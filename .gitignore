@@ -1,0 +1,33 @@
+# Django backend (do NOT ignore the whole backend/ tree — source must be tracked)
+backend/venv/
+backend/.env
+backend/.env.*
+backend/*.sqlite3
+backend/**/__pycache__/
+backend/**/*.py[cod]
+backend/staticfiles/
+backend/uploads/
+backend/logs/
+backend/*.log
+
+# Next.js / frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+frontend/.env*.local
+
+# Repo root venv (if used)
+venv/
+.venv/
+ENV/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Misc
+*.pyc
+.pytest_cache/

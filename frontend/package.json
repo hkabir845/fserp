@@ -1,0 +1,35 @@
+{
+  "name": "filling-station-erp-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0",
+    "dev:turbo": "node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --turbo",
+    "clean:next": "node scripts/clean-next.mjs",
+    "dev:clean": "npm run clean:next && node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "lucide-react": "^0.468.0",
+    "next": "14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.35",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16"
+  },
+  "overrides": {
+    "axios": "^1.7.9"
+  }
+}

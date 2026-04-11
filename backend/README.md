@@ -2,7 +2,7 @@
 
 Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed.
 
-**Operations & releases:** See [`../docs/OPERATIONS.md`](../docs/OPERATIONS.md) — multi-tenant release policy, production env vars, health/version endpoints, and security defaults.
+**Deploy / env:** Configure `backend/.env` or `backend/env/.env` (see [`env.example`](env.example)) — `DJANGO_SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, `FRONTEND_BASE_URL`, etc.
 
 **Deploy metadata:** Set `FSERP_APP_VERSION` and optionally `GIT_COMMIT_SHA`; verify with `GET /api/version/`.
 

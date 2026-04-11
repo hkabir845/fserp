@@ -1,8 +1,10 @@
 'use client'
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import api from '@/lib/api'
 import { useCompany } from '@/contexts/CompanyContext'
+import { isPublicAuthRoute } from '@/utils/publicAuthRoutes'
 import {
   DEFAULT_COMPANY_DATE_FORMAT,
   DEFAULT_COMPANY_TIME_FORMAT,
@@ -17,6 +19,7 @@ const initialCtx: TenantLocaleConfig = {
 }
 
 export function CompanyLocaleProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
   const { selectedCompany } = useCompany()
   const [ctx, setCtx] = useState<TenantLocaleConfig>(initialCtx)
 
@@ -25,6 +28,11 @@ export function CompanyLocaleProvider({ children }: { children: ReactNode }) {
 
     async function load() {
       if (typeof window === 'undefined') return
+      if (isPublicAuthRoute(pathname)) {
+        setTenantLocaleConfig(null)
+        if (!cancelled) setCtx(initialCtx)
+        return
+      }
       const token = localStorage.getItem('access_token')?.trim()
       if (!token) {
         setTenantLocaleConfig(null)
@@ -69,7 +77,7 @@ export function CompanyLocaleProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('storage', onStorage)
       window.removeEventListener('fserp-company-settings-saved', onCompanySettingsSaved)
     }
-  }, [selectedCompany?.id])
+  }, [selectedCompany?.id, pathname])
 
   return (
     <CompanyLocaleContext.Provider value={ctx}>{children}</CompanyLocaleContext.Provider>

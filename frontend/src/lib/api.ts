@@ -7,8 +7,8 @@ import axios from 'axios'
 /**
  * Canonical API base (.../api). Env may be `http://host:8000` or `http://host:8000/api` — never duplicate `/api/api`.
  */
-/** Default API origin when `NEXT_PUBLIC_API_BASE_URL` is unset — production API. For local dev, set `.env.local`. */
-export const FALLBACK_BACKEND_ORIGIN = 'https://fsapi.sascorporationbd.com'
+/** Default API origin when `NEXT_PUBLIC_API_BASE_URL` is unset — production API. Override in `frontend/.env`. */
+export const FALLBACK_BACKEND_ORIGIN = 'https://api.mahasoftcorporation.com'
 
 const DEFAULT_BACKEND_ORIGIN = FALLBACK_BACKEND_ORIGIN
 
@@ -28,7 +28,7 @@ export function getBackendOrigin(): string {
   return base.replace(/\/api\/?$/, '')
 }
 
-/** Dev API index (`/api/docs/`); links should use this so they follow `.env.local` (localhost vs 127.0.0.1). */
+/** Dev API index (`/api/docs/`); links follow `frontend/.env` (localhost vs 127.0.0.1). */
 export function getApiDocsUrl(): string {
   return `${getBackendOrigin().replace(/\/+$/, '')}/api/docs/`
 }

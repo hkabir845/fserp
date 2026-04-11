@@ -1,0 +1,7 @@
+# Single repo: consistent line endings for Linux deploy + Windows dev.
+# Store and check out text as LF; Git stops LF/CRLF warnings on git add.
+* text=auto eol=lf
+
+# Native Windows scripts only
+*.bat text eol=crlf
+*.cmd text eol=crlf

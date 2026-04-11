@@ -9,11 +9,7 @@ Next.js 14 frontend for Filling Station ERP system.
 npm install
 ```
 
-2. Create `.env.local` file:
-```env
-API_URL=https://fsapi.sascorporationbd.com
-WS_URL=ws://localhost:8000
-```
+2. Configure environment in [`.env`](.env) (defaults target `http://localhost:8000` for the Django API). For production builds, set `NEXT_PUBLIC_*` to your API/UI hosts (see commented block in `.env`).
 
 3. Run development server:
 ```bash
@@ -26,6 +22,7 @@ Open `http://localhost:3000`
 
 ```
 frontend/
+├── .env                 # Env vars (dev + production; see comments inside)
 ├── src/
 │   ├── app/             # Next.js App Router pages
 │   ├── components/      # React components
@@ -39,10 +36,14 @@ frontend/
 
 ## Build for Production
 
+Set `NEXT_PUBLIC_*` in [`.env`](.env) to your production API/UI hosts (see commented block in that file), then:
+
 ```bash
 npm run build
 npm start
 ```
+
+If you previously used `.env.local` or `.env.production`, remove them and rely on `.env` only. Close any editor holding old `frontend/.env.example` / `env.local.example` files so they can be deleted from disk if they still appear.
 
 ## Key Features
 
@@ -51,12 +52,6 @@ npm start
 - **Responsive Design:** Works on all devices
 - **TypeScript:** Full type safety
 - **Tailwind CSS:** Modern styling
-
-
-
-
-
-
 
 
 

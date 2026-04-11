@@ -73,34 +73,29 @@ echo.
 echo [OK] Dependencies installed successfully
 echo.
 
-REM Create .env.local file if it doesn't exist
-if not exist ".env.local" (
+REM Create .env file if it doesn't exist (single env file for dev and build)
+if not exist ".env" (
     echo ========================================
-    echo Creating .env.local file...
+    echo Creating .env file...
     echo ========================================
     echo.
     (
+        echo # Next.js — see README. Edit NEXT_PUBLIC_* for local API vs production.
         echo PORT=3000
-        echo.
-        echo # API Configuration
-        echo NEXT_PUBLIC_API_BASE_URL=https://fsapi.sascorporationbd.com/api
-        echo NEXT_PUBLIC_API_URL=https://fsapi.sascorporationbd.com
+        echo NEXT_PUBLIC_API_URL=http://localhost:8000
+        echo NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
         echo NEXT_PUBLIC_WS_URL=ws://localhost:8000
+        echo NEXT_PUBLIC_APP_SHELL_HOSTNAMES=localhost,127.0.0.1
         echo NEXT_PUBLIC_API_TIMEOUT=30000
-        echo.
-        echo # App Configuration
         echo NEXT_PUBLIC_APP_NAME=Filling Station ERP
         echo NEXT_PUBLIC_APP_VERSION=1.0.0
-        echo.
-        echo # Features Toggle
         echo NEXT_PUBLIC_ENABLE_WEBSOCKET=false
         echo NEXT_PUBLIC_ENABLE_NOTIFICATIONS=true
-    ) > .env.local
-    echo [OK] .env.local file created with PORT=3000
+    ) > .env
+    echo [OK] .env file created
     echo.
 ) else (
-    echo [OK] .env.local file already exists
-    echo   (If you need to change port, edit .env.local and set PORT=3000)
+    echo [OK] .env file already exists
     echo.
 )
 

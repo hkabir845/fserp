@@ -143,7 +143,24 @@ const SUMMARY_EXCLUDED_REPORTS: ReportType[] = [
   'tank-dip-variance',
   'tank-dip-register',
   'meter-readings',
-];
+]
+
+/** Single source of truth: APIs that accept `start_date` / `end_date` (used for fetch + period UI). */
+const REPORTS_WITH_PERIOD = new Set<ReportType>([
+  'trial-balance',
+  'balance-sheet',
+  'income-statement',
+  'customer-balances',
+  'vendor-balances',
+  'daily-summary',
+  'shift-summary',
+  'sales-by-nozzle',
+  'fuel-sales',
+  'tank-inventory',
+  'tank-dip-variance',
+  'tank-dip-register',
+  'meter-readings',
+])
 
 export default function ReportsPage() {
   const router = useRouter()
@@ -232,22 +249,7 @@ export default function ReportsPage() {
     setReportData(null) // Clear previous data
 
     const params: Record<string, string> = {}
-    const withPeriod = new Set<ReportType>([
-      'trial-balance',
-      'balance-sheet',
-      'income-statement',
-      'customer-balances',
-      'vendor-balances',
-      'daily-summary',
-      'shift-summary',
-      'sales-by-nozzle',
-      'fuel-sales',
-      'tank-inventory',
-      'tank-dip-variance',
-      'tank-dip-register',
-      'meter-readings',
-    ])
-    if (withPeriod.has(reportId)) {
+    if (REPORTS_WITH_PERIOD.has(reportId)) {
       params.start_date = dateRange.startDate
       params.end_date = dateRange.endDate
     }
@@ -343,11 +345,6 @@ export default function ReportsPage() {
       }
     }, 500)
   }, [dateRange, fetchReport, selectedReport])
-  
-  // Keep backward compatibility with meter-readings specific handler
-  const handleMeterReadingsDateChange = useCallback((field: 'startDate' | 'endDate', value: string) => {
-    handleReportDateChange(field, value, 'meter-readings')
-  }, [handleReportDateChange])
 
   const printReport = () => {
     if (!reportData || !selectedReport) return
@@ -826,6 +823,7 @@ export default function ReportsPage() {
                           <h3 className="text-lg font-semibold text-gray-900 mb-3">Summary</h3>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                             {Object.entries(reportData.summary as Record<string, unknown>).map(([key, value], idx) => {
+                              const summaryEntryKey = `${idx}-${key}`
                               const colorClasses = [
                                 'from-blue-50 to-blue-100 border-blue-200 text-blue-600',
                                 'from-green-50 to-green-100 border-green-200 text-green-600',
@@ -846,7 +844,7 @@ export default function ReportsPage() {
                               const iconColor = iconColors[idx % iconColors.length]
                               
                               return (
-                                <div key={key} className={`bg-gradient-to-br ${colorClass} border rounded-lg p-4 shadow-sm`}>
+                                <div key={summaryEntryKey} className={`bg-gradient-to-br ${colorClass} border rounded-lg p-4 shadow-sm`}>
                                   <div className="flex items-center justify-between">
                                     <div className="flex-1">
                                       <p className={`text-xs uppercase tracking-wide font-medium ${colorClass.split(' ')[2]}`}>
@@ -1022,26 +1020,10 @@ function renderReportTable(
   fetchReport?: (reportId: ReportType) => Promise<void>,
   handleReportDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: ReportType) => void
 ) {
-  // Period-based reports that should show editable filters
-  const periodBasedReports = new Set<ReportType>([
-    'trial-balance',
-    'balance-sheet',
-    'income-statement',
-    'customer-balances',
-    'vendor-balances',
-    'daily-summary',
-    'shift-summary',
-    'sales-by-nozzle',
-    'fuel-sales',
-    'tank-inventory',
-    'tank-dip-variance',
-    'tank-dip-register',
-    'meter-readings'
-  ])
-  
-  // Get period info if available
   const period = data?.period || {}
-  const hasPeriod = periodBasedReports.has(reportType) && (period.start_date || period.end_date || dateRange?.startDate || dateRange?.endDate)
+  const hasPeriod =
+    REPORTS_WITH_PERIOD.has(reportType) &&
+    (period.start_date || period.end_date || dateRange?.startDate || dateRange?.endDate)
   
   // Meter Readings - Check this first to ensure it's caught
   if (reportType === 'meter-readings' && data && (data.meters || data.summary || data.period)) {
@@ -1151,7 +1133,10 @@ function renderReportTable(
                     const periodDispensed = Math.max(0, Number(meter.period_dispensed !== undefined ? meter.period_dispensed : (closingReading - openingReading)))
                     
                     return (
-                      <tr key={meter.meter_number || index} className="hover:bg-gray-50">
+                      <tr
+                        key={meter.id != null ? `meter-${meter.id}` : `meter-${index}-${String(meter.meter_number ?? '')}`}
+                        className="hover:bg-gray-50"
+                      >
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{meter.meter_number || 'N/A'}</td>
                         <td className="px-4 py-3 text-sm text-gray-900">{meter.meter_name || 'N/A'}</td>
                         <td className="px-4 py-3 text-sm text-right text-gray-600">
@@ -1288,8 +1273,8 @@ function renderReportTable(
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {Object.entries(byProduct as Record<string, { transactions?: number; liters?: number; amount?: number }>).map(([product, metrics]) => (
-                    <tr key={product}>
+                  {Object.entries(byProduct as Record<string, { transactions?: number; liters?: number; amount?: number }>).map(([product, metrics], pIdx) => (
+                    <tr key={`${pIdx}-${product}`}>
                       <td className="px-4 py-3 text-sm text-gray-900">{product}</td>
                       <td className="px-4 py-3 text-sm text-right text-gray-600">{metrics.transactions}</td>
                       <td className="px-4 py-3 text-sm text-right text-gray-600">
@@ -1499,9 +1484,9 @@ function renderReportTable(
               </div>
               <div className="divide-y divide-gray-200">
                 {(payload?.accounts ?? []).length > 0 ? (
-                  (payload?.accounts ?? []).map((account: any) => (
+                  (payload?.accounts ?? []).map((account: any, accIdx: number) => (
                     <div
-                      key={account.account_code}
+                      key={`${title}-${accIdx}-${account.account_code ?? 'acct'}`}
                       className={`px-4 py-3 flex justify-between hover:bg-gray-50 transition-colors ${
                         account.is_auto_plug
                           ? 'bg-amber-50/80 border-l-2 border-amber-500'
@@ -1654,8 +1639,11 @@ function renderReportTable(
               </div>
               <div className="divide-y divide-gray-200">
                 {(payload?.accounts ?? []).length > 0 ? (
-                  (payload?.accounts ?? []).map((account: any) => (
-                    <div key={account.account_code} className="px-4 py-3 flex justify-between hover:bg-gray-50 transition-colors">
+                  (payload?.accounts ?? []).map((account: any, accIdx: number) => (
+                    <div
+                      key={`${title}-${accIdx}-${account.account_code ?? 'acct'}`}
+                      className="px-4 py-3 flex justify-between hover:bg-gray-50 transition-colors"
+                    >
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">{account.account_name}</p>
                         <p className="text-xs text-gray-500">{account.account_code}</p>
@@ -1915,7 +1903,10 @@ function renderReportTable(
             <tbody className="bg-white divide-y divide-gray-200">
               {nozzles.length > 0 ? (
                 nozzles.map((nozzle: any, idx: number) => (
-                  <tr key={nozzle.nozzle_number || idx} className="hover:bg-gray-50">
+                  <tr
+                    key={nozzle.id != null ? `nozzle-${nozzle.id}` : `nozzle-${idx}-${String(nozzle.nozzle_number ?? '')}`}
+                    className="hover:bg-gray-50"
+                  >
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{nozzle.nozzle_name || nozzle.nozzle_number || 'N/A'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{nozzle.product_name || 'Unknown'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{nozzle.station_name || 'Unknown'}</td>
@@ -2008,7 +1999,14 @@ function renderReportTable(
                 entries.map((entry: any, idx: number) => {
                   const balance = Number(entry.balance ?? 0)
                   return (
-                    <tr key={entry.vendor_number || entry.customer_number || idx} className="hover:bg-gray-50">
+                    <tr
+                      key={
+                        entry.id != null
+                          ? `${isCustomer ? 'cust' : 'vend'}-${entry.id}`
+                          : `${isCustomer ? 'cust' : 'vend'}-${idx}-${String(entry.vendor_number ?? entry.customer_number ?? '')}`
+                      }
+                      className="hover:bg-gray-50"
+                    >
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">
                         {isCustomer ? entry.customer_number : entry.vendor_number}
                       </td>
@@ -2160,8 +2158,8 @@ function renderReportTable(
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Cashier Performance</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Object.entries(byCashier).map(([cashier, stats]: [string, any]) => (
-                <div key={cashier} className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm hover:shadow-md transition-shadow">
+              {Object.entries(byCashier).map(([cashier, stats]: [string, any], cIdx: number) => (
+                <div key={`cashier-${cIdx}-${cashier}`} className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="font-semibold text-gray-900 text-lg">{cashier}</h4>
                     <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
@@ -2445,8 +2443,8 @@ function renderReportTable(
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
-                  {byTank.map((row: any) => (
-                    <tr key={row.tank_name}>
+                  {byTank.map((row: any, tIdx: number) => (
+                    <tr key={row.tank_id ?? row.id ?? `tank-row-${tIdx}-${String(row.tank_name ?? '')}`}>
                       <td className="px-4 py-2 text-gray-900">{row.tank_name}</td>
                       <td className="px-4 py-2 text-right tabular-nums text-gray-700">{row.readings ?? 0}</td>
                       <td
@@ -2492,7 +2490,7 @@ function renderReportTable(
                     const hasVar = v != null && v !== ''
                     const vn = hasVar ? Number(v) : null
                     return (
-                      <tr key={row.id ?? idx} className="hover:bg-slate-50/80">
+                      <tr key={row.id != null ? `dipreg-${row.id}-${idx}` : `dipreg-${idx}`} className="hover:bg-slate-50/80">
                         <td className="px-3 py-2.5 text-gray-500 tabular-nums">{idx + 1}</td>
                         <td className="px-3 py-2.5 text-gray-900 whitespace-nowrap">
                           {row.dip_date ? formatDate(row.dip_date) : '—'}
@@ -2657,8 +2655,8 @@ function renderReportTable(
           <div>
             <h4 className="font-semibold text-gray-900 mb-3">By Tank</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {Object.entries(byTank).map(([tank, stats]: [string, any]) => (
-                <div key={tank} className="border rounded-lg p-4">
+              {Object.entries(byTank).map(([tank, stats]: [string, any], tkIdx: number) => (
+                <div key={`tank-card-${tkIdx}-${tank}`} className="border rounded-lg p-4">
                   <h5 className="font-medium text-gray-900">{tank}</h5>
                   <p className="text-sm text-gray-500">{stats.product}</p>
                   <div className="mt-2 space-y-1 text-sm">
@@ -2705,7 +2703,7 @@ function renderReportTable(
                     const vq = Number(dip.variance_quantity ?? dip.variance ?? 0)
                     const vType = dip.variance_type || (vq > 0 ? 'GAIN' : vq < 0 ? 'LOSS' : 'EVEN')
                     return (
-                    <tr key={dip.id ?? idx} className="hover:bg-gray-50">
+                    <tr key={dip.id != null ? `dip-${dip.id}-${idx}` : `dip-${idx}`} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-sm text-gray-600">
                         {dateRaw ? formatDate(dateRaw) : '—'}
                       </td>

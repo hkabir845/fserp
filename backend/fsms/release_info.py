@@ -5,7 +5,7 @@ Set at deploy time (recommended):
   FSERP_APP_VERSION   e.g. 1.4.2
   GIT_COMMIT_SHA      short or full git SHA (optional)
 
-See docs/OPERATIONS.md for release discipline.
+Set FSERP_APP_VERSION and GIT_COMMIT_SHA at deploy time; verify with GET /api/version/.
 """
 from __future__ import annotations
 

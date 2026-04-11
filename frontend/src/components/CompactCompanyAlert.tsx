@@ -6,6 +6,7 @@ import { useCompany } from '@/contexts/CompanyContext'
 import { AlertTriangle, Building2, Lock, TestTube, Crown, X } from 'lucide-react'
 import api, { isSuperAdminRole } from '@/lib/api'
 import { isConnectionError } from '@/utils/connectionError'
+import { isPublicAuthRoute } from '@/utils/publicAuthRoutes'
 
 interface ProtectionStatus {
   is_master: boolean
@@ -44,6 +45,7 @@ export function CompactCompanyAlert() {
 
   useEffect(() => {
     if (!isMasterCompany || !selectedCompany || typeof window === 'undefined') return
+    if (isPublicAuthRoute(pathname)) return
 
     // Backend requires JWT + super_admin (see admin_views.admin_master_company_protection_status).
     // Non–super-admins would get 403; missing/invalid token yields 401 — avoid calling when unauthorized.

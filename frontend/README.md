@@ -1,6 +1,6 @@
 # Filling Station ERP - Frontend
 
-Next.js 14 frontend for Filling Station ERP system.
+Next.js **16** frontend for Filling Station ERP (see `package.json` / `npm ls next`).
 
 ## Quick Start
 

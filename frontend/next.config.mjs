@@ -1,3 +1,8 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -7,7 +12,7 @@ const nextConfig = {
     maxInactiveAge: 60 * 1000,
     pagesBufferLength: 8,
   },
-  // Security headers: use `src/middleware.ts` with a matcher that excludes `/_next/static/*`.
+  // Security headers: use `src/proxy.ts` with a matcher that excludes `/_next/static/*`.
   // A `headers()` regex here has caused dev 404s for chunks/CSS in some Next versions.
   env: {
     API_URL: process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://api.mahasoftcorporation.com',
@@ -19,11 +24,11 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react'],
   },
-  webpack: (config, { dev, isServer }) => {
-    if (dev && !isServer) {
-      config.optimization = { ...config.optimization, minimize: false }
-    }
-    return config
+  // Next.js 16+ defaults to Turbopack for `next build`; a custom `webpack` hook without a
+  // Turbopack equivalent triggers a hard error. Dev fast-refresh is fine without disabling minimize.
+  // Pin app root when a parent folder also has package-lock.json (monorepo-style clone).
+  turbopack: {
+    root: __dirname,
   },
 }
 

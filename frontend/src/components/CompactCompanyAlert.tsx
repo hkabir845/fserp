@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
 import { useCompany } from '@/contexts/CompanyContext'
 import { AlertTriangle, Building2, Lock, TestTube, Crown, X } from 'lucide-react'
@@ -43,6 +43,22 @@ export function CompactCompanyAlert() {
     }
   }, [selectedCompany])
 
+  const fetchProtectionStatus = useCallback(async () => {
+    try {
+      const response = await api.get('/admin/master-company/protection-status/', {
+        params: { company_id: selectedCompany?.id }
+      })
+      setProtectionStatus(response.data)
+    } catch (error: any) {
+      const status = error?.response?.status
+      // 401: session expired / not logged in; 403: not super_admin — both expected for this optional banner
+      if (status === 401 || status === 403) return
+      if (!isConnectionError(error)) {
+        console.debug('Could not fetch protection status:', error)
+      }
+    }
+  }, [selectedCompany?.id])
+
   useEffect(() => {
     if (!isMasterCompany || !selectedCompany || typeof window === 'undefined') return
     if (isPublicAuthRoute(pathname)) return
@@ -61,24 +77,8 @@ export function CompactCompanyAlert() {
     }
     if (!token || !isSuperAdminRole(role)) return
 
-    fetchProtectionStatus()
-  }, [isMasterCompany, selectedCompany, pathname])
-
-  const fetchProtectionStatus = async () => {
-    try {
-      const response = await api.get('/admin/master-company/protection-status/', {
-        params: { company_id: selectedCompany?.id }
-      })
-      setProtectionStatus(response.data)
-    } catch (error: any) {
-      const status = error?.response?.status
-      // 401: session expired / not logged in; 403: not super_admin — both expected for this optional banner
-      if (status === 401 || status === 403) return
-      if (!isConnectionError(error)) {
-        console.debug('Could not fetch protection status:', error)
-      }
-    }
-  }
+    void fetchProtectionStatus()
+  }, [isMasterCompany, selectedCompany, pathname, fetchProtectionStatus])
 
   const handleDismiss = () => {
     setIsDismissed(true)

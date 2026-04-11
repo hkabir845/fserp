@@ -1,6 +1,6 @@
 # FSMS Backend (Django)
 
-Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed.
+Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed. The web UI is a separate app: **Next.js 16** in [`../frontend/`](../frontend/) (this Python project does not embed Next.js).
 
 **Deploy / env:** Configure `backend/.env` or `backend/env/.env` (see [`env.example`](env.example)) — `DJANGO_SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, `FRONTEND_BASE_URL`, etc.
 

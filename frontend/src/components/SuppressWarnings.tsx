@@ -35,6 +35,7 @@ export function SuppressWarnings() {
           message.includes('Failed to load resource') ||
           message.includes('net::ERR_CONNECTION_REFUSED') ||
           message.includes('localhost:8000') ||
+          message.includes('api.mahasoftcorporation.com') ||
           /:\d+\/api\/.*ERR_CONNECTION_REFUSED/i.test(message) ||
           /:\d+\/api\/.*Failed to load/i.test(message)) {
         return // Suppress connection error warnings
@@ -56,6 +57,7 @@ export function SuppressWarnings() {
                  arg.includes('Failed to load resource') ||
                  arg.includes('localhost:8000') ||
                  arg.includes('127.0.0.1:8000') ||
+                 arg.includes('api.mahasoftcorporation.com') ||
                  /https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\//i.test(arg) ||
                  /:\d+\/api\/.*ERR_CONNECTION_REFUSED/i.test(arg) ||
                  /:\d+\/api\/.*Failed to load/i.test(arg)
@@ -69,6 +71,7 @@ export function SuppressWarnings() {
           message.includes('net::ERR_CONNECTION_REFUSED') ||
           message.includes('Failed to load resource') ||
           message.includes('localhost:8000') ||
+          message.includes('api.mahasoftcorporation.com') ||
           /GET\s+http:\/\/localhost:\d+.*ERR_CONNECTION_REFUSED/i.test(message) ||
           /POST\s+http:\/\/localhost:\d+.*ERR_CONNECTION_REFUSED/i.test(message) ||
           /:\d+\/api\/.*ERR_CONNECTION_REFUSED/i.test(message) ||
@@ -100,6 +103,7 @@ export function SuppressWarnings() {
             errorStr.includes('ERR_CONNECTION_REFUSED') ||
             errorStr.includes('Failed to fetch') ||
             errorStr.includes('localhost:8000') ||
+            errorStr.includes('api.mahasoftcorporation.com') ||
             /net::ERR_CONNECTION_REFUSED/i.test(errorStr)) {
           event.preventDefault()
           return
@@ -111,7 +115,8 @@ export function SuppressWarnings() {
         if (reason.includes('ERR_CONNECTION_REFUSED') ||
             reason.includes('net::ERR_CONNECTION_REFUSED') ||
             reason.includes('Failed to fetch') ||
-            reason.includes('localhost:8000')) {
+            reason.includes('localhost:8000') ||
+            reason.includes('api.mahasoftcorporation.com')) {
           event.preventDefault()
           return
         }

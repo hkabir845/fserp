@@ -11,7 +11,7 @@ if (-not (Test-Path ".env")) {
     exit 1
 }
 
-Write-Host "Starting backend on http://localhost:8000 ..." -ForegroundColor Green
-Write-Host "API docs: http://localhost:8000/api/docs" -ForegroundColor Cyan
+Write-Host "Starting backend on https://api.mahasoftcorporation.com ..." -ForegroundColor Green
+Write-Host "API docs: https://api.mahasoftcorporation.com/api/docs" -ForegroundColor Cyan
 Write-Host "Press Ctrl+C to stop." -ForegroundColor Yellow
 & ".\venv\Scripts\python.exe" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000

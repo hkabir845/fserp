@@ -4,7 +4,7 @@ Quick script to check if the backend server is running
 import sys
 try:
     import requests
-    response = requests.get('http://localhost:8000/health', timeout=2)
+    response = requests.get('https://api.mahasoftcorporation.com/health', timeout=2)
     if response.status_code == 200:
         print("✅ Backend server is running!")
         print(f"   Response: {response.json()}")

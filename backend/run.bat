@@ -9,8 +9,8 @@ if not defined PY (
     pause
     exit /b 1
 )
-echo Backend (Django): http://127.0.0.1:8000
-echo API docs: http://127.0.0.1:8000/api/docs/
+echo Backend (Django): https://api.mahasoftcorporation.com
+echo API docs: https://api.mahasoftcorporation.com/api/docs/
 echo.
 "%PY%" manage.py runserver 8000
 pause

@@ -9,7 +9,7 @@ Next.js **16** frontend for Filling Station ERP (see `package.json` / `npm ls ne
 npm install
 ```
 
-2. Configure environment in [`.env`](.env) (defaults target `http://localhost:8000` for the Django API and Next on port 3000). For production, set `NEXT_PUBLIC_*` to your API/UI hosts (see commented block in `.env`). Note: `.env.local` overrides `.env` if present.
+2. Configure environment in [`.env`](.env) (defaults target `https://api.mahasoftcorporation.com` for the Django API and Next on port 3000). For production, set `NEXT_PUBLIC_*` to your API/UI hosts (see commented block in `.env`). Note: `.env.local` overrides `.env` if present.
 
 3. Run development server:
 ```bash

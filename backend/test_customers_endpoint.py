@@ -5,7 +5,7 @@ Run this to diagnose backend issues
 import requests
 import json
 
-BASE_URL = "http://localhost:8000/api"
+BASE_URL = "https://api.mahasoftcorporation.com/api"
 
 def test_backend():
     print("=" * 60)
@@ -15,7 +15,7 @@ def test_backend():
     # Test 1: Health check
     print("\n1. Testing /health endpoint...")
     try:
-        response = requests.get("http://localhost:8000/health", timeout=5)
+        response = requests.get("https://api.mahasoftcorporation.com/health", timeout=5)
         print(f"   Status: {response.status_code}")
         print(f"   Response: {response.json()}")
     except Exception as e:

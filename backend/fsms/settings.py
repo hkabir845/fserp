@@ -10,25 +10,11 @@ from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-try:
-    from dotenv import load_dotenv
 
-    load_dotenv(BASE_DIR / ".env")
-    load_dotenv(BASE_DIR / "env" / ".env")
-except ImportError:
-    pass
+SECRET_KEY = 'ahdjkahduihduiwye786284yu289u89&*sfhewuifhweihfke'
+DEBUG = True
 
-# Strip whitespace/newlines from .env so JWT signatures stay stable
-_DEFAULT_SECRET_KEY = "dev-secret-key-change-in-production"
-SECRET_KEY = (os.environ.get("DJANGO_SECRET_KEY") or _DEFAULT_SECRET_KEY).strip()
-DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() in ("1", "true", "yes")
-if not DEBUG and SECRET_KEY == _DEFAULT_SECRET_KEY and "pytest" not in sys.modules:
-    raise ImproperlyConfigured(
-        "Set DJANGO_SECRET_KEY to a long random value when DJANGO_DEBUG is false."
-    )
-ALLOWED_HOSTS = [
-    h.strip() for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0").split(",") if h.strip()
-]
+ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -97,14 +83,7 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-CORS_ALLOW_ALL_ORIGINS = DEBUG
-CORS_ALLOWED_ORIGINS = [
-    o.strip()
-    for o in os.environ.get(
-        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-    ).split(",")
-    if o.strip()
-]
+CORS_ALLOW_ALL_ORIGINS = True
 
 # Preflight must allow every header the Next.js client sends (see src/lib/api.ts).
 # If production still fails with "x-selected-company-id is not allowed", either deploy this file
@@ -117,16 +96,12 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 ]
 
 # Django 4+: trusted origins for CSRF (e.g. admin, session). Defaults to CORS_ORIGINS if unset.
-_csrf_raw = os.environ.get("CSRF_TRUSTED_ORIGINS", "").strip()
-if _csrf_raw:
-    CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_raw.split(",") if o.strip()]
-else:
-    CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
+CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'https://*.mahasoftcorporation.com', 'https://mahasoftcorporation.com']
 
 REST_FRAMEWORK = {"DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"]}
 
 # Base URL for password-reset links in emails (no trailing slash).
-FRONTEND_BASE_URL = (os.environ.get("FRONTEND_BASE_URL") or "http://localhost:3000").rstrip("/")
+FRONTEND_BASE_URL = (os.environ.get("FRONTEND_BASE_URL") or "https://mahasoftcorporation.com").rstrip("/")
 
 # Email: default console backend for development. Set EMAIL_HOST (+ user/password) to send real mail.
 EMAIL_BACKEND = (os.environ.get("EMAIL_BACKEND") or "").strip()

@@ -23,7 +23,7 @@ npm run dev
 - Check Network tab to see if requests are failing
 
 ### 5. Verify Backend is Running
-- Local dev: `http://localhost:8000` — Test: `http://localhost:8000/api/docs/`
+- Local dev: `https://api.mahasoftcorporation.com` — Test: `https://api.mahasoftcorporation.com/api/docs/`
 - Production API host: `https://api.mahasoftcorporation.com` — Test: `https://api.mahasoftcorporation.com/api/docs/`
 
 ### 6. Clear LocalStorage

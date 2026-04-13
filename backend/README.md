@@ -17,8 +17,8 @@ Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATC
 **Verify:** `python verify_backend.py` (includes a preflight check for `x-selected-company-id`). On the server, `curl -i -X OPTIONS "https://api.example.com/api/auth/login/" -H "Origin: https://mahasoftcorporation.com" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: x-selected-company-id"` should show `access-control-allow-headers` containing `x-selected-company-id`.
 
 - **Run:** From `backend` folder: `python manage.py runserver 8000`
-- **API root:** http://127.0.0.1:8000/api/
-- **API docs (simple):** http://127.0.0.1:8000/api/docs/
+- **API root:** https://api.mahasoftcorporation.com/api/
+- **API docs (simple):** https://api.mahasoftcorporation.com/api/docs/
 - **Auth:** POST `/api/auth/login/form/` (JSON or form). Create user: `python manage.py create_superuser`
 
 Endpoints: auth (login, refresh), companies/current, admin/stats, admin/companies, admin/users, dashboard/stats, broadcasts, and stub lists for customers, tanks, items, nozzles (empty until you add full CRUD).
@@ -78,9 +78,9 @@ Models use **managed = False** and map to the existing database tables. Configur
 python manage.py runserver 8000
 ```
 
-- Root: http://localhost:8000/
-- Health: http://localhost:8000/health
-- API: http://localhost:8000/api/
+- Root: https://api.mahasoftcorporation.com/
+- Health: https://api.mahasoftcorporation.com/health
+- API: https://api.mahasoftcorporation.com/api/
 - Auth: POST /api/auth/login (JSON or form), /api/auth/refresh, /api/auth/me
 - Companies: /api/companies/, /api/companies/current, /api/companies/<id>
 - Users: /api/users/, /api/users/<id>

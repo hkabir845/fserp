@@ -12,6 +12,7 @@ import { formatDate } from "@/utils/date"
 import { escapeHtml, printDocument, printLedgerStatement } from "@/utils/printDocument"
 import type { LedgerPayload } from "@/components/ContactLedgerPage"
 import {
+  Building2,
   CheckCircle,
   ChevronDown,
   Fuel,
@@ -25,7 +26,10 @@ import {
   XCircle,
 } from "lucide-react"
 
-type ActiveTab = "fuel" | "general"
+const inputClassName =
+  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+const selectClassName =
+  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
 
 type Company = {
   id: number
@@ -181,7 +185,6 @@ export default function CashierPOSPage() {
   const { selectedCompany } = useCompany()
 
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<ActiveTab>("fuel")
   const [currencySymbol, setCurrencySymbol] = useState<string>("৳") // Default to BDT
   
   // Get API base URL for image construction
@@ -212,7 +215,6 @@ export default function CashierPOSPage() {
   const [cartEntries, setCartEntries] = useState<CartEntry[]>([])
   const [itemSearch, setItemSearch] = useState("")
   const [showInvoicePreview, setShowInvoicePreview] = useState(false)
-  const [showGeneralInvoicePreview, setShowGeneralInvoicePreview] = useState(false)
   const [printMenuOpen, setPrintMenuOpen] = useState(false)
   const [printBusy, setPrintBusy] = useState(false)
   const printMenuRef = useRef<HTMLDivElement | null>(null)
@@ -311,19 +313,6 @@ export default function CashierPOSPage() {
       toast.error("Unable to load POS data. Please try again.")
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleTabChange = (nextTab: ActiveTab) => {
-    setActiveTab(nextTab)
-    if (nextTab === "fuel") {
-      setCartEntries([])
-      setItemSearch("")
-      setSelectedItem(null)
-    } else {
-      setQuantity("")
-      setAmount("")
-      setSelectedNozzle(null)
     }
   }
 
@@ -457,6 +446,12 @@ export default function CashierPOSPage() {
   const quantityNumber = quantity ? parseFloat(quantity) || 0 : 0
   const computedAmount = roundTwo(quantityNumber * unitPrice)
   const amountNumber = amount ? parseFloat(amount) || 0 : computedAmount
+  const pendingFuelAmount =
+    selectedNozzle && quantityNumber > 0 ? amountNumber : 0
+  const grandTotal = useMemo(
+    () => roundTwo(cartTotals.total + pendingFuelAmount),
+    [cartTotals.total, pendingFuelAmount]
+  )
   const meterStart = selectedNozzle?.current_reading || 0
   const meterProjected = roundTwo(meterStart + quantityNumber)
   const tankStart = selectedNozzle?.current_stock || 0
@@ -486,65 +481,40 @@ export default function CashierPOSPage() {
     )
   }, [itemSearch, posItems])
 
-  const handleFuelSale = async () => {
-    if (!selectedNozzle || !quantity || !amount) {
-      toast.error("Select nozzle, quantity, and amount before completing the sale.")
-      return
+  const handleUnifiedSale = async () => {
+    const fuelLines: { nozzle_id: number; quantity: number; amount: number }[] = []
+    if (selectedNozzle && quantity) {
+      const qty = parseFloat(quantity)
+      if (qty > 0) {
+        fuelLines.push({
+          nozzle_id: selectedNozzle.id,
+          quantity: roundTwo(qty),
+          amount: roundTwo(amountNumber),
+        })
+      }
     }
 
-    const qty = parseFloat(quantity)
-    if (!qty || qty <= 0) {
-      toast.error("Quantity must be greater than zero.")
-      return
-    }
+    const validItems = cartEntries
+      .filter(entry => entry.quantity > 0)
+      .map(entry => ({
+        item_id: entry.item.id,
+        quantity: roundTwo(entry.quantity),
+        unit_price: entry.unitPrice > 0 ? roundTwo(entry.unitPrice) : null,
+        discount_percent:
+          entry.item.item_type === "discount" ||
+          entry.item.item_type === "payment"
+            ? 0
+            : Math.min(Math.max(entry.discountPercent, 0), 100),
+      }))
 
-    if (isOnAccount && !customerId) {
+    if (fuelLines.length === 0 && validItems.length === 0) {
       toast.error(
-        "On-account (A/R) requires a customer. Choose a credit customer, not Walk-in."
+        "Add fuel (nozzle + quantity) and/or products to the cart before completing the sale."
       )
       return
     }
 
-    try {
-      const payload: Record<string, unknown> = {
-        nozzle_id: selectedNozzle.id,
-        quantity: qty,
-        amount: parseFloat(amount),
-        customer_id: customerId || null,
-        payment_method: paymentMethod.toLowerCase(),
-      }
-      if (
-        !isOnAccount &&
-        depositBankId !== "" &&
-        typeof depositBankId === "number"
-      ) {
-        payload.bank_account_id = depositBankId
-      }
-      const res = await api.post("/cashier/sale/", payload)
-      const msg = res.data?.detail
-      toast.success(
-        typeof msg === "string" ? msg : "Fuel sale completed successfully."
-      )
-      setQuantity("")
-      setAmount("")
-      setCustomerId(null)
-      setPaymentMethod("CASH")
-      setVehiclePlate("")
-      setShowInvoicePreview(false)
-      await loadInitialData()
-    } catch (error: any) {
-      const msg = error.response?.data?.detail || error.response?.data?.error || (error instanceof Error ? error.message : "Fuel sale failed. Please retry.")
-      toast.error(typeof msg === "string" ? msg : "Fuel sale failed. Please retry.")
-    }
-  }
-
-  const handleGeneralSale = async () => {
-    if (!cartEntries.length) {
-      toast.error("Add items to the cart before completing the sale.")
-      return
-    }
-
-    if (cartTotals.hasNegativeTotal || cartTotals.total <= 0) {
+    if (grandTotal <= 0) {
       toast.error("Total must be positive to complete the sale.")
       return
     }
@@ -557,28 +527,11 @@ export default function CashierPOSPage() {
     }
 
     try {
-      const validItems = cartEntries
-        .filter(entry => entry.quantity > 0)
-        .map(entry => ({
-          item_id: entry.item.id,
-          quantity: roundTwo(entry.quantity),
-          unit_price: entry.unitPrice > 0 ? roundTwo(entry.unitPrice) : null,
-          discount_percent:
-            entry.item.item_type === "discount" ||
-            entry.item.item_type === "payment"
-              ? 0
-              : Math.min(Math.max(entry.discountPercent, 0), 100),
-        }))
-
-      if (validItems.length === 0) {
-        toast.error("No valid items with quantity > 0 to complete the sale.")
-        return
-      }
-
       const payload: Record<string, unknown> = {
         sale_type: "general",
         payment_method: paymentMethod.toLowerCase(),
         items: validItems,
+        fuel_lines: fuelLines,
       }
       if (customerId !== null && customerId !== undefined) {
         payload.customer_id = customerId
@@ -596,20 +549,20 @@ export default function CashierPOSPage() {
       toast.success(typeof msg === "string" ? msg : "Sale completed successfully.")
       setCartEntries([])
       setSelectedItem(null)
+      setQuantity("")
+      setAmount("")
+      setSelectedNozzle(null)
       setCustomerId(null)
       setPaymentMethod("CASH")
+      setVehiclePlate("")
+      setShowInvoicePreview(false)
       await loadInitialData()
     } catch (error: any) {
-      const msg = error.response?.data?.detail || error.response?.data?.error || (error instanceof Error ? error.message : "Sale could not be completed. Please retry.")
+      const msg =
+        error.response?.data?.detail ||
+        error.response?.data?.error ||
+        (error instanceof Error ? error.message : "Sale could not be completed. Please retry.")
       toast.error(typeof msg === "string" ? msg : "Sale could not be completed. Please retry.")
-    }
-  }
-
-  const handleCompleteSale = async () => {
-    if (activeTab === "fuel") {
-      await handleFuelSale()
-    } else {
-      await handleGeneralSale()
     }
   }
 
@@ -630,67 +583,28 @@ export default function CashierPOSPage() {
     return ok
   }
 
-  const canPrintFuelDraft = Boolean(selectedNozzle && quantityNumber > 0)
-  const canPrintGeneralDraft = cartEntries.length > 0 && cartTotals.total > 0
+  const canPrintUnifiedDraft = grandTotal > 0
 
-  const printFuelDraft = () => {
-    if (!selectedNozzle || quantityNumber <= 0) {
-      toast.error("Select a nozzle and quantity before printing the fuel invoice.")
+  const printUnifiedDraft = () => {
+    if (grandTotal <= 0) {
+      toast.error("Add fuel and/or products with a positive total before printing.")
       return
     }
     const custLabel = customerId
       ? customers.find(c => c.id === customerId)?.display_name || `ID ${customerId}`
       : "Walk-in"
-    const inv = `INV-${(selectedNozzle.nozzle_number || "0000")
-      .replace(/[^0-9]/g, "")
-      .padStart(6, "0")}`
-    const body = `
-      <div class="co">
-        <h1>Fuel invoice (draft)</h1>
-        <div><strong>${escapeHtml(posCompanyLabel)}</strong></div>
-        ${posCompanyAddress ? `<div class="muted">${escapeHtml(posCompanyAddress)}</div>` : ""}
-        <p class="muted">Printed ${escapeHtml(formatDate(new Date(), true))}</p>
-      </div>
-      <p class="muted">Customer: ${escapeHtml(custLabel)} · Payment: ${escapeHtml(
-      paymentMethodLabel
-    )}${vehiclePlate ? ` · Vehicle: ${escapeHtml(vehiclePlate.toUpperCase())}` : ""}</p>
-      <table><thead><tr><th>Invoice #</th><th>Nozzle</th></tr></thead><tbody>
-      <tr><td>${escapeHtml(inv)}</td><td>${escapeHtml(selectedNozzle.nozzle_number)}</td></tr></tbody></table>
-      <table><thead><tr><th>Item</th><th class="right">Qty</th><th class="right">Unit price</th><th class="right">Amount</th></tr></thead><tbody>
-      <tr><td>${escapeHtml(selectedNozzle.product_name)}</td><td class="right">${escapeHtml(
-      formatNumber(quantityNumber)
-    )} ${escapeHtml(selectedUnit)}</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-      formatNumber(unitPrice)
-    )}</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-      formatNumber(amountNumber)
-    )}</td></tr>
-      </tbody></table>
-      <table><tbody>
-      <tr><td>Subtotal</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-      formatNumber(amountNumber)
-    )}</td></tr>
-      <tr><td>Tax</td><td class="right">${escapeHtml(currencySymbol)}0.00</td></tr>
-      <tr class="row-total"><td>Total due</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-      formatNumber(amountNumber)
-    )}</td></tr>
-      </tbody></table>`
-    openPosPrintWindow(`Fuel invoice ${inv}`, body)
-  }
-
-  const printGeneralDraft = () => {
-    if (!cartEntries.length || cartTotals.total <= 0) {
-      toast.error("Add items to the cart with a positive total before printing.")
-      return
-    }
-    const custLabel = customerId
-      ? customers.find(c => c.id === customerId)?.display_name || `ID ${customerId}`
-      : "Walk-in"
-    const invSuffix =
-      cartEntries.length > 0
-        ? String(cartEntries[0].item.id).padStart(6, "0")
-        : String(Date.now()).slice(-6)
-    const inv = `GENERAL-${invSuffix}`
-    const rows = cartEntries
+    const inv = `POS-${String(Date.now()).slice(-8)}`
+    const fuelRow =
+      selectedNozzle && quantityNumber > 0
+        ? `<tr>
+          <td>${escapeHtml(selectedNozzle.product_name)} <span class="muted">(fuel)</span></td>
+          <td class="right">${escapeHtml(formatNumber(quantityNumber))} ${escapeHtml(selectedUnit)}</td>
+          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(unitPrice))}</td>
+          <td class="right">—</td>
+          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(amountNumber))}</td>
+        </tr>`
+        : ""
+    const productRows = cartEntries
       .map(entry => {
         const lineAmount = roundTwo(entry.quantity * entry.unitPrice)
         const discountAmount = roundTwo(lineAmount * (entry.discountPercent / 100))
@@ -706,47 +620,37 @@ export default function CashierPOSPage() {
       .join("")
     const body = `
       <div class="co">
-        <h1>Invoice (draft) — products &amp; services</h1>
+        <h1>Invoice (draft) — POS</h1>
         <div><strong>${escapeHtml(posCompanyLabel)}</strong></div>
         ${posCompanyAddress ? `<div class="muted">${escapeHtml(posCompanyAddress)}</div>` : ""}
-        <p class="muted">Printed ${escapeHtml(formatDate(new Date(), true))} · ${escapeHtml(
-      formatDate(new Date())
-    )}</p>
+        <p class="muted">Printed ${escapeHtml(formatDate(new Date(), true))}</p>
       </div>
-      <p class="muted">Customer: ${escapeHtml(custLabel)} · Payment: ${escapeHtml(paymentMethodLabel)}</p>
-      <p class="muted">Invoice # ${escapeHtml(inv)}</p>
-      <table><thead><tr><th>Item</th><th class="right">Qty</th><th class="right">Unit</th><th class="right">Disc.</th><th class="right">Amount</th></tr></thead><tbody>
-      ${rows}
+      <p class="muted">Customer: ${escapeHtml(custLabel)} · Payment: ${escapeHtml(
+      paymentMethodLabel
+    )}${vehiclePlate ? ` · Vehicle: ${escapeHtml(vehiclePlate.toUpperCase())}` : ""}</p>
+      <p class="muted">Ref ${escapeHtml(inv)}</p>
+      <table><thead><tr><th>Item</th><th class="right">Qty</th><th class="right">Unit price</th><th class="right">Disc.</th><th class="right">Amount</th></tr></thead><tbody>
+      ${fuelRow}
+      ${productRows}
       </tbody></table>
       <table><tbody>
-      <tr><td>Subtotal</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-      formatNumber(cartTotals.subtotal)
-    )}</td></tr>
       ${
-        cartTotals.discountTotal > 0
-          ? `<tr><td>Discounts</td><td class="right">-${escapeHtml(currencySymbol)}${escapeHtml(
-              formatNumber(cartTotals.discountTotal)
-            )}</td></tr>`
-          : ""
-      }
-      ${
-        cartTotals.paymentTotal > 0
-          ? `<tr><td>Payments / deposits</td><td class="right">-${escapeHtml(currencySymbol)}${escapeHtml(
-              formatNumber(cartTotals.paymentTotal)
+        pendingFuelAmount > 0 && cartEntries.length > 0
+          ? `<tr><td>Products subtotal</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
+              formatNumber(cartTotals.total)
             )}</td></tr>`
           : ""
       }
       <tr class="row-total"><td>Total due</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-      formatNumber(cartTotals.total)
+      formatNumber(grandTotal)
     )}</td></tr>
       </tbody></table>`
-    openPosPrintWindow(`Invoice ${inv}`, body)
+    openPosPrintWindow(`Invoice draft ${inv}`, body)
   }
 
-  const printDraftInvoiceForActiveTab = () => {
+  const printDraftFromMenu = () => {
     setPrintMenuOpen(false)
-    if (activeTab === "fuel") printFuelDraft()
-    else printGeneralDraft()
+    printUnifiedDraft()
   }
 
   const printPosSummaryReport = async () => {
@@ -834,73 +738,77 @@ export default function CashierPOSPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="flex h-screen bg-background">
         <Sidebar />
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card px-10 py-12 text-center shadow-sm">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <div>
+              <p className="text-sm font-medium text-foreground">Loading POS</p>
+              <p className="mt-1 text-xs text-muted-foreground">Preparing catalog and pumps…</p>
+            </div>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="flex h-screen bg-background">
       <Sidebar />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex flex-col gap-4 border-b border-gray-200 bg-white/80 px-6 py-4 backdrop-blur">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold text-gray-900 lg:text-3xl">
-                {activeTab === "fuel"
-                  ? "POS - Fuel Sales"
-                  : "POS - Products & Services"}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-l border-border/60 shadow-sm">
+        <header className="sticky top-0 z-40 border-b border-border bg-background/95 px-6 py-4 backdrop-blur">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Point of sale
+              </p>
+              <h1 className="mt-1 text-3xl font-bold tracking-tight text-foreground">
+                POS — Fuel &amp; products
               </h1>
-              <p className="text-sm text-gray-500">
-                {activeTab === "fuel"
-                  ? "Select a nozzle, enter quantity and complete the fuel sale. For house / credit customers, use On account (A/R) and record cash later under Payments → Received."
-                  : "Browse catalog items, build the cart and complete the invoice. On account posts to accounts receivable; partial payments are applied when the customer pays."}
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                Add fuel from a nozzle and shop items in one cart, then complete a single invoice.
+                On account (A/R) posts to receivables; record cash later under Payments → Received
+                when the customer pays.
               </p>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-3 lg:shrink-0">
               <div className="relative" ref={printMenuRef}>
                 <button
                   type="button"
                   disabled={printBusy}
                   onClick={() => setPrintMenuOpen(o => !o)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {printBusy ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
                   ) : (
-                    <Printer className="h-4 w-4 text-gray-600" />
+                    <Printer className="h-4 w-4 text-muted-foreground" />
                   )}
                   Print
-                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 </button>
                 {printMenuOpen ? (
-                  <div className="absolute right-0 z-[60] mt-1 w-64 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                  <div className="absolute right-0 z-[60] mt-1.5 w-64 overflow-hidden rounded-xl border border-border bg-popover py-1.5 shadow-lg ring-1 ring-border">
                     <button
                       type="button"
-                      disabled={
-                        (activeTab === "fuel" && !canPrintFuelDraft) ||
-                        (activeTab === "general" && !canPrintGeneralDraft)
-                      }
-                      onClick={printDraftInvoiceForActiveTab}
-                      className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                      disabled={!canPrintUnifiedDraft}
+                      onClick={printDraftFromMenu}
+                      className="block w-full px-3 py-2.5 text-left text-sm text-popover-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <span className="font-medium">Draft invoice</span>
-                      <span className="block text-xs text-gray-500">
-                        {activeTab === "fuel" ? "Fuel line (nozzle + qty)" : "Shopping cart"}
+                      <span className="block text-xs text-muted-foreground">
+                        Fuel line and shopping cart combined
                       </span>
                     </button>
                     <button
                       type="button"
                       onClick={() => void printPosSummaryReport()}
-                      className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50"
+                      className="block w-full px-3 py-2.5 text-left text-sm text-popover-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                     >
                       <span className="font-medium">POS summary report</span>
-                      <span className="block text-xs text-gray-500">
+                      <span className="block text-xs text-muted-foreground">
                         Today&apos;s sales &amp; dashboard totals
                       </span>
                     </button>
@@ -908,61 +816,47 @@ export default function CashierPOSPage() {
                       type="button"
                       disabled={!customerId}
                       onClick={() => void printCustomerLedgerStatement()}
-                      className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                      className="block w-full px-3 py-2.5 text-left text-sm text-popover-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <span className="font-medium">Customer A/R statement</span>
-                      <span className="block text-xs text-gray-500">
+                      <span className="block text-xs text-muted-foreground">
                         Ledger for selected customer
                       </span>
                     </button>
                   </div>
                 ) : null}
               </div>
-              <div className="text-right text-sm text-gray-500">
-                <p className="font-medium text-gray-700">{posCompanyLabel}</p>
-                {posCompanyAddress ? <p>{posCompanyAddress}</p> : null}
+              <div className="hidden max-w-[14rem] text-right text-sm text-muted-foreground sm:block">
+                <div className="inline-flex items-center justify-end gap-1.5 font-medium text-foreground">
+                  <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{posCompanyLabel}</span>
+                </div>
+                {posCompanyAddress ? <p className="truncate text-xs">{posCompanyAddress}</p> : null}
               </div>
               <button
+                type="button"
                 onClick={handleLogout}
-                className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-destructive/30 bg-background px-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <LogOut className="h-4 w-4" />
                 Logout
               </button>
             </div>
           </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleTabChange("fuel")}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                activeTab === "fuel"
-                  ? "bg-blue-600 text-white shadow-lg"
-                  : "bg-white text-gray-600 hover:bg-blue-50"
-              }`}
-            >
-              Fuel Sale
-            </button>
-            <button
-              onClick={() => handleTabChange("general")}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                activeTab === "general"
-                  ? "bg-blue-600 text-white shadow-lg"
-                  : "bg-white text-gray-600 hover:bg-blue-50"
-              }`}
-            >
-              General Products
-            </button>
-          </div>
         </header>
 
-        <main className="flex-1 overflow-auto px-6 py-6">
-          {activeTab === "fuel" ? (
-            <div className="grid gap-5 lg:grid-cols-[2fr,1fr]">
-              <section className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900">Nozzles</h2>
-                  <span className="text-sm text-gray-500">
+        <main className="flex-1 overflow-auto px-4 py-6 sm:px-6">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
+            <div className="space-y-6">
+              <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Pumps
+                    </p>
+                    <h2 className="text-lg font-semibold tracking-tight text-foreground">Nozzles</h2>
+                  </div>
+                  <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                     {nozzles.length} nozzle{nozzles.length === 1 ? "" : "s"}
                   </span>
                 </div>
@@ -985,68 +879,67 @@ export default function CashierPOSPage() {
                         key={nozzle.id}
                         type="button"
                         onClick={() => handleNozzleSelect(nozzle)}
-                        className={`relative rounded-xl border p-4 text-left transition ${
+                        className={`relative rounded-xl border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                           isSelected
-                            ? "border-blue-500 bg-blue-50 shadow-lg"
-                            : "border-gray-200 bg-white hover:border-blue-200"
+                            ? "border-primary bg-primary/5 shadow-md ring-2 ring-primary ring-offset-2 ring-offset-background"
+                            : "border-border bg-card hover:border-primary/30 hover:shadow-md"
                         }`}
                       >
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-sm font-semibold text-gray-700">
+                            <p className="text-sm font-semibold text-foreground">
                               {nozzle.nozzle_number}
                             </p>
                             {nozzle.nozzle_name && (
-                              <p className="text-xs text-gray-500">{nozzle.nozzle_name}</p>
+                              <p className="text-xs text-muted-foreground">{nozzle.nozzle_name}</p>
                             )}
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                               {[nozzle.station_name, nozzle.island_name, nozzle.dispenser_name]
                                 .filter(Boolean)
                                 .join(" • ")}
                             </p>
                           </div>
-                          <Fuel className="h-5 w-5 text-blue-500" />
+                          <Fuel className="h-5 w-5 shrink-0 text-primary" />
                         </div>
 
-                        <div className="mt-3 space-y-2 text-sm text-gray-600">
+                        <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                           <div className="flex items-start justify-between gap-3">
-                            <p className="font-semibold text-gray-800">
-                              {nozzle.product_name}
-                            </p>
-                            <p className="text-sm font-semibold text-gray-800">
-                              {currencySymbol}{formatNumber(Number(nozzle.product_price || 0))} /{" "}
+                            <p className="font-medium text-foreground">{nozzle.product_name}</p>
+                            <p className="shrink-0 text-sm font-medium tabular-nums text-foreground">
+                              {currencySymbol}
+                              {formatNumber(Number(nozzle.product_price || 0))} /{" "}
                               {nozzle.product_unit || "L"}
                             </p>
                           </div>
                           <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
                             <div>
-                              <p className="text-gray-500">Meter</p>
-                              <p className="font-medium text-gray-700">
+                              <p className="text-muted-foreground">Meter</p>
+                              <p className="font-medium text-foreground">
                                 {nozzle.meter_number || "-"}
                               </p>
-                              <div className="mt-1 flex items-center gap-2 text-[11px] text-gray-500">
-                                <span className="inline-flex items-center gap-1">
-                                  <XCircle className="h-3 w-3 text-red-500" />
+                              <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                                <span className="inline-flex items-center gap-1 tabular-nums">
+                                  <XCircle className="h-3 w-3 text-destructive" />
                                   {formatNumber(baseReading)}
                                 </span>
-                                <span className="inline-flex items-center gap-1">
-                                  <CheckCircle className="h-3 w-3 text-emerald-500" />
+                                <span className="inline-flex items-center gap-1 tabular-nums">
+                                  <CheckCircle className="h-3 w-3 text-emerald-600" />
                                   {formatNumber(liveReading)}
                                 </span>
                               </div>
                             </div>
                             <div>
-                              <p className="text-gray-500">Tank</p>
-                              <p className="font-medium text-gray-700">
+                              <p className="text-muted-foreground">Tank</p>
+                              <p className="font-medium text-foreground">
                                 {nozzle.tank_number || "-"}
                               </p>
-                              <div className="mt-1 flex items-center gap-2 text-[11px] text-gray-500">
-                                <span className="inline-flex items-center gap-1">
-                                  <XCircle className="h-3 w-3 text-red-500" />
+                              <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                                <span className="inline-flex items-center gap-1 tabular-nums">
+                                  <XCircle className="h-3 w-3 text-destructive" />
                                   {formatNumber(baseStock)}
                                 </span>
-                                <span className="inline-flex items-center gap-1">
-                                  <CheckCircle className="h-3 w-3 text-emerald-500" />
+                                <span className="inline-flex items-center gap-1 tabular-nums">
+                                  <CheckCircle className="h-3 w-3 text-emerald-600" />
                                   {formatNumber(liveStock)}
                                 </span>
                               </div>
@@ -1054,9 +947,9 @@ export default function CashierPOSPage() {
                           </div>
                         </div>
 
-                        <div className="mt-3 h-1.5 rounded-full bg-gray-100">
+                        <div className="mt-3 h-1.5 rounded-full bg-muted">
                           <div
-                            className="h-1.5 rounded-full bg-blue-500 transition-all"
+                            className="h-1.5 rounded-full bg-primary transition-all duration-300"
                             style={{ width: `${fillPercent}%` }}
                           />
                         </div>
@@ -1065,357 +958,312 @@ export default function CashierPOSPage() {
                   })}
 
                   {!nozzles.length && (
-                    <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+                    <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
                       No nozzles configured yet.
                     </div>
                   )}
                 </div>
-
               </section>
 
-              <section className="space-y-4">
-                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <h2 className="text-lg font-semibold text-gray-900">Fuel Sale</h2>
-                  {selectedNozzle ? (
-                    <div className="mt-4 space-y-4">
-                      <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">
-                        {selectedNozzle.product_name} — {currencySymbol}
-                        {formatNumber(Number(selectedNozzle.product_price || 0))} per{" "}
-                        {selectedNozzle.product_unit || "L"}
-                      </div>
+              <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
+                <div className="mb-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Dispensed fuel
+                  </p>
+                  <h2 className="text-lg font-semibold tracking-tight text-foreground">Fuel sale</h2>
+                </div>
+                {selectedNozzle ? (
+                  <div className="space-y-4">
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-foreground">
+                      <span className="font-medium">{selectedNozzle.product_name}</span>
+                      <span className="text-muted-foreground"> — </span>
+                      {currencySymbol}
+                      {formatNumber(Number(selectedNozzle.product_price || 0))} per{" "}
+                      {selectedNozzle.product_unit || "L"}
+                    </div>
 
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-600">
-                          Quantity ({selectedNozzle.product_unit || "L"})
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={quantity}
-                          onChange={event => handleQuantityChange(event.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                        />
-                      </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">
+                        Quantity ({selectedNozzle.product_unit || "L"})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={quantity}
+                        onChange={event => handleQuantityChange(event.target.value)}
+                        className={inputClassName}
+                      />
+                    </div>
 
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-600">
-                          Amount ({currencySymbol})
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={amount}
-                          onChange={event => handleAmountChange(event.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                        />
-                      </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">
+                        Amount ({currencySymbol})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={amount}
+                        onChange={event => handleAmountChange(event.target.value)}
+                        className={inputClassName}
+                      />
+                    </div>
 
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-600">
-                          {isOnAccount
-                            ? "Customer (required for on account)"
-                            : "Customer (optional)"}
-                        </label>
-                        <select
-                          value={customerId || ""}
-                          onChange={event =>
-                            setCustomerId(
-                              event.target.value ? Number(event.target.value) : null
-                            )
-                          }
-                          className={`w-full rounded-lg border px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 ${
-                            isOnAccount && !customerId
-                              ? "border-amber-400 bg-amber-50"
-                              : "border-gray-300"
-                          }`}
-                        >
-                          <option value="">Walk-in</option>
-                          {customers.map(customer => (
-                            <option key={customer.id} value={customer.id}>
-                              {customer.display_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">
+                        Vehicle plate number (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={vehiclePlate}
+                        onChange={event => setVehiclePlate(event.target.value)}
+                        placeholder="E.g. DHA-1234"
+                        className={inputClassName}
+                      />
+                    </div>
 
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-600">
-                          Payment method
-                        </label>
-                        <select
-                          value={paymentMethod}
-                          onChange={event => setPaymentMethod(event.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                        >
-                          <option value="CASH">Cash</option>
-                          <option value="CARD">Card</option>
-                          <option value="TRANSFER">Bank Transfer</option>
-                          <option value="MOBILE_MONEY">Mobile Money</option>
-                          <option value="ON_ACCOUNT">
-                            On account (A/R) — charge to customer
-                          </option>
-                        </select>
-                        {isOnAccount ? (
-                          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                            Sale posts to <strong>Accounts Receivable</strong> (not cash in
-                            drawer). Customer balance increases; use{" "}
-                            <strong>Payments → Received</strong> for weekly, monthly, or
-                            partial settlements.
-                          </p>
-                        ) : null}
-                      </div>
-
-                      {paymentMethod !== "CARD" &&
-                      paymentMethod !== "ON_ACCOUNT" &&
-                      bankRegisters.length > 0 ? (
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-gray-600">
-                            Record receipt in (optional)
-                          </label>
-                          <select
-                            value={depositBankId === "" ? "" : String(depositBankId)}
-                            onChange={event =>
-                              setDepositBankId(
-                                event.target.value === ""
-                                  ? ""
-                                  : Number(event.target.value)
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                          >
-                            <option value="">
-                              Default — petty cash / undeposited (GL 1010 / 1020)
-                            </option>
-                            {bankRegisters.map(b => (
-                              <option key={b.id} value={b.id}>
-                                {[b.bank_name, b.account_name].filter(Boolean).join(" — ") ||
-                                  `Register #${b.id}`}
-                                {b.chart_account_id ? "" : " (link GL in Chart of Accounts)"}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="text-xs text-gray-500">
-                            To put the sale straight on a bank or till account, pick a register
-                            linked to your chart (Chart of Accounts → bank details).
-                          </p>
-                        </div>
-                      ) : null}
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-600">
-                          Vehicle plate number (optional)
-                        </label>
-                        <input
-                          type="text"
-                          value={vehiclePlate}
-                          onChange={event => setVehiclePlate(event.target.value)}
-                          placeholder="E.g. DHA-1234"
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                        />
-                      </div>
-
-                      {shouldShowLivePreview && (
-                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 shadow-sm">
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div>
-                              <p className="text-xs font-semibold uppercase text-gray-500">
-                                Meter Reading ({selectedUnit})
-                              </p>
-                              <div className="mt-2 grid grid-cols-2 gap-3">
-                                <div>
-                                  <p className="text-gray-500">Before Sale</p>
-                                  <p className="font-semibold text-gray-900">
-                                    {formatNumber(meterStart)}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-gray-500">After Sale</p>
-                                  <p className="font-semibold text-gray-900">
-                                    {formatNumber(meterProjected)}
-                                  </p>
-                                </div>
+                    {shouldShowLivePreview && (
+                      <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-foreground shadow-sm">
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-muted-foreground">
+                              Meter reading ({selectedUnit})
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-3">
+                              <div>
+                                <p className="text-muted-foreground">Before sale</p>
+                                <p className="font-semibold tabular-nums text-foreground">
+                                  {formatNumber(meterStart)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">After sale</p>
+                                <p className="font-semibold tabular-nums text-foreground">
+                                  {formatNumber(meterProjected)}
+                                </p>
                               </div>
                             </div>
-                            <div>
-                              <p className="text-xs font-semibold uppercase text-gray-500">
-                                Tank Stock ({selectedUnit})
-                              </p>
-                              <div className="mt-2 grid grid-cols-2 gap-3">
-                                <div>
-                                  <p className="text-gray-500">Before Sale</p>
-                                  <p className="font-semibold text-gray-900">
-                                    {formatNumber(tankStart)}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-gray-500">After Sale</p>
-                                  <p className="font-semibold text-gray-900">
-                                    {formatNumber(tankProjected)}
-                                  </p>
-                                </div>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-muted-foreground">
+                              Tank stock ({selectedUnit})
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-3">
+                              <div>
+                                <p className="text-muted-foreground">Before sale</p>
+                                <p className="font-semibold tabular-nums text-foreground">
+                                  {formatNumber(tankStart)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">After sale</p>
+                                <p className="font-semibold tabular-nums text-foreground">
+                                  {formatNumber(tankProjected)}
+                                </p>
                               </div>
                             </div>
                           </div>
                         </div>
-                      )}
-
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                        <button
-                          type="button"
-                          onClick={() => setShowInvoicePreview(prev => !prev)}
-                          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-                          disabled={!selectedNozzle || quantityNumber <= 0}
-                        >
-                          Invoice Preview
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => printFuelDraft()}
-                          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={!canPrintFuelDraft}
-                        >
-                          <Printer className="h-4 w-4" />
-                          Print invoice
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleFuelSale}
-                          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-                          disabled={
-                            !quantity ||
-                            !amount ||
-                            parseFloat(quantity) <= 0 ||
-                            (isOnAccount && !customerId)
-                          }
-                        >
-                          <Fuel className="h-4 w-4" />
-                          Complete Fuel Sale
-                        </button>
                       </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowInvoicePreview(true)}
+                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={grandTotal <= 0}
+                      >
+                        Invoice Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => printUnifiedDraft()}
+                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!canPrintUnifiedDraft}
+                      >
+                        <Printer className="h-4 w-4" />
+                        Print draft
+                      </button>
                     </div>
-                  ) : (
-                    <div className="mt-4 rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-                      Select a nozzle to begin a sale.
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                    Select a nozzle to begin a sale.
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Catalog
+                    </p>
+                    <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                      Products &amp; services
+                    </h2>
+                  </div>
+                  <div className="relative w-full sm:max-w-xs sm:flex-1 lg:max-w-sm">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="text"
+                      value={itemSearch}
+                      onChange={event => setItemSearch(event.target.value)}
+                      placeholder="Search products, services, or scan barcode"
+                      className={`${inputClassName} pl-10`}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {filteredItems.map(item => {
+                    const isSelected = selectedItem?.id === item.id
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => addItemToCart(item)}
+                        className={`rounded-xl border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                          isSelected
+                            ? "border-primary bg-primary/5 shadow-md ring-2 ring-primary ring-offset-2 ring-offset-background"
+                            : "border-border bg-card hover:border-primary/30 hover:shadow-md"
+                        }`}
+                      >
+                        {getImageUrl(item.image_url) && (
+                          <div className="mb-3 flex justify-center">
+                            <img
+                              src={getImageUrl(item.image_url)!}
+                              alt={item.name}
+                              className="h-24 w-24 object-contain rounded-lg border border-border bg-muted/30"
+                              onError={e => {
+                                ;(e.target as HTMLImageElement).style.display = "none"
+                              }}
+                            />
+                          </div>
+                        )}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className={`truncate text-sm font-semibold ${
+                                isSelected ? "text-foreground" : "text-foreground"
+                              }`}
+                            >
+                              {item.name}
+                            </p>
+                            <p className="text-xs uppercase text-muted-foreground">
+                              {item.item_type.replace(/_/g, " ")}
+                            </p>
+                            {item.pos_category && (
+                              <p className="text-xs text-muted-foreground">{item.pos_category}</p>
+                            )}
+                          </div>
+                          <PlusCircle
+                            className={`h-5 w-5 shrink-0 ${
+                              isSelected ? "text-primary" : "text-primary/80"
+                            }`}
+                          />
+                        </div>
+                        <p className="mt-3 text-sm font-semibold tabular-nums text-foreground">
+                          {currencySymbol}
+                          {formatNumber(Number(item.unit_price || 0))}
+                          {item.unit && (
+                            <span className="text-xs font-normal text-muted-foreground">
+                              {" "}
+                              / {item.unit}
+                            </span>
+                          )}
+                        </p>
+                        {item.quantity_on_hand !== undefined &&
+                          item.item_type?.toLowerCase() === "inventory" && (
+                            <p className="text-xs text-muted-foreground">
+                              In stock: {formatNumber(Number(item.quantity_on_hand))}{" "}
+                              {item.unit || "units"}
+                            </p>
+                          )}
+                      </button>
+                    )
+                  })}
+
+                  {!filteredItems.length && (
+                    <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                      No matching items found.
                     </div>
                   )}
                 </div>
               </section>
             </div>
-          ) : (
-            <div className="grid gap-5 lg:grid-cols-[2fr,1fr]">
-              <section className="space-y-4">
-                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <h2 className="text-lg font-semibold text-gray-900">
-                      Products & Services
-                    </h2>
-                    <div className="relative w-full sm:w-72">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                      <input
-                        type="text"
-                        value={itemSearch}
-                        onChange={event => setItemSearch(event.target.value)}
-                        placeholder="Search products, services, or scan barcode"
-                        className="w-full rounded-lg border border-gray-300 px-10 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                      />
+
+            <div className="lg:sticky lg:top-[var(--pos-header-offset)] lg:max-h-[calc(100vh-var(--pos-header-offset)-1.5rem)] lg:overflow-y-auto lg:self-start lg:pr-0.5">
+              <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
+                  <div className="mb-4 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Checkout
+                      </p>
+                      <h2 className="text-lg font-semibold tracking-tight text-foreground">Cart</h2>
                     </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {filteredItems.map(item => {
-                      const isSelected = selectedItem?.id === item.id
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => addItemToCart(item)}
-                          className={`rounded-xl border p-4 text-left transition ${
-                            isSelected
-                              ? "border-blue-500 bg-blue-50 shadow-lg"
-                              : "border-gray-200 bg-white hover:border-blue-200 hover:shadow"
-                          }`}
-                        >
-                          {/* Item Image */}
-                          {getImageUrl(item.image_url) && (
-                            <div className="mb-3 flex justify-center">
-                              <img
-                                src={getImageUrl(item.image_url)!}
-                                alt={item.name}
-                                className="h-24 w-24 object-contain rounded-lg border border-gray-200 bg-gray-50"
-                                onError={(e) => {
-                                  // Hide image on error
-                                  (e.target as HTMLImageElement).style.display = 'none'
-                                }}
-                              />
-                            </div>
-                          )}
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1">
-                              <p className={`text-sm font-semibold ${
-                                isSelected ? "text-blue-900" : "text-gray-800"
-                              }`}>
-                                {item.name}
-                              </p>
-                              <p className="text-xs uppercase text-gray-500">
-                                {item.item_type.replace(/_/g, " ")}
-                              </p>
-                              {item.pos_category && (
-                                <p className="text-xs text-gray-400">{item.pos_category}</p>
-                              )}
-                            </div>
-                            <PlusCircle className={`h-5 w-5 flex-shrink-0 ${
-                              isSelected ? "text-blue-600" : "text-blue-500"
-                            }`} />
-                          </div>
-                          <p className={`mt-3 text-sm font-semibold ${
-                            isSelected ? "text-blue-900" : "text-gray-800"
-                          }`}>
-                            {currencySymbol}{formatNumber(Number(item.unit_price || 0))}
-                            {item.unit && (
-                              <span className="text-xs font-normal text-gray-500"> / {item.unit}</span>
-                            )}
-                          </p>
-                          {item.quantity_on_hand !== undefined && item.item_type?.toLowerCase() === 'inventory' && (
-                            <p className="text-xs text-gray-500">
-                              In stock: {formatNumber(Number(item.quantity_on_hand))} {item.unit || 'units'}
-                            </p>
-                          )}
-                        </button>
-                      )
-                    })}
-
-                    {!filteredItems.length && (
-                      <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-                        No matching items found.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </section>
-
-              <section className="space-y-4">
-                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-gray-900">Cart</h2>
-                    {!!cartEntries.length && (
+                    {(!!cartEntries.length || pendingFuelAmount > 0) && (
                       <button
                         type="button"
-                        onClick={() => setCartEntries([])}
-                        className="text-sm font-medium text-red-600 hover:text-red-700"
+                        onClick={() => {
+                          setCartEntries([])
+                          setSelectedItem(null)
+                          setQuantity("")
+                          setAmount("")
+                          setSelectedNozzle(null)
+                        }}
+                        className="text-sm font-medium text-destructive transition-colors hover:text-destructive/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
-                        Clear
+                        Clear all
                       </button>
                     )}
                   </div>
 
-                  {!cartEntries.length ? (
-                    <div className="mt-4 rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
+                  {!cartEntries.length && (
+                    <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
                       Add products from the catalog to begin a sale.
                     </div>
-                  ) : (
-                    <div className="mt-4 space-y-4">
+                  )}
+                  {pendingFuelAmount > 0 && selectedNozzle && (
+                    <div className="mt-4 rounded-lg border border-primary/25 bg-primary/5 p-4 pl-4 shadow-sm ring-1 ring-inset ring-primary/10">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-primary">
+                            Fuel
+                          </p>
+                          <p className="text-sm font-semibold text-foreground">
+                            {selectedNozzle.product_name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedNozzle.nozzle_number} · {formatNumber(quantityNumber)}{" "}
+                            {selectedUnit}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold tabular-nums text-foreground">
+                            {currencySymbol}
+                            {formatNumber(amountNumber)}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuantity("")
+                              setAmount("")
+                              setSelectedNozzle(null)
+                            }}
+                            className="mt-1 text-xs font-medium text-destructive transition-colors hover:text-destructive/80"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {cartEntries.length > 0 && (
+                    <div className="mt-4 overflow-hidden rounded-xl border border-border divide-y divide-border">
                       {cartEntries.map(entry => {
                         const lineAmount = roundTwo(entry.quantity * entry.unitPrice)
                         const isAdjustment =
@@ -1423,10 +1271,7 @@ export default function CashierPOSPage() {
                           entry.item.item_type === "payment"
 
                         return (
-                          <div
-                            key={entry.item.id}
-                            className="rounded-lg border border-gray-200 p-4"
-                          >
+                          <div key={entry.item.id} className="bg-card/50 p-4 transition-colors hover:bg-muted/30">
                             <div className="flex items-start justify-between gap-3">
                               <div className="flex items-center gap-3 flex-1">
                                 {/* Item Image in Cart */}
@@ -1434,17 +1279,17 @@ export default function CashierPOSPage() {
                                   <img
                                     src={getImageUrl(entry.item.image_url)!}
                                     alt={entry.item.name}
-                                    className="h-12 w-12 object-contain rounded border border-gray-200 bg-gray-50 flex-shrink-0"
+                                    className="h-12 w-12 shrink-0 rounded-md border border-border bg-muted/30 object-contain"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).style.display = 'none'
                                     }}
                                   />
                                 )}
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-gray-900">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-semibold text-foreground">
                                     {entry.item.name}
                                   </p>
-                                  <p className="text-xs uppercase text-gray-500">
+                                  <p className="text-xs uppercase text-muted-foreground">
                                     {entry.item.item_type.replace(/_/g, " ")}
                                   </p>
                                 </div>
@@ -1452,7 +1297,7 @@ export default function CashierPOSPage() {
                               <button
                                 type="button"
                                 onClick={() => removeCartItem(entry.item.id)}
-                                className="text-gray-400 hover:text-red-600 flex-shrink-0"
+                                className="shrink-0 rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                               >
                                 <X className="h-4 w-4" />
                               </button>
@@ -1460,7 +1305,7 @@ export default function CashierPOSPage() {
 
                             <div className="mt-3 grid gap-3 sm:grid-cols-3">
                               <div>
-                                <label className="block text-xs font-semibold text-gray-500">
+                                <label className="block text-xs font-semibold text-muted-foreground">
                                   Quantity {entry.item.unit && `(${entry.item.unit})`}
                                 </label>
                                 <input
@@ -1474,15 +1319,15 @@ export default function CashierPOSPage() {
                                       parseFloat(event.target.value) || 0
                                     )
                                   }
-                                  className="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                  className={`${inputClassName} px-2 py-1.5`}
                                 />
                               </div>
 
                               <div>
-                                <label className="block text-xs font-semibold text-gray-500">
+                                <label className="block text-xs font-semibold text-muted-foreground">
                                   Unit Price ({currencySymbol})
                                   {entry.item.unit && (
-                                    <span className="text-gray-400"> / {entry.item.unit}</span>
+                                    <span className="text-muted-foreground/80"> / {entry.item.unit}</span>
                                   )}
                                 </label>
                                 <input
@@ -1496,13 +1341,13 @@ export default function CashierPOSPage() {
                                       parseFloat(event.target.value) || 0
                                     )
                                   }
-                                  className="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                  className={`${inputClassName} px-2 py-1.5`}
                                 />
                               </div>
 
                               {!isAdjustment && (
                                 <div>
-                                  <label className="block text-xs font-semibold text-gray-500">
+                                  <label className="block text-xs font-semibold text-muted-foreground">
                                     Discount %
                                   </label>
                                   <input
@@ -1517,17 +1362,17 @@ export default function CashierPOSPage() {
                                         parseFloat(event.target.value) || 0
                                       )
                                     }
-                                    className="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                    className={`${inputClassName} px-2 py-1.5`}
                                   />
                                 </div>
                               )}
                             </div>
 
                             <div className="mt-3 flex items-center justify-between text-sm">
-                              <span className="text-gray-500">Line total</span>
+                              <span className="text-muted-foreground">Line total</span>
                               <span
-                                className={`text-base font-semibold ${
-                                  lineAmount < 0 ? "text-red-600" : "text-green-600"
+                                className={`text-base font-semibold tabular-nums ${
+                                  lineAmount < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"
                                 }`}
                               >
                                 {currencySymbol}{formatNumber(lineAmount)}
@@ -1536,40 +1381,61 @@ export default function CashierPOSPage() {
                           </div>
                         )
                       })}
+                    </div>
+                  )}
 
-                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm">
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-600">Subtotal</span>
-                          <span className="font-semibold text-gray-900">
-                            {currencySymbol}{formatNumber(cartTotals.subtotal)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-600">Discounts</span>
-                          <span className="font-semibold text-red-600">
-                            -{currencySymbol}{formatNumber(cartTotals.discountTotal)}
-                          </span>
-                        </div>
-                        {cartTotals.paymentTotal > 0 && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-600">Payments / Deposits</span>
-                            <span className="font-semibold text-orange-600">
-                              -{currencySymbol}{formatNumber(cartTotals.paymentTotal)}
+                  {(pendingFuelAmount > 0 || cartEntries.length > 0) && (
+                    <div className="mt-4 space-y-4">
+                      <div className="space-y-2 rounded-xl bg-muted/50 p-4 text-sm">
+                        {pendingFuelAmount > 0 && (
+                          <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                            <span className="text-muted-foreground">Fuel (this sale)</span>
+                            <span className="font-semibold tabular-nums text-foreground">
+                              {currencySymbol}
+                              {formatNumber(amountNumber)}
                             </span>
                           </div>
                         )}
-                        <div className="flex items-center justify-between text-base">
-                          <span className="font-semibold text-gray-800">Total Due</span>
+                        {cartEntries.length > 0 && (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Shop subtotal</span>
+                              <span className="font-semibold tabular-nums text-foreground">
+                                {currencySymbol}
+                                {formatNumber(cartTotals.subtotal)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Discounts</span>
+                              <span className="font-semibold tabular-nums text-destructive">
+                                -{currencySymbol}
+                                {formatNumber(cartTotals.discountTotal)}
+                              </span>
+                            </div>
+                            {cartTotals.paymentTotal > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Payments / deposits</span>
+                                <span className="font-semibold tabular-nums text-orange-600 dark:text-orange-400">
+                                  -{currencySymbol}
+                                  {formatNumber(cartTotals.paymentTotal)}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                        <div className="flex items-center justify-between border-t border-border pt-3">
+                          <span className="text-base font-semibold text-foreground">Total due</span>
                           <span
-                            className={`text-lg font-bold ${
-                              cartTotals.total >= 0 ? "text-green-600" : "text-red-600"
+                            className={`text-2xl font-bold tabular-nums ${
+                              grandTotal >= 0 ? "text-foreground" : "text-destructive"
                             }`}
                           >
-                            {currencySymbol}{formatNumber(cartTotals.total)}
+                            {currencySymbol}
+                            {formatNumber(grandTotal)}
                           </span>
                         </div>
-                        {cartTotals.hasNegativeTotal && (
-                          <p className="text-xs text-red-600">
+                        {cartEntries.length > 0 && cartTotals.hasNegativeTotal && (
+                          <p className="text-xs text-destructive">
                             Total cannot be negative. Adjust discounts or deposits.
                           </p>
                         )}
@@ -1577,7 +1443,7 @@ export default function CashierPOSPage() {
 
                       <div className="space-y-3">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium text-gray-600">
+                          <label className="text-sm font-medium text-foreground">
                             {isOnAccount
                               ? "Customer (required for on account)"
                               : "Customer (optional)"}
@@ -1589,10 +1455,10 @@ export default function CashierPOSPage() {
                                 event.target.value ? Number(event.target.value) : null
                               )
                             }
-                            className={`w-full rounded-lg border px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 ${
+                            className={`${selectClassName} ${
                               isOnAccount && !customerId
-                                ? "border-amber-400 bg-amber-50"
-                                : "border-gray-300"
+                                ? "border-amber-500/80 bg-amber-50 dark:bg-amber-950/30"
+                                : ""
                             }`}
                           >
                             <option value="">Walk-in</option>
@@ -1605,13 +1471,13 @@ export default function CashierPOSPage() {
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-sm font-medium text-gray-600">
+                          <label className="text-sm font-medium text-foreground">
                             Payment method
                           </label>
                           <select
                             value={paymentMethod}
                             onChange={event => setPaymentMethod(event.target.value)}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            className={selectClassName}
                           >
                             <option value="CASH">Cash</option>
                             <option value="CARD">Card</option>
@@ -1622,7 +1488,7 @@ export default function CashierPOSPage() {
                             </option>
                           </select>
                           {isOnAccount ? (
-                            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                            <p className="rounded-md border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
                               Posts to <strong>Accounts Receivable</strong>. Record cash,
                               card, or transfer receipts under <strong>Payments → Received</strong>{" "}
                               when the customer pays (full or partial).
@@ -1634,7 +1500,7 @@ export default function CashierPOSPage() {
                         paymentMethod !== "ON_ACCOUNT" &&
                         bankRegisters.length > 0 ? (
                           <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-600">
+                            <label className="text-sm font-medium text-foreground">
                               Record receipt in (optional)
                             </label>
                             <select
@@ -1646,7 +1512,7 @@ export default function CashierPOSPage() {
                                     : Number(event.target.value)
                                 )
                               }
-                              className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                              className={selectClassName}
                             >
                               <option value="">
                                 Default — petty cash / undeposited (GL 1010 / 1020)
@@ -1659,7 +1525,7 @@ export default function CashierPOSPage() {
                                 </option>
                               ))}
                             </select>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                               Choose a linked bank/till register to debit that GL account for this
                               sale.
                             </p>
@@ -1669,188 +1535,59 @@ export default function CashierPOSPage() {
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                           <button
                             type="button"
-                            onClick={() => setShowGeneralInvoicePreview(prev => !prev)}
-                            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-                            disabled={!cartEntries.length || cartTotals.total <= 0}
+                            onClick={() => setShowInvoicePreview(true)}
+                            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={grandTotal <= 0}
                           >
                             Invoice Preview
                           </button>
                           <button
                             type="button"
-                            onClick={() => printGeneralDraft()}
-                            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={!canPrintGeneralDraft}
+                            onClick={() => printUnifiedDraft()}
+                            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!canPrintUnifiedDraft}
                           >
                             <Printer className="h-4 w-4" />
                             Print invoice
                           </button>
                           <button
                             type="button"
-                            onClick={handleGeneralSale}
+                            onClick={() => void handleUnifiedSale()}
                             disabled={
-                              !cartEntries.length ||
-                              cartTotals.hasNegativeTotal ||
-                              cartTotals.total <= 0 ||
+                              grandTotal <= 0 ||
+                              (cartEntries.length > 0 && cartTotals.hasNegativeTotal) ||
                               (isOnAccount && !customerId)
                             }
-                            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1"
                           >
                             <ShoppingCart className="h-4 w-4" />
-                            Complete Sale
+                            Complete sale
                           </button>
                         </div>
                       </div>
                     </div>
                   )}
-                </div>
               </section>
             </div>
-          )}
+          </div>
         </main>
       </div>
 
-      {/* Fuel Invoice Preview Modal */}
       <Modal
-        isOpen={showInvoicePreview && !!selectedNozzle && quantityNumber > 0}
+        isOpen={showInvoicePreview && grandTotal > 0}
         onClose={() => setShowInvoicePreview(false)}
-        title="Fuel Invoice Preview"
+        title="Invoice preview"
         size="lg"
       >
-        {selectedNozzle ? (
-          <div className="space-y-6">
-            <div className="text-center">
-              <h3 className="text-xl font-semibold text-gray-900">
-                {posCompanyLabel}
-              </h3>
-              {posCompanyAddress ? (
-                <div className="mt-1 text-sm text-gray-500">
-                  <p>{posCompanyAddress}</p>
-                </div>
-              ) : null}
-              <div className="mt-3 text-sm text-gray-600">
-                {customerId ? (
-                  <p>
-                    Customer:{" "}
-                    {customers.find(customer => customer.id === customerId)?.display_name ||
-                      customerId}
-                  </p>
-                ) : (
-                  <p>Customer: Walk-in Customer</p>
-                )}
-                <p>Payment Method: {paymentMethodLabel}</p>
-                {vehiclePlate ? <p>Vehicle Plate: {vehiclePlate.toUpperCase()}</p> : null}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-gray-200">
-              <div className="grid grid-cols-2 gap-4 border-b border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
-                <div>
-                  <p className="font-medium text-gray-500 uppercase tracking-wide text-xs">
-                    Invoice
-                  </p>
-                  <p>
-                    INV-{(selectedNozzle?.nozzle_number || "0000")
-                      .replace(/[^0-9]/g, "")
-                      .padStart(6, "0")}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="font-medium text-gray-500 uppercase tracking-wide text-xs">
-                    Nozzle
-                  </p>
-                  <p>{selectedNozzle.nozzle_number}</p>
-                </div>
-              </div>
-
-              <div className="p-4">
-                <table className="w-full text-sm text-gray-700">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
-                      <th className="pb-2">Item</th>
-                      <th className="pb-2 text-right">Quantity</th>
-                      <th className="pb-2 text-right">Unit Price</th>
-                      <th className="pb-2 text-right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-t border-gray-200">
-                      <td className="py-3">
-                        <p className="font-medium text-gray-900">
-                          {selectedNozzle.product_name}
-                        </p>
-                      </td>
-                      <td className="py-3 text-right">
-                        {formatNumber(quantityNumber)} {selectedUnit}
-                      </td>
-                      <td className="py-3 text-right">
-                        {currencySymbol}{formatNumber(Number(unitPrice))}
-                      </td>
-                      <td className="py-3 text-right font-semibold text-gray-900">
-                        {currencySymbol}{formatNumber(Number(amountNumber || 0))}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="flex items-center justify-end gap-12 border-t border-gray-200 bg-gray-50 p-4 text-sm">
-                <div className="space-y-1 text-right">
-                  <div className="flex items-center justify-between gap-6">
-                    <span className="text-gray-600">Subtotal</span>
-                    <span className="font-medium">
-                      {currencySymbol}{formatNumber(Number(amountNumber || 0))}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-6">
-                    <span className="text-gray-600">Tax</span>
-                    <span className="font-medium">{currencySymbol}0.00</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-6 text-base font-semibold text-gray-900">
-                    <span>Total Due</span>
-                    <span>{currencySymbol}{formatNumber(Number(amountNumber || 0))}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="text-xs text-gray-500">
-              <p>
-                Date/Time:{" "}
-                {formatDate(new Date(), true)}
-              </p>
-            </div>
-            <div className="flex justify-end border-t border-gray-100 pt-4">
-              <button
-                type="button"
-                onClick={() => printFuelDraft()}
-                className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-              >
-                <Printer className="h-4 w-4" />
-                Print invoice
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </Modal>
-
-      {/* General Products Invoice Preview Modal */}
-      <Modal
-        isOpen={showGeneralInvoicePreview && cartEntries.length > 0}
-        onClose={() => setShowGeneralInvoicePreview(false)}
-        title="General Products Invoice Preview"
-        size="lg"
-      >
-        <div className="space-y-6">
+        <div className="space-y-6 text-card-foreground">
           <div className="text-center">
-            <h3 className="text-xl font-semibold text-gray-900">
-              {posCompanyLabel}
-            </h3>
+            <h3 className="text-xl font-semibold tracking-tight text-foreground">{posCompanyLabel}</h3>
             {posCompanyAddress ? (
-              <div className="mt-1 text-sm text-gray-500">
+              <div className="mt-1 text-sm text-muted-foreground">
                 <p>{posCompanyAddress}</p>
               </div>
             ) : null}
-            <div className="mt-3 text-sm text-gray-600">
+            <div className="mt-3 text-sm text-muted-foreground">
               {customerId ? (
                 <p>
                   Customer:{" "}
@@ -1861,67 +1598,80 @@ export default function CashierPOSPage() {
                 <p>Customer: Walk-in Customer</p>
               )}
               <p>Payment Method: {paymentMethodLabel}</p>
+              {vehiclePlate ? <p>Vehicle Plate: {vehiclePlate.toUpperCase()}</p> : null}
             </div>
           </div>
 
-          <div className="rounded-lg border border-gray-200">
-            <div className="grid grid-cols-2 gap-4 border-b border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
-              <div>
-                <p className="font-medium text-gray-500 uppercase tracking-wide text-xs">
-                  Invoice
-                </p>
-                <p>
-                  GENERAL-{cartEntries.length > 0 
-                    ? cartEntries[0].item.id.toString().padStart(6, "0")
-                    : new Date().getTime().toString().slice(-6)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="font-medium text-gray-500 uppercase tracking-wide text-xs">
-                  Date
-                </p>
-                <p>{formatDate(new Date())}</p>
-              </div>
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="border-b border-border bg-muted/40 p-4 text-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Date
+              </p>
+              <p className="text-foreground">{formatDate(new Date())}</p>
             </div>
 
-            <div className="p-4">
-              <table className="w-full text-sm text-gray-700">
+            <div className="overflow-x-auto p-4">
+              <table className="w-full min-w-[28rem] text-sm">
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
+                  <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="pb-2">Item</th>
-                    <th className="pb-2 text-right">Quantity</th>
-                    <th className="pb-2 text-right">Unit Price</th>
-                    <th className="pb-2 text-right">Discount</th>
+                    <th className="pb-2 text-right">Qty</th>
+                    <th className="pb-2 text-right">Unit</th>
+                    <th className="pb-2 text-right">Disc.</th>
                     <th className="pb-2 text-right">Amount</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {cartEntries.map((entry) => {
+                <tbody className="divide-y divide-border">
+                  {selectedNozzle && quantityNumber > 0 ? (
+                    <tr>
+                      <td className="py-3">
+                        <p className="font-medium text-foreground">{selectedNozzle.product_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Fuel · {selectedNozzle.nozzle_number}
+                        </p>
+                      </td>
+                      <td className="py-3 text-right tabular-nums">
+                        {formatNumber(quantityNumber)} {selectedUnit}
+                      </td>
+                      <td className="py-3 text-right tabular-nums">
+                        {currencySymbol}
+                        {formatNumber(Number(unitPrice))}
+                      </td>
+                      <td className="py-3 text-right">—</td>
+                      <td className="py-3 text-right font-semibold tabular-nums text-foreground">
+                        {currencySymbol}
+                        {formatNumber(Number(amountNumber || 0))}
+                      </td>
+                    </tr>
+                  ) : null}
+                  {cartEntries.map(entry => {
                     const lineAmount = roundTwo(entry.quantity * entry.unitPrice)
-                    const discountAmount = roundTwo(lineAmount * (entry.discountPercent / 100))
-                    const finalAmount = roundTwo(lineAmount - discountAmount)
-                    
+                    const finalAmount = roundTwo(
+                      lineAmount - roundTwo(lineAmount * (entry.discountPercent / 100))
+                    )
                     return (
-                      <tr key={entry.item.id} className="border-t border-gray-200">
+                      <tr key={entry.item.id}>
                         <td className="py-3">
-                          <p className="font-medium text-gray-900">
-                            {entry.item.name}
-                          </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="font-medium text-foreground">{entry.item.name}</p>
+                          <p className="text-xs text-muted-foreground">
                             {entry.item.item_type.replace(/_/g, " ")}
                           </p>
                         </td>
-                        <td className="py-3 text-right">
-                          {formatNumber(entry.quantity)} {entry.item.unit || 'units'}
+                        <td className="py-3 text-right tabular-nums">
+                          {formatNumber(entry.quantity)} {entry.item.unit || "units"}
                         </td>
-                        <td className="py-3 text-right">
-                          {currencySymbol}{formatNumber(entry.unitPrice)}
+                        <td className="py-3 text-right tabular-nums">
+                          {currencySymbol}
+                          {formatNumber(entry.unitPrice)}
                         </td>
-                        <td className="py-3 text-right text-red-600">
-                          {entry.discountPercent > 0 ? `${formatNumber(entry.discountPercent)}%` : '-'}
+                        <td className="py-3 text-right text-destructive">
+                          {entry.discountPercent > 0
+                            ? `${formatNumber(entry.discountPercent)}%`
+                            : "—"}
                         </td>
-                        <td className="py-3 text-right font-semibold text-gray-900">
-                          {currencySymbol}{formatNumber(finalAmount)}
+                        <td className="py-3 text-right font-semibold tabular-nums text-foreground">
+                          {currencySymbol}
+                          {formatNumber(finalAmount)}
                         </td>
                       </tr>
                     )
@@ -1930,49 +1680,65 @@ export default function CashierPOSPage() {
               </table>
             </div>
 
-            <div className="flex items-center justify-end gap-12 border-t border-gray-200 bg-gray-50 p-4 text-sm">
-              <div className="space-y-1 text-right">
-                <div className="flex items-center justify-between gap-6">
-                  <span className="text-gray-600">Subtotal</span>
-                  <span className="font-medium">
-                    {currencySymbol}{formatNumber(cartTotals.subtotal)}
+            <div className="flex items-center justify-end border-t border-border bg-muted/30 p-4 text-sm">
+              <div className="min-w-[16rem] space-y-1.5 text-right">
+                {pendingFuelAmount > 0 && (
+                  <div className="flex items-center justify-between gap-6">
+                    <span className="text-muted-foreground">Fuel</span>
+                    <span className="font-medium tabular-nums text-foreground">
+                      {currencySymbol}
+                      {formatNumber(amountNumber)}
+                    </span>
+                  </div>
+                )}
+                {cartEntries.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between gap-6">
+                      <span className="text-muted-foreground">Shop subtotal</span>
+                      <span className="font-medium tabular-nums text-foreground">
+                        {currencySymbol}
+                        {formatNumber(cartTotals.subtotal)}
+                      </span>
+                    </div>
+                    {cartTotals.discountTotal > 0 && (
+                      <div className="flex items-center justify-between gap-6">
+                        <span className="text-muted-foreground">Discounts</span>
+                        <span className="font-medium tabular-nums text-destructive">
+                          -{currencySymbol}
+                          {formatNumber(cartTotals.discountTotal)}
+                        </span>
+                      </div>
+                    )}
+                    {cartTotals.paymentTotal > 0 && (
+                      <div className="flex items-center justify-between gap-6">
+                        <span className="text-muted-foreground">Payments / deposits</span>
+                        <span className="font-medium tabular-nums text-orange-600 dark:text-orange-400">
+                          -{currencySymbol}
+                          {formatNumber(cartTotals.paymentTotal)}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+                <div className="flex items-center justify-between gap-6 border-t border-border pt-2 text-base font-semibold text-foreground">
+                  <span>Total due</span>
+                  <span className="tabular-nums">
+                    {currencySymbol}
+                    {formatNumber(grandTotal)}
                   </span>
-                </div>
-                {cartTotals.discountTotal > 0 && (
-                  <div className="flex items-center justify-between gap-6">
-                    <span className="text-gray-600">Discounts</span>
-                    <span className="font-medium text-red-600">
-                      -{currencySymbol}{formatNumber(cartTotals.discountTotal)}
-                    </span>
-                  </div>
-                )}
-                {cartTotals.paymentTotal > 0 && (
-                  <div className="flex items-center justify-between gap-6">
-                    <span className="text-gray-600">Payments / Deposits</span>
-                    <span className="font-medium text-orange-600">
-                      -{currencySymbol}{formatNumber(cartTotals.paymentTotal)}
-                    </span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between gap-6 text-base font-semibold text-gray-900">
-                  <span>Total Due</span>
-                  <span>{currencySymbol}{formatNumber(cartTotals.total)}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="text-xs text-gray-500">
-            <p>
-              Date/Time:{" "}
-              {formatDate(new Date(), true)}
-            </p>
+          <div className="text-xs text-muted-foreground">
+            <p>Date/Time: {formatDate(new Date(), true)}</p>
           </div>
-          <div className="flex justify-end border-t border-gray-100 pt-4">
+          <div className="flex justify-end border-t border-border pt-4">
             <button
               type="button"
-              onClick={() => printGeneralDraft()}
-              className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              onClick={() => printUnifiedDraft()}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <Printer className="h-4 w-4" />
               Print invoice

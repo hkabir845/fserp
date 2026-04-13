@@ -1086,11 +1086,77 @@ def test_cashier_pos_empty_items_bad_request(
     h = _audit_master_headers(auth_super_headers, company_master)
     r = api_client.post(
         "/api/cashier/pos/",
-        data=json.dumps({"items": []}),
+        data=json.dumps({"items": [], "fuel_lines": []}),
         content_type="application/json",
         **h,
     )
     assert r.status_code == 400
+
+
+def test_cashier_pos_mixed_fuel_and_general(
+    api_client: Client, auth_super_headers, company_master
+):
+    """Single invoice from POST /cashier/pos with fuel_lines and items."""
+    from api.models import Invoice, InvoiceLine, Item, Meter, Tank
+
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    nozzle = _audit_fuel_nozzle(company_master)
+    meter_id = nozzle.meter_id
+    tank_id = nozzle.tank_id
+    qty_fuel = Decimal("2.0")
+
+    item_r = api_client.post(
+        "/api/items/",
+        data=json.dumps(
+            {
+                "name": "Mixed POS Snack",
+                "unit_price": "4.00",
+                "quantity_on_hand": "50",
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert item_r.status_code == 201
+    item_id = json.loads(item_r.content)["id"]
+    shop_item = Item.objects.get(pk=item_id)
+
+    pos = api_client.post(
+        "/api/cashier/pos/",
+        data=json.dumps(
+            {
+                "items": [
+                    {
+                        "item_id": item_id,
+                        "quantity": "2",
+                        "unit_price": "4.00",
+                    }
+                ],
+                "fuel_lines": [
+                    {"nozzle_id": nozzle.id, "quantity": str(qty_fuel)},
+                ],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert pos.status_code == 201, pos.content
+    body = json.loads(pos.content)
+    inv = Invoice.objects.get(pk=body["invoice_id"])
+    # 2 x $4.00 snack + fuel at $120.50/L
+    assert inv.total == Decimal("8.00") + (qty_fuel * Decimal("120.50"))
+    lines = InvoiceLine.objects.filter(invoice=inv)
+    assert lines.count() == 2
+
+    meter = Meter.objects.get(pk=meter_id)
+    assert meter.current_reading == Decimal("1000.0000") + qty_fuel
+
+    tank = Tank.objects.get(pk=tank_id)
+    assert tank.current_stock == Decimal("10000") - qty_fuel
+
+    shop_item.refresh_from_db()
+    assert shop_item.quantity_on_hand == Decimal("48")
 
 
 def test_cashier_pos_no_valid_items_bad_request(

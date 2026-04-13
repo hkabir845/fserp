@@ -103,6 +103,14 @@ urlpatterns = [
     # Companies
     path("companies/current/", companies_views.companies_current),
     path("companies/", companies_views.companies_list_or_create),
+    path(
+        "companies/<int:company_id>/deactivate/",
+        companies_views.company_deactivate,
+    ),
+    path(
+        "companies/<int:company_id>/activate/",
+        companies_views.company_activate,
+    ),
     path("companies/<int:company_id>/", companies_views.company_detail),
     path("companies/<int:company_id>", companies_views.company_detail),
     # Tenant subscription UI (Next.js /subscriptions)
@@ -141,6 +149,16 @@ urlpatterns = [
     # Admin (Super Admin)
     path("admin/stats/", admin_views.admin_stats),
     path("admin/companies/", admin_views.admin_companies),
+    path("admin/platform-release/", admin_views.admin_platform_release),
+    path("admin/platform-release", admin_views.admin_platform_release),
+    path(
+        "admin/companies/<int:company_id>/apply-release/",
+        admin_views.admin_company_apply_release,
+    ),
+    path(
+        "admin/companies/<int:company_id>/apply-release",
+        admin_views.admin_company_apply_release,
+    ),
     path("admin/billing-plans/", subscription_ledger_views.admin_billing_plans),
     path("admin/users/", admin_views.admin_users),
     path("admin/master-company/protection-status/", admin_views.admin_master_company_protection_status),

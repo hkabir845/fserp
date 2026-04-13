@@ -15,7 +15,9 @@ import {
   Building2,
   CheckCircle,
   ChevronDown,
+  Clock,
   Fuel,
+  Keyboard,
   Loader2,
   LogOut,
   PlusCircle,
@@ -214,10 +216,16 @@ export default function CashierPOSPage() {
 
   const [cartEntries, setCartEntries] = useState<CartEntry[]>([])
   const [itemSearch, setItemSearch] = useState("")
+  const [customerFilter, setCustomerFilter] = useState("")
+  const [now, setNow] = useState(() => new Date())
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const itemSearchRef = useRef<HTMLInputElement | null>(null)
   const [showInvoicePreview, setShowInvoicePreview] = useState(false)
   const [printMenuOpen, setPrintMenuOpen] = useState(false)
   const [printBusy, setPrintBusy] = useState(false)
   const printMenuRef = useRef<HTMLDivElement | null>(null)
+  const shortcutsRef = useRef<HTMLDivElement | null>(null)
+  const handleUnifiedSaleRef = useRef<() => Promise<void>>(async () => {})
 
   useEffect(() => {
     const token = localStorage.getItem("access_token")
@@ -239,6 +247,64 @@ export default function CashierPOSPage() {
     document.addEventListener("mousedown", close)
     return () => document.removeEventListener("mousedown", close)
   }, [printMenuOpen])
+
+  useEffect(() => {
+    if (!showShortcuts) return
+    const close = (e: MouseEvent) => {
+      const el = shortcutsRef.current
+      if (el && !el.contains(e.target as Node)) setShowShortcuts(false)
+    }
+    document.addEventListener("mousedown", close)
+    return () => document.removeEventListener("mousedown", close)
+  }, [showShortcuts])
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    const isEditable = (el: EventTarget | null) => {
+      if (!el || !(el instanceof HTMLElement)) return false
+      if (el.isContentEditable) return true
+      const tag = el.tagName
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (showInvoicePreview) {
+          e.preventDefault()
+          setShowInvoicePreview(false)
+        } else if (printMenuOpen) {
+          e.preventDefault()
+          setPrintMenuOpen(false)
+        } else if (showShortcuts) {
+          e.preventDefault()
+          setShowShortcuts(false)
+        }
+        return
+      }
+      if (e.key === "?" && !isEditable(e.target) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        setShowShortcuts(o => !o)
+        return
+      }
+      if (e.key === "/" && !isEditable(e.target) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        itemSearchRef.current?.focus()
+        itemSearchRef.current?.select()
+        return
+      }
+      if (e.key === "F9" || ((e.ctrlKey || e.metaKey) && e.key === "Enter")) {
+        if (showInvoicePreview || printMenuOpen) return
+        if (isEditable(e.target) && e.key !== "F9") return
+        e.preventDefault()
+        void handleUnifiedSaleRef.current()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [showInvoicePreview, printMenuOpen, showShortcuts])
 
   const loadInitialData = async () => {
     setLoading(true)
@@ -481,6 +547,23 @@ export default function CashierPOSPage() {
     )
   }, [itemSearch, posItems])
 
+  const filteredCustomers = useMemo(() => {
+    const q = customerFilter.trim().toLowerCase()
+    let list = !q ? customers : customers.filter(c => c.display_name.toLowerCase().includes(q))
+    if (customerId != null) {
+      const selected = customers.find(c => c.id === customerId)
+      if (selected && !list.some(c => c.id === customerId)) {
+        list = [selected, ...list]
+      }
+    }
+    return list
+  }, [customers, customerFilter, customerId])
+
+  const applyQuickFuelQty = (qty: number) => {
+    if (!selectedNozzle || qty <= 0) return
+    handleQuantityChange(String(qty))
+  }
+
   const handleUnifiedSale = async () => {
     const fuelLines: { nozzle_id: number; quantity: number; amount: number }[] = []
     if (selectedNozzle && quantity) {
@@ -565,6 +648,8 @@ export default function CashierPOSPage() {
       toast.error(typeof msg === "string" ? msg : "Sale could not be completed. Please retry.")
     }
   }
+
+  handleUnifiedSaleRef.current = handleUnifiedSale
 
   const handleLogout = () => {
     localStorage.removeItem("access_token")
@@ -738,7 +823,7 @@ export default function CashierPOSPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-background">
+      <div className="page-with-sidebar flex h-screen bg-background">
         <Sidebar />
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card px-10 py-12 text-center shadow-sm">
@@ -754,26 +839,106 @@ export default function CashierPOSPage() {
   }
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="page-with-sidebar flex h-screen bg-background">
       <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-l border-border/60 shadow-sm">
-        <header className="sticky top-0 z-40 border-b border-border bg-background/95 px-6 py-4 backdrop-blur">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Point of sale
-              </p>
-              <h1 className="mt-1 text-3xl font-bold tracking-tight text-foreground">
-                POS — Fuel &amp; products
+        <header className="sticky top-0 z-40 border-b border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Point of sale
+                </p>
+                <span
+                  className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
+                  title="Local time at this workstation"
+                >
+                  <Clock className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                  <time dateTime={now.toISOString()}>
+                    {now.toLocaleString(undefined, {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                </span>
+              </div>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                Checkout — fuel &amp; retail
               </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                Add fuel from a nozzle and shop items in one cart, then complete a single invoice.
-                On account (A/R) posts to receivables; record cash later under Payments → Received
-                when the customer pays.
+              <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                One ticket for pump dispense and counter items. Credit sales post to A/R; settle later
+                under Payments → Received.
               </p>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-3 lg:shrink-0">
+            <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3 lg:shrink-0">
+              <div className="relative" ref={shortcutsRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowShortcuts(o => !o)}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  aria-expanded={showShortcuts}
+                  aria-controls="pos-shortcuts-panel"
+                >
+                  <Keyboard className="h-4 w-4 text-muted-foreground" aria-hidden />
+                  Keys
+                </button>
+                {showShortcuts ? (
+                  <div
+                    id="pos-shortcuts-panel"
+                    className="absolute right-0 z-[70] mt-1.5 w-[min(100vw-2rem,20rem)] overflow-hidden rounded-xl border border-border bg-popover py-3 px-3 text-popover-foreground shadow-lg ring-1 ring-border"
+                    role="region"
+                    aria-label="Keyboard shortcuts"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Shortcuts
+                    </p>
+                    <ul className="mt-2 space-y-2 text-sm">
+                      <li className="flex items-start justify-between gap-2">
+                        <span className="text-muted-foreground">Product search</span>
+                        <kbd className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          /
+                        </kbd>
+                      </li>
+                      <li className="flex items-start justify-between gap-2">
+                        <span className="text-muted-foreground">Complete sale</span>
+                        <span className="flex max-w-[11rem] shrink-0 flex-wrap items-center justify-end gap-1">
+                          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                            F9
+                          </kbd>
+                          <span className="text-xs text-muted-foreground">or</span>
+                          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                            ⌘/Ctrl
+                          </kbd>
+                          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                            Enter
+                          </kbd>
+                        </span>
+                      </li>
+                      <li className="flex items-start justify-between gap-2">
+                        <span className="text-muted-foreground">Close dialogs</span>
+                        <kbd className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          Esc
+                        </kbd>
+                      </li>
+                      <li className="flex items-start justify-between gap-2">
+                        <span className="text-muted-foreground">This panel</span>
+                        <kbd className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          ?
+                        </kbd>
+                      </li>
+                    </ul>
+                    <p className="mt-3 border-t border-border pt-2 text-[11px] leading-snug text-muted-foreground">
+                      Barcode scanners: focus search, scan code — if one match exists, press{" "}
+                      <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd>{" "}
+                      to add.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
               <div className="relative" ref={printMenuRef}>
                 <button
                   type="button"
@@ -845,7 +1010,11 @@ export default function CashierPOSPage() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto px-4 py-6 sm:px-6">
+        <main
+          className="flex-1 overflow-auto px-4 py-6 sm:px-6"
+          id="pos-workspace"
+          aria-label="Point of sale workspace"
+        >
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
             <div className="space-y-6">
               <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
@@ -1011,6 +1180,23 @@ export default function CashierPOSPage() {
                     </div>
 
                     <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Quick quantity</p>
+                      <div className="flex flex-wrap gap-2" role="group" aria-label="Preset fuel quantities">
+                        {[1, 5, 10, 20, 50].map(q => (
+                          <button
+                            key={q}
+                            type="button"
+                            onClick={() => applyQuickFuelQty(q)}
+                            disabled={!selectedNozzle}
+                            className="inline-flex min-h-11 min-w-[3.25rem] items-center justify-center rounded-lg border border-border bg-muted/40 px-3 text-sm font-semibold tabular-nums text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {q} {selectedUnit}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
                       <label className="text-sm font-medium text-foreground">
                         Vehicle plate number (optional)
                       </label>
@@ -1108,10 +1294,21 @@ export default function CashierPOSPage() {
                   <div className="relative w-full sm:max-w-xs sm:flex-1 lg:max-w-sm">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <input
-                      type="text"
+                      ref={itemSearchRef}
+                      id="pos-product-search"
+                      type="search"
                       value={itemSearch}
                       onChange={event => setItemSearch(event.target.value)}
-                      placeholder="Search products, services, or scan barcode"
+                      onKeyDown={event => {
+                        if (event.key !== "Enter") return
+                        if (filteredItems.length === 1) {
+                          event.preventDefault()
+                          addItemToCart(filteredItems[0])
+                          setItemSearch("")
+                        }
+                      }}
+                      placeholder="Search or scan barcode — press / to focus"
+                      autoComplete="off"
                       className={`${inputClassName} pl-10`}
                     />
                   </div>
@@ -1221,9 +1418,10 @@ export default function CashierPOSPage() {
                     )}
                   </div>
 
-                  {!cartEntries.length && (
+                  {!cartEntries.length && pendingFuelAmount <= 0 && (
                     <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-                      Add products from the catalog to begin a sale.
+                      Add fuel above and/or products from the catalog. Fuel-only or shop-only sales are
+                      both supported.
                     </div>
                   )}
                   {pendingFuelAmount > 0 && selectedNozzle && (
@@ -1423,7 +1621,11 @@ export default function CashierPOSPage() {
                             )}
                           </>
                         )}
-                        <div className="flex items-center justify-between border-t border-border pt-3">
+                        <div
+                          className="flex items-center justify-between border-t border-border pt-3"
+                          aria-live="polite"
+                          aria-atomic="true"
+                        >
                           <span className="text-base font-semibold text-foreground">Total due</span>
                           <span
                             className={`text-2xl font-bold tabular-nums ${
@@ -1443,12 +1645,27 @@ export default function CashierPOSPage() {
 
                       <div className="space-y-3">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium text-foreground">
+                          <label className="text-sm font-medium text-foreground" htmlFor="pos-customer-filter">
+                            Find customer
+                          </label>
+                          <input
+                            id="pos-customer-filter"
+                            type="search"
+                            value={customerFilter}
+                            onChange={event => setCustomerFilter(event.target.value)}
+                            placeholder="Filter by name…"
+                            autoComplete="off"
+                            className={inputClassName}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground" htmlFor="pos-customer-select">
                             {isOnAccount
                               ? "Customer (required for on account)"
                               : "Customer (optional)"}
                           </label>
                           <select
+                            id="pos-customer-select"
                             value={customerId || ""}
                             onChange={event =>
                               setCustomerId(
@@ -1462,7 +1679,7 @@ export default function CashierPOSPage() {
                             }`}
                           >
                             <option value="">Walk-in</option>
-                            {customers.map(customer => (
+                            {filteredCustomers.map(customer => (
                               <option key={customer.id} value={customer.id}>
                                 {customer.display_name}
                               </option>

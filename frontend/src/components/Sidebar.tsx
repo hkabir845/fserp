@@ -52,7 +52,7 @@ const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
   hr: 'hr human resources employee payroll staff',
   management: 'management company settings subscription user tax admin backup restore',
   reports: 'reports analytics export print',
-  saas: 'saas platform admin tenant companies users contract subscription billing overview ledger',
+  saas: 'saas platform admin tenant companies users contract subscription billing overview ledger backup restore export',
 }
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'sidebar_width_px'
@@ -486,6 +486,7 @@ export default function Sidebar() {
     { href: '/admin/contracts', icon: FileText, label: 'Contract Management', section: 'saas' },
     { href: '/admin/subscription-ledger', icon: Receipt, label: 'Subscription Ledger', section: 'saas' },
     { href: '/admin/broadcasting', icon: Megaphone, label: 'Broadcasting', section: 'saas' },
+    { href: '/admin/backup', icon: Database, label: 'Backup & Restore', section: 'saas' },
   ]
 
   // Select menu items based on mode - CRITICAL: Always show FSMS ERP menu when in FSMS ERP mode
@@ -534,12 +535,24 @@ export default function Sidebar() {
     if (role === 'super_admin') {
       return menuItems
     }
-    
+
     // Default: Show all menu items
     return menuItems
   }
 
-  const filteredMenuItems = getFilteredMenuItems()
+  /** Company-owner backup lives under ERP Management (/backup). Super admins use SaaS → /admin/backup only. */
+  const filterTenantBackupMenuItem = (items: typeof fsmsErpMenuItems, role: string) => {
+    const r = role.toLowerCase()
+    return items.filter((item) => {
+      if (item.href !== '/backup') return true
+      return r === 'admin'
+    })
+  }
+
+  const filteredMenuItems = filterTenantBackupMenuItem(
+    getFilteredMenuItems(),
+    userRole?.toLowerCase() || ''
+  )
 
   const menuItemsForNav = useMemo(() => {
     const q = navSearchQuery.trim().toLowerCase()
@@ -560,9 +573,7 @@ export default function Sidebar() {
 
   // Filter sections based on visible menu items
   const getFilteredSections = () => {
-    const role = userRole?.toLowerCase() || ''
-    const filteredItems = getFilteredMenuItems()
-    const visibleSections = new Set(filteredItems.map(item => item.section))
+    const visibleSections = new Set(filteredMenuItems.map((item) => item.section))
     
     // SaaS Dashboard sections
     if (isSuperAdmin && mode === 'saas_dashboard') {
@@ -619,7 +630,7 @@ export default function Sidebar() {
   
   return (
     <div
-      className={`relative shrink-0 ${isDesktopLayout ? '' : 'w-0'}`}
+      className={`relative flex h-full min-h-0 max-h-full shrink-0 flex-col overflow-hidden ${isDesktopLayout ? '' : 'w-0'}`}
       style={isDesktopLayout ? { width: sidebarWidthPx } : undefined}
     >
       {/* Mobile menu toggle — sits above main content; sidebar is off-canvas until opened */}
@@ -642,8 +653,8 @@ export default function Sidebar() {
       <aside
         key={`sidebar-${mode}`}
         className={`
-          fixed inset-y-0 left-0 z-[50] flex w-[min(100vw-3rem,20rem)] max-w-[20rem] flex-col bg-gray-900 text-white shadow-xl transition-transform duration-200 ease-out
-          lg:static lg:z-auto lg:min-w-0 lg:w-full lg:max-w-none lg:translate-x-0
+          fixed inset-y-0 left-0 z-[50] flex h-full min-h-0 w-[min(100vw-3rem,20rem)] max-w-[20rem] flex-col overflow-hidden bg-gray-900 text-white shadow-xl transition-transform duration-200 ease-out
+          lg:static lg:z-auto lg:h-full lg:min-h-0 lg:min-w-0 lg:w-full lg:max-w-none lg:translate-x-0
           ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >

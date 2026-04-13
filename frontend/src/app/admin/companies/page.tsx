@@ -4,7 +4,25 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
-import { Building2, Plus, Edit2, Trash2, X, Shield, Crown, Calendar, RefreshCw, Eye, EyeOff, UserCog, Database, Upload } from 'lucide-react'
+import {
+  Building2,
+  Plus,
+  Edit2,
+  Trash2,
+  X,
+  Shield,
+  Crown,
+  Calendar,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  UserCog,
+  Database,
+  Upload,
+  Ban,
+  PlayCircle,
+  Rocket,
+} from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { formatCurrency } from '@/utils/currency'
@@ -70,6 +88,11 @@ interface Company {
   monthly_charge?: number
   yearly_charge?: number
   has_active_contract?: boolean
+  /** Deploy target / applied release tag (manual SaaS rollout). */
+  platform_release?: string | null
+  platform_target_release?: string | null
+  platform_release_applied_at?: string | null
+  release_behind?: boolean
   contact_person?: string
   payment_type?: string
   payment_start_date?: string
@@ -108,8 +131,17 @@ function CompaniesPageContent() {
   const [restoreModalCompany, setRestoreModalCompany] = useState<Company | null>(null)
   const [restorePhrase, setRestorePhrase] = useState('')
   const [restoreBusy, setRestoreBusy] = useState(false)
+  const [deleteModalCompany, setDeleteModalCompany] = useState<Company | null>(null)
+  const [deletePhrase, setDeletePhrase] = useState('')
+  const [deleteBusy, setDeleteBusy] = useState(false)
   const restoreFileRef = useRef<HTMLInputElement>(null)
   const [backupDownloadBusyId, setBackupDownloadBusyId] = useState<number | null>(null)
+  const [applyReleaseBusyId, setApplyReleaseBusyId] = useState<number | null>(null)
+  const [platformInfo, setPlatformInfo] = useState<{
+    target_release: string
+    app_version: string
+    hint?: string
+  } | null>(null)
 
   const [companyFormData, setCompanyFormData] = useState({
     company_name: '',
@@ -150,9 +182,19 @@ function CompaniesPageContent() {
   const fetchCompanies = async () => {
     try {
       setLoading(true)
-      const response = await api.get('/admin/companies/', { params: { limit: 500 } })
-      if (response.data) {
-        const companiesWithMaster = response.data.map((c: any) => ({
+      const [companiesRes, releaseRes] = await Promise.all([
+        api.get('/admin/companies/', { params: { limit: 500 } }),
+        api.get('/admin/platform-release/').catch(() => ({ data: null })),
+      ])
+      if (releaseRes.data) {
+        setPlatformInfo({
+          target_release: String(releaseRes.data.target_release ?? ''),
+          app_version: String(releaseRes.data.app_version ?? ''),
+          hint: releaseRes.data.hint,
+        })
+      }
+      if (companiesRes.data) {
+        const companiesWithMaster = companiesRes.data.map((c: any) => ({
           ...c,
           is_master:
             c.is_master === true || String(c.is_master || '').toLowerCase() === 'true'
@@ -168,6 +210,40 @@ function CompaniesPageContent() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleApplyPlatformRelease = async (company: Company) => {
+    const target =
+      company.platform_target_release ||
+      platformInfo?.target_release ||
+      '(configured target)'
+    if (
+      !window.confirm(
+        `Apply platform release ${target} to "${company.name}"?\n\nRun R&D on Master first; this only updates this tenant’s release tag and any registered upgrade hooks.`
+      )
+    ) {
+      return
+    }
+    setApplyReleaseBusyId(company.id)
+    try {
+      const res = await api.post(`/admin/companies/${company.id}/apply-release/`, {})
+      if (res.data?.skipped) {
+        toast.success(res.data.message || 'Already at this release.')
+      } else {
+        toast.success(
+          `Release ${res.data?.release ?? target} applied to ${company.name}.`
+        )
+      }
+      await fetchCompanies()
+    } catch (error: unknown) {
+      const msg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Apply release failed'
+      toast.error(msg)
+      safeLogError('Apply release:', error)
+    } finally {
+      setApplyReleaseBusyId(null)
     }
   }
 
@@ -268,19 +344,66 @@ function CompaniesPageContent() {
     }
   }
 
-  const handleDeleteCompany = async (company: Company) => {
-    if (!confirm(`Are you sure you want to delete company "${company.name}"? This action cannot be undone and will delete all associated data.`)) {
+  const openDeleteCompanyModal = (company: Company) => {
+    setDeleteModalCompany(company)
+    setDeletePhrase('')
+  }
+
+  const runPermanentCompanyDelete = async () => {
+    if (!deleteModalCompany) return
+    if (deletePhrase.trim() !== RESTORE_CONFIRM_PHRASE) {
+      toast.error(`Type the confirmation phrase exactly: ${RESTORE_CONFIRM_PHRASE}`)
       return
     }
-
+    setDeleteBusy(true)
     try {
-      await api.delete(`/companies/${company.id}`)
-      toast.success('Company deleted successfully!')
+      await api.delete(`/companies/${deleteModalCompany.id}/`, {
+        data: { confirm_phrase: RESTORE_CONFIRM_PHRASE },
+      })
+      toast.success('Company and all tenant data were permanently removed.')
+      setDeleteModalCompany(null)
+      setDeletePhrase('')
       await fetchCompanies()
     } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || error.response?.data?.message || 'Failed to delete company'
-      toast.error(errorMsg)
+      const errorMsg =
+        error.response?.data?.detail || error.response?.data?.message || 'Failed to delete company'
+      toast.error(typeof errorMsg === 'string' ? errorMsg : 'Failed to delete company')
       safeLogError('Delete company error:', error)
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
+  const handleDeactivateCompany = async (company: Company) => {
+    if (
+      !window.confirm(
+        `Deactivate "${company.name}"? Tenant users cannot sign in until the company is activated again.`
+      )
+    ) {
+      return
+    }
+    try {
+      await api.post(`/companies/${company.id}/deactivate/`)
+      toast.success('Company deactivated.')
+      await fetchCompanies()
+    } catch (error: any) {
+      const errorMsg =
+        error.response?.data?.detail || error.response?.data?.message || 'Failed to deactivate company'
+      toast.error(typeof errorMsg === 'string' ? errorMsg : 'Failed to deactivate company')
+      safeLogError('Deactivate company error:', error)
+    }
+  }
+
+  const handleActivateCompany = async (company: Company) => {
+    try {
+      await api.post(`/companies/${company.id}/activate/`)
+      toast.success('Company activated.')
+      await fetchCompanies()
+    } catch (error: any) {
+      const errorMsg =
+        error.response?.data?.detail || error.response?.data?.message || 'Failed to activate company'
+      toast.error(typeof errorMsg === 'string' ? errorMsg : 'Failed to activate company')
+      safeLogError('Activate company error:', error)
     }
   }
 
@@ -436,10 +559,15 @@ function CompaniesPageContent() {
               </div>
               <div className="ml-3">
                 <h3 className="text-sm font-medium text-blue-900">Maintenance & Upgrades</h3>
-                <div className="mt-2 text-sm text-blue-700">
+                <div className="mt-2 text-sm text-blue-700 space-y-2">
                   <p>
                     All subscribed companies receive <strong>free maintenance and upgrades</strong> while their subscription is active and continuing. 
                     This includes system updates, feature enhancements, security patches, and technical support.
+                  </p>
+                  <p>
+                    <strong>Manual release rollout:</strong> each company card shows the deploy <strong>target</strong> tag and an{' '}
+                    <strong>Apply upgrade</strong> action. Promote tenants one-by-one after validating on Master — there is no automatic upgrade of every tenant.
+                    Set <code className="rounded bg-blue-100/80 px-1 text-xs">FSERP_PLATFORM_RELEASE</code> on the server to bump the target after a deploy.
                   </p>
                 </div>
               </div>
@@ -573,13 +701,98 @@ function CompaniesPageContent() {
                             >
                               <Edit2 className="h-5 w-5" />
                             </button>
-                            <button
-                              onClick={() => handleDeleteCompany(company)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Delete Company"
-                            >
-                              <Trash2 className="h-5 w-5" />
-                            </button>
+                            {company.is_master !== 'true' && company.is_active && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeactivateCompany(company)}
+                                className="p-2 text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+                                title="Deactivate company (suspend access, keep all data)"
+                              >
+                                <Ban className="h-5 w-5" />
+                              </button>
+                            )}
+                            {company.is_master !== 'true' && !company.is_active && (
+                              <button
+                                type="button"
+                                onClick={() => handleActivateCompany(company)}
+                                className="p-2 text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                                title="Activate company"
+                              >
+                                <PlayCircle className="h-5 w-5" />
+                              </button>
+                            )}
+                            {company.is_master !== 'true' && (
+                              <button
+                                type="button"
+                                onClick={() => openDeleteCompanyModal(company)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Permanently delete company and all data"
+                              >
+                                <Trash2 className="h-5 w-5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Manual platform release (per tenant) */}
+                        <div className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0 text-sm">
+                            <span className="font-medium text-slate-700">Platform release</span>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-600">
+                              <span>
+                                Target:{' '}
+                                <code className="rounded bg-white px-1.5 py-0.5 font-mono text-slate-900">
+                                  {company.platform_target_release ||
+                                    platformInfo?.target_release ||
+                                    '—'}
+                                </code>
+                              </span>
+                              <span>
+                                This tenant:{' '}
+                                <code className="rounded bg-white px-1.5 py-0.5 font-mono text-slate-900">
+                                  {company.platform_release?.trim() ? company.platform_release : '—'}
+                                </code>
+                              </span>
+                              {company.release_behind ? (
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                                  Behind
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                                  Up to date
+                                </span>
+                              )}
+                            </div>
+                            {company.platform_release_applied_at && (
+                              <p className="mt-1 text-xs text-slate-500">
+                                Last applied:{' '}
+                                {new Date(company.platform_release_applied_at).toLocaleString()}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex max-w-xl shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                            {company.is_master === 'true' ? (
+                              <p className="text-xs text-slate-600 sm:text-right">
+                                R&amp;D tenant — exercise new behaviour here first, then use{' '}
+                                <strong>Apply upgrade</strong> on each other company when ready (manual
+                                rollout only).
+                              </p>
+                            ) : null}
+                            {company.release_behind ? (
+                              <button
+                                type="button"
+                                onClick={() => handleApplyPlatformRelease(company)}
+                                disabled={applyReleaseBusyId === company.id}
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <Rocket className="h-4 w-4 shrink-0" />
+                                {applyReleaseBusyId === company.id ? 'Applying…' : 'Apply upgrade'}
+                              </button>
+                            ) : (
+                              <span className="text-xs text-slate-500 sm:text-right">
+                                No upgrade action needed.
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -977,6 +1190,68 @@ function CompaniesPageContent() {
                       className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {restoreBusy ? 'Restoring…' : 'Choose file & restore'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {deleteModalCompany && (
+            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+              <div className="w-full max-w-lg rounded-t-2xl bg-white shadow-2xl sm:rounded-xl">
+                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 sm:px-6">
+                  <h2 className="text-lg font-bold text-gray-900">Permanently delete company</h2>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteModalCompany(null)
+                      setDeletePhrase('')
+                    }}
+                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="space-y-4 p-4 sm:p-6">
+                  <p className="text-sm text-gray-700">
+                    Company: <strong>{deleteModalCompany.name}</strong> (ID {deleteModalCompany.id})
+                  </p>
+                  <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                    This removes the company row, <strong>all users and passwords</strong>, and{' '}
+                    <strong>all ERP data</strong> for this tenant. This cannot be undone. To suspend access without
+                    deleting data, use <strong>Deactivate</strong> instead.
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Type <code className="rounded bg-gray-100 px-1">{RESTORE_CONFIRM_PHRASE}</code>
+                    </label>
+                    <input
+                      type="text"
+                      value={deletePhrase}
+                      onChange={(e) => setDeletePhrase(e.target.value)}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteModalCompany(null)
+                        setDeletePhrase('')
+                      }}
+                      className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleteBusy || deletePhrase.trim() !== RESTORE_CONFIRM_PHRASE}
+                      onClick={runPermanentCompanyDelete}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deleteBusy ? 'Deleting…' : 'Delete permanently'}
                     </button>
                   </div>
                 </div>

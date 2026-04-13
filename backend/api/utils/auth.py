@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from django.conf import settings
 from django.http import JsonResponse
-from api.models import User
+from api.models import Company, User
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,13 @@ def auth_required(view_func):
             user = get_user_from_request(request)
             if not user:
                 return JsonResponse({"detail": "Authentication required"}, status=401)
+            if not tenant_company_allows_access(user):
+                return JsonResponse(
+                    {
+                        "detail": "This company account is inactive. Contact your administrator.",
+                    },
+                    status=403,
+                )
             request.api_user = user
             return view_func(request, *args, **kwargs)
         except Exception as e:
@@ -81,6 +88,19 @@ def user_is_super_admin(user) -> bool:
     """True if user is platform super admin (tolerant of spacing/casing in role string)."""
     r = (getattr(user, "role", None) or "").strip().lower().replace(" ", "_").replace("-", "_")
     return r in ("super_admin", "superadmin")
+
+
+def tenant_company_allows_access(user) -> bool:
+    """
+    Non-super-admin users tied to a company may not use the API when that company is
+    inactive or deleted. Super admins are unaffected so they can open the tenant and reactivate.
+    """
+    if not user or user_is_super_admin(user):
+        return True
+    cid = getattr(user, "company_id", None)
+    if cid is None:
+        return True
+    return Company.objects.filter(id=cid, is_deleted=False, is_active=True).exists()
 
 
 def _subdomain_from_request(request) -> str | None:

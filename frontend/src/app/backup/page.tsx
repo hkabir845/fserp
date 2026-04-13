@@ -1,18 +1,24 @@
 'use client'
 
+/**
+ * Tenant Backup & Restore — company owner (admin) in ERP / Management.
+ * Super admin platform backup is under SaaS: /admin/backup
+ */
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { Database, Download, Upload, AlertTriangle } from 'lucide-react'
+import { CompanyProvider } from '@/contexts/CompanyContext'
+import { Database, Download, Upload, AlertTriangle, Info } from 'lucide-react'
 import { useToast } from '@/components/Toast'
-import api from '@/lib/api'
+import api, { isSuperAdminRole } from '@/lib/api'
 import {
   RESTORE_CONFIRM_PHRASE,
   downloadTenantBackupForCurrentCompany,
   restoreTenantBackupForCurrentCompany,
 } from '@/utils/tenantBackup'
+import { safeLogError } from '@/utils/connectionError'
 
-export default function BackupRestorePage() {
+function TenantBackupRestoreContent() {
   const router = useRouter()
   const toast = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -38,22 +44,31 @@ export default function BackupRestorePage() {
     }
     const r = (u?.role || '').toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_')
     setUserRole(r)
-    if (r !== 'admin' && r !== 'super_admin') {
-      setLoading(false)
+
+    if (isSuperAdminRole(r)) {
+      router.replace('/admin/backup')
       return
     }
-    api
-      .get('/companies/current/')
-      .then((res) => {
-        const d = res.data
+
+    const load = async () => {
+      if (r !== 'admin') {
+        setLoading(false)
+        return
+      }
+      try {
+        const cur = await api.get('/companies/current/')
+        const d = cur.data
         const name = (d?.name || d?.company_name || '').trim() || `Company #${d?.id}`
         setCompanyLabel(name)
-      })
-      .catch(() => setCompanyLabel(''))
-      .finally(() => setLoading(false))
+      } catch {
+        setCompanyLabel('')
+      }
+      setLoading(false)
+    }
+    load()
   }, [router])
 
-  const canUse = userRole === 'admin' || userRole === 'super_admin'
+  const canUse = userRole === 'admin'
 
   const onDownload = async () => {
     setDownloading(true)
@@ -62,9 +77,11 @@ export default function BackupRestorePage() {
       toast.success('Backup downloaded')
     } catch (e: unknown) {
       const msg =
+        (e as Error)?.message ||
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
         'Failed to download backup'
-      toast.error(msg)
+      toast.error(typeof msg === 'string' ? msg : 'Failed to download backup')
+      safeLogError('backup download', e)
     } finally {
       setDownloading(false)
     }
@@ -82,7 +99,7 @@ export default function BackupRestorePage() {
     }
     if (
       !window.confirm(
-        'This permanently deletes all ERP data for the current company and replaces it from the backup file. Continue?'
+        `This permanently deletes all ERP data for ${companyLabel || 'this company'} and replaces it from the backup file. Continue?`
       )
     ) {
       return
@@ -98,8 +115,10 @@ export default function BackupRestorePage() {
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (err as Error)?.message ||
         'Restore failed'
-      toast.error(msg)
+      toast.error(typeof msg === 'string' ? msg : 'Restore failed')
+      safeLogError('backup restore', err)
     } finally {
       setRestoring(false)
     }
@@ -118,7 +137,10 @@ export default function BackupRestorePage() {
       <div className="page-with-sidebar flex h-screen bg-gray-100">
         <Sidebar />
         <div className="flex flex-1 items-center justify-center p-8">
-          <p className="text-gray-600">Only company administrators can access backup and restore.</p>
+          <p className="text-gray-600">
+            Only the company administrator can access backup and restore here. Super admins: use{' '}
+            <strong>SaaS → Backup &amp; Restore</strong> for any tenant.
+          </p>
         </div>
       </div>
     )
@@ -134,16 +156,25 @@ export default function BackupRestorePage() {
               <Database className="h-8 w-8 text-blue-700" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Backup &amp; Restore</h1>
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">Your organization</p>
+              <h1 className="text-3xl font-bold text-gray-900">Backup and restore</h1>
               <p className="mt-1 text-gray-600">
-                Export or replace all data for the company you are working in now
-                {companyLabel ? (
-                  <>
-                    : <span className="font-semibold text-gray-800">{companyLabel}</span>
-                  </>
-                ) : null}
-                . Super admins: select the tenant in the sidebar before downloading or restoring.
+                Export or replace all data for <span className="font-semibold text-gray-800">{companyLabel || 'your company'}</span>
+                . Super admins: pick the tenant in the company switcher, or use the SaaS menu for any company.
               </p>
+            </div>
+          </div>
+
+          <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
+            <div className="flex gap-2">
+              <Info className="h-5 w-5 shrink-0 text-slate-500" />
+              <div>
+                <p className="font-medium text-slate-900">Scope</p>
+                <p className="mt-1">
+                  Applies to your signed-in tenant (the company selected in the header switcher when you use multiple
+                  contexts). The backup file is tied to your company ID.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -151,8 +182,8 @@ export default function BackupRestorePage() {
             <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900">Download backup</h2>
               <p className="mt-2 text-sm text-gray-600">
-                JSON snapshot of this tenant (stations, accounting, customers, loans, etc.). Store it securely;
-                it contains business data.
+                JSON snapshot of this tenant (chart of accounts, stations, customers, journals, loans, etc.). Large
+                tenants may take several minutes.
               </p>
               <button
                 type="button"
@@ -171,19 +202,19 @@ export default function BackupRestorePage() {
                 <div>
                   <h2 className="text-lg font-semibold">Restore from backup</h2>
                   <p className="mt-2 text-sm text-amber-900/90">
-                    Restoring <strong>deletes all current data</strong> for this company and reloads the file.
-                    The backup must have been created for the <strong>same company ID</strong>.
+                    Restoring deletes all current data for this company and reloads the file. The backup must have been
+                    created for the same company ID.
                   </p>
                 </div>
               </div>
               <label className="mt-4 block text-sm font-medium text-gray-800">
-                Type <code className="rounded bg-gray-200 px-1">{RESTORE_CONFIRM_PHRASE}</code> to enable restore
+                Type <code className="rounded bg-amber-100 px-1">{RESTORE_CONFIRM_PHRASE}</code> to enable restore
               </label>
               <input
                 type="text"
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
-                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm"
+                className="mt-2 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-sm"
                 placeholder={RESTORE_CONFIRM_PHRASE}
                 autoComplete="off"
               />
@@ -201,12 +232,20 @@ export default function BackupRestorePage() {
                 className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-700 bg-white px-4 py-2.5 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Upload className="h-4 w-4" />
-                {restoring ? 'Restoring…' : 'Choose backup file & restore'}
+                {restoring ? 'Restoring…' : 'Choose backup file and restore'}
               </button>
             </div>
           </div>
         </div>
       </div>
     </div>
+  )
+}
+
+export default function BackupRestorePage() {
+  return (
+    <CompanyProvider>
+      <TenantBackupRestoreContent />
+    </CompanyProvider>
   )
 }

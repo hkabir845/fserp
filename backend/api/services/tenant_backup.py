@@ -7,14 +7,23 @@ tenant in FK-safe order (PROTECT chains), then reloads from the bundle.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import logging
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from django.core import serializers
 from django.db import transaction
 from django.db.models import Count
+from django.utils.duration import duration_iso_string
+from django.utils.functional import Promise
+
+logger = logging.getLogger(__name__)
 
 from api.models import (
+    Broadcast,
+    BroadcastRead,
     BankAccount,
     BankDeposit,
     Bill,
@@ -58,6 +67,56 @@ from api.models import (
 
 BACKUP_SCHEMA_VERSION = 1
 RESTORE_CONFIRM_PHRASE = "DELETE_ALL_TENANT_DATA"
+
+
+def _sanitize_for_json(obj: Any) -> Any:
+    """
+    Recursively convert the bundle to JSON-safe primitives (dict/list/str/number/bool/null).
+
+    Using only ``json.dumps`` + ``JSONEncoder.default`` is fragile: nested ``datetime`` values
+    can still surface as "Object of type datetime is not JSON serializable" depending on
+    Python/Django versions and deployment. Pre-sanitizing the tree removes that class of failure.
+    """
+    if obj is None:
+        return None
+    if isinstance(obj, (bool, str, int, float)):
+        return obj
+    if isinstance(obj, dict):
+        return {str(k): _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    if isinstance(obj, datetime):
+        r = obj.isoformat()
+        if obj.microsecond:
+            r = r[:23] + r[26:]
+        if r.endswith("+00:00"):
+            r = r[:-6] + "Z"
+        return r
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, time):
+        return obj.isoformat()
+    if isinstance(obj, timedelta):
+        return duration_iso_string(obj)
+    if isinstance(obj, Decimal):
+        return str(obj)
+    if isinstance(obj, UUID):
+        return str(obj)
+    if isinstance(obj, (set, frozenset)):
+        return [_sanitize_for_json(v) for v in obj]
+    if isinstance(obj, Promise):
+        return str(obj)
+    if isinstance(obj, bytes):
+        try:
+            return obj.decode("utf-8")
+        except UnicodeDecodeError:
+            logger.warning("backup JSON: non-UTF8 bytes, using repr")
+            return repr(obj)
+    if isinstance(obj, memoryview):
+        return _sanitize_for_json(bytes(obj))
+
+    logger.warning("backup JSON sanitize str() fallback: %s", type(obj).__name__)
+    return str(obj)
 
 
 def delete_tenant_company_data(company_id: int) -> None:
@@ -122,6 +181,9 @@ def delete_tenant_company_data(company_id: int) -> None:
             raise ValueError("Chart of accounts could not be cleared (unexpected cycle).")
         leaf.delete()
 
+    # Tenant-targeted broadcasts (IntegerField, not FK — must delete explicitly)
+    Broadcast.objects.filter(company_id=cid).delete()
+
     User.objects.filter(company_id=cid).delete()
     Contract.objects.filter(company_id=cid).delete()
     Company.objects.filter(pk=cid).delete()
@@ -180,6 +242,11 @@ def build_backup_bundle(company_id: int) -> dict[str, Any]:
     _serialize_many(records, Company.objects.filter(pk=company_id))
     _serialize_many(records, Contract.objects.filter(company_id=company_id))
     _serialize_many(records, User.objects.filter(company_id=company_id))
+    # Tenant-targeted broadcasts (company_id set); read receipts reference broadcast PK — order matters for restore.
+    _serialize_many(records, Broadcast.objects.filter(company_id=company_id).order_by("id"))
+    _serialize_many(
+        records, BroadcastRead.objects.filter(broadcast__company_id=company_id).order_by("id")
+    )
     _serialize_many(records, _topo_chart_accounts(company_id))
     _serialize_many(records, Station.objects.filter(company_id=company_id).order_by("id"))
     _serialize_many(records, Item.objects.filter(company_id=company_id).order_by("id"))
@@ -244,7 +311,8 @@ def build_backup_bundle(company_id: int) -> dict[str, Any]:
 
 def backup_bundle_json_bytes(company_id: int) -> bytes:
     bundle = build_backup_bundle(company_id)
-    return json.dumps(bundle, indent=2).encode("utf-8")
+    safe = _sanitize_for_json(bundle)
+    return json.dumps(safe, indent=2, ensure_ascii=False).encode("utf-8")
 
 
 def _parse_bundle(raw: bytes | str) -> dict[str, Any]:

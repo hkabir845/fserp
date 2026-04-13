@@ -449,7 +449,7 @@ export default function CustomersPage() {
 
   return (
     <CompanyProvider>
-      <div className="flex h-screen bg-gray-50">
+      <div className="page-with-sidebar flex h-screen bg-gray-50">
         <Sidebar />
         <div className="flex-1 overflow-auto">
           <div className="p-8">

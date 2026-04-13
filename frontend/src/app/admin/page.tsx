@@ -7,7 +7,32 @@ import CompanySwitcher from '@/components/CompanySwitcher'
 import ContractManagement from '@/components/ContractManagement'
 import SubscriptionLedger from '@/components/SubscriptionLedger'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
-import { Building2, Users, BarChart3, Plus, Edit2, Trash2, X, Shield, TrendingUp, DollarSign, MapPin, Crown, Calendar, Clock, AlertTriangle, RefreshCw, Eye, EyeOff, Upload, FileText, Megaphone, Send } from 'lucide-react'
+import {
+  Building2,
+  Users,
+  BarChart3,
+  Plus,
+  Edit2,
+  Trash2,
+  X,
+  Shield,
+  TrendingUp,
+  DollarSign,
+  MapPin,
+  Crown,
+  Calendar,
+  Clock,
+  AlertTriangle,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Upload,
+  FileText,
+  Megaphone,
+  Send,
+  Ban,
+  PlayCircle,
+} from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
 import { MasterCompanyConfirmDialog } from '@/components/MasterCompanyConfirmDialog'
@@ -16,6 +41,7 @@ import { formatCurrency, formatNumber } from '@/utils/currency'
 import { getCurrenciesByCountry } from '@/utils/currencies'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { formatDate, formatDateOnly } from '@/utils/date'
+import { RESTORE_CONFIRM_PHRASE } from '@/utils/tenantBackup'
 
 interface PlatformStats {
   total_companies: number
@@ -160,6 +186,9 @@ function SuperAdminPageContent() {
   })
   const [showCompanyViewModal, setShowCompanyViewModal] = useState(false)
   const [viewingCompany, setViewingCompany] = useState<Company | null>(null)
+  const [deleteModalCompany, setDeleteModalCompany] = useState<Company | null>(null)
+  const [deletePhrase, setDeletePhrase] = useState('')
+  const [deleteBusy, setDeleteBusy] = useState(false)
   const [broadcastFormData, setBroadcastFormData] = useState({
     title: '',
     message: '',
@@ -509,20 +538,69 @@ function SuperAdminPageContent() {
     }
   }
 
-  const handleDeleteCompany = async (company: Company) => {
-    if (!confirm(`Are you sure you want to delete company "${company.name}"? This action cannot be undone and will delete all associated data.`)) {
+  const openDeleteCompanyModal = (company: Company) => {
+    setDeleteModalCompany(company)
+    setDeletePhrase('')
+  }
+
+  const runPermanentCompanyDelete = async () => {
+    if (!deleteModalCompany) return
+    if (deletePhrase.trim() !== RESTORE_CONFIRM_PHRASE) {
+      toast.error(`Type the confirmation phrase exactly: ${RESTORE_CONFIRM_PHRASE}`)
       return
     }
-
+    setDeleteBusy(true)
     try {
-      await api.delete(`/companies/${company.id}`)
-      toast.success('Company deleted successfully!')
+      await api.delete(`/companies/${deleteModalCompany.id}/`, {
+        data: { confirm_phrase: RESTORE_CONFIRM_PHRASE },
+      })
+      toast.success('Company and all tenant data were permanently removed.')
+      setDeleteModalCompany(null)
+      setDeletePhrase('')
       await fetchCompanies()
       await fetchPlatformStats()
     } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || error.response?.data?.message || 'Failed to delete company'
-      toast.error(errorMsg)
+      const errorMsg =
+        error.response?.data?.detail || error.response?.data?.message || 'Failed to delete company'
+      toast.error(typeof errorMsg === 'string' ? errorMsg : 'Failed to delete company')
       safeLogError('Delete company error:', error)
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
+  const handleDeactivateCompany = async (company: Company) => {
+    if (
+      !window.confirm(
+        `Deactivate "${company.name}"? Tenant users cannot sign in until the company is activated again.`
+      )
+    ) {
+      return
+    }
+    try {
+      await api.post(`/companies/${company.id}/deactivate/`)
+      toast.success('Company deactivated.')
+      await fetchCompanies()
+      await fetchPlatformStats()
+    } catch (error: any) {
+      const errorMsg =
+        error.response?.data?.detail || error.response?.data?.message || 'Failed to deactivate company'
+      toast.error(typeof errorMsg === 'string' ? errorMsg : 'Failed to deactivate company')
+      safeLogError('Deactivate company error:', error)
+    }
+  }
+
+  const handleActivateCompany = async (company: Company) => {
+    try {
+      await api.post(`/companies/${company.id}/activate/`)
+      toast.success('Company activated.')
+      await fetchCompanies()
+      await fetchPlatformStats()
+    } catch (error: any) {
+      const errorMsg =
+        error.response?.data?.detail || error.response?.data?.message || 'Failed to activate company'
+      toast.error(typeof errorMsg === 'string' ? errorMsg : 'Failed to activate company')
+      safeLogError('Activate company error:', error)
     }
   }
 
@@ -1039,13 +1117,36 @@ function SuperAdminPageContent() {
                               >
                                 <Edit2 className="h-5 w-5" />
                               </button>
-                              <button
-                                onClick={() => handleDeleteCompany(company)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete Company"
-                              >
-                                <Trash2 className="h-5 w-5" />
-                              </button>
+                              {company.is_master !== 'true' && company.is_active && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeactivateCompany(company)}
+                                  className="p-2 text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+                                  title="Deactivate company (suspend access, keep all data)"
+                                >
+                                  <Ban className="h-5 w-5" />
+                                </button>
+                              )}
+                              {company.is_master !== 'true' && !company.is_active && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleActivateCompany(company)}
+                                  className="p-2 text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                                  title="Activate company"
+                                >
+                                  <PlayCircle className="h-5 w-5" />
+                                </button>
+                              )}
+                              {company.is_master !== 'true' && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDeleteCompanyModal(company)}
+                                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Permanently delete company and all data"
+                                >
+                                  <Trash2 className="h-5 w-5" />
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -1970,6 +2071,68 @@ function SuperAdminPageContent() {
                     >
                       <Edit2 className="h-4 w-4" />
                       <span>Edit Company</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {deleteModalCompany && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+              <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 sm:px-6">
+                  <h2 className="text-lg font-bold text-gray-900">Permanently delete company</h2>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteModalCompany(null)
+                      setDeletePhrase('')
+                    }}
+                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="space-y-4 p-4 sm:p-6">
+                  <p className="text-sm text-gray-700">
+                    Company: <strong>{deleteModalCompany.name}</strong> (ID {deleteModalCompany.id})
+                  </p>
+                  <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                    This removes the company row, <strong>all users and passwords</strong>, and{' '}
+                    <strong>all ERP data</strong> for this tenant. This cannot be undone. To suspend access without
+                    deleting data, use <strong>Deactivate</strong> instead.
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Type <code className="rounded bg-gray-100 px-1">{RESTORE_CONFIRM_PHRASE}</code>
+                    </label>
+                    <input
+                      type="text"
+                      value={deletePhrase}
+                      onChange={(e) => setDeletePhrase(e.target.value)}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteModalCompany(null)
+                        setDeletePhrase('')
+                      }}
+                      className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleteBusy || deletePhrase.trim() !== RESTORE_CONFIRM_PHRASE}
+                      onClick={runPermanentCompanyDelete}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deleteBusy ? 'Deleting…' : 'Delete permanently'}
                     </button>
                   </div>
                 </div>

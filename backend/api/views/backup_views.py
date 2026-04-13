@@ -1,5 +1,7 @@
 """Tenant backup (download) and restore (full replace)."""
 
+import logging
+
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -13,6 +15,8 @@ from api.services.tenant_backup import (
     _parse_bundle,
 )
 from api.utils.auth import auth_required, company_context_error_response, get_company_id, user_is_super_admin
+
+logger = logging.getLogger(__name__)
 
 
 def _user_can_backup(user) -> bool:
@@ -55,10 +59,17 @@ def company_backup_download(request):
         payload = backup_bundle_json_bytes(cid)
     except ValueError as e:
         return JsonResponse({"detail": str(e)}, status=404)
+    except Exception as e:
+        logger.exception("company backup download failed company_id=%s", cid)
+        return JsonResponse({"detail": "Backup generation failed.", "error": str(e)}, status=500)
 
     name = f"fserp_company_{cid}_backup.json"
     resp = HttpResponse(payload, content_type="application/json; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{name}"'
+    resp["X-Backup-Company-Id"] = str(cid)
+    resp["X-Backup-Schema-Version"] = "1"
+    resp["X-FSERP-Backup-Json"] = "sanitize-v1"
+    resp["Cache-Control"] = "no-store"
     return resp
 
 
@@ -144,10 +155,17 @@ def admin_company_backup_download(request, company_id: int):
         payload = backup_bundle_json_bytes(company_id)
     except ValueError as e:
         return JsonResponse({"detail": str(e)}, status=404)
+    except Exception as e:
+        logger.exception("admin backup download failed company_id=%s", company_id)
+        return JsonResponse({"detail": "Backup generation failed.", "error": str(e)}, status=500)
 
     name = f"fserp_company_{company_id}_backup.json"
     resp = HttpResponse(payload, content_type="application/json; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{name}"'
+    resp["X-Backup-Company-Id"] = str(company_id)
+    resp["X-Backup-Schema-Version"] = "1"
+    resp["X-FSERP-Backup-Json"] = "sanitize-v1"
+    resp["Cache-Control"] = "no-store"
     return resp
 
 

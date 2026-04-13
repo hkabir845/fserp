@@ -17,7 +17,7 @@ export default function ForgotPasswordPage() {
     setMessage(null)
     const trimmed = email.trim()
     if (!trimmed) {
-      setError('Enter the email address you use to sign in.')
+      setError('Enter the email or username you use to sign in.')
       return
     }
     setLoading(true)
@@ -51,8 +51,8 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-xl border border-slate-100">
         <h1 className="text-2xl font-semibold text-slate-900">Forgot password</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Enter the email address associated with your account (usually the same as your username). We will email you a
-          link to choose a new password.
+          Enter the email or username you use to sign in. We send the reset link to the email on your account (or to your
+          username when it is an email address).
         </p>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
@@ -70,16 +70,16 @@ export default function ForgotPasswordPage() {
 
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1.5">
-              Email
+              Email or username
             </label>
             <input
               id="email"
-              type="email"
-              autoComplete="email"
+              type="text"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="you@company.com"
+              placeholder="you@company.com or your username"
               disabled={loading}
             />
           </div>

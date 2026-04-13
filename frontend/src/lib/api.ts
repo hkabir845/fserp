@@ -5,7 +5,7 @@
 import axios from 'axios'
 
 /**
- * Canonical API base (.../api). Env is `NEXT_PUBLIC_API_BASE_URL` (e.g. `https://api.mahasoftcorporation.com` or local `http://localhost:8000`); path may include `/api` — never duplicate `/api/api`.
+ * Canonical API base (.../api). Env is `NEXT_PUBLIC_API_BASE_URL` (e.g. `https://api.mahasoftcorporation.com` or local `https://api.mahasoftcorporation.com`); path may include `/api` — never duplicate `/api/api`.
  */
 /** Default API origin when `NEXT_PUBLIC_API_BASE_URL` is unset — production API. Override in `frontend/.env`. */
 export const FALLBACK_BACKEND_ORIGIN = 'https://api.mahasoftcorporation.com'
@@ -274,6 +274,16 @@ api.interceptors.request.use(
       // Don't log in production to avoid noise
       if (process.env.NODE_ENV === 'development') {
         console.warn('Error in API request interceptor:', e)
+      }
+    }
+
+    // FormData: must not send application/json — browser/axios must set multipart boundary.
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      const h = config.headers
+      if (h && typeof (h as { delete?: (k: string) => void }).delete === 'function') {
+        ;(h as { delete: (k: string) => void }).delete('Content-Type')
+      } else if (h && typeof h === 'object') {
+        delete (h as Record<string, unknown>)['Content-Type']
       }
     }
 

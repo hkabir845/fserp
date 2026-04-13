@@ -10,7 +10,6 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
-from django.db.models import Q
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -114,11 +113,10 @@ def forgot_password(request):
         return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
     cache.set(throttle_key, 1, FORGOT_COOLDOWN_SEC)
 
-    user = (
-        User.objects.filter(is_active=True)
-        .filter(Q(email__iexact=email) | Q(username__iexact=email))
-        .first()
-    )
+    # Prefer username match (unique) so duplicate emails across users do not pick an arbitrary row.
+    user = User.objects.filter(is_active=True, username__iexact=email).first()
+    if not user:
+        user = User.objects.filter(is_active=True, email__iexact=email).first()
 
     if not user:
         return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
@@ -128,6 +126,7 @@ def forgot_password(request):
         logger.warning("password reset: user id=%s has no deliverable email", user.id)
         return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
 
+    token_row = None
     with transaction.atomic():
         PasswordResetToken.objects.filter(user=user, used_at__isnull=True).update(
             used_at=timezone.now()
@@ -136,11 +135,12 @@ def forgot_password(request):
         token_hash = _hash_token(raw_token)
         expires = timezone.now() + timedelta(hours=TOKEN_EXPIRY_HOURS)
         try:
-            PasswordResetToken.objects.create(
+            token_row = PasswordResetToken.objects.create(
                 user=user, token_hash=token_hash, expires_at=expires
             )
         except Exception:
             logger.exception("password reset: failed to store token for user id=%s", user.id)
+            cache.delete(throttle_key)
             return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
 
     frontend = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
@@ -154,6 +154,10 @@ def forgot_password(request):
         )
     except Exception:
         logger.exception("password reset: email send failed for user id=%s", user.id)
+        if token_row is not None:
+            PasswordResetToken.objects.filter(pk=token_row.pk).delete()
+        cache.delete(throttle_key)
+        return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
 
     return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
 

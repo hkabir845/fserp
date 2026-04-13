@@ -1,5 +1,7 @@
 """Admin API (Super Admin): stats, companies, users. Replaces FastAPI app.api.admin."""
 import json
+import logging
+
 from django.db.models import Case, IntegerField, Q, Sum, When
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
@@ -8,6 +10,9 @@ from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.models import User, Company, Customer, Vendor, Station, Invoice
+from api.services.tenant_release import apply_platform_release, get_target_release
+
+logger = logging.getLogger(__name__)
 
 
 def _super_admin_required(view_func):
@@ -74,9 +79,13 @@ def admin_companies(request):
         )
         .order_by("_master_first", "id")[skip : skip + limit]
     )
+    target_release = get_target_release()
     result = []
     for c in qs:
         user_count = User.objects.filter(company_id=c.id, is_active=True).count()
+        current_release = (getattr(c, "platform_release", None) or "").strip()
+        release_behind = current_release != target_release
+        applied = getattr(c, "platform_release_applied_at", None)
         result.append({
             "id": c.id,
             "name": c.name,
@@ -100,6 +109,10 @@ def admin_companies(request):
             "billing_plan_code": (getattr(c, "billing_plan_code", None) or "").strip().lower(),
             "date_format": getattr(c, "date_format", None) or "YYYY-MM-DD",
             "time_format": getattr(c, "time_format", None) or "HH:mm",
+            "platform_release": current_release,
+            "platform_target_release": target_release,
+            "platform_release_applied_at": applied.isoformat() if applied else None,
+            "release_behind": release_behind,
         })
     return JsonResponse(result, safe=False)
 
@@ -161,5 +174,60 @@ def admin_master_company_protection_status(request):
 @auth_required
 @_super_admin_required
 def admin_master_company_push_updates(request):
-    """POST /api/admin/master-company/push-updates - stub."""
-    return JsonResponse({"ok": True, "message": "Push updates completed"})
+    """POST /api/admin/master-company/push-updates — legacy stub; use per-tenant apply-release instead."""
+    return JsonResponse(
+        {
+            "ok": True,
+            "message": (
+                "Use POST /api/admin/companies/<id>/apply-release/ for manual per-tenant rollout. "
+                "Set FSERP_PLATFORM_RELEASE at deploy to define the target tag."
+            ),
+            "target_release": get_target_release(),
+        }
+    )
+
+
+@csrf_exempt
+@require_GET
+@auth_required
+@_super_admin_required
+def admin_platform_release(request):
+    """GET /api/admin/platform-release/ — current deploy target tag for manual tenant rollout."""
+    from fsms.release_info import APP_VERSION
+
+    return JsonResponse(
+        {
+            "target_release": get_target_release(),
+            "app_version": APP_VERSION,
+            "manual_rollout": True,
+            "hint": (
+                "Test on Master Filling Station, then apply the same release tag to each tenant "
+                "when ready — no automatic all-tenant upgrade."
+            ),
+        }
+    )
+
+
+@csrf_exempt
+@auth_required
+@_super_admin_required
+def admin_company_apply_release(request, company_id: int):
+    """POST /api/admin/companies/<id>/apply-release/ — promote one tenant to the platform target release."""
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"detail": "Invalid JSON"}, status=400)
+    override = (body.get("release") or body.get("platform_release") or "").strip()
+    company = Company.objects.filter(id=company_id, is_deleted=False).first()
+    if not company:
+        return JsonResponse({"detail": "Company not found"}, status=404)
+    try:
+        result = apply_platform_release(company, override if override else None)
+    except ValueError as e:
+        return JsonResponse({"detail": str(e)}, status=400)
+    except Exception as e:
+        logger.exception("apply_platform_release failed company_id=%s", company_id)
+        return JsonResponse({"detail": "Apply release failed", "error": str(e)}, status=500)
+    return JsonResponse(result)

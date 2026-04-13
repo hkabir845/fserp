@@ -16,6 +16,8 @@ from api.utils.auth import (
 )
 from api.models import Company, User
 from api.chart_templates.fuel_station import seed_fuel_station_if_empty
+from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_tenant_company_data
+from api.services.tenant_release import get_target_release
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,110 @@ def _coerce_date_format(value) -> str:
 def _coerce_time_format(value) -> str:
     s = str(value or "").strip()
     return s if s in ALLOWED_TIME_FORMATS else "HH:mm"
+
+
+def _is_master_company(c: Company) -> bool:
+    return str(getattr(c, "is_master", "") or "").strip().lower() in ("true", "1", "yes")
+
+
+def _role_normalized(user: User) -> str:
+    return (getattr(user, "role", None) or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _maybe_reclaim_admin_username(admin_email: str) -> tuple[JsonResponse | None, bool]:
+    """
+    If the admin login is taken only by leftover tenant users (soft-deleted company or missing
+    company row), purge that data so a new company can be created with the same email.
+
+    Returns (error JsonResponse or None, reclaimed_bool).
+    """
+    existing = User.objects.filter(username__iexact=admin_email).first()
+    if not existing:
+        return None, False
+
+    if _role_normalized(existing) in ("super_admin", "superadmin"):
+        return (
+            JsonResponse(
+                {
+                    "detail": (
+                        f"The login '{admin_email}' is already used by a platform super admin. "
+                        "Choose a different administrator email for the new company."
+                    ),
+                },
+                status=400,
+            ),
+            False,
+        )
+
+    cid = getattr(existing, "company_id", None)
+    if cid is None:
+        return (
+            JsonResponse(
+                {
+                    "detail": (
+                        f"A user with login '{admin_email}' already exists without a tenant. "
+                        "Use a different administrator email or remove that user first."
+                    ),
+                },
+                status=400,
+            ),
+            False,
+        )
+
+    co = Company.objects.filter(id=cid).first()
+    if co is None:
+        deleted_n, _ = User.objects.filter(company_id=cid).delete()
+        logger.info(
+            "reclaim admin username: removed %s orphan user row(s) for missing company_id=%s",
+            deleted_n,
+            cid,
+        )
+        return None, True
+
+    if getattr(co, "is_deleted", False):
+        if _is_master_company(co):
+            return (
+                JsonResponse(
+                    {
+                        "detail": "That login belongs to a soft-deleted master company record; it cannot be auto-removed.",
+                    },
+                    status=400,
+                ),
+                False,
+            )
+        try:
+            delete_tenant_company_data(cid)
+        except Exception as e:
+            logger.exception("reclaim admin username: delete_tenant_company_data failed for company_id=%s", cid)
+            return (
+                JsonResponse(
+                    {
+                        "detail": "Could not clear leftover data from a previously deleted company. Try again or contact support.",
+                        "error": str(e),
+                    },
+                    status=500,
+                ),
+                False,
+            )
+        logger.info(
+            "reclaim admin username: purged soft-deleted tenant company_id=%s for reuse of %s",
+            cid,
+            admin_email,
+        )
+        return None, True
+
+    return (
+        JsonResponse(
+            {
+                "detail": (
+                    f"A user with login '{admin_email}' already exists for an active company "
+                    "(ID {cid}). Use another administrator email, remove that user, or permanently delete the tenant first."
+                ),
+            },
+            status=400,
+        ),
+        False,
+    )
 
 
 def _super_admin_required(view_func):
@@ -163,11 +269,6 @@ def companies_list_or_create(request):
             {"detail": "Company administrator password is required (minimum 6 characters)."},
             status=400,
         )
-    if User.objects.filter(username__iexact=admin_email).exists():
-        return JsonResponse(
-            {"detail": f"A user with email '{admin_email}' already exists. Use a different administrator email."},
-            status=400,
-        )
 
     display_name = admin_full_name or (body.get("contact_person") or "").strip() or name
 
@@ -191,6 +292,10 @@ def companies_list_or_create(request):
             {"detail": f"Custom domain '{dom_norm}' is already used by another company."},
             status=409,
         )
+
+    reclaim_err, reclaimed_stale = _maybe_reclaim_admin_username(admin_email)
+    if reclaim_err:
+        return reclaim_err
 
     try:
         with transaction.atomic():
@@ -223,6 +328,7 @@ def companies_list_or_create(request):
                     pass
             if "billing_plan_code" in body:
                 c.billing_plan_code = (str(body.get("billing_plan_code") or "").strip().lower())[:32]
+            c.platform_release = get_target_release()[:64]
             c.save()
 
             chart_of_accounts_result = None
@@ -247,6 +353,8 @@ def companies_list_or_create(request):
             "role": "admin",
             "message": "Company owner can log in with this email, then add Cashiers, Accountants, and change passwords.",
         }
+        if reclaimed_stale:
+            payload["reclaimed_stale_tenant"] = True
         if chart_of_accounts_result is not None:
             payload["chart_of_accounts"] = chart_of_accounts_result
         return JsonResponse(payload, status=201)
@@ -261,7 +369,7 @@ def companies_list_or_create(request):
 @csrf_exempt
 @auth_required
 def company_detail(request, company_id: int):
-    """GET /api/companies/<id>/ - get one. PUT - update. DELETE - soft delete. Super admin for create/delete; super admin or own company for update."""
+    """GET /api/companies/<id>/ - get one. PUT - update. DELETE - permanent removal (requires confirm_phrase). Super admin for create/delete; super admin or own company for update."""
     company = Company.objects.filter(id=company_id).first()
     if not company:
         return JsonResponse({"detail": "Company not found"}, status=404)
@@ -380,9 +488,85 @@ def company_detail(request, company_id: int):
             return JsonResponse({"detail": "Authentication required"}, status=401)
         if not user_is_super_admin(user):
             return JsonResponse({"detail": "Super Admin access required"}, status=403)
-        company.is_deleted = True
-        company.save()
-        return JsonResponse({"detail": "Company deleted"}, status=200)
+        if _is_master_company(company):
+            return JsonResponse(
+                {"detail": "The master company cannot be permanently deleted."},
+                status=403,
+            )
+        try:
+            body = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            return JsonResponse({"detail": "Invalid JSON"}, status=400)
+        if not isinstance(body, dict):
+            body = {}
+        phrase = (body.get("confirm_phrase") or body.get("confirm") or "").strip()
+        if phrase != RESTORE_CONFIRM_PHRASE:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Permanent removal requires confirm_phrase in the JSON body matching "
+                        f"{RESTORE_CONFIRM_PHRASE!r}. Prefer deactivating the company (POST .../deactivate/) "
+                        "to suspend access without deleting data."
+                    ),
+                    "expected_confirm_phrase": RESTORE_CONFIRM_PHRASE,
+                },
+                status=400,
+            )
+        try:
+            with transaction.atomic():
+                delete_tenant_company_data(company_id)
+        except Exception as e:
+            logger.exception("permanent company delete failed")
+            return JsonResponse(
+                {"detail": "Failed to remove company data", "error": str(e)},
+                status=500,
+            )
+        return JsonResponse(
+            {
+                "detail": "Company and all related data were permanently removed.",
+                "removed_company_id": company_id,
+            },
+            status=200,
+        )
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@auth_required
+def company_deactivate(request, company_id: int):
+    """POST — set company inactive (suspend tenant); does not delete data. Super admin only."""
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    user = getattr(request, "api_user", None) or get_user_from_request(request)
+    if not user or not user_is_super_admin(user):
+        return JsonResponse({"detail": "Super Admin access required"}, status=403)
+    company = Company.objects.filter(id=company_id, is_deleted=False).first()
+    if not company:
+        return JsonResponse({"detail": "Company not found"}, status=404)
+    if _is_master_company(company):
+        return JsonResponse(
+            {"detail": "The master company cannot be deactivated."},
+            status=403,
+        )
+    company.is_active = False
+    company.save(update_fields=["is_active", "updated_at"])
+    return JsonResponse({**_company_to_json(company), "detail": "Company deactivated."})
+
+
+@csrf_exempt
+@auth_required
+def company_activate(request, company_id: int):
+    """POST — re-enable a deactivated company. Super admin only."""
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    user = getattr(request, "api_user", None) or get_user_from_request(request)
+    if not user or not user_is_super_admin(user):
+        return JsonResponse({"detail": "Super Admin access required"}, status=403)
+    company = Company.objects.filter(id=company_id, is_deleted=False).first()
+    if not company:
+        return JsonResponse({"detail": "Company not found"}, status=404)
+    company.is_active = True
+    company.save(update_fields=["is_active", "updated_at"])
+    return JsonResponse({**_company_to_json(company), "detail": "Company activated."})
 

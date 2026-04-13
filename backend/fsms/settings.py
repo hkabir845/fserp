@@ -10,6 +10,15 @@ from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+try:
+    from fsms.release_info import APP_VERSION as _FSERP_APP_VERSION
+except ImportError:
+    _FSERP_APP_VERSION = "0.0.0-dev"
+
+# Manual tenant rollout target (super admin applies per company). Override at deploy.
+PLATFORM_TARGET_RELEASE = (
+    (os.environ.get("FSERP_PLATFORM_RELEASE") or _FSERP_APP_VERSION or "0.0.0-dev").strip()[:64]
+)
 
 SECRET_KEY = 'ahdjkahduihduiwye786284yu289u89&*sfhewuifhweihfke'
 DEBUG = True
@@ -82,6 +91,13 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Tenant JSON backup/restore: raise limits for production (nginx must allow body size too).
+_file_mb = int(os.environ.get("FSERP_MAX_UPLOAD_MB", "256") or "256")
+_file_bytes = max(_file_mb, 1) * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("DATA_UPLOAD_MAX_MEMORY_SIZE", str(_file_bytes)))
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("FILE_UPLOAD_MAX_MEMORY_SIZE", str(_file_bytes)))
+DATA_UPLOAD_MAX_NUMBER_FIELDS = int(os.environ.get("DATA_UPLOAD_MAX_NUMBER_FIELDS", "10240"))
 
 CORS_ALLOW_ALL_ORIGINS = True
 

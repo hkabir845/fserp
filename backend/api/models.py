@@ -41,6 +41,9 @@ class Company(models.Model):
     payment_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     billing_plan_code = models.CharField(max_length=32, blank=True)  # starter, growth, enterprise, platform, custom
     subscription_cancel_at_period_end = models.BooleanField(default=False)
+    # Manual SaaS rollout: super admin promotes each tenant to PLATFORM_TARGET_RELEASE when ready.
+    platform_release = models.CharField(max_length=64, blank=True, default="")
+    platform_release_applied_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "company"

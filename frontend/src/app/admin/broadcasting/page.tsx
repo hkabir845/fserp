@@ -278,7 +278,7 @@ function BroadcastingPageContent() {
 
   if (loading) {
     return (
-      <div className="flex h-screen">
+      <div className="page-with-sidebar flex h-screen">
         <Sidebar />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
@@ -308,7 +308,7 @@ function BroadcastingPageContent() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="page-with-sidebar flex h-screen bg-gray-50">
       <Sidebar />
       <div className="flex-1 overflow-y-auto">
         <div className="p-8">

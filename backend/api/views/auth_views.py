@@ -4,7 +4,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from api.models import User
-from api.utils.auth import create_tokens, get_user_from_request
+from api.utils.auth import create_tokens, get_user_from_request, tenant_company_allows_access
 
 
 def _parse_login_body(request):
@@ -54,6 +54,11 @@ def login(request):
     user = User.objects.filter(username__iexact=username, is_active=True).first()
     if not user or not user.check_password(password):
         return JsonResponse({"detail": "Invalid credentials"}, status=401)
+    if not tenant_company_allows_access(user):
+        return JsonResponse(
+            {"detail": "This company account is inactive. Contact your administrator."},
+            status=403,
+        )
     access_token, refresh_token = create_tokens(user)
     return JsonResponse({
         "access_token": access_token,
@@ -117,6 +122,11 @@ def refresh(request):
         return JsonResponse({"detail": "Server error"}, status=500)
     if not user:
         return JsonResponse({"detail": "User not found"}, status=401)
+    if not tenant_company_allows_access(user):
+        return JsonResponse(
+            {"detail": "This company account is inactive. Contact your administrator."},
+            status=403,
+        )
     try:
         access_token, _ = create_tokens(user)
         if isinstance(access_token, bytes):

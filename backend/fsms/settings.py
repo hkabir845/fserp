@@ -107,6 +107,9 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 # Preflight must allow every header the Next.js client sends (see src/lib/api.ts).
+# If production still fails with "x-selected-company-id is not allowed", either deploy this file
+# or fix nginx/cPanel: do not answer OPTIONS with a short Allow-Headers list — proxy OPTIONS to Django
+# or add x-selected-company-id (and other custom headers) to the proxy's Access-Control-Allow-Headers.
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-selected-company-id",
     "x-tenant-subdomain",

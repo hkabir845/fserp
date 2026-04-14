@@ -258,6 +258,60 @@ def test_items_list_quantity_is_sum_of_active_tanks_for_fuel_products(
     assert Decimal(str(row["quantity_on_hand"])) == Decimal("13500")
 
 
+def test_items_for_tanks_query_includes_fuel_category_and_legacy_fuel_names(
+    api_client: Client, auth_super_headers, company_master
+):
+    """Tank/nozzle UIs use ?for_tanks=1: fuel POS category, names, or category-field hints."""
+    from api.models import Item
+
+    Item.objects.create(
+        company=company_master,
+        name="Octane 95",
+        item_type="inventory",
+        pos_category="general",
+        is_active=True,
+    )
+    Item.objects.create(
+        company=company_master,
+        name="Snacks Bar",
+        item_type="inventory",
+        pos_category="general",
+        is_active=True,
+    )
+    Item.objects.create(
+        company=company_master,
+        name="Marked Fuel Row",
+        item_type="inventory",
+        pos_category="fuel",
+        is_active=True,
+    )
+    Item.objects.create(
+        company=company_master,
+        name="SKU-Plain",
+        item_type="inventory",
+        pos_category="general",
+        category="Petroleum gas retail",
+        is_active=True,
+    )
+    Item.objects.create(
+        company=company_master,
+        name="LPG-Auto",
+        item_type="inventory",
+        pos_category="fuel_lpg",
+        is_active=True,
+    )
+    h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
+    r = api_client.get("/api/items/?for_tanks=1", **h)
+    assert r.status_code == 200
+    rows = json.loads(r.content)
+    names = {x["name"] for x in rows}
+    assert "Octane 95" in names
+    assert "Marked Fuel Row" in names
+    assert "SKU-Plain" in names
+    assert "LPG-Auto" in names
+    assert "Snacks Bar" not in names
+
+
 # --- Chart of accounts, invoices, payments, cashier ---
 
 

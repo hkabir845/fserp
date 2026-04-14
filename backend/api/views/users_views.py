@@ -73,7 +73,8 @@ def users_list_or_create(request):
         if _is_super_admin(api_user):
             qs = User.objects.order_by("id")[skip : skip + limit]
         else:
-            qs = User.objects.filter(company_id=api_user.company_id, is_active=True).order_by("id")[
+            # Company admins see active and inactive so they can reactivate without extra flags.
+            qs = User.objects.filter(company_id=api_user.company_id).order_by("-is_active", "id")[
                 skip : skip + limit
             ]
         result = [_user_to_json(u) for u in qs]
@@ -164,46 +165,28 @@ def user_detail(request, user_id):
             return JsonResponse(_user_to_json(user))
 
         if request.method == "DELETE":
+            # DELETE always removes the row from the database. Use PUT { "is_active": false } to disable login only.
             if user.id == api_user.id:
-                return JsonResponse({"detail": "You cannot deactivate your own account."}, status=400)
-            permanent = (request.GET.get("permanent") or "").strip().lower() in ("1", "true", "yes")
-            if permanent:
-                if not _is_super_admin(api_user):
+                return JsonResponse({"detail": "You cannot delete your own account."}, status=400)
+            if user_is_super_admin(user):
+                others = User.objects.filter(is_active=True).exclude(pk=user.pk)
+                if not any(user_is_super_admin(u) for u in others):
                     return JsonResponse(
-                        {"detail": "Only a Super Admin can permanently delete users."},
-                        status=403,
+                        {
+                            "detail": "Cannot delete: at least one other active Super Admin must remain."
+                        },
+                        status=400,
                     )
-                if user_is_super_admin(user):
-                    others = User.objects.filter(is_active=True).exclude(pk=user.pk)
-                    if not any(user_is_super_admin(u) for u in others):
-                        return JsonResponse(
-                            {
-                                "detail": "Cannot permanently delete: at least one other active Super Admin must remain."
-                            },
-                            status=400,
-                        )
-                try:
-                    BroadcastRead.objects.filter(user_id=user.id).delete()
-                    user.delete()
-                except Exception as e_orm:
-                    logger.exception("permanent delete user failed: %s", e_orm)
-                    return JsonResponse(
-                        {"detail": "Failed to permanently delete user", "error": str(e_orm)},
-                        status=500,
-                    )
-                return JsonResponse({"detail": "User permanently deleted"}, status=200)
-
             try:
-                updated = User.objects.filter(id=user_id).update(is_active=False)
+                BroadcastRead.objects.filter(user_id=user.id).delete()
+                user.delete()
             except Exception as e_orm:
                 logger.exception("delete user failed: %s", e_orm)
                 return JsonResponse(
                     {"detail": "Failed to delete user", "error": str(e_orm)},
                     status=500,
                 )
-            if updated:
-                return JsonResponse({"detail": "User deactivated (login disabled)"}, status=200)
-            return JsonResponse({"detail": "User not found"}, status=404)
+            return JsonResponse({"detail": "User deleted permanently"}, status=200)
 
         # PUT
         body = request.body

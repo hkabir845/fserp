@@ -34,6 +34,8 @@ interface Product {
   id: number
   item_number: string
   name: string
+  pos_category?: string
+  is_active?: boolean
 }
 
 export default function TanksPage() {
@@ -189,7 +191,7 @@ export default function TanksPage() {
       const [tanksRes, stationsRes, productsRes] = await Promise.allSettled([
         api.get('/tanks/'),
         api.get('/stations/'),
-        api.get('/items/')
+        api.get('/items/?for_tanks=1'),
       ])
 
       if (tanksRes.status === 'fulfilled') {
@@ -233,13 +235,7 @@ export default function TanksPage() {
       }
       
       if (productsRes.status === 'fulfilled') {
-        const allProducts = productsRes.value.data
-        // Filter only inventory items (fuel)
-        setProducts(allProducts.filter((p: Product) => 
-          p.name.toLowerCase().includes('diesel') || 
-          p.name.toLowerCase().includes('petrol') || 
-          p.name.toLowerCase().includes('fuel')
-        ))
+        setProducts(productsRes.value.data as Product[])
       } else {
         console.error('❌ Products API error:', productsRes.reason)
         // Don't show error for products - it's not critical
@@ -648,6 +644,12 @@ export default function TanksPage() {
                         </option>
                       ))}
                     </select>
+                    {!loading && products.length === 0 ? (
+                      <p className="mt-2 text-xs text-amber-700">
+                        No tank-eligible fuels yet. Add an inventory product with POS category Fuel (covers liquid and
+                        gas fuels).
+                      </p>
+                    ) : null}
                   </div>
                   
                   <div>
@@ -705,9 +707,15 @@ export default function TanksPage() {
                   </div>
                 </div>
                 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 space-y-2">
                   <p className="text-sm text-blue-800">
-                    <strong>Note:</strong> Each tank is dedicated to a single product. Select the fuel type this tank will store.
+                    <strong>Note:</strong> Each tank holds one product. The list includes inventory fuels:
+                    liquid grades (diesel, petrol, etc.), petroleum gas (LPG/CNG/LNG), and similar—prefer POS
+                    category <strong>Fuel</strong> so naming does not matter.
+                  </p>
+                  <p className="text-sm text-blue-800">
+                    Missing a product? In <strong>Products</strong>, use Inventory, set POS category to{' '}
+                    <strong>Fuel</strong> (or a category like <em>Petroleum gas</em>), and keep it active.
                   </p>
                 </div>
                 

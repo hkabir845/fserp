@@ -241,7 +241,7 @@ function UsersPageContent() {
     }
 
     try {
-      await api.delete(`/users/${user.id}/`)
+      await api.put(`/users/${user.id}/`, { is_active: false })
       toast.success('User deactivated — login disabled. Status column shows Inactive.')
       await fetchUsers()
     } catch (error: any) {
@@ -286,7 +286,7 @@ function UsersPageContent() {
       return
     }
     try {
-      await api.delete(`/users/${user.id}/`, { params: { permanent: true } })
+      await api.delete(`/users/${user.id}/`)
       toast.success('User permanently removed from the database.')
       await fetchUsers()
     } catch (error: any) {
@@ -331,9 +331,9 @@ function UsersPageContent() {
                 allow sign-in again. The <span className="inline-flex items-center gap-0.5 align-middle">
                   <OctagonAlert className="inline h-3.5 w-3.5 text-rose-700" aria-hidden />
                 </span>{' '}
-                <strong className="text-rose-800">permanently deletes</strong> the user (Super Admin
-                only; you must type DELETE to confirm). You cannot remove or deactivate your own
-                account here. You cannot delete the last active Super Admin.
+                <strong className="text-rose-800">permanently deletes</strong> the user from the database
+                (you must type DELETE to confirm). You cannot remove or deactivate your own account
+                here. You cannot delete the last active Super Admin.
               </p>
               <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-gray-700">
                 <input
@@ -466,7 +466,7 @@ function UsersPageContent() {
                                     type="button"
                                     onClick={() => handleDeactivateUser(user)}
                                     className="rounded p-1.5 text-red-600 transition-colors hover:bg-red-50 hover:text-red-900"
-                                    title="Deactivate login (soft delete)"
+                                    title="Deactivate login (keeps the user record)"
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </button>

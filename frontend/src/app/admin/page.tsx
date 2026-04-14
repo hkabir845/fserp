@@ -741,13 +741,17 @@ function SuperAdminPageContent() {
   }
 
   const handleDeleteUser = async (user: AdminUser) => {
-    if (!confirm(`Are you sure you want to delete user "${user.username}"?`)) {
+    if (
+      !confirm(
+        `Permanently delete user "${user.username}" from the database?\n\nThis cannot be undone. To only block sign-in, use SaaS Dashboard → Users → deactivate (trash icon) instead.`
+      )
+    ) {
       return
     }
 
     try {
       await api.delete(`/users/${user.id}`)
-      toast.success('User deleted successfully!')
+      toast.success('User deleted permanently.')
       await fetchUsers()
       await fetchPlatformStats()
     } catch (error: any) {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { Plus, Edit2, Trash2, Shield, User, X, Eye, EyeOff, Grid3x3, List } from 'lucide-react'
+import { Plus, Edit2, Trash2, Shield, User, X, Eye, EyeOff, Grid3x3, List, Ban, UserCheck } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { getApiBaseUrl } from '@/lib/api'
 import { formatDate } from '@/utils/date'
@@ -37,6 +37,7 @@ export default function UsersPage() {
   const [companies, setCompanies] = useState<CompanyOption[]>([])
   const [isCompanyOwner, setIsCompanyOwner] = useState(false)
   const [isSuperAdminSession, setIsSuperAdminSession] = useState(false)
+  const [currentSessionUserId, setCurrentSessionUserId] = useState<number | null>(null)
   const [viewMode, setViewMode] = useState<'card' | 'list'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('users_view_mode')
@@ -69,6 +70,12 @@ export default function UsersPage() {
         const role = (u.role || '').toLowerCase()
         superA = role === 'super_admin'
         owner = role === 'admin' && u.company_id != null
+        if (typeof u.id === 'number') {
+          setCurrentSessionUserId(u.id)
+        } else if (u.id != null) {
+          const parsed = parseInt(String(u.id), 10)
+          if (!Number.isNaN(parsed)) setCurrentSessionUserId(parsed)
+        }
       }
     } catch {
       /* ignore */
@@ -273,17 +280,66 @@ export default function UsersPage() {
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this user?')) return
+  const handleSetUserActive = async (user: SystemUser, active: boolean) => {
+    const action = active ? 'activate' : 'deactivate'
+    if (
+      !confirm(
+        active
+          ? `Allow "${user.full_name}" to sign in again?`
+          : `Deactivate "${user.full_name}"?\n\nThey will not be able to sign in. The account stays in the database until you delete it.`
+      )
+    ) {
+      return
+    }
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${getApiBaseUrl()}/users/${user.id}/`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        mode: 'cors',
+        credentials: 'omit',
+        body: JSON.stringify({ is_active: active })
+      })
+      if (response.ok) {
+        toast.success(active ? 'User activated — they can sign in again.' : 'User deactivated — login disabled.')
+        fetchUsers()
+      } else {
+        let msg = `Failed to ${action} user`
+        try {
+          const error = await response.json()
+          msg = typeof error?.detail === 'string' ? error.detail : msg
+        } catch {
+          if (response.status === 401) msg = 'Session expired or not authorized — try again after login.'
+        }
+        toast.error(msg)
+      }
+    } catch (error) {
+      console.error(`Error ${action} user:`, error)
+      toast.error('Error connecting to server')
+    }
+  }
+
+  const handleDelete = async (user: SystemUser) => {
+    if (
+      !confirm(
+        `Permanently remove "${user.full_name}" from the database?\n\nThis cannot be undone. Use Deactivate if you only want to block sign-in.`
+      )
+    ) {
+      return
+    }
 
     try {
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${getApiBaseUrl()}/users/${id}/`, {
+      const response = await fetch(`${getApiBaseUrl()}/users/${user.id}/`, {
         method: 'DELETE',
-        headers: { 
+        headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          Accept: 'application/json'
         },
         mode: 'cors',
         credentials: 'omit'
@@ -291,9 +347,9 @@ export default function UsersPage() {
       if (response.ok) {
         try {
           const data = await response.json()
-          toast.success(typeof data?.detail === 'string' ? data.detail : 'User deactivated (login disabled)')
+          toast.success(typeof data?.detail === 'string' ? data.detail : 'User deleted permanently')
         } catch {
-          toast.success('User deactivated (login disabled)')
+          toast.success('User deleted permanently')
         }
         fetchUsers()
       } else {
@@ -343,8 +399,8 @@ export default function UsersPage() {
               <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
               <p className="text-gray-600 mt-1">
                 {isCompanyOwner
-                  ? 'Add Cashiers and Accountants for your company. Staff log in with their email.'
-                  : 'Manage system users and permissions'}
+                  ? 'Add Cashiers and Accountants for your company. Staff log in with their email. Deactivate blocks sign-in but keeps the record; trash permanently deletes the user.'
+                  : 'Manage system users and permissions. Deactivate blocks sign-in; delete removes the row from the database.'}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -443,7 +499,7 @@ export default function UsersPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-end space-x-2 pt-4 border-t">
+                  <div className="flex items-center justify-end gap-1 pt-4 border-t">
                     <button
                       type="button"
                       onClick={() => handleEdit(user)}
@@ -452,14 +508,41 @@ export default function UsersPage() {
                     >
                       <Edit2 className="h-4 w-4" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(user.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded"
-                      title="Delete User"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {currentSessionUserId !== null && user.id === currentSessionUserId ? (
+                      <span className="px-2 text-xs text-gray-400" title="You cannot change your own account here">
+                        —
+                      </span>
+                    ) : (
+                      <>
+                        {user.is_active ? (
+                          <button
+                            type="button"
+                            onClick={() => handleSetUserActive(user, false)}
+                            className="p-2 text-amber-600 hover:bg-amber-50 rounded"
+                            title="Deactivate login (keeps the user record)"
+                          >
+                            <Ban className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleSetUserActive(user, true)}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded"
+                            title="Activate login"
+                          >
+                            <UserCheck className="h-4 w-4" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(user)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded"
+                          title="Permanently delete user from database"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -560,22 +643,49 @@ export default function UsersPage() {
                           {user.created_at ? formatDate(user.created_at, true) : '—'}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleEdit(user)}
-                            className="mr-1 inline-flex rounded p-1.5 text-blue-600 hover:bg-blue-50"
-                            title="Edit"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(user.id)}
-                            className="inline-flex rounded p-1.5 text-red-600 hover:bg-red-50"
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <div className="flex flex-wrap items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleEdit(user)}
+                              className="inline-flex rounded p-1.5 text-blue-600 hover:bg-blue-50"
+                              title="Edit"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            {currentSessionUserId !== null && user.id === currentSessionUserId ? (
+                              <span className="px-2 text-xs text-gray-400">—</span>
+                            ) : (
+                              <>
+                                {user.is_active ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetUserActive(user, false)}
+                                    className="inline-flex rounded p-1.5 text-amber-600 hover:bg-amber-50"
+                                    title="Deactivate login"
+                                  >
+                                    <Ban className="h-4 w-4" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetUserActive(user, true)}
+                                    className="inline-flex rounded p-1.5 text-green-600 hover:bg-green-50"
+                                    title="Activate login"
+                                  >
+                                    <UserCheck className="h-4 w-4" />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(user)}
+                                  className="inline-flex rounded p-1.5 text-red-600 hover:bg-red-50"
+                                  title="Permanently delete"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

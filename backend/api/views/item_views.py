@@ -36,6 +36,86 @@ def _truncate(val, max_len):
     return (str(val) or "")[:max_len]
 
 
+# Liquid / gaseous / petroleum fuels: used to match legacy rows when name or category
+# was not tagged with POS category "fuel". Multi-word phrases first (longer matches).
+_FUEL_ASSIGNMENT_HINT_TERMS = (
+    "natural gas",
+    "petroleum gas",
+    "liquefied petroleum",
+    "marine gas",
+    "heating oil",
+    "furnace oil",
+    "diesel",
+    "petrol",
+    "gasoline",
+    "fuel",
+    "octane",
+    "kerosene",
+    "premium",
+    "super",
+    "unleaded",
+    "mogas",
+    "avgas",
+    "lpg",
+    "cng",
+    "lng",
+    "biodiesel",
+    "adblue",
+    "e10",
+    "e85",
+    "gasoil",
+    "hsd",
+    "petroleum",
+    "propane",
+    "butane",
+    "liquefied",
+    "ngv",
+    "autogas",
+    "biogas",
+    "methanol",
+    "ethanol",
+    "hydrogen",
+    "distillate",
+    "naphtha",
+    "bunker",
+    "bitumen",
+)
+
+
+def _icontains_any_field(field: str, terms: tuple) -> Q:
+    q = Q()
+    for t in terms:
+        q |= Q(**{f"{field}__icontains": t})
+    return q
+
+
+def _fuel_pos_category_q():
+    """POS category explicitly marked as fuel (or namespaced e.g. fuel_lpg)."""
+    return (
+        Q(pos_category__iexact="fuel")
+        | Q(pos_category__istartswith="fuel_")
+        | Q(pos_category__istartswith="fuel-")
+    )
+
+
+def _legacy_fuel_name_or_category_q():
+    """Legacy: product name or category text suggests a tank-stored fuel."""
+    return _icontains_any_field("name", _FUEL_ASSIGNMENT_HINT_TERMS) | _icontains_any_field(
+        "category", _FUEL_ASSIGNMENT_HINT_TERMS
+    )
+
+
+def _items_queryset_for_tank_assignment(base_qs):
+    """
+    Products that may be assigned to a fuel tank: active inventory items with fuel POS
+    category, or name/category hints (liquid fuels, petroleum gas, LPG/CNG/LNG, etc.).
+    """
+    return base_qs.filter(
+        is_active=True,
+        item_type__iexact="inventory",
+    ).filter(_fuel_pos_category_q() | _legacy_fuel_name_or_category_q())
+
+
 def _items_queryset_with_tank_annotations(base_qs):
     """Fuel products use Tank.current_stock; sum active tanks for display quantity."""
     return base_qs.annotate(
@@ -91,7 +171,9 @@ def _item_to_json(i):
 def items_list_or_create(request):
     if request.method == "GET":
         qs = Item.objects.filter(company_id=request.company_id).order_by("id")
-        if request.GET.get("pos_only") in ("true", "1", "yes"):
+        if request.GET.get("for_tanks") in ("true", "1", "yes"):
+            qs = _items_queryset_for_tank_assignment(qs)
+        elif request.GET.get("pos_only") in ("true", "1", "yes"):
             qs = qs.filter(is_pos_available=True, is_active=True)
         qs = _items_queryset_with_tank_annotations(qs)
         return JsonResponse([_item_to_json(i) for i in qs], safe=False)

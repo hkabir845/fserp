@@ -179,7 +179,7 @@ export default function NozzlesPage() {
         api.get('/dispensers/'),
         api.get('/meters/'),
         api.get('/tanks/'),
-        api.get('/items/')
+        api.get('/items/?for_tanks=1'),
       ])
 
       if (nozzlesRes.status === 'fulfilled') {
@@ -211,12 +211,7 @@ export default function NozzlesPage() {
       }
       
       if (productsRes.status === 'fulfilled') {
-        const allProducts = productsRes.value.data
-        setProducts(allProducts.filter((p: Product) => 
-          p.name.toLowerCase().includes('diesel') || 
-          p.name.toLowerCase().includes('petrol') || 
-          p.name.toLowerCase().includes('fuel')
-        ))
+        setProducts(productsRes.value.data)
       }
       
     } catch (error) {

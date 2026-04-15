@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import Sidebar from "@/components/Sidebar"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/components/Toast"
@@ -1015,22 +1015,24 @@ export default function CashierPOSPage() {
           id="pos-workspace"
           aria-label="Point of sale workspace"
         >
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
-            <div className="space-y-6">
-              <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
-                <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)] lg:items-start">
+            <div className="min-w-0 space-y-6">
+              <section className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-card via-card to-muted/25 p-5 text-card-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset,0_12px_40px_-12px_rgba(15,23,42,0.15)] dark:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)] sm:p-6">
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
+                <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                       Pumps
                     </p>
-                    <h2 className="text-lg font-semibold tracking-tight text-foreground">Nozzles</h2>
+                    <h2 className="mt-1 text-xl font-semibold tracking-tight text-foreground">Nozzles</h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Select a lane to load pricing and meter context</p>
                   </div>
-                  <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                    {nozzles.length} nozzle{nozzles.length === 1 ? "" : "s"}
+                  <span className="rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-xs font-medium tabular-nums text-muted-foreground">
+                    {nozzles.length} active
                   </span>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
                   {nozzles.map(nozzle => {
                     const isSelected = selectedNozzle?.id === nozzle.id
                     const capacity = nozzle.tank_capacity || 0
@@ -1042,73 +1044,78 @@ export default function CashierPOSPage() {
                       capacity > 0
                         ? Math.max(0, Math.min(100, (liveStock / capacity) * 100))
                         : 0
+                    const accent = (nozzle.color_code || "#3b82f6").trim()
 
                     return (
                       <button
                         key={nozzle.id}
                         type="button"
                         onClick={() => handleNozzleSelect(nozzle)}
-                        className={`relative rounded-xl border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                        style={{ borderLeftColor: isSelected ? accent : undefined } as CSSProperties}
+                        className={`relative rounded-xl border border-border/90 bg-card/90 p-4 text-left shadow-sm backdrop-blur-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                           isSelected
-                            ? "border-primary bg-primary/5 shadow-md ring-2 ring-primary ring-offset-2 ring-offset-background"
-                            : "border-border bg-card hover:border-primary/30 hover:shadow-md"
-                        }`}
+                            ? "border-l-[3px] shadow-md ring-1 ring-primary/20"
+                            : "border-l-[3px] border-l-transparent hover:border-border hover:shadow-md"
+                        } `}
                       >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-semibold text-foreground">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-semibold tabular-nums text-foreground">
                               {nozzle.nozzle_number}
                             </p>
                             {nozzle.nozzle_name && (
-                              <p className="text-xs text-muted-foreground">{nozzle.nozzle_name}</p>
+                              <p className="truncate text-xs text-muted-foreground">{nozzle.nozzle_name}</p>
                             )}
-                            <p className="text-xs text-muted-foreground">
+                            <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
                               {[nozzle.station_name, nozzle.island_name, nozzle.dispenser_name]
                                 .filter(Boolean)
-                                .join(" • ")}
+                                .join(" · ")}
                             </p>
                           </div>
-                          <Fuel className="h-5 w-5 shrink-0 text-primary" />
+                          <div
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/30"
+                            style={{ color: accent }}
+                          >
+                            <Fuel className="h-4 w-4" />
+                          </div>
                         </div>
 
                         <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                          <div className="flex items-start justify-between gap-3">
-                            <p className="font-medium text-foreground">{nozzle.product_name}</p>
-                            <p className="shrink-0 text-sm font-medium tabular-nums text-foreground">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="min-w-0 font-medium leading-snug text-foreground">{nozzle.product_name}</p>
+                            <p className="shrink-0 text-xs font-semibold tabular-nums text-foreground sm:text-sm">
                               {currencySymbol}
-                              {formatNumber(Number(nozzle.product_price || 0))} /{" "}
-                              {nozzle.product_unit || "L"}
+                              {formatNumber(Number(nozzle.product_price || 0))}
+                              <span className="block text-right text-[10px] font-normal text-muted-foreground">
+                                / {nozzle.product_unit || "L"}
+                              </span>
                             </p>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
+                          <div className="grid grid-cols-2 gap-2 border-t border-border/50 pt-2 text-xs">
                             <div>
-                              <p className="text-muted-foreground">Meter</p>
-                              <p className="font-medium text-foreground">
-                                {nozzle.meter_number || "-"}
-                              </p>
-                              <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-                                <span className="inline-flex items-center gap-1 tabular-nums">
-                                  <XCircle className="h-3 w-3 text-destructive" />
+                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Meter</p>
+                              <p className="font-medium text-foreground">{nozzle.meter_number || "—"}</p>
+                              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                                <span className="inline-flex items-center gap-0.5 tabular-nums">
+                                  <XCircle className="h-3 w-3 shrink-0 text-destructive" />
                                   {formatNumber(baseReading)}
                                 </span>
-                                <span className="inline-flex items-center gap-1 tabular-nums">
-                                  <CheckCircle className="h-3 w-3 text-emerald-600" />
+                                <span className="inline-flex items-center gap-0.5 tabular-nums">
+                                  <CheckCircle className="h-3 w-3 shrink-0 text-emerald-600" />
                                   {formatNumber(liveReading)}
                                 </span>
                               </div>
                             </div>
                             <div>
-                              <p className="text-muted-foreground">Tank</p>
-                              <p className="font-medium text-foreground">
-                                {nozzle.tank_number || "-"}
-                              </p>
-                              <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-                                <span className="inline-flex items-center gap-1 tabular-nums">
-                                  <XCircle className="h-3 w-3 text-destructive" />
+                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Tank</p>
+                              <p className="font-medium text-foreground">{nozzle.tank_number || "—"}</p>
+                              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                                <span className="inline-flex items-center gap-0.5 tabular-nums">
+                                  <XCircle className="h-3 w-3 shrink-0 text-destructive" />
                                   {formatNumber(baseStock)}
                                 </span>
-                                <span className="inline-flex items-center gap-1 tabular-nums">
-                                  <CheckCircle className="h-3 w-3 text-emerald-600" />
+                                <span className="inline-flex items-center gap-0.5 tabular-nums">
+                                  <CheckCircle className="h-3 w-3 shrink-0 text-emerald-600" />
                                   {formatNumber(liveStock)}
                                 </span>
                               </div>
@@ -1116,10 +1123,13 @@ export default function CashierPOSPage() {
                           </div>
                         </div>
 
-                        <div className="mt-3 h-1.5 rounded-full bg-muted">
+                        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
                           <div
-                            className="h-1.5 rounded-full bg-primary transition-all duration-300"
-                            style={{ width: `${fillPercent}%` }}
+                            className="h-full rounded-full transition-all duration-300"
+                            style={{
+                              width: `${fillPercent}%`,
+                              backgroundColor: accent,
+                            }}
                           />
                         </div>
                       </button>
@@ -1127,158 +1137,11 @@ export default function CashierPOSPage() {
                   })}
 
                   {!nozzles.length && (
-                    <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                    <div className="col-span-full rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center text-sm text-muted-foreground">
                       No nozzles configured yet.
                     </div>
                   )}
                 </div>
-              </section>
-
-              <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
-                <div className="mb-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Dispensed fuel
-                  </p>
-                  <h2 className="text-lg font-semibold tracking-tight text-foreground">Fuel sale</h2>
-                </div>
-                {selectedNozzle ? (
-                  <div className="space-y-4">
-                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-foreground">
-                      <span className="font-medium">{selectedNozzle.product_name}</span>
-                      <span className="text-muted-foreground"> — </span>
-                      {currencySymbol}
-                      {formatNumber(Number(selectedNozzle.product_price || 0))} per{" "}
-                      {selectedNozzle.product_unit || "L"}
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">
-                        Quantity ({selectedNozzle.product_unit || "L"})
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={quantity}
-                        onChange={event => handleQuantityChange(event.target.value)}
-                        className={inputClassName}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">
-                        Amount ({currencySymbol})
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={amount}
-                        onChange={event => handleAmountChange(event.target.value)}
-                        className={inputClassName}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Quick quantity</p>
-                      <div className="flex flex-wrap gap-2" role="group" aria-label="Preset fuel quantities">
-                        {[1, 5, 10, 20, 50].map(q => (
-                          <button
-                            key={q}
-                            type="button"
-                            onClick={() => applyQuickFuelQty(q)}
-                            disabled={!selectedNozzle}
-                            className="inline-flex min-h-11 min-w-[3.25rem] items-center justify-center rounded-lg border border-border bg-muted/40 px-3 text-sm font-semibold tabular-nums text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {q} {selectedUnit}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">
-                        Vehicle plate number (optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={vehiclePlate}
-                        onChange={event => setVehiclePlate(event.target.value)}
-                        placeholder="E.g. DHA-1234"
-                        className={inputClassName}
-                      />
-                    </div>
-
-                    {shouldShowLivePreview && (
-                      <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-foreground shadow-sm">
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div>
-                            <p className="text-xs font-semibold uppercase text-muted-foreground">
-                              Meter reading ({selectedUnit})
-                            </p>
-                            <div className="mt-2 grid grid-cols-2 gap-3">
-                              <div>
-                                <p className="text-muted-foreground">Before sale</p>
-                                <p className="font-semibold tabular-nums text-foreground">
-                                  {formatNumber(meterStart)}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground">After sale</p>
-                                <p className="font-semibold tabular-nums text-foreground">
-                                  {formatNumber(meterProjected)}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold uppercase text-muted-foreground">
-                              Tank stock ({selectedUnit})
-                            </p>
-                            <div className="mt-2 grid grid-cols-2 gap-3">
-                              <div>
-                                <p className="text-muted-foreground">Before sale</p>
-                                <p className="font-semibold tabular-nums text-foreground">
-                                  {formatNumber(tankStart)}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground">After sale</p>
-                                <p className="font-semibold tabular-nums text-foreground">
-                                  {formatNumber(tankProjected)}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowInvoicePreview(true)}
-                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={grandTotal <= 0}
-                      >
-                        Invoice Preview
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => printUnifiedDraft()}
-                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={!canPrintUnifiedDraft}
-                      >
-                        <Printer className="h-4 w-4" />
-                        Print draft
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-                    Select a nozzle to begin a sale.
-                  </div>
-                )}
               </section>
 
               <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
@@ -1392,7 +1255,155 @@ export default function CashierPOSPage() {
               </section>
             </div>
 
-            <div className="lg:sticky lg:top-[var(--pos-header-offset)] lg:max-h-[calc(100vh-var(--pos-header-offset)-1.5rem)] lg:overflow-y-auto lg:self-start lg:pr-0.5">
+            <div className="space-y-6 lg:sticky lg:top-[var(--pos-header-offset)] lg:max-h-[calc(100vh-var(--pos-header-offset)-1.5rem)] lg:overflow-y-auto lg:self-start lg:pr-0.5">
+              <section className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-b from-card via-card to-muted/20 p-5 text-card-foreground shadow-[0_8px_32px_-12px_rgba(15,23,42,0.14)] ring-1 ring-black/5 dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.5)] dark:ring-white/10 sm:p-6">
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary/50 via-primary/25 to-transparent" />
+                <div className="mb-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Dispensed fuel
+                  </p>
+                  <h2 className="text-lg font-semibold tracking-tight text-foreground">Fuel sale</h2>
+                </div>
+                {selectedNozzle ? (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm text-foreground">
+                      <span className="font-medium">{selectedNozzle.product_name}</span>
+                      <span className="text-muted-foreground"> — </span>
+                      {currencySymbol}
+                      {formatNumber(Number(selectedNozzle.product_price || 0))} per{" "}
+                      {selectedNozzle.product_unit || "L"}
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">
+                        Quantity ({selectedNozzle.product_unit || "L"})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={quantity}
+                        onChange={event => handleQuantityChange(event.target.value)}
+                        className={inputClassName}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">
+                        Amount ({currencySymbol})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={amount}
+                        onChange={event => handleAmountChange(event.target.value)}
+                        className={`${inputClassName} min-w-0 text-right tabular-nums`}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Quick quantity</p>
+                      <div className="flex flex-wrap gap-2" role="group" aria-label="Preset fuel quantities">
+                        {[1, 5, 10, 20, 50].map(q => (
+                          <button
+                            key={q}
+                            type="button"
+                            onClick={() => applyQuickFuelQty(q)}
+                            disabled={!selectedNozzle}
+                            className="inline-flex min-h-11 min-w-[3.25rem] items-center justify-center rounded-lg border border-border bg-muted/40 px-3 text-sm font-semibold tabular-nums text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {q} {selectedUnit}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">
+                        Vehicle plate number (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={vehiclePlate}
+                        onChange={event => setVehiclePlate(event.target.value)}
+                        placeholder="E.g. DHA-1234"
+                        className={inputClassName}
+                      />
+                    </div>
+
+                    {shouldShowLivePreview && (
+                      <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-foreground shadow-sm">
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-muted-foreground">
+                              Meter reading ({selectedUnit})
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-3">
+                              <div>
+                                <p className="text-muted-foreground">Before sale</p>
+                                <p className="font-semibold tabular-nums text-foreground">
+                                  {formatNumber(meterStart)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">After sale</p>
+                                <p className="font-semibold tabular-nums text-foreground">
+                                  {formatNumber(meterProjected)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-muted-foreground">
+                              Tank stock ({selectedUnit})
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-3">
+                              <div>
+                                <p className="text-muted-foreground">Before sale</p>
+                                <p className="font-semibold tabular-nums text-foreground">
+                                  {formatNumber(tankStart)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">After sale</p>
+                                <p className="font-semibold tabular-nums text-foreground">
+                                  {formatNumber(tankProjected)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowInvoicePreview(true)}
+                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={grandTotal <= 0}
+                      >
+                        Invoice Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => printUnifiedDraft()}
+                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!canPrintUnifiedDraft}
+                      >
+                        <Printer className="h-4 w-4" />
+                        Print draft
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                    Select a nozzle on the left to begin a fuel sale.
+                  </div>
+                )}
+              </section>
+
               <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
                   <div className="mb-4 flex items-center justify-between gap-2">
                     <div>
@@ -1420,8 +1431,8 @@ export default function CashierPOSPage() {
 
                   {!cartEntries.length && pendingFuelAmount <= 0 && (
                     <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-                      Add fuel above and/or products from the catalog. Fuel-only or shop-only sales are
-                      both supported.
+                      Enter fuel in the panel above and/or add products from the catalog. Fuel-only or
+                      shop-only sales are both supported.
                     </div>
                   )}
                   {pendingFuelAmount > 0 && selectedNozzle && (

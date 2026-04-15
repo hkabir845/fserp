@@ -9,6 +9,11 @@ import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 
+/** Match backend duplicate-name rules: trim, collapse spaces, case-insensitive. */
+function normalizeItemNameKey(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
 /** API returns decimals as strings; tanks-backed quantity is merged server-side. */
 function parseInventoryQty(raw: unknown): number {
   if (raw == null) return 0
@@ -191,6 +196,23 @@ export default function ItemsPage() {
       if (formData.cost === null || formData.cost === undefined || isNaN(formData.cost) || formData.cost < 0) {
         toast.error('Cost must be a valid number greater than or equal to 0')
         return
+      }
+
+      const nameKey = normalizeItemNameKey(formData.name)
+      const nameDuplicate = items.some(
+        (it) => it.id !== editingId && normalizeItemNameKey(it.name) === nameKey
+      )
+      if (nameDuplicate) {
+        toast.error('An item with this name already exists for this company.')
+        return
+      }
+
+      if (formData.item_type.toLowerCase() === 'inventory') {
+        const q = Number(formData.quantity_on_hand)
+        if (isNaN(q) || q < 0) {
+          toast.error('Quantity on hand must be zero or greater')
+          return
+        }
       }
       
       const token = localStorage.getItem('access_token')

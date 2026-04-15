@@ -119,7 +119,6 @@ export default function PaymentMadePage() {
   useEffect(() => {
     fetchPaymentsMade()
     fetchAllOutstandingBills()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate])
 
   const fetchVendors = async () => {

@@ -10,6 +10,7 @@ import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { formatDateOnly } from '@/utils/date'
+import { AMOUNT_JE_LINE_CLASS } from '@/utils/amountFieldStyles'
 
 interface JournalEntryLine {
   id?: number
@@ -1055,14 +1056,14 @@ export default function JournalEntriesPage() {
                               placeholder="Optional"
                             />
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 min-w-[10rem]">
                             <input
                               type="number"
                               step="0.01"
                               min="0"
                               value={line.amount}
                               onChange={(e) => updateLine(index, 'amount', e.target.value)}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded text-right focus:ring-2 focus:ring-blue-500"
+                              className={AMOUNT_JE_LINE_CLASS}
                               placeholder="0.00"
                               required
                             />

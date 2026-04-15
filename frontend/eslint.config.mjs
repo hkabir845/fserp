@@ -15,8 +15,12 @@ const eslintConfig = [
       'react-hooks/set-state-in-effect': 'off',
       // React Compiler hints — manual useMemo is intentional in places
       'react-hooks/preserve-manual-memoization': 'off',
-      // Prefer &quot; in copy later; not worth blocking builds
-      'react/no-unescaped-entities': 'warn',
+      // App Router pages use mount-only data loads; widening deps often causes loops.
+      'react-hooks/exhaustive-deps': 'off',
+      // ERP copy frequently contains quotes/apostrophes; escaping hurts readability.
+      'react/no-unescaped-entities': 'off',
+      // Cashier/items use dynamic/user URLs; next/image needs domains + dimensions per asset.
+      '@next/next/no-img-element': 'off',
     },
   },
 ]

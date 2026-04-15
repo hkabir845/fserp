@@ -82,7 +82,6 @@ function UsersPageContent() {
     } else {
       setLoading(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, router]) // Only depend on mode to avoid infinite loops
 
   const fetchCompanies = async () => {

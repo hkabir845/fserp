@@ -15,15 +15,42 @@ try:
 except ImportError:
     _FSERP_APP_VERSION = "0.0.0-dev"
 
+
+def _env_bool(key: str, *, default: bool) -> bool:
+    raw = (os.environ.get(key) or "").strip().lower()
+    if raw == "":
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
+# Default True when unset so local dev keeps working without a .env.
+DEBUG = _env_bool("DJANGO_DEBUG", default=True)
+
+# Only for local dev when DJANGO_SECRET_KEY is unset — never use in production.
+_DEV_SECRET_KEY_FALLBACK = "ahdjkahduihduiwye786284yu289u89&*sfhewuifhweihfke"
+SECRET_KEY = (os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY") or "").strip() or _DEV_SECRET_KEY_FALLBACK
+if not DEBUG:
+    if SECRET_KEY == _DEV_SECRET_KEY_FALLBACK or len(SECRET_KEY) < 32:
+        raise ImproperlyConfigured(
+            "Production requires DJANGO_SECRET_KEY (or SECRET_KEY) set to a random string of at least 32 characters."
+        )
+
+_allowed = (os.environ.get("DJANGO_ALLOWED_HOSTS") or "").strip()
+if DEBUG:
+    ALLOWED_HOSTS = (
+        [h.strip() for h in _allowed.split(",") if h.strip()] if _allowed else ["*"]
+    )
+else:
+    ALLOWED_HOSTS = [h.strip() for h in _allowed.split(",") if h.strip()]
+    if not ALLOWED_HOSTS:
+        raise ImproperlyConfigured(
+            "Production requires DJANGO_ALLOWED_HOSTS as a comma-separated list (no wildcards in production)."
+        )
+
 # Manual tenant rollout target (super admin applies per company). Override at deploy.
 PLATFORM_TARGET_RELEASE = (
     (os.environ.get("FSERP_PLATFORM_RELEASE") or _FSERP_APP_VERSION or "0.0.0-dev").strip()[:64]
 )
-
-SECRET_KEY = 'ahdjkahduihduiwye786284yu289u89&*sfhewuifhweihfke'
-DEBUG = True
-
-ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -67,12 +94,23 @@ TEMPLATES = [
 ]
 WSGI_APPLICATION = "fsms.wsgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
+if DATABASE_URL:
+    import dj_database_url
+
+    DATABASES = {
+        "default": dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=int(os.environ.get("DATABASE_CONN_MAX_AGE", "600") or "600"),
+        )
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -99,7 +137,16 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("DATA_UPLOAD_MAX_MEMORY_SIZE", 
 FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("FILE_UPLOAD_MAX_MEMORY_SIZE", str(_file_bytes)))
 DATA_UPLOAD_MAX_NUMBER_FIELDS = int(os.environ.get("DATA_UPLOAD_MAX_NUMBER_FIELDS", "10240"))
 
-CORS_ALLOW_ALL_ORIGINS = True
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOW_ALL_ORIGINS = False
+    _cors_origins = (os.environ.get("DJANGO_CORS_ALLOWED_ORIGINS") or "").strip()
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()]
+    if not CORS_ALLOWED_ORIGINS:
+        raise ImproperlyConfigured(
+            "Production requires DJANGO_CORS_ALLOWED_ORIGINS (comma-separated full origins, e.g. https://app.example.com)."
+        )
 
 # Preflight must allow every header the Next.js client sends (see src/lib/api.ts).
 # If production still fails with "x-selected-company-id is not allowed", either deploy this file

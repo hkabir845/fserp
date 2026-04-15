@@ -698,7 +698,6 @@ export default function ChartOfAccountsPage() {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: run when unlinked count / company changes
   }, [unlinkedBanks.length, selectedCompany?.id])
   
   const fetchStatement = async (accountId: number) => {

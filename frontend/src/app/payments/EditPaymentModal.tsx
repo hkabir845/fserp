@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import api from '@/lib/api'
+import { AMOUNT_SLATE_EDITABLE_CLASS } from '@/utils/amountFieldStyles'
 import { AlertCircle, Loader2, X } from 'lucide-react'
 
 interface BankAccount {
@@ -255,7 +256,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                     inputMode="decimal"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className={AMOUNT_SLATE_EDITABLE_CLASS}
                     required
                   />
                 </div>

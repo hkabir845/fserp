@@ -230,6 +230,55 @@ def test_items_list_with_trailing_slash(api_client: Client, auth_super_headers, 
     assert isinstance(json.loads(r.content), list)
 
 
+def test_items_reject_duplicate_name_same_company(
+    api_client: Client, auth_super_headers, company_master
+):
+    h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
+    payload = {"name": "Audit Dup Product", "unit_price": "10", "cost": "5"}
+    r1 = api_client.post(
+        "/api/items/",
+        data=json.dumps(payload),
+        content_type="application/json",
+        **h,
+    )
+    assert r1.status_code == 201
+    r2 = api_client.post(
+        "/api/items/",
+        data=json.dumps({**payload, "name": "  audit dup  product "}),
+        content_type="application/json",
+        **h,
+    )
+    assert r2.status_code == 409
+    assert b"already exists" in r2.content
+
+
+def test_items_same_name_allowed_in_different_companies(
+    api_client: Client, auth_super_headers, company_master, company_tenant
+):
+    body = {"name": "Shared Label OK", "unit_price": "1", "cost": "0"}
+    h_m = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
+    h_t = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_tenant.id)}
+    r1 = api_client.post(
+        "/api/items/", data=json.dumps(body), content_type="application/json", **h_m
+    )
+    r2 = api_client.post(
+        "/api/items/", data=json.dumps(body), content_type="application/json", **h_t
+    )
+    assert r1.status_code == 201
+    assert r2.status_code == 201
+
+
+def test_items_reject_negative_unit_price(api_client: Client, auth_super_headers, company_master):
+    h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
+    r = api_client.post(
+        "/api/items/",
+        data=json.dumps({"name": "Neg price item", "unit_price": "-1", "cost": "0"}),
+        content_type="application/json",
+        **h,
+    )
+    assert r.status_code == 400
+
+
 def test_items_list_quantity_is_sum_of_active_tanks_for_fuel_products(
     api_client: Client, auth_super_headers, company_master
 ):
@@ -1637,3 +1686,83 @@ def test_income_statement_treats_revenue_alias_as_income(company_master):
     pl = report_income_statement(company_master.id, date(2026, 6, 1), date(2026, 6, 30))
     inc_codes = [a["account_code"] for a in pl["income"]["accounts"]]
     assert "9997" in inc_codes
+
+
+# --- SaaS: station operational purge (super admin) ---
+
+
+def test_admin_company_stations_forbidden_for_company_admin(api_client, auth_admin_headers, company_tenant):
+    r = api_client.get(
+        f"/api/admin/companies/{company_tenant.id}/stations/",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 403
+
+
+def test_admin_company_stations_list_ok(api_client, auth_super_headers, company_tenant):
+    from api.models import Station
+
+    Station.objects.create(company_id=company_tenant.id, station_name="Audit Station A")
+    r = api_client.get(
+        f"/api/admin/companies/{company_tenant.id}/stations/",
+        **auth_super_headers,
+    )
+    assert r.status_code == 200
+    data = json.loads(r.content)
+    assert data["company_id"] == company_tenant.id
+    assert len(data["stations"]) >= 1
+    assert data["stations"][0]["station_name"]
+
+
+def test_admin_station_purge_requires_confirm_phrase(api_client, auth_super_headers, company_tenant):
+    from api.models import Item, Station, Tank
+
+    item = Item.objects.create(company_id=company_tenant.id, name="Purge phrase test fuel")
+    st = Station.objects.create(company_id=company_tenant.id, station_name="Phrase station")
+    Tank.objects.create(company_id=company_tenant.id, station=st, product=item, tank_name="T-phrase")
+    r = api_client.post(
+        f"/api/admin/companies/{company_tenant.id}/stations/{st.id}/purge/",
+        data=json.dumps({"confirm_phrase": "wrong"}),
+        content_type="application/json",
+        **auth_super_headers,
+    )
+    assert r.status_code == 400
+    assert Station.objects.filter(pk=st.pk).exists()
+
+
+def test_admin_station_purge_removes_forecourt_keeps_items(api_client, auth_super_headers, company_tenant):
+    from api.models import Item, Station, Tank
+    from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE
+
+    item = Item.objects.create(company_id=company_tenant.id, name="Keep after purge")
+    st_a = Station.objects.create(company_id=company_tenant.id, station_name="Station A")
+    st_b = Station.objects.create(company_id=company_tenant.id, station_name="Station B")
+    Tank.objects.create(company_id=company_tenant.id, station=st_a, product=item, tank_name="TA")
+    Tank.objects.create(company_id=company_tenant.id, station=st_b, product=item, tank_name="TB")
+
+    r = api_client.post(
+        f"/api/admin/companies/{company_tenant.id}/stations/{st_a.id}/purge/",
+        data=json.dumps({"confirm_phrase": RESTORE_CONFIRM_PHRASE}),
+        content_type="application/json",
+        **auth_super_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    out = json.loads(r.content)
+    assert out.get("station_id") == st_a.id
+
+    assert not Station.objects.filter(pk=st_a.pk).exists()
+    assert Station.objects.filter(pk=st_b.pk).exists()
+    assert Tank.objects.filter(company_id=company_tenant.id).count() == 1
+    assert Item.objects.filter(pk=item.pk).exists()
+
+
+def test_delete_station_operational_data_keeps_station_row(company_tenant):
+    from api.models import Item, Station, Tank
+    from api.services.tenant_backup import delete_station_operational_data
+
+    item = Item.objects.create(company_id=company_tenant.id, name="Shell row")
+    st = Station.objects.create(company_id=company_tenant.id, station_name="Keep row")
+    Tank.objects.create(company_id=company_tenant.id, station=st, product=item, tank_name="T1")
+    delete_station_operational_data(company_tenant.id, st.id, remove_station_record=False)
+    assert Station.objects.filter(pk=st.pk).exists()
+    assert Tank.objects.filter(station_id=st.id).count() == 0

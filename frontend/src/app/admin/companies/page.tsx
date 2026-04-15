@@ -22,6 +22,7 @@ import {
   Ban,
   PlayCircle,
   Rocket,
+  Eraser,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
@@ -37,6 +38,7 @@ import {
   formatCompanyTime,
 } from '@/utils/companyLocaleFormats'
 import { formatDateOnly } from '@/utils/date'
+import { AMOUNT_ADMIN_TEXT_CLASS } from '@/utils/amountFieldStyles'
 import {
   RESTORE_CONFIRM_PHRASE,
   downloadTenantBackupForAdminCompany,
@@ -134,6 +136,15 @@ function CompaniesPageContent() {
   const [deleteModalCompany, setDeleteModalCompany] = useState<Company | null>(null)
   const [deletePhrase, setDeletePhrase] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [stationPurgeCompany, setStationPurgeCompany] = useState<Company | null>(null)
+  const [stationPurgeList, setStationPurgeList] = useState<
+    { id: number; station_number: string; station_name: string; is_active: boolean }[]
+  >([])
+  const [stationPurgeLoadingList, setStationPurgeLoadingList] = useState(false)
+  const [stationPurgeStationId, setStationPurgeStationId] = useState<number | ''>('')
+  const [stationPurgePhrase, setStationPurgePhrase] = useState('')
+  const [stationPurgeRemoveRow, setStationPurgeRemoveRow] = useState(true)
+  const [stationPurgeBusy, setStationPurgeBusy] = useState(false)
   const restoreFileRef = useRef<HTMLInputElement>(null)
   const [backupDownloadBusyId, setBackupDownloadBusyId] = useState<number | null>(null)
   const [applyReleaseBusyId, setApplyReleaseBusyId] = useState<number | null>(null)
@@ -176,7 +187,6 @@ function CompaniesPageContent() {
     if (mode === 'saas_dashboard') {
       fetchCompanies()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 
   const fetchCompanies = async () => {
@@ -371,6 +381,63 @@ function CompaniesPageContent() {
       safeLogError('Delete company error:', error)
     } finally {
       setDeleteBusy(false)
+    }
+  }
+
+  const openStationPurgeModal = async (company: Company) => {
+    setStationPurgeCompany(company)
+    setStationPurgeStationId('')
+    setStationPurgePhrase('')
+    setStationPurgeRemoveRow(true)
+    setStationPurgeList([])
+    setStationPurgeLoadingList(true)
+    try {
+      const res = await api.get(`/admin/companies/${company.id}/stations/`)
+      setStationPurgeList(Array.isArray(res.data?.stations) ? res.data.stations : [])
+    } catch (error: unknown) {
+      const msg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Could not load stations for this company'
+      toast.error(typeof msg === 'string' ? msg : 'Could not load stations')
+      safeLogError('Admin stations list:', error)
+      setStationPurgeCompany(null)
+    } finally {
+      setStationPurgeLoadingList(false)
+    }
+  }
+
+  const runStationPurge = async () => {
+    if (!stationPurgeCompany || typeof stationPurgeStationId !== 'number') return
+    if (stationPurgePhrase.trim() !== RESTORE_CONFIRM_PHRASE) {
+      toast.error(`Type the confirmation phrase exactly: ${RESTORE_CONFIRM_PHRASE}`)
+      return
+    }
+    setStationPurgeBusy(true)
+    try {
+      await api.post(
+        `/admin/companies/${stationPurgeCompany.id}/stations/${stationPurgeStationId}/purge/`,
+        {
+          confirm_phrase: RESTORE_CONFIRM_PHRASE,
+          remove_station_record: stationPurgeRemoveRow,
+        }
+      )
+      toast.success(
+        stationPurgeRemoveRow
+          ? 'Station forecourt data removed and station record deleted.'
+          : 'Station forecourt data removed; empty station row kept for re-setup.'
+      )
+      setStationPurgeCompany(null)
+      setStationPurgePhrase('')
+      setStationPurgeStationId('')
+      await fetchCompanies()
+    } catch (error: unknown) {
+      const errorMsg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Station purge failed'
+      toast.error(typeof errorMsg === 'string' ? errorMsg : 'Station purge failed')
+      safeLogError('Station purge error:', error)
+    } finally {
+      setStationPurgeBusy(false)
     }
   }
 
@@ -693,6 +760,14 @@ function CompaniesPageContent() {
                               title="Restore tenant from backup"
                             >
                               <Upload className="h-5 w-5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void openStationPurgeModal(company)}
+                              className="p-2 text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="Purge one station (tanks, islands, POS hardware tree, shifts — not company-wide accounting)"
+                            >
+                              <Eraser className="h-5 w-5" />
                             </button>
                             <button
                               onClick={() => handleEditCompany(company)}
@@ -1259,6 +1334,124 @@ function CompaniesPageContent() {
             </div>
           )}
 
+          {stationPurgeCompany && (
+            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+              <div className="w-full max-w-lg rounded-t-2xl bg-white shadow-2xl sm:rounded-xl">
+                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 sm:px-6">
+                  <h2 className="text-lg font-bold text-gray-900">Purge station (forecourt only)</h2>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStationPurgeCompany(null)
+                      setStationPurgePhrase('')
+                      setStationPurgeStationId('')
+                    }}
+                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="space-y-4 p-4 sm:p-6">
+                  <p className="text-sm text-gray-700">
+                    Company: <strong>{stationPurgeCompany.name}</strong> (ID {stationPurgeCompany.id})
+                  </p>
+                  {stationPurgeCompany.is_master === 'true' && (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                      This is the <strong>master</strong> tenant. Only purge if you intend to reset demo forecourt
+                      data.
+                    </p>
+                  )}
+                  <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-950">
+                    Removes <strong>this station&apos;s</strong> tanks, islands, dispensers, meters, nozzles, tank
+                    dips, and shift sessions. Company-wide data (customers, vendors, chart of accounts, invoices,
+                    payments, items catalog) is <strong>not</strong> deleted. Invoices linked to cleared shifts keep
+                    their rows; the shift link is cleared.
+                  </p>
+                  {stationPurgeLoadingList ? (
+                    <p className="text-sm text-gray-600">Loading stations…</p>
+                  ) : stationPurgeList.length === 0 ? (
+                    <p className="text-sm text-gray-600">No stations found for this company.</p>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Station to purge</label>
+                      <select
+                        className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        value={stationPurgeStationId === '' ? '' : String(stationPurgeStationId)}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (v === '') {
+                            setStationPurgeStationId('')
+                            return
+                          }
+                          const n = parseInt(v, 10)
+                          setStationPurgeStationId(Number.isFinite(n) ? n : '')
+                        }}
+                      >
+                        <option value="">Select a station…</option>
+                        {stationPurgeList.map((s) => (
+                          <option key={s.id} value={String(s.id)}>
+                            {(s.station_number || `ID ${s.id}`).trim()} — {s.station_name || 'Unnamed'}
+                            {!s.is_active ? ' (inactive)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <label className="flex cursor-pointer items-start gap-2 text-sm text-gray-800">
+                    <input
+                      type="checkbox"
+                      className="mt-1 rounded border-gray-300"
+                      checked={stationPurgeRemoveRow}
+                      onChange={(e) => setStationPurgeRemoveRow(e.target.checked)}
+                    />
+                    <span>
+                      Also delete the <strong>station</strong> record after clearing hardware (uncheck to keep an
+                      empty station for re-configuration).
+                    </span>
+                  </label>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Type <code className="rounded bg-gray-100 px-1">{RESTORE_CONFIRM_PHRASE}</code>
+                    </label>
+                    <input
+                      type="text"
+                      value={stationPurgePhrase}
+                      onChange={(e) => setStationPurgePhrase(e.target.value)}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStationPurgeCompany(null)
+                        setStationPurgePhrase('')
+                        setStationPurgeStationId('')
+                      }}
+                      className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={
+                        stationPurgeBusy ||
+                        stationPurgeLoadingList ||
+                        typeof stationPurgeStationId !== 'number' ||
+                        stationPurgePhrase.trim() !== RESTORE_CONFIRM_PHRASE
+                      }
+                      onClick={() => void runStationPurge()}
+                      className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {stationPurgeBusy ? 'Purging…' : 'Purge station data'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Company Modal */}
           {showCompanyModal && (
             <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
@@ -1479,7 +1672,7 @@ function CompaniesPageContent() {
                           type="text"
                           value={companyFormData.payment_amount}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, payment_amount: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className={AMOUNT_ADMIN_TEXT_CLASS}
                           placeholder="0.00"
                         />
                       </div>

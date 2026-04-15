@@ -41,7 +41,7 @@ def test_login():
             try:
                 error = response.json()
                 print(f"Error: {error.get('detail', 'Unknown error')}")
-            except:
+            except (ValueError, requests.exceptions.JSONDecodeError):
                 print(f"Error: {response.text}")
                 
     except requests.exceptions.ConnectionError:
@@ -49,7 +49,7 @@ def test_login():
         print("Make sure the backend is running on https://api.mahasoftcorporation.com")
         print("\nTo start the backend, run:")
         print("  cd backend")
-        print("  python -m uvicorn app.main:app --reload")
+        print("  python manage.py runserver 8000")
     except Exception as e:
         print(f"\n❌ ERROR: {type(e).__name__}: {str(e)}")
 

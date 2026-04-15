@@ -83,7 +83,7 @@ def create_sample_contracts():
                     # Extract sequence number from last contract
                     seq = int(last_contract.contract_number.split('-')[-1])
                     seq += 1
-                except:
+                except (ValueError, IndexError):
                     seq = 1
             else:
                 seq = 1

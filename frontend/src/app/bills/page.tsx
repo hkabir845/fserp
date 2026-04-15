@@ -9,6 +9,7 @@ import api, { getApiBaseUrl } from '@/lib/api'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
+import { AMOUNT_LINE_COL_CLASS, AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 
 interface BillLineItem {
   id?: number
@@ -1189,13 +1190,14 @@ export default function BillsPage() {
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                               />
                             </div>
-                            <div className="w-[5.5rem] shrink-0">
+                            <div className={AMOUNT_LINE_COL_CLASS}>
                               <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
                               <input
                                 type="text"
                                 value={line.amount.toFixed(2)}
                                 readOnly
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-gray-50"
+                                title={`${currencySymbol}${line.amount.toFixed(2)}`}
+                                className={AMOUNT_READ_ONLY_INPUT_CLASS}
                               />
                             </div>
                             <div className="shrink-0 pb-px">
@@ -1525,14 +1527,15 @@ export default function BillsPage() {
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                               />
                             </div>
-                            <div className="w-[5.25rem] shrink-0">
+                            <div className={AMOUNT_LINE_COL_CLASS}>
                               <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
                               <input
-                                type="number"
-                                step="0.01"
-                                value={(Number(line.amount) || 0).toFixed(2)}
+                                type="text"
                                 readOnly
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-gray-50"
+                                inputMode="decimal"
+                                value={(Number(line.amount) || 0).toFixed(2)}
+                                title={`${currencySymbol}${(Number(line.amount) || 0).toFixed(2)}`}
+                                className={AMOUNT_READ_ONLY_INPUT_CLASS}
                               />
                             </div>
                             <div className="shrink-0 pb-px">

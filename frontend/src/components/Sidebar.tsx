@@ -282,6 +282,10 @@ export default function Sidebar() {
       setScopeCompanyLabel(null)
       return
     }
+    if (typeof window !== 'undefined' && !localStorage.getItem('access_token')?.trim()) {
+      setScopeCompanyLabel(null)
+      return
+    }
     let cancelled = false
     api
       .get('/companies/current/')
@@ -434,13 +438,13 @@ export default function Sidebar() {
     { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', section: 'main' },
     { href: '/cashier', icon: ShoppingCart, label: 'POS / Cashier', section: 'main' },
     
-    // Station Management
+    // Station Management (physical hierarchy: station → tank → island → dispenser → meter → nozzle)
     { href: '/stations', icon: Building2, label: 'Stations', section: 'station' },
     { href: '/tanks', icon: Droplet, label: 'Tanks', section: 'station' },
     { href: '/islands', icon: MapPin, label: 'Islands', section: 'station' },
     { href: '/dispensers', icon: Zap, label: 'Dispensers', section: 'station' },
-    { href: '/nozzles', icon: Fuel, label: 'Nozzles', section: 'station' },
     { href: '/meters', icon: Gauge, label: 'Meters', section: 'station' },
+    { href: '/nozzles', icon: Fuel, label: 'Nozzles', section: 'station' },
     
     // Operations
     { href: '/shift-management', icon: Clock, label: 'Shift Management', section: 'operations' },
@@ -515,7 +519,7 @@ export default function Sidebar() {
     if (role === 'accountant') {
       return menuItems.filter(item => {
         // Exclude station management items
-        const stationItems = ['/stations', '/tanks', '/islands', '/dispensers', '/nozzles', '/meters']
+        const stationItems = ['/stations', '/tanks', '/islands', '/dispensers', '/meters', '/nozzles']
         if (stationItems.includes(item.href)) return false
         
         // Exclude user management

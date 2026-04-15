@@ -8,6 +8,7 @@ import { ArrowLeft, AlertCircle } from 'lucide-react'
 import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
+import { AMOUNT_ALLOCATE_GREEN_CLASS, AMOUNT_EDITABLE_FULL_GREEN_CLASS } from '@/utils/amountFieldStyles'
 
 interface OutstandingInvoice {
   id: number
@@ -217,7 +218,6 @@ function RecordPaymentReceivedInner() {
     if (!Number.isFinite(id)) return
     prefillApplied.current = true
     handleCustomerSelectChange(String(id))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot prefill
   }, [customers.length])
 
   const selectedCustomer =
@@ -501,7 +501,7 @@ function RecordPaymentReceivedInner() {
                     min="0"
                     value={totalPaymentAmount || ''}
                     onChange={(e) => handlePaymentAmountChange(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className={AMOUNT_EDITABLE_FULL_GREEN_CLASS}
                     required
                   />
                 </div>
@@ -601,7 +601,7 @@ function RecordPaymentReceivedInner() {
                                   onChange={(e) =>
                                     handleAllocationChange(invoice.id, Number(e.target.value))
                                   }
-                                  className="w-24 px-2 py-1 border border-gray-300 rounded text-right focus:outline-none focus:ring-2 focus:ring-green-500"
+                                  className={AMOUNT_ALLOCATE_GREEN_CLASS}
                                 />
                               </td>
                             </tr>

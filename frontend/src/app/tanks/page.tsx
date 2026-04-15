@@ -615,7 +615,10 @@ export default function TanksPage() {
                     <select
                       required
                       value={formData.station_id}
-                      onChange={(e) => setFormData({ ...formData, station_id: parseInt(e.target.value) })}
+                      onChange={(e) => {
+                        const n = parseInt(e.target.value, 10)
+                        setFormData({ ...formData, station_id: Number.isFinite(n) ? n : 0 })
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value={0}>Select Station</option>
@@ -634,7 +637,10 @@ export default function TanksPage() {
                     <select
                       required
                       value={formData.product_id}
-                      onChange={(e) => setFormData({ ...formData, product_id: parseInt(e.target.value) })}
+                      onChange={(e) => {
+                        const n = parseInt(e.target.value, 10)
+                        setFormData({ ...formData, product_id: Number.isFinite(n) ? n : 0 })
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value={0}>Select Product</option>
@@ -661,8 +667,15 @@ export default function TanksPage() {
                       required
                       min="0"
                       step="0.01"
-                      value={formData.capacity}
-                      onChange={(e) => setFormData({ ...formData, capacity: parseFloat(e.target.value) })}
+                      value={Number.isFinite(formData.capacity) ? formData.capacity : ''}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        const n = parseFloat(v)
+                        setFormData({
+                          ...formData,
+                          capacity: v === '' ? 0 : Number.isFinite(n) ? n : formData.capacity,
+                        })
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -675,8 +688,15 @@ export default function TanksPage() {
                       type="number"
                       min="0"
                       step="0.01"
-                      value={formData.current_stock}
-                      onChange={(e) => setFormData({ ...formData, current_stock: parseFloat(e.target.value) })}
+                      value={Number.isFinite(formData.current_stock) ? formData.current_stock : ''}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        const n = parseFloat(v)
+                        setFormData({
+                          ...formData,
+                          current_stock: v === '' ? 0 : Number.isFinite(n) ? n : formData.current_stock,
+                        })
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -689,8 +709,15 @@ export default function TanksPage() {
                       type="number"
                       min="0"
                       step="0.01"
-                      value={formData.min_stock_level}
-                      onChange={(e) => setFormData({ ...formData, min_stock_level: parseFloat(e.target.value) })}
+                      value={Number.isFinite(formData.min_stock_level) ? formData.min_stock_level : ''}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        const n = parseFloat(v)
+                        setFormData({
+                          ...formData,
+                          min_stock_level: v === '' ? 0 : Number.isFinite(n) ? n : formData.min_stock_level,
+                        })
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>

@@ -71,7 +71,6 @@ function OverviewPageContent() {
       // This ensures the page renders even if mode hasn't initialized
       setLoading(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, router]) // Only depend on mode to avoid infinite loops
 
   const fetchPlatformStats = async () => {

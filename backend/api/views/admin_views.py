@@ -2,6 +2,7 @@
 import json
 import logging
 
+from django.db import transaction
 from django.db.models import Case, IntegerField, Q, Sum, When
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
@@ -10,6 +11,7 @@ from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.models import User, Company, Customer, Vendor, Station, Invoice
+from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_station_operational_data
 from api.services.tenant_release import apply_platform_release, get_target_release
 
 logger = logging.getLogger(__name__)
@@ -231,3 +233,120 @@ def admin_company_apply_release(request, company_id: int):
         logger.exception("apply_platform_release failed company_id=%s", company_id)
         return JsonResponse({"detail": "Apply release failed", "error": str(e)}, status=500)
     return JsonResponse(result)
+
+
+def _is_master_company_row(company: Company) -> bool:
+    return str(getattr(company, "is_master", "") or "").strip().lower() in ("true", "1", "yes")
+
+
+@csrf_exempt
+@require_GET
+@auth_required
+@_super_admin_required
+def admin_company_stations(request, company_id: int):
+    """GET /api/admin/companies/<id>/stations/ — list stations for SaaS station purge UI."""
+    company = Company.objects.filter(id=company_id, is_deleted=False).first()
+    if not company:
+        return JsonResponse({"detail": "Company not found"}, status=404)
+    rows = []
+    for s in Station.objects.filter(company_id=company_id).order_by("id"):
+        rows.append(
+            {
+                "id": s.id,
+                "station_number": getattr(s, "station_number", "") or "",
+                "station_name": s.station_name or "",
+                "is_active": bool(getattr(s, "is_active", True)),
+            }
+        )
+    return JsonResponse(
+        {
+            "company_id": company.id,
+            "company_name": company.name,
+            "is_master": _is_master_company_row(company),
+            "stations": rows,
+        }
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@_super_admin_required
+def admin_company_station_purge(request, company_id: int, station_id: int):
+    """
+    POST /api/admin/companies/<company_id>/stations/<station_id>/purge/
+
+    JSON body:
+      - confirm_phrase: must match RESTORE_CONFIRM_PHRASE (same as tenant restore / full delete).
+      - remove_station_record: optional bool (default true). If false, clears forecourt data but
+        keeps the station row for re-setup.
+    """
+    company = Company.objects.filter(id=company_id, is_deleted=False).first()
+    if not company:
+        return JsonResponse({"detail": "Company not found"}, status=404)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"detail": "Invalid JSON"}, status=400)
+    if not isinstance(body, dict):
+        body = {}
+
+    phrase = (body.get("confirm_phrase") or body.get("confirm") or "").strip()
+    if phrase != RESTORE_CONFIRM_PHRASE:
+        return JsonResponse(
+            {
+                "detail": (
+                    "Station purge requires confirm_phrase in the JSON body matching "
+                    f"{RESTORE_CONFIRM_PHRASE!r}."
+                ),
+                "expected_confirm_phrase": RESTORE_CONFIRM_PHRASE,
+            },
+            status=400,
+        )
+
+    remove_station = body.get("remove_station_record")
+    if remove_station is None:
+        remove_station = True
+    elif not isinstance(remove_station, bool):
+        return JsonResponse({"detail": "remove_station_record must be a boolean"}, status=400)
+
+    actor = getattr(request, "api_user", None) or get_user_from_request(request)
+    actor_id = getattr(actor, "id", None)
+
+    try:
+        with transaction.atomic():
+            counts = delete_station_operational_data(
+                company_id,
+                station_id,
+                remove_station_record=remove_station,
+            )
+    except ValueError as e:
+        return JsonResponse({"detail": str(e)}, status=404)
+    except Exception as e:
+        logger.exception(
+            "admin station purge failed company_id=%s station_id=%s actor_id=%s",
+            company_id,
+            station_id,
+            actor_id,
+        )
+        return JsonResponse({"detail": "Station purge failed", "error": str(e)}, status=500)
+
+    logger.info(
+        "admin station purge ok company_id=%s station_id=%s actor_id=%s remove_station=%s counts=%s",
+        company_id,
+        station_id,
+        actor_id,
+        remove_station,
+        counts,
+    )
+
+    return JsonResponse(
+        {
+            "detail": "Station operational data removed.",
+            "company_id": company_id,
+            "station_id": station_id,
+            "remove_station_record": remove_station,
+            "deleted": counts,
+        }
+    )

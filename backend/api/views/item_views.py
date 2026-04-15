@@ -1,6 +1,7 @@
 """Items (products) API: list, create, get, update, delete (company-scoped)."""
 import json
 import os
+import re
 import uuid
 from decimal import Decimal, InvalidOperation
 
@@ -34,6 +35,26 @@ def _truncate(val, max_len):
     if val is None:
         return ""
     return (str(val) or "")[:max_len]
+
+
+def _normalize_item_name_for_storage(raw) -> str:
+    """Trim, collapse internal whitespace, max 200 chars — used for save + duplicate detection."""
+    s = re.sub(r"\s+", " ", (str(raw or "").strip()))
+    return _truncate(s, 200)
+
+
+def _item_name_conflicts(company_id: int, canonical_name: str, exclude_pk: int | None = None) -> bool:
+    """True if another item in the company already matches this name (case/spacing-insensitive)."""
+    key = _normalize_item_name_for_storage(canonical_name).lower()
+    if not key:
+        return False
+    qs = Item.objects.filter(company_id=company_id).only("id", "name")
+    if exclude_pk is not None:
+        qs = qs.exclude(pk=exclude_pk)
+    for row in qs:
+        if _normalize_item_name_for_storage(row.name).lower() == key:
+            return True
+    return False
 
 
 # Liquid / gaseous / petroleum fuels: used to match legacy rows when name or category
@@ -182,7 +203,7 @@ def items_list_or_create(request):
         body, err = parse_json_body(request)
         if err:
             return err
-        name = _truncate((body.get("name") or "").strip(), 200)
+        name = _normalize_item_name_for_storage(body.get("name"))
         if not name:
             return JsonResponse({"detail": "name is required"}, status=400)
         unit_price = _parse_decimal(body.get("unit_price"), "0")
@@ -194,6 +215,22 @@ def items_list_or_create(request):
             return JsonResponse({"detail": "Invalid cost"}, status=400)
         if qty is None:
             return JsonResponse({"detail": "Invalid quantity_on_hand"}, status=400)
+        if unit_price < 0:
+            return JsonResponse({"detail": "unit_price cannot be negative"}, status=400)
+        if cost < 0:
+            return JsonResponse({"detail": "cost cannot be negative"}, status=400)
+        if qty < 0:
+            return JsonResponse({"detail": "quantity_on_hand cannot be negative"}, status=400)
+        if _item_name_conflicts(request.company_id, name):
+            return JsonResponse(
+                {
+                    "detail": (
+                        "An item with this name already exists for this company. "
+                        "Use a different name or edit the existing product."
+                    )
+                },
+                status=409,
+            )
         bc = _truncate(body.get("barcode"), 64).strip()
         if bc and Item.objects.filter(company_id=request.company_id, barcode__iexact=bc).exists():
             return JsonResponse(
@@ -250,8 +287,20 @@ def item_detail(request, item_id: int):
         if err:
             return err
         if body.get("name") is not None:
-            nm = _truncate((body.get("name") or "").strip(), 200)
-            i.name = nm or i.name
+            nm = _normalize_item_name_for_storage(body.get("name"))
+            if nm:
+                if _item_name_conflicts(request.company_id, nm, exclude_pk=i.pk):
+                    return JsonResponse(
+                        {
+                            "detail": (
+                                "An item with this name already exists for this company. "
+                                "Use a different name or edit the existing product."
+                            )
+                        },
+                        status=409,
+                    )
+                i.name = nm
+            # empty / whitespace-only keeps existing name
         if "description" in body:
             i.description = _truncate(body.get("description"), 10000) or ""
         if "item_type" in body:
@@ -260,16 +309,22 @@ def item_detail(request, item_id: int):
             up = _parse_decimal(body["unit_price"])
             if up is None:
                 return JsonResponse({"detail": "Invalid unit_price"}, status=400)
+            if up < 0:
+                return JsonResponse({"detail": "unit_price cannot be negative"}, status=400)
             i.unit_price = up
         if "cost" in body and body["cost"] is not None:
             c = _parse_decimal(body["cost"])
             if c is None:
                 return JsonResponse({"detail": "Invalid cost"}, status=400)
+            if c < 0:
+                return JsonResponse({"detail": "cost cannot be negative"}, status=400)
             i.cost = c
         if "quantity_on_hand" in body and body["quantity_on_hand"] is not None:
             q = _parse_decimal(body["quantity_on_hand"])
             if q is None:
                 return JsonResponse({"detail": "Invalid quantity_on_hand"}, status=400)
+            if q < 0:
+                return JsonResponse({"detail": "quantity_on_hand cannot be negative"}, status=400)
             tank_qs = Tank.objects.filter(
                 product_id=i.pk, company_id=i.company_id, is_active=True
             ).order_by("id")

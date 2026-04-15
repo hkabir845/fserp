@@ -68,11 +68,11 @@ def create_placeholder_image(item_name: str, category: str = None) -> Image.Imag
         # Try to use a system font
         font_large = ImageFont.truetype("arial.ttf", 32)
         font_small = ImageFont.truetype("arial.ttf", 20)
-    except:
+    except OSError:
         try:
             font_large = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 32)
             font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 20)
-        except:
+        except OSError:
             # Use default font
             font_large = ImageFont.load_default()
             font_small = ImageFont.load_default()

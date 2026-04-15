@@ -8,6 +8,7 @@ import { ArrowLeft, AlertCircle } from 'lucide-react'
 import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
+import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_EDITABLE_FULL_BLUE_CLASS } from '@/utils/amountFieldStyles'
 
 interface OutstandingBill {
   id: number
@@ -329,7 +330,6 @@ function RecordPaymentMadeInner() {
     if (!Number.isFinite(id)) return
     prefillApplied.current = true
     handleVendorSelectChange(String(id))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendors.length])
 
   const selectedVendor =
@@ -665,7 +665,7 @@ function RecordPaymentMadeInner() {
                     min="0"
                     value={totalPaymentAmount || ''}
                     onChange={(e) => handlePaymentAmountChange(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={AMOUNT_EDITABLE_FULL_BLUE_CLASS}
                     required
                   />
                 </div>
@@ -773,7 +773,7 @@ function RecordPaymentMadeInner() {
                                   onChange={(e) =>
                                     handleAllocationChange(bill.id, Number(e.target.value))
                                   }
-                                  className="w-24 px-2 py-1 border border-gray-300 rounded text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  className={AMOUNT_ALLOCATE_BLUE_CLASS}
                                 />
                               </td>
                             </tr>

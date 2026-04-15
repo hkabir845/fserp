@@ -7,6 +7,7 @@ import { formatCurrency } from '@/utils/currency'
 import { Plus, Edit2, Trash2, X, DollarSign, FileText, Search } from 'lucide-react'
 import { safeLogError } from '@/utils/connectionError'
 import { formatDate, formatDateOnly } from '@/utils/date'
+import { AMOUNT_SUBSCRIPTION_INPUT_CLASS } from '@/utils/amountFieldStyles'
 
 interface SubscriptionInvoice {
   id: number
@@ -971,7 +972,7 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                     step="0.01"
                     value={editFormData.amount}
                     onChange={(e) => setEditFormData({ ...editFormData, amount: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className={AMOUNT_SUBSCRIPTION_INPUT_CLASS}
                   />
                 </div>
                 <div>

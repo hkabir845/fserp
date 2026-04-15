@@ -9,6 +9,7 @@ import { extractErrorMessage } from '@/utils/errorHandler'
 import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
+import { AMOUNT_FUND_TRANSFER_INPUT_CLASS } from '@/utils/amountFieldStyles'
 
 interface FundTransfer {
   id: number
@@ -485,7 +486,7 @@ export default function FundTransfersPage() {
                     min="0.01"
                     value={formData.amount}
                     onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={AMOUNT_FUND_TRANSFER_INPUT_CLASS}
                     placeholder="0.00"
                   />
                 </div>

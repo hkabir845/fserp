@@ -361,7 +361,7 @@ export default function ReportsPage() {
       Object.entries(reportData.summary).forEach(([key, value]) => {
         const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
         const formattedValue = typeof value === 'number' 
-          ? (key.includes('amount') || key.includes('value') || key.includes('sales') ? `$${Number(value).toFixed(2)}` : Number(value).toLocaleString())
+          ? (key.includes('amount') || key.includes('value') || key.includes('sales') ? formatCurrency(Number(value)) : Number(value).toLocaleString())
           : String(value)
         contentHTML += `<tr><td><strong>${formattedKey}:</strong></td><td>${formattedValue}</td></tr>`
       })
@@ -372,9 +372,9 @@ export default function ReportsPage() {
     if (selectedReport === 'trial-balance' && reportData.accounts) {
       contentHTML += '<h2>Accounts</h2><table><thead><tr><th>Account Code</th><th>Account Name</th><th>Type</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th></tr></thead><tbody>'
       reportData.accounts.forEach((acc: any) => {
-        contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td>${acc.account_type || ''}</td><td style="text-align:right">$${Number(acc.debit || 0).toFixed(2)}</td><td style="text-align:right">$${Number(acc.credit || 0).toFixed(2)}</td><td style="text-align:right">$${Number(acc.balance || 0).toFixed(2)}</td></tr>`
+        contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td>${acc.account_type || ''}</td><td style="text-align:right">${formatCurrency(acc.debit || 0)}</td><td style="text-align:right">${formatCurrency(acc.credit || 0)}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td></tr>`
       })
-      contentHTML += `<tfoot><tr><td colspan="3"><strong>Totals:</strong></td><td style="text-align:right"><strong>$${Number(reportData.total_debit || 0).toFixed(2)}</strong></td><td style="text-align:right"><strong>$${Number(reportData.total_credit || 0).toFixed(2)}</strong></td><td style="text-align:right"><strong>$${Number((reportData.total_debit || 0) - (reportData.total_credit || 0)).toFixed(2)}</strong></td></tr></tfoot></tbody></table>`
+      contentHTML += `<tfoot><tr><td colspan="3"><strong>Totals:</strong></td><td style="text-align:right"><strong>${formatCurrency(reportData.total_debit || 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(reportData.total_credit || 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency((reportData.total_debit || 0) - (reportData.total_credit || 0))}</strong></td></tr></tfoot></tbody></table>`
     } else if (selectedReport === 'balance-sheet') {
       const sections = [
         { title: 'Assets', data: reportData.assets },
@@ -383,9 +383,9 @@ export default function ReportsPage() {
       ]
       sections.forEach(section => {
         if (section.data?.accounts?.length > 0) {
-          contentHTML += `<h2>${section.title}</h2><p><strong>Total: $${Number(section.data.total || 0).toFixed(2)}</strong></p><table><thead><tr><th>Account Code</th><th>Account Name</th><th style="text-align:right">Balance</th></tr></thead><tbody>`
+          contentHTML += `<h2>${section.title}</h2><p><strong>Total: ${formatCurrency(section.data.total || 0)}</strong></p><table><thead><tr><th>Account Code</th><th>Account Name</th><th style="text-align:right">Balance</th></tr></thead><tbody>`
           section.data.accounts.forEach((acc: any) => {
-            contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td style="text-align:right">$${Number(acc.balance || 0).toFixed(2)}</td></tr>`
+            contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td></tr>`
           })
           contentHTML += '</tbody></table>'
         }
@@ -398,32 +398,32 @@ export default function ReportsPage() {
       ]
       sections.forEach(section => {
         if (section.data?.accounts?.length > 0) {
-          contentHTML += `<h2>${section.title}</h2><p><strong>Total: $${Number(section.data.total || 0).toFixed(2)}</strong></p><table><thead><tr><th>Account Code</th><th>Account Name</th><th style="text-align:right">Balance</th></tr></thead><tbody>`
+          contentHTML += `<h2>${section.title}</h2><p><strong>Total: ${formatCurrency(section.data.total || 0)}</strong></p><table><thead><tr><th>Account Code</th><th>Account Name</th><th style="text-align:right">Balance</th></tr></thead><tbody>`
           section.data.accounts.forEach((acc: any) => {
-            contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td style="text-align:right">$${Number(acc.balance || 0).toFixed(2)}</td></tr>`
+            contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td></tr>`
           })
           contentHTML += '</tbody></table>'
         }
       })
-      contentHTML += `<div class="summary"><h2>Summary</h2><p><strong>Gross Profit:</strong> $${Number(reportData.gross_profit || 0).toFixed(2)}</p><p><strong>Net Income:</strong> $${Number(reportData.net_income || 0).toFixed(2)}</p></div>`
+      contentHTML += `<div class="summary"><h2>Summary</h2><p><strong>Gross Profit:</strong> ${formatCurrency(reportData.gross_profit || 0)}</p><p><strong>Net Income:</strong> ${formatCurrency(reportData.net_income || 0)}</p></div>`
     } else if ((selectedReport === 'customer-balances' || selectedReport === 'vendor-balances') && reportData.customers || reportData.vendors) {
       const entries = reportData.customers || reportData.vendors || []
       const type = selectedReport === 'customer-balances' ? 'Customer' : 'Vendor'
       contentHTML += `<h2>${type} Balances</h2><table><thead><tr><th>${type} #</th><th>${type} Name</th><th>Email</th><th>Phone</th><th style="text-align:right">Balance</th></tr></thead><tbody>`
       entries.forEach((entry: any) => {
-        contentHTML += `<tr><td>${entry.customer_number || entry.vendor_number || ''}</td><td>${entry.display_name || entry.company_name || ''}</td><td>${entry.email || '—'}</td><td>${entry.phone || '—'}</td><td style="text-align:right">$${Math.abs(Number(entry.balance || 0)).toFixed(2)}</td></tr>`
+        contentHTML += `<tr><td>${entry.customer_number || entry.vendor_number || ''}</td><td>${entry.display_name || entry.company_name || ''}</td><td>${entry.email || '—'}</td><td>${entry.phone || '—'}</td><td style="text-align:right">${formatCurrency(Math.abs(Number(entry.balance || 0)))}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'meter-readings' && reportData.meters) {
       contentHTML += '<h2>Meter Details</h2><table><thead><tr><th>Meter Number</th><th>Meter Name</th><th style="text-align:right">Opening</th><th style="text-align:right">Closing</th><th style="text-align:right">Dispensed</th><th style="text-align:right">Sales</th><th style="text-align:right">Liters</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
       reportData.meters.forEach((meter: any) => {
-        contentHTML += `<tr><td>${meter.meter_number || ''}</td><td>${meter.meter_name || ''}</td><td style="text-align:right">${Number(meter.opening_reading || 0).toFixed(2)}L</td><td style="text-align:right">${Number(meter.closing_reading || 0).toFixed(2)}L</td><td style="text-align:right">${Number(meter.period_dispensed || 0).toFixed(2)}L</td><td style="text-align:right">${meter.total_sales || 0}</td><td style="text-align:right">${Number(meter.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">$${Number(meter.total_amount || 0).toFixed(2)}</td></tr>`
+        contentHTML += `<tr><td>${meter.meter_number || ''}</td><td>${meter.meter_name || ''}</td><td style="text-align:right">${Number(meter.opening_reading || 0).toFixed(2)}L</td><td style="text-align:right">${Number(meter.closing_reading || 0).toFixed(2)}L</td><td style="text-align:right">${Number(meter.period_dispensed || 0).toFixed(2)}L</td><td style="text-align:right">${meter.total_sales || 0}</td><td style="text-align:right">${Number(meter.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">${formatCurrency(meter.total_amount || 0)}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'sales-by-nozzle' && reportData.nozzles) {
       contentHTML += '<h2>Sales by Nozzle</h2><table><thead><tr><th>Nozzle</th><th>Product</th><th>Station</th><th style="text-align:right">Transactions</th><th style="text-align:right">Liters</th><th style="text-align:right">Amount</th><th style="text-align:right">Avg Sale</th></tr></thead><tbody>'
       reportData.nozzles.forEach((nozzle: any) => {
-        contentHTML += `<tr><td>${nozzle.nozzle_name || nozzle.nozzle_number || ''}</td><td>${nozzle.product_name || ''}</td><td>${nozzle.station_name || ''}</td><td style="text-align:right">${nozzle.total_transactions || 0}</td><td style="text-align:right">${Number(nozzle.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">$${Number(nozzle.total_amount || 0).toFixed(2)}</td><td style="text-align:right">$${Number(nozzle.average_sale_amount || 0).toFixed(2)}</td></tr>`
+        contentHTML += `<tr><td>${nozzle.nozzle_name || nozzle.nozzle_number || ''}</td><td>${nozzle.product_name || ''}</td><td>${nozzle.station_name || ''}</td><td style="text-align:right">${nozzle.total_transactions || 0}</td><td style="text-align:right">${Number(nozzle.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">${formatCurrency(nozzle.total_amount || 0)}</td><td style="text-align:right">${formatCurrency(nozzle.average_sale_amount || 0)}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
@@ -437,7 +437,7 @@ export default function ReportsPage() {
       reportData.sessions.forEach((session: any) => {
         const openedDate = formatDate(session.opened_at, true)
         const closedDate = session.closed_at ? formatDate(session.closed_at, true) : '—'
-        contentHTML += `<tr><td>${session.cashier_name || ''}</td><td>${session.station_name || ''}</td><td>${openedDate}</td><td>${closedDate}</td><td style="text-align:right">${session.transaction_count || 0}</td><td style="text-align:right">$${Number(session.total_sales || 0).toFixed(2)}</td><td style="text-align:right">${Number(session.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">$${Number(session.cash_expected || 0).toFixed(2)}</td><td style="text-align:right">$${Number(session.cash_counted || 0).toFixed(2)}</td><td style="text-align:right">$${Number(session.variance || 0).toFixed(2)}</td><td>${session.status || ''}</td></tr>`
+        contentHTML += `<tr><td>${session.cashier_name || ''}</td><td>${session.station_name || ''}</td><td>${openedDate}</td><td>${closedDate}</td><td style="text-align:right">${session.transaction_count || 0}</td><td style="text-align:right">${formatCurrency(session.total_sales || 0)}</td><td style="text-align:right">${Number(session.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">${formatCurrency(session.cash_expected || 0)}</td><td style="text-align:right">${formatCurrency(session.cash_counted || 0)}</td><td style="text-align:right">${formatCurrency(session.variance || 0)}</td><td>${session.status || ''}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'tank-dip-register' && reportData.entries) {
@@ -1281,7 +1281,7 @@ function renderReportTable(
                         {Number(metrics.liters ?? 0).toFixed(2)} L
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-900">
-                        ${Number(metrics.amount ?? 0).toFixed(2)}
+                        {formatCurrency(metrics.amount ?? 0)}
                       </td>
                     </tr>
                   ))}
@@ -2108,7 +2108,7 @@ function renderReportTable(
                       {formatCurrency(summary.total_cash_expected)}
                     </p>
                     <p className="text-xs text-purple-600 mt-1">
-                      Counted: ${Number(summary.total_cash_counted || 0).toFixed(2)}
+                      Counted: {formatCurrency(summary.total_cash_counted || 0)}
                     </p>
                   </div>
                   <div className="bg-purple-200 rounded-full p-3">
@@ -2186,7 +2186,7 @@ function renderReportTable(
                       <div className="flex justify-between items-center pb-2 border-b border-gray-100">
                         <span className="text-sm text-gray-600">Cash Sales</span>
                         <span className="text-base font-semibold text-green-700">
-                          ${Number(stats.total_cash_sales || 0).toFixed(2)}
+                          {formatCurrency(stats.total_cash_sales || 0)}
                         </span>
                       </div>
                     )}
@@ -2195,7 +2195,7 @@ function renderReportTable(
                       <div className="flex justify-between items-center pb-2 border-b border-gray-100">
                         <span className="text-sm text-gray-600">Non-Cash Sales</span>
                         <span className="text-base font-semibold text-blue-700">
-                          ${Number(stats.total_non_cash_sales || 0).toFixed(2)}
+                          {formatCurrency(stats.total_non_cash_sales || 0)}
                         </span>
                       </div>
                     )}
@@ -2206,7 +2206,7 @@ function renderReportTable(
                         <span className={`text-base font-bold ${
                           (stats.cash_variance || 0) >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          ${Math.abs(Number(stats.cash_variance || 0)).toFixed(2)}
+                          {formatCurrency(Math.abs(Number(stats.cash_variance || 0)))}
                         </span>
                       </div>
                       {stats.variance_percentage !== undefined && (
@@ -2311,19 +2311,19 @@ function renderReportTable(
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <span className="text-sm text-gray-700">
-                          ${Number(session.cash_expected || 0).toFixed(2)}
+                          {formatCurrency(session.cash_expected || 0)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <span className="text-sm text-gray-700">
-                          ${Number(session.cash_counted || 0).toFixed(2)}
+                          {formatCurrency(session.cash_counted || 0)}
                         </span>
                       </td>
                       <td className={`px-6 py-4 whitespace-nowrap text-right`}>
                         <span className={`text-sm font-semibold ${
                           (session.variance || 0) >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {(session.variance || 0) >= 0 ? '+' : ''}${Number(session.variance || 0).toFixed(2)}
+                          {formatCurrency(session.variance || 0)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -2660,10 +2660,10 @@ function renderReportTable(
                   <h5 className="font-medium text-gray-900">{tank}</h5>
                   <p className="text-sm text-gray-500">{stats.product}</p>
                   <div className="mt-2 space-y-1 text-sm">
-                    <p className="text-green-600">Gain: {Number(stats.total_gain_qty || 0).toFixed(2)}L (${Number(stats.total_gain_value || 0).toFixed(2)})</p>
-                    <p className="text-red-600">Loss: {Number(stats.total_loss_qty || 0).toFixed(2)}L (${Number(stats.total_loss_value || 0).toFixed(2)})</p>
+                    <p className="text-green-600">Gain: {Number(stats.total_gain_qty || 0).toFixed(2)}L ({formatCurrency(stats.total_gain_value || 0)})</p>
+                    <p className="text-red-600">Loss: {Number(stats.total_loss_qty || 0).toFixed(2)}L ({formatCurrency(stats.total_loss_value || 0)})</p>
                     <p className={`font-medium ${(stats.net_variance_qty || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      Net: {Number(stats.net_variance_qty || 0).toFixed(2)}L (${Number(stats.net_variance_value || 0).toFixed(2)})
+                      Net: {Number(stats.net_variance_qty || 0).toFixed(2)}L ({formatCurrency(stats.net_variance_value || 0)})
                     </p>
                   </div>
                 </div>

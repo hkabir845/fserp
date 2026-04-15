@@ -8,6 +8,7 @@ import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
+import { AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 
 interface InvoiceLineItem {
   id?: number
@@ -1139,7 +1140,7 @@ export default function InvoicesPage() {
                   <div className="space-y-3">
                     {formData.lines.map((line, index) => (
                       <div key={index} className="grid grid-cols-12 gap-2 p-3 border border-gray-200 rounded-lg">
-                        <div className="col-span-12 md:col-span-4">
+                        <div className="col-span-12 md:col-span-3">
                           <label className="block text-xs font-medium text-gray-700 mb-1">Item</label>
                           <select
                             value={line.item_id || ''}
@@ -1211,7 +1212,7 @@ export default function InvoicesPage() {
                             </p>
                           )}
                         </div>
-                        <div className="col-span-12 md:col-span-3">
+                        <div className="col-span-12 md:col-span-2">
                           <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
                           <input
                             type="text"
@@ -1242,13 +1243,14 @@ export default function InvoicesPage() {
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                           />
                         </div>
-                        <div className="col-span-12 md:col-span-1">
+                        <div className="col-span-12 md:col-span-2">
                           <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
                           <input
                             type="text"
                             value={line.amount.toFixed(2)}
                             readOnly
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-gray-50"
+                            title={`${currencySymbol}${line.amount.toFixed(2)}`}
+                            className={AMOUNT_READ_ONLY_INPUT_CLASS}
                           />
                         </div>
                         <div className="col-span-12 md:col-span-1 flex items-end">
@@ -1278,7 +1280,7 @@ export default function InvoicesPage() {
                         <p className="text-sm text-gray-600">Tax:</p>
                         <p className="text-lg font-semibold text-gray-900">Total:</p>
                       </div>
-                      <div className="text-right min-w-[120px]">
+                      <div className="text-right min-w-[9rem] tabular-nums">
                         <p className="text-sm text-gray-900">{currencySymbol}{calculateTotals().subtotal.toFixed(2)}</p>
                         <p className="text-sm text-gray-900">{currencySymbol}{calculateTotals().taxAmount.toFixed(2)}</p>
                         <p className="text-lg font-semibold text-gray-900">{currencySymbol}{calculateTotals().total.toFixed(2)}</p>
@@ -1533,7 +1535,7 @@ export default function InvoicesPage() {
                   <div className="space-y-3">
                     {formData.lines.map((line, index) => (
                       <div key={index} className="grid grid-cols-12 gap-2 p-3 border border-gray-200 rounded-lg">
-                        <div className="col-span-12 md:col-span-4">
+                        <div className="col-span-12 md:col-span-3">
                           <label className="block text-xs font-medium text-gray-700 mb-1">Item</label>
                           <select
                             value={line.item_id || ''}
@@ -1605,7 +1607,7 @@ export default function InvoicesPage() {
                             </p>
                           )}
                         </div>
-                        <div className="col-span-12 md:col-span-3">
+                        <div className="col-span-12 md:col-span-2">
                           <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
                           <input
                             type="text"
@@ -1636,13 +1638,14 @@ export default function InvoicesPage() {
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                           />
                         </div>
-                        <div className="col-span-12 md:col-span-1">
+                        <div className="col-span-12 md:col-span-2">
                           <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
                           <input
                             type="text"
                             value={line.amount.toFixed(2)}
                             readOnly
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-gray-50"
+                            title={`${currencySymbol}${line.amount.toFixed(2)}`}
+                            className={AMOUNT_READ_ONLY_INPUT_CLASS}
                           />
                         </div>
                         <div className="col-span-12 md:col-span-1 flex items-end">
@@ -1672,7 +1675,7 @@ export default function InvoicesPage() {
                         <p className="text-sm text-gray-600">Tax:</p>
                         <p className="text-lg font-semibold text-gray-900">Total:</p>
                       </div>
-                      <div className="text-right min-w-[120px]">
+                      <div className="text-right min-w-[9rem] tabular-nums">
                         <p className="text-sm text-gray-900">{currencySymbol}{calculateTotals().subtotal.toFixed(2)}</p>
                         <p className="text-sm text-gray-900">{currencySymbol}{calculateTotals().taxAmount.toFixed(2)}</p>
                         <p className="text-lg font-semibold text-gray-900">{currencySymbol}{calculateTotals().total.toFixed(2)}</p>

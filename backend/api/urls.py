@@ -66,6 +66,7 @@ def api_docs(request):
             "/api/shifts/", "/api/tank-dips", "/api/taxes/",             "/api/reports/<id>",
             "/api/company/backup/", "/api/company/restore/",
             "/api/admin/companies/<id>/backup/", "/api/admin/companies/<id>/restore/",
+            "/api/admin/companies/<id>/stations/", "/api/admin/companies/<id>/stations/<sid>/purge/",
         ],
     })
 
@@ -171,6 +172,14 @@ urlpatterns = [
     ),
     path("admin/companies/<int:company_id>/backup/", backup_views.admin_company_backup_download),
     path("admin/companies/<int:company_id>/restore/", backup_views.admin_company_restore_upload),
+    path(
+        "admin/companies/<int:company_id>/stations/",
+        admin_views.admin_company_stations,
+    ),
+    path(
+        "admin/companies/<int:company_id>/stations/<int:station_id>/purge/",
+        admin_views.admin_company_station_purge,
+    ),
     # Contracts (Super Admin)
     path("contracts/", contracts_views.contracts_list_or_create),
     path("contracts", contracts_views.contracts_list_or_create),

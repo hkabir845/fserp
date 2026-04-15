@@ -86,7 +86,6 @@ export default function PaymentReceivedPage() {
   useEffect(() => {
     fetchPaymentsReceived()
     fetchAllOutstandingInvoices()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate])
 
   const fetchCustomers = async () => {

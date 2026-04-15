@@ -2,7 +2,7 @@
 
 Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed. The web UI is a separate app: **Next.js 16** in [`../frontend/`](../frontend/) (this Python project does not embed Next.js).
 
-**Deploy / env:** Configure `backend/.env` or `backend/env/.env` (see [`env.example`](env.example)) — `DJANGO_SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, `FRONTEND_BASE_URL`, etc.
+**Deploy / env:** Configure `backend/.env` or `backend/env/.env` (see [`env.example`](env.example)) — `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CORS_ALLOWED_ORIGINS`, `FRONTEND_BASE_URL`, etc. (Production requires the `DJANGO_*` names; `ALLOWED_HOSTS` / `CORS_ORIGINS` alone are not read by `fsms/settings.py`.)
 
 **Deploy metadata:** Set `FSERP_APP_VERSION` and optionally `GIT_COMMIT_SHA`; verify with `GET /api/version/`.
 
@@ -11,7 +11,7 @@ Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed. The web 
 Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATCH` with custom headers. The frontend sends **`X-Selected-Company-Id`** (tenant scope) for many API calls. The server must respond with **`Access-Control-Allow-Headers`** that includes `x-selected-company-id`.
 
 - **Django:** `fsms/settings.py` already extends `CORS_ALLOW_HEADERS` with that header (and `x-tenant-subdomain`, `x-request-id`). **Redeploy the backend** so production runs this code.
-- **`CORS_ORIGINS`** must include your UI origin, e.g. `https://mahasoftcorporation.com,https://www.mahasoftcorporation.com` (see `env.example`).
+- **`DJANGO_CORS_ALLOWED_ORIGINS`** must include your UI origin(s), e.g. `https://mahasoftcorporation.com,https://www.mahasoftcorporation.com` (comma-separated; see `env.example`).
 - **Nginx / cPanel / reverse proxy:** If the proxy handles `OPTIONS` or injects CORS headers, it must **not** use a narrow `Access-Control-Allow-Headers` list. **Prefer** forwarding `OPTIONS` to Django so `django-cors-headers` sets headers. If you must set CORS in nginx, include at least: `Authorization`, `Content-Type`, `X-CSRFToken`, `X-Selected-Company-Id`, `X-Tenant-Subdomain`, `X-Request-Id`.
 
 **Verify:** `python verify_backend.py` (includes a preflight check for `x-selected-company-id`). On the server, `curl -i -X OPTIONS "https://api.example.com/api/auth/login/" -H "Origin: https://mahasoftcorporation.com" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: x-selected-company-id"` should show `access-control-allow-headers` containing `x-selected-company-id`.
@@ -64,13 +64,13 @@ Then log in on the frontend with that username and password.
 ## Setup
 
 ```bash
-cd backend_django
+cd backend
 python -m venv venv
 venv\Scripts\activate   # Windows
 pip install -r requirements.txt
 ```
 
-Models use **managed = False** and map to the existing database tables. Configure the DB path in `fsms/settings.py`. Run `python manage.py migrate` to create Django’s auth/session tables if you use the admin site.
+Use **`DATABASE_URL`** for PostgreSQL (see `env.example`), or omit it to use the default SQLite file `backend/db.sqlite3`. Run `python manage.py migrate` to apply Django migrations.
 
 ## Run
 

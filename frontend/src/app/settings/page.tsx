@@ -91,8 +91,7 @@ export default function SettingsPage() {
                 <ul className="mt-3 space-y-2 text-blue-800 text-sm">
                   <li>• Create company and stations</li>
                   <li>• Add tanks linked to products</li>
-                  <li>• Configure islands, dispensers, and meters</li>
-                  <li>• Set up nozzles for cashier POS</li>
+                  <li>• Configure islands, dispensers, meters, and nozzles for cashier POS</li>
                   <li>• Manage chart of accounts</li>
                 </ul>
               </div>

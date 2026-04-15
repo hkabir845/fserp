@@ -189,6 +189,52 @@ def delete_tenant_company_data(company_id: int) -> None:
     Company.objects.filter(pk=cid).delete()
 
 
+def delete_station_operational_data(
+    company_id: int,
+    station_id: int,
+    *,
+    remove_station_record: bool = True,
+) -> dict[str, int]:
+    """
+    Remove forecourt / operations data for a single station within a tenant.
+
+    Does **not** delete company-wide accounting (invoices, payments, GL, customers, items, etc.).
+    Invoices linked to shift sessions for this station keep existing rows; ``Invoice.shift_session``
+    is set NULL when shift sessions are removed.
+
+    Deletes in FK-safe order: shifts → dips → nozzles → meters → dispensers → islands → tanks →
+    optionally the station row.
+
+    Returns approximate row counts deleted per group (best-effort for observability).
+    """
+    cid = company_id
+    sid = station_id
+
+    st = Station.objects.filter(pk=sid, company_id=cid).first()
+    if not st:
+        raise ValueError("Station not found for this company.")
+
+    counts: dict[str, int] = {}
+
+    def _del(label: str, qs):
+        n, _ = qs.delete()
+        counts[label] = counts.get(label, 0) + int(n)
+
+    # Shift sessions (Invoice.shift_session is SET_NULL)
+    _del("shift_sessions", ShiftSession.objects.filter(company_id=cid, station_id=sid))
+    _del("tank_dips", TankDip.objects.filter(company_id=cid, tank__station_id=sid))
+    _del("nozzles", Nozzle.objects.filter(company_id=cid, tank__station_id=sid))
+    _del("meters", Meter.objects.filter(company_id=cid, dispenser__island__station_id=sid))
+    _del("dispensers", Dispenser.objects.filter(company_id=cid, island__station_id=sid))
+    _del("islands", Island.objects.filter(company_id=cid, station_id=sid))
+    _del("tanks", Tank.objects.filter(company_id=cid, station_id=sid))
+
+    if remove_station_record:
+        _del("stations", Station.objects.filter(pk=sid, company_id=cid))
+
+    return counts
+
+
 def _topo_chart_accounts(company_id: int) -> list[ChartOfAccount]:
     qs = ChartOfAccount.objects.filter(company_id=company_id)
     by_id = {o.id: o for o in qs}

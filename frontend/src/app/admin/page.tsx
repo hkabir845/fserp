@@ -41,6 +41,7 @@ import { formatCurrency, formatNumber } from '@/utils/currency'
 import { getCurrenciesByCountry } from '@/utils/currencies'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { formatDate, formatDateOnly } from '@/utils/date'
+import { AMOUNT_ADMIN_TEXT_CLASS } from '@/utils/amountFieldStyles'
 import { RESTORE_CONFIRM_PHRASE } from '@/utils/tenantBackup'
 
 interface PlatformStats {
@@ -2300,7 +2301,7 @@ function SuperAdminPageContent() {
                           type="text"
                           value={companyFormData.payment_amount}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, payment_amount: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className={AMOUNT_ADMIN_TEXT_CLASS}
                           placeholder="0.00"
                         />
                       </div>

@@ -6,7 +6,7 @@ import json
 
 def test_login():
     """Test admin login"""
-    url = "https://api.mahasoftcorporation.com/api/auth/login"
+    url = "https://localhost:8000/api/auth/login"
     
     # Test data
     data = {
@@ -46,7 +46,7 @@ def test_login():
                 
     except requests.exceptions.ConnectionError:
         print("\n❌ ERROR: Cannot connect to backend server")
-        print("Make sure the backend is running on https://api.mahasoftcorporation.com")
+        print("Make sure the backend is running on https://localhost:8000")
         print("\nTo start the backend, run:")
         print("  cd backend")
         print("  python manage.py runserver 8000")

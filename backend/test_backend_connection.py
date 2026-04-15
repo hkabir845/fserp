@@ -10,7 +10,7 @@ def test_backend():
     print("Testing Backend Connection")
     print("=" * 60)
     
-    base_url = "https://api.mahasoftcorporation.com"
+    base_url = "https://localhost:8000"
     
     # Test 1: Health endpoint (no auth needed)
     print("\n1. Testing /health endpoint...")
@@ -20,7 +20,7 @@ def test_backend():
         print(f"   Response: {response.json()}")
     except requests.exceptions.ConnectionError:
         print("   ❌ FAILED: Cannot connect to backend")
-        print("   Backend is NOT running on https://api.mahasoftcorporation.com")
+        print("   Backend is NOT running on https://localhost:8000")
         print("\n   To start backend:")
         print("   - Double-click: START_BACKEND_NOW.bat")
         print("   - Or run: cd backend && python -m uvicorn app.main:app --reload")

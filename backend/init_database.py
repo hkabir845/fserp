@@ -596,7 +596,7 @@ def main():
         
         print("\nNEXT STEPS:")
         print("  1. Start backend: python -m uvicorn app.main:app --reload")
-        print("  2. Access API docs: https://api.mahasoftcorporation.com/api/docs")
+        print("  2. Access API docs: https://localhost:8000/api/docs")
         print("  3. Access frontend: http://localhost:3000")
         print("\n" + "="*60)
         

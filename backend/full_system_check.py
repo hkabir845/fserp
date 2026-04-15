@@ -10,7 +10,7 @@ from typing import Iterable, Tuple
 
 import requests
 
-BASE_URL = "https://api.mahasoftcorporation.com"
+BASE_URL = "https://localhost:8000"
 
 
 def fetch_token(username: str, password: str) -> str:

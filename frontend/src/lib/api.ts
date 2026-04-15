@@ -5,10 +5,10 @@
 import axios from 'axios'
 
 /**
- * Canonical API base (.../api). Env is `NEXT_PUBLIC_API_BASE_URL` (e.g. `https://api.mahasoftcorporation.com` or local `https://api.mahasoftcorporation.com`); path may include `/api` — never duplicate `/api/api`.
+ * Canonical API base (.../api). Env is `NEXT_PUBLIC_API_BASE_URL` (e.g. `https://localhost:8000` or local `https://localhost:8000`); path may include `/api` — never duplicate `/api/api`.
  */
 /** Default API origin when `NEXT_PUBLIC_API_BASE_URL` is unset — production API. Override in `frontend/.env`. */
-export const FALLBACK_BACKEND_ORIGIN = 'https://api.mahasoftcorporation.com'
+export const FALLBACK_BACKEND_ORIGIN = 'https://localhost:8000'
 
 const DEFAULT_BACKEND_ORIGIN = FALLBACK_BACKEND_ORIGIN
 

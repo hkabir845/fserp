@@ -45,7 +45,7 @@ try:
     print("TO SEE TANKS IN THE APP:")
     print("=" * 60)
     print("\n1. ⚠️ Cannot connect to backend server")
-    print("   Please ensure the backend is running on https://api.mahasoftcorporation.com")
+    print("   Please ensure the backend is running on https://localhost:8000")
     print("   💡 Tip: Run 'python -m uvicorn app.main:app --reload' in the backend directory")
     print("\n2. Login with your domain-based tenant account")
     print("   (This is a domain-based multi-tenant application)")

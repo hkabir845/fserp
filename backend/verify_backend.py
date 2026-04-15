@@ -13,7 +13,7 @@ def verify_backend():
     # Test 1: Health endpoint
     print("1. Testing /health endpoint...")
     try:
-        response = requests.get('https://api.mahasoftcorporation.com/health', timeout=5)
+        response = requests.get('https://localhost:8000/health', timeout=5)
         if response.status_code == 200:
             print(f"   ✅ Status: {response.status_code}")
             print(f"   ✅ Response: {response.json()}")
@@ -34,7 +34,7 @@ def verify_backend():
     print("2. Testing CORS configuration...")
     try:
         response = requests.options(
-            'https://api.mahasoftcorporation.com/api/auth/login',
+            'https://localhost:8000/api/auth/login',
             headers={
                 'Origin': 'http://localhost:3000',
                 'Access-Control-Request-Method': 'POST',
@@ -64,7 +64,7 @@ def verify_backend():
     print("3. Testing /api/auth/login endpoint...")
     try:
         response = requests.post(
-            'https://api.mahasoftcorporation.com/api/auth/login',
+            'https://localhost:8000/api/auth/login',
             data={'username': 'admin', 'password': 'admin123'},
             headers={'Origin': 'http://localhost:3000'},
             timeout=5

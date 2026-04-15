@@ -82,8 +82,8 @@ if not exist ".env" (
     (
         echo # Next.js — see README. Edit NEXT_PUBLIC_* for local API vs production.
         echo PORT=3000
-        echo NEXT_PUBLIC_API_URL=https://api.mahasoftcorporation.com
-        echo NEXT_PUBLIC_API_BASE_URL=https://api.mahasoftcorporation.com
+        echo NEXT_PUBLIC_API_URL=https://localhost:8000
+        echo NEXT_PUBLIC_API_BASE_URL=https://localhost:8000
         echo NEXT_PUBLIC_WS_URL=wss://api.mahasoftcorporation.com
         echo NEXT_PUBLIC_APP_SHELL_HOSTNAMES=localhost,127.0.0.1
         echo NEXT_PUBLIC_API_TIMEOUT=30000

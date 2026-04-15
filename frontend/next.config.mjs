@@ -15,7 +15,7 @@ const nextConfig = {
   // Security headers: use `src/proxy.ts` with a matcher that excludes `/_next/static/*`.
   // A `headers()` regex here has caused dev 404s for chunks/CSS in some Next versions.
   env: {
-    API_URL: process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://api.mahasoftcorporation.com',
+    API_URL: process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000',
     WS_URL: process.env.WS_URL || process.env.NEXT_PUBLIC_WS_URL || 'wss://api.mahasoftcorporation.com',
   },
   // Production static/CSS: ensure your server or reverse proxy forwards /_next/* to the Next server.

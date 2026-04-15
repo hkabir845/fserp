@@ -26,7 +26,7 @@ function triggerDownload(blob: Blob, filename: string) {
 /** Explains stale-API case when backend still errors on JSON encoding backup payloads. */
 function appendBackupStaleApiHint(message: string): string {
   if (!/not JSON serializable/i.test(message)) return message
-  return `${message} Current API: ${getApiBaseUrl()}. Use local Django (NEXT_PUBLIC_API_BASE_URL=https://localhost:8000) or deploy the latest backend to production.`
+  return `${message} Current API: ${getApiBaseUrl()}. For local Django set API URL in frontend/.env.development; otherwise deploy the latest backend to production.`
 }
 
 /** When `responseType: 'blob'`, 4xx/5xx JSON bodies arrive as Blob — surface `detail` / `error` in the UI. */

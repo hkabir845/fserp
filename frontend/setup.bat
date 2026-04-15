@@ -73,19 +73,19 @@ echo.
 echo [OK] Dependencies installed successfully
 echo.
 
-REM Create .env file if it doesn't exist (single env file for dev and build)
+REM Create .env + .env.development if missing (production defaults + local dev overrides)
 if not exist ".env" (
     echo ========================================
-    echo Creating .env file...
+    echo Creating .env file ^(production API defaults^)...
     echo ========================================
     echo.
     (
-        echo # Next.js — see README. Edit NEXT_PUBLIC_* for local API vs production.
+        echo # See .env.example. `next build` uses this; `next dev` also loads .env.development.
         echo PORT=3000
-        echo NEXT_PUBLIC_API_URL=https://localhost:8000
-        echo NEXT_PUBLIC_API_BASE_URL=https://localhost:8000
+        echo NEXT_PUBLIC_API_URL=https://api.mahasoftcorporation.com
+        echo NEXT_PUBLIC_API_BASE_URL=https://api.mahasoftcorporation.com
         echo NEXT_PUBLIC_WS_URL=wss://api.mahasoftcorporation.com
-        echo NEXT_PUBLIC_APP_SHELL_HOSTNAMES=localhost,127.0.0.1
+        echo NEXT_PUBLIC_APP_SHELL_HOSTNAMES=mahasoftcorporation.com,www.mahasoftcorporation.com
         echo NEXT_PUBLIC_API_TIMEOUT=30000
         echo NEXT_PUBLIC_APP_NAME=Filling Station ERP
         echo NEXT_PUBLIC_APP_VERSION=1.0.0
@@ -96,6 +96,21 @@ if not exist ".env" (
     echo.
 ) else (
     echo [OK] .env file already exists
+    echo.
+)
+if not exist ".env.development" (
+    echo Creating .env.development ^(localhost API for npm run dev^)...
+    (
+        echo # Loaded only for `next dev`. Overrides `.env`.
+        echo NEXT_PUBLIC_API_URL=http://localhost:8000
+        echo NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+        echo NEXT_PUBLIC_APP_SHELL_HOSTNAMES=localhost,127.0.0.1
+        echo NEXT_PUBLIC_APP_ORIGIN=http://localhost:3000
+    ) > .env.development
+    echo [OK] .env.development created
+    echo.
+) else (
+    echo [OK] .env.development already exists
     echo.
 )
 

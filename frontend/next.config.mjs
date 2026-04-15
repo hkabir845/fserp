@@ -3,6 +3,35 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+/**
+ * Fail `next build` if public URLs still point at loopback — avoids shipping a bundle that
+ * calls the user's machine from a VPS deployment.
+ */
+function assertProductionBuildUsesNonLoopbackPublicUrls() {
+  if (process.env.NODE_ENV !== 'production') return
+  if (!process.argv.includes('build')) return
+  const check = (key) => {
+    const v = process.env[key]
+    if (v == null || !String(v).trim()) return
+    const s = String(v).toLowerCase()
+    if (
+      s.includes('localhost') ||
+      s.includes('127.0.0.1') ||
+      s.includes('[::1]') ||
+      s.includes('://0.0.0.0')
+    ) {
+      throw new Error(
+        `[next.config] ${key}=${v} must not use localhost/loopback in a production build. ` +
+          'Use your public API host (see frontend/.env). For local Django, use `next dev` with frontend/.env.development only.',
+      )
+    }
+  }
+  check('NEXT_PUBLIC_API_BASE_URL')
+  check('NEXT_PUBLIC_API_URL')
+  check('NEXT_PUBLIC_WS_URL')
+}
+assertProductionBuildUsesNonLoopbackPublicUrls()
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -15,7 +44,10 @@ const nextConfig = {
   // Security headers: use `src/proxy.ts` with a matcher that excludes `/_next/static/*`.
   // A `headers()` regex here has caused dev 404s for chunks/CSS in some Next versions.
   env: {
-    API_URL: process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000',
+    API_URL:
+      process.env.API_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      'https://api.mahasoftcorporation.com',
     WS_URL: process.env.WS_URL || process.env.NEXT_PUBLIC_WS_URL || 'wss://api.mahasoftcorporation.com',
   },
   // Production static/CSS: ensure your server or reverse proxy forwards /_next/* to the Next server.

@@ -16,16 +16,45 @@ try:
 except ImportError:
     _FSERP_APP_VERSION = "0.0.0-dev"
 
+_manage_cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+_is_runserver = _manage_cmd == "runserver"
+
+# Local `manage.py` without DJANGO_SECRET_KEY — fixed dev-only key (never use in production).
+_manage_insecure_secret_ok = _manage_cmd in frozenset(
+    {
+        "runserver",
+        "shell",
+        "migrate",
+        "makemigrations",
+        "createsuperuser",
+        "test",
+        "showmigrations",
+        "dbshell",
+        "flush",
+        "loaddata",
+        "dumpdata",
+        "sqlmigrate",
+        "collectstatic",
+        "check",
+        "changepassword",
+        "compilemessages",
+        "makemessages",
+    }
+)
+
 # --- Public site URLs (browser + API hostnames) ---
 ALLOWED_HOSTS = ["api.mahasoftcorporation.com", "mahasoftcorporation.com"]
+if _is_runserver:
+    ALLOWED_HOSTS = list(dict.fromkeys([*ALLOWED_HOSTS, "localhost", "127.0.0.1"]))
 
-DEBUG = False
+DEBUG = _is_runserver
 
 _secret = (os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY") or "").strip()
 if len(_secret) < 32:
-    # pytest loads settings before conftest can set env; allow a fixed test key only under pytest
     if "pytest" in sys.modules:
         _secret = "pytest-only-secret-key-do-not-use-in-production-32"
+    elif _manage_insecure_secret_ok:
+        _secret = "django-insecure-local-manage-only-not-for-production-use-32"
     else:
         raise ImproperlyConfigured(
             "Set DJANGO_SECRET_KEY (or SECRET_KEY) to a random string of at least 32 characters."
@@ -172,8 +201,8 @@ USE_X_FORWARDED_HOST = True
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = not _is_runserver
+CSRF_COOKIE_SECURE = not _is_runserver
 
 LOGGING = {
     "version": 1,

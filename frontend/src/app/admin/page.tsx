@@ -35,7 +35,6 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
-import { MasterCompanyConfirmDialog } from '@/components/MasterCompanyConfirmDialog'
 import api from '@/lib/api'
 import { formatCurrency, formatNumber } from '@/utils/currency'
 import { getCurrenciesByCountry } from '@/utils/currencies'
@@ -179,7 +178,10 @@ function SuperAdminPageContent() {
   const [broadcasts, setBroadcasts] = useState<any[]>([])
   const [showBroadcastModal, setShowBroadcastModal] = useState(false)
   const [showPushUpdateDialog, setShowPushUpdateDialog] = useState(false)
+  const [pushScope, setPushScope] = useState<'all_tenants' | 'selected'>('all_tenants')
+  const [pushSelectedCompanyIds, setPushSelectedCompanyIds] = useState<number[]>([])
   const [pushUpdateOptions, setPushUpdateOptions] = useState({
+    apply_platform_release: true,
     sync_chart_of_accounts: true,
     sync_items: true,
     sync_tax_codes: true,
@@ -711,28 +713,41 @@ function SuperAdminPageContent() {
     }
   }
 
-  const handlePushMasterUpdates = () => {
+  const handlePushMasterUpdates = async () => {
     if (!isMasterCompany) {
       toast.error('This feature is only available in Master Company')
       return
     }
+    await fetchCompanies()
     setShowPushUpdateDialog(true)
   }
 
   const confirmPushUpdates = async () => {
+    if (pushScope === 'selected' && pushSelectedCompanyIds.length === 0) {
+      toast.error('Select at least one tenant company, or choose All tenants.')
+      return
+    }
     try {
-      const params = new URLSearchParams({
-        sync_chart_of_accounts: String(pushUpdateOptions.sync_chart_of_accounts),
-        sync_items: String(pushUpdateOptions.sync_items),
-        sync_tax_codes: String(pushUpdateOptions.sync_tax_codes),
-        sync_company_settings: String(pushUpdateOptions.sync_company_settings)
-      })
-      const response = await api.post(`/admin/master-company/push-updates?${params.toString()}`)
+      const body: Record<string, unknown> = {
+        scope: pushScope,
+        company_ids: pushScope === 'selected' ? pushSelectedCompanyIds : undefined,
+        apply_platform_release: pushUpdateOptions.apply_platform_release,
+        sync_chart_of_accounts: pushUpdateOptions.sync_chart_of_accounts,
+        sync_items: pushUpdateOptions.sync_items,
+        sync_tax_codes: pushUpdateOptions.sync_tax_codes,
+        sync_company_settings: pushUpdateOptions.sync_company_settings
+      }
+      const response = await api.post(`/admin/master-company/push-updates/`, body)
       setShowPushUpdateDialog(false)
       if (response.data) {
-        toast.success(
-          `Updates pushed successfully to ${response.data.updated_count} companies!`
-        )
+        const n = response.data.updated_count ?? 0
+        const failed = (response.data.results || []).filter((r: { ok?: boolean }) => !r.ok).length
+        if (failed > 0) {
+          toast.error(`Completed with ${failed} failure(s). ${n} tenant(s) updated fully.`)
+        } else {
+          toast.success(`Updates applied to ${n} tenant company(ies).`)
+        }
+        await fetchCompanies()
       }
     } catch (error: any) {
       const errorMsg = error.response?.data?.detail || error.response?.data?.message || 'Failed to push updates'
@@ -2725,18 +2740,6 @@ function SuperAdminPageContent() {
         </div>
       </div>
       
-      {/* Push Updates Confirmation Dialog */}
-      <MasterCompanyConfirmDialog
-        isOpen={showPushUpdateDialog}
-        onClose={() => setShowPushUpdateDialog(false)}
-        onConfirm={confirmPushUpdates}
-        title="Push Master Company Updates"
-        message="This will sync updates from Master Company to all tenant companies. Select what to sync:"
-        confirmText="Push Updates"
-        cancelText="Cancel"
-        destructive={false}
-      />
-      
       {showPushUpdateDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
@@ -2758,14 +2761,83 @@ function SuperAdminPageContent() {
                     <span className="text-sm font-semibold">Master Company Mode Active</span>
                   </div>
                   <p className="text-xs text-orange-700 mt-1">
-                    This will sync updates from Master Company to all tenant companies.
+                    Promote the current platform release to tenants and optionally copy template data from Master to the
+                    tenants you choose.
                   </p>
                 </div>
               )}
+
+              <p className="text-sm font-medium text-gray-800 mb-2">Apply to</p>
+              <div className="space-y-2 mb-4">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="pushScope"
+                    checked={pushScope === 'all_tenants'}
+                    onChange={() => {
+                      setPushScope('all_tenants')
+                      setPushSelectedCompanyIds([])
+                    }}
+                    className="text-blue-600"
+                  />
+                  <span className="text-sm text-gray-700">All tenant companies</span>
+                </label>
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="pushScope"
+                    checked={pushScope === 'selected'}
+                    onChange={() => setPushScope('selected')}
+                    className="text-blue-600"
+                  />
+                  <span className="text-sm text-gray-700">Selected tenants only</span>
+                </label>
+              </div>
+              {pushScope === 'selected' && (
+                <div className="mb-4 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                  {companies
+                    .filter((c) => c.is_master !== 'true')
+                    .map((c) => (
+                      <label key={c.id} className="flex items-center space-x-2 cursor-pointer text-sm">
+                        <input
+                          type="checkbox"
+                          checked={pushSelectedCompanyIds.includes(c.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setPushSelectedCompanyIds([...pushSelectedCompanyIds, c.id])
+                            } else {
+                              setPushSelectedCompanyIds(pushSelectedCompanyIds.filter((id) => id !== c.id))
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 rounded"
+                        />
+                        <span className="text-gray-800">
+                          {c.name} <span className="text-gray-500">(#{c.id})</span>
+                        </span>
+                      </label>
+                    ))}
+                  {companies.filter((c) => c.is_master !== 'true').length === 0 && (
+                    <p className="text-xs text-gray-500">No tenant companies in the list.</p>
+                  )}
+                </div>
+              )}
               
-              <p className="text-gray-700 mb-4">Select what to sync:</p>
+              <p className="text-gray-700 mb-3">Select what to apply:</p>
               
               <div className="space-y-3 mb-6">
+                <label className="flex items-center space-x-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={pushUpdateOptions.apply_platform_release}
+                    onChange={(e) =>
+                      setPushUpdateOptions({ ...pushUpdateOptions, apply_platform_release: e.target.checked })
+                    }
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Platform release (deploy tag + release hooks — same as per-tenant Apply release)
+                  </span>
+                </label>
                 <label className="flex items-center space-x-3 cursor-pointer">
                   <input
                     type="checkbox"

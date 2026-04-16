@@ -315,6 +315,7 @@ urlpatterns = [
     # Reports
     path("reports/<str:report_id>/", reports_views.report_by_id),
     # HR (employees + subledger + payroll run headers)
+    path("employees/next-code/", hr_views.employee_next_code_suggested),
     path("employees/", hr_views.employees_list_or_create),
     path(
         "employees/<int:employee_id>/ledger/entries/",

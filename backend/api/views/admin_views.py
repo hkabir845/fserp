@@ -11,6 +11,7 @@ from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.models import User, Company, Customer, Vendor, Station, Invoice
+from api.services.master_push import run_master_push
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_station_operational_data
 from api.services.tenant_release import apply_platform_release, get_target_release
 
@@ -172,21 +173,85 @@ def admin_master_company_protection_status(request):
     return JsonResponse({"enabled": False, "message": "Protection status not configured"})
 
 
+def _parse_bool(val, default: bool = False) -> bool:
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    s = str(val).strip().lower()
+    if s in ("true", "1", "yes", "on"):
+        return True
+    if s in ("false", "0", "no", "off", ""):
+        return False
+    return default
+
+
 @csrf_exempt
+@require_http_methods(["POST"])
 @auth_required
 @_super_admin_required
 def admin_master_company_push_updates(request):
-    """POST /api/admin/master-company/push-updates — legacy stub; use per-tenant apply-release instead."""
-    return JsonResponse(
-        {
-            "ok": True,
-            "message": (
-                "Use POST /api/admin/companies/<id>/apply-release/ for manual per-tenant rollout. "
-                "Set FSERP_PLATFORM_RELEASE at deploy to define the target tag."
-            ),
-            "target_release": get_target_release(),
-        }
+    """
+    POST /api/admin/master-company/push-updates/
+
+    Apply platform release and/or copy template data from the Master company to one or all tenants.
+
+    JSON body:
+      - scope: "all_tenants" | "selected" (default all_tenants)
+      - company_ids: list[int] — required when scope is selected (non-master companies only)
+      - apply_platform_release: bool (default true)
+      - sync_chart_of_accounts, sync_items, sync_tax_codes, sync_company_settings: bool (default false)
+
+    Query string (legacy, optional): same keys as booleans for sync_* and apply_platform_release.
+    """
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"detail": "Invalid JSON"}, status=400)
+
+    def _from_body_or_get(key: str, default):
+        if key in body:
+            return body.get(key)
+        return request.GET.get(key)
+
+    scope = (body.get("scope") or request.GET.get("scope") or "all_tenants").strip()
+    raw_ids = body.get("company_ids")
+    if raw_ids is None and request.GET.get("company_ids"):
+        raw = request.GET.get("company_ids", "")
+        company_ids = [int(x) for x in raw.replace(",", " ").split() if x.strip().isdigit()]
+    elif isinstance(raw_ids, list):
+        company_ids = raw_ids
+    elif raw_ids is None:
+        company_ids = None
+    else:
+        return JsonResponse({"detail": "company_ids must be a list of integers"}, status=400)
+
+    apply_platform_release_flag = _parse_bool(
+        _from_body_or_get("apply_platform_release", True), True
     )
+    sync_chart = _parse_bool(_from_body_or_get("sync_chart_of_accounts", False), False)
+    sync_items = _parse_bool(_from_body_or_get("sync_items", False), False)
+    sync_tax = _parse_bool(_from_body_or_get("sync_tax_codes", False), False)
+    sync_settings = _parse_bool(_from_body_or_get("sync_company_settings", False), False)
+
+    try:
+        result = run_master_push(
+            scope=scope,
+            company_ids=company_ids,
+            apply_platform_release_flag=apply_platform_release_flag,
+            sync_chart_of_accounts=sync_chart,
+            sync_items=sync_items,
+            sync_tax_codes=sync_tax,
+            sync_company_settings=sync_settings,
+        )
+    except ValueError as e:
+        return JsonResponse({"detail": str(e)}, status=400)
+    except Exception as e:
+        logger.exception("run_master_push failed")
+        return JsonResponse({"detail": "Push failed", "error": str(e)}, status=500)
+
+    result["target_release"] = get_target_release()
+    return JsonResponse(result)
 
 
 @csrf_exempt

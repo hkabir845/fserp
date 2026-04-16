@@ -32,17 +32,19 @@ export default function CompanySwitcher() {
     fetchCompanies()
   }, [])
 
-  // FSMS ERP: if no tenant is picked yet, scope API calls to the first Master company (e.g. Master Filling Station).
+  // FSMS ERP: if no company is picked yet, scope API calls (X-Selected-Company-Id) to a default tenant.
+  // Prefer Master demo company when present; otherwise first company (pure tenant deployments).
   useEffect(() => {
     if (loading || fetchError) return
     if (mode !== 'fsms_erp') return
     if (selectedCompany?.id) return
+    if (companies.length === 0) return
     const firstMaster = companies.find(isMasterCompanyRecord)
-    if (!firstMaster) return
+    const pick = firstMaster ?? companies[0]
     setSelectedCompany({
-      id: firstMaster.id,
-      name: firstMaster.name,
-      is_master: firstMaster.is_master,
+      id: pick.id,
+      name: pick.name,
+      is_master: pick.is_master,
     })
   }, [loading, fetchError, mode, selectedCompany?.id, companies, setSelectedCompany])
 
@@ -184,6 +186,12 @@ export default function CompanySwitcher() {
         </div>
         <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform sm:mt-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
+      {mode === 'fsms_erp' && masterCompanies.length === 0 && companies.length > 0 && (
+        <p className="mt-1.5 text-[10px] leading-snug text-gray-500 px-0.5">
+          No Master demo company: the first tenant is auto-selected for API scope (like Master Filling Station). Switch
+          here if you use multiple tenants.
+        </p>
+      )}
 
       {isOpen && (
         <>

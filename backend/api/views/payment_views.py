@@ -20,6 +20,7 @@ from api.models import (
     Payment,
     PaymentBillAllocation,
     PaymentInvoiceAllocation,
+    ShiftSession,
     Vendor,
 )
 from api.services.gl_posting import (
@@ -37,6 +38,7 @@ from api.services.payment_allocation import (
     refresh_invoice_from_allocations,
     refresh_invoices_touched_by_payment,
 )
+from api.services.shift_sales import record_ar_collection_on_shift
 
 
 def _serialize_date(d):
@@ -347,6 +349,30 @@ def payments_received_create(request):
     if not ok:
         return JsonResponse({"detail": msg}, status=400)
 
+    shift_session_id_for_roll: int | None = None
+    raw_shift = body.get("shift_session_id")
+    if raw_shift is not None and str(raw_shift).strip() != "":
+        try:
+            shift_session_id_for_roll = int(raw_shift)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "Invalid shift_session_id"}, status=400)
+        if not ShiftSession.objects.filter(
+            id=shift_session_id_for_roll,
+            company_id=request.company_id,
+            closed_at__isnull=True,
+        ).exists():
+            return JsonResponse(
+                {
+                    "detail": (
+                        "shift_session_id must be an open shift session for this company "
+                        "(see GET /api/shifts/sessions/active/)."
+                    )
+                },
+                status=400,
+            )
+
+    pm_norm = _normalize_payment_method(body)
+
     with transaction.atomic():
         p = Payment(
             company_id=request.company_id,
@@ -355,7 +381,7 @@ def payments_received_create(request):
             bank_account_id=bank_id,
             amount=amount,
             payment_date=_parse_date(body.get("payment_date")) or date.today(),
-            payment_method=_normalize_payment_method(body),
+            payment_method=pm_norm,
             reference=body.get("reference_number") or body.get("reference") or "",
             memo=body.get("memo") or "",
         )
@@ -367,6 +393,10 @@ def payments_received_create(request):
             )
         post_payment_received_journal(request.company_id, p)
         refresh_invoices_touched_by_payment(request.company_id, p.id)
+        if shift_session_id_for_roll is not None:
+            record_ar_collection_on_shift(
+                request.company_id, shift_session_id_for_roll, amount, pm_norm
+            )
 
     p = (
         Payment.objects.filter(id=p.id)

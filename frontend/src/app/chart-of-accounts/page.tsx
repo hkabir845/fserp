@@ -1017,7 +1017,8 @@ export default function ChartOfAccountsPage() {
               <strong>View statement</strong> to see each sale. On <strong>Reports → Trial balance</strong>, widen the date
               range to include the sale dates and scroll for codes <span className="font-mono">1010</span>,{' '}
               <span className="font-mono">1020</span>, or <span className="font-mono">1120</span>. To hit a specific bank
-              line instead, choose <strong>Record receipt in</strong> on the Cashier screen.
+              line instead, use the optional <strong>Where to record this sale&apos;s cash</strong> picker on the
+              Cashier screen.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium text-sky-800">Quick filter:</span>

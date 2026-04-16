@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Max, Sum
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -59,6 +59,19 @@ def _employee_to_json(e: Employee) -> dict:
     }
 
 
+def _next_employee_code_from_id(employee_id: int) -> str:
+    """Stable code after insert; matches suggested next code when ids are sequential."""
+    return f"EMP-{employee_id:05d}"
+
+
+def _suggested_next_employee_code(company_id: int) -> str:
+    """Preview of the code the next employee row will get if created without a custom code."""
+    max_id = (
+        Employee.objects.filter(company_id=company_id).aggregate(m=Max("id")).get("m") or 0
+    )
+    return _next_employee_code_from_id(max_id + 1)
+
+
 def _refresh_employee_balance(employee_id: int) -> None:
     emp = Employee.objects.filter(pk=employee_id).first()
     if not emp:
@@ -71,6 +84,15 @@ def _refresh_employee_balance(employee_id: int) -> None:
     c = agg.get("c") or Decimal("0")
     nb = ob + d - c
     Employee.objects.filter(pk=employee_id).update(current_balance=nb)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def employee_next_code_suggested(request):
+    """Returns the code the next created employee will receive if no custom code is sent."""
+    return JsonResponse({"suggested_code": _suggested_next_employee_code(request.company_id)})
 
 
 @csrf_exempt
@@ -89,36 +111,54 @@ def employees_list_or_create(request):
     code = (body.get("employee_code") or body.get("employee_number") or "").strip()
     fn = (body.get("first_name") or "").strip()
     ln = (body.get("last_name") or "").strip()
-    if not code or not fn:
-        return JsonResponse(
-            {"detail": "employee_code and first_name are required"}, status=400
-        )
-    if Employee.objects.filter(company_id=cid, employee_code__iexact=code[:64]).exists():
-        return JsonResponse(
-            {"detail": f"Employee code '{code}' is already used in this company."},
-            status=409,
-        )
+    if not fn:
+        return JsonResponse({"detail": "first_name is required"}, status=400)
     ob = _decimal(body.get("opening_balance"), Decimal("0"))
-    e = Employee(
-        company_id=cid,
-        employee_code=code[:64],
-        employee_number=code[:64],
-        first_name=fn[:100],
-        last_name=(ln or "")[:100],
-        email=(body.get("email") or "")[:150],
-        phone=(body.get("phone") or "")[:30],
-        job_title=(body.get("job_title") or body.get("position") or "")[:200],
-        department=(body.get("department") or "")[:200],
-        hire_date=_parse_date(body.get("hire_date")),
-        salary=_decimal(body.get("salary"), None),
-        opening_balance=ob,
-        opening_balance_date=_parse_date(body.get("opening_balance_date")),
-        current_balance=ob,
-        is_active=bool(body.get("is_active", True)),
-    )
-    e.save()
-    if not e.employee_number:
-        Employee.objects.filter(pk=e.pk).update(employee_number=f"EMP-{e.id}")
+    if code:
+        if Employee.objects.filter(company_id=cid, employee_code__iexact=code[:64]).exists():
+            return JsonResponse(
+                {"detail": f"Employee code '{code}' is already used in this company."},
+                status=409,
+            )
+        e = Employee(
+            company_id=cid,
+            employee_code=code[:64],
+            employee_number=code[:64],
+            first_name=fn[:100],
+            last_name=(ln or "")[:100],
+            email=(body.get("email") or "")[:150],
+            phone=(body.get("phone") or "")[:30],
+            job_title=(body.get("job_title") or body.get("position") or "")[:200],
+            department=(body.get("department") or "")[:200],
+            hire_date=_parse_date(body.get("hire_date")),
+            salary=_decimal(body.get("salary"), None),
+            opening_balance=ob,
+            opening_balance_date=_parse_date(body.get("opening_balance_date")),
+            current_balance=ob,
+            is_active=bool(body.get("is_active", True)),
+        )
+        e.save()
+    else:
+        e = Employee(
+            company_id=cid,
+            employee_code="",
+            employee_number="",
+            first_name=fn[:100],
+            last_name=(ln or "")[:100],
+            email=(body.get("email") or "")[:150],
+            phone=(body.get("phone") or "")[:30],
+            job_title=(body.get("job_title") or body.get("position") or "")[:200],
+            department=(body.get("department") or "")[:200],
+            hire_date=_parse_date(body.get("hire_date")),
+            salary=_decimal(body.get("salary"), None),
+            opening_balance=ob,
+            opening_balance_date=_parse_date(body.get("opening_balance_date")),
+            current_balance=ob,
+            is_active=bool(body.get("is_active", True)),
+        )
+        e.save()
+        gen = _next_employee_code_from_id(e.id)
+        Employee.objects.filter(pk=e.pk).update(employee_code=gen, employee_number=gen)
         e.refresh_from_db()
     return JsonResponse(_employee_to_json(e), status=201)
 

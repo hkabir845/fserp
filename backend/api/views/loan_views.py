@@ -116,6 +116,12 @@ ALLOWED_ISLAMIC_VARIANTS = frozenset(
 )
 
 
+def _norm_islamic_variant(val) -> str:
+    """Normalize islamic_contract_variant to an allowed value or empty string."""
+    s = (val or "").strip().lower()[:24]
+    return s if s in ALLOWED_ISLAMIC_VARIANTS else ""
+
+
 def _norm_banking(val) -> str:
     s = (val or Loan.BANKING_CONVENTIONAL).strip().lower()
     return s if s in ALLOWED_BANKING else Loan.BANKING_CONVENTIONAL
@@ -248,11 +254,49 @@ def _loan_json(lo: Loan):
 
 
 def _coa_belongs(cid: int, aid) -> bool:
-    if not aid:
+    if aid is None or aid == "":
+        return False
+    if isinstance(aid, bool):
+        return False
+    try:
+        i = int(aid)
+    except (TypeError, ValueError):
+        return False
+    if i <= 0:
         return False
     return ChartOfAccount.objects.filter(
-        id=int(aid), company_id=cid, is_active=True
+        id=i, company_id=cid, is_active=True
     ).exists()
+
+
+def _parse_required_positive_int(val, field: str) -> int:
+    """Parse a required FK id from JSON; raises ValueError with a safe client message."""
+    if val is None or val == "":
+        raise ValueError(f"{field} is required")
+    if isinstance(val, bool):
+        raise ValueError(f"Invalid {field}")
+    try:
+        n = int(val)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid {field}")
+    if n <= 0:
+        raise ValueError(f"{field} must be a positive integer")
+    return n
+
+
+def _parse_optional_positive_int(val, field: str) -> int | None:
+    """Parse optional FK id; None if absent; raises ValueError if present but invalid."""
+    if val is None or val == "":
+        return None
+    if isinstance(val, bool):
+        raise ValueError(f"Invalid {field}")
+    try:
+        n = int(val)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid {field}")
+    if n <= 0:
+        raise ValueError(f"{field} must be a positive integer")
+    return n
 
 
 @csrf_exempt
@@ -390,23 +434,26 @@ def loans_list_or_create(request):
         direction = (body.get("direction") or "").strip().lower()
         if direction not in (Loan.DIRECTION_BORROWED, Loan.DIRECTION_LENT):
             return JsonResponse({"detail": "direction must be borrowed or lent"}, status=400)
-        cp_id = body.get("counterparty_id")
-        if not cp_id or not LoanCounterparty.objects.filter(
-            id=cp_id, company_id=cid, is_active=True
-        ).exists():
+        try:
+            cp_id = _parse_required_positive_int(body.get("counterparty_id"), "counterparty_id")
+            pa = _parse_required_positive_int(body.get("principal_account_id"), "principal_account_id")
+            sa = _parse_required_positive_int(body.get("settlement_account_id"), "settlement_account_id")
+            ia = _parse_optional_positive_int(body.get("interest_account_id"), "interest_account_id")
+            iaa = _parse_optional_positive_int(
+                body.get("interest_accrual_account_id"), "interest_accrual_account_id"
+            )
+        except ValueError as e:
+            return JsonResponse({"detail": str(e)}, status=400)
+        if not LoanCounterparty.objects.filter(id=cp_id, company_id=cid, is_active=True).exists():
             return JsonResponse({"detail": "Valid counterparty_id required"}, status=400)
-        pa = body.get("principal_account_id")
-        sa = body.get("settlement_account_id")
         if not _coa_belongs(cid, pa) or not _coa_belongs(cid, sa):
             return JsonResponse(
                 {"detail": "principal_account_id and settlement_account_id must be active COA in company"},
                 status=400,
             )
-        ia = body.get("interest_account_id")
-        if ia and not _coa_belongs(cid, ia):
+        if ia is not None and not _coa_belongs(cid, ia):
             return JsonResponse({"detail": "Invalid interest_account_id"}, status=400)
-        iaa = body.get("interest_accrual_account_id")
-        if iaa and not _coa_belongs(cid, iaa):
+        if iaa is not None and not _coa_belongs(cid, iaa):
             return JsonResponse({"detail": "Invalid interest_accrual_account_id"}, status=400)
         icv = _norm_islamic_variant(body.get("islamic_contract_variant"))
         try:
@@ -430,10 +477,11 @@ def loans_list_or_create(request):
         deal_ref = (body.get("deal_reference") or "").strip()[:64]
         parent_obj = None
         if pt == Loan.PRODUCT_ISLAMIC_DEAL:
-            pid = body.get("parent_loan_id")
-            if not pid:
-                return JsonResponse({"detail": "parent_loan_id required for Islamic deal"}, status=400)
-            parent_obj = Loan.objects.filter(id=int(pid), company_id=cid).first()
+            try:
+                pid = _parse_required_positive_int(body.get("parent_loan_id"), "parent_loan_id")
+            except ValueError as e:
+                return JsonResponse({"detail": str(e)}, status=400)
+            parent_obj = Loan.objects.filter(id=pid, company_id=cid).first()
             if not parent_obj or parent_obj.product_type != Loan.PRODUCT_ISLAMIC_FACILITY:
                 return JsonResponse({"detail": "Islamic deal requires parent facility loan"}, status=400)
             if parent_obj.direction != direction:
@@ -459,13 +507,13 @@ def loans_list_or_create(request):
                 loan_no=temp_no,
                 direction=direction,
                 status=(body.get("status") or "draft").strip()[:24] or "draft",
-                counterparty_id=int(cp_id),
+                counterparty_id=cp_id,
                 title=(body.get("title") or "")[:200],
                 agreement_no=(body.get("agreement_no") or "")[:120],
-                principal_account_id=int(pa),
-                settlement_account_id=int(sa),
-                interest_account_id=int(ia) if ia else None,
-                interest_accrual_account_id=int(iaa) if iaa else None,
+                principal_account_id=pa,
+                settlement_account_id=sa,
+                interest_account_id=ia,
+                interest_accrual_account_id=iaa,
                 islamic_contract_variant=icv,
                 sanction_amount=_dec(body.get("sanction_amount")),
                 outstanding_principal=Decimal("0"),
@@ -621,38 +669,53 @@ def loan_detail(request, loan_id: int):
                     return JsonResponse({"detail": "direction must be borrowed or lent"}, status=400)
                 lo.direction = d
             if "counterparty_id" in body:
-                cp_id = body.get("counterparty_id")
-                if not cp_id or not LoanCounterparty.objects.filter(
-                    id=int(cp_id), company_id=cid, is_active=True
-                ).exists():
+                try:
+                    cp_id = _parse_required_positive_int(body.get("counterparty_id"), "counterparty_id")
+                except ValueError as e:
+                    return JsonResponse({"detail": str(e)}, status=400)
+                if not LoanCounterparty.objects.filter(id=cp_id, company_id=cid, is_active=True).exists():
                     return JsonResponse({"detail": "Valid counterparty_id required"}, status=400)
-                lo.counterparty_id = int(cp_id)
+                lo.counterparty_id = cp_id
             if "principal_account_id" in body:
-                pa = body.get("principal_account_id")
+                try:
+                    pa = _parse_required_positive_int(body.get("principal_account_id"), "principal_account_id")
+                except ValueError as e:
+                    return JsonResponse({"detail": str(e)}, status=400)
                 if not _coa_belongs(cid, pa):
                     return JsonResponse({"detail": "Invalid principal_account_id"}, status=400)
-                lo.principal_account_id = int(pa)
+                lo.principal_account_id = pa
             if "settlement_account_id" in body:
-                sa = body.get("settlement_account_id")
+                try:
+                    sa = _parse_required_positive_int(body.get("settlement_account_id"), "settlement_account_id")
+                except ValueError as e:
+                    return JsonResponse({"detail": str(e)}, status=400)
                 if not _coa_belongs(cid, sa):
                     return JsonResponse({"detail": "Invalid settlement_account_id"}, status=400)
-                lo.settlement_account_id = int(sa)
+                lo.settlement_account_id = sa
             if "interest_account_id" in body:
                 ia = body.get("interest_account_id")
                 if ia in (None, "", 0, "0"):
                     lo.interest_account_id = None
                 else:
-                    if not _coa_belongs(cid, ia):
+                    try:
+                        ia_n = _parse_required_positive_int(ia, "interest_account_id")
+                    except ValueError as e:
+                        return JsonResponse({"detail": str(e)}, status=400)
+                    if not _coa_belongs(cid, ia_n):
                         return JsonResponse({"detail": "Invalid interest_account_id"}, status=400)
-                    lo.interest_account_id = int(ia)
+                    lo.interest_account_id = ia_n
             if "interest_accrual_account_id" in body:
                 iaa = body.get("interest_accrual_account_id")
                 if iaa in (None, "", 0, "0"):
                     lo.interest_accrual_account_id = None
                 else:
-                    if not _coa_belongs(cid, iaa):
+                    try:
+                        iaa_n = _parse_required_positive_int(iaa, "interest_accrual_account_id")
+                    except ValueError as e:
+                        return JsonResponse({"detail": str(e)}, status=400)
+                    if not _coa_belongs(cid, iaa_n):
                         return JsonResponse({"detail": "Invalid interest_accrual_account_id"}, status=400)
-                    lo.interest_accrual_account_id = int(iaa)
+                    lo.interest_accrual_account_id = iaa_n
             if "islamic_contract_variant" in body:
                 lo.islamic_contract_variant = _norm_islamic_variant(body.get("islamic_contract_variant"))
             if "sanction_amount" in body:
@@ -695,7 +758,11 @@ def loan_detail(request, loan_id: int):
                         )
                     lo.parent_loan_id = None
                 else:
-                    parent_obj = Loan.objects.filter(id=int(pid), company_id=cid).first()
+                    try:
+                        pid_int = _parse_required_positive_int(pid, "parent_loan_id")
+                    except ValueError as e:
+                        return JsonResponse({"detail": str(e)}, status=400)
+                    parent_obj = Loan.objects.filter(id=pid_int, company_id=cid).first()
                     if not parent_obj or parent_obj.product_type != Loan.PRODUCT_ISLAMIC_FACILITY:
                         return JsonResponse({"detail": "parent must be Islamic facility"}, status=400)
                     if parent_obj.direction != lo.direction:
@@ -1085,6 +1152,15 @@ def loan_repayment_reverse(request, loan_id: int, repayment_id: int):
     )
 
 
+def _schedule_sheet_context(lo: Loan) -> dict:
+    """Labels for payment schedule export/UI: company pays (borrowed) vs collects (lent)."""
+    lent = (lo.direction or Loan.DIRECTION_BORROWED) == Loan.DIRECTION_LENT
+    return {
+        "direction": lo.direction or Loan.DIRECTION_BORROWED,
+        "role": "receivable" if lent else "payable",
+    }
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
@@ -1125,6 +1201,7 @@ def loan_schedule_remaining(request, loan_id: int):
                 "suggested_next": None,
                 "note": "No outstanding principal.",
                 "financing_terminology": "islamic" if sch_islamic else "conventional",
+                "schedule_sheet": _schedule_sheet_context(lo),
             }
         )
     basis_key = loan_interest_basis_key(lo)
@@ -1189,6 +1266,7 @@ def loan_schedule_remaining(request, loan_id: int):
                 "method_note": method_core + method_extra + islamic_sched_note,
                 "schedule": rows,
                 "suggested_next": suggested,
+                "schedule_sheet": _schedule_sheet_context(lo),
             }
         )
 
@@ -1270,6 +1348,7 @@ def loan_schedule_remaining(request, loan_id: int):
                 for x in rows
             ],
             "suggested_next": suggested,
+            "schedule_sheet": _schedule_sheet_context(lo),
         }
     )
 

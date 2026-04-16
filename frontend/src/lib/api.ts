@@ -157,13 +157,6 @@ export function clearAuthIfApiOriginMismatch(): boolean {
     if (!token) return false
     const stored = localStorage.getItem(FSERP_AUTH_API_ORIGIN_KEY)
     const cur = normalizeBackendOrigin(getBackendOrigin())
-    let host = ''
-    try {
-      host = new URL(cur).hostname.toLowerCase()
-    } catch {
-      host = ''
-    }
-    const isLocalApi = host === 'localhost' || host === '127.0.0.1'
 
     if (stored) {
       if (normalizeBackendOrigin(stored) === cur) return false
@@ -171,12 +164,10 @@ export function clearAuthIfApiOriginMismatch(): boolean {
       return true
     }
 
-    // No stamp (older sessions): using local Django, leftover prod JWTs always 401 — sign in again once.
-    if (isLocalApi) {
-      clearAuthStorage()
-      return true
-    }
-
+    // No origin stamp (sessions from before FSERP_AUTH_API_ORIGIN_KEY, or first load after deploy):
+    // adopt the current backend URL without wiping tokens. Wrong-host JWTs will still 401; user can sign in again.
+    // (Previously we cleared all auth on every localhost load without a stamp, which broke valid tenant sessions.)
+    setAuthApiOriginStamp()
     return false
   } catch {
     return false

@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import Sidebar from "@/components/Sidebar"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { useToast } from "@/components/Toast"
+import { extractErrorMessage } from "@/utils/errorHandler"
 import Modal from "@/components/ui/Modal"
 import api, { getApiBaseUrl } from "@/lib/api"
 import { useCompany } from "@/contexts/CompanyContext"
@@ -24,9 +26,11 @@ import {
   Printer,
   Search,
   ShoppingCart,
+  Wallet,
   X,
   XCircle,
 } from "lucide-react"
+import { CashierCollectPayment } from "./CashierCollectPayment"
 
 const inputClassName =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -132,6 +136,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   TRANSFER: "Bank transfer",
   MOBILE_MONEY: "Mobile money",
   ON_ACCOUNT: "On account (A/R)",
+  MIXED: "Mixed (pay now + A/R)",
 }
 
 const computeCartTotals = (entries: CartEntry[]): CartTotals => {
@@ -211,6 +216,8 @@ export default function CashierPOSPage() {
   const [paymentMethod, setPaymentMethod] = useState("CASH")
   /** When set, GL debits this bank register's chart line (see Chart of Accounts → bank link). */
   const [depositBankId, setDepositBankId] = useState<number | "">("")
+  /** With Cash/Card/etc., amount collected now; if below total, rest stays on A/R (split tender). */
+  const [amountPaidNow, setAmountPaidNow] = useState("")
   const [bankRegisters, setBankRegisters] = useState<BankRegister[]>([])
   const [vehiclePlate, setVehiclePlate] = useState("")
 
@@ -223,9 +230,30 @@ export default function CashierPOSPage() {
   const [showInvoicePreview, setShowInvoicePreview] = useState(false)
   const [printMenuOpen, setPrintMenuOpen] = useState(false)
   const [printBusy, setPrintBusy] = useState(false)
+  /** New sale vs collect on open A/R (due bills). */
+  const [posMode, setPosMode] = useState<"sale" | "collect">("sale")
   const printMenuRef = useRef<HTMLDivElement | null>(null)
   const shortcutsRef = useRef<HTMLDivElement | null>(null)
   const handleUnifiedSaleRef = useRef<() => Promise<void>>(async () => {})
+  /** Avoid POSTing line items from company A after superadmin switched context to company B. */
+  const prevTenantCompanyIdRef = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    const tid = selectedCompany?.id ?? undefined
+    const prev = prevTenantCompanyIdRef.current
+    if (prev !== undefined && prev !== tid) {
+      setCartEntries([])
+      setCustomerId(null)
+      setAmountPaidNow("")
+      setDepositBankId("")
+      setQuantity("")
+      setAmount("")
+      setVehiclePlate("")
+      setShowInvoicePreview(false)
+      setPosMode("sale")
+    }
+    prevTenantCompanyIdRef.current = tid
+  }, [selectedCompany?.id])
 
   useEffect(() => {
     const token = localStorage.getItem("access_token")
@@ -296,6 +324,7 @@ export default function CashierPOSPage() {
         return
       }
       if (e.key === "F9" || ((e.ctrlKey || e.metaKey) && e.key === "Enter")) {
+        if (posMode !== "sale") return
         if (showInvoicePreview || printMenuOpen) return
         if (isEditable(e.target) && e.key !== "F9") return
         e.preventDefault()
@@ -304,7 +333,7 @@ export default function CashierPOSPage() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [showInvoicePreview, printMenuOpen, showShortcuts])
+  }, [posMode, showInvoicePreview, printMenuOpen, showShortcuts])
 
   const loadInitialData = async () => {
     setLoading(true)
@@ -327,15 +356,33 @@ export default function CashierPOSPage() {
 
       const banksRaw = Array.isArray(banksRes.data) ? banksRes.data : []
       setBankRegisters(
-        banksRaw.filter(
-          (b: BankRegister) => b && typeof b.id === "number" && b.is_active !== false
-        )
+        banksRaw
+          .filter(
+            (b: BankRegister & { id?: unknown }) =>
+              b &&
+              b.is_active !== false &&
+              (typeof b.id === "number" || typeof b.id === "string")
+          )
+          .map((b: BankRegister & { id?: unknown }) => ({
+            ...b,
+            id: typeof b.id === "string" ? Number(b.id) : b.id,
+          }))
+          .filter((b: BankRegister) => Number.isFinite(b.id))
       )
 
       const nozzlesData = Array.isArray(nozzleRes.data) ? nozzleRes.data : []
       setNozzles(nozzlesData)
-      if (nozzlesData.length > 0) {
-        setSelectedNozzle(nozzlesData[0])
+      if (nozzlesData.length === 0) {
+        setSelectedNozzle(null)
+        setQuantity("")
+        setAmount("")
+      } else {
+        setSelectedNozzle(prev => {
+          const match = prev
+            ? nozzlesData.find(n => Number(n.id) === Number(prev.id))
+            : undefined
+          return match ?? nozzlesData[0]
+        })
       }
 
       setCustomers(Array.isArray(customerRes.data) ? customerRes.data : [])
@@ -353,18 +400,22 @@ export default function CashierPOSPage() {
       const tanksData = Array.isArray(tanksRes.data) ? tanksRes.data : []
       tankProductIds = new Set(
         tanksData
-          .map((tank: any) => tank.product_id)
-          .filter((id: any) => id !== null && id !== undefined)
+          .map((tank: { product_id?: unknown }) => tank.product_id)
+          .filter((id: unknown) => id !== null && id !== undefined)
+          .map((id: unknown) => Number(id))
+          .filter((id: number) => Number.isFinite(id))
       )
 
       const rawItems = itemRes.data
       const itemsList = Array.isArray(rawItems) ? rawItems : (rawItems?.items || [])
       const generalItems = itemsList.filter((item: POSItem) => {
-        const isNotLinkedToTank = !tankProductIds.has(item.id)
+        const itemPk = Number(item.id)
+        const isNotLinkedToTank = !Number.isFinite(itemPk) || !tankProductIds.has(itemPk)
         const allowedCategories = ["general", "service", "other"]
-        const hasAllowedCategory = item.pos_category && allowedCategories.includes(item.pos_category.toLowerCase())
+        const cat = (item.pos_category || "").trim().toLowerCase()
+        const hasAllowedCategory = allowedCategories.includes(cat)
         const isAvailable = item.is_pos_available !== false
-        const isNotFuel = item.pos_category?.toLowerCase() !== "fuel"
+        const isNotFuel = cat !== "fuel"
         return isNotLinkedToTank && hasAllowedCategory && isAvailable && isNotFuel
       })
       setPosItems(generalItems)
@@ -518,6 +569,32 @@ export default function CashierPOSPage() {
     () => roundTwo(cartTotals.total + pendingFuelAmount),
     [cartTotals.total, pendingFuelAmount]
   )
+
+  const parsedAmountPaidNow = useMemo(() => {
+    const t = amountPaidNow.trim()
+    if (!t) return null
+    const n = parseFloat(t)
+    if (!Number.isFinite(n) || n < 0) return null
+    return roundTwo(n)
+  }, [amountPaidNow])
+
+  const isSplitPayment =
+    !isOnAccount &&
+    parsedAmountPaidNow !== null &&
+    parsedAmountPaidNow > 0 &&
+    parsedAmountPaidNow < grandTotal
+
+  const splitBalanceOnAR =
+    isSplitPayment && parsedAmountPaidNow !== null
+      ? roundTwo(grandTotal - parsedAmountPaidNow)
+      : null
+
+  const displayPaymentMethodLabel = isSplitPayment
+    ? `${PAYMENT_LABELS.MIXED} (${currencySymbol}${formatNumber(
+        parsedAmountPaidNow ?? 0
+      )} now, ${currencySymbol}${formatNumber(splitBalanceOnAR ?? 0)} on A/R)`
+    : paymentMethodLabel
+
   const meterStart = selectedNozzle?.current_reading || 0
   const meterProjected = roundTwo(meterStart + quantityNumber)
   const tankStart = selectedNozzle?.current_stock || 0
@@ -568,11 +645,13 @@ export default function CashierPOSPage() {
     const fuelLines: { nozzle_id: number; quantity: number; amount: number }[] = []
     if (selectedNozzle && quantity) {
       const qty = parseFloat(quantity)
-      if (qty > 0) {
+      const q = roundTwo(qty)
+      const amt = roundTwo(amountNumber)
+      if (Number.isFinite(q) && q > 0) {
         fuelLines.push({
-          nozzle_id: selectedNozzle.id,
-          quantity: roundTwo(qty),
-          amount: roundTwo(amountNumber),
+          nozzle_id: Number(selectedNozzle.id),
+          quantity: q,
+          amount: Number.isFinite(amt) ? amt : roundTwo(q * (selectedNozzle.product_price || 0)),
         })
       }
     }
@@ -580,7 +659,7 @@ export default function CashierPOSPage() {
     const validItems = cartEntries
       .filter(entry => entry.quantity > 0)
       .map(entry => ({
-        item_id: entry.item.id,
+        item_id: Number(entry.item.id),
         quantity: roundTwo(entry.quantity),
         unit_price: entry.unitPrice > 0 ? roundTwo(entry.unitPrice) : null,
         discount_percent:
@@ -590,6 +669,24 @@ export default function CashierPOSPage() {
             : Math.min(Math.max(entry.discountPercent, 0), 100),
       }))
 
+    const catalogIdSet = new Set(posItems.map(p => Number(p.id)))
+    if (validItems.some(row => !catalogIdSet.has(Number(row.item_id)))) {
+      toast.error(
+        "Cart has products that are not in the current catalog (e.g. after switching company). Clear the cart or reload."
+      )
+      return
+    }
+
+    if (fuelLines.length > 0) {
+      const nozzleIdSet = new Set(nozzles.map(n => Number(n.id)))
+      if (fuelLines.some(fl => !nozzleIdSet.has(Number(fl.nozzle_id)))) {
+        toast.error(
+          "Selected nozzle is not valid for this company (e.g. after switching tenant). Clear fuel selection or reload the page."
+        )
+        return
+      }
+    }
+
     if (fuelLines.length === 0 && validItems.length === 0) {
       toast.error(
         "Add fuel (nozzle + quantity) and/or products to the cart before completing the sale."
@@ -597,8 +694,8 @@ export default function CashierPOSPage() {
       return
     }
 
-    if (grandTotal <= 0) {
-      toast.error("Total must be positive to complete the sale.")
+    if (!Number.isFinite(grandTotal) || grandTotal <= 0) {
+      toast.error("Total must be a valid positive amount. Check quantities, prices, and fuel inputs.")
       return
     }
 
@@ -606,6 +703,18 @@ export default function CashierPOSPage() {
       toast.error(
         "On-account (A/R) requires a customer. Choose a credit customer, not Walk-in."
       )
+      return
+    }
+
+    if (isSplitPayment && !customerId) {
+      toast.error(
+        "Split payment (pay part now, rest on account) requires a selected customer."
+      )
+      return
+    }
+
+    if (!isOnAccount && amountPaidNow.trim() !== "" && parsedAmountPaidNow === null) {
+      toast.error('Enter a valid number for "Pay now", or leave it blank for full settlement.')
       return
     }
 
@@ -626,6 +735,9 @@ export default function CashierPOSPage() {
       ) {
         payload.bank_account_id = depositBankId
       }
+      if (isSplitPayment && parsedAmountPaidNow !== null) {
+        payload.amount_paid_now = parsedAmountPaidNow
+      }
 
       const res = await api.post("/cashier/pos/", payload)
       const msg = res.data?.detail
@@ -637,15 +749,17 @@ export default function CashierPOSPage() {
       setSelectedNozzle(null)
       setCustomerId(null)
       setPaymentMethod("CASH")
+      setAmountPaidNow("")
       setVehiclePlate("")
       setShowInvoicePreview(false)
       await loadInitialData()
-    } catch (error: any) {
-      const msg =
-        error.response?.data?.detail ||
-        error.response?.data?.error ||
-        (error instanceof Error ? error.message : "Sale could not be completed. Please retry.")
-      toast.error(typeof msg === "string" ? msg : "Sale could not be completed. Please retry.")
+    } catch (error: unknown) {
+      toast.error(
+        extractErrorMessage(
+          error,
+          "Sale could not be completed. Check your connection and try again."
+        )
+      )
     }
   }
 
@@ -668,10 +782,10 @@ export default function CashierPOSPage() {
     return ok
   }
 
-  const canPrintUnifiedDraft = grandTotal > 0
+  const canPrintUnifiedDraft = Number.isFinite(grandTotal) && grandTotal > 0
 
   const printUnifiedDraft = () => {
-    if (grandTotal <= 0) {
+    if (!Number.isFinite(grandTotal) || grandTotal <= 0) {
       toast.error("Add fuel and/or products with a positive total before printing.")
       return
     }
@@ -711,7 +825,7 @@ export default function CashierPOSPage() {
         <p class="muted">Printed ${escapeHtml(formatDate(new Date(), true))}</p>
       </div>
       <p class="muted">Customer: ${escapeHtml(custLabel)} · Payment: ${escapeHtml(
-      paymentMethodLabel
+      displayPaymentMethodLabel
     )}${vehiclePlate ? ` · Vehicle: ${escapeHtml(vehiclePlate.toUpperCase())}` : ""}</p>
       <p class="muted">Ref ${escapeHtml(inv)}</p>
       <table><thead><tr><th>Item</th><th class="right">Qty</th><th class="right">Unit price</th><th class="right">Disc.</th><th class="right">Amount</th></tr></thead><tbody>
@@ -1015,6 +1129,54 @@ export default function CashierPOSPage() {
           id="pos-workspace"
           aria-label="Point of sale workspace"
         >
+          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Register mode
+            </p>
+            <div
+              className="inline-flex rounded-lg border border-border bg-muted/40 p-1"
+              role="group"
+              aria-label="POS mode"
+            >
+              <button
+                type="button"
+                onClick={() => setPosMode("sale")}
+                className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                  posMode === "sale"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <ShoppingCart className="h-4 w-4" />
+                New sale
+              </button>
+              <button
+                type="button"
+                onClick={() => setPosMode("collect")}
+                className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                  posMode === "collect"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Wallet className="h-4 w-4" />
+                Collect due
+              </button>
+            </div>
+          </div>
+
+          {posMode === "collect" ? (
+            <div className="mx-auto max-w-3xl">
+              <CashierCollectPayment
+                customers={customers}
+                currencySymbol={currencySymbol}
+                bankRegisters={bankRegisters}
+                onRecorded={() => loadInitialData()}
+              />
+            </div>
+          ) : null}
+
+          {posMode === "sale" ? (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)] lg:items-start">
             <div className="min-w-0 space-y-6">
               <section className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-card via-card to-muted/25 p-5 text-card-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset,0_12px_40px_-12px_rgba(15,23,42,0.15)] dark:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)] sm:p-6">
@@ -1382,7 +1544,7 @@ export default function CashierPOSPage() {
                         type="button"
                         onClick={() => setShowInvoicePreview(true)}
                         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={grandTotal <= 0}
+                        disabled={!Number.isFinite(grandTotal) || grandTotal <= 0}
                       >
                         Invoice Preview
                       </button>
@@ -1671,8 +1833,8 @@ export default function CashierPOSPage() {
                         </div>
                         <div className="space-y-2">
                           <label className="text-sm font-medium text-foreground" htmlFor="pos-customer-select">
-                            {isOnAccount
-                              ? "Customer (required for on account)"
+                            {isOnAccount || isSplitPayment
+                              ? "Customer (required for on account / split tender)"
                               : "Customer (optional)"}
                           </label>
                           <select
@@ -1684,7 +1846,7 @@ export default function CashierPOSPage() {
                               )
                             }
                             className={`${selectClassName} ${
-                              isOnAccount && !customerId
+                              (isOnAccount || isSplitPayment) && !customerId
                                 ? "border-amber-500/80 bg-amber-50 dark:bg-amber-950/30"
                                 : ""
                             }`}
@@ -1696,15 +1858,35 @@ export default function CashierPOSPage() {
                               </option>
                             ))}
                           </select>
+                          <p className="text-xs text-muted-foreground">
+                            <Link
+                              href="/payments/received/new"
+                              className="font-medium text-primary underline underline-offset-2"
+                            >
+                              Collect payment (old invoices only)
+                            </Link>
+                            <span className="text-muted-foreground">
+                              {" "}
+                              — use when the customer pays due balances without a new sale here.
+                            </span>
+                          </p>
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-sm font-medium text-foreground">
+                          <label
+                            className="text-sm font-medium text-foreground"
+                            htmlFor="pos-payment-method"
+                          >
                             Payment method
                           </label>
                           <select
+                            id="pos-payment-method"
                             value={paymentMethod}
-                            onChange={event => setPaymentMethod(event.target.value)}
+                            onChange={event => {
+                              const v = event.target.value
+                              setPaymentMethod(v)
+                              if (v === "ON_ACCOUNT") setAmountPaidNow("")
+                            }}
                             className={selectClassName}
                           >
                             <option value="CASH">Cash</option>
@@ -1715,6 +1897,10 @@ export default function CashierPOSPage() {
                               On account (A/R) — charge to customer
                             </option>
                           </select>
+                          <p className="text-xs text-muted-foreground">
+                            <strong className="text-foreground">Credit / charge sale:</strong> choose{" "}
+                            <strong>On account (A/R)</strong> here — not in the bank/till list below.
+                          </p>
                           {isOnAccount ? (
                             <p className="rounded-md border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
                               Posts to <strong>Accounts Receivable</strong>. Record cash,
@@ -1724,14 +1910,59 @@ export default function CashierPOSPage() {
                           ) : null}
                         </div>
 
+                        {!isOnAccount ? (
+                          <div className="space-y-2">
+                            <label
+                              className="text-sm font-medium text-foreground"
+                              htmlFor="pos-amount-paid-now"
+                            >
+                              Pay now (optional — split tender)
+                            </label>
+                            <input
+                              id="pos-amount-paid-now"
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              value={amountPaidNow}
+                              onChange={event => setAmountPaidNow(event.target.value)}
+                              placeholder={
+                                grandTotal > 0
+                                  ? `Blank = pay full ${currencySymbol}${formatNumber(grandTotal)} with method above`
+                                  : "Enter amount collected now"
+                              }
+                              className={inputClassName}
+                            />
+                            {isSplitPayment &&
+                            parsedAmountPaidNow !== null &&
+                            splitBalanceOnAR !== null ? (
+                              <p className="rounded-md border border-sky-200/80 bg-sky-50 px-3 py-2 text-xs text-sky-950 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
+                                <strong>Split tender:</strong> {currencySymbol}
+                                {formatNumber(parsedAmountPaidNow)} taken now;{" "}
+                                {currencySymbol}
+                                {formatNumber(splitBalanceOnAR)} posts to{" "}
+                                <strong>Accounts Receivable</strong> for this customer.
+                              </p>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                Less than total = charge the remainder on account (named customer
+                                required).
+                              </p>
+                            )}
+                          </div>
+                        ) : null}
+
                         {paymentMethod !== "CARD" &&
                         paymentMethod !== "ON_ACCOUNT" &&
                         bankRegisters.length > 0 ? (
                           <div className="space-y-2">
-                            <label className="text-sm font-medium text-foreground">
-                              Record receipt in (optional)
+                            <label
+                              className="text-sm font-medium text-foreground"
+                              htmlFor="pos-deposit-bank"
+                            >
+                              Where to record this sale&apos;s cash (optional)
                             </label>
                             <select
+                              id="pos-deposit-bank"
                               value={depositBankId === "" ? "" : String(depositBankId)}
                               onChange={event =>
                                 setDepositBankId(
@@ -1754,8 +1985,11 @@ export default function CashierPOSPage() {
                               ))}
                             </select>
                             <p className="text-xs text-muted-foreground">
-                              Choose a linked bank/till register to debit that GL account for this
-                              sale.
+                              Picks which <strong>bank or till register</strong> gets debited for{" "}
+                              <strong>immediate</strong> payment only. Accounts Receivable is{" "}
+                              <strong>not</strong> listed here — use{" "}
+                              <strong>Payment method → On account (A/R)</strong> above for credit
+                              sales.
                             </p>
                           </div>
                         ) : null}
@@ -1765,7 +1999,7 @@ export default function CashierPOSPage() {
                             type="button"
                             onClick={() => setShowInvoicePreview(true)}
                             className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={grandTotal <= 0}
+                            disabled={!Number.isFinite(grandTotal) || grandTotal <= 0}
                           >
                             Invoice Preview
                           </button>
@@ -1782,9 +2016,11 @@ export default function CashierPOSPage() {
                             type="button"
                             onClick={() => void handleUnifiedSale()}
                             disabled={
+                              !Number.isFinite(grandTotal) ||
                               grandTotal <= 0 ||
                               (cartEntries.length > 0 && cartTotals.hasNegativeTotal) ||
-                              (isOnAccount && !customerId)
+                              (isOnAccount && !customerId) ||
+                              (isSplitPayment && !customerId)
                             }
                             className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1"
                           >
@@ -1798,6 +2034,7 @@ export default function CashierPOSPage() {
               </section>
             </div>
           </div>
+          ) : null}
         </main>
       </div>
 
@@ -1825,7 +2062,7 @@ export default function CashierPOSPage() {
               ) : (
                 <p>Customer: Walk-in Customer</p>
               )}
-              <p>Payment Method: {paymentMethodLabel}</p>
+              <p>Payment Method: {displayPaymentMethodLabel}</p>
               {vehiclePlate ? <p>Vehicle Plate: {vehiclePlate.toUpperCase()}</p> : null}
             </div>
           </div>

@@ -15,9 +15,10 @@ import {
   FileText,
   Calculator,
   Printer,
+  Download,
 } from 'lucide-react'
 import { getCurrencySymbol } from '@/utils/currency'
-import { printCurrentWindow } from '@/utils/printDocument'
+import { printCurrentWindow, printDocument, escapeHtml } from '@/utils/printDocument'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import {
   MAX_ANNUAL_APR,
@@ -286,6 +287,8 @@ interface ScheduleRemainingResponse {
   interest_basis?: string
   interest_basis_label?: string
   financing_terminology?: 'islamic' | 'conventional'
+  /** API: payable = you pay (borrowed), receivable = you collect (lent). */
+  schedule_sheet?: { direction: string; role: 'payable' | 'receivable' }
 }
 
 interface LoanStatementResponse {
@@ -349,7 +352,10 @@ function isPrincipalCoaForDirection(a: CoaLine, direction: 'borrowed' | 'lent'):
   if (direction === 'borrowed') {
     return (t === 'loan' && st === 'loan_payable') || (t === 'liability' && st === 'loan_payable')
   }
-  return t === 'loan' && st === 'loan_receivable'
+  // Lent (money we advanced): template uses type `loan` + loan_receivable; imports may use `asset`.
+  return (
+    (t === 'loan' && st === 'loan_receivable') || (t === 'asset' && st === 'loan_receivable')
+  )
 }
 
 function isInterestCoaForDirection(a: CoaLine, direction: 'borrowed' | 'lent'): boolean {
@@ -385,6 +391,12 @@ function statementKindLabel(kind: string, islamic = false): string {
 /** Two-decimal string for repayment math (matches GL tolerance in doRepay). */
 function roundMoney2(n: number): string {
   return (Math.round(n * 100) / 100).toFixed(2)
+}
+
+function csvEscapeCell(v: string): string {
+  const s = String(v ?? '')
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) return `"${s.replace(/"/g, '""')}"`
+  return s
 }
 
 function computeAutoRepayFields(
@@ -984,7 +996,11 @@ export default function LoansPage() {
         post_to_gl: true,
       })
       toast.success(
-        loanUsesIslamicTerminology(actionLoan) ? 'Payment posted' : 'Repayment posted'
+        actionLoan.direction === 'lent'
+          ? 'Collection posted'
+          : loanUsesIslamicTerminology(actionLoan)
+            ? 'Payment posted'
+            : 'Repayment posted'
       )
       setActionLoan(null)
       setRepayAmt('')
@@ -1172,6 +1188,168 @@ export default function LoansPage() {
     setRepayAmt(row.payment)
     setRepayPrin(row.principal)
     setRepayInt(row.interest)
+  }
+
+  const applyQuickRepayment = useCallback(
+    (
+      kind: 'interest_only' | 'principal_only' | 'full_payoff' | 'next_schedule'
+    ) => {
+      if (!actionLoan) return
+      const out = Number(actionLoan.outstanding_principal ?? 0)
+      if (kind === 'next_schedule') {
+        const sn = scheduleData?.suggested_next
+        if (sn) {
+          setRepayAmt(sn.payment)
+          setRepayPrin(sn.principal)
+          setRepayInt(sn.interest)
+          return
+        }
+        toast.error('No schedule line — set term/remaining periods or fix schedule errors above.')
+        return
+      }
+      if (kind === 'interest_only') {
+        if (scheduleData?.suggested_next) {
+          const sn = scheduleData.suggested_next
+          const intAmt = parseFloat(sn.interest)
+          if (Number.isFinite(intAmt) && intAmt > 0) {
+            setRepayPrin('0.00')
+            setRepayInt(roundMoney2(intAmt))
+            setRepayAmt(roundMoney2(intAmt))
+            return
+          }
+        }
+        const est = interestHint?.simple_interest_estimate
+        if (est == null || est === '') {
+          toast.error(
+            'Set Days (above) so interest can be estimated, or load a schedule with a next period.'
+          )
+          return
+        }
+        const i = Number(est)
+        if (!Number.isFinite(i) || i <= 0) {
+          toast.error(
+            loanUsesIslamicTerminology(actionLoan)
+              ? 'Profit/return for this period is zero — check rate or days.'
+              : 'Interest for this period is zero — check rate or days.'
+          )
+          return
+        }
+        setRepayPrin('0.00')
+        setRepayInt(roundMoney2(i))
+        setRepayAmt(roundMoney2(i))
+        return
+      }
+      if (kind === 'principal_only') {
+        if (out <= 0) return
+        setRepayPrin(roundMoney2(out))
+        setRepayInt('0.00')
+        setRepayAmt(roundMoney2(out))
+        return
+      }
+      if (kind === 'full_payoff') {
+        if (out <= 0) return
+        const intEst =
+          interestHint?.simple_interest_estimate != null
+            ? Number(interestHint.simple_interest_estimate)
+            : 0
+        const i = Number.isFinite(intEst) && intEst > 0 ? intEst : 0
+        setRepayPrin(roundMoney2(out))
+        setRepayInt(roundMoney2(i))
+        setRepayAmt(roundMoney2(out + i))
+      }
+    },
+    [actionLoan, scheduleData, interestHint, toast]
+  )
+
+  const downloadPaymentScheduleCsv = () => {
+    if (!actionLoan || !scheduleData?.schedule?.length) return
+    const isl = loanUsesIslamicTerminology(actionLoan)
+    const role =
+      scheduleData.schedule_sheet?.role ?? (actionLoan.direction === 'lent' ? 'receivable' : 'payable')
+    const totalHdr = role === 'receivable' ? 'total_collect' : 'total_pay'
+    const piHdr = isl ? 'profit_return' : 'interest'
+    const esc = csvEscapeCell
+    const lines = scheduleData.schedule.map((row) =>
+      [
+        String(row.period_label ?? row.period),
+        row.payment,
+        row.principal,
+        row.interest,
+        row.closing_balance ?? '',
+      ]
+        .map((v) => esc(String(v ?? '')))
+        .join(',')
+    )
+    const header = ['period', totalHdr, 'principal', piHdr, 'principal_balance_after'].join(',')
+    const meta = [
+      `# loan_no=${esc(actionLoan.loan_no)}`,
+      `# direction=${esc(actionLoan.direction)}`,
+      `# schedule_role=${role}`,
+      `# currency_symbol=${esc(currencySymbol)}`,
+    ].join('\n')
+    const csv = [meta, header, ...lines].join('\n')
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `loan-payment-schedule-${actionLoan.loan_no.replace(/[^\w.-]+/g, '_')}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const printPaymentScheduleSheet = () => {
+    if (!actionLoan || !scheduleData?.schedule?.length) return
+    const isl = loanUsesIslamicTerminology(actionLoan)
+    const role =
+      scheduleData.schedule_sheet?.role ?? (actionLoan.direction === 'lent' ? 'receivable' : 'payable')
+    const intCol = isl ? 'Profit / return' : 'Interest'
+    const totalCol = role === 'receivable' ? 'Total you collect' : 'Total you pay'
+    const title =
+      role === 'receivable'
+        ? `Payment schedule (receivable) — ${actionLoan.loan_no}`
+        : `Payment schedule (payable) — ${actionLoan.loan_no}`
+    const sub =
+      role === 'receivable'
+        ? 'Cash you receive when the borrower pays (money you lent).'
+        : 'Cash you pay toward this loan (money you borrowed).'
+    const rowsHtml = scheduleData.schedule
+      .map(
+        (row) =>
+          `<tr>
+            <td>${escapeHtml(String(row.period_label ?? row.period))}${
+              row.days_in_period != null ? ` <span class="muted">(${row.days_in_period}d)</span>` : ''
+            }</td>
+            <td class="right">${escapeHtml(row.payment)}</td>
+            <td class="right">${escapeHtml(row.principal)}</td>
+            <td class="right">${escapeHtml(row.interest)}</td>
+            <td class="right">${escapeHtml(row.closing_balance ?? '')}</td>
+          </tr>`
+      )
+      .join('')
+    printDocument({
+      title,
+      bodyHtml: `
+        <div class="period">${escapeHtml(sub)}</div>
+        <p class="co"><span class="label">Outstanding principal (now):</span> ${escapeHtml(
+          String(scheduleData.outstanding_principal ?? actionLoan.outstanding_principal)
+        )} &nbsp;|&nbsp; <span class="label">Basis:</span> ${escapeHtml(
+          scheduleData.interest_basis_label || ''
+        )}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th class="right">${escapeHtml(totalCol)}</th>
+              <th class="right">Principal</th>
+              <th class="right">${escapeHtml(intCol)}</th>
+              <th class="right">Balance after</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        ${scheduleData.method_note ? `<p class="muted">${escapeHtml(scheduleData.method_note)}</p>` : ''}
+      `,
+    })
   }
 
   const openLoanStatement = async (row: LoanRow) => {
@@ -1772,25 +1950,61 @@ export default function LoansPage() {
                   {(loanModalMode === 'new' || (!loanModalHasActivity && !loanEditInitiallyClosed)) && (
                     <>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Direction</label>
-                        <select
-                          className="w-full border rounded-lg px-3 py-2"
-                          value={loanForm.direction}
-                          onChange={(e) => {
-                            const d = e.target.value as 'borrowed' | 'lent'
-                            setLoanForm({
-                              ...loanForm,
-                              direction: d,
-                              principal_account_id: 0,
-                              interest_account_id: 0,
-                              interest_accrual_account_id: 0,
-                              parent_loan_id: 0,
-                            })
-                          }}
+                        <span className="block text-sm font-medium text-gray-700 mb-2">
+                          Direction — who is the borrower?
+                        </span>
+                        <div
+                          className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+                          role="group"
+                          aria-label="Loan direction"
                         >
-                          <option value="borrowed">Borrowed (we owe)</option>
-                          <option value="lent">Lent (they owe us)</option>
-                        </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLoanForm((prev) => ({
+                                ...prev,
+                                direction: 'borrowed',
+                                principal_account_id: 0,
+                                interest_account_id: 0,
+                                interest_accrual_account_id: 0,
+                                parent_loan_id: 0,
+                              }))
+                            }
+                            className={`rounded-lg border px-3 py-3 text-left text-sm transition-colors ${
+                              loanForm.direction === 'borrowed'
+                                ? 'border-indigo-600 bg-indigo-50 ring-2 ring-indigo-500/30'
+                                : 'border-gray-200 bg-white hover:bg-gray-50'
+                            }`}
+                          >
+                            <span className="font-medium text-gray-900">We borrowed</span>
+                            <span className="block text-gray-600 mt-0.5">
+                              Funds from a bank or lender — we owe principal (loans payable).
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLoanForm((prev) => ({
+                                ...prev,
+                                direction: 'lent',
+                                principal_account_id: 0,
+                                interest_account_id: 0,
+                                interest_accrual_account_id: 0,
+                                parent_loan_id: 0,
+                              }))
+                            }
+                            className={`rounded-lg border px-3 py-3 text-left text-sm transition-colors ${
+                              loanForm.direction === 'lent'
+                                ? 'border-indigo-600 bg-indigo-50 ring-2 ring-indigo-500/30'
+                                : 'border-gray-200 bg-white hover:bg-gray-50'
+                            }`}
+                          >
+                            <span className="font-medium text-gray-900">We lent / gave a loan</span>
+                            <span className="block text-gray-600 mt-0.5">
+                              We advanced money — counterparty owes us (loans receivable).
+                            </span>
+                          </button>
+                        </div>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Banking model</label>
@@ -2358,13 +2572,45 @@ export default function LoansPage() {
                         </div>
 
                         <div className="rounded-lg border border-white bg-white p-3 shadow-sm">
-                          <p className="text-xs font-semibold text-gray-700 mb-1">
-                            {actionLoan.product_type === 'business_line'
-                              ? disburseRepayUsesIslamicTerms
-                                ? 'Quarterly profit / return schedule'
-                                : 'Quarterly interest schedule'
-                              : 'Remaining amortization'}
-                          </p>
+                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
+                            <div>
+                              <p className="text-xs font-semibold text-gray-700">
+                                {actionLoan.product_type === 'business_line'
+                                  ? disburseRepayUsesIslamicTerms
+                                    ? 'Quarterly profit / return schedule'
+                                    : 'Quarterly interest schedule'
+                                  : 'Payment schedule (remaining)'}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {scheduleData?.schedule_sheet?.role === 'receivable' ||
+                                actionLoan.direction === 'lent'
+                                  ? 'Receivable: amounts you collect from the borrower.'
+                                  : 'Payable: amounts you pay to the lender.'}
+                              </p>
+                            </div>
+                            {scheduleData?.schedule &&
+                              scheduleData.schedule.length > 0 &&
+                              !scheduleLoading && (
+                                <div className="flex flex-wrap gap-2 shrink-0">
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                                    onClick={downloadPaymentScheduleCsv}
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                    Download CSV
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                                    onClick={printPaymentScheduleSheet}
+                                  >
+                                    <Printer className="h-3.5 w-3.5" />
+                                    Print sheet
+                                  </button>
+                                </div>
+                              )}
+                          </div>
                           {actionLoan.product_type === 'business_line' ? (
                             <>
                               <p className="text-xs text-gray-500 mb-2">
@@ -2480,12 +2726,14 @@ export default function LoansPage() {
                             <p className="text-xs text-gray-500 mb-2">{scheduleData.method_note}</p>
                           )}
                           {scheduleData?.schedule && scheduleData.schedule.length > 0 && (
-                            <div className="overflow-x-auto max-h-48 border rounded-lg">
+                            <div className="overflow-x-auto max-h-72 border rounded-lg">
                               <table className="min-w-full text-xs">
                                 <thead className="bg-gray-100 text-left sticky top-0">
                                   <tr>
                                     <th className="px-2 py-1.5 font-semibold">Period</th>
-                                    <th className="px-2 py-1.5 font-semibold text-right">Payment</th>
+                                    <th className="px-2 py-1.5 font-semibold text-right">
+                                      {actionLoan.direction === 'lent' ? 'Collection' : 'Payment'}
+                                    </th>
                                     <th className="px-2 py-1.5 font-semibold text-right">Principal</th>
                                     <th className="px-2 py-1.5 font-semibold text-right">
                                       {disburseRepayUsesIslamicTerms ? 'Profit / return' : 'Interest'}
@@ -2650,7 +2898,13 @@ export default function LoansPage() {
                     <hr />
                     <div>
                       <h3 className="font-medium text-gray-800 mb-2">
-                        {disburseRepayUsesIslamicTerms ? 'Payment / collection' : 'Repay / collect'}
+                        {actionLoan.direction === 'lent'
+                          ? disburseRepayUsesIslamicTerms
+                            ? 'Receive payment (principal & profit)'
+                            : 'Receive payment (principal & interest)'
+                          : disburseRepayUsesIslamicTerms
+                            ? 'Pay lender (principal & profit)'
+                            : 'Pay lender (principal & interest)'}
                       </h3>
                       <p className="text-xs text-gray-500 mb-2">
                         {actionLoan.direction === 'borrowed'
@@ -2672,6 +2926,49 @@ export default function LoansPage() {
                           Edit before posting if your bank amount differs.
                         </span>
                       </p>
+                      <div className="rounded-xl border border-violet-200 bg-violet-50/90 p-3 mb-3 space-y-2">
+                        <p className="text-xs font-semibold text-violet-950">Quick fill (then edit if needed)</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 text-xs rounded-lg bg-white border border-violet-300 text-violet-950 hover:bg-violet-100/80"
+                            onClick={() => applyQuickRepayment('next_schedule')}
+                          >
+                            Next schedule line
+                          </button>
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 text-xs rounded-lg bg-white border border-violet-300 text-violet-950 hover:bg-violet-100/80"
+                            onClick={() => applyQuickRepayment('interest_only')}
+                          >
+                            {disburseRepayUsesIslamicTerms ? 'Profit / return only' : 'Interest only'}
+                          </button>
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 text-xs rounded-lg bg-white border border-violet-300 text-violet-950 hover:bg-violet-100/80"
+                            onClick={() => applyQuickRepayment('principal_only')}
+                          >
+                            {actionLoan.direction === 'lent'
+                              ? 'Principal only (full outstanding)'
+                              : 'Principal only (full outstanding)'}
+                          </button>
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 text-xs rounded-lg bg-white border border-violet-300 text-violet-950 hover:bg-violet-100/80"
+                            onClick={() => applyQuickRepayment('full_payoff')}
+                          >
+                            {actionLoan.direction === 'lent'
+                              ? 'Full payoff (principal + interest for Days)'
+                              : 'Full payoff (principal + interest for Days)'}
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-violet-900/90">
+                          <strong>Interest only</strong> uses the next schedule row if loaded; otherwise the simple
+                          estimate from <strong>Days</strong> above. <strong>Full payoff</strong> repays all principal
+                          plus that same interest estimate (add separate accruals in GL if your bank uses different
+                          interest).
+                        </p>
+                      </div>
                       <input
                         type="number"
                         step="0.01"
@@ -2705,7 +3002,7 @@ export default function LoansPage() {
                         onClick={doRepay}
                         className="w-full py-2 border border-indigo-600 text-indigo-700 rounded-lg hover:bg-indigo-50"
                       >
-                        {disburseRepayUsesIslamicTerms ? 'Post payment' : 'Post repayment'}
+                        {actionLoan.direction === 'lent' ? 'Post collection to GL' : 'Post payment to GL'}
                       </button>
                     </div>
 

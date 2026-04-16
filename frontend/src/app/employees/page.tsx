@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -70,6 +70,40 @@ export default function EmployeesPage() {
     fetchCompanyCurrency()
     fetchEmployees()
   }, [router])
+
+  useEffect(() => {
+    if (showModal && !editingId) {
+      void fetchSuggestedEmployeeCode(false)
+    }
+  }, [showModal, editingId, fetchSuggestedEmployeeCode])
+
+  const fetchSuggestedEmployeeCode = useCallback(async (force = false) => {
+    try {
+      const token = localStorage.getItem('access_token')
+      if (!token) return
+      const baseUrl = getApiBaseUrl()
+      const response = await fetch(`${baseUrl}/employees/next-code/`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+        mode: 'cors',
+        credentials: 'omit',
+      })
+      if (response.ok) {
+        const data = await response.json()
+        if (data?.suggested_code) {
+          setFormData((prev) => {
+            if (!force && prev.employee_code.trim() !== '') return prev
+            return { ...prev, employee_code: data.suggested_code }
+          })
+        }
+      }
+    } catch {
+      // Leave code empty; user can type one or submit without for auto-assignment
+    }
+  }, [])
 
   const fetchCompanyCurrency = async () => {
     try {
@@ -252,14 +286,29 @@ export default function EmployeesPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!formData.first_name || !formData.last_name || !formData.employee_code) {
-      toast.error('Please fill in required fields (First Name, Last Name, Employee Code)')
+    if (!formData.first_name || !formData.last_name) {
+      toast.error('Please fill in required fields (First Name, Last Name)')
       return
     }
 
     try {
       const token = localStorage.getItem('access_token')
       const baseUrl = getApiBaseUrl()
+      const code = formData.employee_code.trim()
+      const body: Record<string, unknown> = {
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        email: formData.email || null,
+        phone: formData.phone || null,
+        hire_date: formData.hire_date || null,
+        job_title: formData.job_title || null,
+        department: formData.department || null,
+        salary: formData.salary ? parseFloat(formData.salary) : null,
+        is_active: formData.is_active,
+      }
+      if (code) {
+        body.employee_code = code
+      }
       const response = await fetch(`${baseUrl}/employees/`, {
         method: 'POST',
         headers: {
@@ -269,18 +318,7 @@ export default function EmployeesPage() {
         },
         mode: 'cors',
         credentials: 'omit',
-        body: JSON.stringify({
-          employee_code: formData.employee_code,
-          first_name: formData.first_name,
-          last_name: formData.last_name,
-          email: formData.email || null,
-          phone: formData.phone || null,
-          hire_date: formData.hire_date || null,
-          job_title: formData.job_title || null,
-          department: formData.department || null,
-          salary: formData.salary ? parseFloat(formData.salary) : null,
-          is_active: formData.is_active
-        })
+        body: JSON.stringify(body)
       })
 
       if (response.ok) {
@@ -835,17 +873,33 @@ export default function EmployeesPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Employee Code <span className="text-red-500">*</span>
+                        Employee Code
                       </label>
-                      <input
-                        type="text"
-                        required
-                        value={formData.employee_code}
-                        onChange={(e) => setFormData({ ...formData, employee_code: e.target.value })}
-                        disabled={!!editingId}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
-                        placeholder="EMP001"
-                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={formData.employee_code}
+                          onChange={(e) => setFormData({ ...formData, employee_code: e.target.value })}
+                          disabled={!!editingId}
+                          className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                          placeholder="EMP-00001"
+                        />
+                        {!editingId && (
+                          <button
+                            type="button"
+                            onClick={() => void fetchSuggestedEmployeeCode(true)}
+                            className="shrink-0 px-3 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                            title="Replace with next suggested code"
+                          >
+                            Suggest
+                          </button>
+                        )}
+                      </div>
+                      {!editingId && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          Prefilled suggestion; edit if needed, or clear the field to let the server assign a code on save.
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">

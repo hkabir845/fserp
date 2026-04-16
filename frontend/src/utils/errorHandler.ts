@@ -60,6 +60,28 @@ export function extractErrorMessage(error: any, fallback: string = 'An error occ
     if (data.message) {
       return data.message
     }
+
+    // Django REST / custom JSON: { "error": "..." } (no `detail`)
+    if (typeof data.error === 'string' && data.error.trim()) {
+      return data.error.trim()
+    }
+
+    // DRF field errors without top-level `detail`: { "field": ["msg"] } or { "field": "msg" }
+    if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+      const fieldParts: string[] = []
+      for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+        if (k === 'detail' || k === 'message' || k === 'error') continue
+        if (Array.isArray(v)) {
+          const msgs = v
+            .map(x => (typeof x === 'string' ? x : JSON.stringify(x)))
+            .filter(Boolean)
+          if (msgs.length) fieldParts.push(`${k}: ${msgs.join(' ')}`)
+        } else if (typeof v === 'string' && v.trim()) {
+          fieldParts.push(`${k}: ${v}`)
+        }
+      }
+      if (fieldParts.length) return fieldParts.join('; ')
+    }
   }
 
   // Try to get error from direct error object

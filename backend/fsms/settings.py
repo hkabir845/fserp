@@ -148,13 +148,20 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 10240
 
 # CORS — hardcoded (do not add CORS headers for this API in nginx)
 CORS_ALLOW_ALL_ORIGINS = False
+# Chrome may send preflight (incl. Private Network Access) for UI on *.localhost → API on localhost:8000.
+CORS_ALLOW_PRIVATE_NETWORK = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    # Explicit tenant-style dev hosts (also covered by regex below; listed for clarity / older cors versions)
+    "http://adib.localhost:3000",
     "https://mahasoftcorporation.com",
 ]
 # CORS_ALLOWED_ORIGINS does not support "*.domain"; use regex for subdomains.
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://[a-zA-Z0-9-]+\.mahasoftcorporation\.com$",
+    # Tenant-style local dev: http://adib.localhost:3000 → API on http://localhost:8000
+    r"^http://[a-zA-Z0-9-]+\.localhost(:\d+)?$",
 ]
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-selected-company-id",
@@ -166,6 +173,7 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://adib.localhost:3000",
     "https://mahasoftcorporation.com",
     "https://www.mahasoftcorporation.com",
     "https://api.mahasoftcorporation.com",

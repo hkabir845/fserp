@@ -659,6 +659,55 @@ def test_payments_received_and_outstanding(
     assert isinstance(out, list)
 
 
+def test_payments_received_cash_with_shift_updates_expected_cash_drawer(
+    api_client: Client, auth_super_headers, company_master
+):
+    """Optional shift_session_id on POST /payments/received/ rolls cash into expected_cash_total."""
+    from decimal import Decimal
+
+    from api.models import ShiftSession
+
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    api_client.post("/api/customers/add-dummy/", **h)
+    customer_id = json.loads(api_client.get("/api/customers/", **h).content)[0]["id"]
+
+    active_r = api_client.get("/api/shifts/sessions/active/", **h)
+    body_raw = active_r.content.decode().strip()
+    if body_raw in ("null", ""):
+        open_r = api_client.post(
+            "/api/shifts/sessions/open/",
+            data=json.dumps({}),
+            content_type="application/json",
+            **h,
+        )
+        assert open_r.status_code == 201, open_r.content
+        shift_id = json.loads(open_r.content)["id"]
+        exp_before = Decimal("0")
+    else:
+        sess = json.loads(active_r.content)
+        shift_id = sess["id"]
+        exp_before = Decimal(str(sess.get("expected_cash_total") or "0"))
+
+    pay = api_client.post(
+        "/api/payments/received/",
+        data=json.dumps(
+            {
+                "customer_id": customer_id,
+                "amount": "40.00",
+                "payment_method": "cash",
+                "shift_session_id": shift_id,
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert pay.status_code == 201, pay.content
+
+    s = ShiftSession.objects.get(pk=shift_id)
+    assert s.expected_cash_total == exp_before + Decimal("40.00")
+
+
 def test_payments_made_create_and_list(
     api_client: Client, auth_super_headers, company_master
 ):
@@ -1366,6 +1415,55 @@ def test_cashier_pos_on_account_creates_sent_invoice(
     assert inv.customer_id == cust.id
     cust.refresh_from_db()
     assert cust.current_balance == Decimal("8.00")
+
+
+def test_cashier_pos_split_tender_cash_and_ar(
+    api_client: Client, auth_super_headers, company_master
+):
+    """POS: pay part now (cash), remainder on A/R — invoice partial + payment allocation."""
+    from api.models import Customer, Invoice, Item, Payment
+
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    cust = Customer.objects.create(
+        company=company_master,
+        display_name="Split Tender Customer",
+        customer_number="ST-001",
+        is_active=True,
+    )
+    item = Item.objects.create(
+        company=company_master,
+        name="Split SKU",
+        unit_price=Decimal("10.00"),
+        quantity_on_hand=Decimal("10"),
+    )
+    r = api_client.post(
+        "/api/cashier/pos/",
+        data=json.dumps(
+            {
+                "payment_method": "cash",
+                "customer_id": cust.id,
+                "amount_paid_now": "3.00",
+                "items": [{"item_id": item.id, "quantity": "1", "unit_price": "10.00"}],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert r.status_code == 201
+    body = json.loads(r.content)
+    assert body.get("invoice_status") == "partial"
+    assert body.get("billing") == "split_cash_ar"
+    assert "payment_id" in body
+    inv = Invoice.objects.get(pk=body["invoice_id"])
+    assert inv.status == "partial"
+    assert inv.payment_method == "mixed"
+    assert inv.total == Decimal("10.00")
+    cust.refresh_from_db()
+    assert cust.current_balance == Decimal("7.00")
+    pid = body["payment_id"]
+    p = Payment.objects.get(pk=pid)
+    assert p.amount == Decimal("3.00")
 
 
 def test_cashier_sale_fuel_happy_path(api_client: Client, auth_super_headers, company_master):

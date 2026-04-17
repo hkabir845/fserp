@@ -11,9 +11,9 @@ from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.models import User, Company, Customer, Vendor, Station, Invoice
-from api.services.master_push import run_master_push
+from api.services.master_push import run_master_push, run_master_rollback
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_station_operational_data
-from api.services.tenant_release import apply_platform_release, get_target_release
+from api.services.tenant_release import apply_platform_release, get_target_release, rollback_platform_release
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,9 @@ def admin_companies(request):
             "platform_release": current_release,
             "platform_target_release": target_release,
             "platform_release_applied_at": applied.isoformat() if applied else None,
+            "platform_release_previous": getattr(c, "platform_release_previous", None),
             "release_behind": release_behind,
+            "release_can_rollback": getattr(c, "platform_release_previous", None) is not None,
         })
     return JsonResponse(result, safe=False)
 
@@ -297,6 +299,67 @@ def admin_company_apply_release(request, company_id: int):
     except Exception as e:
         logger.exception("apply_platform_release failed company_id=%s", company_id)
         return JsonResponse({"detail": "Apply release failed", "error": str(e)}, status=500)
+    return JsonResponse(result)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@_super_admin_required
+def admin_company_rollback_release(request, company_id: int):
+    """POST /api/admin/companies/<id>/rollback-release/ — restore previous platform release tag for one company."""
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    company = Company.objects.filter(id=company_id, is_deleted=False).first()
+    if not company:
+        return JsonResponse({"detail": "Company not found"}, status=404)
+    try:
+        result = rollback_platform_release(company)
+    except ValueError as e:
+        return JsonResponse({"detail": str(e)}, status=400)
+    except Exception as e:
+        logger.exception("rollback_platform_release failed company_id=%s", company_id)
+        return JsonResponse({"detail": "Rollback failed", "error": str(e)}, status=500)
+    return JsonResponse(result)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@_super_admin_required
+def admin_master_company_rollback_release(request):
+    """
+    POST /api/admin/master-company/rollback-release/
+
+    Roll back the last platform release on one or all non-master tenants (same scope as push-updates).
+    JSON body: scope (all_tenants | selected), company_ids (when selected).
+    """
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"detail": "Invalid JSON"}, status=400)
+
+    scope = (body.get("scope") or request.GET.get("scope") or "all_tenants").strip()
+    raw_ids = body.get("company_ids")
+    if raw_ids is None and request.GET.get("company_ids"):
+        raw = request.GET.get("company_ids", "")
+        company_ids = [int(x) for x in raw.replace(",", " ").split() if x.strip().isdigit()]
+    elif isinstance(raw_ids, list):
+        company_ids = raw_ids
+    elif raw_ids is None:
+        company_ids = None
+    else:
+        return JsonResponse({"detail": "company_ids must be a list of integers"}, status=400)
+
+    try:
+        result = run_master_rollback(scope=scope, company_ids=company_ids)
+    except ValueError as e:
+        return JsonResponse({"detail": str(e)}, status=400)
+    except Exception as e:
+        logger.exception("run_master_rollback failed")
+        return JsonResponse({"detail": "Rollback failed", "error": str(e)}, status=500)
+
+    result["target_release"] = get_target_release()
     return JsonResponse(result)
 
 

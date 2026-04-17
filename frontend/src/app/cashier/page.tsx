@@ -235,6 +235,8 @@ export default function CashierPOSPage() {
   const printMenuRef = useRef<HTMLDivElement | null>(null)
   const shortcutsRef = useRef<HTMLDivElement | null>(null)
   const handleUnifiedSaleRef = useRef<() => Promise<void>>(async () => {})
+  /** Mirrors Complete sale button enablement so F9 / Ctrl+Enter cannot bypass it. */
+  const canCompleteUnifiedSaleRef = useRef(false)
   /** Avoid POSTing line items from company A after superadmin switched context to company B. */
   const prevTenantCompanyIdRef = useRef<number | undefined>(undefined)
 
@@ -327,6 +329,7 @@ export default function CashierPOSPage() {
         if (posMode !== "sale") return
         if (showInvoicePreview || printMenuOpen) return
         if (isEditable(e.target) && e.key !== "F9") return
+        if (!canCompleteUnifiedSaleRef.current) return
         e.preventDefault()
         void handleUnifiedSaleRef.current()
       }
@@ -595,6 +598,23 @@ export default function CashierPOSPage() {
       )} now, ${currencySymbol}${formatNumber(splitBalanceOnAR ?? 0)} on A/R)`
     : paymentMethodLabel
 
+  /** Must match backend: customer exists for resolved company (avoids 400 after tenant switch / stale id). */
+  const hasValidNamedCustomer = useMemo(() => {
+    if (customerId == null) return false
+    const id = Number(customerId)
+    if (!Number.isFinite(id)) return false
+    return customers.some(c => Number(c.id) === id)
+  }, [customerId, customers])
+
+  const canCompleteUnifiedSale =
+    Number.isFinite(grandTotal) &&
+    grandTotal > 0 &&
+    !(cartEntries.length > 0 && cartTotals.hasNegativeTotal) &&
+    !(isOnAccount && !hasValidNamedCustomer) &&
+    !(isSplitPayment && !hasValidNamedCustomer)
+
+  canCompleteUnifiedSaleRef.current = canCompleteUnifiedSale
+
   const meterStart = selectedNozzle?.current_reading || 0
   const meterProjected = roundTwo(meterStart + quantityNumber)
   const tankStart = selectedNozzle?.current_stock || 0
@@ -699,16 +719,16 @@ export default function CashierPOSPage() {
       return
     }
 
-    if (isOnAccount && !customerId) {
+    if (isOnAccount && !hasValidNamedCustomer) {
       toast.error(
-        "On-account (A/R) requires a customer. Choose a credit customer, not Walk-in."
+        "On-account (A/R) requires a customer from the list for this company. Choose a credit customer (not Walk-in), or refresh after switching company."
       )
       return
     }
 
-    if (isSplitPayment && !customerId) {
+    if (isSplitPayment && !hasValidNamedCustomer) {
       toast.error(
-        "Split payment (pay part now, rest on account) requires a selected customer."
+        "Split payment (pay part now, rest on account) requires a customer from the list for this company."
       )
       return
     }
@@ -725,13 +745,15 @@ export default function CashierPOSPage() {
         items: validItems,
         fuel_lines: fuelLines,
       }
-      if (customerId !== null && customerId !== undefined) {
-        payload.customer_id = customerId
+      if (hasValidNamedCustomer) {
+        payload.customer_id = customerId as number
       }
       if (
         !isOnAccount &&
         depositBankId !== "" &&
-        typeof depositBankId === "number"
+        typeof depositBankId === "number" &&
+        Number.isFinite(depositBankId) &&
+        depositBankId > 0
       ) {
         payload.bank_account_id = depositBankId
       }
@@ -754,12 +776,28 @@ export default function CashierPOSPage() {
       setShowInvoicePreview(false)
       await loadInitialData()
     } catch (error: unknown) {
-      toast.error(
-        extractErrorMessage(
-          error,
-          "Sale could not be completed. Check your connection and try again."
-        )
+      const message = extractErrorMessage(
+        error,
+        "Sale could not be completed. Check your connection and try again."
       )
+      if (
+        process.env.NODE_ENV === "development" &&
+        error &&
+        typeof error === "object" &&
+        "response" in error
+      ) {
+        const res = (error as { response?: { status?: number; data?: unknown } }).response
+        if (res?.status === 400) {
+          const raw = res.data
+          const body =
+            raw !== null && typeof raw === "object"
+              ? JSON.stringify(raw)
+              : String(raw ?? "")
+          // Single-line string so DevTools shows the message (objects often render as "Object")
+          console.warn(`[cashier/pos] 400 ${body}`)
+        }
+      }
+      toast.error(message)
     }
   }
 
@@ -2015,13 +2053,7 @@ export default function CashierPOSPage() {
                           <button
                             type="button"
                             onClick={() => void handleUnifiedSale()}
-                            disabled={
-                              !Number.isFinite(grandTotal) ||
-                              grandTotal <= 0 ||
-                              (cartEntries.length > 0 && cartTotals.hasNegativeTotal) ||
-                              (isOnAccount && !customerId) ||
-                              (isSplitPayment && !customerId)
-                            }
+                            disabled={!canCompleteUnifiedSale}
                             className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1"
                           >
                             <ShoppingCart className="h-4 w-4" />

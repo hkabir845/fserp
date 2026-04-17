@@ -68,7 +68,8 @@ def _coerce_optional_bank_account_id(
     Omit or null to use default cash / undeposited / card-clearing rules from gl_posting.
     """
     raw = body.get("bank_account_id")
-    if raw is None or raw == "":
+    # Treat 0 like unset (clients may send Number("") → 0 or JSON null coerced oddly).
+    if raw is None or raw == "" or raw == 0:
         return None, None
     try:
         bid = int(raw)
@@ -201,9 +202,14 @@ def _resolve_pos_customer_and_bank(
         ).first()
     bank_account_id = None
     if on_account:
-        if not customer:
+        if not customer_id:
             return None, None, _cashier_pos_error(
                 "On-account (A/R) sales require a named customer. Select a customer other than Walk-in."
+            )
+        if not customer:
+            return None, None, _cashier_pos_error(
+                "On-account (A/R): that customer was not found for this company. "
+                "Refresh the cashier page or pick a customer from the list (e.g. after switching company)."
             )
         if _is_walkin_customer(customer):
             return None, None, _cashier_pos_error(

@@ -44,6 +44,8 @@ class Company(models.Model):
     # Manual SaaS rollout: super admin promotes each tenant to PLATFORM_TARGET_RELEASE when ready.
     platform_release = models.CharField(max_length=64, blank=True, default="")
     platform_release_applied_at = models.DateTimeField(null=True, blank=True)
+    # Set when apply_platform_release moves this company to a new tag; None = nothing to roll back.
+    platform_release_previous = models.CharField(max_length=64, blank=True, null=True)
 
     class Meta:
         db_table = "company"

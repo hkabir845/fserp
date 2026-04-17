@@ -127,10 +127,30 @@ export function normalizeBackendOrigin(origin: string): string {
   return origin.trim().replace(/\/+$/, '').toLowerCase()
 }
 
+/**
+ * Same logical API host for auth stamping: `http://127.0.0.1:8000` ≡ `http://localhost:8000`.
+ * Without this, switching between loopback hostnames clears the session and causes 401 on every request.
+ */
+export function canonicalApiOriginForAuth(origin: string): string {
+  const raw = origin.trim()
+  if (!raw) return ''
+  try {
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`
+    const u = new URL(withScheme)
+    const h = u.hostname
+    if (h === '127.0.0.1' || h === 'localhost' || h === '[::1]' || h === '::1') {
+      u.hostname = 'localhost'
+    }
+    return u.origin.toLowerCase()
+  } catch {
+    return normalizeBackendOrigin(raw)
+  }
+}
+
 export function setAuthApiOriginStamp(): void {
   if (typeof window === 'undefined') return
   try {
-    localStorage.setItem(FSERP_AUTH_API_ORIGIN_KEY, normalizeBackendOrigin(getBackendOrigin()))
+    localStorage.setItem(FSERP_AUTH_API_ORIGIN_KEY, canonicalApiOriginForAuth(getBackendOrigin()))
   } catch {
     /* ignore */
   }
@@ -156,10 +176,10 @@ export function clearAuthIfApiOriginMismatch(): boolean {
     const token = localStorage.getItem('access_token')?.trim()
     if (!token) return false
     const stored = localStorage.getItem(FSERP_AUTH_API_ORIGIN_KEY)
-    const cur = normalizeBackendOrigin(getBackendOrigin())
+    const cur = canonicalApiOriginForAuth(getBackendOrigin())
 
     if (stored) {
-      if (normalizeBackendOrigin(stored) === cur) return false
+      if (canonicalApiOriginForAuth(stored) === cur) return false
       clearAuthStorage()
       return true
     }

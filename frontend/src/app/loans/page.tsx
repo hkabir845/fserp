@@ -16,6 +16,14 @@ import {
   Calculator,
   Printer,
   Download,
+  Search,
+  Scale,
+  Shield,
+  TrendingDown,
+  TrendingUp,
+  BookOpen,
+  Users,
+  Filter,
 } from 'lucide-react'
 import { getCurrencySymbol } from '@/utils/currency'
 import { printCurrentWindow, printDocument, escapeHtml } from '@/utils/printDocument'
@@ -503,6 +511,9 @@ export default function LoansPage() {
   const [accrualDays, setAccrualDays] = useState('30')
   const [accrualMemo, setAccrualMemo] = useState('')
   const [accrualDate, setAccrualDate] = useState('')
+  const [loanRegisterQuery, setLoanRegisterQuery] = useState('')
+  const [loanFilterDirection, setLoanFilterDirection] = useState<'all' | 'borrowed' | 'lent'>('all')
+  const [loanFilterStatus, setLoanFilterStatus] = useState<'all' | 'draft' | 'active' | 'closed'>('all')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -1469,159 +1480,404 @@ export default function LoansPage() {
     URL.revokeObjectURL(url)
   }
 
+  const loanPortfolioSummary = useMemo(() => {
+    let borrowedOutstanding = 0
+    let lentOutstanding = 0
+    let activeCount = 0
+    let draftCount = 0
+    let closedCount = 0
+    for (const l of loans) {
+      const o = Number(outstandingDisplayed(l))
+      if (l.direction === 'borrowed') borrowedOutstanding += o
+      else if (l.direction === 'lent') lentOutstanding += o
+      if (l.status === 'active') activeCount += 1
+      else if (l.status === 'draft') draftCount += 1
+      else if (l.status === 'closed') closedCount += 1
+    }
+    return {
+      borrowedOutstanding,
+      lentOutstanding,
+      activeCount,
+      draftCount,
+      closedCount,
+      registerCount: loans.length,
+    }
+  }, [loans])
+
+  const filteredLoans = useMemo(() => {
+    const q = loanRegisterQuery.trim().toLowerCase()
+    return loans.filter((row) => {
+      if (loanFilterDirection !== 'all' && row.direction !== loanFilterDirection) return false
+      if (loanFilterStatus !== 'all' && row.status !== loanFilterStatus) return false
+      if (!q) return true
+      const party =
+        counterpartiesAll.find((c) => c.id === row.counterparty_id)?.name?.toLowerCase() ?? ''
+      const blob = [
+        row.loan_no,
+        row.title || '',
+        row.deal_reference || '',
+        row.parent_loan_no || '',
+        party,
+        productTypeLabel(row.product_type),
+        row.status,
+      ]
+        .join(' ')
+        .toLowerCase()
+      return blob.includes(q)
+    })
+  }, [loans, loanRegisterQuery, loanFilterDirection, loanFilterStatus, counterpartiesAll])
+
   const cpName = (id: number) => counterpartiesAll.find((c) => c.id === id)?.name || `#${id}`
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-[#f0f2f6]">
       <Sidebar />
-      <main className="flex-1 p-6 lg:p-8 overflow-auto">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-            <div className="flex items-center gap-3">
-              <Landmark className="h-9 w-9 text-indigo-600" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Loans</h1>
-                <p className="text-sm text-gray-600">
-                  Borrowed and lent with GL posting (conventional and Islamic financing products). Use{' '}
-                  <strong>Statement</strong> for a running balance report (CSV export). In{' '}
-                  <strong>Disburse / Repay</strong>, term loans get a remaining amortization schedule; lines and business
-                  facilities get a simple interest or profit/return estimate — not automatic accrual journals.
+      <main className="flex-1 p-5 sm:p-7 lg:p-8 overflow-auto">
+        <div className="max-w-7xl mx-auto space-y-6">
+          {/* Hero + actions */}
+          <div className="rounded-2xl border border-slate-200/90 bg-white shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-5 sm:px-8 py-7 text-white">
+              <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6">
+                <div className="flex gap-4 min-w-0">
+                  <div
+                    className="shrink-0 h-14 w-14 rounded-2xl bg-white/10 flex items-center justify-center ring-1 ring-white/15"
+                    aria-hidden
+                  >
+                    <Landmark className="h-7 w-7 text-amber-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-1.5">
+                      General ledger · Borrowings &amp; advances
+                    </p>
+                    <h1 className="text-2xl sm:text-[1.75rem] font-semibold tracking-tight leading-tight">
+                      Loans &amp; financing register
+                    </h1>
+                    <p className="mt-3 text-sm text-slate-300 max-w-3xl leading-relaxed">
+                      Record bank and non-bank facilities with full double-entry: principal, settlement (bank/cash),
+                      interest or Islamic profit recognition, optional accruals, and auditable statements (print / CSV).
+                      Conventional and Shariah-labelled products share the same GL discipline; always reconcile to your
+                      facility letter and regulator reporting (e.g. Bangladesh Bank returns where applicable).
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => load()}
+                    className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-white/20 bg-white/5 text-sm font-medium text-white hover:bg-white/10 transition-colors"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCp(true)}
+                    className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-white/20 bg-white/5 text-sm font-medium text-white hover:bg-white/10 transition-colors"
+                  >
+                    <Users className="h-4 w-4" />
+                    Counterparty
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openNewLoanModal}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-400 text-slate-900 text-sm font-semibold hover:bg-amber-300 shadow-md transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                    New loan
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-100 bg-white">
+              <div className="p-4 sm:p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Register</p>
+                <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900">
+                  {loanPortfolioSummary.registerCount}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {loanPortfolioSummary.activeCount} active · {loanPortfolioSummary.draftCount} draft ·{' '}
+                  {loanPortfolioSummary.closedCount} closed
+                </p>
+              </div>
+              <div className="p-4 sm:p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                  <TrendingDown className="h-3.5 w-3.5 text-rose-600" aria-hidden />
+                  Borrowed O/S
+                </p>
+                <p className="mt-1.5 text-xl sm:text-2xl font-semibold tabular-nums text-slate-900 leading-tight">
+                  {formatMoneyAmount(String(loanPortfolioSummary.borrowedOutstanding), currencySymbol)}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">Loans payable — principal</p>
+              </div>
+              <div className="p-4 sm:p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                  <TrendingUp className="h-3.5 w-3.5 text-emerald-700" aria-hidden />
+                  Lent O/S
+                </p>
+                <p className="mt-1.5 text-xl sm:text-2xl font-semibold tabular-nums text-slate-900 leading-tight">
+                  {formatMoneyAmount(String(loanPortfolioSummary.lentOutstanding), currencySymbol)}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">Loans receivable — principal</p>
+              </div>
+              <div className="p-4 sm:p-5 col-span-2 lg:col-span-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                  <BookOpen className="h-3.5 w-3.5 text-slate-600" aria-hidden />
+                  Workflow
+                </p>
+                <p className="mt-2 text-sm text-slate-600 leading-snug">
+                  <span className="font-medium text-slate-800">Statement</span> — activity &amp; balance.{' '}
+                  <span className="font-medium text-slate-800">Disburse / Repay</span> — cash, EMI schedule, estimates.
                 </p>
               </div>
             </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => load()}
-                className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-              >
-                <RefreshCw className="h-4 w-4" />
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowCp(true)}
-                className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-              >
-                <Plus className="h-4 w-4" />
-                Counterparty
-              </button>
-              <button
-                type="button"
-                onClick={openNewLoanModal}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-              >
-                <Plus className="h-4 w-4" />
-                New loan
-              </button>
+          </div>
+
+          <details className="group rounded-xl border border-amber-200/90 bg-amber-50/40 text-sm text-amber-950 shadow-sm open:ring-1 open:ring-amber-200/50">
+            <summary className="cursor-pointer list-none px-4 py-3.5 font-medium flex items-center justify-between gap-2 hover:bg-amber-50/80 rounded-xl [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center gap-2">
+                <Scale className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
+                Chart of accounts — template GL codes
+              </span>
+              <span className="text-xs font-normal text-amber-800/90">Expand</span>
+            </summary>
+            <div className="px-4 pb-4 pt-0 border-t border-amber-100/90">
+              <p className="pt-3 leading-relaxed">
+                The fuel-station template includes <strong>2410</strong> Loans Payable (borrowed principal),{' '}
+                <strong>1160</strong> Loans Receivable (lent principal), <strong>1030</strong> Bank — Operating
+                (settlement), <strong>6620</strong> interest expense (borrowed), and <strong>4410</strong> interest
+                income (lent). Run{' '}
+                <code className="text-xs bg-amber-100/90 px-1.5 py-0.5 rounded font-mono">python manage.py migrate</code>{' '}
+                if those codes are missing. Other valid mapped accounts may be used.
+              </p>
             </div>
-          </div>
+          </details>
 
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 text-sm text-amber-950">
-            <strong>Chart of Accounts (built-in):</strong> the fuel-station template includes{' '}
-            <strong>2410</strong> Loans Payable (borrowed principal), <strong>1160</strong> Loans Receivable (lent
-            principal), <strong>1030</strong> Bank — Operating (settlement), <strong>6620</strong> interest expense
-            (borrowed), and <strong>4410</strong> interest income (lent). Run <code className="text-xs bg-amber-100 px-1 rounded">python manage.py migrate</code> on the backend if those codes are missing. You can still use any other valid GL lines.
-          </div>
-
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6 text-sm text-slate-800 space-y-2">
-            <p>
-              <strong>Term loan</strong> — instalment-style: set interest and <strong>term (months)</strong> on the
-              loan. For <strong>Bank</strong> / <strong>Finance company</strong> counterparties you enter{' '}
-              <strong>annual interest %</strong>; for <strong>Individual</strong>, <strong>Vendor</strong>, and all other
-              party types you enter <strong>monthly interest %</strong> (the system stores annual = monthly × 12 for
-              schedules). The <strong>remaining amortization</strong> table uses standard{' '}
-              <strong>reducing-balance EMI</strong> (fixed monthly payment; interest on the declining balance), the same
-              method public bank term-loan EMI calculators use — not flat-rate or equal-principal shortcuts. Open{' '}
-              <strong>Disburse / Repay</strong> for the table and repayment pre-fill.
-            </p>
-            <p>
-              <strong>Business line</strong> — revolving <strong>limit</strong>: draws and principal repayments in{' '}
-              <strong>Disburse / Repay</strong>. The schedule there is <strong>quarterly interest-only</strong> on the
-              current drawn balance (calendar-quarter day counts; bank/finance uses actual/365, others 30/360 — same as
-              accrual hints). Many banks accrue daily and bill quarterly; if the balance moves within the quarter, use
-              accruals or adjust. The simple-interest <strong>Days</strong> box defaults to ~one quarter for this
-              product.
-            </p>
-            <p>
-              <strong>Islamic facility</strong> — parent row for the bank&apos;s overall limit. Create{' '}
-              <strong>Islamic deal</strong> children for each purpose (e.g. diesel purchase). Post cash movement only on
-              deal rows. <strong>Closing a deal</strong> settles <strong>utilised principal</strong> (drawn on that deal)
-              plus <strong>profit / return</strong> (same mechanics as interest in GL) for the usage period. Deal
-              reference is auto-assigned if you leave it blank.
-            </p>
-            <p>
-              <strong>Interest day-count</strong> — set each counterparty&apos;s <strong>Type</strong> correctly:{' '}
-              <strong>Bank</strong> and <strong>Finance company</strong> use <strong>actual/365</strong> for simple
-              interest hints and accrual-from-days. All other types use <strong>30/360</strong>. Use{' '}
-              <strong>0</strong> in the interest field (annual or monthly, depending on party type) for zero-interest
-              loans (principal-only schedule and estimates).
-            </p>
-          </div>
+          <details className="group rounded-xl border border-slate-200 bg-white text-sm text-slate-800 shadow-sm">
+            <summary className="cursor-pointer list-none px-4 py-3.5 font-medium flex items-center justify-between gap-2 hover:bg-slate-50 rounded-xl [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center gap-2">
+                <Shield className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                Products, EMI &amp; day-count (accounting methodology)
+              </span>
+              <span className="text-xs font-normal text-slate-500">Expand</span>
+            </summary>
+            <div className="px-4 pb-4 pt-0 border-t border-slate-100 space-y-3 leading-relaxed">
+              <p className="pt-3">
+                <strong>Term loan</strong> — set <strong>term (months)</strong> and rate. Bank / finance counterparties:
+                <strong> annual %</strong>; other parties: <strong>monthly %</strong> (stored as ×12). Schedules use{' '}
+                <strong>reducing-balance EMI</strong> (industry-standard amortization).
+              </p>
+              <p>
+                <strong>Business line</strong> — revolving limit; schedule shows <strong>quarterly interest</strong> on
+                drawn balance (bank/finance actual/365; others 30/360).
+              </p>
+              <p>
+                <strong>Islamic facility / deal</strong> — facility is the limit; deals carry cash movement. Profit/return
+                posts parallel to interest for GL clarity.
+              </p>
+              <p>
+                <strong>Zero rate</strong> — enter <strong>0</strong> for principal-only movement. Set counterparty{' '}
+                <strong>Type</strong> correctly for day-count rules.
+              </p>
+            </div>
+          </details>
 
           {!loading && (
-            <div className="bg-white rounded-lg shadow mb-8 overflow-x-auto">
-              <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold text-gray-900">Counterparties</h2>
-                <p className="text-sm text-gray-500">
-                  Edit or remove duplicates. Names must be unique (case-insensitive). Delete is blocked if any loan
-                  references this party.
-                </p>
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-50/60">
+                <div className="flex items-start gap-3">
+                  <Users className="h-5 w-5 text-slate-600 shrink-0 mt-0.5" aria-hidden />
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900">Counterparties</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Master data for lenders, borrowers, and other parties. Names unique; deletion blocked if used on a
+                      loan.
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs font-medium text-slate-500 tabular-nums self-start sm:self-center">
+                  {counterpartiesAll.length} record{counterpartiesAll.length === 1 ? '' : 's'}
+                </span>
               </div>
               {counterpartiesAll.length === 0 ? (
-                <p className="p-4 text-sm text-gray-500">No counterparties yet. Use Counterparty to add one.</p>
+                <div className="p-8 text-center">
+                  <p className="text-sm text-slate-600">No counterparties yet.</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowCp(true)}
+                    className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add counterparty
+                  </button>
+                </div>
               ) : (
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 text-left">
-                    <tr>
-                      <th className="px-4 py-2 font-semibold">Code</th>
-                      <th className="px-4 py-2 font-semibold">Name</th>
-                      <th className="px-4 py-2 font-semibold">Type</th>
-                      <th className="px-4 py-2 font-semibold">Status</th>
-                      <th className="px-4 py-2 font-semibold text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {counterpartiesAll.map((c) => (
-                      <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50">
-                        <td className="px-4 py-2 font-mono">{c.code}</td>
-                        <td className="px-4 py-2">{c.name}</td>
-                        <td className="px-4 py-2">{formatRoleType(c.role_type)}</td>
-                        <td className="px-4 py-2">{c.is_active ? 'Active' : 'Inactive'}</td>
-                        <td className="px-4 py-2 text-right whitespace-nowrap space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => openEditCounterparty(c)}
-                            className="inline-flex items-center gap-1 text-indigo-600 hover:underline"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteCounterparty(c)}
-                            className="inline-flex items-center gap-1 text-red-600 hover:underline"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Delete
-                          </button>
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-700">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Code</th>
+                        <th className="px-4 py-3 font-semibold">Name</th>
+                        <th className="px-4 py-3 font-semibold">Type</th>
+                        <th className="px-4 py-3 font-semibold">Status</th>
+                        <th className="px-4 py-3 font-semibold text-right">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {counterpartiesAll.map((c) => (
+                        <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="px-4 py-2.5 font-mono text-slate-800">{c.code}</td>
+                          <td className="px-4 py-2.5 text-slate-900 font-medium">{c.name}</td>
+                          <td className="px-4 py-2.5 text-slate-700">{formatRoleType(c.role_type)}</td>
+                          <td className="px-4 py-2.5">
+                            <span
+                              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                                c.is_active
+                                  ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/80'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {c.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-right whitespace-nowrap space-x-3">
+                            <button
+                              type="button"
+                              onClick={() => openEditCounterparty(c)}
+                              className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteCounterparty(c)}
+                              className="inline-flex items-center gap-1 text-sm font-medium text-red-600 hover:text-red-800"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           )}
 
           {loading ? (
-            <p className="text-gray-500">Loading…</p>
+            <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+              <RefreshCw className="h-8 w-8 text-slate-300 mx-auto mb-3 animate-spin" aria-hidden />
+              <p className="text-sm text-slate-600">Loading loan register…</p>
+            </div>
           ) : loans.length === 0 ? (
-            <p className="text-gray-500">No loans yet. Create a counterparty, then a loan, then disburse.</p>
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
+              <Landmark className="h-10 w-10 text-slate-300 mx-auto mb-3" aria-hidden />
+              <p className="text-slate-800 font-medium">No facilities in the register</p>
+              <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto">
+                Add a counterparty, create a loan (draft), then post disbursements when funds move. Statements and
+                amortization tools unlock after activity.
+              </p>
+              <div className="mt-6 flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCp(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 text-sm font-medium text-slate-800 hover:bg-slate-50"
+                >
+                  <Users className="h-4 w-4" />
+                  Add counterparty
+                </button>
+                <button
+                  type="button"
+                  onClick={openNewLoanModal}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  New loan
+                </button>
+              </div>
+            </div>
           ) : (
-            <div className="bg-white rounded-lg shadow overflow-x-auto">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex flex-col gap-4 bg-slate-50/60">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900">Loan register</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Filter and search; amounts in {currencySymbol} (company currency).
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <div className="relative flex-1 min-w-[12rem]">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" aria-hidden />
+                      <input
+                        type="search"
+                        placeholder="Search loan #, party, product…"
+                        className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+                        value={loanRegisterQuery}
+                        onChange={(e) => setLoanRegisterQuery(e.target.value)}
+                        aria-label="Search loans"
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-500">
+                        <Filter className="h-3.5 w-3.5" aria-hidden />
+                        Direction
+                      </span>
+                      {(['all', 'borrowed', 'lent'] as const).map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setLoanFilterDirection(d)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                            loanFilterDirection === d
+                              ? 'bg-slate-900 text-white'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {d === 'all' ? 'All' : d === 'borrowed' ? 'Borrowed' : 'Lent'}
+                        </button>
+                      ))}
+                      <select
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                        value={loanFilterStatus}
+                        onChange={(e) => setLoanFilterStatus(e.target.value as typeof loanFilterStatus)}
+                        aria-label="Filter by status"
+                      >
+                        <option value="all">All statuses</option>
+                        <option value="draft">Draft</option>
+                        <option value="active">Active</option>
+                        <option value="closed">Closed</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                {filteredLoans.length !== loans.length && (
+                  <p className="text-xs text-slate-500">
+                    Showing <strong className="text-slate-700">{filteredLoans.length}</strong> of {loans.length} facilities
+                  </p>
+                )}
+              </div>
+              {filteredLoans.length === 0 ? (
+                <div className="p-10 text-center text-sm text-slate-600">
+                  No loans match your search or filters.{' '}
+                  <button
+                    type="button"
+                    className="font-medium text-indigo-600 hover:underline"
+                    onClick={() => {
+                      setLoanRegisterQuery('')
+                      setLoanFilterDirection('all')
+                      setLoanFilterStatus('all')
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-100 text-left">
+                <thead className="bg-slate-100 text-left text-slate-800 sticky top-0 z-[1] shadow-[0_1px_0_0_rgb(226_232_240)]">
                   <tr>
                     <th className="px-3 py-3 font-semibold whitespace-nowrap">Loan #</th>
                     <th className="px-3 py-3 font-semibold whitespace-nowrap">Product</th>
@@ -1636,8 +1892,8 @@ export default function LoansPage() {
                     <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {loans.map((row) => {
+                <tbody className="divide-y divide-slate-100">
+                  {filteredLoans.map((row) => {
                     const outS = outstandingDisplayed(row)
                     const util = utilisationPercent(row)
                     const facDeals = row.facility_deal_count ?? 0
@@ -1645,7 +1901,7 @@ export default function LoansPage() {
                       loanHasMoneyMovement(row) ||
                       (isIslamicFacilityHeader(row) && facDeals > 0)
                     return (
-                      <tr key={row.id} className="border-t border-gray-100 hover:bg-gray-50 align-top">
+                      <tr key={row.id} className="hover:bg-slate-50/90 align-top transition-colors">
                         <td className="px-3 py-3 font-mono font-medium whitespace-nowrap">{row.loan_no}</td>
                         <td className="px-3 py-3">
                           <div className="flex flex-col gap-0.5">
@@ -1786,6 +2042,8 @@ export default function LoansPage() {
                   })}
                 </tbody>
               </table>
+                </div>
+              )}
             </div>
           )}
         </div>

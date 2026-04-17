@@ -17,7 +17,7 @@ from api.chart_templates.fuel_station import (
     seed_fuel_station_chart,
 )
 from api.models import Company, Item, Tax, TaxRate
-from api.services.tenant_release import apply_platform_release
+from api.services.tenant_release import apply_platform_release, get_target_release, rollback_platform_release
 
 
 def find_master_company() -> Company | None:
@@ -202,12 +202,19 @@ def run_master_push(
 
     results: list[dict[str, Any]] = []
     ok_count = 0
+    platform_release_applied = 0
+    platform_release_skipped_already = 0
 
     for tenant in targets:
         row: dict[str, Any] = {"company_id": tenant.id, "company_name": tenant.name, "ok": True}
         try:
             if apply_platform_release_flag:
-                row["platform_release"] = apply_platform_release(tenant, None)
+                pr = apply_platform_release(tenant, None)
+                row["platform_release"] = pr
+                if isinstance(pr, dict) and pr.get("skipped"):
+                    platform_release_skipped_already += 1
+                else:
+                    platform_release_applied += 1
             if has_data_sync and master is not None:
                 row["data_sync"] = _apply_data_sync_for_tenant(master, tenant, options)
             ok_count += 1
@@ -216,10 +223,69 @@ def run_master_push(
             row["detail"] = str(e)
         results.append(row)
 
-    return {
-        "ok": True,
+    failed_count = len(targets) - ok_count
+    out: dict[str, Any] = {
+        "ok": failed_count == 0,
         "master_company_id": master.id if master else None,
         "target_tenant_count": len(targets),
         "updated_count": ok_count,
+        "failed_count": failed_count,
+        "results": results,
+    }
+    if apply_platform_release_flag:
+        tgt = get_target_release()
+        out["platform_release_summary"] = {
+            "target": tgt,
+            "tenants_applied": platform_release_applied,
+            "tenants_skipped_already_at_target": platform_release_skipped_already,
+            "tenants_failed": failed_count,
+        }
+    return out
+
+
+def run_master_rollback(*, scope: str, company_ids: list[int] | None) -> dict[str, Any]:
+    """
+    Roll back the last platform release tag on each target tenant (non-master only).
+    Tenants with nothing recorded skip with a message; failures are per-row.
+    """
+    targets, err = _tenant_targets(scope=scope, company_ids=company_ids)
+    if err:
+        raise ValueError(err)
+
+    results: list[dict[str, Any]] = []
+    ok_count = 0
+    rolled_back = 0
+    skipped_nothing_to_undo = 0
+
+    for tenant in targets:
+        row: dict[str, Any] = {"company_id": tenant.id, "company_name": tenant.name, "ok": True}
+        try:
+            tenant.refresh_from_db(fields=["platform_release", "platform_release_previous", "platform_release_applied_at"])
+            if tenant.platform_release_previous is None:
+                row["rollback"] = {
+                    "skipped": True,
+                    "message": "No upgrade recorded to roll back.",
+                }
+                skipped_nothing_to_undo += 1
+            else:
+                row["rollback"] = rollback_platform_release(tenant)
+                rolled_back += 1
+            ok_count += 1
+        except Exception as e:
+            row["ok"] = False
+            row["detail"] = str(e)
+        results.append(row)
+
+    failed_count = len(targets) - ok_count
+    return {
+        "ok": failed_count == 0,
+        "target_tenant_count": len(targets),
+        "updated_count": ok_count,
+        "failed_count": failed_count,
+        "rollback_summary": {
+            "tenants_rolled_back": rolled_back,
+            "tenants_skipped_nothing_to_undo": skipped_nothing_to_undo,
+            "tenants_failed": failed_count,
+        },
         "results": results,
     }

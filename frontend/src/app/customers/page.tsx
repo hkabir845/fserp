@@ -266,7 +266,7 @@ export default function CustomersPage() {
     try {
       const token = localStorage.getItem('access_token')
       const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/customers/${editingCustomer.id}`, {
+      const response = await fetch(`${baseUrl}/customers/${editingCustomer.id}/`, {
         method: 'PUT',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -333,7 +333,7 @@ export default function CustomersPage() {
     try {
       const token = localStorage.getItem('access_token')
       const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/customers/${customerId}`, {
+      const response = await fetch(`${baseUrl}/customers/${customerId}/`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`

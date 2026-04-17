@@ -23,6 +23,7 @@ import {
   PlayCircle,
   Rocket,
   Eraser,
+  Undo2,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
@@ -94,6 +95,9 @@ interface Company {
   platform_release?: string | null
   platform_target_release?: string | null
   platform_release_applied_at?: string | null
+  /** Tag before last Apply upgrade; when set, Super Admin can roll back one step. */
+  platform_release_previous?: string | null
+  release_can_rollback?: boolean
   release_behind?: boolean
   contact_person?: string
   payment_type?: string
@@ -148,6 +152,9 @@ function CompaniesPageContent() {
   const restoreFileRef = useRef<HTMLInputElement>(null)
   const [backupDownloadBusyId, setBackupDownloadBusyId] = useState<number | null>(null)
   const [applyReleaseBusyId, setApplyReleaseBusyId] = useState<number | null>(null)
+  const [rolloutAllReleaseBusy, setRolloutAllReleaseBusy] = useState(false)
+  const [rollbackReleaseBusyId, setRollbackReleaseBusyId] = useState<number | null>(null)
+  const [rollbackAllBusy, setRollbackAllBusy] = useState(false)
   const [platformInfo, setPlatformInfo] = useState<{
     target_release: string
     app_version: string
@@ -210,6 +217,7 @@ function CompaniesPageContent() {
             c.is_master === true || String(c.is_master || '').toLowerCase() === 'true'
               ? 'true'
               : 'false',
+          release_can_rollback: Boolean(c.release_can_rollback),
         }))
         setCompanies(companiesWithMaster)
       }
@@ -254,6 +262,170 @@ function CompaniesPageContent() {
       safeLogError('Apply release:', error)
     } finally {
       setApplyReleaseBusyId(null)
+    }
+  }
+
+  /**
+   * Promote every non-master tenant to the configured platform release — same as per-card "Apply upgrade",
+   * but does not copy COA/items/taxes/settings from Master (those are separate flags on push-updates).
+   */
+  const handleRolloutPlatformReleaseToAllTenants = async () => {
+    const tenantRows = companies.filter((c) => c.is_master !== 'true')
+    if (tenantRows.length === 0) {
+      toast.error('No tenant companies found (only Master or none). Add a tenant or check company list.')
+      return
+    }
+    const target = platformInfo?.target_release?.trim() || '(server target)'
+    if (
+      !window.confirm(
+        `Apply platform release ${target} to ${tenantRows.length} tenant company(ies)? (Master is never modified.)\n\n` +
+          `This updates only each tenant’s release tag and registered upgrade hooks — not business data.\n` +
+          `It does NOT copy chart of accounts, products, taxes, or company settings from Master Filling Station.\n\n` +
+          `Deploy backend/frontend and run database migrations on the server before you continue.`
+      )
+    ) {
+      return
+    }
+    setRolloutAllReleaseBusy(true)
+    try {
+      const res = await api.post(`/admin/master-company/push-updates/`, {
+        scope: 'all_tenants',
+        apply_platform_release: true,
+        sync_chart_of_accounts: false,
+        sync_items: false,
+        sync_tax_codes: false,
+        sync_company_settings: false,
+      })
+      const data = res.data as {
+        updated_count?: number
+        failed_count?: number
+        target_tenant_count?: number
+        platform_release_summary?: {
+          target?: string
+          tenants_applied?: number
+          tenants_skipped_already_at_target?: number
+          tenants_failed?: number
+        }
+        results?: { ok?: boolean; company_name?: string; detail?: string }[]
+      }
+      const sum = data.platform_release_summary
+      const failed =
+        typeof data.failed_count === 'number'
+          ? data.failed_count
+          : (data.results || []).filter((r) => r.ok === false).length
+      const applied = sum?.tenants_applied ?? 0
+      const skipped = sum?.tenants_skipped_already_at_target ?? 0
+
+      if (failed > 0) {
+        const names = (data.results || [])
+          .filter((r) => r.ok === false)
+          .map((r) => `${r.company_name ?? '?'}: ${r.detail ?? 'error'}`)
+          .slice(0, 5)
+        toast.error(
+          `${failed} tenant(s) failed. ${applied} upgraded, ${skipped} already at target.` +
+            (names.length ? ` — ${names.join('; ')}` : '')
+        )
+      } else {
+        const parts: string[] = []
+        if (applied > 0) parts.push(`${applied} upgraded to ${sum?.target ?? target}`)
+        if (skipped > 0) parts.push(`${skipped} already at target (no DB change)`)
+        if (parts.length === 0) parts.push('No changes needed')
+        toast.success(`Rollout complete: ${parts.join('; ')}.`)
+      }
+      await fetchCompanies()
+    } catch (error: unknown) {
+      const msg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Rollout failed'
+      toast.error(msg)
+      safeLogError('Rollout platform release to all tenants:', error)
+    } finally {
+      setRolloutAllReleaseBusy(false)
+    }
+  }
+
+  const handleRollbackPlatformRelease = async (company: Company) => {
+    const prev =
+      company.platform_release_previous != null
+        ? String(company.platform_release_previous).trim() || '(empty)'
+        : '—'
+    if (
+      !window.confirm(
+        `Roll back the last platform release for "${company.name}"?\n\n` +
+          `The stored tag will return to: ${prev}\n\n` +
+          `This does not uninstall server code or reverse database migrations — only the tenant release record ` +
+          `and optional rollback hooks. Deploy older code separately if required.`
+      )
+    ) {
+      return
+    }
+    setRollbackReleaseBusyId(company.id)
+    try {
+      const res = await api.post(`/admin/companies/${company.id}/rollback-release/`, {})
+      toast.success(
+        `Rolled back to ${res.data?.release ?? prev}. (Was: ${res.data?.rolled_back_from ?? '—'})`
+      )
+      await fetchCompanies()
+    } catch (error: unknown) {
+      const msg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Rollback failed'
+      toast.error(msg)
+      safeLogError('Rollback release:', error)
+    } finally {
+      setRollbackReleaseBusyId(null)
+    }
+  }
+
+  const handleRollbackAllTenants = async () => {
+    const tenantRows = companies.filter((c) => c.is_master !== 'true')
+    if (tenantRows.length === 0) {
+      toast.error('No tenant companies found.')
+      return
+    }
+    if (
+      !window.confirm(
+        `Roll back the last platform release for every tenant (${tenantRows.length}) where a previous tag is recorded?\n\n` +
+          `Tenants with nothing to undo are skipped. This does not uninstall deployed code.`
+      )
+    ) {
+      return
+    }
+    setRollbackAllBusy(true)
+    try {
+      const res = await api.post(`/admin/master-company/rollback-release/`, {
+        scope: 'all_tenants',
+      })
+      const data = res.data as {
+        failed_count?: number
+        rollback_summary?: {
+          tenants_rolled_back?: number
+          tenants_skipped_nothing_to_undo?: number
+        }
+        results?: { ok?: boolean; company_name?: string; detail?: string }[]
+      }
+      const sum = data.rollback_summary
+      const failed = data.failed_count ?? 0
+      if (failed > 0) {
+        const names = (data.results || [])
+          .filter((r) => r.ok === false)
+          .map((r) => `${r.company_name ?? '?'}: ${r.detail ?? 'error'}`)
+          .slice(0, 5)
+        toast.error(`Rollback: ${failed} failure(s). ${names.join('; ')}`)
+      } else {
+        toast.success(
+          `Rollback: ${sum?.tenants_rolled_back ?? 0} tenant(s) reverted; ${sum?.tenants_skipped_nothing_to_undo ?? 0} skipped (nothing to undo).`
+        )
+      }
+      await fetchCompanies()
+    } catch (error: unknown) {
+      const msg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Bulk rollback failed'
+      toast.error(msg)
+      safeLogError('Rollback all tenants:', error)
+    } finally {
+      setRollbackAllBusy(false)
     }
   }
 
@@ -620,23 +792,53 @@ function CompaniesPageContent() {
           </div>
 
           <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-blue-900">Maintenance & Upgrades</h3>
-                <div className="mt-2 text-sm text-blue-700 space-y-2">
-                  <p>
-                    All subscribed companies receive <strong>free maintenance and upgrades</strong> while their subscription is active and continuing. 
-                    This includes system updates, feature enhancements, security patches, and technical support.
-                  </p>
-                  <p>
-                    <strong>Manual release rollout:</strong> each company card shows the deploy <strong>target</strong> tag and an{' '}
-                    <strong>Apply upgrade</strong> action. Promote tenants one-by-one after validating on Master — there is no automatic upgrade of every tenant.
-                    Set <code className="rounded bg-blue-100/80 px-1 text-xs">FSERP_PLATFORM_RELEASE</code> on the server to bump the target after a deploy.
-                  </p>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 flex-1 items-start">
+                <div className="flex-shrink-0">
+                  <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
                 </div>
+                <div className="ml-3 min-w-0">
+                  <h3 className="text-sm font-medium text-blue-900">Maintenance & Upgrades</h3>
+                  <div className="mt-2 text-sm text-blue-700 space-y-2">
+                    <p>
+                      All subscribed companies receive <strong>free maintenance and upgrades</strong> while their subscription is active and continuing.
+                      This includes system updates, feature enhancements, security patches, and technical support.
+                    </p>
+                    <p>
+                      <strong>Code rollout (no Master data):</strong> after you deploy backend/frontend and run migrations, use{' '}
+                      <strong>Apply release to all tenants</strong> below to set every tenant&apos;s platform release tag to the
+                      current server target and run upgrade hooks. This does <strong>not</strong> copy chart of accounts, products, or settings from Master.
+                    </p>
+                    <p>
+                      Or use <strong>Apply upgrade</strong> on each company card for one tenant at a time. Set{' '}
+                      <code className="rounded bg-blue-100/80 px-1 text-xs">FSERP_PLATFORM_RELEASE</code> on the server to define the target tag after a deploy.
+                    </p>
+                    <p>
+                      <strong>Rollback:</strong> restores the <em>previous</em> stored release tag one step (per tenant or bulk). It does not
+                      uninstall server binaries or undo Django migrations — redeploy older code if you need that.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:min-w-[220px]">
+                <button
+                  type="button"
+                  onClick={handleRolloutPlatformReleaseToAllTenants}
+                  disabled={rolloutAllReleaseBusy || loading || rollbackAllBusy}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Rocket className="h-4 w-4 shrink-0" />
+                  {rolloutAllReleaseBusy ? 'Applying…' : 'Apply release to all tenants'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRollbackAllTenants}
+                  disabled={rollbackAllBusy || loading || rolloutAllReleaseBusy}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Undo2 className="h-4 w-4 shrink-0" />
+                  {rollbackAllBusy ? 'Rolling back…' : 'Rollback last release (all tenants)'}
+                </button>
               </div>
             </div>
           </div>
@@ -844,6 +1046,17 @@ function CompaniesPageContent() {
                                 {new Date(company.platform_release_applied_at).toLocaleString()}
                               </p>
                             )}
+                            {company.release_can_rollback && (
+                              <p className="mt-1 text-xs text-amber-900/90">
+                                One-step rollback available → previous tag:{' '}
+                                <code className="rounded bg-white px-1 font-mono text-slate-900">
+                                  {company.platform_release_previous != null &&
+                                  String(company.platform_release_previous).trim() !== ''
+                                    ? company.platform_release_previous
+                                    : '(none)'}
+                                </code>
+                              </p>
+                            )}
                           </div>
                           <div className="flex max-w-xl shrink-0 flex-col items-stretch gap-2 sm:items-end">
                             {company.is_master === 'true' ? (
@@ -853,21 +1066,34 @@ function CompaniesPageContent() {
                                 rollout only).
                               </p>
                             ) : null}
-                            {company.release_behind ? (
-                              <button
-                                type="button"
-                                onClick={() => handleApplyPlatformRelease(company)}
-                                disabled={applyReleaseBusyId === company.id}
-                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                <Rocket className="h-4 w-4 shrink-0" />
-                                {applyReleaseBusyId === company.id ? 'Applying…' : 'Apply upgrade'}
-                              </button>
-                            ) : (
-                              <span className="text-xs text-slate-500 sm:text-right">
-                                No upgrade action needed.
-                              </span>
-                            )}
+                            <div className="flex flex-wrap justify-end gap-2">
+                              {company.release_behind ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleApplyPlatformRelease(company)}
+                                  disabled={applyReleaseBusyId === company.id || rollbackReleaseBusyId === company.id}
+                                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <Rocket className="h-4 w-4 shrink-0" />
+                                  {applyReleaseBusyId === company.id ? 'Applying…' : 'Apply upgrade'}
+                                </button>
+                              ) : (
+                                <span className="self-center text-xs text-slate-500 sm:text-right">
+                                  No upgrade action needed.
+                                </span>
+                              )}
+                              {company.release_can_rollback ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRollbackPlatformRelease(company)}
+                                  disabled={rollbackReleaseBusyId === company.id || applyReleaseBusyId === company.id}
+                                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <Undo2 className="h-4 w-4 shrink-0" />
+                                  {rollbackReleaseBusyId === company.id ? 'Rolling back…' : 'Rollback last release'}
+                                </button>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
 

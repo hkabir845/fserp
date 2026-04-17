@@ -61,22 +61,6 @@ export default function EmployeesPage() {
     is_active: true
   })
 
-  useEffect(() => {
-    const token = localStorage.getItem('access_token')
-    if (!token) {
-      router.push('/login')
-      return
-    }
-    fetchCompanyCurrency()
-    fetchEmployees()
-  }, [router])
-
-  useEffect(() => {
-    if (showModal && !editingId) {
-      void fetchSuggestedEmployeeCode(false)
-    }
-  }, [showModal, editingId, fetchSuggestedEmployeeCode])
-
   const fetchSuggestedEmployeeCode = useCallback(async (force = false) => {
     try {
       const token = localStorage.getItem('access_token')
@@ -104,6 +88,22 @@ export default function EmployeesPage() {
       // Leave code empty; user can type one or submit without for auto-assignment
     }
   }, [])
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) {
+      router.push('/login')
+      return
+    }
+    fetchCompanyCurrency()
+    fetchEmployees()
+  }, [router])
+
+  useEffect(() => {
+    if (showModal && !editingId) {
+      void fetchSuggestedEmployeeCode(false)
+    }
+  }, [showModal, editingId, fetchSuggestedEmployeeCode])
 
   const fetchCompanyCurrency = async () => {
     try {

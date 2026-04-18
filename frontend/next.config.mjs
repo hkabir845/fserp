@@ -47,7 +47,7 @@ const nextConfig = {
     API_URL:
       process.env.API_URL ||
       process.env.NEXT_PUBLIC_API_URL ||
-      'https://localhost:3000 ',
+      'https://api.mahasoftcorporation.com',
     WS_URL: process.env.WS_URL || process.env.NEXT_PUBLIC_WS_URL || 'wss://api.mahasoftcorporation.com',
   },
   // Production static/CSS: ensure your server or reverse proxy forwards /_next/* to the Next server.

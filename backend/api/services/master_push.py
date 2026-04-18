@@ -35,25 +35,7 @@ def find_master_company() -> Company | None:
     )
 
 
-def _tenant_targets(
-    *,
-    scope: str,
-    company_ids: list[int] | None,
-) -> tuple[list[Company], str | None]:
-    """
-    Returns (targets, error_message). Targets exclude master and deleted rows.
-    """
-    scope = (scope or "all_tenants").strip().lower()
-    if scope not in ("all_tenants", "selected"):
-        return [], "scope must be all_tenants or selected"
-
-    qs = Company.objects.filter(is_deleted=False)
-    master_q = Q(is_master__iexact="true") | Q(is_master="1")
-    qs = qs.exclude(master_q)
-
-    if scope == "all_tenants":
-        return list(qs.order_by("id")), None
-
+def _parse_selected_company_ids(company_ids: list[int] | None) -> tuple[list[int] | None, str | None]:
     ids: list[int] = []
     for x in company_ids or []:
         if x is None:
@@ -61,13 +43,84 @@ def _tenant_targets(
         try:
             ids.append(int(x))
         except (TypeError, ValueError):
-            return [], "company_ids must be integers"
+            return None, "company_ids must be integers"
     if not ids:
-        return [], "company_ids required when scope is selected"
+        return None, "company_ids required when scope is selected"
+    return ids, None
+
+
+def _tenant_targets(
+    *,
+    scope: str,
+    company_ids: list[int] | None,
+    exclude_master: bool,
+) -> tuple[list[Company], str | None]:
+    """
+    Returns (targets, error_message).
+
+    When exclude_master is True (template sync only, or tenant list without Master), the Master
+    row is excluded. When False (platform release only, rollback, or combined release+sync),
+    Master may appear in the list.
+    """
+    scope = (scope or "all_tenants").strip().lower()
+    if scope not in ("all_tenants", "selected"):
+        return [], "scope must be all_tenants or selected"
+
+    qs = Company.objects.filter(is_deleted=False)
+    master_q = Q(is_master__iexact="true") | Q(is_master="1")
+    if exclude_master:
+        qs = qs.exclude(master_q)
+
+    if scope == "all_tenants":
+        return list(qs.order_by("id")), None
+
+    raw_ids, err = _parse_selected_company_ids(company_ids)
+    if err or raw_ids is None:
+        return [], err or "company_ids required when scope is selected"
+    ids = raw_ids
 
     rows = list(qs.filter(id__in=ids).order_by("id"))
     if len(rows) != len(set(ids)):
-        return [], "One or more company_ids are invalid, deleted, or master company"
+        return [], (
+            "One or more company_ids are invalid, deleted, or (when syncing template data only) "
+            "master cannot be a target"
+        )
+    return rows, None
+
+
+def _push_target_companies(
+    *,
+    scope: str,
+    company_ids: list[int] | None,
+    apply_platform_release_flag: bool,
+    has_data_sync: bool,
+) -> tuple[list[Company], str | None]:
+    """
+    Companies to visit in one master push. Release-only includes Master; template-only excludes
+    Master; release+sync includes Master for release but data_sync must skip the Master row.
+    """
+    combined = apply_platform_release_flag and has_data_sync
+    if not combined:
+        return _tenant_targets(
+            scope=scope,
+            company_ids=company_ids,
+            exclude_master=has_data_sync,
+        )
+
+    scope_l = (scope or "all_tenants").strip().lower()
+    if scope_l not in ("all_tenants", "selected"):
+        return [], "scope must be all_tenants or selected"
+
+    qs = Company.objects.filter(is_deleted=False).order_by("id")
+    if scope_l == "all_tenants":
+        return list(qs), None
+
+    raw_ids, err = _parse_selected_company_ids(company_ids)
+    if err or raw_ids is None:
+        return [], err or "company_ids required when scope is selected"
+    rows = list(qs.filter(id__in=raw_ids).order_by("id"))
+    if len(rows) != len(set(raw_ids)):
+        return [], "One or more company_ids are invalid or deleted"
     return rows, None
 
 
@@ -285,13 +338,18 @@ def preview_master_push(
     """
     Dry-run: same inputs as run_master_push; no database writes.
     """
-    targets, err = _tenant_targets(scope=scope, company_ids=company_ids)
-    if err:
-        raise ValueError(err)
-
     has_data_sync = bool(
         sync_chart_of_accounts or sync_items or sync_tax_codes or sync_company_settings
     )
+    targets, err = _push_target_companies(
+        scope=scope,
+        company_ids=company_ids,
+        apply_platform_release_flag=apply_platform_release_flag,
+        has_data_sync=has_data_sync,
+    )
+    if err:
+        raise ValueError(err)
+
     master = find_master_company() if has_data_sync else None
     if has_data_sync and not master:
         raise ValueError(
@@ -328,7 +386,13 @@ def preview_master_push(
             else:
                 release_would_skip += 1
         if has_data_sync and master is not None:
-            row["data_sync_preview"] = _preview_data_sync_for_tenant(master, tenant, options)
+            if master.id == tenant.id:
+                row["data_sync_preview"] = {
+                    "skipped": True,
+                    "reason": "Master is the template source; sync applies to tenant companies only.",
+                }
+            else:
+                row["data_sync_preview"] = _preview_data_sync_for_tenant(master, tenant, options)
         preview_rows.append(row)
 
     return {
@@ -358,13 +422,18 @@ def run_master_push(
     actor_user_id: int | None = None,
     audit_source: str = "master_push",
 ) -> dict[str, Any]:
-    targets, err = _tenant_targets(scope=scope, company_ids=company_ids)
-    if err:
-        raise ValueError(err)
-
     has_data_sync = bool(
         sync_chart_of_accounts or sync_items or sync_tax_codes or sync_company_settings
     )
+    targets, err = _push_target_companies(
+        scope=scope,
+        company_ids=company_ids,
+        apply_platform_release_flag=apply_platform_release_flag,
+        has_data_sync=has_data_sync,
+    )
+    if err:
+        raise ValueError(err)
+
     master = find_master_company() if has_data_sync else None
     if has_data_sync and not master:
         raise ValueError(
@@ -397,7 +466,13 @@ def run_master_push(
                 else:
                     platform_release_applied += 1
             if has_data_sync and master is not None:
-                row["data_sync"] = _apply_data_sync_for_tenant(master, tenant, options)
+                if master.id == tenant.id:
+                    row["data_sync"] = {
+                        "skipped": True,
+                        "reason": "Master is the template source; sync applies to tenant companies only.",
+                    }
+                else:
+                    row["data_sync"] = _apply_data_sync_for_tenant(master, tenant, options)
             ok_count += 1
         except Exception as e:
             row["ok"] = False
@@ -462,10 +537,10 @@ def run_master_rollback(
     audit_source: str = "rollback_batch",
 ) -> dict[str, Any]:
     """
-    Roll back the last platform release tag on each target tenant (non-master only).
-    Tenants with nothing recorded skip with a message; failures are per-row.
+    Roll back the last platform release tag on each target company (includes Master when scope matches).
+    Rows with nothing recorded skip with a message; failures are per-row.
     """
-    targets, err = _tenant_targets(scope=scope, company_ids=company_ids)
+    targets, err = _tenant_targets(scope=scope, company_ids=company_ids, exclude_master=False)
     if err:
         raise ValueError(err)
 

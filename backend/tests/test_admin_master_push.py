@@ -12,6 +12,8 @@ def test_push_updates_all_tenants_applies_release(
     api_client, auth_super_headers, company_master, company_tenant
 ):
     tgt = settings.PLATFORM_TARGET_RELEASE
+    company_master.platform_release = "pre-upgrade-master"
+    company_master.save(update_fields=["platform_release"])
     company_tenant.platform_release = "pre-upgrade-test"
     company_tenant.save(update_fields=["platform_release"])
 
@@ -32,13 +34,16 @@ def test_push_updates_all_tenants_applies_release(
     assert r.status_code == 200, r.content.decode()
     out = json.loads(r.content)
     assert out.get("ok") is True
-    assert out.get("updated_count") == 1
+    assert out.get("updated_count") == 2
     assert out.get("failed_count") == 0
     summary = out.get("platform_release_summary") or {}
     assert summary.get("target") == tgt
-    assert summary.get("tenants_applied") == 1
+    assert summary.get("tenants_applied") == 2
     assert summary.get("tenants_skipped_already_at_target") == 0
     assert summary.get("tenants_failed") == 0
+    company_master.refresh_from_db()
+    assert company_master.platform_release == tgt
+    assert company_master.platform_release_previous == "pre-upgrade-master"
     company_tenant.refresh_from_db()
     assert company_tenant.platform_release == tgt
     assert company_tenant.platform_release_previous == "pre-upgrade-test"
@@ -50,6 +55,8 @@ def test_push_release_all_tenants_skipped_when_already_current(
 ):
     """Second rollout when every tenant is already at the target — accurate skip counts."""
     tgt = settings.PLATFORM_TARGET_RELEASE
+    company_master.platform_release = tgt
+    company_master.save(update_fields=["platform_release"])
     company_tenant.platform_release = tgt
     company_tenant.save(update_fields=["platform_release"])
 
@@ -70,10 +77,10 @@ def test_push_release_all_tenants_skipped_when_already_current(
     assert r.status_code == 200, r.content.decode()
     out = json.loads(r.content)
     assert out.get("ok") is True
-    assert out.get("updated_count") == 1
+    assert out.get("updated_count") == 2
     summary = out.get("platform_release_summary") or {}
     assert summary.get("tenants_applied") == 0
-    assert summary.get("tenants_skipped_already_at_target") == 1
+    assert summary.get("tenants_skipped_already_at_target") == 2
     assert summary.get("tenants_failed") == 0
 
 
@@ -185,6 +192,8 @@ def test_master_rollback_release_all_tenants(
     api_client, auth_super_headers, company_master, company_tenant
 ):
     tgt = settings.PLATFORM_TARGET_RELEASE
+    company_master.platform_release = "tag-before-bulk"
+    company_master.save(update_fields=["platform_release"])
     company_tenant.platform_release = "tag-before-bulk"
     company_tenant.save(update_fields=["platform_release"])
 
@@ -203,7 +212,9 @@ def test_master_rollback_release_all_tenants(
         **auth_super_headers,
     )
     assert r.status_code == 200, r.content.decode()
+    company_master.refresh_from_db()
     company_tenant.refresh_from_db()
+    assert company_master.platform_release == tgt
     assert company_tenant.platform_release == tgt
 
     r2 = api_client.post(
@@ -215,7 +226,10 @@ def test_master_rollback_release_all_tenants(
     assert r2.status_code == 200, r2.content.decode()
     out = json.loads(r2.content)
     assert out.get("ok") is True
-    assert (out.get("rollback_summary") or {}).get("tenants_rolled_back") == 1
+    assert (out.get("rollback_summary") or {}).get("tenants_rolled_back") == 2
+    company_master.refresh_from_db()
     company_tenant.refresh_from_db()
+    assert company_master.platform_release == "tag-before-bulk"
     assert company_tenant.platform_release == "tag-before-bulk"
+    assert company_master.platform_release_previous is None
     assert company_tenant.platform_release_previous is None

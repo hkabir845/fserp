@@ -299,13 +299,12 @@ function CompaniesPageContent() {
   }
 
   /**
-   * Promote every non-master tenant to the configured platform release — same as per-card "Apply upgrade",
-   * but does not copy COA/items/taxes/settings from Master (those are separate flags on push-updates).
+   * Promote every company (including Master Filling Station) to the configured platform release —
+   * same as per-card "Apply upgrade". Does not copy COA/items/taxes/settings from Master (use push-updates with sync flags for that).
    */
   const handleRolloutPlatformReleaseToAllTenants = async () => {
-    const tenantRows = companies.filter((c) => c.is_master !== 'true')
-    if (tenantRows.length === 0) {
-      toast.error('No tenant companies found (only Master or none). Add a tenant or check company list.')
+    if (companies.length === 0) {
+      toast.error('No companies loaded. Refresh the page or create a company first.')
       return
     }
     const target = platformInfo?.target_release?.trim() || '(server target)'
@@ -340,9 +339,9 @@ function CompaniesPageContent() {
     if (
       !window.confirm(
         `Dry-run preview (no database changes yet):\n\n` +
-          `• ${wouldApply} tenant(s) would be upgraded to ${target}\n` +
+          `• ${wouldApply} company/companies would be upgraded to ${target} (includes Master when present)\n` +
           `• ${wouldSkip} already at target (no DB change if you proceed)\n\n` +
-          `This updates only each tenant’s release tag and registered upgrade hooks — not business data.\n` +
+          `This updates only each company’s release tag and registered upgrade hooks — not business data.\n` +
           `It does NOT copy chart of accounts, products, taxes, or company settings from Master.\n\n` +
           `Deploy backend/frontend and run database migrations on the server before you continue.\n\n` +
           `Proceed with the rollout?`
@@ -448,15 +447,14 @@ function CompaniesPageContent() {
   }
 
   const handleRollbackAllTenants = async () => {
-    const tenantRows = companies.filter((c) => c.is_master !== 'true')
-    if (tenantRows.length === 0) {
-      toast.error('No tenant companies found.')
+    if (companies.length === 0) {
+      toast.error('No companies loaded.')
       return
     }
     if (
       !window.confirm(
-        `Roll back the last platform release for every tenant (${tenantRows.length}) where a previous tag is recorded?\n\n` +
-          `Tenants with nothing to undo are skipped. This does not uninstall deployed code.`
+        `Roll back the last platform release for every company (${companies.length} loaded, including Master when present) where a previous tag is recorded?\n\n` +
+          `Companies with nothing to undo are skipped. This does not uninstall deployed code.`
       )
     ) {
       return
@@ -484,7 +482,7 @@ function CompaniesPageContent() {
         toast.error(`Rollback: ${failed} failure(s). ${names.join('; ')}`)
       } else {
         toast.success(
-          `Rollback: ${sum?.tenants_rolled_back ?? 0} tenant(s) reverted; ${sum?.tenants_skipped_nothing_to_undo ?? 0} skipped (nothing to undo).`
+          `Rollback: ${sum?.tenants_rolled_back ?? 0} company/companies reverted; ${sum?.tenants_skipped_nothing_to_undo ?? 0} skipped (nothing to undo).`
         )
       }
       await fetchCompanies()

@@ -11,6 +11,8 @@ from django.conf import settings
 def test_push_preview_matches_apply_plan(
     api_client, auth_super_headers, company_master, company_tenant
 ):
+    company_master.platform_release = "old-master"
+    company_master.save(update_fields=["platform_release"])
     company_tenant.platform_release = "old-tag"
     company_tenant.save(update_fields=["platform_release"])
 
@@ -32,7 +34,7 @@ def test_push_preview_matches_apply_plan(
     pout = json.loads(prev.content)
     assert pout.get("dry_run") is True
     rs = pout.get("release_preview_summary") or {}
-    assert rs.get("would_apply") == 1
+    assert rs.get("would_apply") == 2
     assert rs.get("would_skip_already_at_target") == 0
 
 

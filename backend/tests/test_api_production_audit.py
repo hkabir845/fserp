@@ -990,6 +990,157 @@ def test_vendor_bill_open_increases_tank_and_item_stock_for_fuel(
     assert Bill.objects.get(pk=bill["id"]).stock_receipt_applied is True
 
 
+def test_vendor_bill_receipt_over_tank_capacity_returns_400(
+    api_client: Client, auth_super_headers, company_master
+):
+    """Posted vendor bill must not push tank level above capacity."""
+    from api.models import Bill, Tank
+
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    nozzle = _audit_fuel_nozzle(company_master)
+    product_id = nozzle.product_id
+    tank_id = nozzle.tank_id
+    Tank.objects.filter(pk=tank_id).update(capacity=Decimal("10050"), current_stock=Decimal("10000"))
+
+    v = api_client.post(
+        "/api/vendors/",
+        data=json.dumps({"company_name": "Fuel Supplier Cap"}),
+        content_type="application/json",
+        **h,
+    )
+    assert v.status_code == 201
+    vendor_id = json.loads(v.content)["id"]
+
+    bill_r = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor_id,
+                "subtotal": "100.00",
+                "tax_total": "0",
+                "total": "100.00",
+                "status": "open",
+                "lines": [
+                    {
+                        "item_id": product_id,
+                        "description": "Too much",
+                        "quantity": "200",
+                        "unit_cost": "0.50",
+                        "amount": "100.00",
+                    }
+                ],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert bill_r.status_code == 400
+    detail = json.loads(bill_r.content).get("detail", "")
+    assert "capacity" in detail.lower()
+
+    assert Bill.objects.filter(vendor_id=vendor_id).count() == 0
+
+
+def test_vendor_bill_over_tank_capacity_succeeds_with_ack(
+    api_client: Client, auth_super_headers, company_master
+):
+    """Posted vendor bill may exceed tank capacity when acknowledge_tank_overfill is true (e.g. drums)."""
+    from api.models import Tank
+
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    nozzle = _audit_fuel_nozzle(company_master)
+    product_id = nozzle.product_id
+    tank_id = nozzle.tank_id
+    Tank.objects.filter(pk=tank_id).update(capacity=Decimal("10050"), current_stock=Decimal("10000"))
+
+    v = api_client.post(
+        "/api/vendors/",
+        data=json.dumps({"company_name": "Fuel Supplier Ack"}),
+        content_type="application/json",
+        **h,
+    )
+    assert v.status_code == 201
+    vendor_id = json.loads(v.content)["id"]
+
+    bill_r = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor_id,
+                "subtotal": "100.00",
+                "tax_total": "0",
+                "total": "100.00",
+                "status": "open",
+                "acknowledge_tank_overfill": True,
+                "lines": [
+                    {
+                        "item_id": product_id,
+                        "description": "Overflow to drums",
+                        "quantity": "200",
+                        "unit_cost": "0.50",
+                        "amount": "100.00",
+                    }
+                ],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert bill_r.status_code == 201, bill_r.content
+    tank = Tank.objects.get(pk=tank_id)
+    assert tank.current_stock == Decimal("10200")
+
+
+def test_cashier_pos_fuel_over_tank_stock_returns_400(
+    api_client: Client, auth_super_headers, company_master
+):
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    nozzle = _audit_fuel_nozzle(company_master)
+
+    pos = api_client.post(
+        "/api/cashier/pos/",
+        data=json.dumps(
+            {
+                "items": [],
+                "fuel_lines": [{"nozzle_id": nozzle.id, "quantity": "999999"}],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert pos.status_code == 400
+    detail = json.loads(pos.content).get("detail", "")
+    assert "fuel" in detail.lower() or "tank" in detail.lower() or "available" in detail.lower()
+
+
+def test_cashier_pos_shop_qty_over_qoh_returns_400(
+    api_client: Client, auth_super_headers, company_master
+):
+    h = _audit_master_headers(auth_super_headers, company_master)
+    item_r = api_client.post(
+        "/api/items/",
+        data=json.dumps({"name": "Low Stock SKU", "unit_price": "5.00", "quantity_on_hand": "10"}),
+        content_type="application/json",
+        **h,
+    )
+    assert item_r.status_code == 201
+    item_id = json.loads(item_r.content)["id"]
+
+    pos = api_client.post(
+        "/api/cashier/pos/",
+        data=json.dumps(
+            {"items": [{"item_id": item_id, "quantity": "50", "unit_price": "5.00"}]}
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert pos.status_code == 400
+    assert "stock" in json.loads(pos.content).get("detail", "").lower()
+
+
 def test_vendor_bill_existing_journal_backfills_stock_once(
     api_client: Client, auth_super_headers, company_master
 ):

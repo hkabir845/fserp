@@ -82,8 +82,8 @@ if not exist ".env" (
     (
         echo # See .env.example. `next build` uses this; `next dev` also loads .env.development.
         echo PORT=3000
-        echo NEXT_PUBLIC_API_URL=https://api.mahasoftcorporation.com
-        echo NEXT_PUBLIC_API_BASE_URL=https://api.mahasoftcorporation.com
+        echo NEXT_PUBLIC_API_URL=https://localhost:3000 
+        echo NEXT_PUBLIC_API_BASE_URL=https://localhost:3000 
         echo NEXT_PUBLIC_WS_URL=wss://api.mahasoftcorporation.com
         echo NEXT_PUBLIC_APP_SHELL_HOSTNAMES=mahasoftcorporation.com,www.mahasoftcorporation.com
         echo NEXT_PUBLIC_API_TIMEOUT=30000

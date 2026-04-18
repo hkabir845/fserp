@@ -10,6 +10,7 @@ import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_LINE_COL_CLASS, AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
+import { extractErrorMessage } from '@/utils/errorHandler'
 
 interface BillLineItem {
   id?: number
@@ -137,6 +138,7 @@ interface Item {
   unit: string
   item_type: string  // 'inventory', 'non_inventory', 'service'
   pos_category?: string  // 'fuel', 'general', etc.
+  quantity_on_hand?: number | string
 }
 
 interface Tank {
@@ -147,6 +149,114 @@ interface Tank {
   capacity: number
   current_stock: number
   station_name?: string
+  unit_of_measure?: string
+}
+
+function parseQtyLoose(v: unknown): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+interface TankIssueRow {
+  tankId: number
+  tankName: string
+  unit: string
+  capacity: number
+  currentStock: number
+  remainingUllage: number
+  receiptQty: number
+  projected: number
+  overBy: number
+}
+
+interface CatalogLineRow {
+  itemName: string
+  billQty: number
+  quantityOnHand: number | null
+  unit: string
+}
+
+/** Resolve receiving tank for a bill line (matches backend routing). */
+function resolveLineTank(
+  line: BillLineItem,
+  itemList: Item[],
+  tankList: Tank[]
+): Tank | undefined {
+  if (!line.item_id) return undefined
+  const itemTanks = tankList.filter(t => t.product_id === line.item_id)
+  if (itemTanks.length === 0) return undefined
+  if (line.tank_id) {
+    const byId = itemTanks.find(t => t.id === line.tank_id)
+    if (byId) return byId
+  }
+  const defId = defaultTankIdForProduct(line.item_id, itemList, tankList)
+  if (defId) {
+    const t = itemTanks.find(x => x.id === defId)
+    if (t) return t
+  }
+  return itemTanks.slice().sort((a, b) => a.tank_name.localeCompare(b.tank_name))[0]
+}
+
+/**
+ * When fuel receipt would exceed tank capacity, return rows for the warning modal.
+ * Only lines that map to a tank with capacity > 0 are considered.
+ */
+function buildTankOverfillReview(
+  lines: BillLineItem[],
+  itemList: Item[],
+  tankList: Tank[]
+): { tankIssues: TankIssueRow[]; catalogLines: CatalogLineRow[] } | null {
+  const totals = new Map<number, number>()
+  for (const line of lines) {
+    const tank = resolveLineTank(line, itemList, tankList)
+    if (!tank) continue
+    const cap = parseQtyLoose(tank.capacity)
+    if (!(cap > 0)) continue
+    const q = parseQtyLoose(line.quantity)
+    if (q <= 0) continue
+    totals.set(tank.id, (totals.get(tank.id) || 0) + q)
+  }
+  const tankIssues: TankIssueRow[] = []
+  for (const [tankId, receiptQty] of totals) {
+    const t = tankList.find(x => x.id === tankId)
+    if (!t) continue
+    const cap = parseQtyLoose(t.capacity)
+    const cur = parseQtyLoose(t.current_stock)
+    const projected = cur + receiptQty
+    if (projected <= cap) continue
+    const u = (t.unit_of_measure || 'L').trim() || 'L'
+    const rem = Math.max(0, cap - cur)
+    tankIssues.push({
+      tankId,
+      tankName: t.tank_name || t.tank_number || `Tank #${tankId}`,
+      unit: u,
+      capacity: cap,
+      currentStock: cur,
+      remainingUllage: rem,
+      receiptQty,
+      projected,
+      overBy: projected - cap,
+    })
+  }
+  if (tankIssues.length === 0) return null
+  const catalogLines: CatalogLineRow[] = []
+  for (const line of lines) {
+    if (!line.item_id) continue
+    const it = itemList.find(i => i.id === line.item_id)
+    if (!it) continue
+    const qohRaw = it.quantity_on_hand
+    const qoh =
+      qohRaw === undefined || qohRaw === null || qohRaw === ''
+        ? null
+        : parseQtyLoose(qohRaw)
+    catalogLines.push({
+      itemName: it.name,
+      billQty: parseQtyLoose(line.quantity),
+      quantityOnHand: qoh,
+      unit: (it.unit || 'units').trim() || 'units',
+    })
+  }
+  return { tankIssues, catalogLines }
 }
 
 interface ExpenseAccount {
@@ -175,6 +285,15 @@ export default function BillsPage() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingBill, setEditingBill] = useState<Bill | null>(null)
   const [viewingBill, setViewingBill] = useState<Bill | null>(null)
+  /** Tank capacity / stock review before save (warning only; posting may send acknowledge_tank_overfill). */
+  const [stockReviewOpen, setStockReviewOpen] = useState(false)
+  const [stockReviewPayload, setStockReviewPayload] = useState<{
+    mode: 'create' | 'edit'
+    tankIssues: TankIssueRow[]
+    catalogLines: CatalogLineRow[]
+    needsServerAck: boolean
+    draftNote: boolean
+  } | null>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [formData, setFormData] = useState(() => {
@@ -409,9 +528,58 @@ export default function BillsPage() {
     return itemTanks
   }
 
+  const performCreate = async (confirm?: { acknowledgeTankOverfill: boolean }) => {
+    const { subtotal, taxAmount, total } = calculateTotals()
+
+    const over = buildTankOverfillReview(formData.lines, items, tanks)
+    if (over && confirm === undefined) {
+      setStockReviewPayload({
+        mode: 'create',
+        tankIssues: over.tankIssues,
+        catalogLines: over.catalogLines,
+        needsServerAck: approveBill,
+        draftNote: !approveBill,
+      })
+      setStockReviewOpen(true)
+      return
+    }
+
+    const sendAck = !!(confirm && confirm.acknowledgeTankOverfill)
+    await api.post('/bills/', {
+      vendor_id: formData.vendor_id,
+      bill_date: formData.bill_date,
+      due_date: formData.due_date || null,
+      vendor_reference: formData.vendor_reference || null,
+      memo: formData.memo || null,
+      subtotal: subtotal,
+      tax_amount: taxAmount,
+      total_amount: total,
+      status: approveBill ? 'open' : 'draft',
+      acknowledge_tank_overfill: sendAck ? true : undefined,
+      lines: formData.lines.map((line, idx) => ({
+        line_number: idx + 1,
+        description: line.description || null,
+        item_id: line.item_id || null,
+        expense_account_id: line.expense_account_id || null,
+        tank_id: line.tank_id || null,
+        quantity: line.quantity,
+        unit_cost: line.unit_cost,
+        amount: line.amount,
+        tax_amount: line.tax_amount || 0
+      }))
+    })
+
+    toast.success(approveBill ? 'Bill approved and posted (Open).' : 'Bill saved as draft.')
+    setShowModal(false)
+    setStockReviewOpen(false)
+    setStockReviewPayload(null)
+    resetForm()
+    fetchData()
+  }
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!formData.vendor_id) {
       toast.error('Please select a vendor')
       return
@@ -422,52 +590,23 @@ export default function BillsPage() {
       return
     }
 
-    try {
-      const { subtotal, taxAmount, total } = calculateTotals()
-
-      // Validate fuel items have tank selected
-      for (let i = 0; i < formData.lines.length; i++) {
-        const line = formData.lines[i]
-        if (line.item_id) {
-          const item = items.find(it => it.id === line.item_id)
-          const availableTanks = getTanksForItem(line.item_id)
-          if (availableTanks.length > 0 && !line.tank_id) {
-            toast.error(`Please select a tank for fuel item "${item?.name || 'Unknown'}" in line ${i + 1}`)
-            return
-          }
+    for (let i = 0; i < formData.lines.length; i++) {
+      const line = formData.lines[i]
+      if (line.item_id) {
+        const item = items.find(it => it.id === line.item_id)
+        const availableTanks = getTanksForItem(line.item_id)
+        if (availableTanks.length > 0 && !line.tank_id) {
+          toast.error(`Please select a tank for fuel item "${item?.name || 'Unknown'}" in line ${i + 1}`)
+          return
         }
       }
+    }
 
-      await api.post('/bills/', {
-        vendor_id: formData.vendor_id,
-        bill_date: formData.bill_date,
-        due_date: formData.due_date || null,
-        vendor_reference: formData.vendor_reference || null,
-        memo: formData.memo || null,
-        subtotal: subtotal,
-        tax_amount: taxAmount,
-        total_amount: total,
-        status: approveBill ? 'open' : 'draft',
-        lines: formData.lines.map((line, idx) => ({
-          line_number: idx + 1,
-          description: line.description || null,
-          item_id: line.item_id || null,
-          expense_account_id: line.expense_account_id || null,
-          tank_id: line.tank_id || null,
-          quantity: line.quantity,
-          unit_cost: line.unit_cost,
-          amount: line.amount,
-          tax_amount: line.tax_amount || 0
-        }))
-      })
-
-      toast.success(approveBill ? 'Bill approved and posted (Open).' : 'Bill saved as draft.')
-      setShowModal(false)
-      resetForm()
-      fetchData()
-    } catch (error) {
+    try {
+      await performCreate()
+    } catch (error: unknown) {
       console.error('Error creating bill:', error)
-      toast.error('Error connecting to server')
+      toast.error(extractErrorMessage(error, 'Could not save the bill. Check your connection and try again.'))
     }
   }
 
@@ -508,65 +647,107 @@ export default function BillsPage() {
     }
   }
 
+  const performUpdate = async (confirm?: { acknowledgeTankOverfill: boolean }) => {
+    if (!editingBill) return
+
+    const { subtotal, taxAmount, total } = calculateTotals()
+    const nextStatus =
+      editingBill.status === 'draft' && postDraftBillOnUpdate ? 'open' : editingBill.status
+
+    const willPostReceipt = ['open', 'paid', 'partial', 'overdue'].includes(
+      (nextStatus || '').toLowerCase()
+    )
+
+    const over = buildTankOverfillReview(formData.lines, items, tanks)
+    if (over && confirm === undefined) {
+      setStockReviewPayload({
+        mode: 'edit',
+        tankIssues: over.tankIssues,
+        catalogLines: over.catalogLines,
+        needsServerAck: willPostReceipt,
+        draftNote: !willPostReceipt,
+      })
+      setStockReviewOpen(true)
+      return
+    }
+
+    const sendAck = !!(confirm && confirm.acknowledgeTankOverfill)
+    await api.put(`/bills/${editingBill.id}`, {
+      vendor_id: formData.vendor_id,
+      bill_date: formData.bill_date,
+      due_date: formData.due_date || null,
+      vendor_reference: formData.vendor_reference || null,
+      memo: formData.memo || null,
+      subtotal: subtotal,
+      tax_amount: taxAmount,
+      total_amount: total,
+      status: nextStatus,
+      acknowledge_tank_overfill: sendAck ? true : undefined,
+      lines: formData.lines.map((line, idx) => ({
+        line_number: idx + 1,
+        description: line.description || null,
+        item_id: line.item_id || null,
+        expense_account_id: line.expense_account_id || null,
+        tank_id: line.tank_id || null,
+        quantity: line.quantity,
+        unit_cost: line.unit_cost,
+        amount: line.amount,
+        tax_amount: line.tax_amount || 0
+      }))
+    })
+
+    toast.success(
+      postDraftBillOnUpdate && editingBill.status === 'draft'
+        ? 'Bill approved and posted (Open).'
+        : 'Bill updated successfully!'
+    )
+    setShowEditModal(false)
+    setEditingBill(null)
+    setStockReviewOpen(false)
+    setStockReviewPayload(null)
+    resetForm()
+    fetchData()
+  }
+
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingBill) return
 
-    try {
-      const { subtotal, taxAmount, total } = calculateTotals()
-
-      // Validate fuel items have tank selected
-      for (let i = 0; i < formData.lines.length; i++) {
-        const line = formData.lines[i]
-        if (line.item_id) {
-          const item = items.find(it => it.id === line.item_id)
-          const availableTanks = getTanksForItem(line.item_id)
-          if (availableTanks.length > 0 && !line.tank_id) {
-            toast.error(`Please select a tank for fuel item "${item?.name || 'Unknown'}" in line ${i + 1}`)
-            return
-          }
+    for (let i = 0; i < formData.lines.length; i++) {
+      const line = formData.lines[i]
+      if (line.item_id) {
+        const item = items.find(it => it.id === line.item_id)
+        const availableTanks = getTanksForItem(line.item_id)
+        if (availableTanks.length > 0 && !line.tank_id) {
+          toast.error(`Please select a tank for fuel item "${item?.name || 'Unknown'}" in line ${i + 1}`)
+          return
         }
       }
+    }
 
-      const nextStatus =
-        editingBill.status === 'draft' && postDraftBillOnUpdate ? 'open' : editingBill.status
-
-      await api.put(`/bills/${editingBill.id}`, {
-        vendor_id: formData.vendor_id,
-        bill_date: formData.bill_date,
-        due_date: formData.due_date || null,
-        vendor_reference: formData.vendor_reference || null,
-        memo: formData.memo || null,
-        subtotal: subtotal,
-        tax_amount: taxAmount,
-        total_amount: total,
-        status: nextStatus,
-        lines: formData.lines.map((line, idx) => ({
-          line_number: idx + 1,
-          description: line.description || null,
-          item_id: line.item_id || null,
-          expense_account_id: line.expense_account_id || null,
-          tank_id: line.tank_id || null,
-          quantity: line.quantity,
-          unit_cost: line.unit_cost,
-          amount: line.amount,
-          tax_amount: line.tax_amount || 0
-        }))
-      })
-
-      toast.success(
-        postDraftBillOnUpdate && editingBill.status === 'draft'
-          ? 'Bill approved and posted (Open).'
-          : 'Bill updated successfully!'
-      )
-      setShowEditModal(false)
-      setEditingBill(null)
-      resetForm()
-      fetchData()
-    } catch (error: any) {
+    try {
+      await performUpdate()
+    } catch (error: unknown) {
       console.error('Error updating bill:', error)
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to update bill'
-      toast.error(errorMessage)
+      toast.error(extractErrorMessage(error, 'Could not update the bill. Check your connection and try again.'))
+    }
+  }
+
+  const confirmStockReview = async () => {
+    const p = stockReviewPayload
+    if (!p) return
+    const ack = p.needsServerAck
+    try {
+      if (p.mode === 'create') {
+        await performCreate({ acknowledgeTankOverfill: ack })
+      } else {
+        await performUpdate({ acknowledgeTankOverfill: ack })
+      }
+    } catch (error: unknown) {
+      console.error('Bill save after stock review:', error)
+      toast.error(extractErrorMessage(error, 'Could not save the bill. Check your connection and try again.'))
+      setStockReviewOpen(false)
+      setStockReviewPayload(null)
     }
   }
 
@@ -1280,6 +1461,103 @@ export default function BillsPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Tank capacity / stock review (warning — user may continue, e.g. drums) */}
+        {stockReviewOpen && stockReviewPayload && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] overflow-y-auto p-4">
+            <div
+              className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 border border-amber-200"
+              role="dialog"
+              aria-labelledby="stock-review-title"
+            >
+              <h3 id="stock-review-title" className="text-lg font-semibold text-amber-900 mb-2">
+                Tank capacity notice
+              </h3>
+              <p className="text-sm text-gray-700 mb-4">
+                This bill would receive more fuel than fits in the tank(s) below (current stock + this bill &gt; tank
+                capacity). You can still continue if overflow will be stored elsewhere (for example in drums).
+              </p>
+              {stockReviewPayload.draftNote && (
+                <p className="text-sm text-blue-800 bg-blue-50 border border-blue-100 rounded-md px-3 py-2 mb-4">
+                  You are saving as draft — inventory is not received until the bill is posted (Open).
+                </p>
+              )}
+              <div className="overflow-x-auto mb-4">
+                <table className="min-w-full text-sm border border-gray-200 rounded-md">
+                  <thead className="bg-gray-50 text-left">
+                    <tr>
+                      <th className="px-3 py-2 font-medium text-gray-700">Tank</th>
+                      <th className="px-3 py-2 font-medium text-gray-700 text-right">In tank</th>
+                      <th className="px-3 py-2 font-medium text-gray-700 text-right">Capacity</th>
+                      <th className="px-3 py-2 font-medium text-gray-700 text-right">Free space</th>
+                      <th className="px-3 py-2 font-medium text-gray-700 text-right">This bill</th>
+                      <th className="px-3 py-2 font-medium text-gray-700 text-right">Over by</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stockReviewPayload.tankIssues.map((row) => (
+                      <tr key={row.tankId} className="border-t border-gray-100">
+                        <td className="px-3 py-2 text-gray-900">{row.tankName}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {row.currentStock.toFixed(2)} {row.unit}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {row.capacity.toFixed(2)} {row.unit}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-emerald-800">
+                          {row.remainingUllage.toFixed(2)} {row.unit}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">{row.receiptQty.toFixed(2)} {row.unit}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-amber-800">
+                          {row.overBy.toFixed(2)} {row.unit}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {stockReviewPayload.catalogLines.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-2">Items on this bill</p>
+                  <ul className="text-sm text-gray-800 space-y-1 border border-gray-100 rounded-md px-3 py-2 bg-gray-50/80">
+                    {stockReviewPayload.catalogLines.map((row, i) => (
+                      <li key={i}>
+                        <span className="font-medium">{row.itemName}</span>
+                        {' — '}
+                        bill qty {row.billQty.toFixed(2)} {row.unit}
+                        {row.quantityOnHand !== null && (
+                          <span className="text-gray-600">
+                            {' '}
+                            · current stock (system) {row.quantityOnHand.toFixed(2)} {row.unit}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="flex flex-wrap justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStockReviewOpen(false)
+                    setStockReviewPayload(null)
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void confirmStockReview()}
+                  className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+                >
+                  {stockReviewPayload.needsServerAck ? 'Continue and confirm overflow' : 'Continue'}
+                </button>
+              </div>
             </div>
           </div>
         )}

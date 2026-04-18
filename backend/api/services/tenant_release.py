@@ -1,7 +1,7 @@
 """
 Manual per-tenant platform release rollout (SaaS).
 
-Deploy sets FSERP_PLATFORM_RELEASE (or it falls back to FSERP_APP_VERSION).
+Deploy sets FSERP_APP_VERSION (see PLATFORM_TARGET_RELEASE in Django settings).
 Super Admin promotes each tenant when ready — no automatic all-tenant push.
 
 Add idempotent data backfills in TENANT_RELEASE_HOOKS below as you ship features.
@@ -53,7 +53,7 @@ def apply_platform_release(company: Company, target: str | None = None) -> dict[
     if tgt != allowed:
         raise ValueError(
             f"Release must match the configured platform target ({allowed!r}). "
-            "Change FSERP_PLATFORM_RELEASE at deploy, then promote tenants."
+            "Change FSERP_APP_VERSION at deploy, then promote tenants."
         )
 
     cur = (company.platform_release or "").strip()

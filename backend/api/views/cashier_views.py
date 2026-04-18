@@ -25,9 +25,14 @@ from api.models import (
     ShiftSession,
     Tank,
 )
+from api.exceptions import StockBusinessError
 from api.services.gl_posting import _is_walkin_customer, post_payment_received_journal, sync_invoice_gl
 from api.services.payment_allocation import refresh_invoices_touched_by_payment
 from api.services.shift_sales import record_invoice_on_shift
+from api.services.inventory_validation import (
+    assert_pos_fuel_sale_within_stock,
+    assert_pos_general_lines_within_qoh,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +341,8 @@ def _cashier_pos_unified(company_id: int, body: dict) -> JsonResponse:
 
     try:
         with transaction.atomic():
+            assert_pos_fuel_sale_within_stock(company_id, fuel_entries)
+            assert_pos_general_lines_within_qoh(company_id, lines_data)
             inv = Invoice(
                 company_id=company_id,
                 customer=customer,
@@ -373,11 +380,9 @@ def _cashier_pos_unified(company_id: int, body: dict) -> JsonResponse:
                         current_reading=F("current_reading") + qty
                     )
                 if tank:
-                    tk = Tank.objects.select_for_update().get(pk=tank.pk)
-                    new_stock = tk.current_stock - qty
-                    if new_stock < 0:
-                        new_stock = Decimal("0")
-                    Tank.objects.filter(pk=tank.pk).update(current_stock=new_stock)
+                    Tank.objects.filter(pk=tank.pk).update(
+                        current_stock=F("current_stock") - qty
+                    )
 
             for d in lines_data:
                 InvoiceLine.objects.create(
@@ -389,10 +394,9 @@ def _cashier_pos_unified(company_id: int, body: dict) -> JsonResponse:
                     amount=d["amount"],
                 )
                 if d["item"].quantity_on_hand is not None:
-                    new_qty = d["item"].quantity_on_hand - d["quantity"]
-                    if new_qty < 0:
-                        new_qty = Decimal("0")
-                    Item.objects.filter(pk=d["item"].pk).update(quantity_on_hand=new_qty)
+                    Item.objects.filter(pk=d["item"].pk).update(
+                        quantity_on_hand=F("quantity_on_hand") - d["quantity"]
+                    )
 
             inv = Invoice.objects.filter(id=inv.id).select_related("customer").first()
             sync_invoice_gl(
@@ -461,6 +465,8 @@ def _cashier_pos_unified(company_id: int, body: dict) -> JsonResponse:
             if split_payment_id is not None:
                 payload["payment_id"] = split_payment_id
         return JsonResponse(payload, status=201)
+    except StockBusinessError as e:
+        return _cashier_pos_error(e.detail)
     except Exception as e:
         logger.exception("cashier_pos_unified failed")
         return JsonResponse(

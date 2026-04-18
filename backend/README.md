@@ -14,7 +14,7 @@ Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATC
 - **CORS origin** is **`https://mahasoftcorporation.com`** in `fsms/settings.py` (do not add a second `Access-Control-Allow-Origin` in nginx).
 - **Nginx / cPanel / reverse proxy:** If the proxy handles `OPTIONS` or injects CORS headers, it must **not** use a narrow `Access-Control-Allow-Headers` list. **Prefer** forwarding `OPTIONS` to Django so `django-cors-headers` sets headers. If you must set CORS in nginx, include at least: `Authorization`, `Content-Type`, `X-CSRFToken`, `X-Selected-Company-Id`, `X-Tenant-Subdomain`, `X-Request-Id`.
 
-**Verify:** `python verify_backend.py` (includes a preflight check for `x-selected-company-id`). On the server, `curl -i -X OPTIONS "https://api.example.com/api/auth/login/" -H "Origin: https://api.mahasoftcorporation.com" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: x-selected-company-id"` should show `access-control-allow-headers` containing `x-selected-company-id`.
+**Verify:** `python verify_backend.py` (includes a preflight check for `x-selected-company-id`). On the server, `curl -i -X OPTIONS "https://api.example.com/api/auth/login/" -H "Origin: https://localhost:3000 " -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: x-selected-company-id"` should show `access-control-allow-headers` containing `x-selected-company-id`.
 
 - **Run:** From `backend` folder: `python manage.py runserver 8000`
 - **API root:** https://localhost:8000/api/

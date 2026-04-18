@@ -21,6 +21,8 @@ def _env(name: str, default: str = "") -> str:
 
 APP_VERSION = _env("FSERP_APP_VERSION", _env("RELEASE_VERSION", "0.0.0-dev")) or "0.0.0-dev"
 GIT_COMMIT = (_env("GIT_COMMIT_SHA", _env("SOURCE_VERSION", "")) or "")[:12] or None
+# Optional one-line or short multi-line notes for operators (shown in Super Admin platform release panel).
+RELEASE_NOTES = (_env("FSERP_RELEASE_NOTES", "") or "")[:4000]
 
 
 def health_payload() -> dict:

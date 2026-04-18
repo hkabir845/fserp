@@ -11,9 +11,14 @@ from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.models import User, Company, Customer, Vendor, Station, Invoice
-from api.services.master_push import run_master_push, run_master_rollback
+from api.services.master_push import preview_master_push, run_master_push, run_master_rollback
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_station_operational_data
 from api.services.tenant_release import apply_platform_release, get_target_release, rollback_platform_release
+from api.services.tenant_upgrade_audit import (
+    compute_fleet_release_summary,
+    list_recent_release_events,
+    record_release_audit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +180,11 @@ def admin_master_company_protection_status(request):
     return JsonResponse({"enabled": False, "message": "Protection status not configured"})
 
 
+def _actor_user_id(request) -> int | None:
+    u = getattr(request, "api_user", None) or get_user_from_request(request)
+    return getattr(u, "id", None) if u else None
+
+
 def _parse_bool(val, default: bool = False) -> bool:
     if val is None:
         return default
@@ -245,6 +255,8 @@ def admin_master_company_push_updates(request):
             sync_items=sync_items,
             sync_tax_codes=sync_tax,
             sync_company_settings=sync_settings,
+            actor_user_id=_actor_user_id(request),
+            audit_source="master_push",
         )
     except ValueError as e:
         return JsonResponse({"detail": str(e)}, status=400)
@@ -257,24 +269,113 @@ def admin_master_company_push_updates(request):
 
 
 @csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@_super_admin_required
+def admin_master_company_push_preview(request):
+    """
+    POST /api/admin/master-company/push-updates/preview/
+
+    Same JSON body as push-updates; returns a dry-run plan (no writes).
+    """
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"detail": "Invalid JSON"}, status=400)
+
+    def _from_body_or_get(key: str, default):
+        if key in body:
+            return body.get(key)
+        return request.GET.get(key)
+
+    scope = (body.get("scope") or request.GET.get("scope") or "all_tenants").strip()
+    raw_ids = body.get("company_ids")
+    if raw_ids is None and request.GET.get("company_ids"):
+        raw = request.GET.get("company_ids", "")
+        company_ids = [int(x) for x in raw.replace(",", " ").split() if x.strip().isdigit()]
+    elif isinstance(raw_ids, list):
+        company_ids = raw_ids
+    elif raw_ids is None:
+        company_ids = None
+    else:
+        return JsonResponse({"detail": "company_ids must be a list of integers"}, status=400)
+
+    apply_platform_release_flag = _parse_bool(
+        _from_body_or_get("apply_platform_release", True), True
+    )
+    sync_chart = _parse_bool(_from_body_or_get("sync_chart_of_accounts", False), False)
+    sync_items = _parse_bool(_from_body_or_get("sync_items", False), False)
+    sync_tax = _parse_bool(_from_body_or_get("sync_tax_codes", False), False)
+    sync_settings = _parse_bool(_from_body_or_get("sync_company_settings", False), False)
+
+    try:
+        result = preview_master_push(
+            scope=scope,
+            company_ids=company_ids,
+            apply_platform_release_flag=apply_platform_release_flag,
+            sync_chart_of_accounts=sync_chart,
+            sync_items=sync_items,
+            sync_tax_codes=sync_tax,
+            sync_company_settings=sync_settings,
+        )
+    except ValueError as e:
+        return JsonResponse({"detail": str(e)}, status=400)
+    except Exception as e:
+        logger.exception("preview_master_push failed")
+        return JsonResponse({"detail": "Preview failed", "error": str(e)}, status=500)
+
+    result["target_release"] = get_target_release()
+    return JsonResponse(result)
+
+
+@csrf_exempt
 @require_GET
 @auth_required
 @_super_admin_required
 def admin_platform_release(request):
     """GET /api/admin/platform-release/ — current deploy target tag for manual tenant rollout."""
-    from fsms.release_info import APP_VERSION
+    from fsms.release_info import APP_VERSION, RELEASE_NOTES
 
     return JsonResponse(
         {
             "target_release": get_target_release(),
             "app_version": APP_VERSION,
             "manual_rollout": True,
+            "fleet_summary": compute_fleet_release_summary(),
+            "release_notes": RELEASE_NOTES,
+            "upgrade_playbook": [
+                "Deploy backend and frontend; run Django migrations on the server.",
+                "Set FSERP_APP_VERSION at deploy so target_release matches the build you shipped.",
+                "Validate on Master Filling Station, then use Preview (dry-run) before Apply release to all tenants.",
+                "Use per-tenant Apply upgrade for canary tenants first; check Audit history for accountability.",
+            ],
             "hint": (
                 "Test on Master Filling Station, then apply the same release tag to each tenant "
                 "when ready — no automatic all-tenant upgrade."
             ),
         }
     )
+
+
+@csrf_exempt
+@require_GET
+@auth_required
+@_super_admin_required
+def admin_platform_release_history(request):
+    """GET /api/admin/platform-release/history/?limit=50&company_id= — audit log for tenant upgrades."""
+    try:
+        limit = int(request.GET.get("limit", "50"))
+    except ValueError:
+        limit = 50
+    company_id = request.GET.get("company_id")
+    cid: int | None = None
+    if company_id is not None and str(company_id).strip() != "":
+        try:
+            cid = int(company_id)
+        except ValueError:
+            return JsonResponse({"detail": "company_id must be an integer"}, status=400)
+    events = list_recent_release_events(company_id=cid, limit=limit)
+    return JsonResponse({"events": events, "count": len(events)})
 
 
 @csrf_exempt
@@ -292,13 +393,37 @@ def admin_company_apply_release(request, company_id: int):
     company = Company.objects.filter(id=company_id, is_deleted=False).first()
     if not company:
         return JsonResponse({"detail": "Company not found"}, status=404)
+    actor_id = _actor_user_id(request)
     try:
         result = apply_platform_release(company, override if override else None)
     except ValueError as e:
         return JsonResponse({"detail": str(e)}, status=400)
     except Exception as e:
         logger.exception("apply_platform_release failed company_id=%s", company_id)
+        record_release_audit(
+            company_id=company_id,
+            category="apply_release",
+            server_target_release=get_target_release(),
+            success=False,
+            actor_user_id=actor_id,
+            source="apply_release",
+            detail=None,
+            error_message=str(e),
+        )
         return JsonResponse({"detail": "Apply release failed", "error": str(e)}, status=500)
+    try:
+        record_release_audit(
+            company_id=company_id,
+            category="apply_release",
+            server_target_release=get_target_release(),
+            success=True,
+            actor_user_id=actor_id,
+            source="apply_release",
+            detail=result if isinstance(result, dict) else {"result": result},
+            error_message="",
+        )
+    except Exception:
+        logger.exception("audit log apply_release company_id=%s", company_id)
     return JsonResponse(result)
 
 
@@ -313,13 +438,37 @@ def admin_company_rollback_release(request, company_id: int):
     company = Company.objects.filter(id=company_id, is_deleted=False).first()
     if not company:
         return JsonResponse({"detail": "Company not found"}, status=404)
+    actor_id = _actor_user_id(request)
     try:
         result = rollback_platform_release(company)
     except ValueError as e:
         return JsonResponse({"detail": str(e)}, status=400)
     except Exception as e:
         logger.exception("rollback_platform_release failed company_id=%s", company_id)
+        record_release_audit(
+            company_id=company_id,
+            category="rollback_release",
+            server_target_release=get_target_release(),
+            success=False,
+            actor_user_id=actor_id,
+            source="rollback_release",
+            detail=None,
+            error_message=str(e),
+        )
         return JsonResponse({"detail": "Rollback failed", "error": str(e)}, status=500)
+    try:
+        record_release_audit(
+            company_id=company_id,
+            category="rollback_release",
+            server_target_release=get_target_release(),
+            success=True,
+            actor_user_id=actor_id,
+            source="rollback_release",
+            detail=result if isinstance(result, dict) else {"result": result},
+            error_message="",
+        )
+    except Exception:
+        logger.exception("audit log rollback_release company_id=%s", company_id)
     return JsonResponse(result)
 
 
@@ -352,7 +501,12 @@ def admin_master_company_rollback_release(request):
         return JsonResponse({"detail": "company_ids must be a list of integers"}, status=400)
 
     try:
-        result = run_master_rollback(scope=scope, company_ids=company_ids)
+        result = run_master_rollback(
+            scope=scope,
+            company_ids=company_ids,
+            actor_user_id=_actor_user_id(request),
+            audit_source="rollback_batch",
+        )
     except ValueError as e:
         return JsonResponse({"detail": str(e)}, status=400)
     except Exception as e:

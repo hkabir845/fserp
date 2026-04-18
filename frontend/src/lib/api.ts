@@ -9,7 +9,7 @@ import axios from 'axios'
  * `frontend/.env.development` (local Django). Path may include `/api` — never duplicate `/api/api`.
  */
 /** Default when env is missing at build time — production API (local dev uses `.env.development`). */
-export const FALLBACK_BACKEND_ORIGIN = 'https://api.mahasoftcorporation.com'
+export const FALLBACK_BACKEND_ORIGIN = 'https://localhost:3000 '
 
 const DEFAULT_BACKEND_ORIGIN = FALLBACK_BACKEND_ORIGIN
 

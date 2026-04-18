@@ -40,6 +40,26 @@ def _decimal(val, default=0):
         return default
 
 
+def _tank_capacity_detail_error(t) -> JsonResponse | None:
+    """Return 400 response if current stock exceeds capacity (when capacity is set)."""
+    cap = t.capacity or Decimal("0")
+    if cap <= 0:
+        return None
+    cur = t.current_stock or Decimal("0")
+    if cur > cap:
+        u = (t.unit_of_measure or "L").strip() or "L"
+        return JsonResponse(
+            {
+                "detail": (
+                    f'Current stock ({cur} {u}) is higher than this tank\'s capacity ({cap} {u}). '
+                    f"Lower the stock figure, increase capacity, or check your dip readings."
+                )
+            },
+            status=400,
+        )
+    return None
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
@@ -71,6 +91,9 @@ def tanks_list_or_create(request):
             unit_of_measure=body.get("unit_of_measure") or "L",
             is_active=body.get("is_active", True),
         )
+        cap_err = _tank_capacity_detail_error(t)
+        if cap_err:
+            return cap_err
         t.save()
         if not t.tank_number:
             t.tank_number = f"TNK-{t.id}"
@@ -110,6 +133,9 @@ def tank_detail(request, tank_id: int):
             t.reorder_level = _decimal(body.get("min_stock_level") or body.get("reorder_level"), t.reorder_level)
         if "is_active" in body:
             t.is_active = bool(body["is_active"])
+        cap_err = _tank_capacity_detail_error(t)
+        if cap_err:
+            return cap_err
         try:
             t.save()
         except ValidationError as e:

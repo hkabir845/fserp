@@ -172,7 +172,15 @@ urlpatterns = [
     path("admin/users/", admin_views.admin_users),
     path("admin/master-company/protection-status/", admin_views.admin_master_company_protection_status),
     path("admin/master-company/push-updates/", admin_views.admin_master_company_push_updates),
+    path(
+        "admin/master-company/push-updates/preview/",
+        admin_views.admin_master_company_push_preview,
+    ),
     path("admin/master-company/rollback-release/", admin_views.admin_master_company_rollback_release),
+    path(
+        "admin/platform-release/history/",
+        admin_views.admin_platform_release_history,
+    ),
     path("admin/companies/<int:company_id>/subscription/", subscription_ledger_views.admin_company_subscription),
     path("admin/companies/<int:company_id>/subscription/extend/", subscription_ledger_views.admin_company_subscription_extend),
     path(

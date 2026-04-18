@@ -17,7 +17,13 @@ from api.chart_templates.fuel_station import (
     seed_fuel_station_chart,
 )
 from api.models import Company, Item, Tax, TaxRate
-from api.services.tenant_release import apply_platform_release, get_target_release, rollback_platform_release
+from api.services.tenant_release import (
+    apply_platform_release,
+    get_target_release,
+    rollback_platform_release,
+    tenant_needs_release,
+)
+from api.services.tenant_upgrade_audit import record_release_audit
 
 
 def find_master_company() -> Company | None:
@@ -130,6 +136,77 @@ def _sync_taxes(master_id: int, tenant_id: int) -> dict[str, Any]:
     return {"taxes_added": taxes_added, "rates_added": rates_added, "skipped": skipped}
 
 
+def _preview_items_sync_counts(master_id: int, tenant_id: int) -> dict[str, Any]:
+    would_add = 0
+    skipped = 0
+    for mi in Item.objects.filter(company_id=master_id).order_by("id"):
+        num = (mi.item_number or "").strip()
+        if num:
+            if Item.objects.filter(company_id=tenant_id, item_number=num).exists():
+                skipped += 1
+                continue
+        else:
+            if Item.objects.filter(company_id=tenant_id, name=mi.name).exists():
+                skipped += 1
+                continue
+        would_add += 1
+    return {"would_add": would_add, "would_skip_existing": skipped}
+
+
+def _preview_taxes_sync_counts(master_id: int, tenant_id: int) -> dict[str, Any]:
+    would_add_taxes = 0
+    would_add_rate_rows = 0
+    skipped = 0
+    for mt in Tax.objects.filter(company_id=master_id).order_by("id"):
+        name = (mt.name or "").strip()
+        if not name:
+            skipped += 1
+            continue
+        if Tax.objects.filter(company_id=tenant_id, name=name).exists():
+            skipped += 1
+            continue
+        would_add_taxes += 1
+        would_add_rate_rows += mt.rates.count()
+    return {
+        "would_add_tax_definitions": would_add_taxes,
+        "would_add_rate_rows": would_add_rate_rows,
+        "skipped": skipped,
+    }
+
+
+def _preview_company_settings_diff(master: Company, tenant: Company) -> dict[str, Any]:
+    fields = [
+        "currency",
+        "date_format",
+        "time_format",
+        "fiscal_year_start",
+    ]
+    diff: dict[str, Any] = {}
+    for f in fields:
+        mv = getattr(master, f, None)
+        tv = getattr(tenant, f, None)
+        if mv != tv:
+            diff[f] = {"from": tv, "to": mv}
+    return {"field_changes": diff, "would_update": bool(diff)}
+
+
+def _preview_data_sync_for_tenant(master: Company, tenant: Company, options: dict[str, bool]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    mid, tid = master.id, tenant.id
+    if options.get("sync_chart_of_accounts"):
+        out["chart_of_accounts"] = {
+            "would_run": True,
+            "note": "Adds missing template accounts from the fuel-station profile; does not delete tenant data.",
+        }
+    if options.get("sync_items"):
+        out["items"] = _preview_items_sync_counts(mid, tid)
+    if options.get("sync_tax_codes"):
+        out["taxes"] = _preview_taxes_sync_counts(mid, tid)
+    if options.get("sync_company_settings"):
+        out["company_settings"] = _preview_company_settings_diff(master, tenant)
+    return out
+
+
 def _sync_company_settings(master: Company, tenant: Company) -> dict[str, Any]:
     fields = [
         "currency",
@@ -167,6 +244,108 @@ def _apply_data_sync_for_tenant(master: Company, tenant: Company, options: dict[
     return out
 
 
+def _audit_master_push_row(
+    *,
+    tenant_id: int,
+    actor_user_id: int | None,
+    audit_source: str,
+    row: dict[str, Any],
+) -> None:
+    tgt = get_target_release()
+    success = bool(row.get("ok"))
+    detail: dict[str, Any] = {}
+    if "platform_release" in row:
+        detail["platform_release"] = row["platform_release"]
+    if "data_sync" in row:
+        detail["data_sync"] = row["data_sync"]
+    if not success:
+        detail["error"] = row.get("detail")
+    record_release_audit(
+        company_id=tenant_id,
+        category="master_push",
+        server_target_release=tgt,
+        success=success,
+        actor_user_id=actor_user_id,
+        source=audit_source,
+        detail=detail or None,
+        error_message=(row.get("detail") or "") if not success else "",
+    )
+
+
+def preview_master_push(
+    *,
+    scope: str,
+    company_ids: list[int] | None,
+    apply_platform_release_flag: bool,
+    sync_chart_of_accounts: bool,
+    sync_items: bool,
+    sync_tax_codes: bool,
+    sync_company_settings: bool,
+) -> dict[str, Any]:
+    """
+    Dry-run: same inputs as run_master_push; no database writes.
+    """
+    targets, err = _tenant_targets(scope=scope, company_ids=company_ids)
+    if err:
+        raise ValueError(err)
+
+    has_data_sync = bool(
+        sync_chart_of_accounts or sync_items or sync_tax_codes or sync_company_settings
+    )
+    master = find_master_company() if has_data_sync else None
+    if has_data_sync and not master:
+        raise ValueError(
+            "No Master company found. Create one with is_master=true or disable data sync options."
+        )
+
+    if not apply_platform_release_flag and not has_data_sync:
+        raise ValueError("Select at least one operation (platform release and/or data sync).")
+
+    options = {
+        "sync_chart_of_accounts": sync_chart_of_accounts,
+        "sync_items": sync_items,
+        "sync_tax_codes": sync_tax_codes,
+        "sync_company_settings": sync_company_settings,
+    }
+    tgt = get_target_release()
+    preview_rows: list[dict[str, Any]] = []
+    release_would_apply = 0
+    release_would_skip = 0
+
+    for tenant in targets:
+        row: dict[str, Any] = {"company_id": tenant.id, "company_name": tenant.name}
+        if apply_platform_release_flag:
+            cur = (tenant.platform_release or "").strip()
+            needs = tenant_needs_release(tenant)
+            row["release"] = {
+                "current_release": cur,
+                "target_release": tgt,
+                "would_apply": needs,
+                "would_skip_already_current": not needs,
+            }
+            if needs:
+                release_would_apply += 1
+            else:
+                release_would_skip += 1
+        if has_data_sync and master is not None:
+            row["data_sync_preview"] = _preview_data_sync_for_tenant(master, tenant, options)
+        preview_rows.append(row)
+
+    return {
+        "dry_run": True,
+        "target_release": tgt,
+        "master_company_id": master.id if master else None,
+        "target_tenant_count": len(targets),
+        "release_preview_summary": {
+            "would_apply": release_would_apply,
+            "would_skip_already_at_target": release_would_skip,
+        }
+        if apply_platform_release_flag
+        else None,
+        "preview": preview_rows,
+    }
+
+
 def run_master_push(
     *,
     scope: str,
@@ -176,6 +355,8 @@ def run_master_push(
     sync_items: bool,
     sync_tax_codes: bool,
     sync_company_settings: bool,
+    actor_user_id: int | None = None,
+    audit_source: str = "master_push",
 ) -> dict[str, Any]:
     targets, err = _tenant_targets(scope=scope, company_ids=company_ids)
     if err:
@@ -222,6 +403,12 @@ def run_master_push(
             row["ok"] = False
             row["detail"] = str(e)
         results.append(row)
+        _audit_master_push_row(
+            tenant_id=tenant.id,
+            actor_user_id=actor_user_id,
+            audit_source=audit_source,
+            row=row,
+        )
 
     failed_count = len(targets) - ok_count
     out: dict[str, Any] = {
@@ -243,7 +430,37 @@ def run_master_push(
     return out
 
 
-def run_master_rollback(*, scope: str, company_ids: list[int] | None) -> dict[str, Any]:
+def _audit_rollback_row(
+    *,
+    tenant_id: int,
+    actor_user_id: int | None,
+    audit_source: str,
+    row: dict[str, Any],
+) -> None:
+    tgt = get_target_release()
+    success = bool(row.get("ok"))
+    detail: dict[str, Any] = {"rollback": row.get("rollback")}
+    if not success:
+        detail["error"] = row.get("detail")
+    record_release_audit(
+        company_id=tenant_id,
+        category="rollback_batch",
+        server_target_release=tgt,
+        success=success,
+        actor_user_id=actor_user_id,
+        source=audit_source,
+        detail=detail,
+        error_message=(row.get("detail") or "") if not success else "",
+    )
+
+
+def run_master_rollback(
+    *,
+    scope: str,
+    company_ids: list[int] | None,
+    actor_user_id: int | None = None,
+    audit_source: str = "rollback_batch",
+) -> dict[str, Any]:
     """
     Roll back the last platform release tag on each target tenant (non-master only).
     Tenants with nothing recorded skip with a message; failures are per-row.
@@ -275,6 +492,12 @@ def run_master_rollback(*, scope: str, company_ids: list[int] | None) -> dict[st
             row["ok"] = False
             row["detail"] = str(e)
         results.append(row)
+        _audit_rollback_row(
+            tenant_id=tenant.id,
+            actor_user_id=actor_user_id,
+            audit_source=audit_source,
+            row=row,
+        )
 
     failed_count = len(targets) - ok_count
     return {

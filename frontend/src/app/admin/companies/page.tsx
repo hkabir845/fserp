@@ -159,7 +159,29 @@ function CompaniesPageContent() {
     target_release: string
     app_version: string
     hint?: string
+    fleet_summary?: {
+      tenant_count: number
+      at_target: number
+      not_at_target: number
+      unset_or_empty_tag: number
+      behind_different_tag: number
+      compliance_pct: number
+      server_target_release: string
+    }
+    release_notes?: string
+    upgrade_playbook?: string[]
   } | null>(null)
+  const [upgradeAuditEvents, setUpgradeAuditEvents] = useState<
+    {
+      id: number
+      company_name: string
+      category: string
+      success: boolean
+      created_at: string | null
+      actor_user_id: number | null
+    }[]
+  >([])
+  const [previewRolloutBusy, setPreviewRolloutBusy] = useState(false)
 
   const [companyFormData, setCompanyFormData] = useState({
     company_name: '',
@@ -199,16 +221,27 @@ function CompaniesPageContent() {
   const fetchCompanies = async () => {
     try {
       setLoading(true)
-      const [companiesRes, releaseRes] = await Promise.all([
+      const [companiesRes, releaseRes, auditRes] = await Promise.all([
         api.get('/admin/companies/', { params: { limit: 500 } }),
         api.get('/admin/platform-release/').catch(() => ({ data: null })),
+        api.get('/admin/platform-release/history/', { params: { limit: 25 } }).catch(() => ({ data: null })),
       ])
       if (releaseRes.data) {
         setPlatformInfo({
           target_release: String(releaseRes.data.target_release ?? ''),
           app_version: String(releaseRes.data.app_version ?? ''),
           hint: releaseRes.data.hint,
+          fleet_summary: releaseRes.data.fleet_summary ?? undefined,
+          release_notes: releaseRes.data.release_notes
+            ? String(releaseRes.data.release_notes)
+            : undefined,
+          upgrade_playbook: Array.isArray(releaseRes.data.upgrade_playbook)
+            ? releaseRes.data.upgrade_playbook.map(String)
+            : undefined,
         })
+      }
+      if (auditRes.data?.events) {
+        setUpgradeAuditEvents(auditRes.data.events)
       }
       if (companiesRes.data) {
         const companiesWithMaster = companiesRes.data.map((c: any) => ({
@@ -276,12 +309,43 @@ function CompaniesPageContent() {
       return
     }
     const target = platformInfo?.target_release?.trim() || '(server target)'
+    setPreviewRolloutBusy(true)
+    let wouldApply = 0
+    let wouldSkip = 0
+    try {
+      const prev = await api.post(`/admin/master-company/push-updates/preview/`, {
+        scope: 'all_tenants',
+        apply_platform_release: true,
+        sync_chart_of_accounts: false,
+        sync_items: false,
+        sync_tax_codes: false,
+        sync_company_settings: false,
+      })
+      const rs = prev.data?.release_preview_summary as
+        | { would_apply?: number; would_skip_already_at_target?: number }
+        | undefined
+      wouldApply = typeof rs?.would_apply === 'number' ? rs.would_apply : 0
+      wouldSkip =
+        typeof rs?.would_skip_already_at_target === 'number' ? rs.would_skip_already_at_target : 0
+    } catch (error: unknown) {
+      const msg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Preview failed'
+      toast.error(msg)
+      safeLogError('Rollout preview:', error)
+      return
+    } finally {
+      setPreviewRolloutBusy(false)
+    }
     if (
       !window.confirm(
-        `Apply platform release ${target} to ${tenantRows.length} tenant company(ies)? (Master is never modified.)\n\n` +
+        `Dry-run preview (no database changes yet):\n\n` +
+          `• ${wouldApply} tenant(s) would be upgraded to ${target}\n` +
+          `• ${wouldSkip} already at target (no DB change if you proceed)\n\n` +
           `This updates only each tenant’s release tag and registered upgrade hooks — not business data.\n` +
-          `It does NOT copy chart of accounts, products, taxes, or company settings from Master Filling Station.\n\n` +
-          `Deploy backend/frontend and run database migrations on the server before you continue.`
+          `It does NOT copy chart of accounts, products, taxes, or company settings from Master.\n\n` +
+          `Deploy backend/frontend and run database migrations on the server before you continue.\n\n` +
+          `Proceed with the rollout?`
       )
     ) {
       return
@@ -333,6 +397,12 @@ function CompaniesPageContent() {
         toast.success(`Rollout complete: ${parts.join('; ')}.`)
       }
       await fetchCompanies()
+      try {
+        const audit = await api.get('/admin/platform-release/history/', { params: { limit: 25 } })
+        if (audit.data?.events) setUpgradeAuditEvents(audit.data.events)
+      } catch {
+        /* ignore */
+      }
     } catch (error: unknown) {
       const msg =
         (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
@@ -811,7 +881,9 @@ function CompaniesPageContent() {
                     </p>
                     <p>
                       Or use <strong>Apply upgrade</strong> on each company card for one tenant at a time. Set{' '}
-                      <code className="rounded bg-blue-100/80 px-1 text-xs">FSERP_PLATFORM_RELEASE</code> on the server to define the target tag after a deploy.
+                      <code className="rounded bg-blue-100/80 px-1 text-xs">FSERP_APP_VERSION</code> at deploy so the server&apos;s
+                      platform target tag (see <code className="rounded bg-blue-100/80 px-1 text-xs">GET /api/admin/platform-release/</code>)
+                      matches what you promote tenants to.
                     </p>
                     <p>
                       <strong>Rollback:</strong> restores the <em>previous</em> stored release tag one step (per tenant or bulk). It does not
@@ -824,16 +896,20 @@ function CompaniesPageContent() {
                 <button
                   type="button"
                   onClick={handleRolloutPlatformReleaseToAllTenants}
-                  disabled={rolloutAllReleaseBusy || loading || rollbackAllBusy}
+                  disabled={rolloutAllReleaseBusy || loading || rollbackAllBusy || previewRolloutBusy}
                   className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Rocket className="h-4 w-4 shrink-0" />
-                  {rolloutAllReleaseBusy ? 'Applying…' : 'Apply release to all tenants'}
+                  {previewRolloutBusy
+                    ? 'Previewing…'
+                    : rolloutAllReleaseBusy
+                      ? 'Applying…'
+                      : 'Apply release to all tenants'}
                 </button>
                 <button
                   type="button"
                   onClick={handleRollbackAllTenants}
-                  disabled={rollbackAllBusy || loading || rolloutAllReleaseBusy}
+                  disabled={rollbackAllBusy || loading || rolloutAllReleaseBusy || previewRolloutBusy}
                   className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Undo2 className="h-4 w-4 shrink-0" />
@@ -842,6 +918,94 @@ function CompaniesPageContent() {
               </div>
             </div>
           </div>
+
+          {platformInfo?.fleet_summary && (
+            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900">Fleet release compliance</h3>
+              <p className="mt-1 text-xs text-slate-600">
+                Server target:{' '}
+                <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
+                  {platformInfo.fleet_summary.server_target_release || platformInfo.target_release}
+                </code>{' '}
+                · App version:{' '}
+                <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">{platformInfo.app_version}</code>
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-md bg-emerald-50 px-3 py-2 text-center">
+                  <p className="text-2xl font-semibold text-emerald-800">
+                    {platformInfo.fleet_summary.at_target}
+                  </p>
+                  <p className="text-xs text-emerald-700">At target</p>
+                </div>
+                <div className="rounded-md bg-amber-50 px-3 py-2 text-center">
+                  <p className="text-2xl font-semibold text-amber-800">
+                    {platformInfo.fleet_summary.not_at_target}
+                  </p>
+                  <p className="text-xs text-amber-800">Not at target</p>
+                </div>
+                <div className="rounded-md bg-slate-50 px-3 py-2 text-center">
+                  <p className="text-2xl font-semibold text-slate-800">
+                    {platformInfo.fleet_summary.tenant_count}
+                  </p>
+                  <p className="text-xs text-slate-600">Tenants (excl. Master)</p>
+                </div>
+                <div className="rounded-md bg-blue-50 px-3 py-2 text-center">
+                  <p className="text-2xl font-semibold text-blue-800">
+                    {platformInfo.fleet_summary.compliance_pct}%
+                  </p>
+                  <p className="text-xs text-blue-700">Compliance</p>
+                </div>
+              </div>
+              {platformInfo.release_notes?.trim() ? (
+                <p className="mt-3 text-xs text-slate-700 border-t border-slate-100 pt-3 whitespace-pre-wrap">
+                  <span className="font-medium text-slate-800">Release notes (deploy): </span>
+                  {platformInfo.release_notes}
+                </p>
+              ) : null}
+              {platformInfo.upgrade_playbook && platformInfo.upgrade_playbook.length > 0 ? (
+                <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs text-slate-600 border-t border-slate-100 pt-3">
+                  {platformInfo.upgrade_playbook.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ol>
+              ) : null}
+            </div>
+          )}
+
+          {upgradeAuditEvents.length > 0 && (
+            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900">Recent upgrade audit</h3>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Immutable log of platform rollouts (who triggered actions is stored as actor user id when available).
+              </p>
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-500">
+                      <th className="py-1.5 pr-3 font-medium">When (UTC)</th>
+                      <th className="py-1.5 pr-3 font-medium">Company</th>
+                      <th className="py-1.5 pr-3 font-medium">Category</th>
+                      <th className="py-1.5 pr-3 font-medium">Actor</th>
+                      <th className="py-1.5 font-medium">OK</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {upgradeAuditEvents.map((ev) => (
+                      <tr key={ev.id} className="border-b border-slate-100">
+                        <td className="py-1.5 pr-3 whitespace-nowrap">
+                          {ev.created_at ? ev.created_at.slice(0, 19).replace('T', ' ') : '—'}
+                        </td>
+                        <td className="py-1.5 pr-3">{ev.company_name || '—'}</td>
+                        <td className="py-1.5 pr-3 font-mono text-[11px]">{ev.category}</td>
+                        <td className="py-1.5 pr-3">{ev.actor_user_id ?? '—'}</td>
+                        <td className="py-1.5">{ev.success ? '✓' : '✗'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Companies Grid */}
           {loading ? (

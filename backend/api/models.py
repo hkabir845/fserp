@@ -54,6 +54,37 @@ class Company(models.Model):
         return self.name
 
 
+class TenantPlatformReleaseEvent(models.Model):
+    """
+    Audit trail for platform release rollouts (SaaS): who promoted which tenant, when,
+    and whether template sync or hooks ran. Used for compliance, debugging, and fleet dashboards.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="platform_release_events")
+    category = models.CharField(
+        max_length=32,
+        db_index=True,
+        help_text="master_push | apply_release | rollback_release",
+    )
+    server_target_release = models.CharField(max_length=64, blank=True, default="")
+    success = models.BooleanField(default=True)
+    error_message = models.TextField(blank=True)
+    actor_user_id = models.IntegerField(null=True, blank=True)
+    source = models.CharField(max_length=48, blank=True, default="")
+    detail = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "tenant_platform_release_event"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["company", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.category} company={self.company_id} @ {self.created_at}"
+
+
 class Contract(models.Model):
     """SaaS contract per company. Super Admin manages via /api/contracts/."""
     contract_number = models.CharField(max_length=64, unique=True)

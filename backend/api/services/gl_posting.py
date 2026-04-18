@@ -33,6 +33,7 @@ from api.models import (
     TankDip,
     Vendor,
 )
+from api.exceptions import StockBusinessError
 from api.utils.customer_display import customer_display_name
 
 logger = logging.getLogger(__name__)
@@ -887,13 +888,20 @@ def _sync_item_qoh_from_tanks(company_id: int, item_id: int) -> None:
     Item.objects.filter(pk=item_id, company_id=company_id).update(quantity_on_hand=total)
 
 
-def receipt_inventory_from_posted_bill(bill: Bill) -> int:
+def receipt_inventory_from_posted_bill(
+    bill: Bill, *, acknowledge_tank_overfill: bool = False
+) -> int:
     """
     When a vendor bill is posted, increase stock for inventory / fuel lines.
     Fuel (items linked to tanks): add quantity to the line's tank (explicit id or best match by name),
     then sync Item.quantity_on_hand from tank totals. Non-tank inventory: Item.quantity_on_hand only.
     Returns the number of bill lines that applied a stock movement.
     """
+    from api.services.inventory_validation import lock_tanks_and_assert_receipt_capacity
+
+    lock_tanks_and_assert_receipt_capacity(
+        bill, acknowledge_tank_overfill=acknowledge_tank_overfill
+    )
     applied_lines = 0
     company_id = bill.company_id
     for line in BillLine.objects.filter(bill_id=bill.id).select_related("item", "tank"):
@@ -957,7 +965,9 @@ def undo_bill_stock_receipt(bill: Bill) -> None:
         Bill.objects.filter(pk=bill.pk).update(stock_receipt_applied=False)
 
 
-def try_apply_bill_stock_receipt(bill: Bill) -> None:
+def try_apply_bill_stock_receipt(
+    bill: Bill, *, acknowledge_tank_overfill: bool = False
+) -> None:
     """
     Apply inventory receipt once per bill (idempotent). Uses row lock so concurrent calls
     do not double-post stock.
@@ -971,7 +981,9 @@ def try_apply_bill_stock_receipt(bill: Bill) -> None:
         )
         if not locked or locked.stock_receipt_applied:
             return
-        n = receipt_inventory_from_posted_bill(bill)
+        n = receipt_inventory_from_posted_bill(
+            bill, acknowledge_tank_overfill=acknowledge_tank_overfill
+        )
         if n > 0:
             Bill.objects.filter(pk=bill.pk).update(stock_receipt_applied=True)
 
@@ -1122,17 +1134,23 @@ def cleanup_vendor_bill_posting_effects(company_id: int, bill: Bill) -> None:
         ).delete()
 
 
-def sync_posted_vendor_bill(company_id: int, bill: Bill) -> bool:
+def sync_posted_vendor_bill(
+    company_id: int, bill: Bill, *, acknowledge_tank_overfill: bool = False
+) -> bool:
     """
     Single integration point: reload bill from DB, then GL (if possible), vendor A/P, and inventory/tanks.
     """
     fresh = Bill.objects.filter(pk=bill.pk, company_id=company_id).first()
     if not fresh:
         return False
-    return post_bill_journal(company_id, fresh)
+    return post_bill_journal(
+        company_id, fresh, acknowledge_tank_overfill=acknowledge_tank_overfill
+    )
 
 
-def post_bill_journal(company_id: int, bill: Bill) -> bool:
+def post_bill_journal(
+    company_id: int, bill: Bill, *, acknowledge_tank_overfill: bool = False
+) -> bool:
     """
     Post vendor bill: AUTO-BILL-{id} when chart of accounts allows; always (when posted) vendor A/P
     and one-time inventory/tank receipt for qualifying lines.
@@ -1146,7 +1164,11 @@ def post_bill_journal(company_id: int, bill: Bill) -> bool:
     ).exists():
         _ensure_vendor_ap_for_posted_bill(company_id, bill)
         try:
-            try_apply_bill_stock_receipt(bill)
+            try_apply_bill_stock_receipt(
+                bill, acknowledge_tank_overfill=acknowledge_tank_overfill
+            )
+        except StockBusinessError:
+            raise
         except Exception:
             logger.exception(
                 "try_apply_bill_stock_receipt failed for bill %s (journal already exists)",
@@ -1168,7 +1190,11 @@ def post_bill_journal(company_id: int, bill: Bill) -> bool:
     _ensure_vendor_ap_for_posted_bill(company_id, bill)
 
     try:
-        try_apply_bill_stock_receipt(bill)
+        try_apply_bill_stock_receipt(
+            bill, acknowledge_tank_overfill=acknowledge_tank_overfill
+        )
+    except StockBusinessError:
+        raise
     except Exception:
         logger.exception(
             "try_apply_bill_stock_receipt failed for bill %s (after journal attempt)",

@@ -10,6 +10,7 @@ from django.db.models import Sum
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from api.exceptions import StockBusinessError
 from api.models import Bill, BillLine, PaymentBillAllocation, Tank, Vendor
 from api.services.gl_posting import (
     bill_eligible_for_posting,
@@ -151,6 +152,16 @@ def _coerce_item_id(row: dict) -> Optional[int]:
         return None
 
 
+def _acknowledge_tank_overfill_from_body(body: dict) -> bool:
+    """True when client confirms receiving fuel beyond tank capacity (e.g. drums)."""
+    v = body.get("acknowledge_tank_overfill")
+    if v is True:
+        return True
+    if isinstance(v, str) and v.strip().lower() in ("true", "1", "yes", "on"):
+        return True
+    return False
+
+
 def _coerce_line_tank_id(company_id: int, row: dict, item_id: Optional[int]):
     raw = row.get("tank_id")
     if raw is None or raw == "":
@@ -216,49 +227,58 @@ def bills_create(request):
     due_date = _normalize_due_date(bill_date, _parse_date(body.get("due_date")))
     tax_total = _decimal(body.get("tax_amount", body.get("tax_total")))
     status = _normalize_bill_status(body.get("status"), "draft")
+    ack_tank_overfill = _acknowledge_tank_overfill_from_body(body)
 
-    b = Bill(
-        company_id=request.company_id,
-        vendor_id=vendor_id,
-        bill_number=f"BILL-{count + 1}",
-        bill_date=bill_date,
-        due_date=due_date,
-        vendor_reference=(body.get("vendor_reference") or "")[:200],
-        memo=(body.get("memo") or "")[:5000],
-        status=status,
-        subtotal=_decimal(body.get("subtotal")),
-        tax_total=tax_total,
-        total=_decimal(body.get("total_amount", body.get("total"))),
-    )
-    b.save()
-    for i, row in enumerate(body.get("lines") or []):
-        amt = _decimal(row.get("amount"), _decimal(row.get("quantity"), 1) * _decimal(row.get("unit_cost", row.get("unit_price")), 0))
-        item_id = _coerce_item_id(row)
-        tank_id, terr = _coerce_line_tank_id(request.company_id, row, item_id)
-        if terr:
-            b.delete()
-            return terr
-        BillLine.objects.create(
-            bill=b,
-            item_id=item_id,
-            tank_id=tank_id,
-            description=row.get("description") or "",
-            quantity=_decimal(row.get("quantity"), 1),
-            unit_price=_decimal(row.get("unit_cost", row.get("unit_price")), 0),
-            amount=amt,
-        )
-    b.tax_total = tax_total
-    b.save(update_fields=["tax_total", "updated_at"])
-    _refresh_bill_totals_from_lines(b)
-    b.refresh_from_db()
-    b = (
-        Bill.objects.filter(id=b.id)
-        .select_related("vendor")
-        .prefetch_related("lines__item", "lines__tank", "payment_allocations")
-        .first()
-    )
-    if bill_eligible_for_posting(b):
-        sync_posted_vendor_bill(request.company_id, b)
+    try:
+        with transaction.atomic():
+            b = Bill(
+                company_id=request.company_id,
+                vendor_id=vendor_id,
+                bill_number=f"BILL-{count + 1}",
+                bill_date=bill_date,
+                due_date=due_date,
+                vendor_reference=(body.get("vendor_reference") or "")[:200],
+                memo=(body.get("memo") or "")[:5000],
+                status=status,
+                subtotal=_decimal(body.get("subtotal")),
+                tax_total=tax_total,
+                total=_decimal(body.get("total_amount", body.get("total"))),
+            )
+            b.save()
+            for i, row in enumerate(body.get("lines") or []):
+                amt = _decimal(row.get("amount"), _decimal(row.get("quantity"), 1) * _decimal(row.get("unit_cost", row.get("unit_price")), 0))
+                item_id = _coerce_item_id(row)
+                tank_id, terr = _coerce_line_tank_id(request.company_id, row, item_id)
+                if terr:
+                    transaction.set_rollback(True)
+                    return terr
+                BillLine.objects.create(
+                    bill=b,
+                    item_id=item_id,
+                    tank_id=tank_id,
+                    description=row.get("description") or "",
+                    quantity=_decimal(row.get("quantity"), 1),
+                    unit_price=_decimal(row.get("unit_cost", row.get("unit_price")), 0),
+                    amount=amt,
+                )
+            b.tax_total = tax_total
+            b.save(update_fields=["tax_total", "updated_at"])
+            _refresh_bill_totals_from_lines(b)
+            b.refresh_from_db()
+            b = (
+                Bill.objects.filter(id=b.id)
+                .select_related("vendor")
+                .prefetch_related("lines__item", "lines__tank", "payment_allocations")
+                .first()
+            )
+            if bill_eligible_for_posting(b):
+                sync_posted_vendor_bill(
+                    request.company_id,
+                    b,
+                    acknowledge_tank_overfill=ack_tank_overfill,
+                )
+    except StockBusinessError as e:
+        return JsonResponse({"detail": e.detail}, status=400)
     return JsonResponse(_bill_to_json(b), status=201)
 
 
@@ -280,6 +300,7 @@ def bill_detail(request, bill_id: int):
         body, err = parse_json_body(request)
         if err:
             return err
+        parsed_lines = None
         if body.get("vendor_id"):
             vid = body.get("vendor_id")
             try:
@@ -297,7 +318,7 @@ def bill_detail(request, bill_id: int):
         b.tax_total = _decimal(body.get("tax_amount", body.get("tax_total")), b.tax_total)
         if "status" in body:
             b.status = _normalize_bill_status(body.get("status"), b.status)
-        b.save()
+        ack_tank_overfill = _acknowledge_tank_overfill_from_body(body)
         if "lines" in body:
             parsed_lines = []
             for row in body.get("lines") or []:
@@ -320,30 +341,39 @@ def bill_detail(request, bill_id: int):
                         "amount": amt,
                     }
                 )
-            undo_bill_stock_receipt(b)
-            b.refresh_from_db(fields=["stock_receipt_applied"])
+        try:
             with transaction.atomic():
-                b.lines.all().delete()
-                for pl in parsed_lines:
-                    BillLine.objects.create(
-                        bill=b,
-                        item_id=pl["item_id"],
-                        tank_id=pl["tank_id"],
-                        description=pl["description"],
-                        quantity=pl["quantity"],
-                        unit_price=pl["unit_price"],
-                        amount=pl["amount"],
+                b.save()
+                if parsed_lines is not None:
+                    undo_bill_stock_receipt(b)
+                    b.refresh_from_db(fields=["stock_receipt_applied"])
+                    b.lines.all().delete()
+                    for pl in parsed_lines:
+                        BillLine.objects.create(
+                            bill=b,
+                            item_id=pl["item_id"],
+                            tank_id=pl["tank_id"],
+                            description=pl["description"],
+                            quantity=pl["quantity"],
+                            unit_price=pl["unit_price"],
+                            amount=pl["amount"],
+                        )
+                _refresh_bill_totals_from_lines(b)
+                b.refresh_from_db()
+                b = (
+                    Bill.objects.filter(id=b.id)
+                    .select_related("vendor")
+                    .prefetch_related("lines__item", "lines__tank", "payment_allocations")
+                    .first()
+                )
+                if bill_eligible_for_posting(b):
+                    sync_posted_vendor_bill(
+                        request.company_id,
+                        b,
+                        acknowledge_tank_overfill=ack_tank_overfill,
                     )
-        _refresh_bill_totals_from_lines(b)
-        b.refresh_from_db()
-        b = (
-            Bill.objects.filter(id=b.id)
-            .select_related("vendor")
-            .prefetch_related("lines__item", "lines__tank", "payment_allocations")
-            .first()
-        )
-        if bill_eligible_for_posting(b):
-            sync_posted_vendor_bill(request.company_id, b)
+        except StockBusinessError as e:
+            return JsonResponse({"detail": e.detail}, status=400)
         return JsonResponse(_bill_to_json(b))
     if request.method == "DELETE":
         paid = _amount_paid(b)

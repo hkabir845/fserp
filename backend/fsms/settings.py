@@ -63,6 +63,23 @@ SECRET_KEY = _secret
 
 PLATFORM_TARGET_RELEASE = (_FSERP_APP_VERSION or "0.0.0-dev").strip()[:64]
 
+# Built-in Master demo tenant (FS-000001) after `migrate` — disabled for pytest / `manage.py test` / env override.
+SKIP_MASTER_TEMPLATE_BOOTSTRAP = (
+    str(os.environ.get("FSERP_SKIP_MASTER_BOOTSTRAP", "")).strip().lower() in ("1", "true", "yes")
+    or ("pytest" in sys.modules)
+    or (_manage_cmd == "test")
+)
+
+
+def _env_truthy(name: str) -> bool:
+    return str(os.environ.get(name, "")).strip().lower() in ("1", "true", "yes")
+
+
+# Master template banners (CompactCompanyAlert / MasterCompanyBanner): optional fleet policy via env.
+# Locked overrides testing when both are set.
+MASTER_COMPANY_PROTECTION_LOCKED = _env_truthy("FSERP_MASTER_COMPANY_LOCKED")
+MASTER_COMPANY_PROTECTION_TESTING = _env_truthy("FSERP_MASTER_COMPANY_TESTING")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

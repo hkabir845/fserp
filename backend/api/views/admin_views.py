@@ -2,6 +2,7 @@
 import json
 import logging
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Case, IntegerField, Q, Sum, When
 from django.http import JsonResponse
@@ -12,6 +13,7 @@ from django.views.decorators.http import require_http_methods
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.models import User, Company, Customer, Vendor, Station, Invoice
 from api.services.master_push import preview_master_push, run_master_push, run_master_rollback
+from api.services.company_code import resolved_company_code
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_station_operational_data
 from api.services.tenant_release import apply_platform_release, get_target_release, rollback_platform_release
 from api.services.tenant_upgrade_audit import (
@@ -21,6 +23,10 @@ from api.services.tenant_upgrade_audit import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _company_is_master(c: Company) -> bool:
+    return str(getattr(c, "is_master", "") or "").strip().lower() in ("true", "1", "yes")
 
 
 def _super_admin_required(view_func):
@@ -96,6 +102,7 @@ def admin_companies(request):
         applied = getattr(c, "platform_release_applied_at", None)
         result.append({
             "id": c.id,
+            "company_code": resolved_company_code(c),
             "name": c.name,
             "legal_name": c.legal_name or "",
             "email": c.email or "",
@@ -173,11 +180,82 @@ def admin_users(request):
 
 
 @csrf_exempt
+@require_GET
 @auth_required
 @_super_admin_required
 def admin_master_company_protection_status(request):
-    """GET /api/admin/master-company/protection-status - stub."""
-    return JsonResponse({"enabled": False, "message": "Protection status not configured"})
+    """
+    GET /api/admin/master-company/protection-status/
+
+    Query: company_id (optional) — when set, response describes that row if it is the master tenant.
+
+    Used by MasterCompanyBanner / CompactCompanyAlert. Operational modes come from env
+    (FSERP_MASTER_COMPANY_LOCKED, FSERP_MASTER_COMPANY_TESTING); locked wins over testing.
+    """
+    raw_id = (request.GET.get("company_id") or "").strip()
+    company_id: int | None = None
+    if raw_id.isdigit():
+        company_id = int(raw_id)
+
+    is_master_context = False
+    if company_id is not None:
+        c = Company.objects.filter(id=company_id, is_deleted=False).first()
+        if c and _company_is_master(c):
+            is_master_context = True
+
+    locked = bool(getattr(settings, "MASTER_COMPANY_PROTECTION_LOCKED", False))
+    testing_env = bool(getattr(settings, "MASTER_COMPANY_PROTECTION_TESTING", False))
+
+    if not is_master_context:
+        return JsonResponse(
+            {
+                "is_master": False,
+                "is_locked": False,
+                "is_testing": False,
+                "status": "tenant",
+                "message": "Selected company is not the master template tenant.",
+            }
+        )
+
+    if locked:
+        return JsonResponse(
+            {
+                "is_master": True,
+                "is_locked": True,
+                "is_testing": False,
+                "status": "locked",
+                "message": (
+                    "Master company is locked by server policy (FSERP_MASTER_COMPANY_LOCKED). "
+                    "All modifications should be blocked or restricted."
+                ),
+            }
+        )
+
+    if testing_env:
+        return JsonResponse(
+            {
+                "is_master": True,
+                "is_locked": False,
+                "is_testing": True,
+                "status": "testing",
+                "message": (
+                    "Master company is in testing mode (FSERP_MASTER_COMPANY_TESTING). "
+                    "Changes may affect all tenants."
+                ),
+            }
+        )
+
+    return JsonResponse(
+        {
+            "is_master": True,
+            "is_locked": False,
+            "is_testing": False,
+            "status": "active",
+            "message": (
+                "Master company is active for development and upgrades. Changes may affect all tenants."
+            ),
+        }
+    )
 
 
 def _actor_user_id(request) -> int | None:

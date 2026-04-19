@@ -1,7 +1,10 @@
 """API models."""
 import bcrypt
 from decimal import Decimal
+
 from django.db import models
+
+from api.services.company_code import compute_company_code
 
 # bcrypt has a 72-byte limit on password length; use same encoding everywhere
 def _password_bytes(raw_password: str) -> bytes:
@@ -10,6 +13,8 @@ def _password_bytes(raw_password: str) -> bytes:
 
 class Company(models.Model):
     """Company/tenant for multi-tenant support. Replaces FastAPI app.models.company."""
+    # Immutable business reference: Master = FS-000001 (reserved); others FS-{id:06d}. Set in save().
+    company_code = models.CharField(max_length=24, null=True, blank=True, unique=True, db_index=True)
     name = models.CharField(max_length=200)
     legal_name = models.CharField(max_length=200, blank=True)
     tax_id = models.CharField(max_length=50, blank=True)
@@ -49,6 +54,14 @@ class Company(models.Model):
 
     class Meta:
         db_table = "company"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        expected = compute_company_code(company_id=self.id, is_master=getattr(self, "is_master", "false"))
+        if self.company_code == expected:
+            return
+        Company.objects.filter(pk=self.pk).update(company_code=expected)
+        self.company_code = expected
 
     def __str__(self):
         return self.name

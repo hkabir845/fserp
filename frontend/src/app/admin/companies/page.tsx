@@ -39,6 +39,7 @@ import {
   formatCompanyTime,
 } from '@/utils/companyLocaleFormats'
 import { formatDateOnly } from '@/utils/date'
+import { displayCompanyCode } from '@/utils/companyCode'
 import { AMOUNT_ADMIN_TEXT_CLASS } from '@/utils/amountFieldStyles'
 import {
   RESTORE_CONFIRM_PHRASE,
@@ -64,6 +65,8 @@ interface SubscriptionData {
 
 interface Company {
   id: number
+  /** Stable reference: master is FS-000001; others FS-00000N (or FS-N000001 if id collides). */
+  company_code?: string | null
   name: string
   legal_name: string | null
   email: string | null
@@ -246,6 +249,7 @@ function CompaniesPageContent() {
       if (companiesRes.data) {
         const companiesWithMaster = companiesRes.data.map((c: any) => ({
           ...c,
+          company_code: c.company_code != null && String(c.company_code).trim() !== '' ? String(c.company_code) : undefined,
           is_master:
             c.is_master === true || String(c.is_master || '').toLowerCase() === 'true'
               ? 'true'
@@ -581,8 +585,11 @@ function CompaniesPageContent() {
         const { admin_confirm_password, ...payload } = companyFormData
         const res = await api.post('/companies/', payload)
         const adminEmail = res.data?.company_admin?.email || companyFormData.admin_email
+        const code = res.data?.company_code ? String(res.data.company_code) : ''
         toast.success(
-          `Company created. Owner can log in as ${adminEmail} to add staff and manage passwords.`
+          code
+            ? `Company ${code} created. Owner can log in as ${adminEmail} to add staff and manage passwords.`
+            : `Company created. Owner can log in as ${adminEmail} to add staff and manage passwords.`
         )
       }
       setShowCompanyModal(false)
@@ -781,10 +788,12 @@ function CompaniesPageContent() {
   const filteredCompanies = companies.filter((c) => {
     const q = companySearch.trim().toLowerCase()
     if (!q) return true
+    const code = (c.company_code || '').toLowerCase()
     return (
       (c.name && c.name.toLowerCase().includes(q)) ||
       (c.legal_name && c.legal_name.toLowerCase().includes(q)) ||
-      String(c.id).includes(q)
+      String(c.id).includes(q) ||
+      (code && code.includes(q))
     )
   })
 
@@ -827,7 +836,7 @@ function CompaniesPageContent() {
               type="search"
               value={companySearch}
               onChange={(e) => setCompanySearch(e.target.value)}
-              placeholder="Search by company name, legal name, or ID…"
+              placeholder="Search by company code (e.g. FS-000042), name, or numeric ID…"
               className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             />
           </div>
@@ -1061,6 +1070,14 @@ function CompaniesPageContent() {
                                 <Crown className="h-6 w-6 shrink-0 text-yellow-600" />
                               )}
                               <h3 className="min-w-0 text-lg font-bold text-gray-900 sm:text-xl">{company.name}</h3>
+                              {company.company_code ? (
+                                <span
+                                  className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700"
+                                  title="Company reference code"
+                                >
+                                  {company.company_code}
+                                </span>
+                              ) : null}
                               {company.is_master === 'true' && (
                                 <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-semibold text-yellow-800 sm:px-3 sm:py-1">
                                   Master
@@ -1473,6 +1490,16 @@ function CompaniesPageContent() {
                         <div>
                           <label className="text-sm font-medium text-gray-500">Company Name</label>
                           <p className="text-base text-gray-900 mt-1">{viewingCompany.name}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500">Company code</label>
+                          <p className="mt-1 font-mono text-base text-gray-900">
+                            {displayCompanyCode(viewingCompany)}
+                          </p>
+                          <p className="mt-0.5 text-xs text-gray-500">
+                            Use with the company name when referring to this tenant (e.g. support). The master
+                            tenant uses the reserved code FS-000001; others follow FS- plus a six-digit id.
+                          </p>
                         </div>
                         {viewingCompany.legal_name && (
                           <div>

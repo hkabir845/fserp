@@ -17,6 +17,7 @@ from api.utils.auth import (
 from api.models import Company, User
 from api.chart_templates.fuel_station import seed_fuel_station_if_empty
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_tenant_company_data
+from api.services.company_code import resolved_company_code
 from api.services.tenant_release import get_target_release
 
 logger = logging.getLogger(__name__)
@@ -187,8 +188,10 @@ def _company_to_json(c: Company) -> dict:
         return str(val) if val is not None else None
     parts = [getattr(c, "address_line1", "") or "", getattr(c, "city", "") or "", getattr(c, "state", "") or "", getattr(c, "postal_code", "") or "", getattr(c, "country", "") or ""]
     address = ", ".join(p for p in parts if p).strip() or None
+    code = resolved_company_code(c)
     return {
         "id": c.id,
+        "company_code": code,
         "name": c.name,
         "company_name": c.name,
         "legal_name": c.legal_name or "",
@@ -231,6 +234,7 @@ def companies_current(request):
     if not company:
         return JsonResponse({
             "id": 1,
+            "company_code": "",
             "name": "Default Company",
             "company_name": "Default Company",
             "currency": "BDT",
@@ -392,6 +396,11 @@ def company_detail(request, company_id: int):
             return JsonResponse({"detail": "Invalid JSON"}, status=400)
         if not isinstance(body, dict):
             body = {}
+        if "company_code" in body:
+            return JsonResponse(
+                {"detail": "company_code is assigned automatically when the company is created and cannot be changed."},
+                status=400,
+            )
         try:
             if "company_name" in body:
                 company.name = (body["company_name"] or "").strip() or company.name

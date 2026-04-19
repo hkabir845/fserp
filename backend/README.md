@@ -25,10 +25,14 @@ Endpoints: auth (login, refresh), companies/current, admin/stats, admin/companie
 
 **Obsolete scripts:** Scripts in the backend root that imported from the removed `app` package (e.g. `init_database.py`, `create_tenant_companies.py`, `create_super_admin.py`, `diagnose_login.py`, and others) will raise `ImportError` if run. Use Django management commands and the API instead.
 
-**First run:** Create a super_admin user and a default company:
+**Built-in demo tenant (FS-000001):** After `python manage.py migrate`, the backend ensures **Master Filling Station** exists with company code **FS-000001** (not `FS-FS-000001` — the human-facing code is exactly `FS-000001`). It loads the fuel-station chart of accounts (if empty), convenience **products and services** for Cashier → General, and the **fuel station / nozzle** demo graph. Re-run or repair anytime: `python manage.py ensure_master_template`. For a richer sandbox (posted GL, vendors, sample P&amp;L), run `python manage.py seed_master_full_demo`. To disable auto-bootstrap (tests, or an empty staging DB), set **`FSERP_SKIP_MASTER_BOOTSTRAP=1`**.
+
+**First run:** Create a super_admin user. The demo company is created by **migrate** (or use `create_default_company` only when the database has **no** companies yet):
 ```bash
+python manage.py migrate
 python manage.py create_superuser --username superuser@sasfserp.com --password "Admin@123"
-python manage.py create_default_company
+# Optional if migrate did not run (empty DB manual path):
+# python manage.py create_default_company
 ```
 If `create_superuser` says the user already exists but they do not appear in **SaaS → All Users**, normalize role and active flag:
 ```bash

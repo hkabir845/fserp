@@ -12,48 +12,13 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from api.models import Company, Item
-
-
-# Typical filling-station convenience / shop SKUs
-DEFAULT_PRODUCTS = [
-    {"name": "Drinking Water (500ml)", "unit_price": "20.00", "cost": "12.00", "unit": "piece", "item_type": "inventory", "category": "Beverages"},
-    {"name": "Soft Drink (Can)", "unit_price": "45.00", "cost": "30.00", "unit": "piece", "item_type": "inventory", "category": "Beverages"},
-    {"name": "Energy Drink", "unit_price": "120.00", "cost": "85.00", "unit": "piece", "item_type": "inventory", "category": "Beverages"},
-    {"name": "Snacks Pack", "unit_price": "35.00", "cost": "22.00", "unit": "piece", "item_type": "inventory", "category": "Snacks"},
-    {"name": "Engine Oil (1L)", "unit_price": "850.00", "cost": "620.00", "unit": "piece", "item_type": "inventory", "category": "Lubricants"},
-    {"name": "Brake Fluid", "unit_price": "320.00", "cost": "210.00", "unit": "piece", "item_type": "inventory", "category": "Lubricants"},
-    {"name": "Coolant (1L)", "unit_price": "280.00", "cost": "180.00", "unit": "piece", "item_type": "inventory", "category": "Lubricants"},
-    {"name": "Car Air Freshener", "unit_price": "150.00", "cost": "90.00", "unit": "piece", "item_type": "inventory", "category": "Accessories"},
-    {"name": "Microfiber Cloth", "unit_price": "80.00", "cost": "45.00", "unit": "piece", "item_type": "inventory", "category": "Accessories"},
-    {"name": "Tire Pressure Check (Service)", "unit_price": "50.00", "cost": "0.00", "unit": "service", "item_type": "service", "category": "Service"},
-    {"name": "Windshield Wash (Top-up)", "unit_price": "40.00", "cost": "10.00", "unit": "service", "item_type": "service", "category": "Service"},
-]
+from api.models import Item
+from api.services.master_template import DEFAULT_GENERAL_DEMO_PRODUCTS, get_or_create_master_template_company
 
 
 def get_master_company():
-    master = (
-        Company.objects.filter(is_master="true", is_deleted=False).first()
-        or Company.objects.filter(name__iexact="Master Filling Station", is_deleted=False).first()
-    )
-    if master:
-        if master.is_master != "true":
-            master.is_master = "true"
-            master.save(update_fields=["is_master"])
-        return master
-    master, _ = Company.objects.get_or_create(
-        name="Master Filling Station",
-        is_deleted=False,
-        defaults={
-            "legal_name": "Master Filling Station (Development)",
-            "currency": "BDT",
-            "is_active": True,
-            "is_master": "true",
-        },
-    )
-    master.is_master = "true"
-    master.save(update_fields=["is_master"])
-    return master
+    c, _ = get_or_create_master_template_company()
+    return c
 
 
 class Command(BaseCommand):
@@ -74,7 +39,7 @@ class Command(BaseCommand):
         }
 
         n = 0
-        for row in DEFAULT_PRODUCTS:
+        for row in DEFAULT_GENERAL_DEMO_PRODUCTS:
             key = row["name"].strip().lower()
             if key in existing:
                 self.stdout.write(f"  Skip (exists): {row['name']}")

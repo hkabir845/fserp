@@ -127,11 +127,14 @@ def assert_pos_fuel_sale_within_stock(company_id: int, fuel_entries: list) -> No
 
 
 def assert_pos_general_lines_within_qoh(company_id: int, lines_data: list) -> None:
-    """Shop inventory lines: quantity must not exceed quantity_on_hand when tracked."""
+    """Perpetual-inventory POS lines only: quantity must not exceed quantity_on_hand (see item_catalog)."""
     per: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     for d in lines_data:
         item = d.get("item")
         if not item:
+            continue
+        # Match vendor receipt rules: services / non-inventory are not shop QOH.
+        if not _item_receives_physical_stock(item):
             continue
         if item.quantity_on_hand is None:
             continue

@@ -78,8 +78,12 @@ function isPrivateOrLocalPageHost(hostname: string): boolean {
 }
 
 /**
- * If the JS bundle mistakenly inlined a loopback API but the page is served from a public host
- * (e.g. VPS), use the production API so deployment never talks to localhost.
+ * Resolves which backend origin the browser should call.
+ *
+ * **Self-hosted / VPS:** If `NEXT_PUBLIC_API_BASE_URL` still points at loopback but users open the UI from a
+ * public hostname, we no longer silently switch to `FALLBACK_BACKEND_ORIGIN` — that showed the wrong database
+ * (empty companies) while the real data remained on the VPS. Set `NEXT_PUBLIC_API_BASE_URL` to your real API
+ * origin and rebuild. Opt-in legacy behavior: `NEXT_PUBLIC_API_FALLBACK_TO_PRODUCTION_ORIGIN=true`.
  */
 function effectiveBackendBaseFromEnv(): string {
   let base = rawBackendBaseFromEnv()
@@ -92,11 +96,17 @@ function effectiveBackendBaseFromEnv(): string {
     const useProdApi = process.env.NEXT_PUBLIC_USE_PRODUCTION_API === 'true'
     const devBackend =
       (process.env.NEXT_PUBLIC_DEV_BACKEND_ORIGIN || 'http://localhost:8000').trim().replace(/\/+$/, '')
+    const allowLoopbackToProdFallback =
+      process.env.NEXT_PUBLIC_API_FALLBACK_TO_PRODUCTION_ORIGIN === 'true'
 
     // Tenant UI on *.localhost but NEXT_PUBLIC_* still targets prod (e.g. .env.local) → local Django.
     if (!useProdApi && isLocalhostStyleDevHost(pageHost) && !isLoopbackApiHost(apiHost)) {
       base = devBackend
-    } else if (isLoopbackApiHost(apiHost) && !isPrivateOrLocalPageHost(pageHost)) {
+    } else if (
+      allowLoopbackToProdFallback &&
+      isLoopbackApiHost(apiHost) &&
+      !isPrivateOrLocalPageHost(pageHost)
+    ) {
       base = FALLBACK_BACKEND_ORIGIN.trim().replace(/\/+$/, '')
     }
   } catch {
@@ -318,6 +328,9 @@ api.interceptors.request.use(
     
     // All browser API access must be inside try-catch and window checks
     try {
+      // Resolve API host on each request so it always matches current window + env (important after deploy).
+      config.baseURL = getApiBaseUrl()
+
       // Add auth token
       try {
         const token = localStorage.getItem('access_token')?.trim()

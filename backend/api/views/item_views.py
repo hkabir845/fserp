@@ -16,6 +16,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id, _serialize_decimal
 from api.models import Item, Tank
+from api.services.item_catalog import item_tracks_physical_stock, normalize_item_type
 
 
 def _parse_decimal(val, default="0"):
@@ -165,13 +166,23 @@ def _effective_quantity_on_hand(i: Item) -> Decimal:
     return i.quantity_on_hand
 
 
+def _coerce_item_type_for_storage(raw) -> str:
+    """Normalize API input (e.g. non-inventory → non_inventory) and cap length."""
+    s = _truncate(raw or "inventory", 32) or "inventory"
+    nt = normalize_item_type(s)
+    if nt in ("inventory", "non_inventory", "service"):
+        return nt
+    return s
+
+
 def _item_to_json(i):
     return {
         "id": i.id,
         "item_number": i.item_number or "",
         "name": i.name,
         "description": i.description or "",
-        "item_type": i.item_type or "inventory",
+        "item_type": _coerce_item_type_for_storage(i.item_type),
+        "tracks_inventory": item_tracks_physical_stock(i),
         "unit_price": _serialize_decimal(i.unit_price),
         "cost": _serialize_decimal(i.cost),
         "quantity_on_hand": _serialize_decimal(_effective_quantity_on_hand(i)),
@@ -241,7 +252,7 @@ def items_list_or_create(request):
             company_id=request.company_id,
             name=name,
             description=_truncate(body.get("description"), 10000) or "",
-            item_type=_truncate(body.get("item_type") or "inventory", 32) or "inventory",
+            item_type=_coerce_item_type_for_storage(body.get("item_type")),
             unit_price=unit_price,
             cost=cost,
             quantity_on_hand=qty,
@@ -304,7 +315,7 @@ def item_detail(request, item_id: int):
         if "description" in body:
             i.description = _truncate(body.get("description"), 10000) or ""
         if "item_type" in body:
-            i.item_type = _truncate(body.get("item_type") or i.item_type, 32) or i.item_type
+            i.item_type = _coerce_item_type_for_storage(body.get("item_type") or i.item_type)
         if "unit_price" in body and body["unit_price"] is not None:
             up = _parse_decimal(body["unit_price"])
             if up is None:

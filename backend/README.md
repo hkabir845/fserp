@@ -6,6 +6,14 @@ Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed. The web 
 
 **Deploy metadata:** Set `FSERP_APP_VERSION` and optionally `GIT_COMMIT_SHA`; verify with `GET /api/version/`.
 
+### VPS upgrades and existing data
+
+- **Always** run `python manage.py migrate` to apply schema changes. Migrations add or alter tables/columns; they do **not** delete business rows unless a migration explicitly does so (FSERP avoids data-destroying migrations in normal releases).
+- **Do not** replace the production database with an empty or demo database during upgrade. Restore from backup only when you intend to roll back.
+- After deploy, operators can confirm what is already stored for the selected company via **`GET /api/system/tenant-data-summary/`** (authenticated, company-scoped). The dashboard shows the same snapshot in **“Your stored data”** (read-only).
+- Post-migrate bootstrap (`ensure_master_template`) is **additive**: it creates the demo tenant if missing, seeds the chart of accounts **if empty**, adds demo products **by name only if not present**, and wires nozzles — it does **not** wipe user companies, invoices, or inventory. Set `FSERP_SKIP_MASTER_BOOTSTRAP=1` to skip it entirely (e.g. CI).
+- Removing, editing, or deleting records remains a **user action** in the app (or an explicit admin backup/restore you run on purpose).
+
 ### CORS (production)
 
 Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATCH` with custom headers. The frontend sends **`X-Selected-Company-Id`** (tenant scope) for many API calls. The server must respond with **`Access-Control-Allow-Headers`** that includes `x-selected-company-id`.

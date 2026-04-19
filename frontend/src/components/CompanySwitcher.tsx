@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronDown, Building2, Crown, Shield } from 'lucide-react'
 import { useCompany } from '@/contexts/CompanyContext'
 import api from '@/lib/api'
+import { messageForAdminListError } from '@/utils/adminApiErrors'
 import { safeLogError } from '@/utils/connectionError'
 
 interface Company {
@@ -67,23 +68,7 @@ export default function CompanySwitcher() {
       }
     } catch (error: any) {
       safeLogError('Error fetching companies:', error)
-      const status = error?.response?.status
-      const detail = error?.response?.data?.detail
-      if (status === 403) {
-        setFetchError(
-          typeof detail === 'string'
-            ? detail
-            : 'Super Admin access is required to load the company list.'
-        )
-      } else if (status === 401) {
-        setFetchError('Session expired. Sign in again to load companies.')
-      } else if (error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
-        setFetchError('Cannot reach the API. Is the backend running?')
-      } else {
-        setFetchError(
-          typeof detail === 'string' ? detail : 'Could not load companies. Check the API and try again.'
-        )
-      }
+      setFetchError(messageForAdminListError(error, 'companies'))
     } finally {
       setLoading(false)
     }

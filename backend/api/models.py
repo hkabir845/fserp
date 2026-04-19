@@ -226,7 +226,17 @@ class Station(models.Model):
 
 
 class Item(models.Model):
-    """Products/fuel items (company-scoped)."""
+    """
+    Products / fuels / services (company-scoped).
+
+    item_type drives inventory and GL behavior (see api.services.item_catalog):
+
+    - **inventory** — Perpetual stock (shop QOH and/or tanks); receipts and sales move quantity;
+      COGS relieves inventory at cost when auto-GL runs.
+    - **non_inventory** — Sold but not tracked as balance-sheet inventory; bills expense purchases;
+      no POS stock check or automatic COGS/inventory relief from Item.cost.
+    - **service** — No physical stock; revenue without inventory movement (e.g. car wash, labor).
+    """
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="items")
     item_number = models.CharField(max_length=64, blank=True)
     name = models.CharField(max_length=200)

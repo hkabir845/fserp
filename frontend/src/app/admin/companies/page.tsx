@@ -26,7 +26,8 @@ import {
   Undo2,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
-import api from '@/lib/api'
+import api, { getBackendOrigin } from '@/lib/api'
+import { messageForAdminListError } from '@/utils/adminApiErrors'
 import { formatCurrency } from '@/utils/currency'
 import { getCurrenciesByCountry } from '@/utils/currencies'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
@@ -130,6 +131,8 @@ function CompaniesPageContent() {
   const { mode } = useCompany()
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
+  /** Set when GET /admin/companies/ fails so we do not imply the database has zero tenants. */
+  const [companiesFetchError, setCompaniesFetchError] = useState<string | null>(null)
   const [showCompanyModal, setShowCompanyModal] = useState(false)
   const [showCompanyViewModal, setShowCompanyViewModal] = useState(false)
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
@@ -222,6 +225,7 @@ function CompaniesPageContent() {
   }, [mode])
 
   const fetchCompanies = async () => {
+    setCompaniesFetchError(null)
     try {
       setLoading(true)
       const [companiesRes, releaseRes, auditRes] = await Promise.all([
@@ -257,11 +261,15 @@ function CompaniesPageContent() {
           release_can_rollback: Boolean(c.release_can_rollback),
         }))
         setCompanies(companiesWithMaster)
+        setCompaniesFetchError(null)
       }
     } catch (error: any) {
       safeLogError('Error fetching companies:', error)
+      setCompanies([])
+      const msg = messageForAdminListError(error, 'companies')
+      setCompaniesFetchError(msg)
       if (!isConnectionError(error)) {
-      toast.error('Failed to load companies')
+        toast.error(msg)
       }
     } finally {
       setLoading(false)
@@ -840,6 +848,28 @@ function CompaniesPageContent() {
               className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             />
           </div>
+
+          {companiesFetchError && (
+            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-red-900">Could not load companies from the API</p>
+                  <p className="mt-1 text-sm text-red-800/95">{companiesFetchError}</p>
+                  <p className="mt-2 font-mono text-xs text-red-900/80 break-all">
+                    API origin in use: {getBackendOrigin()}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchCompanies()}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-900 shadow-sm hover:bg-red-100/80"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Retry
+                </button>
+              </div>
+            </div>
+          )}
           
           {/* Info Banner */}
           <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -1021,10 +1051,20 @@ function CompaniesPageContent() {
               <p className="text-gray-600">Loading companies...</p>
             </div>
           ) : companies.length === 0 ? (
+            companiesFetchError ? (
+              <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-600">
+                <p className="text-sm">Fix the issue above (API URL, sign-in, or Super Admin role), then use Retry.</p>
+              </div>
+            ) : (
             <div className="bg-white rounded-lg shadow p-8 text-center">
               <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-600 text-lg mb-2">No companies found</p>
               <p className="text-gray-500 text-sm mb-4">Create your first company to get started</p>
+              <p className="text-gray-500 text-xs mb-4 max-w-lg mx-auto">
+                If you upgraded from an older deployment and expected existing tenants, confirm your database still has
+                rows in the company table with <code className="rounded bg-gray-100 px-1">is_deleted=false</code>, and
+                that this UI points at the same API as that database (<code className="rounded bg-gray-100 px-1">NEXT_PUBLIC_API_BASE_URL</code>).
+              </p>
               <button
                 onClick={handleCreateCompany}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -1032,6 +1072,7 @@ function CompaniesPageContent() {
                 Create Company
               </button>
             </div>
+            )
           ) : filteredCompanies.length === 0 ? (
             <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-600">
               <p>No companies match &quot;{companySearch.trim()}&quot;.</p>

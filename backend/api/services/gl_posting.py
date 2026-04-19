@@ -34,6 +34,7 @@ from api.models import (
     Vendor,
 )
 from api.exceptions import StockBusinessError
+from api.services.item_catalog import item_tracks_physical_stock
 from api.utils.customer_display import customer_display_name
 
 logger = logging.getLogger(__name__)
@@ -413,8 +414,10 @@ def _create_posted_entry(
 
 def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
     """
-    Dr COGS / Cr inventory at average cost (item.cost x qty) when accounts exist.
-    Idempotent: AUTO-INV-{id}-COGS.
+    Dr COGS / Cr inventory at average cost (item.cost x qty) for perpetual-inventory items.
+
+    Skips service and non-inventory lines (no inventory asset to relieve). Idempotent:
+    AUTO-INV-{id}-COGS.
     """
     if inv.status == "draft" or inv.total <= 0:
         return False
@@ -429,6 +432,8 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
     for line in InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item"):
         it = line.item
         if not it:
+            continue
+        if not item_tracks_physical_stock(it):
             continue
         cost = it.cost or Decimal("0")
         if cost <= 0:
@@ -844,19 +849,13 @@ def _pick_tank_for_bill_line(line: BillLine, item: Item, tanks_qs):
 
 
 def _item_receives_physical_stock(item: Optional[Item]) -> bool:
-    """True if a vendor bill line should increase/decrease physical stock (tank and/or QOH)."""
-    if not item:
-        return False
-    itype = (item.item_type or "").strip().lower()
-    if itype == "inventory":
-        return True
-    if _is_fuel_item(item):
-        return True
-    name = (item.name or "").strip().lower()
-    for token in ("diesel", "petrol", "gasoline", "octane", "lpg"):
-        if token in name:
-            return True
-    return False
+    """
+    True if a vendor bill line or POS line should move physical stock (tank and/or QOH).
+
+    Delegates to item_catalog.item_tracks_physical_stock: **inventory** only, plus legacy
+    fuel heuristics for old rows; **service** and **non_inventory** never.
+    """
+    return item_tracks_physical_stock(item)
 
 
 def _tanks_for_stock_receipt(company_id: int, item: Item):

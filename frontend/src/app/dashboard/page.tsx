@@ -7,7 +7,7 @@ import CompanySwitcher from '@/components/CompanySwitcher'
 import { useCompany } from '@/contexts/CompanyContext'
 import { formatNumber, formatCurrency } from '@/utils/currency'
 import api from '@/lib/api'
-import { Megaphone, X, Crown, Building2 } from 'lucide-react'
+import { Megaphone, X, Crown, Building2, Database } from 'lucide-react'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { formatDate } from '@/utils/date'
 
@@ -28,6 +28,13 @@ function DashboardPageContent() {
   const [error, setError] = useState<string | null>(null)
   const [broadcasts, setBroadcasts] = useState<any[]>([])
   const [unreadBroadcasts, setUnreadBroadcasts] = useState<any[]>([])
+  const [tenantDataSummary, setTenantDataSummary] = useState<{
+    backend_version?: string
+    git_commit?: string | null
+    company?: { name?: string; company_code?: string; platform_release?: string }
+    counts?: Record<string, number>
+    data_policy?: { summary?: string }
+  } | null>(null)
 
   useEffect(() => {
     // Check authentication
@@ -138,6 +145,24 @@ function DashboardPageContent() {
       clearTimeout(safetyTimer)
     }
   }, [router, selectedCompany])
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const r = await api.get('/system/tenant-data-summary/')
+        if (!cancelled && r.data) setTenantDataSummary(r.data)
+      } catch {
+        if (!cancelled) setTenantDataSummary(null)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCompany?.id])
 
   const fetchCompanyCurrency = async () => {
     try {
@@ -614,6 +639,49 @@ function DashboardPageContent() {
               </div>
             </div>
           </div>
+
+          {tenantDataSummary?.counts && (
+            <div className="mb-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="mb-4 flex flex-wrap items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+                  <Database className="h-5 w-5 text-slate-700" aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-lg font-semibold text-slate-900">Your stored data</h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Read-only snapshot after upgrade or deploy — nothing here is changed automatically. Edit or delete
+                    records only from the relevant screens.
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Backend {tenantDataSummary.backend_version || '—'}
+                    {tenantDataSummary.git_commit ? ` · ${tenantDataSummary.git_commit}` : ''}
+                    {tenantDataSummary.company?.company_code
+                      ? ` · ${tenantDataSummary.company.company_code}`
+                      : ''}
+                    {tenantDataSummary.company?.platform_release
+                      ? ` · release ${tenantDataSummary.company.platform_release}`
+                      : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {Object.entries(tenantDataSummary.counts).map(([key, value]) => (
+                  <div
+                    key={key}
+                    className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-center"
+                  >
+                    <p className="text-xl font-semibold tabular-nums text-slate-900">{value}</p>
+                    <p className="text-xs capitalize text-slate-600">{key.replace(/_/g, ' ')}</p>
+                  </div>
+                ))}
+              </div>
+              {tenantDataSummary.data_policy?.summary && (
+                <p className="mt-4 border-t border-slate-100 pt-4 text-xs leading-relaxed text-slate-500">
+                  {tenantDataSummary.data_policy.summary}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Quick Actions */}
           <div className="bg-white rounded-lg shadow p-6 mb-8">

@@ -6,6 +6,7 @@ from django.urls import path
 from fsms.release_info import health_payload, version_payload
 
 from api.views import (
+    system_views,
     auth_views,
     password_views,
     cashier_views,
@@ -53,6 +54,7 @@ def api_docs(request):
             "/api/health/", "/api/version/",
             "/api/auth/login", "/api/auth/refresh",
             "/api/companies/current", "/api/dashboard/stats",
+            "/api/system/tenant-data-summary/",
             "/api/admin/stats", "/api/admin/companies", "/api/admin/users",
             "/api/broadcasts/", "/api/broadcasts/my", "/api/stations/", "/api/tanks/",
             "/api/items/", "/api/islands/", "/api/dispensers/", "/api/meters/", "/api/nozzles/",
@@ -204,6 +206,8 @@ urlpatterns = [
     path("contracts/<int:contract_id>/print/", contracts_views.contract_print),
     # Dashboard
     path("dashboard/stats/", dashboard_views.dashboard_stats),
+    path("system/tenant-data-summary/", system_views.tenant_data_summary),
+    path("system/tenant-data-summary", system_views.tenant_data_summary),
     # Broadcasts
     path("broadcasts/", broadcasts_views.broadcasts_list_or_create),
     path("broadcasts/my/", broadcasts_views.broadcasts_my),

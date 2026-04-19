@@ -26,7 +26,12 @@ from api.models import (
     Tank,
 )
 from api.exceptions import StockBusinessError
-from api.services.gl_posting import _is_walkin_customer, post_payment_received_journal, sync_invoice_gl
+from api.services.gl_posting import (
+    _is_walkin_customer,
+    _item_receives_physical_stock,
+    post_payment_received_journal,
+    sync_invoice_gl,
+)
 from api.services.payment_allocation import refresh_invoices_touched_by_payment
 from api.services.shift_sales import record_invoice_on_shift
 from api.services.inventory_validation import (
@@ -393,7 +398,9 @@ def _cashier_pos_unified(company_id: int, body: dict) -> JsonResponse:
                     unit_price=d["unit_price"],
                     amount=d["amount"],
                 )
-                if d["item"].quantity_on_hand is not None:
+                if _item_receives_physical_stock(d["item"]) and d[
+                    "item"
+                ].quantity_on_hand is not None:
                     Item.objects.filter(pk=d["item"].pk).update(
                         quantity_on_hand=F("quantity_on_hand") - d["quantity"]
                     )

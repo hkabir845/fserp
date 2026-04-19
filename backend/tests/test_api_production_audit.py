@@ -202,6 +202,20 @@ def test_dashboard_stats_ok(api_client: Client, auth_super_headers, company_mast
         assert key in data
 
 
+def test_tenant_data_summary_read_only(api_client: Client, auth_super_headers, company_master):
+    """POST-upgrade snapshot: counts + policy text; no mutation."""
+    h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
+    r = api_client.get("/api/system/tenant-data-summary/", **h)
+    assert r.status_code == 200
+    data = json.loads(r.content)
+    assert data.get("application") == "FSERP"
+    assert "backend_version" in data
+    assert "counts" in data and isinstance(data["counts"], dict)
+    assert "items" in data["counts"]
+    assert "data_policy" in data
+    assert "summary" in data["data_policy"]
+
+
 def test_customers_list_empty(api_client: Client, auth_super_headers, company_master):
     h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
     r = api_client.get("/api/customers/", **h)
@@ -1139,6 +1153,43 @@ def test_cashier_pos_shop_qty_over_qoh_returns_400(
     )
     assert pos.status_code == 400
     assert "stock" in json.loads(pos.content).get("detail", "").lower()
+
+
+def test_cashier_pos_service_item_ignores_qoh(
+    api_client: Client, auth_super_headers, company_master
+):
+    """POS must not block or decrement shop QOH for item_type=service (e.g. car wash)."""
+    from api.models import Item
+
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    item_r = api_client.post(
+        "/api/items/",
+        data=json.dumps(
+            {
+                "name": "Car Wash POS Test",
+                "unit_price": "25.00",
+                "quantity_on_hand": "0",
+                "unit": "service",
+                "item_type": "service",
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert item_r.status_code == 201
+    item_id = json.loads(item_r.content)["id"]
+
+    pos = api_client.post(
+        "/api/cashier/pos/",
+        data=json.dumps(
+            {"items": [{"item_id": item_id, "quantity": "1", "unit_price": "25.00"}]}
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert pos.status_code == 201, pos.content
+    assert Item.objects.get(pk=item_id).quantity_on_hand == Decimal("0")
 
 
 def test_vendor_bill_existing_journal_backfills_stock_once(

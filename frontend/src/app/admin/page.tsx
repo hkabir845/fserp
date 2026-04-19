@@ -36,6 +36,7 @@ import {
 import { useToast } from '@/components/Toast'
 import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
 import api from '@/lib/api'
+import { messageForAdminListError } from '@/utils/adminApiErrors'
 import { formatCurrency, formatNumber } from '@/utils/currency'
 import { getCurrenciesByCountry } from '@/utils/currencies'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
@@ -369,8 +370,9 @@ function SuperAdminPageContent() {
       }
     } catch (error: any) {
       safeLogError('Error fetching companies:', error)
+      const msg = messageForAdminListError(error, 'companies')
       if (!isConnectionError(error)) {
-        toast.error('Failed to load companies')
+        toast.error(msg)
       }
       setCompanies([])
     }
@@ -393,7 +395,7 @@ function SuperAdminPageContent() {
       if (!isConnectionError(error)) {
         safeLogError('Error fetching users:', error)
         safeLogError('Error details:', error.response?.data)
-        toast.error('Failed to load users')
+        toast.error(messageForAdminListError(error, 'users'))
       }
       setUsers([])
     } finally {

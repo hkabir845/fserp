@@ -1530,9 +1530,10 @@ export default function LoansPage() {
   const cpName = (id: number) => counterpartiesAll.find((c) => c.id === id)?.name || `#${id}`
 
   return (
-    <div className="flex min-h-screen bg-[#f0f2f6]">
+    <div className="flex h-screen min-h-0 bg-[#f0f2f6] page-with-sidebar">
       <Sidebar />
-      <main className="flex-1 p-5 sm:p-7 lg:p-8 overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <main className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-7 lg:p-8">
         <div className="max-w-7xl mx-auto space-y-6">
           {/* Hero + actions */}
           <div className="rounded-2xl border border-slate-200/90 bg-white shadow-sm overflow-hidden">
@@ -3487,7 +3488,8 @@ export default function LoansPage() {
             </div>
           </div>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   )
 }

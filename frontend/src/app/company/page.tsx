@@ -205,9 +205,9 @@ export default function CompanyPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 page-with-sidebar">
+    <div className="flex h-screen min-h-0 bg-slate-50 page-with-sidebar">
       <Sidebar />
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
           <header className="mb-8 flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
             <div>

@@ -57,9 +57,10 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen min-h-0 bg-gray-100 page-with-sidebar">
       <Sidebar />
-      <div className="flex-1 overflow-y-auto p-6 md:p-10">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 md:p-10">
         <div className="mx-auto max-w-lg">
           <h1 className="text-2xl font-bold text-gray-900">Change password</h1>
           <p className="mt-1 text-sm text-gray-600">
@@ -138,6 +139,7 @@ export default function ChangePasswordPage() {
               </Link>
             </div>
           </form>
+        </div>
         </div>
       </div>
     </div>

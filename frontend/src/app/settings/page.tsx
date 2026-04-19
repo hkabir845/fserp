@@ -19,10 +19,10 @@ export default function SettingsPage() {
   }, [])
 
   return (
-    <div className="flex">
+    <div className="page-with-sidebar flex h-screen min-h-0 bg-gray-50">
       <Sidebar />
-      
-      <main className="flex-1 bg-gray-50 p-8">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <main className="flex-1 min-h-0 overflow-y-auto bg-gray-50 p-8">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
@@ -99,6 +99,7 @@ export default function SettingsPage() {
           </div>
         </div>
       </main>
+      </div>
     </div>
   )
 }

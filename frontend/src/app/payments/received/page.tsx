@@ -4,12 +4,25 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
-import { ArrowLeft, CheckCircle2, DollarSign, Filter, Pencil, Plus, Trash2, X } from 'lucide-react'
+import {
+  ArrowLeft,
+  CheckCircle2,
+  DollarSign,
+  Filter,
+  Pencil,
+  Plus,
+  Printer,
+  Trash2,
+  X,
+} from 'lucide-react'
 import api from '@/lib/api'
 import EditPaymentModal from '../EditPaymentModal'
 import { confirmDeletePaymentDialog, deletePaymentRequest } from '../paymentMutations'
 import { getCurrencySymbol } from '@/utils/currency'
-import { formatDateOnly } from '@/utils/date'
+import { formatDate, formatDateOnly } from '@/utils/date'
+import { escapeHtml } from '@/utils/printDocument'
+import { printListView } from '@/utils/printListView'
+import { ContactArApBalances } from '@/components/ContactArApBalances'
 
 interface OutstandingInvoice {
   id: number
@@ -23,6 +36,8 @@ interface OutstandingInvoice {
   amount_paid?: number | string
   balance_due: number | string
   days_overdue: number | null
+  synthetic?: boolean
+  on_account?: boolean
 }
 
 interface CustomerPayment {
@@ -54,6 +69,9 @@ interface Customer {
   id: number
   customer_number: string
   display_name: string
+  opening_balance?: string
+  opening_balance_date?: string | null
+  current_balance?: string
 }
 
 type PaymentFilter = 'all' | 'received' | 'outstanding'
@@ -157,6 +175,68 @@ export default function PaymentReceivedPage() {
 
   const displayedData = getDisplayedData()
 
+  const handlePrintList = async () => {
+    const { payments, invoices } = displayedData
+    const sub = [
+      `View: ${filterStatus}`,
+      startDate && `From ${startDate}`,
+      endDate && `To ${endDate}`,
+      `Generated ${formatDate(new Date(), true)}`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    const parts: string[] = []
+    if (payments.length) {
+      const rows = payments
+        .map((p) => {
+          const cust = customers.find((c) => c.id === p.customer_id)
+          const customerName = cust?.display_name || (p.customer_id ? `Customer #${p.customer_id}` : '—')
+          return `<tr>
+            <td>${escapeHtml(String(p.payment_number ?? `PAY-${p.id}`))}</td>
+            <td>${escapeHtml(formatDateOnly(p.payment_date))}</td>
+            <td>${escapeHtml(customerName)}</td>
+            <td>${escapeHtml((p.payment_method ?? 'unspecified').replace(/_/g, ' '))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml((Number(p.amount) || 0).toFixed(2))}</td>
+          </tr>`
+        })
+        .join('')
+      parts.push(
+        `<h2>Payments received</h2><table><thead><tr><th>Payment #</th><th>Date</th><th>Customer</th><th>Method</th><th class="right">Amount</th></tr></thead><tbody>${rows}</tbody></table>`
+      )
+    }
+    if (invoices.length) {
+      const rows = invoices
+        .map((inv) => {
+          const total = Number(inv.total_amount ?? inv.total ?? 0) || 0
+          const paid = Number(inv.amount_paid ?? 0) || 0
+          const bal = Number(inv.balance_due) || 0
+          return `<tr>
+            <td>${escapeHtml(inv.invoice_number)}</td>
+            <td>${escapeHtml(formatDateOnly(inv.invoice_date))}</td>
+            <td>${escapeHtml(inv.due_date ? formatDateOnly(inv.due_date) : '—')}</td>
+            <td>${escapeHtml(inv.customer_name || '—')}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(total.toFixed(2))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(paid.toFixed(2))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(bal.toFixed(2))}</td>
+          </tr>`
+        })
+        .join('')
+      parts.push(
+        `<h2>Outstanding invoices</h2><table><thead><tr><th>Invoice #</th><th>Date</th><th>Due</th><th>Customer</th><th class="right">Total</th><th class="right">Paid</th><th class="right">Balance</th></tr></thead><tbody>${rows}</tbody></table>`
+      )
+    }
+    if (parts.length === 0) {
+      window.alert('Nothing to print for the current filter.')
+      return
+    }
+    const ok = await printListView({
+      title: 'Payments — received (list)',
+      subtitle: sub,
+      tableHtml: parts.join(''),
+    })
+    if (!ok) window.alert('Printing was blocked. Allow pop-ups for this site.')
+  }
+
   const handleDeletePayment = async (payment: CustomerPayment) => {
     const label = payment.payment_number ?? `PAY-${payment.id}`
     if (!confirmDeletePaymentDialog(label)) return
@@ -205,13 +285,23 @@ export default function PaymentReceivedPage() {
                 </span>
               </p>
             </div>
-            <Link
-              href="/payments/received/new"
-              className="inline-flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shrink-0"
-            >
-              <Plus className="h-5 w-5" />
-              <span>New Payment</span>
-            </Link>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => void handlePrintList()}
+                className="inline-flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50"
+              >
+                <Printer className="h-5 w-5" />
+                <span>Print list</span>
+              </button>
+              <Link
+                href="/payments/received/new"
+                className="inline-flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                <Plus className="h-5 w-5" />
+                <span>New Payment</span>
+              </Link>
+            </div>
           </div>
 
           {policyBanner && (
@@ -473,6 +563,9 @@ export default function PaymentReceivedPage() {
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                             Customer
                           </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[9rem]">
+                            Contact A/R
+                          </th>
                           <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                             Total
                           </th>
@@ -485,18 +578,27 @@ export default function PaymentReceivedPage() {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {displayedData.invoices.map((invoice) => (
+                        {displayedData.invoices.map((invoice) => {
+                          const cust = customers.find((c) => c.id === invoice.customer_id)
+                          return (
                           <tr
-                            key={invoice.id}
+                            key={invoice.synthetic ? `oa-${invoice.customer_id}` : invoice.id}
                             className={
-                              invoice.days_overdue && invoice.days_overdue > 0
+                              !invoice.synthetic && invoice.days_overdue && invoice.days_overdue > 0
                                 ? 'bg-red-50'
                                 : 'hover:bg-gray-50'
                             }
                           >
                             <td className="px-4 py-3 text-sm font-medium text-gray-900">
                               {invoice.invoice_number}
-                              {invoice.days_overdue && invoice.days_overdue > 0 && (
+                              {invoice.synthetic ? (
+                                <span className="ml-1 text-xs font-normal text-gray-500">
+                                  (A/R not on an invoice)
+                                </span>
+                              ) : null}
+                              {!invoice.synthetic &&
+                                invoice.days_overdue &&
+                                invoice.days_overdue > 0 && (
                                 <span className="ml-2 text-xs text-red-600">
                                   ({invoice.days_overdue}d overdue)
                                 </span>
@@ -508,23 +610,50 @@ export default function PaymentReceivedPage() {
                             <td className="px-4 py-3 text-sm text-gray-600">
                               {invoice.due_date
                                 ? formatDateOnly(invoice.due_date)
-                                : '-'}
+                                : '—'}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600">{invoice.customer_name}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600 align-top">
+                              {cust ? (
+                                <ContactArApBalances
+                                  role="customer"
+                                  compact
+                                  openingBalance={cust.opening_balance}
+                                  openingBalanceDate={cust.opening_balance_date}
+                                  currentBalance={cust.current_balance}
+                                  currencySymbol={currencySymbol}
+                                />
+                              ) : (
+                                '—'
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-sm text-right text-gray-900">
-                              {currencySymbol}
-                              {(Number(invoice.total_amount ?? invoice.total) || 0).toFixed(2)}
+                              {invoice.synthetic ? (
+                                '—'
+                              ) : (
+                                <>
+                                  {currencySymbol}
+                                  {(Number(invoice.total_amount ?? invoice.total) || 0).toFixed(2)}
+                                </>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-sm text-right text-gray-600">
-                              {currencySymbol}
-                              {(Number(invoice.amount_paid) || 0).toFixed(2)}
+                              {invoice.synthetic ? (
+                                '—'
+                              ) : (
+                                <>
+                                  {currencySymbol}
+                                  {(Number(invoice.amount_paid) || 0).toFixed(2)}
+                                </>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                               {currencySymbol}
                               {(Number(invoice.balance_due) || 0).toFixed(2)}
                             </td>
                           </tr>
-                        ))}
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>

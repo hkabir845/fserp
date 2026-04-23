@@ -376,6 +376,8 @@ export default function UsersPage() {
         return 'bg-blue-100 text-blue-800'
       case 'cashier':
         return 'bg-green-100 text-green-800'
+      case 'operator':
+        return 'bg-teal-100 text-teal-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -800,7 +802,9 @@ export default function UsersPage() {
                         <option value="admin">Admin</option>
                         <option value="accountant">Accountant</option>
                         <option value="cashier">Cashier</option>
-                        {!isCompanyOwner && <option value="worker">Worker</option>}
+                        {!isCompanyOwner && (
+                          <option value="operator">Operator (POS: New sale and Donation)</option>
+                        )}
                       </select>
                     </div>
                     {!isCompanyOwner && (

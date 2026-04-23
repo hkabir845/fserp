@@ -12,6 +12,7 @@ import { formatCurrency } from '@/utils/currency'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { formatDateOnly } from '@/utils/date'
 import { printContractAgreement } from '@/utils/printDocument'
+import { loadPrintBranding } from '@/utils/printBranding'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
 
 interface Contract {
@@ -412,6 +413,11 @@ function ContractsPageContent() {
   const handlePrintContract = async (contract: Contract) => {
     try {
       await api.get(`/contracts/${contract.id}/print`)
+      const baseBranding = await loadPrintBranding(api)
+      const branding = {
+        ...baseBranding,
+        companyName: (contract.company_name || '').trim() || baseBranding.companyName,
+      }
       const ok = printContractAgreement(
         {
           contract_number: contract.contract_number,
@@ -427,7 +433,8 @@ function ContractsPageContent() {
           payment_reminder_message: contract.payment_reminder_message,
           terms_and_conditions: contract.terms_and_conditions,
         },
-        formatDateOnly
+        formatDateOnly,
+        branding
       )
       if (!ok) toast.error('Allow pop-ups in your browser to print.')
     } catch (error: unknown) {

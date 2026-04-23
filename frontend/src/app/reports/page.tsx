@@ -13,6 +13,8 @@ import api from '@/lib/api'
 import { formatDate, formatDateOnly, formatDateRange, localDateISO, toDateInputValue } from '@/utils/date'
 import { formatCurrency, formatNumber } from '@/utils/formatting'
 import { escapeHtml, printDocument } from '@/utils/printDocument'
+import type { PrintBranding } from '@/utils/printBranding'
+import { loadPrintBranding } from '@/utils/printBranding'
 
 type ReportType = 
   | 'trial-balance'
@@ -167,6 +169,7 @@ export default function ReportsPage() {
   const { selectedCompany } = useCompany()
   /** Legal / display name for print & CSV — from API (same tenant as reports). */
   const [reportCompanyLabel, setReportCompanyLabel] = useState('')
+  const [reportPrintBranding, setReportPrintBranding] = useState<PrintBranding | null>(null)
   const [selectedReport, setSelectedReport] = useState<ReportType | null>(null)
   const [reportData, setReportData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
@@ -195,28 +198,44 @@ export default function ReportsPage() {
     }
   }, [selectedCompany?.id])
 
+  useEffect(() => {
+    let cancelled = false
+    loadPrintBranding(api)
+      .then((b) => {
+        if (!cancelled) setReportPrintBranding(b)
+      })
+      .catch(() => {
+        if (!cancelled) setReportPrintBranding(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCompany?.id])
+
   const resolveReportCompanyName = () =>
     reportCompanyLabel.trim() ||
     (selectedCompany?.name && String(selectedCompany.name).trim()) ||
     (typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '').trim() : '') ||
     'Company'
 
-  // Get user role from localStorage
+  // Get user role from localStorage; operator is POS-only (no reports UI)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const userStr = localStorage.getItem('user')
-      if (userStr && userStr !== 'undefined' && userStr !== 'null') {
-        try {
-          const parsedUser = JSON.parse(userStr)
-          if (parsedUser && typeof parsedUser === 'object') {
-            setUserRole(parsedUser.role?.toLowerCase() || null)
-          }
-        } catch (error) {
-          console.error('Error parsing user data:', error)
+    if (typeof window === 'undefined') return
+    const userStr = localStorage.getItem('user')
+    if (!userStr || userStr === 'undefined' || userStr === 'null') return
+    try {
+      const parsedUser = JSON.parse(userStr)
+      if (parsedUser && typeof parsedUser === 'object') {
+        const r = parsedUser.role?.toLowerCase() || null
+        setUserRole(r)
+        if (r === 'operator') {
+          router.replace('/cashier')
         }
       }
+    } catch (error) {
+      console.error('Error parsing user data:', error)
     }
-  }, [])
+  }, [router])
   
   // Filter reports based on user role and category
   const getFilteredReports = () => {
@@ -351,7 +370,10 @@ export default function ReportsPage() {
 
     const reportTitle = reports.find(r => r.id === selectedReport)?.title || selectedReport
     const companyName = resolveReportCompanyName()
-    
+    const branding: PrintBranding = reportPrintBranding
+      ? { ...reportPrintBranding, companyName: companyName || reportPrintBranding.companyName }
+      : { companyName, companyAddress: undefined, stationName: '' }
+
     // Generate HTML content from report data
     let contentHTML = ''
     
@@ -476,10 +498,10 @@ export default function ReportsPage() {
 
     const ok = printDocument({
       title: reportTitle,
+      branding,
       bodyHtml: `
           <h1>${escapeHtml(reportTitle)}</h1>
           <div class="period">
-            <strong>Company:</strong> ${escapeHtml(companyName)}<br>
             <strong>Generated:</strong> ${escapeHtml(formatDate(new Date(), true))}<br>
             ${periodLine}
           </div>

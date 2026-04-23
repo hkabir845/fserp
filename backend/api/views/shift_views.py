@@ -2,13 +2,14 @@
 from datetime import datetime
 from decimal import Decimal
 
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone as django_timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
-from api.models import ShiftTemplate, ShiftSession, Station
+from api.models import Employee, Meter, ShiftTemplate, ShiftSession, Station
 
 
 def _serialize_datetime(dt):
@@ -51,6 +52,12 @@ def _template_to_json(t):
 
 
 def _session_to_json(s):
+    om = getattr(s, "opening_meters", None) or []
+    es = getattr(s, "employee_schedule", None) or []
+    if not isinstance(om, list):
+        om = []
+    if not isinstance(es, list):
+        es = []
     return {
         "id": s.id,
         "station_id": s.station_id,
@@ -67,7 +74,126 @@ def _session_to_json(s):
         "cash_variance": str(s.cash_variance or Decimal("0")),
         "total_sales_amount": str(s.total_sales_amount or Decimal("0")),
         "sale_transaction_count": s.sale_transaction_count or 0,
+        "opening_meters": om,
+        "employee_schedule": es,
     }
+
+
+def _build_employee_schedule(company_id: int, raw) -> tuple[list | None, str | None]:
+    if raw is None:
+        return [], None
+    if not isinstance(raw, list):
+        return None, "employee_schedule must be a JSON array"
+    out = []
+    seen: set[int] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            return None, "Each employee_schedule entry must be an object"
+        eid = item.get("employee_id")
+        if eid is None:
+            return None, "Each employee row needs employee_id"
+        try:
+            eid = int(eid)
+        except (TypeError, ValueError):
+            return None, f"Invalid employee_id: {item.get('employee_id')}"
+        if eid in seen:
+            return None, f"Duplicate employee_id: {eid}"
+        seen.add(eid)
+        e = Employee.objects.filter(id=eid, company_id=company_id, is_active=True).first()
+        if not e:
+            return None, f"Active employee {eid} not found in this company"
+        st = str(item.get("scheduled_start") or "").strip()[:16]
+        en = str(item.get("scheduled_end") or "").strip()[:16]
+        notes = str(item.get("notes") or "")[:500]
+        out.append(
+            {
+                "employee_id": e.id,
+                "first_name": e.first_name,
+                "last_name": (e.last_name or ""),
+                "scheduled_start": st,
+                "scheduled_end": en,
+                "notes": notes,
+            }
+        )
+    return out, None
+
+
+def _parse_opening_meter_intent(company_id: int, station_id, raw) -> tuple[list[tuple[int, Decimal]] | None, str | None]:
+    """
+    Validate opening_meters JSON without writing. Returns (meter_id, reading) rows or an error.
+    """
+    if not raw:
+        return [], None
+    if not isinstance(raw, list):
+        return None, "opening_meters must be a JSON array"
+    want_sid = int(station_id) if station_id else None
+    to_apply: list[tuple[int, Decimal]] = []
+    seen_mid: set[int] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            return None, "Each opening_meters entry must be an object"
+        mid = item.get("meter_id")
+        if mid is None:
+            return None, "Each meter row needs meter_id"
+        try:
+            mid = int(mid)
+        except (TypeError, ValueError):
+            return None, f"Invalid meter_id: {item.get('meter_id')}"
+        if mid in seen_mid:
+            return None, f"Duplicate meter_id: {mid}"
+        seen_mid.add(mid)
+        m = (
+            Meter.objects.filter(id=mid, company_id=company_id, is_active=True)
+            .select_related("dispenser", "dispenser__island", "dispenser__island__station")
+            .first()
+        )
+        if not m:
+            return None, f"Meter {mid} not found or inactive"
+        m_sid = m.dispenser.island.station_id if m.dispenser and m.dispenser.island_id else None
+        if want_sid is not None and m_sid != want_sid:
+            return None, f"Meter {mid} is not on the selected station (station_id={m_sid}, expected {want_sid})"
+        r = _decimal(item.get("reading"), None)
+        if r is None or r < 0:
+            return None, f"Invalid reading for meter {mid} (use a non-negative number)"
+        to_apply.append((mid, r))
+    return to_apply, None
+
+
+def _apply_opening_meter_intent(company_id: int, station_id, to_apply: list[tuple[int, Decimal]]) -> list[dict]:
+    """
+    Apply validated (meter_id, reading) rows and return snapshot. Call inside transaction.atomic().
+    """
+    if not to_apply:
+        return []
+    want_sid = int(station_id) if station_id else None
+    snapshot: list[dict] = []
+    for mid, r in to_apply:
+        m = (
+            Meter.objects.filter(id=mid, company_id=company_id, is_active=True)
+            .select_for_update()
+            .select_related("dispenser", "dispenser__island", "dispenser__island__station")
+            .first()
+        )
+        if not m:
+            raise ValueError(f"Meter {mid} not found or inactive")
+        m_sid = m.dispenser.island.station_id if m.dispenser and m.dispenser.island_id else None
+        if want_sid is not None and m_sid != want_sid:
+            raise ValueError(
+                f"Meter {mid} is not on the selected station (station_id={m_sid}, expected {want_sid})"
+            )
+        prev = m.current_reading
+        m.current_reading = r
+        m.save(update_fields=["current_reading", "updated_at"])
+        snapshot.append(
+            {
+                "meter_id": m.id,
+                "reading": str(r),
+                "previous_reading": str(prev),
+                "meter_name": (m.meter_name or m.meter_code or str(m.id)),
+                "dispenser_name": m.dispenser.dispenser_name if m.dispenser_id else "",
+            }
+        )
+    return snapshot
 
 
 @csrf_exempt
@@ -180,15 +306,31 @@ def shifts_sessions_open(request):
     opening = _decimal(body.get("opening_cash_float"), Decimal("0"))
     if opening is None:
         opening = Decimal("0")
-    s = ShiftSession(
-        company_id=request.company_id,
-        station_id=station_id or None,
-        template_id=template_id or None,
-        opened_at=django_timezone.now(),
-        opened_by_user_id=getattr(request.api_user, "id", None),
-        opening_cash_float=opening,
+    es, eerr = _build_employee_schedule(request.company_id, body.get("employee_schedule"))
+    if eerr:
+        return JsonResponse({"detail": eerr}, status=400)
+    to_apply, merr = _parse_opening_meter_intent(
+        request.company_id, station_id, body.get("opening_meters") or []
     )
-    s.save()
+    if merr:
+        return JsonResponse({"detail": merr}, status=400)
+    try:
+        with transaction.atomic():
+            snap = _apply_opening_meter_intent(request.company_id, station_id, to_apply)
+            s = ShiftSession(
+                company_id=request.company_id,
+                station_id=station_id or None,
+                template_id=template_id or None,
+                opened_at=django_timezone.now(),
+                opened_by_user_id=getattr(request.api_user, "id", None),
+                opening_cash_float=opening,
+                employee_schedule=es or [],
+                opening_meters=snap,
+            )
+            s.save()
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
+    s.refresh_from_db()
     return JsonResponse(_session_to_json(s), status=201)
 
 

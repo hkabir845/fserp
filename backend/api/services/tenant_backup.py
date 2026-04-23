@@ -61,6 +61,7 @@ from api.models import (
     TankDip,
     Tax,
     TaxRate,
+    TenantPlatformReleaseEvent,
     User,
     Vendor,
 )
@@ -184,8 +185,15 @@ def delete_tenant_company_data(company_id: int) -> None:
     # Tenant-targeted broadcasts (IntegerField, not FK — must delete explicitly)
     Broadcast.objects.filter(company_id=cid).delete()
 
+    # user_id is not a ForeignKey; remove read receipts for this tenant (incl. global broadcasts).
+    tenant_user_ids = list(User.objects.filter(company_id=cid).values_list("id", flat=True))
+    if tenant_user_ids:
+        BroadcastRead.objects.filter(user_id__in=tenant_user_ids).delete()
+
     User.objects.filter(company_id=cid).delete()
     Contract.objects.filter(company_id=cid).delete()
+    # Explicit: audit rows (Company CASCADE would also remove these)
+    TenantPlatformReleaseEvent.objects.filter(company_id=cid).delete()
     Company.objects.filter(pk=cid).delete()
 
 

@@ -13,6 +13,7 @@ from django.db.models import Q
 
 from api.chart_templates.fuel_station import (
     backfill_company_coa_descriptions,
+    ensure_donation_social_support_account,
     ensure_loan_module_default_accounts,
     seed_fuel_station_chart,
 )
@@ -286,8 +287,14 @@ def _apply_data_sync_for_tenant(master: Company, tenant: Company, options: dict[
     if options.get("sync_chart_of_accounts"):
         seed = seed_fuel_station_chart(tid, profile="full", replace=False)
         loan = ensure_loan_module_default_accounts(tid)
+        donation = ensure_donation_social_support_account(tid)
         desc = backfill_company_coa_descriptions(tid, only_blank=True, force_template=False)
-        out["chart_of_accounts"] = {"seed": seed, "loan_defaults": loan, "descriptions": desc}
+        out["chart_of_accounts"] = {
+            "seed": seed,
+            "loan_defaults": loan,
+            "donation_support": donation,
+            "descriptions": desc,
+        }
     if options.get("sync_items"):
         out["items"] = _sync_items(mid, tid)
     if options.get("sync_tax_codes"):

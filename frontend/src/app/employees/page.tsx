@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -11,6 +11,7 @@ import { useToast } from '@/components/Toast'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateLong } from '@/utils/date'
 import { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
+import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 interface Employee {
   id: number
@@ -48,6 +49,7 @@ export default function EmployeesPage() {
     }
     return 'card'
   })
+  const [empCodePickerNonce, setEmpCodePickerNonce] = useState(0)
   const [formData, setFormData] = useState({
     employee_code: '',
     first_name: '',
@@ -61,34 +63,6 @@ export default function EmployeesPage() {
     is_active: true
   })
 
-  const fetchSuggestedEmployeeCode = useCallback(async (force = false) => {
-    try {
-      const token = localStorage.getItem('access_token')
-      if (!token) return
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/employees/next-code/`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-        mode: 'cors',
-        credentials: 'omit',
-      })
-      if (response.ok) {
-        const data = await response.json()
-        if (data?.suggested_code) {
-          setFormData((prev) => {
-            if (!force && prev.employee_code.trim() !== '') return prev
-            return { ...prev, employee_code: data.suggested_code }
-          })
-        }
-      }
-    } catch {
-      // Leave code empty; user can type one or submit without for auto-assignment
-    }
-  }, [])
-
   useEffect(() => {
     const token = localStorage.getItem('access_token')
     if (!token) {
@@ -98,12 +72,6 @@ export default function EmployeesPage() {
     fetchCompanyCurrency()
     fetchEmployees()
   }, [router])
-
-  useEffect(() => {
-    if (showModal && !editingId) {
-      void fetchSuggestedEmployeeCode(false)
-    }
-  }, [showModal, editingId, fetchSuggestedEmployeeCode])
 
   const fetchCompanyCurrency = async () => {
     try {
@@ -468,8 +436,10 @@ export default function EmployeesPage() {
                     <p className="text-gray-600 mt-1">Manage your workforce</p>
                   </div>
                   <button 
+                    type="button"
                     onClick={() => {
                       resetForm()
+                      setEmpCodePickerNonce((n) => n + 1)
                       setShowModal(true)
                     }}
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
@@ -803,8 +773,10 @@ export default function EmployeesPage() {
                     <h3 className="text-xl font-semibold text-gray-900 mb-2">No Employees Found</h3>
                     <p className="text-gray-500 mb-6">Get started by adding your first employee to the system.</p>
                     <button 
+                      type="button"
                       onClick={() => {
                         resetForm()
+                        setEmpCodePickerNonce((n) => n + 1)
                         setShowModal(true)
                       }}
                       className="inline-flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
@@ -872,32 +844,29 @@ export default function EmployeesPage() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Employee Code
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
+                      {editingId ? (
+                        <ReferenceCodePicker
+                          kind="employee"
+                          id="emp_code_ro"
+                          label="Employee code"
                           value={formData.employee_code}
-                          onChange={(e) => setFormData({ ...formData, employee_code: e.target.value })}
-                          disabled={!!editingId}
-                          className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
-                          placeholder="EMP-00001"
+                          onChange={() => {}}
+                          disabled
                         />
-                        {!editingId && (
-                          <button
-                            type="button"
-                            onClick={() => void fetchSuggestedEmployeeCode(true)}
-                            className="shrink-0 px-3 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                            title="Replace with next suggested code"
-                          >
-                            Suggest
-                          </button>
-                        )}
-                      </div>
+                      ) : (
+                        <ReferenceCodePicker
+                          key={empCodePickerNonce}
+                          kind="employee"
+                          id="emp_code"
+                          label="Employee code"
+                          value={formData.employee_code}
+                          onChange={(c) => setFormData((prev) => ({ ...prev, employee_code: c }))}
+                        />
+                      )}
                       {!editingId && (
                         <p className="mt-1 text-xs text-gray-500">
-                          Prefilled suggestion; edit if needed, or clear the field to let the server assign a code on save.
+                          The lowest free code is selected by default. You can pick another from the list (gaps and next
+                          number after the highest in use).
                         </p>
                       )}
                     </div>

@@ -41,6 +41,7 @@ from api.views import (
     reports_views,
     loan_views,
     backup_views,
+    reference_code_views,
 )
 
 
@@ -246,6 +247,8 @@ urlpatterns = [
     path("cashier/sale", cashier_views.cashier_sale),
     path("cashier/pos/", cashier_views.cashier_pos),
     path("cashier/pos", cashier_views.cashier_pos),
+    path("cashier/cash-donation/", cashier_views.cashier_cash_donation),
+    path("cashier/cash-donation", cashier_views.cashier_cash_donation),
     path("vendors/", vendor_views.vendors_list_or_create),
     path("vendors/<int:vendor_id>/ledger/", vendor_views.vendor_ledger),
     path("vendors/<int:vendor_id>/", vendor_views.vendor_detail),
@@ -335,6 +338,8 @@ urlpatterns = [
     path("subscription-ledger/invoices/<int:invoice_id>/", subscription_ledger_views.subscription_ledger_invoice_detail),
     # Reports
     path("reports/<str:report_id>/", reports_views.report_by_id),
+    # Master reference code suggestions (gap-aware PREFIX-n)
+    path("reference-codes/suggested/", reference_code_views.suggested_reference_codes),
     # HR (employees + subledger + payroll run headers)
     path("employees/next-code/", hr_views.employee_next_code_suggested),
     path("employees/", hr_views.employees_list_or_create),
@@ -345,5 +350,8 @@ urlpatterns = [
     path("employees/<int:employee_id>/ledger/", hr_views.employee_ledger),
     path("employees/<int:employee_id>/", hr_views.employee_detail),
     path("payroll/", hr_views.payroll_list_or_create),
+    path("payroll/<int:payroll_id>/from-employees/", hr_views.payroll_from_employees),
+    path("payroll/<int:payroll_id>/from-one-employee/", hr_views.payroll_from_one_employee),
+    path("payroll/<int:payroll_id>/post-to-books/", hr_views.payroll_post_to_books),
     path("payroll/<int:payroll_id>/", hr_views.payroll_detail),
 ]

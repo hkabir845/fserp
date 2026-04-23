@@ -10,7 +10,7 @@ from api.models import BroadcastRead, User, Company
 
 logger = logging.getLogger(__name__)
 
-TENANT_USER_ROLES = frozenset({"admin", "accountant", "cashier"})
+TENANT_USER_ROLES = frozenset({"admin", "accountant", "cashier", "operator"})
 
 
 def _api_user(request):
@@ -111,7 +111,9 @@ def users_list_or_create(request):
         company_id = api_user.company_id
         if role not in TENANT_USER_ROLES:
             return JsonResponse(
-                {"detail": "Role must be admin, accountant, or cashier for company users."},
+                {
+                    "detail": "Role must be one of: admin, accountant, cashier, operator for company users.",
+                },
                 status=400,
             )
     elif _is_super_admin(api_user):
@@ -212,7 +214,9 @@ def user_detail(request, user_id):
             new_role = (data.get("role") or user.role or "").strip()
             if data.get("role") is not None and new_role not in TENANT_USER_ROLES:
                 return JsonResponse(
-                    {"detail": "Role must be admin, accountant, or cashier."},
+                    {
+                        "detail": "Role must be one of: admin, accountant, cashier, operator.",
+                    },
                     status=400,
                 )
         if data.get("email") is not None:

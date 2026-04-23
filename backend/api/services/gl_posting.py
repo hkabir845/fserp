@@ -7,6 +7,7 @@ accounts are missing (operations still succeed).
 from __future__ import annotations
 
 import logging
+import uuid
 from collections import Counter, defaultdict
 from datetime import date
 from decimal import Decimal
@@ -29,6 +30,7 @@ from api.models import (
     JournalEntry,
     JournalEntryLine,
     Payment,
+    PayrollRun,
     Tank,
     TankDip,
     Vendor,
@@ -36,6 +38,7 @@ from api.models import (
 from api.exceptions import StockBusinessError
 from api.services.item_catalog import item_tracks_physical_stock
 from api.utils.customer_display import customer_display_name
+from api.services.coa_constants import normalize_chart_account_type
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +76,16 @@ CODE_FUEL_REV = "4100"
 CODE_SHOP_REV = "4200"
 CODE_OTHER_REV = "4230"
 CODE_OFFICE_EXP = "6900"
+CODE_DONATION_SOCIAL = "6910"
 CODE_COGS_FUEL = "5100"
 CODE_COGS_SHOP = "5120"
 CODE_SHRINK_FUEL = "5200"
 CODE_INV_FUEL = "1200"
 CODE_INV_SHOP = "1220"
+# Payroll (fuel_station template; optional — posting skips if 6400 missing)
+CODE_SALARY_EXP = "6400"
+CODE_SALARY_PAYABLE = "2200"
+CODE_STAT_DED = "2210"
 
 
 def _coa(company_id: int, code: str) -> Optional[ChartOfAccount]:
@@ -117,6 +125,39 @@ def _debit_account_for_paid_sale(
         if a:
             return a
     return _coa(company_id, CODE_CASH) or _coa(company_id, CODE_UNDEPOSITED)
+
+
+def post_pos_cash_donation_journal(
+    company_id: int,
+    *,
+    amount: Decimal,
+    entry_date,
+    memo: str,
+    bank_account_id: Optional[int],
+) -> tuple[Optional[JournalEntry], str]:
+    """
+    Record cash (or register-linked) payout for donation / social support from POS.
+    Dr Donation & Social Support (6910), Cr same cash/clearing GL as POS uses for cash (1010 by default).
+    """
+    if amount is None or amount <= 0:
+        return None, "Amount must be positive"
+    exp = _coa(company_id, CODE_DONATION_SOCIAL)
+    if not exp:
+        return None, "Chart account 6910 Donation & Social Support is missing. Sync the chart of accounts or run master push for COA defaults."
+    cash = _debit_account_for_paid_sale(company_id, "cash", bank_account_id)
+    if not cash:
+        return None, "No cash-on-hand (1010) or register-linked GL. Add account 1010 or link a register to a chart line."
+    line_memo = (memo or "POS — donation & social support")[:300]
+    entry_num = f"AUTO-POS-DON-{uuid.uuid4().hex[:12].upper()}"
+    desc = f"Donation & social support — {line_memo}"[:500]
+    lines = [
+        (exp, amount, Decimal("0"), line_memo),
+        (cash, Decimal("0"), amount, line_memo),
+    ]
+    je = _create_posted_entry(company_id, entry_date, entry_num, desc, lines)
+    if not je:
+        return None, "Could not post journal. Please try again."
+    return je, ""
 
 
 def _is_fuel_item(item) -> bool:
@@ -1376,3 +1417,139 @@ def post_bank_deposit_journal(
         lines,
     )
     return je is not None
+
+
+def _payroll_deduction_credit_account(company_id: int) -> Optional[ChartOfAccount]:
+    """Statutory or generic payroll liability for withheld amounts."""
+    a = _coa(company_id, CODE_STAT_DED)
+    if a:
+        return a
+    return _coa(company_id, CODE_SALARY_PAYABLE)
+
+
+def _payroll_net_pay_credit_account(
+    company_id: int,
+    bank_account_id: Optional[int],
+    pay_from_chart_account_id: Optional[int],
+) -> tuple[Optional[ChartOfAccount], Optional[str]]:
+    """
+    GL account to credit for net pay. Bank register wins if both are sent.
+    """
+    if bank_account_id:
+        bank = (
+            BankAccount.objects.filter(
+                id=bank_account_id, company_id=company_id, is_active=True
+            )
+            .select_related("chart_account")
+            .first()
+        )
+        if not bank or not bank.chart_account_id:
+            return None, (
+                "Bank account is missing or not linked to a chart of accounts line. "
+                "Link it in Banking, or pick a bank/cash GL account below."
+            )
+        return bank.chart_account, None
+
+    if pay_from_chart_account_id:
+        coa = (
+            ChartOfAccount.objects.filter(
+                id=pay_from_chart_account_id,
+                company_id=company_id,
+                is_active=True,
+            )
+            .first()
+        )
+        if not coa:
+            return None, "Selected GL account was not found or is inactive."
+        t = normalize_chart_account_type(coa.account_type)
+        if t not in ("asset", "bank_account"):
+            return None, (
+                "Net pay must be credited to a bank or cash asset account "
+                f"(e.g. {CODE_BANK_OP} or {CODE_CASH}). "
+                f"Account {coa.account_code} is not valid for net pay; salary expense still uses {CODE_SALARY_EXP}."
+            )
+        return coa, None
+
+    pay = _coa(company_id, CODE_BANK_OP) or _coa(company_id, CODE_CASH)
+    if not pay:
+        return None, f"Add chart {CODE_BANK_OP} / {CODE_CASH} or select a register / GL account above for net pay."
+    return pay, None
+
+
+def post_payroll_salary(
+    company_id: int,
+    pr: PayrollRun,
+    bank_account_id: Optional[int] = None,
+    pay_from_chart_account_id: Optional[int] = None,
+):
+    """
+    Book net salary paid from a bank (or default cash/bank account).
+
+    Dr 6400 (Salaries & Wages) = gross
+    Cr 2210/2200 = total_deductions (when > 0)
+    Cr selected bank register, chosen GL account, or default 1030/1010 = net pay to employees
+
+    If both bank_account_id and pay_from_chart_account_id are provided, the bank register is used.
+    Idempotent entry: AUTO-PAYROLL-{id}. Returns (JournalEntry|None, error message).
+    """
+    pr = PayrollRun.objects.filter(id=pr.id, company_id=company_id).first()
+    if not pr:
+        return None, "Payroll run not found"
+    if pr.salary_journal_id:
+        return pr.salary_journal, ""
+
+    gross = (pr.total_gross or Decimal("0")).quantize(Decimal("0.01"))
+    ded = (pr.total_deductions or Decimal("0")).quantize(Decimal("0.01"))
+    net = (pr.total_net or Decimal("0")).quantize(Decimal("0.01"))
+    if gross <= 0:
+        return None, "Set payroll totals first (gross must be positive)."
+    if abs(gross - ded - net) > Decimal("0.02"):
+        return (
+            None,
+            f"Gross ({gross}) must equal deductions ({ded}) + net pay ({net})",
+        )
+
+    expense = _coa(company_id, CODE_SALARY_EXP)
+    if not expense:
+        return None, f"Add chart account {CODE_SALARY_EXP} (Salaries & Wages) to post salary."
+
+    pay_account, pay_err = _payroll_net_pay_credit_account(
+        company_id, bank_account_id, pay_from_chart_account_id
+    )
+    if pay_err or not pay_account:
+        return None, pay_err or "Could not resolve account for net pay"
+
+    if ded > 0 and not _payroll_deduction_credit_account(company_id):
+        return None, f"For deductions, add {CODE_STAT_DED} or {CODE_SALARY_PAYABLE} in the chart of accounts."
+
+    ref = f"{pr.payroll_number or f'PR-{pr.id}'}"[:300]
+    en = f"AUTO-PAYROLL-{pr.id}"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=en).exists():
+        je = JournalEntry.objects.filter(company_id=company_id, entry_number=en).first()
+        if je and not pr.salary_journal_id:
+            PayrollRun.objects.filter(pk=pr.pk).update(salary_journal=je, status="paid")
+        return je, ""
+
+    lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = [
+        (expense, gross, Decimal("0"), f"Gross pay — {ref}"),
+    ]
+    if ded > 0:
+        dacc = _payroll_deduction_credit_account(company_id)
+        if not dacc:
+            return None, "Deductions account not configured"
+        lines.append((dacc, Decimal("0"), ded, f"Deductions / withholdings — {ref}"))
+
+    lines.append((pay_account, Decimal("0"), net, f"Net pay — {ref}"))
+
+    je = _create_posted_entry(
+        company_id,
+        pr.payment_date,
+        en,
+        f"Salary pay {pr.payroll_number or en}",
+        lines,
+    )
+    if not je:
+        return None, "Failed to post journal (unbalanced or invalid)"
+    with transaction.atomic():
+        PayrollRun.objects.filter(pk=pr.pk).update(salary_journal=je, status="paid")
+    return je, ""

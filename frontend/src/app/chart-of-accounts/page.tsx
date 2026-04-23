@@ -3,13 +3,15 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { Plus, Edit2, Trash2, X, FileText, Filter, AlertTriangle, RefreshCw, LayoutTemplate, Loader2 } from 'lucide-react'
+import { Plus, Edit2, Trash2, X, FileText, Filter, AlertTriangle, RefreshCw, LayoutTemplate, Loader2, Printer } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin, isSuperAdminRole } from '@/lib/api'
 import { useCompany } from '@/contexts/CompanyContext'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { isConnectionError, safeLogError } from '@/utils/connectionError'
-import { formatDateOnly } from '@/utils/date'
+import { formatDate, formatDateOnly } from '@/utils/date'
+import { printLedgerStatement, type LedgerStatementPrintInput } from '@/utils/printDocument'
+import { loadPrintBranding, type PrintBranding } from '@/utils/printBranding'
 
 interface AccountUsage {
   journal_lines: number
@@ -278,6 +280,50 @@ function mapStatementApiToView(
   }
 }
 
+function accountStatementToLedgerPrintInput(
+  s: AccountStatement
+): LedgerStatementPrintInput {
+  const isAssetOrExpense = ['asset', 'expense', 'bank_account'].includes(
+    s.account.account_type.toLowerCase()
+  )
+  const sorted = [...s.transactions].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  )
+  const rows: LedgerStatementPrintInput['transactions'] = []
+  let running = Number(s.opening_balance)
+  for (const txn of sorted) {
+    if (txn.type === 'Debit') {
+      if (isAssetOrExpense) running += txn.amount
+      else running -= txn.amount
+    } else {
+      if (isAssetOrExpense) running -= txn.amount
+      else running += txn.amount
+    }
+    const extra =
+      txn.other_account_name != null
+        ? ` (${txn.other_account_code ?? '—'} — ${txn.other_account_name})`
+        : ''
+    const description = (txn.description || '') + extra
+    rows.push({
+      date: formatDateOnly(txn.date),
+      type: txn.type,
+      reference: txn.reference,
+      description,
+      debit: txn.debit_amount > 0 ? String(txn.debit_amount) : '0',
+      credit: txn.credit_amount > 0 ? String(txn.credit_amount) : '0',
+      balance: String(running),
+    })
+  }
+  return {
+    display_name: `${s.account.account_code} — ${s.account.account_name}`,
+    period_start_balance: String(s.opening_balance),
+    closing_balance: String(s.closing_balance),
+    start_date: s.period.start_date,
+    end_date: s.period.end_date,
+    transactions: rows,
+  }
+}
+
 export default function ChartOfAccountsPage() {
   const router = useRouter()
   const toast = useToast()
@@ -293,6 +339,7 @@ export default function ChartOfAccountsPage() {
   const [statement, setStatement] = useState<AccountStatement | null>(null)
   const [statementAccountId, setStatementAccountId] = useState<number | null>(null)
   const [statementLoading, setStatementLoading] = useState(false)
+  const [statementPrintBranding, setStatementPrintBranding] = useState<PrintBranding | null>(null)
   const [statementStartDate, setStatementStartDate] = useState<string>('')
   const [statementEndDate, setStatementEndDate] = useState<string>('')
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
@@ -715,7 +762,12 @@ export default function ChartOfAccountsPage() {
       if (startDate) params.append('start_date', startDate)
       if (endDate) params.append('end_date', endDate)
       
-      const response = await api.get(`/chart-of-accounts/${accountId}/statement?${params.toString()}`)
+      const [response, branding] = await Promise.all([
+        api.get(`/chart-of-accounts/${accountId}/statement?${params.toString()}`),
+        loadPrintBranding(api).catch(() => null),
+      ])
+      if (branding) setStatementPrintBranding(branding)
+      else setStatementPrintBranding(null)
       setStatement(
         mapStatementApiToView(response.data, { start: startDate, end: endDate }, currencySymbol)
       )
@@ -742,6 +794,23 @@ export default function ChartOfAccountsPage() {
     if (statementAccountId) {
       await fetchStatement(statementAccountId)
     }
+  }
+
+  const handlePrintAccountStatement = async () => {
+    if (!statement) return
+    const branding = (await loadPrintBranding(api).catch(() => null)) ?? statementPrintBranding
+    if (branding) setStatementPrintBranding(branding)
+    const data = accountStatementToLedgerPrintInput(statement)
+    const ok = printLedgerStatement(data, {
+      companyName: branding?.companyName ?? 'Company',
+      companyAddress: branding?.companyAddress,
+      stationName: branding?.stationName,
+      currencySymbol: statement.account.currency,
+      documentTitle: 'GL account statement',
+      printedAt: formatDate(new Date(), true),
+      branding: branding ?? undefined,
+    })
+    if (!ok) toast.error('Allow pop-ups in your browser to print.')
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -1565,9 +1634,24 @@ export default function ChartOfAccountsPage() {
       {showStatement && statement && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
           <div className="bg-white rounded-lg p-8 max-w-6xl w-full max-h-[90vh] overflow-y-auto my-8">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-start gap-4 mb-6">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">Account Statement</h2>
+                {statementPrintBranding ? (
+                  <div className="mb-4 border-b border-gray-200 pb-3">
+                    <p className="text-base font-bold text-gray-900">{statementPrintBranding.companyName}</p>
+                    {statementPrintBranding.stationName ? (
+                      <p className="text-xs font-semibold text-gray-600 mt-0.5 uppercase tracking-wide">
+                        Station: {statementPrintBranding.stationName}
+                      </p>
+                    ) : null}
+                    {statementPrintBranding.companyAddress ? (
+                      <p className="text-xs text-gray-500 mt-1 whitespace-pre-line">
+                        {statementPrintBranding.companyAddress}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                <h2 className="text-2xl font-bold text-gray-900">GL account statement</h2>
                 <p className="text-gray-600 mt-1">
                   {statement.account.account_code} - {statement.account.account_name}
                 </p>
@@ -1575,16 +1659,29 @@ export default function ChartOfAccountsPage() {
                   {statement.account.account_type} / {statement.account.account_sub_type}
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setShowStatement(false)
-                  setStatement(null)
-                  setStatementAccountId(null)
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-6 w-6" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => void handlePrintAccountStatement()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+                >
+                  <Printer className="h-4 w-4" />
+                  Print
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStatement(false)
+                    setStatement(null)
+                    setStatementAccountId(null)
+                    setStatementPrintBranding(null)
+                  }}
+                  className="text-gray-400 hover:text-gray-600 p-2"
+                  aria-label="Close"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
             </div>
 
             {/* Date Range Filter */}

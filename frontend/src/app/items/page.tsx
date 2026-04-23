@@ -8,6 +8,7 @@ import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 /** Match backend duplicate-name rules: trim, collapse spaces, case-insensitive. */
 function normalizeItemNameKey(name: string): string {
@@ -56,6 +57,8 @@ export default function ItemsPage() {
   const [showModal, setShowModal] = useState(false)
   const [filterType, setFilterType] = useState<string>('ALL')
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [itemRefCode, setItemRefCode] = useState('')
+  const [createItemCodeNonce, setCreateItemCodeNonce] = useState(0)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [formData, setFormData] = useState({
     name: '',
@@ -250,7 +253,8 @@ export default function ItemsPage() {
           is_taxable: formData.is_taxable !== undefined ? formData.is_taxable : true,
           is_pos_available: formData.is_pos_available !== undefined ? formData.is_pos_available : true,
           is_active: formData.is_active !== undefined ? formData.is_active : true,
-          image_url: formData.image_url?.trim() || null
+          image_url: formData.image_url?.trim() || null,
+          ...(!editingId && itemRefCode.trim() ? { item_number: itemRefCode.trim() } : {}),
         },
         headers: {
           Authorization: `Bearer ${token}`,
@@ -350,6 +354,7 @@ export default function ItemsPage() {
       image_url: '',
     })
     setImagePreview(null)
+    setItemRefCode('')
     setEditingId(null)
   }, [])
 
@@ -378,6 +383,7 @@ export default function ItemsPage() {
 
     if (wantNew) {
       resetForm()
+      setCreateItemCodeNonce((n) => n + 1)
       setShowModal(true)
       router.replace('/items', { scroll: false })
     }
@@ -667,8 +673,10 @@ export default function ItemsPage() {
             </div>
 
             <button
+              type="button"
               onClick={() => {
                 resetForm()
+                setCreateItemCodeNonce((n) => n + 1)
                 setShowModal(true)
               }}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -689,7 +697,12 @@ export default function ItemsPage() {
             <h3 className="text-lg font-medium text-gray-900 mb-2">No items found</h3>
             <p className="text-gray-600 mb-4">Get started by creating your first product or service</p>
             <button
-              onClick={() => setShowModal(true)}
+              type="button"
+              onClick={() => {
+                resetForm()
+                setCreateItemCodeNonce((n) => n + 1)
+                setShowModal(true)
+              }}
               className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               <Plus className="h-5 w-5" />
@@ -910,6 +923,27 @@ export default function ItemsPage() {
                 {editingId ? 'Edit Item' : 'Add New Item'}
               </h2>
               <form onSubmit={handleSubmit}>
+                {editingId ? (
+                  <ReferenceCodePicker
+                    kind="item"
+                    id="item_ref_ro"
+                    label="Item number"
+                    value={items.find((i) => i.id === editingId)?.item_number || ''}
+                    onChange={() => {}}
+                    disabled
+                    className="mb-4"
+                  />
+                ) : (
+                  <ReferenceCodePicker
+                    key={createItemCodeNonce}
+                    kind="item"
+                    id="item_ref"
+                    label="Item number"
+                    value={itemRefCode}
+                    onChange={setItemRefCode}
+                    className="mb-4"
+                  />
+                )}
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">

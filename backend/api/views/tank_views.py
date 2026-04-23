@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Tank, Station, Item
+from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 
 
 def _tank_to_json(t):
@@ -80,6 +81,16 @@ def tanks_list_or_create(request):
             return JsonResponse({"detail": "Station not found"}, status=400)
         if not Item.objects.filter(id=product_id, company_id=request.company_id).exists():
             return JsonResponse({"detail": "Product (item) not found"}, status=400)
+        tnum, terr = user_supplied_code_or_auto(
+            request.company_id,
+            Tank,
+            "tank_number",
+            "TNK",
+            (body.get("tank_number") or "").strip() or None,
+            None,
+        )
+        if terr:
+            return JsonResponse({"detail": terr}, status=400)
         t = Tank(
             company_id=request.company_id,
             station_id=station_id,
@@ -90,14 +101,20 @@ def tanks_list_or_create(request):
             reorder_level=_decimal(body.get("min_stock_level", body.get("reorder_level")), 2000),
             unit_of_measure=body.get("unit_of_measure") or "L",
             is_active=body.get("is_active", True),
+            tank_number=tnum or "",
         )
         cap_err = _tank_capacity_detail_error(t)
         if cap_err:
             return cap_err
         t.save()
         if not t.tank_number:
-            t.tank_number = f"TNK-{t.id}"
-            Tank.objects.filter(pk=t.pk).update(tank_number=t.tank_number)
+            assigned, aerr = assign_string_code_if_empty(
+                request.company_id, Tank, "tank_number", "TNK", t.pk, None, None
+            )
+            if aerr:
+                t.delete()
+                return JsonResponse({"detail": aerr}, status=400)
+            t.tank_number = assigned
         t.refresh_from_db()
         return JsonResponse(_tank_to_json(t), status=201)
 

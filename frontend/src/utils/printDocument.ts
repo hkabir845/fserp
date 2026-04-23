@@ -10,6 +10,8 @@
  * })
  */
 
+import type { PrintBranding } from '@/utils/printBranding'
+
 export const PRINT_DOCUMENT_DELAY_MS = 220
 
 /** Shared print stylesheet: invoices, reports, statements, contracts. */
@@ -70,6 +72,29 @@ export const PRINT_APP_STYLES = `
   .right, th[style*="text-align:right"], td[style*="text-align:right"] { text-align: right; }
   .row-total { font-weight: 600; background: #fafafa; }
   .co { margin-bottom: 14px; line-height: 1.45; }
+  .print-branding {
+    margin-bottom: 20px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .print-branding-company {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .print-branding-station {
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .print-branding-addr {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #6b7280;
+  }
   .contract-header { text-align: center; margin-bottom: 24px; }
   .label { font-weight: 700; }
   .no-print { display: none !important; }
@@ -100,11 +125,28 @@ function formatPrintAmount(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+export function buildPrintBrandingBlockHtml(brand: PrintBranding): string {
+  const co = escapeHtml(brand.companyName || 'Company')
+  const st = (brand.stationName || '').trim()
+  const ad = (brand.companyAddress || '').trim()
+  return `<div class="print-branding">
+    <div class="print-branding-company">${co}</div>
+    ${
+      st
+        ? `<div class="print-branding-station">Station: ${escapeHtml(st)}</div>`
+        : ''
+    }
+    ${ad ? `<div class="print-branding-addr">${escapeHtml(ad)}</div>` : ''}
+  </div>`
+}
+
 export type PrintDocumentOptions = {
   /** Window title and HTML document title (escaped automatically). */
   title: string
   /** Inner HTML for <body> — escape dynamic strings with {@link escapeHtml}. */
   bodyHtml: string
+  /** Company + station (and address) header block prepended to body when set. */
+  branding?: PrintBranding
   /** Extra tags for <head> (e.g. `<style>…</style>`) after default styles. */
   extraHead?: string
   delayMs?: number
@@ -156,10 +198,11 @@ function printViaPopup(docHtml: string, delayMs: number): boolean {
  * @returns false only if both paths fail or popup is blocked (fallback).
  */
 export function printDocument(options: PrintDocumentOptions): boolean {
-  const { title, bodyHtml, extraHead = "", delayMs = PRINT_DOCUMENT_DELAY_MS } = options
+  const { title, bodyHtml, branding, extraHead = "", delayMs = PRINT_DOCUMENT_DELAY_MS } = options
   if (typeof window === "undefined" || typeof document === "undefined") return false
 
-  const docHtml = buildPrintDocumentHtml(title, bodyHtml, extraHead)
+  const combinedBody = branding ? `${buildPrintBrandingBlockHtml(branding)}${bodyHtml}` : bodyHtml
+  const docHtml = buildPrintDocumentHtml(title, combinedBody, extraHead)
 
   try {
     const iframe = document.createElement("iframe")
@@ -281,11 +324,13 @@ export function buildContractAgreementHtml(
 
 export function printContractAgreement(
   c: ContractPrintFields,
-  formatDateOnly: (iso: string) => string
+  formatDateOnly: (iso: string) => string,
+  branding?: PrintBranding
 ): boolean {
   return printDocument({
     title: `Contract ${c.contract_number}`,
     bodyHtml: buildContractAgreementHtml(c, formatDateOnly),
+    branding,
   })
 }
 
@@ -312,6 +357,9 @@ export function buildLedgerStatementHtml(
   options: {
     companyName: string
     companyAddress?: string
+    stationName?: string
+    /** When true, company/address/station lines are skipped (use {@link printDocument} `branding` instead). */
+    omitCompanyHeader?: boolean
     currencySymbol: string
     /** e.g. "Customer account statement" */
     documentTitle: string
@@ -319,6 +367,7 @@ export function buildLedgerStatementHtml(
   }
 ): string {
   const sym = options.currencySymbol
+  const omitCo = options.omitCompanyHeader === true
   const periodNote =
     data.start_date && data.end_date
       ? `Period: ${escapeHtml(data.start_date)} — ${escapeHtml(data.end_date)}`
@@ -346,11 +395,17 @@ export function buildLedgerStatementHtml(
   const ps = formatPrintAmount(parseFloat(data.period_start_balance || "0"))
   const cl = formatPrintAmount(parseFloat(data.closing_balance || "0"))
 
+  const st = (options.stationName || '').trim()
   return `
     <div class="co">
       <h1>${escapeHtml(options.documentTitle)}</h1>
-      <div><strong>${escapeHtml(options.companyName)}</strong></div>
-      ${options.companyAddress ? `<div class="muted">${escapeHtml(options.companyAddress)}</div>` : ""}
+      ${
+        omitCo
+          ? ''
+          : `<div><strong>${escapeHtml(options.companyName)}</strong></div>
+      ${st ? `<div class="muted"><strong>Station:</strong> ${escapeHtml(st)}</div>` : ''}
+      ${options.companyAddress ? `<div class="muted">${escapeHtml(options.companyAddress)}</div>` : ''}`
+      }
       <p class="muted">Printed ${escapeHtml(options.printedAt)}</p>
     </div>
     <p><strong>${escapeHtml(data.display_name || "Account")}</strong></p>
@@ -367,10 +422,16 @@ export function buildLedgerStatementHtml(
 
 export function printLedgerStatement(
   data: LedgerStatementPrintInput,
-  options: Parameters<typeof buildLedgerStatementHtml>[1]
+  options: Parameters<typeof buildLedgerStatementHtml>[1] & { branding?: PrintBranding }
 ): boolean {
+  const { branding, ...ledgerOpts } = options
+  const bodyHtml = buildLedgerStatementHtml(data, {
+    ...ledgerOpts,
+    omitCompanyHeader: Boolean(branding),
+  })
   return printDocument({
     title: `${options.documentTitle} — ${data.display_name}`,
-    bodyHtml: buildLedgerStatementHtml(data, options),
+    bodyHtml,
+    branding,
   })
 }

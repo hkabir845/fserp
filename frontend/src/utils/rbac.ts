@@ -3,7 +3,12 @@
  * Helper functions for checking user roles and permissions
  */
 
-export type UserRole = 'super_admin' | 'admin' | 'accountant' | 'cashier' | 'worker'
+export type UserRole =
+  | 'super_admin'
+  | 'admin'
+  | 'accountant'
+  | 'cashier'
+  | 'operator'
 
 /**
  * Get current user role from localStorage
@@ -64,6 +69,11 @@ export function isCashier(): boolean {
   return hasRole('cashier')
 }
 
+/** Register staff limited to New sale + Donation on POS (not full cashier tools). */
+export function isLimitedPosRegisterUser(): boolean {
+  return hasRole('operator')
+}
+
 /**
  * Check if user can access management features
  */
@@ -96,8 +106,7 @@ export function canManageInvoices(): boolean {
  * Check if user can access POS
  */
 export function canAccessPOS(): boolean {
-  // All roles can access POS
-  return hasRole(['super_admin', 'admin', 'accountant', 'cashier'])
+  return hasRole(['super_admin', 'admin', 'accountant', 'cashier', 'operator'])
 }
 
 /**
@@ -119,7 +128,7 @@ export function getRoleDisplayName(role: UserRole | string | null): string {
     admin: 'Admin',
     accountant: 'Accountant',
     cashier: 'Cashier',
-    worker: 'Worker'
+    operator: 'Operator'
   }
 
   return roleMap[role.toLowerCase()] || role
@@ -136,7 +145,7 @@ export function getRoleBadgeColor(role: UserRole | string | null): string {
     admin: 'bg-blue-100 text-blue-800',
     accountant: 'bg-green-100 text-green-800',
     cashier: 'bg-orange-100 text-orange-800',
-    worker: 'bg-gray-100 text-gray-800'
+    operator: 'bg-teal-100 text-teal-800'
   }
 
   return colorMap[role.toLowerCase()] || 'bg-gray-100 text-gray-800'

@@ -505,6 +505,11 @@ export default function Sidebar() {
       return fsmsErpMenuItems // Always return full ERP menu for super admin in FSMS ERP mode
     }
     
+    // Operator / Worker: POS only (New sale + Donation); no other ERP areas
+    if (role === 'operator') {
+      return menuItems.filter((item) => item.href === '/cashier')
+    }
+
     // Cashier: Limited access
     if (role === 'cashier') {
       return menuItems.filter(item => 

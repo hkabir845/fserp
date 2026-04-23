@@ -26,14 +26,16 @@ from api.models import (
     Tank,
 )
 from api.exceptions import StockBusinessError
+from api.chart_templates.fuel_station import ensure_donation_social_support_account
 from api.services.gl_posting import (
     _is_walkin_customer,
     _item_receives_physical_stock,
     post_payment_received_journal,
+    post_pos_cash_donation_journal,
     sync_invoice_gl,
 )
 from api.services.payment_allocation import refresh_invoices_touched_by_payment
-from api.services.shift_sales import record_invoice_on_shift
+from api.services.shift_sales import record_cash_payout_on_shift, record_invoice_on_shift
 from api.services.inventory_validation import (
     assert_pos_fuel_sale_within_stock,
     assert_pos_general_lines_within_qoh,
@@ -530,3 +532,81 @@ def cashier_pos(request):
     if err:
         return err
     return _cashier_pos_unified(request.company_id, body)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def cashier_cash_donation(request):
+    """
+    POST /api/cashier/cash-donation — Dr 6910 Donation & Social Support, Cr 1010 (or register GL).
+    body: amount (required), entry_date (optional, default today), bank_account_id (optional),
+    shift_session_id (optional), memo (optional), payment_method (optional; default cash — affects shift drawer).
+    """
+    company_id = request.company_id
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    ensure_donation_social_support_account(company_id)
+    raw_amount = body.get("amount")
+    if raw_amount is None or raw_amount == "":
+        return _cashier_pos_error("amount is required")
+    try:
+        amount = Decimal(str(raw_amount))
+    except Exception:
+        return _cashier_pos_error("Invalid amount")
+    if amount <= 0:
+        return _cashier_pos_error("Amount must be positive")
+    ed_raw = body.get("entry_date") or body.get("date")
+    if ed_raw:
+        from datetime import datetime
+
+        if isinstance(ed_raw, str):
+            try:
+                entry_date = datetime.strptime(str(ed_raw).strip()[:10], "%Y-%m-%d").date()
+            except ValueError:
+                return _cashier_pos_error("Invalid entry_date; use YYYY-MM-DD")
+        else:
+            entry_date = timezone.localdate()
+    else:
+        entry_date = timezone.localdate()
+    bank_account_id, berr = _coerce_optional_bank_account_id(company_id, body)
+    if berr:
+        return berr
+    memo = body.get("memo")
+    if memo is not None and not isinstance(memo, str):
+        memo = str(memo)
+    shift_session_id = body.get("shift_session_id")
+    if shift_session_id is not None and shift_session_id != "" and shift_session_id != 0:
+        try:
+            sid = int(shift_session_id)
+        except (TypeError, ValueError):
+            return _cashier_pos_error("Invalid shift_session_id")
+        if not ShiftSession.objects.filter(
+            id=sid, company_id=company_id, closed_at__isnull=True
+        ).exists():
+            return _cashier_pos_error("Unknown or closed shift_session_id")
+    else:
+        sid = None
+
+    je, msg = post_pos_cash_donation_journal(
+        company_id,
+        amount=amount,
+        entry_date=entry_date,
+        memo=(memo or "").strip() or "POS — donation & social support",
+        bank_account_id=bank_account_id,
+    )
+    if not je:
+        return _cashier_pos_error(msg or "Could not post journal", status=400)
+    if sid is not None:
+        record_cash_payout_on_shift(company_id, sid, amount, "cash")
+    return JsonResponse(
+        {
+            "detail": "Donation / social support recorded in the general ledger.",
+            "journal_id": je.id,
+            "entry_number": je.entry_number,
+            "entry_date": str(entry_date),
+        },
+        status=201,
+    )

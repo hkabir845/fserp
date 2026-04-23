@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Vendor
+from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.contact_ledgers import build_vendor_ledger, ledger_query_dates
 
 
@@ -71,6 +72,16 @@ def vendors_list_or_create(request):
         company_name = (body.get("company_name") or "").strip()
         if not company_name:
             return JsonResponse({"detail": "company_name is required"}, status=400)
+        vcode, verr = user_supplied_code_or_auto(
+            request.company_id,
+            Vendor,
+            "vendor_number",
+            "VND",
+            (body.get("vendor_number") or "").strip() or None,
+            None,
+        )
+        if verr:
+            return JsonResponse({"detail": verr}, status=400)
         v = Vendor(
             company_id=request.company_id,
             company_name=company_name,
@@ -87,11 +98,17 @@ def vendors_list_or_create(request):
             opening_balance_date=_parse_date(body.get("opening_balance_date")),
             current_balance=_decimal(body.get("current_balance"), _decimal(body.get("opening_balance"))),
             is_active=body.get("is_active", True),
+            vendor_number=vcode or "",
         )
         v.save()
         if not v.vendor_number:
-            v.vendor_number = f"VND-{v.id}"
-            Vendor.objects.filter(pk=v.pk).update(vendor_number=v.vendor_number)
+            assigned, aerr = assign_string_code_if_empty(
+                request.company_id, Vendor, "vendor_number", "VND", v.pk, None, None
+            )
+            if aerr:
+                v.delete()
+                return JsonResponse({"detail": aerr}, status=400)
+            v.vendor_number = assigned
         return JsonResponse(_vendor_to_json(v), status=201)
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -133,7 +150,11 @@ def vendor_detail(request, vendor_id: int):
         if "bank_routing_number" in body:
             v.bank_routing_number = (body.get("bank_routing_number") or "")[:64]
         if "opening_balance" in body:
-            v.opening_balance = _decimal(body.get("opening_balance"), v.opening_balance)
+            new_ob = _decimal(body.get("opening_balance"), v.opening_balance)
+            old_ob = v.opening_balance
+            v.opening_balance = new_ob
+            if "current_balance" not in body:
+                v.current_balance = (v.current_balance or Decimal("0")) + (new_ob - old_ob)
         if "opening_balance_date" in body:
             v.opening_balance_date = _parse_date(body.get("opening_balance_date"))
         if "current_balance" in body:

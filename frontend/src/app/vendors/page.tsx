@@ -11,6 +11,7 @@ import api, { getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { isConnectionError } from '@/utils/connectionError'
+import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 interface Vendor {
   id: number
@@ -42,6 +43,8 @@ export default function VendorsPage() {
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
+  const [vendorRefCode, setVendorRefCode] = useState('')
+  const [createCodeNonce, setCreateCodeNonce] = useState(0)
   const [formData, setFormData] = useState({
     company_name: '',
     contact_person: '',
@@ -130,7 +133,8 @@ export default function VendorsPage() {
         bank_routing_number: formData.bank_routing_number || '',
         opening_balance: formData.opening_balance,
         opening_balance_date: formData.opening_balance_date || null,
-        is_active: formData.is_active
+        is_active: formData.is_active,
+        ...(vendorRefCode.trim() ? { vendor_number: vendorRefCode.trim() } : {}),
       })
       toast.success('Vendor created successfully!')
       setShowModal(false)
@@ -224,6 +228,7 @@ export default function VendorsPage() {
       opening_balance_date: new Date().toISOString().split('T')[0],
       is_active: true
     })
+    setVendorRefCode('')
     setEditingVendor(null)
   }
 
@@ -260,7 +265,12 @@ export default function VendorsPage() {
             />
           </div>
           <button
-            onClick={() => setShowModal(true)}
+            type="button"
+            onClick={() => {
+              resetForm()
+              setCreateCodeNonce((n) => n + 1)
+              setShowModal(true)
+            }}
             className="ml-4 flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Plus className="h-5 w-5" />
@@ -402,6 +412,27 @@ export default function VendorsPage() {
                 {editingVendor ? 'Edit Vendor' : 'Add New Vendor'}
               </h2>
               <form onSubmit={editingVendor ? handleUpdate : handleCreate}>
+                {editingVendor ? (
+                  <ReferenceCodePicker
+                    kind="vendor"
+                    id="vendor_ref_ro"
+                    label="Vendor number"
+                    value={editingVendor.vendor_number || ''}
+                    onChange={() => {}}
+                    disabled
+                    className="mb-4"
+                  />
+                ) : (
+                  <ReferenceCodePicker
+                    key={createCodeNonce}
+                    kind="vendor"
+                    id="vendor_ref"
+                    label="Vendor number"
+                    value={vendorRefCode}
+                    onChange={setVendorRefCode}
+                    className="mb-4"
+                  />
+                )}
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">

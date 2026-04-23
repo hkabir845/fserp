@@ -1595,6 +1595,7 @@ function SuperAdminPageContent() {
                             user.role === 'admin' ? 'bg-blue-100 text-blue-800' :
                             user.role === 'accountant' ? 'bg-green-100 text-green-800' :
                             user.role === 'cashier' ? 'bg-yellow-100 text-yellow-800' :
+                            user.role === 'operator' ? 'bg-teal-100 text-teal-800' :
                             'bg-gray-100 text-gray-800'
                           }`}>
                             {user.role.replace('_', ' ').toUpperCase()}
@@ -1759,6 +1760,7 @@ function SuperAdminPageContent() {
                           <option value="admin">Admin</option>
                           <option value="accountant">Accountant</option>
                           <option value="cashier">Cashier</option>
+                          <option value="operator">Operator</option>
                         </select>
                       </div>
                     </div>
@@ -2469,7 +2471,7 @@ function SuperAdminPageContent() {
                           <option value="admin">Admin</option>
                           <option value="accountant">Accountant</option>
                           <option value="cashier">Cashier</option>
-                          <option value="worker">Worker</option>
+                          <option value="operator">Operator</option>
                         </select>
                       </div>
                       <div>

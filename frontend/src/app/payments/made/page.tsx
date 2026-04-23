@@ -11,6 +11,7 @@ import {
   Filter,
   Pencil,
   Plus,
+  Printer,
   Trash2,
   X,
 } from 'lucide-react'
@@ -18,7 +19,10 @@ import api from '@/lib/api'
 import EditPaymentModal from '../EditPaymentModal'
 import { confirmDeletePaymentDialog, deletePaymentRequest } from '../paymentMutations'
 import { getCurrencySymbol } from '@/utils/currency'
-import { formatDateOnly } from '@/utils/date'
+import { formatDate, formatDateOnly } from '@/utils/date'
+import { escapeHtml } from '@/utils/printDocument'
+import { printListView } from '@/utils/printListView'
+import { ContactArApBalances } from '@/components/ContactArApBalances'
 
 interface OutstandingBill {
   id: number
@@ -31,6 +35,8 @@ interface OutstandingBill {
   amount_paid: number
   balance_due: number
   days_overdue: number | null
+  synthetic?: boolean
+  on_account?: boolean
 }
 
 function parseNum(v: unknown): number {
@@ -54,6 +60,8 @@ function normalizeOutstandingBill(row: Record<string, unknown>): OutstandingBill
       row.days_overdue === null || row.days_overdue === undefined
         ? null
         : parseNum(row.days_overdue),
+    synthetic: row.synthetic === true,
+    on_account: row.on_account === true,
   }
 }
 
@@ -87,6 +95,9 @@ interface Vendor {
   company_name?: string | null
   display_name?: string | null
   vendor_name?: string | null
+  opening_balance?: string
+  opening_balance_date?: string | null
+  current_balance?: string
 }
 
 type PaymentFilter = 'all' | 'made' | 'outstanding'
@@ -218,6 +229,69 @@ export default function PaymentMadePage() {
 
   const displayedData = getDisplayedData()
 
+  const handlePrintList = async () => {
+    const { payments, bills } = displayedData
+    const sub = [
+      `View: ${filterStatus}`,
+      startDate && `From ${startDate}`,
+      endDate && `To ${endDate}`,
+      `Generated ${formatDate(new Date(), true)}`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    const parts: string[] = []
+    if (payments.length) {
+      const rows = payments
+        .map((p) => {
+          const vendor = vendors.find((v) => v.id === p.vendor_id)
+          const vendorName =
+            vendor?.display_name ||
+            vendor?.vendor_name ||
+            vendor?.company_name ||
+            `Vendor ${p.vendor_id}`
+          return `<tr>
+            <td>${escapeHtml(String(p.payment_number ?? `PAY-${p.id}`))}</td>
+            <td>${escapeHtml(formatDateOnly(p.payment_date))}</td>
+            <td>${escapeHtml(vendorName)}</td>
+            <td>${escapeHtml((p.payment_method ?? 'unspecified').replace(/_/g, ' '))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml((Number(p.amount) || 0).toFixed(2))}</td>
+          </tr>`
+        })
+        .join('')
+      parts.push(
+        `<h2>Payments made</h2><table><thead><tr><th>Payment #</th><th>Date</th><th>Vendor</th><th>Method</th><th class="right">Amount</th></tr></thead><tbody>${rows}</tbody></table>`
+      )
+    }
+    if (bills.length) {
+      const rows = bills
+        .map((bill) => {
+          return `<tr>
+            <td>${escapeHtml(bill.bill_number)}</td>
+            <td>${escapeHtml(formatDateOnly(bill.bill_date))}</td>
+            <td>${escapeHtml(bill.due_date ? formatDateOnly(bill.due_date) : '—')}</td>
+            <td>${escapeHtml(vendorDisplayForBill(bill))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml((Number(bill.total_amount) || 0).toFixed(2))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml((Number(bill.amount_paid) || 0).toFixed(2))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml((Number(bill.balance_due) || 0).toFixed(2))}</td>
+          </tr>`
+        })
+        .join('')
+      parts.push(
+        `<h2>Outstanding bills</h2><table><thead><tr><th>Bill #</th><th>Date</th><th>Due</th><th>Vendor</th><th class="right">Total</th><th class="right">Paid</th><th class="right">Balance</th></tr></thead><tbody>${rows}</tbody></table>`
+      )
+    }
+    if (parts.length === 0) {
+      window.alert('Nothing to print for the current filter.')
+      return
+    }
+    const ok = await printListView({
+      title: 'Payments — made (list)',
+      subtitle: sub,
+      tableHtml: parts.join(''),
+    })
+    if (!ok) window.alert('Printing was blocked. Allow pop-ups for this site.')
+  }
+
   const handleDeletePayment = async (payment: VendorPayment) => {
     const label = payment.payment_number ?? `PAY-${payment.id}`
     if (!confirmDeletePaymentDialog(label)) return
@@ -264,13 +338,23 @@ export default function PaymentMadePage() {
                 until the deposit is adjusted.
               </p>
             </div>
-            <Link
-              href="/payments/made/new"
-              className="inline-flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shrink-0"
-            >
-              <Plus className="h-5 w-5" />
-              <span>New Payment</span>
-            </Link>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => void handlePrintList()}
+                className="inline-flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50"
+              >
+                <Printer className="h-5 w-5" />
+                <span>Print list</span>
+              </button>
+              <Link
+                href="/payments/made/new"
+                className="inline-flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <Plus className="h-5 w-5" />
+                <span>New Payment</span>
+              </Link>
+            </div>
           </div>
 
           {policyBanner && (
@@ -534,6 +618,9 @@ export default function PaymentMadePage() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                           Vendor
                         </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[9rem]">
+                          Contact A/P
+                        </th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                           Total
                         </th>
@@ -546,18 +633,27 @@ export default function PaymentMadePage() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {displayedData.bills.map((bill) => (
+                      {displayedData.bills.map((bill) => {
+                        const vend = vendors.find((v) => v.id === bill.vendor_id)
+                        return (
                         <tr
-                          key={bill.id}
+                          key={bill.synthetic ? `oa-v-${bill.vendor_id}` : bill.id}
                           className={
-                            bill.days_overdue && bill.days_overdue > 0
+                            !bill.synthetic && bill.days_overdue && bill.days_overdue > 0
                               ? 'bg-red-50'
                               : 'hover:bg-gray-50'
                           }
                         >
                           <td className="px-4 py-3 text-sm font-medium text-gray-900">
                             {bill.bill_number}
-                            {bill.days_overdue && bill.days_overdue > 0 && (
+                            {bill.synthetic ? (
+                              <span className="ml-1 text-xs font-normal text-gray-500">
+                                (A/P not on a bill)
+                              </span>
+                            ) : null}
+                            {!bill.synthetic &&
+                              bill.days_overdue &&
+                              bill.days_overdue > 0 && (
                               <span className="ml-2 text-xs text-red-600">
                                 ({bill.days_overdue}d overdue)
                               </span>
@@ -567,23 +663,50 @@ export default function PaymentMadePage() {
                             {formatDateOnly(bill.bill_date)}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600">
-                            {bill.due_date ? formatDateOnly(bill.due_date) : '-'}
+                            {bill.due_date ? formatDateOnly(bill.due_date) : '—'}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600">{vendorDisplayForBill(bill)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 align-top">
+                            {vend ? (
+                              <ContactArApBalances
+                                role="vendor"
+                                compact
+                                openingBalance={vend.opening_balance}
+                                openingBalanceDate={vend.opening_balance_date}
+                                currentBalance={vend.current_balance}
+                                currencySymbol={currencySymbol}
+                              />
+                            ) : (
+                              '—'
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-sm text-right text-gray-900">
-                            {currencySymbol}
-                            {parseNum(bill.total_amount).toFixed(2)}
+                            {bill.synthetic ? (
+                              '—'
+                            ) : (
+                              <>
+                                {currencySymbol}
+                                {parseNum(bill.total_amount).toFixed(2)}
+                              </>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-sm text-right text-gray-600">
-                            {currencySymbol}
-                            {parseNum(bill.amount_paid).toFixed(2)}
+                            {bill.synthetic ? (
+                              '—'
+                            ) : (
+                              <>
+                                {currencySymbol}
+                                {parseNum(bill.amount_paid).toFixed(2)}
+                              </>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                             {currencySymbol}
                             {parseNum(bill.balance_due).toFixed(2)}
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

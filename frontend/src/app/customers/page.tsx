@@ -10,6 +10,7 @@ import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getApiDocsUrl, getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { isConnectionError } from '@/utils/connectionError'
+import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 interface Customer {
   id: number
@@ -51,6 +52,8 @@ export default function CustomersPage() {
   const [showDebug, setShowDebug] = useState(false)
   const [apiResponse, setApiResponse] = useState<any>(null)
   const [addingDummy, setAddingDummy] = useState(false)
+  const [customerRefCode, setCustomerRefCode] = useState('')
+  const [createCodeNonce, setCreateCodeNonce] = useState(0)
   const [formData, setFormData] = useState({
     company_name: '',
     contact_person: '',
@@ -216,7 +219,8 @@ export default function CustomersPage() {
           bank_routing_number: formData.bank_routing_number || null,
           opening_balance: formData.opening_balance,
           opening_balance_date: formData.opening_balance_date || null,
-          is_active: formData.is_active
+          is_active: formData.is_active,
+          ...(customerRefCode.trim() ? { customer_number: customerRefCode.trim() } : {}),
         })
       })
       if (response.ok) {
@@ -372,6 +376,7 @@ export default function CustomersPage() {
       opening_balance_date: new Date().toISOString().split('T')[0],
       is_active: true
     })
+    setCustomerRefCode('')
     setEditingCustomer(null)
   }
 
@@ -570,6 +575,7 @@ export default function CustomersPage() {
                   <button
                     onClick={() => {
                       resetForm()
+                      setCreateCodeNonce((n) => n + 1)
                       setShowModal(true)
                     }}
                     className="flex items-center space-x-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-medium"
@@ -672,6 +678,7 @@ export default function CustomersPage() {
                     <button
                       onClick={() => {
                         resetForm()
+                        setCreateCodeNonce((n) => n + 1)
                         setShowModal(true)
                       }}
                       className="inline-flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -934,6 +941,27 @@ export default function CustomersPage() {
                     </button>
                   </div>
                   <form onSubmit={editingCustomer ? handleUpdate : handleCreate}>
+                    {editingCustomer ? (
+                      <ReferenceCodePicker
+                        kind="customer"
+                        id="customer_ref_code_ro"
+                        label="Customer number"
+                        value={editingCustomer.customer_number || ''}
+                        onChange={() => {}}
+                        disabled
+                        className="mb-6"
+                      />
+                    ) : (
+                      <ReferenceCodePicker
+                        key={createCodeNonce}
+                        kind="customer"
+                        id="customer_ref_code"
+                        label="Customer number"
+                        value={customerRefCode}
+                        onChange={setCustomerRefCode}
+                        className="mb-6"
+                      />
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">

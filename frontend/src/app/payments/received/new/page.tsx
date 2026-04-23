@@ -9,6 +9,7 @@ import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_ALLOCATE_GREEN_CLASS, AMOUNT_EDITABLE_FULL_GREEN_CLASS } from '@/utils/amountFieldStyles'
+import { ContactArApBalances } from '@/components/ContactArApBalances'
 
 interface OutstandingInvoice {
   id: number
@@ -22,6 +23,12 @@ interface OutstandingInvoice {
   amount_paid?: number | string
   balance_due: number | string
   days_overdue: number | null
+  synthetic?: boolean
+  on_account?: boolean
+}
+
+function allocInvoiceId(inv: OutstandingInvoice) {
+  return inv.synthetic ? 0 : inv.id
 }
 
 interface Customer {
@@ -37,6 +44,9 @@ interface Customer {
   bank_name?: string
   bank_branch?: string
   bank_routing_number?: string
+  opening_balance?: string
+  opening_balance_date?: string | null
+  current_balance?: string
 }
 
 /** Coerce IDs and unwrap common API shapes so the customer select value always matches an option. */
@@ -72,6 +82,12 @@ function normalizeCustomersFromApi(data: unknown): Customer[] {
         bank_branch: r.bank_branch != null ? String(r.bank_branch) : undefined,
         bank_routing_number:
           r.bank_routing_number != null ? String(r.bank_routing_number) : undefined,
+        opening_balance: r.opening_balance != null ? String(r.opening_balance) : undefined,
+        opening_balance_date:
+          r.opening_balance_date != null && r.opening_balance_date !== ''
+            ? String(r.opening_balance_date)
+            : null,
+        current_balance: r.current_balance != null ? String(r.current_balance) : undefined,
       }
       return [c]
     })
@@ -166,7 +182,7 @@ function RecordPaymentReceivedInner() {
           setOutstandingInvoices(response.data)
           setAllocations(
             response.data.map((inv: OutstandingInvoice) => ({
-              invoice_id: inv.id,
+              invoice_id: allocInvoiceId(inv),
               allocated_amount: 0,
               discount_amount: 0,
             }))
@@ -226,7 +242,9 @@ function RecordPaymentReceivedInner() {
       : null
 
   const handleAllocationChange = (invoiceId: number, amount: number) => {
-    const invoice = outstandingInvoices.find((inv) => inv.id === invoiceId)
+    const invoice = outstandingInvoices.find(
+      (inv) => (inv.synthetic && invoiceId === 0) || (!inv.synthetic && inv.id === invoiceId)
+    )
     if (!invoice) return
     const maxAmount = Number(invoice.balance_due) || 0
     const allocatedAmount = Math.min(Math.max(0, amount), maxAmount)
@@ -242,15 +260,20 @@ function RecordPaymentReceivedInner() {
 
   const handleAutoAllocate = () => {
     let remaining = totalPaymentAmount
-    const newAllocations = outstandingInvoices.map((invoice) => {
-      const allocation = allocations.find((a) => a.invoice_id === invoice.id)
+    const order = [...outstandingInvoices].sort((a, b) => {
+      if (a.synthetic && !b.synthetic) return 1
+      if (!a.synthetic && b.synthetic) return -1
+      return new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
+    })
+    const newAllocations = order.map((invoice) => {
+      const aid = allocInvoiceId(invoice)
       if (remaining <= 0) {
-        return { ...allocation!, allocated_amount: 0 }
+        return { invoice_id: aid, discount_amount: 0, allocated_amount: 0 }
       }
       const balanceDue = Number(invoice.balance_due) || 0
       const amt = Math.min(remaining, balanceDue)
       remaining -= amt
-      return { ...allocation!, allocated_amount: amt }
+      return { invoice_id: aid, discount_amount: 0, allocated_amount: amt }
     })
     setAllocations(newAllocations)
   }
@@ -259,14 +282,23 @@ function RecordPaymentReceivedInner() {
     setTotalPaymentAmount(amount)
     if (amount > 0) {
       let remaining = amount
-      const newAllocations = outstandingInvoices.map((invoice) => {
+      const order = [...outstandingInvoices].sort((a, b) => {
+        if (a.synthetic && !b.synthetic) return 1
+        if (!a.synthetic && b.synthetic) return -1
+        return new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
+      })
+      const newAllocations = order.map((invoice) => {
         if (remaining <= 0) {
-          return { invoice_id: invoice.id, allocated_amount: 0, discount_amount: 0 }
+          return { invoice_id: allocInvoiceId(invoice), allocated_amount: 0, discount_amount: 0 }
         }
         const balanceDue = Number(invoice.balance_due) || 0
         const allocatedAmount = Math.min(remaining, balanceDue)
         remaining -= allocatedAmount
-        return { invoice_id: invoice.id, allocated_amount: allocatedAmount, discount_amount: 0 }
+        return {
+          invoice_id: allocInvoiceId(invoice),
+          allocated_amount: allocatedAmount,
+          discount_amount: 0,
+        }
       })
       setAllocations(newAllocations)
     }
@@ -438,6 +470,13 @@ function RecordPaymentReceivedInner() {
                               .join(' · ')}
                           </p>
                         ) : null}
+                        <ContactArApBalances
+                          role="customer"
+                          openingBalance={selectedCustomer.opening_balance}
+                          openingBalanceDate={selectedCustomer.opening_balance_date}
+                          currentBalance={selectedCustomer.current_balance}
+                          currencySymbol={currencySymbol}
+                        />
                       </div>
                     </div>
                   )}
@@ -559,17 +598,28 @@ function RecordPaymentReceivedInner() {
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {outstandingInvoices.map((invoice) => {
-                          const allocation = allocations.find((a) => a.invoice_id === invoice.id)
+                          const aid = allocInvoiceId(invoice)
+                          const allocation = allocations.find((a) => a.invoice_id === aid)
                           const allocatedAmount = allocation?.allocated_amount || 0
                           return (
-                            <tr key={invoice.id} className={allocatedAmount > 0 ? 'bg-green-50' : ''}>
+                            <tr
+                              key={invoice.synthetic ? `oa-${invoice.customer_id}` : invoice.id}
+                              className={allocatedAmount > 0 ? 'bg-green-50' : ''}
+                            >
                               <td className="px-4 py-3 text-sm font-medium text-gray-900">
                                 {invoice.invoice_number}
-                                {invoice.days_overdue && invoice.days_overdue > 0 && (
+                                {invoice.synthetic ? (
+                                  <span className="ml-1 text-xs font-normal text-gray-500">
+                                    (A/R not on an invoice)
+                                  </span>
+                                ) : null}
+                                {!invoice.synthetic &&
+                                invoice.days_overdue &&
+                                invoice.days_overdue > 0 ? (
                                   <span className="ml-2 text-xs text-red-600">
                                     ({invoice.days_overdue}d overdue)
                                   </span>
-                                )}
+                                ) : null}
                               </td>
                               <td className="px-4 py-3 text-sm text-gray-600">
                                 {formatDateOnly(invoice.invoice_date)}
@@ -577,15 +627,27 @@ function RecordPaymentReceivedInner() {
                               <td className="px-4 py-3 text-sm text-gray-600">
                                 {invoice.due_date
                                   ? formatDateOnly(invoice.due_date)
-                                  : '-'}
+                                  : '—'}
                               </td>
                               <td className="px-4 py-3 text-sm text-right text-gray-900">
-                                {currencySymbol}
-                                {(Number(invoice.total_amount ?? invoice.total) || 0).toFixed(2)}
+                                {invoice.synthetic ? (
+                                  '—'
+                                ) : (
+                                  <>
+                                    {currencySymbol}
+                                    {(Number(invoice.total_amount ?? invoice.total) || 0).toFixed(2)}
+                                  </>
+                                )}
                               </td>
                               <td className="px-4 py-3 text-sm text-right text-gray-600">
-                                {currencySymbol}
-                                {(Number(invoice.amount_paid) || 0).toFixed(2)}
+                                {invoice.synthetic ? (
+                                  '—'
+                                ) : (
+                                  <>
+                                    {currencySymbol}
+                                    {(Number(invoice.amount_paid) || 0).toFixed(2)}
+                                  </>
+                                )}
                               </td>
                               <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                                 {currencySymbol}
@@ -599,7 +661,7 @@ function RecordPaymentReceivedInner() {
                                   max={Number(invoice.balance_due) || 0}
                                   value={allocatedAmount}
                                   onChange={(e) =>
-                                    handleAllocationChange(invoice.id, Number(e.target.value))
+                                    handleAllocationChange(aid, Number(e.target.value))
                                   }
                                   className={AMOUNT_ALLOCATE_GREEN_CLASS}
                                 />

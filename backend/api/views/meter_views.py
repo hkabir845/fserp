@@ -17,6 +17,7 @@ def _meter_to_json(m):
         "dispenser_id": m.dispenser_id,
         "dispenser_name": m.dispenser.dispenser_name if m.dispenser_id else "",
         "island_name": m.dispenser.island.island_name if m.dispenser_id and m.dispenser.island_id else "",
+        "station_id": m.dispenser.island.station_id if m.dispenser_id and m.dispenser.island_id else None,
         "station_name": m.dispenser.island.station.station_name if m.dispenser_id and m.dispenser.island_id else "",
         "current_reading": str(m.current_reading),
         "last_reset_date": _serialize_datetime(m.last_reset_date),

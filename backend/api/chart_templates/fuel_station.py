@@ -134,6 +134,13 @@ ERP_AUTOMATION_ACCOUNT_GUIDE: List[Dict[str, str]] = [
         "purpose": "Default expense for vendor bills (full bill amount to expense when bill posts).",
     },
     {
+        "account_code": "6910",
+        "purpose": (
+            "Donation and social support paid from the station: record in POS; debits 6910 and credits 1010 Cash on Hand "
+            "or the selected cash register’s linked GL (same as sales deposits)."
+        ),
+    },
+    {
         "account_code": "3000",
         "purpose": "Owner Equity / Shareholder Capital (3000): credit this (and debit a bank/cash GL) via a manual journal when owners invest cash.",
     },
@@ -301,6 +308,7 @@ FUEL_STATION_COA_ROWS: List[Dict[str, Any]] = [
     _row("6800", "Professional Fees — Legal & Accounting", "expense", "office_general_administrative_expenses", "Auditors, lawyers, consultants."),
     _row("6810", "IT & Software Subscriptions", "expense", "office_general_administrative_expenses", "SaaS, support, cybersecurity.", ("full",)),
     _row("6900", "Office & Administrative", "expense", "office_general_administrative_expenses", "Supplies, postage, small tools not capitalized."),
+    _row("6910", "Donation & Social Support", "expense", "other_business_expenses", "Charitable giving and local social support paid from station cash; use POS to debit expense and credit cash in hand (1010) or the active register."),
     _row("7000", "Security & Cash Handling Services", "expense", "other_business_expenses", "CIT, alarms, monitoring."),
     _row("7100", "Fuel Freight & Delivery In", "expense", "supplies_materials", "Transport surcharges on wet-stock deliveries."),
     _row("7200", "Licenses, Permits & Memberships", "expense", "other_business_expenses", "Station licenses, industry association dues."),
@@ -453,6 +461,58 @@ def ensure_loan_module_default_accounts(company_id: int) -> Dict[str, Any]:
         "added": added,
         "skipped": len(LOAN_MODULE_DEFAULT_COA_ROWS) - added,
         "codes": [r["account_code"] for r in LOAN_MODULE_DEFAULT_COA_ROWS],
+    }
+
+
+# Same as the 6910 line in FUEL_STATION_COA_ROWS — used to backfill tenants missing the row.
+DONATION_SUPPORT_DEFAULT_COA_ROWS: List[Dict[str, Any]] = [
+    _row(
+        "6910",
+        "Donation & Social Support",
+        "expense",
+        "other_business_expenses",
+        "Charitable giving and local social support paid from station cash; use POS to debit expense and credit cash in hand (1010) or the active register.",
+    ),
+]
+
+
+def ensure_donation_social_support_account(company_id: int) -> Dict[str, Any]:
+    """
+    Idempotently add 6910 Donation & Social Support if missing.
+    Use for companies created before that default existed; safe to call multiple times.
+    """
+    from django.utils import timezone
+
+    from api.models import ChartOfAccount
+
+    today = timezone.now().date()
+    existing_codes = set(
+        ChartOfAccount.objects.filter(company_id=company_id).values_list("account_code", flat=True)
+    )
+    added = 0
+    for item in DONATION_SUPPORT_DEFAULT_COA_ROWS:
+        code = item["account_code"]
+        if code in existing_codes:
+            continue
+        ChartOfAccount.objects.create(
+            company_id=company_id,
+            account_code=code,
+            account_name=item["account_name"],
+            account_type=item["account_type"],
+            account_sub_type=item.get("account_sub_type") or "",
+            description=item.get("description") or "",
+            parent_id=None,
+            opening_balance=Decimal("0"),
+            opening_balance_date=today,
+            is_active=True,
+        )
+        added += 1
+        existing_codes.add(code)
+    return {
+        "company_id": company_id,
+        "added": added,
+        "skipped": len(DONATION_SUPPORT_DEFAULT_COA_ROWS) - added,
+        "codes": [r["account_code"] for r in DONATION_SUPPORT_DEFAULT_COA_ROWS],
     }
 
 

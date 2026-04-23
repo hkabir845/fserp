@@ -159,7 +159,8 @@ function UsersPageContent() {
   const needsCompany =
     userFormData.role === 'admin' ||
     userFormData.role === 'accountant' ||
-    userFormData.role === 'cashier'
+    userFormData.role === 'cashier' ||
+    userFormData.role === 'operator'
 
   const handleSubmitUser = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -417,6 +418,7 @@ function UsersPageContent() {
                             user.role === 'admin' ? 'bg-blue-100 text-blue-800' :
                             user.role === 'accountant' ? 'bg-green-100 text-green-800' :
                             user.role === 'cashier' ? 'bg-yellow-100 text-yellow-800' :
+                            user.role === 'operator' ? 'bg-teal-100 text-teal-800' :
                             'bg-gray-100 text-gray-800'
                           }`}>
                             {user.role.replace('_', ' ').toUpperCase()}
@@ -535,6 +537,7 @@ function UsersPageContent() {
                         <option value="admin">Company Admin — email + password for one company</option>
                         <option value="accountant">Accountant (select company)</option>
                         <option value="cashier">Cashier (select company)</option>
+                        <option value="operator">Operator — POS: New sale and Donation only (select company)</option>
                       </select>
                     </div>
 

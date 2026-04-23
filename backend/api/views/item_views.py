@@ -16,6 +16,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id, _serialize_decimal
 from api.models import Item, Tank
+from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.item_catalog import item_tracks_physical_stock, normalize_item_type
 
 
@@ -248,6 +249,16 @@ def items_list_or_create(request):
                 {"detail": f"Another item already uses barcode '{bc}' in this company."},
                 status=409,
             )
+        inum, ierr = user_supplied_code_or_auto(
+            request.company_id,
+            Item,
+            "item_number",
+            "ITM",
+            (body.get("item_number") or "").strip() or None,
+            None,
+        )
+        if ierr:
+            return JsonResponse({"detail": ierr}, status=400)
         i = Item(
             company_id=request.company_id,
             name=name,
@@ -264,14 +275,20 @@ def items_list_or_create(request):
             is_pos_available=body.get("is_pos_available", True),
             is_active=body.get("is_active", True),
             image_url=_truncate(body.get("image_url"), 500),
+            item_number=inum or "",
         )
         try:
             i.save()
         except ValidationError as e:
             return JsonResponse({"detail": "Validation failed", "errors": e.message_dict if hasattr(e, "message_dict") else str(e)}, status=400)
         if not i.item_number:
-            i.item_number = f"ITM-{i.id}"
-            Item.objects.filter(pk=i.pk).update(item_number=i.item_number)
+            assigned, aerr = assign_string_code_if_empty(
+                request.company_id, Item, "item_number", "ITM", i.pk, None, None
+            )
+            if aerr:
+                i.delete()
+                return JsonResponse({"detail": aerr}, status=400)
+            i.item_number = assigned
         i2 = _items_queryset_with_tank_annotations(Item.objects.filter(pk=i.pk)).first()
         return JsonResponse(_item_to_json(i2 or i), status=201)
 

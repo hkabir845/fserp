@@ -3,12 +3,23 @@
 import { useEffect, useState } from 'react'
 import api from '@/lib/api'
 import { AMOUNT_SLATE_EDITABLE_CLASS } from '@/utils/amountFieldStyles'
+import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
+import { getCurrencySymbol } from '@/utils/currency'
 import { AlertCircle, Loader2, X } from 'lucide-react'
 
 interface BankAccount {
   id: number
   account_name: string
   current_balance: number | string | null
+  opening_balance?: string | number | null
+  opening_balance_date?: string | null
+}
+
+type ContactSnapshot = {
+  kind: 'customer' | 'vendor'
+  opening_balance: string
+  opening_balance_date?: string | null
+  current_balance: string
 }
 
 function normalizeBankAccountsFromApi(data: unknown): BankAccount[] {
@@ -21,14 +32,16 @@ function normalizeBankAccountsFromApi(data: unknown): BankAccount[] {
   }
   return rows
     .filter((row): row is Record<string, unknown> => row != null && typeof row === 'object')
-    .map((r) => {
+    .map((r): BankAccount | null => {
       const id = typeof r.id === 'number' ? r.id : Number(r.id)
       if (!Number.isFinite(id)) return null
       return {
         id,
         account_name: String(r.account_name ?? ''),
         current_balance: r.current_balance as BankAccount['current_balance'],
-      } satisfies BankAccount
+        opening_balance: r.opening_balance as string | number | null | undefined,
+        opening_balance_date: r.opening_balance_date as string | null | undefined,
+      }
     })
     .filter((a): a is BankAccount => a != null)
 }
@@ -87,6 +100,8 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
   const [amount, setAmount] = useState('')
   const [bankAccountId, setBankAccountId] = useState<string>('')
   const [allocationsJson, setAllocationsJson] = useState('[]')
+  const [contactSnapshot, setContactSnapshot] = useState<ContactSnapshot | null>(null)
+  const [currencySymbol, setCurrencySymbol] = useState('৳')
 
   useEffect(() => {
     if (!open || !paymentId) return
@@ -94,12 +109,17 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
     ;(async () => {
       setLoading(true)
       setError('')
+      setContactSnapshot(null)
       try {
-        const [payRes, bankRes] = await Promise.all([
+        const [payRes, bankRes, companyRes] = await Promise.all([
           api.get<PaymentDetailPayload>(`/payments/${paymentId}/`),
           api.get('/bank-accounts/'),
+          api.get('/companies/current').catch(() => ({ data: null })),
         ])
         if (cancelled) return
+        if (companyRes.data?.currency) {
+          setCurrencySymbol(getCurrencySymbol(companyRes.data.currency))
+        }
         setBanks(normalizeBankAccountsFromApi(bankRes.data))
         const p = payRes.data
         setDetail(p)
@@ -116,6 +136,38 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
           return { bill_id: a.bill_id, amount: String(a.allocated_amount ?? a.amount ?? '') }
         })
         setAllocationsJson(JSON.stringify(allocs, null, 2))
+
+        if (p.payment_type === 'received' && p.customer_id) {
+          try {
+            const cr = await api.get(`/customers/${p.customer_id}/`)
+            if (cancelled) return
+            const c = cr.data as Record<string, string | undefined>
+            setContactSnapshot({
+              kind: 'customer',
+              opening_balance: String(c.opening_balance ?? '0'),
+              opening_balance_date: c.opening_balance_date ?? null,
+              current_balance: String(c.current_balance ?? '0'),
+            })
+          } catch {
+            if (!cancelled) setContactSnapshot(null)
+          }
+        } else if (p.payment_type === 'made' && p.vendor_id) {
+          try {
+            const vr = await api.get(`/vendors/${p.vendor_id}/`)
+            if (cancelled) return
+            const v = vr.data as Record<string, string | undefined>
+            setContactSnapshot({
+              kind: 'vendor',
+              opening_balance: String(v.opening_balance ?? '0'),
+              opening_balance_date: v.opening_balance_date ?? null,
+              current_balance: String(v.current_balance ?? '0'),
+            })
+          } catch {
+            if (!cancelled) setContactSnapshot(null)
+          }
+        } else {
+          setContactSnapshot(null)
+        }
       } catch (e) {
         console.error(e)
         if (!cancelled) setError('Could not load this payment.')
@@ -218,6 +270,16 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
             </div>
           )}
 
+          {contactSnapshot && !loading && (
+            <ContactArApBalances
+              role={contactSnapshot.kind}
+              openingBalance={contactSnapshot.opening_balance}
+              openingBalanceDate={contactSnapshot.opening_balance_date}
+              currentBalance={contactSnapshot.current_balance}
+              currencySymbol={currencySymbol}
+            />
+          )}
+
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
@@ -274,6 +336,21 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                       </option>
                     ))}
                   </select>
+                  {bankAccountId
+                    ? (() => {
+                        const acc = banks.find((x) => String(x.id) === bankAccountId)
+                        if (!acc) return null
+                        return (
+                          <BankRegisterBalances
+                            openingBalance={acc.opening_balance}
+                            openingBalanceDate={acc.opening_balance_date}
+                            currentBalance={acc.current_balance}
+                            currencySymbol={currencySymbol}
+                            className="mt-2"
+                          />
+                        )
+                      })()
+                    : null}
                 </div>
                 <div className="col-span-2">
                   <label className="mb-1 block text-xs font-medium text-slate-600">Reference</label>

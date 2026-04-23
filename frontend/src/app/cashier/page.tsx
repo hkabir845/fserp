@@ -11,14 +11,18 @@ import api, { getApiBaseUrl } from "@/lib/api"
 import { useCompany } from "@/contexts/CompanyContext"
 import { getCurrencySymbol, formatNumber } from "@/utils/currency"
 import { formatDate } from "@/utils/date"
+import { isLimitedPosRegisterUser } from "@/utils/rbac"
 import { escapeHtml, printDocument, printLedgerStatement } from "@/utils/printDocument"
+import { loadPrintBranding } from "@/utils/printBranding"
 import type { LedgerPayload } from "@/components/ContactLedgerPage"
 import {
+  Banknote,
   Building2,
   CheckCircle,
   ChevronDown,
   Clock,
   Fuel,
+  HeartHandshake,
   Keyboard,
   Loader2,
   LogOut,
@@ -31,6 +35,8 @@ import {
   XCircle,
 } from "lucide-react"
 import { CashierCollectPayment } from "./CashierCollectPayment"
+import { CashierDonation } from "./CashierDonation"
+import { CashierPayBills } from "./CashierPayBills"
 
 const inputClassName =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -96,6 +102,13 @@ type BankRegister = {
   bank_name?: string
   chart_account_id?: number | null
   is_active?: boolean
+  is_equity_register?: boolean
+  current_balance?: string | number | null
+}
+
+type Vendor = {
+  id: number
+  display_name: string
 }
 
 type POSItem = {
@@ -205,6 +218,7 @@ export default function CashierPOSPage() {
 
   const [company, setCompany] = useState<Company | null>(null)
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [vendors, setVendors] = useState<Vendor[]>([])
   const [nozzles, setNozzles] = useState<Nozzle[]>([])
   const [posItems, setPosItems] = useState<POSItem[]>([])
 
@@ -230,8 +244,8 @@ export default function CashierPOSPage() {
   const [showInvoicePreview, setShowInvoicePreview] = useState(false)
   const [printMenuOpen, setPrintMenuOpen] = useState(false)
   const [printBusy, setPrintBusy] = useState(false)
-  /** New sale vs collect on open A/R (due bills). */
-  const [posMode, setPosMode] = useState<"sale" | "collect">("sale")
+  /** New sale vs collect A/R vs pay A/P. */
+  const [posMode, setPosMode] = useState<"sale" | "collect" | "pay" | "donation">("sale")
   const printMenuRef = useRef<HTMLDivElement | null>(null)
   const shortcutsRef = useRef<HTMLDivElement | null>(null)
   const handleUnifiedSaleRef = useRef<() => Promise<void>>(async () => {})
@@ -239,6 +253,12 @@ export default function CashierPOSPage() {
   const canCompleteUnifiedSaleRef = useRef(false)
   /** Avoid POSTing line items from company A after superadmin switched context to company B. */
   const prevTenantCompanyIdRef = useRef<number | undefined>(undefined)
+  const limitedPosRegister = isLimitedPosRegisterUser()
+
+  useEffect(() => {
+    if (!limitedPosRegister) return
+    if (posMode === "collect" || posMode === "pay") setPosMode("sale")
+  }, [limitedPosRegister, posMode])
 
   useEffect(() => {
     const tid = selectedCompany?.id ?? undefined
@@ -347,10 +367,11 @@ export default function CashierPOSPage() {
         return
       }
 
-      const [nozzleRes, customerRes, companyRes, itemRes, tanksRes, banksRes] =
+      const [nozzleRes, customerRes, vendorRes, companyRes, itemRes, tanksRes, banksRes] =
         await Promise.all([
           api.get("/nozzles/details/"),
           api.get("/customers/"),
+          api.get("/vendors/", { params: { skip: 0, limit: 10000 } }),
           api.get("/companies/current/"),
           api.get("/items/", { params: { pos_only: "true" } }),
           api.get("/tanks/"),
@@ -366,9 +387,11 @@ export default function CashierPOSPage() {
               b.is_active !== false &&
               (typeof b.id === "number" || typeof b.id === "string")
           )
-          .map((b: BankRegister & { id?: unknown }) => ({
+          .map((b: BankRegister & { id?: unknown; is_equity_register?: boolean; current_balance?: unknown }) => ({
             ...b,
             id: typeof b.id === "string" ? Number(b.id) : b.id,
+            is_equity_register: b.is_equity_register === true,
+            current_balance: b.current_balance,
           }))
           .filter((b: BankRegister) => Number.isFinite(b.id))
       )
@@ -389,6 +412,19 @@ export default function CashierPOSPage() {
       }
 
       setCustomers(Array.isArray(customerRes.data) ? customerRes.data : [])
+
+      const rawVendors = Array.isArray(vendorRes.data) ? vendorRes.data : []
+      setVendors(
+        rawVendors
+          .map((v: { id?: unknown; display_name?: string; company_name?: string; is_active?: boolean }) => {
+            const id = typeof v.id === "number" ? v.id : Number(v.id)
+            if (!Number.isFinite(id) || v.is_active === false) return null
+            const label =
+              (v.display_name || v.company_name || `Vendor #${id}`).trim() || `Vendor #${id}`
+            return { id, display_name: label }
+          })
+          .filter((v: Vendor | null): v is Vendor => v != null)
+      )
 
       const mapped = mapCompanyFromApi(companyRes.data as Record<string, unknown>)
       if (mapped) {
@@ -814,8 +850,9 @@ export default function CashierPOSPage() {
     (company?.company_name || "").trim() || selectedCompany?.name?.trim() || "Company"
   const posCompanyAddress = (company?.address || "").trim()
 
-  const openPosPrintWindow = (docTitle: string, bodyHtml: string) => {
-    const ok = printDocument({ title: docTitle, bodyHtml })
+  const openPosPrintWindow = async (docTitle: string, bodyHtml: string, stationNameOverride?: string | null) => {
+    const branding = await loadPrintBranding(api, stationNameOverride)
+    const ok = printDocument({ title: docTitle, bodyHtml, branding })
     if (!ok) toast.error("Allow pop-ups in your browser to print.")
     return ok
   }
@@ -827,6 +864,7 @@ export default function CashierPOSPage() {
       toast.error("Add fuel and/or products with a positive total before printing.")
       return
     }
+    const stationForPrint = (selectedNozzle?.station_name || "").trim() || null
     const custLabel = customerId
       ? customers.find(c => c.id === customerId)?.display_name || `ID ${customerId}`
       : "Walk-in"
@@ -858,8 +896,6 @@ export default function CashierPOSPage() {
     const body = `
       <div class="co">
         <h1>Invoice (draft) — POS</h1>
-        <div><strong>${escapeHtml(posCompanyLabel)}</strong></div>
-        ${posCompanyAddress ? `<div class="muted">${escapeHtml(posCompanyAddress)}</div>` : ""}
         <p class="muted">Printed ${escapeHtml(formatDate(new Date(), true))}</p>
       </div>
       <p class="muted">Customer: ${escapeHtml(custLabel)} · Payment: ${escapeHtml(
@@ -882,7 +918,7 @@ export default function CashierPOSPage() {
       formatNumber(grandTotal)
     )}</td></tr>
       </tbody></table>`
-    openPosPrintWindow(`Invoice draft ${inv}`, body)
+    void openPosPrintWindow(`Invoice draft ${inv}`, body, stationForPrint)
   }
 
   const printDraftFromMenu = () => {
@@ -906,8 +942,6 @@ export default function CashierPOSPage() {
       const body = `
         <div class="co">
           <h1>POS summary report</h1>
-          <div><strong>${escapeHtml(posCompanyLabel)}</strong></div>
-          ${posCompanyAddress ? `<div class="muted">${escapeHtml(posCompanyAddress)}</div>` : ""}
           <p class="muted">Business date (server): ${escapeHtml(today)} · Generated ${escapeHtml(
         formatDate(new Date(), true)
       )}</p>
@@ -926,7 +960,7 @@ export default function CashierPOSPage() {
         formatNumber(Number(s.total_revenue || 0))
       )}</td></tr>
         </tbody></table>`
-      openPosPrintWindow(`POS summary ${today}`, body)
+      await openPosPrintWindow(`POS summary ${today}`, body, null)
     } catch {
       toast.error("Could not load dashboard figures for printing.")
     } finally {
@@ -948,6 +982,7 @@ export default function CashierPOSPage() {
         toast.error("No ledger data returned.")
         return
       }
+      const branding = await loadPrintBranding(api, (selectedNozzle?.station_name || "").trim() || null)
       const ok = printLedgerStatement(
         {
           display_name: data.display_name,
@@ -958,11 +993,13 @@ export default function CashierPOSPage() {
           transactions: data.transactions,
         },
         {
-          companyName: posCompanyLabel,
-          companyAddress: posCompanyAddress || undefined,
+          companyName: branding.companyName,
+          companyAddress: branding.companyAddress,
+          stationName: branding.stationName,
           currencySymbol,
           documentTitle: "Customer account statement",
           printedAt: formatDate(new Date(), true),
+          branding,
         }
       )
       if (!ok) toast.error("Allow pop-ups in your browser to print.")
@@ -1172,14 +1209,14 @@ export default function CashierPOSPage() {
               Register mode
             </p>
             <div
-              className="inline-flex rounded-lg border border-border bg-muted/40 p-1"
+              className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted/40 p-1"
               role="group"
               aria-label="POS mode"
             >
               <button
                 type="button"
                 onClick={() => setPosMode("sale")}
-                className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
                   posMode === "sale"
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
@@ -1188,17 +1225,45 @@ export default function CashierPOSPage() {
                 <ShoppingCart className="h-4 w-4" />
                 New sale
               </button>
+              {!limitedPosRegister ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setPosMode("collect")}
+                    className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
+                      posMode === "collect"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Wallet className="h-4 w-4" />
+                    Collect due
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPosMode("pay")}
+                    className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
+                      posMode === "pay"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Banknote className="h-4 w-4" />
+                    Pay bills
+                  </button>
+                </>
+              ) : null}
               <button
                 type="button"
-                onClick={() => setPosMode("collect")}
-                className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  posMode === "collect"
+                onClick={() => setPosMode("donation")}
+                className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
+                  posMode === "donation"
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Wallet className="h-4 w-4" />
-                Collect due
+                <HeartHandshake className="h-4 w-4" />
+                Donation
               </button>
             </div>
           </div>
@@ -1209,6 +1274,27 @@ export default function CashierPOSPage() {
                 customers={customers}
                 currencySymbol={currencySymbol}
                 bankRegisters={bankRegisters}
+                onRecorded={() => loadInitialData()}
+              />
+            </div>
+          ) : null}
+
+          {posMode === "pay" ? (
+            <div className="mx-auto max-w-3xl">
+              <CashierPayBills
+                vendors={vendors}
+                currencySymbol={currencySymbol}
+                bankAccounts={bankRegisters}
+                onRecorded={() => loadInitialData()}
+              />
+            </div>
+          ) : null}
+
+          {posMode === "donation" ? (
+            <div className="mx-auto max-w-3xl">
+              <CashierDonation
+                currencySymbol={currencySymbol}
+                bankAccounts={bankRegisters}
                 onRecorded={() => loadInitialData()}
               />
             </div>

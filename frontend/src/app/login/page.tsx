@@ -353,7 +353,7 @@ export default function LoginPage() {
       const userRole = user?.role?.toLowerCase()
       if (userRole === 'super_admin') {
         router.push('/admin')
-      } else if (userRole === 'cashier') {
+      } else if (userRole === 'cashier' || userRole === 'operator') {
         router.push('/cashier')
       } else {
         router.push('/dashboard')

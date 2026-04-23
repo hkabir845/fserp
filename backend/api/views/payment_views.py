@@ -31,6 +31,8 @@ from api.services.gl_posting import (
     reverse_payment_received_posting,
 )
 from api.services.payment_allocation import (
+    customer_uninvoiced_receivable,
+    vendor_unbilled_payable,
     invoice_balance_due,
     invoice_balance_due_excluding_payment,
     refresh_bill_from_allocations,
@@ -38,6 +40,7 @@ from api.services.payment_allocation import (
     refresh_invoice_from_allocations,
     refresh_invoices_touched_by_payment,
 )
+from api.services.gl_posting import _is_walkin_customer
 from api.services.shift_sales import record_ar_collection_on_shift
 
 
@@ -267,6 +270,48 @@ def payments_received_outstanding(request):
                 "days_overdue": days_overdue,
             }
         )
+
+    def _append_uninvoiced_on_account(c: Customer) -> None:
+        if _is_walkin_customer(c):
+            return
+        u = customer_uninvoiced_receivable(cid, c)
+        if u <= Decimal("0.005"):
+            return
+        out.append(
+            {
+                "id": 0,
+                "synthetic": True,
+                "on_account": True,
+                "invoice_number": "On-account (opening / not invoiced)",
+                "invoice_date": _serialize_date(c.opening_balance_date) or _serialize_date(today),
+                "due_date": None,
+                "customer_id": c.id,
+                "customer_name": customer_display_name(c),
+                "total": str(u),
+                "total_amount": str(u),
+                "amount_paid": "0",
+                "balance_due": str(u),
+                "days_overdue": None,
+            }
+        )
+
+    if cust_param is not None and str(cust_param).strip() != "":
+        try:
+            cust_id = int(cust_param)
+        except (TypeError, ValueError):
+            cust_id = None
+        if cust_id is not None:
+            c = Customer.objects.filter(company_id=cid, id=cust_id).first()
+            if c:
+                _append_uninvoiced_on_account(c)
+    else:
+        cand = (
+            Customer.objects.filter(company_id=cid, is_active=True)
+            .filter(Q(current_balance__gt=0) | Q(opening_balance__gt=0))
+            .order_by("display_name", "id")
+        )
+        for c in cand:
+            _append_uninvoiced_on_account(c)
     return JsonResponse(out, safe=False)
 
 
@@ -278,6 +323,48 @@ def _invoice_allocation_row_amount(row: dict) -> Decimal:
     return _decimal(v)
 
 
+def _align_stored_receivable_before_receipt(company_id: int, customer_id: int) -> None:
+    """If A/R in subledger (opening / un-invoiced) is higher than stored current_balance, align it."""
+    c = (
+        Customer.objects.filter(company_id=company_id, id=customer_id)
+        .select_for_update()
+        .first()
+    )
+    if not c or _is_walkin_customer(c):
+        return
+    u = customer_uninvoiced_receivable(company_id, c)
+    cb0 = c.current_balance or Decimal("0")
+    if u > cb0 + Decimal("0.01"):
+        Customer.objects.filter(pk=c.id).update(current_balance=u)
+
+
+def _align_stored_ap_before_made_payment(company_id: int, vendor_id: int) -> None:
+    """If A/P in subledger exceeds stored vendor.current_balance, align it before a disbursement."""
+    v = (
+        Vendor.objects.filter(company_id=company_id, id=vendor_id)
+        .select_for_update()
+        .first()
+    )
+    if not v:
+        return
+    u = vendor_unbilled_payable(company_id, v)
+    cb0 = v.current_balance or Decimal("0")
+    if u > cb0 + Decimal("0.01"):
+        Vendor.objects.filter(pk=v.id).update(current_balance=u)
+
+
+def _is_on_account_allocation_row(row: dict) -> bool:
+    if row.get("on_account") is True:
+        return True
+    iid = row.get("invoice_id")
+    if iid is None or iid == "":
+        return False
+    try:
+        return int(iid) == 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _validate_invoice_allocations(
     company_id: int,
     customer_id: int,
@@ -285,28 +372,66 @@ def _validate_invoice_allocations(
     rows: list,
     *,
     exclude_payment_id: int | None = None,
-) -> tuple[bool, str, list[tuple[int, Decimal]]]:
+) -> tuple[bool, str, list[tuple[int, Decimal]], Decimal]:
+    """Returns (ok, err, invoice_alloc_pairs, on_account_total). on_account has no PaymentInvoice row."""
+    coerced_from_empty = bool((not rows) and amount and amount > 0)
+    if coerced_from_empty:
+        # Legacy: POST without allocation lines applies the full amount to A/R (not to a specific invoice).
+        rows = [{"invoice_id": 0, "allocated_amount": str(amount)}]
     if not rows:
-        return True, "", []
+        if amount > 0:
+            return False, "invoice_allocations must sum to payment amount", [], Decimal("0")
+        return True, "", [], Decimal("0")
+    cust = Customer.objects.filter(
+        id=customer_id, company_id=company_id
+    ).first()
+    if not cust:
+        return False, "Customer not found", [], Decimal("0")
+    ex_pay = None
+    if exclude_payment_id is not None:
+        ex_pay = Payment.objects.filter(
+            id=exclude_payment_id, company_id=company_id, payment_type="received"
+        ).first()
+    cap_on_account = customer_uninvoiced_receivable(company_id, cust, exclude_payment=ex_pay)
+
+    on_account_total = Decimal("0")
     total_alloc = Decimal("0")
     cleaned: list[tuple[int, Decimal]] = []
     for row in rows:
+        if not isinstance(row, dict):
+            return False, "invalid allocation", [], Decimal("0")
+        if _is_on_account_allocation_row(row):
+            try:
+                d_amt = _invoice_allocation_row_amount(row)
+            except Exception:
+                return False, "invalid on-account amount", [], Decimal("0")
+            if d_amt <= 0:
+                continue
+            on_account_total += d_amt
+            total_alloc += d_amt
+            continue
         iid = row.get("invoice_id")
         if iid is None:
             continue
         try:
+            iid = int(iid)
+        except (TypeError, ValueError):
+            return False, "invalid allocation", [], Decimal("0")
+        if iid == 0:
+            continue
+        try:
             d_amt = _invoice_allocation_row_amount(row)
         except Exception:
-            return False, "invalid allocation", []
+            return False, "invalid allocation", [], Decimal("0")
         if d_amt <= 0:
             continue
         inv = Invoice.objects.filter(
             id=iid, company_id=company_id, customer_id=customer_id
         ).prefetch_related("payment_allocations").first()
         if not inv:
-            return False, f"invoice {iid} invalid for customer", []
+            return False, f"invoice {iid} invalid for customer", [], Decimal("0")
         if inv.status == "draft":
-            return False, f"invoice {iid} is draft", []
+            return False, f"invoice {iid} is draft", [], Decimal("0")
         if exclude_payment_id is not None:
             open_amt = invoice_balance_due_excluding_payment(
                 inv, company_id, exclude_payment_id
@@ -314,12 +439,20 @@ def _validate_invoice_allocations(
         else:
             open_amt = invoice_balance_due(inv, company_id)
         if d_amt > open_amt + Decimal("0.01"):
-            return False, f"allocation exceeds balance for invoice {iid}", []
+            return False, f"allocation exceeds balance for invoice {iid}", [], Decimal("0")
         cleaned.append((inv.id, d_amt))
         total_alloc += d_amt
+    if on_account_total > cap_on_account + Decimal("0.01"):
+        if not coerced_from_empty or cap_on_account > Decimal("0.01"):
+            return (
+                False,
+                "on-account amount exceeds unapplied receivable (not covered by open invoices)",
+                [],
+                Decimal("0"),
+            )
     if abs(total_alloc - amount) > Decimal("0.01"):
-        return False, "invoice_allocations must sum to payment amount", []
-    return True, "", cleaned
+        return False, "invoice_allocations must sum to payment amount", [], Decimal("0")
+    return True, "", cleaned, on_account_total
 
 
 @csrf_exempt
@@ -343,7 +476,7 @@ def payments_received_create(request):
     alloc_rows = body.get("invoice_allocations") or body.get("allocations") or []
     if alloc_rows and not isinstance(alloc_rows, list):
         return JsonResponse({"detail": "invoice_allocations must be a list"}, status=400)
-    ok, msg, cleaned = _validate_invoice_allocations(
+    ok, msg, cleaned, on_acct = _validate_invoice_allocations(
         request.company_id, int(customer_id), amount, alloc_rows
     )
     if not ok:
@@ -374,6 +507,10 @@ def payments_received_create(request):
     pm_norm = _normalize_payment_method(body)
 
     with transaction.atomic():
+        if on_acct and on_acct > 0:
+            _align_stored_receivable_before_receipt(
+                request.company_id, int(customer_id)
+            )
         p = Payment(
             company_id=request.company_id,
             payment_type="received",
@@ -436,6 +573,18 @@ def _bill_allocation_row_amount(row: dict) -> Decimal:
     return _decimal(v)
 
 
+def _is_on_account_bill_row(row: dict) -> bool:
+    if row.get("on_account") is True:
+        return True
+    bid = row.get("bill_id")
+    if bid is None or bid == "":
+        return False
+    try:
+        return int(bid) == 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _validate_bill_allocations(
     company_id: int,
     vendor_id: int,
@@ -443,28 +592,62 @@ def _validate_bill_allocations(
     rows: list,
     *,
     exclude_payment_id: int | None = None,
-) -> tuple[bool, str, list[tuple[int, Decimal]]]:
+) -> tuple[bool, str, list[tuple[int, Decimal]], Decimal]:
     from api.services.payment_allocation import (
         total_allocated_to_bill,
         total_allocated_to_bill_excluding_payment,
     )
 
+    coerced_from_empty = bool((not rows) and amount and amount > 0)
+    if coerced_from_empty:
+        rows = [{"bill_id": 0, "allocated_amount": str(amount)}]
     if not rows:
-        return True, "", []
+        if amount > 0:
+            return False, "bill_allocations must sum to payment amount", [], Decimal("0")
+        return True, "", [], Decimal("0")
+    v = Vendor.objects.filter(id=vendor_id, company_id=company_id).first()
+    if not v:
+        return False, "Vendor not found", [], Decimal("0")
+    ex_pay = None
+    if exclude_payment_id is not None:
+        ex_pay = Payment.objects.filter(
+            id=exclude_payment_id, company_id=company_id, payment_type="made"
+        ).first()
+    cap_on = vendor_unbilled_payable(company_id, v, exclude_payment=ex_pay)
+
+    on_account_total = Decimal("0")
     total_alloc = Decimal("0")
     cleaned: list[tuple[int, Decimal]] = []
     for row in rows:
+        if not isinstance(row, dict):
+            return False, "invalid allocation", [], Decimal("0")
+        if _is_on_account_bill_row(row):
+            try:
+                d_amt = _bill_allocation_row_amount(row)
+            except Exception:
+                return False, "invalid on-account amount", [], Decimal("0")
+            if d_amt <= 0:
+                continue
+            on_account_total += d_amt
+            total_alloc += d_amt
+            continue
         bid = row.get("bill_id")
         if bid is None:
+            continue
+        try:
+            bid = int(bid)
+        except (TypeError, ValueError):
+            return False, "invalid allocation", [], Decimal("0")
+        if bid == 0:
             continue
         d_amt = _bill_allocation_row_amount(row)
         if d_amt <= 0:
             continue
         bill = Bill.objects.filter(id=bid, company_id=company_id, vendor_id=vendor_id).first()
         if not bill:
-            return False, f"bill {bid} invalid for vendor", []
+            return False, f"bill {bid} invalid for vendor", [], Decimal("0")
         if bill.status == "draft":
-            return False, f"bill {bid} is draft", []
+            return False, f"bill {bid} is draft", [], Decimal("0")
         if exclude_payment_id is not None:
             paid = total_allocated_to_bill_excluding_payment(
                 company_id, bill.id, exclude_payment_id
@@ -473,12 +656,20 @@ def _validate_bill_allocations(
             paid = total_allocated_to_bill(company_id, bill.id)
         open_amt = max(Decimal("0"), (bill.total or Decimal("0")) - paid)
         if d_amt > open_amt + Decimal("0.01"):
-            return False, f"allocation exceeds balance for bill {bid}", []
+            return False, f"allocation exceeds balance for bill {bid}", [], Decimal("0")
         cleaned.append((bill.id, d_amt))
         total_alloc += d_amt
+    if on_account_total > cap_on + Decimal("0.01"):
+        if not coerced_from_empty or cap_on > Decimal("0.01"):
+            return (
+                False,
+                "on-account amount exceeds unbilled A/P (not covered by open bills)",
+                [],
+                Decimal("0"),
+            )
     if abs(total_alloc - amount) > Decimal("0.01"):
-        return False, "bill_allocations must sum to payment amount", []
-    return True, "", cleaned
+        return False, "bill_allocations must sum to payment amount", [], Decimal("0")
+    return True, "", cleaned, on_account_total
 
 
 def _vendor_display_name(vendor) -> str:
@@ -555,6 +746,47 @@ def payments_made_outstanding(request):
         row = _outstanding_bill_payload(cid, b)
         if row:
             out.append(row)
+
+    def _append_unbilled_on_account(v: Vendor) -> None:
+        u = vendor_unbilled_payable(cid, v)
+        if u <= Decimal("0.005"):
+            return
+        t = date.today()
+        out.append(
+            {
+                "id": 0,
+                "synthetic": True,
+                "on_account": True,
+                "bill_number": "On-account (opening / not on a bill)",
+                "bill_date": _serialize_date(v.opening_balance_date) or _serialize_date(t),
+                "due_date": None,
+                "vendor_id": v.id,
+                "vendor_name": _vendor_display_name(v),
+                "status": "on_account",
+                "total": str(u),
+                "total_amount": str(u),
+                "amount_paid": "0",
+                "balance_due": str(u),
+                "days_overdue": None,
+            }
+        )
+
+    if vendor_id is not None and str(vendor_id).strip() != "":
+        try:
+            v_only_id = int(vendor_id)
+        except (TypeError, ValueError):
+            v_only_id = None
+        if v_only_id is not None:
+            ve = Vendor.objects.filter(company_id=cid, id=v_only_id).first()
+            if ve:
+                _append_unbilled_on_account(ve)
+    else:
+        for v in (
+            Vendor.objects.filter(company_id=cid, is_active=True)
+            .filter(Q(current_balance__gt=0) | Q(opening_balance__gt=0))
+            .order_by("display_name", "company_name", "id")
+        ):
+            _append_unbilled_on_account(v)
     return JsonResponse(out, safe=False)
 
 
@@ -579,13 +811,17 @@ def payments_made_create(request):
     alloc_rows = body.get("bill_allocations") or body.get("allocations") or []
     if alloc_rows and not isinstance(alloc_rows, list):
         return JsonResponse({"detail": "bill_allocations must be a list"}, status=400)
-    ok, msg, cleaned = _validate_bill_allocations(
+    ok, msg, cleaned, on_acct = _validate_bill_allocations(
         request.company_id, int(vendor_id), amount, alloc_rows
     )
     if not ok:
         return JsonResponse({"detail": msg}, status=400)
 
     with transaction.atomic():
+        if on_acct and on_acct > 0:
+            _align_stored_ap_before_made_payment(
+                request.company_id, int(vendor_id)
+            )
         p = Payment(
             company_id=request.company_id,
             payment_type="made",
@@ -934,7 +1170,7 @@ def payment_detail_update_delete(request, payment_id: int):
                 return JsonResponse(
                     {"detail": "invoice_allocations must be a list"}, status=400
                 )
-            ok, msg, cleaned = _validate_invoice_allocations(
+            ok, msg, cleaned, on_acct = _validate_invoice_allocations(
                 cid,
                 int(customer_id),
                 amount,
@@ -950,6 +1186,8 @@ def payment_detail_update_delete(request, payment_id: int):
                 if not ok:
                     return JsonResponse({"detail": msg}, status=400)
                 p.refresh_from_db()
+                if on_acct and on_acct > 0:
+                    _align_stored_receivable_before_receipt(cid, int(customer_id))
                 p.payment_date = _parse_date(body.get("payment_date")) or p.payment_date
                 p.payment_method = _normalize_payment_method(body)
                 p.reference = (body.get("reference_number") or body.get("reference") or "").strip()[
@@ -1023,7 +1261,7 @@ def payment_detail_update_delete(request, payment_id: int):
                 ]
             if alloc_rows and not isinstance(alloc_rows, list):
                 return JsonResponse({"detail": "bill_allocations must be a list"}, status=400)
-            ok, msg, cleaned = _validate_bill_allocations(
+            ok, msg, cleaned, on_acct = _validate_bill_allocations(
                 cid, int(vendor_id), amount, alloc_rows, exclude_payment_id=p.id
             )
             if not ok:
@@ -1035,6 +1273,8 @@ def payment_detail_update_delete(request, payment_id: int):
                 if not ok:
                     return JsonResponse({"detail": msg}, status=400)
                 p.refresh_from_db()
+                if on_acct and on_acct > 0:
+                    _align_stored_ap_before_made_payment(cid, int(vendor_id))
                 p.payment_date = _parse_date(body.get("payment_date")) or p.payment_date
                 p.payment_method = _normalize_payment_method(body)
                 p.reference = (body.get("reference_number") or body.get("reference") or "").strip()[

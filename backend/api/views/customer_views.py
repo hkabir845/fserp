@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Customer
+from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.contact_ledgers import build_customer_ledger, ledger_query_dates
 
 
@@ -83,6 +84,16 @@ def customers_list(request):
                 },
                 status=400,
             )
+        cnum, cerr = user_supplied_code_or_auto(
+            request.company_id,
+            Customer,
+            "customer_number",
+            "CUST",
+            (body.get("customer_number") or "").strip() or None,
+            None,
+        )
+        if cerr:
+            return JsonResponse({"detail": cerr}, status=400)
         c = Customer(
             company_id=request.company_id,
             display_name=display_name or company_name or first_name,
@@ -104,11 +115,17 @@ def customers_list(request):
                 body.get("current_balance"), _decimal(body.get("opening_balance"))
             ),
             is_active=bool(body.get("is_active", True)),
+            customer_number=cnum or "",
         )
         c.save()
         if not c.customer_number:
-            c.customer_number = f"CUST-{c.id}"
-            Customer.objects.filter(pk=c.pk).update(customer_number=c.customer_number)
+            assigned, aerr = assign_string_code_if_empty(
+                request.company_id, Customer, "customer_number", "CUST", c.pk, None, None
+            )
+            if aerr:
+                c.delete()
+                return JsonResponse({"detail": aerr}, status=400)
+            c.customer_number = assigned
         return JsonResponse(_customer_to_json(c), status=201)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
@@ -180,7 +197,11 @@ def customer_detail(request, customer_id: int):
         if "bank_routing_number" in body:
             c.bank_routing_number = (body.get("bank_routing_number") or "")[:64]
         if "opening_balance" in body:
-            c.opening_balance = _decimal(body.get("opening_balance"), c.opening_balance)
+            new_ob = _decimal(body.get("opening_balance"), c.opening_balance)
+            old_ob = c.opening_balance
+            c.opening_balance = new_ob
+            if "current_balance" not in body:
+                c.current_balance = (c.current_balance or Decimal("0")) + (new_ob - old_ob)
         if "opening_balance_date" in body:
             c.opening_balance_date = _parse_date(body.get("opening_balance_date"))
         if "current_balance" in body:

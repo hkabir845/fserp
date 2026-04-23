@@ -1,17 +1,24 @@
-"""HR: employees + manual employee subledger; payroll run headers (CRUD, no GL yet)."""
+"""HR: employees, employee subledger, payroll run (totals + optional salary GL post)."""
 from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Max, Sum
+from django.db.models import Sum
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from api.models import Employee, EmployeeLedgerEntry, PayrollRun
+from api.models import Employee, EmployeeLedgerEntry, JournalEntry, PayrollRun
+from api.services.reference_code import (
+    assign_string_code_if_empty,
+    first_free_suffix,
+    collect_used_suffixes,
+    format_code,
+)
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.services.contact_ledgers import build_employee_ledger, ledger_query_dates
+from api.services.gl_posting import post_payroll_salary
 
 
 def _serialize_date(d):
@@ -60,16 +67,15 @@ def _employee_to_json(e: Employee) -> dict:
 
 
 def _next_employee_code_from_id(employee_id: int) -> str:
-    """Stable code after insert; matches suggested next code when ids are sequential."""
+    """Legacy helper; new auto-codes use gap-based EMP-##### assignment."""
     return f"EMP-{employee_id:05d}"
 
 
 def _suggested_next_employee_code(company_id: int) -> str:
-    """Preview of the code the next employee row will get if created without a custom code."""
-    max_id = (
-        Employee.objects.filter(company_id=company_id).aggregate(m=Max("id")).get("m") or 0
-    )
-    return _next_employee_code_from_id(max_id + 1)
+    """Next suggested EMP-#####: lowest free integer suffix, zero-padded to 5 digits."""
+    used = collect_used_suffixes(company_id, Employee, "employee_code", "EMP")
+    n = first_free_suffix(used)
+    return format_code("EMP", n, 5)
 
 
 def _refresh_employee_balance(employee_id: int) -> None:
@@ -157,7 +163,12 @@ def employees_list_or_create(request):
             is_active=bool(body.get("is_active", True)),
         )
         e.save()
-        gen = _next_employee_code_from_id(e.id)
+        gen, gen_err = assign_string_code_if_empty(
+            cid, Employee, "employee_code", "EMP", e.id, None, 5
+        )
+        if gen_err:
+            e.delete()
+            return JsonResponse({"detail": gen_err}, status=400)
         Employee.objects.filter(pk=e.pk).update(employee_code=gen, employee_number=gen)
         e.refresh_from_db()
     return JsonResponse(_employee_to_json(e), status=201)
@@ -288,6 +299,13 @@ def employee_ledger_entries(request, employee_id: int):
 
 
 def _payroll_run_to_json(p: PayrollRun) -> dict:
+    jn = ""
+    if p.salary_journal_id:
+        sj = getattr(p, "salary_journal", None)
+        if sj is None:
+            sj = JournalEntry.objects.filter(pk=p.salary_journal_id).only("entry_number").first()
+        if sj is not None:
+            jn = (sj.entry_number or "").strip()
     return {
         "id": p.id,
         "payroll_number": p.payroll_number or "",
@@ -299,6 +317,9 @@ def _payroll_run_to_json(p: PayrollRun) -> dict:
         "total_net": float(p.total_net or Decimal("0")),
         "status": (p.status or "draft").strip().lower(),
         "notes": p.notes or "",
+        "salary_journal_entry_id": p.salary_journal_id,
+        "salary_journal_entry_number": jn,
+        "is_salary_posted": bool(p.salary_journal_id),
         "created_at": p.created_at.isoformat() if p.created_at else "",
         "updated_at": p.updated_at.isoformat() if p.updated_at else "",
     }
@@ -314,6 +335,17 @@ def _validate_payroll_period(start: date | None, end: date | None, pay: date | N
     return None
 
 
+def _validate_payroll_amounts(gross: Decimal, ded: Decimal, net: Decimal) -> str | None:
+    g = (gross or Decimal("0")).quantize(Decimal("0.01"))
+    d = (ded or Decimal("0")).quantize(Decimal("0.01"))
+    n = (net or Decimal("0")).quantize(Decimal("0.01"))
+    if d < 0 or n < 0 or g < 0:
+        return "Gross, deductions, and net must be non-negative"
+    if abs(g - d - n) > Decimal("0.02"):
+        return "Gross must equal deductions + net pay"
+    return None
+
+
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 @auth_required
@@ -321,7 +353,7 @@ def _validate_payroll_period(start: date | None, end: date | None, pay: date | N
 def payroll_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
-        qs = PayrollRun.objects.filter(company_id=cid)
+        qs = PayrollRun.objects.filter(company_id=cid).select_related("salary_journal")
         return JsonResponse([_payroll_run_to_json(p) for p in qs], safe=False)
 
     body, err = parse_json_body(request)
@@ -340,12 +372,30 @@ def payroll_list_or_create(request):
     else:
         notes_str = str(notes)[:5000]
 
+    g, d, n = Decimal("0"), Decimal("0"), Decimal("0")
+    if any(
+        k in body
+        for k in ("total_gross", "total_deductions", "total_net")
+    ):
+        g = _decimal(body.get("total_gross"), Decimal("0"))
+        d = _decimal(body.get("total_deductions"), Decimal("0"))
+        if "total_net" in body and body.get("total_net") is not None and str(body.get("total_net")).strip() != "":
+            n = _decimal(body.get("total_net"), Decimal("0"))
+        else:
+            n = (g or Decimal("0")) - (d or Decimal("0"))
+        aerr = _validate_payroll_amounts(g, d, n)
+        if aerr:
+            return JsonResponse({"detail": aerr}, status=400)
+
     p = PayrollRun(
         company_id=cid,
         pay_period_start=ps,
         pay_period_end=pe,
         payment_date=pd,
         notes=notes_str,
+        total_gross=g,
+        total_deductions=d,
+        total_net=n,
     )
     p.save()
     if not p.payroll_number:
@@ -360,7 +410,11 @@ def payroll_list_or_create(request):
 @require_company_id
 def payroll_detail(request, payroll_id: int):
     cid = request.company_id
-    p = PayrollRun.objects.filter(pk=payroll_id, company_id=cid).first()
+    p = (
+        PayrollRun.objects.filter(pk=payroll_id, company_id=cid)
+        .select_related("salary_journal")
+        .first()
+    )
     if not p:
         return JsonResponse({"detail": "Not found"}, status=404)
 
@@ -368,6 +422,14 @@ def payroll_detail(request, payroll_id: int):
         return JsonResponse(_payroll_run_to_json(p))
 
     if request.method == "PUT":
+        if p.salary_journal_id:
+            return JsonResponse(
+                {
+                    "detail": "This payroll is posted to the general ledger. Amounts and dates are locked; "
+                    "reverse the linked journal in accounting if you must correct it."
+                },
+                status=400,
+            )
         body, err = parse_json_body(request)
         if err:
             return err
@@ -383,8 +445,196 @@ def payroll_detail(request, payroll_id: int):
         if "notes" in body:
             n = body.get("notes")
             p.notes = "" if n is None else str(n)[:5000]
+        if "total_gross" in body or "total_deductions" in body or "total_net" in body:
+            g = _decimal(
+                body.get("total_gross") if "total_gross" in body else p.total_gross,
+                p.total_gross,
+            )
+            d = _decimal(
+                body.get("total_deductions") if "total_deductions" in body else p.total_deductions,
+                p.total_deductions,
+            )
+            if "total_net" in body and body.get("total_net") is not None and str(body.get("total_net")).strip() != "":
+                n = _decimal(body.get("total_net"), p.total_net)
+            else:
+                n = (g or Decimal("0")) - (d or Decimal("0"))
+            aerr = _validate_payroll_amounts(
+                g or Decimal("0"), d or Decimal("0"), n or Decimal("0")
+            )
+            if aerr:
+                return JsonResponse({"detail": aerr}, status=400)
+            p.total_gross = g
+            p.total_deductions = d
+            p.total_net = n
+        if "status" in body and body.get("status") is not None:
+            p.status = str(body.get("status") or "draft")[:32].lower()
         p.save()
         return JsonResponse(_payroll_run_to_json(p))
 
+    if p.salary_journal_id:
+        return JsonResponse(
+            {
+                "detail": "Cannot delete a payroll that is posted. Remove or unpost the salary journal first."
+            },
+            status=400,
+        )
     p.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def payroll_from_employees(request, payroll_id: int):
+    """
+    Set total_gross = sum of active employees' salary; deductions=0; net=gross.
+    Re-run if you change headcount. Not allowed after GL post.
+    """
+    cid = request.company_id
+    p = PayrollRun.objects.filter(pk=payroll_id, company_id=cid).first()
+    if not p:
+        return JsonResponse({"detail": "Not found"}, status=404)
+    if p.salary_journal_id:
+        return JsonResponse(
+            {"detail": "Already posted. Totals are locked."},
+            status=400,
+        )
+    s = (
+        Employee.objects.filter(
+            company_id=cid, is_active=True, salary__isnull=False, salary__gt=0
+        ).aggregate(t=Sum("salary"))["t"]
+    ) or Decimal("0")
+    s = s.quantize(Decimal("0.01"))
+    p.total_gross = s
+    p.total_deductions = Decimal("0")
+    p.total_net = s
+    p.save()
+    p.refresh_from_db()
+    p = (
+        PayrollRun.objects.filter(pk=p.id, company_id=cid)
+        .select_related("salary_journal")
+        .first()
+    )
+    return JsonResponse(_payroll_run_to_json(p), status=200)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def payroll_from_one_employee(request, payroll_id: int):
+    """
+    Set total_gross = one active employee's salary; deductions=0; net=gross.
+    Use after you paid that person (cash/bank/MFS) to align books without summing the whole team.
+    """
+    cid = request.company_id
+    p = PayrollRun.objects.filter(pk=payroll_id, company_id=cid).first()
+    if not p:
+        return JsonResponse({"detail": "Not found"}, status=404)
+    if p.salary_journal_id:
+        return JsonResponse(
+            {"detail": "Already posted. Totals are locked."},
+            status=400,
+        )
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    eid = body.get("employee_id")
+    try:
+        eid = int(eid)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "employee_id is required (integer)."}, status=400)
+
+    emp = (
+        Employee.objects.filter(pk=eid, company_id=cid)
+        .only(
+            "id",
+            "is_active",
+            "salary",
+            "first_name",
+            "last_name",
+            "employee_number",
+            "employee_code",
+        )
+        .first()
+    )
+    if not emp:
+        return JsonResponse({"detail": "Employee not found."}, status=404)
+    if not emp.is_active:
+        return JsonResponse({"detail": "Employee is not active."}, status=400)
+    s = (emp.salary or Decimal("0")).quantize(Decimal("0.01"))
+    if s <= 0:
+        return JsonResponse(
+            {
+                "detail": "This employee has no positive salary in HR. Open Employees and set salary, then try again.",
+            },
+            status=400,
+        )
+    p.total_gross = s
+    p.total_deductions = Decimal("0")
+    p.total_net = s
+    p.save()
+    p.refresh_from_db()
+    p = (
+        PayrollRun.objects.filter(pk=p.id, company_id=cid)
+        .select_related("salary_journal")
+        .first()
+    )
+    return JsonResponse(_payroll_run_to_json(p), status=200)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def payroll_post_to_books(request, payroll_id: int):
+    """
+    After you have paid staff from the bank, post one journal: Dr 6400, Cr 2210/2200? Cr bank.
+    Body: { "bank_account_id": <optional>, "pay_from_chart_account_id": <optional GL id for net pay> }
+    If a bank register is given, it takes priority over pay_from_chart_account_id.
+    """
+    cid = request.company_id
+    p = PayrollRun.objects.filter(pk=payroll_id, company_id=cid).first()
+    if not p:
+        return JsonResponse({"detail": "Not found"}, status=404)
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    bank_id = body.get("bank_account_id")
+    baid = None
+    if bank_id is not None and str(bank_id).strip() != "":
+        try:
+            baid = int(bank_id)
+        except (TypeError, ValueError):
+            baid = None
+    pcoa = body.get("pay_from_chart_account_id")
+    pcaid = None
+    if pcoa is not None and str(pcoa).strip() != "":
+        try:
+            pcaid = int(pcoa)
+        except (TypeError, ValueError):
+            pcaid = None
+
+    with transaction.atomic():
+        p = (
+            PayrollRun.objects.select_for_update()
+            .filter(pk=payroll_id, company_id=cid)
+            .first()
+        )
+        if not p:
+            return JsonResponse({"detail": "Not found"}, status=404)
+        je, em = post_payroll_salary(cid, p, baid, pcaid)
+        if em:
+            return JsonResponse({"detail": em}, status=400)
+    p2 = (
+        PayrollRun.objects.filter(pk=payroll_id, company_id=cid)
+        .select_related("salary_journal")
+        .first()
+    )
+    out = _payroll_run_to_json(p2)
+    out["message"] = (
+        f"General ledger entry {out.get('salary_journal_entry_number') or ''} created. "
+        f"Run date = payment date. Record actual bank payment outside the app; this updates your books only."
+    )
+    return JsonResponse(out, status=200)

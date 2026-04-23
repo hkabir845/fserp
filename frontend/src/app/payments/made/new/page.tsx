@@ -9,6 +9,7 @@ import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_EDITABLE_FULL_BLUE_CLASS } from '@/utils/amountFieldStyles'
+import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
 
 interface OutstandingBill {
   id: number
@@ -21,6 +22,12 @@ interface OutstandingBill {
   amount_paid: number
   balance_due: number
   days_overdue: number | null
+  synthetic?: boolean
+  on_account?: boolean
+}
+
+function allocBillId(bill: OutstandingBill) {
+  return bill.synthetic ? 0 : bill.id
 }
 
 function parseNum(v: unknown): number {
@@ -44,6 +51,8 @@ function normalizeOutstandingBill(row: Record<string, unknown>): OutstandingBill
       row.days_overdue === null || row.days_overdue === undefined
         ? null
         : parseNum(row.days_overdue),
+    synthetic: row.synthetic === true,
+    on_account: row.on_account === true,
   }
 }
 
@@ -61,6 +70,9 @@ interface Vendor {
   bank_name?: string | null
   bank_branch?: string | null
   bank_routing_number?: string | null
+  opening_balance?: string
+  opening_balance_date?: string | null
+  current_balance?: string
 }
 
 /** Coerce IDs and unwrap common API shapes so the vendor select value always matches an option. */
@@ -97,6 +109,12 @@ function normalizeVendorsFromApi(data: unknown): Vendor[] {
         bank_branch: r.bank_branch != null ? String(r.bank_branch) : null,
         bank_routing_number:
           r.bank_routing_number != null ? String(r.bank_routing_number) : null,
+        opening_balance: r.opening_balance != null ? String(r.opening_balance) : undefined,
+        opening_balance_date:
+          r.opening_balance_date != null && r.opening_balance_date !== ''
+            ? String(r.opening_balance_date)
+            : null,
+        current_balance: r.current_balance != null ? String(r.current_balance) : undefined,
       }
       return [v]
     })
@@ -132,6 +150,8 @@ interface BankAccount {
   account_number: string
   account_name: string
   current_balance: number | string | null
+  opening_balance?: string | number
+  opening_balance_date?: string | null
 }
 
 function normalizeBankAccountsFromApi(data: unknown): BankAccount[] {
@@ -146,7 +166,7 @@ function normalizeBankAccountsFromApi(data: unknown): BankAccount[] {
 
   return rows
     .filter((row): row is Record<string, unknown> => row != null && typeof row === 'object')
-    .map((r) => {
+    .map((r): BankAccount | null => {
       const id = typeof r.id === 'number' ? r.id : Number(r.id)
       if (!Number.isFinite(id)) return null
       return {
@@ -154,7 +174,12 @@ function normalizeBankAccountsFromApi(data: unknown): BankAccount[] {
         account_number: String(r.account_number ?? ''),
         account_name: String(r.account_name ?? ''),
         current_balance: r.current_balance as BankAccount['current_balance'],
-      } satisfies BankAccount
+        opening_balance: r.opening_balance as string | number | undefined,
+        opening_balance_date:
+          r.opening_balance_date != null && r.opening_balance_date !== ''
+            ? String(r.opening_balance_date)
+            : null,
+      }
     })
     .filter((a): a is BankAccount => a != null)
 }
@@ -249,7 +274,7 @@ function RecordPaymentMadeInner() {
         setPayFullBalanceBillIds(new Set())
         setAllocations(
           data.map((bill: OutstandingBill) => ({
-            bill_id: bill.id,
+            bill_id: allocBillId(bill),
             allocated_amount: 0,
             discount_amount: 0,
           }))
@@ -338,21 +363,24 @@ function RecordPaymentMadeInner() {
       : null
 
   const handleAllocationChange = (billId: number, amount: number) => {
-    const bill = outstandingBills.find((b) => b.id === billId)
+    const bill = outstandingBills.find(
+      (b) => (b.synthetic && billId === 0) || (!b.synthetic && b.id === billId)
+    )
     if (!bill) return
+    const allocKey = allocBillId(bill)
     const maxAmount = parseNum(bill.balance_due)
     const allocatedAmount = Math.min(Math.max(0, amount), maxAmount)
     const fullBalance = maxAmount
     const isFullLine = fullBalance > 0 && Math.abs(allocatedAmount - fullBalance) < 0.005
     setPayFullBalanceBillIds((prev) => {
       const next = new Set(prev)
-      if (isFullLine) next.add(billId)
-      else next.delete(billId)
+      if (isFullLine) next.add(allocKey)
+      else next.delete(allocKey)
       return next
     })
     setAllocations((prev) => {
       const updated = prev.map((alloc) =>
-        alloc.bill_id === billId ? { ...alloc, allocated_amount: allocatedAmount } : alloc
+        alloc.bill_id === allocKey ? { ...alloc, allocated_amount: allocatedAmount } : alloc
       )
       const newTotal = updated.reduce((sum, a) => sum + a.allocated_amount, 0)
       setTotalPaymentAmount(newTotal)
@@ -360,20 +388,20 @@ function RecordPaymentMadeInner() {
     })
   }
 
-  const handleRowPayFullToggle = (billId: number, checked: boolean) => {
-    const bill = outstandingBills.find((b) => b.id === billId)
+  const handleRowPayFullToggle = (allocKey: number, checked: boolean) => {
+    const bill = outstandingBills.find((b) => allocBillId(b) === allocKey)
     if (!bill) return
     const balance = parseNum(bill.balance_due)
     if (balance <= 0 && checked) return
     setPayFullBalanceBillIds((prev) => {
       const next = new Set(prev)
-      if (checked) next.add(billId)
-      else next.delete(billId)
+      if (checked) next.add(allocKey)
+      else next.delete(allocKey)
       return next
     })
     setAllocations((prev) => {
       const updated = prev.map((alloc) =>
-        alloc.bill_id === billId
+        alloc.bill_id === allocKey
           ? { ...alloc, allocated_amount: checked ? balance : 0 }
           : alloc
       )
@@ -388,13 +416,19 @@ function RecordPaymentMadeInner() {
     setTotalPaymentAmount(amount)
     if (amount > 0) {
       let remaining = amount
-      const newAllocations = outstandingBills.map((bill) => {
+      const order = [...outstandingBills].sort((a, b) => {
+        if (a.synthetic && !b.synthetic) return 1
+        if (!a.synthetic && b.synthetic) return -1
+        return new Date(a.bill_date).getTime() - new Date(b.bill_date).getTime()
+      })
+      const newAllocations = order.map((bill) => {
         if (remaining <= 0) {
-          return { bill_id: bill.id, allocated_amount: 0, discount_amount: 0 }
+          return { bill_id: allocBillId(bill), allocated_amount: 0, discount_amount: 0 }
         }
-        const allocatedAmount = Math.min(remaining, bill.balance_due)
+        const bd = parseNum(bill.balance_due)
+        const allocatedAmount = Math.min(remaining, bd)
         remaining -= allocatedAmount
-        return { bill_id: bill.id, allocated_amount: allocatedAmount, discount_amount: 0 }
+        return { bill_id: allocBillId(bill), allocated_amount: allocatedAmount, discount_amount: 0 }
       })
       setAllocations(newAllocations)
     }
@@ -581,6 +615,13 @@ function RecordPaymentMadeInner() {
                               .join(' · ')}
                           </p>
                         ) : null}
+                        <ContactArApBalances
+                          role="vendor"
+                          openingBalance={selectedVendor.opening_balance}
+                          openingBalanceDate={selectedVendor.opening_balance_date}
+                          currentBalance={selectedVendor.current_balance}
+                          currencySymbol={currencySymbol}
+                        />
                       </div>
                     </div>
                   )}
@@ -602,11 +643,27 @@ function RecordPaymentMadeInner() {
                     <option value="">Select Bank Account</option>
                     {bankAccounts.map((account) => (
                       <option key={account.id} value={String(account.id)}>
-                        {account.account_name} (Balance: {currencySymbol}
-                        {formatBalance(account.current_balance)})
+                        {account.account_name} — Op. {currencySymbol}
+                        {formatBalance(account.opening_balance ?? 0)} | {currencySymbol}
+                        {formatBalance(account.current_balance)}
                       </option>
                     ))}
                   </select>
+                  {selectedBankAccountId != null ? (
+                    (() => {
+                      const acc = bankAccounts.find((a) => a.id === selectedBankAccountId)
+                      if (!acc) return null
+                      return (
+                        <BankRegisterBalances
+                          openingBalance={acc.opening_balance}
+                          openingBalanceDate={acc.opening_balance_date}
+                          currentBalance={acc.current_balance}
+                          currencySymbol={currencySymbol}
+                          className="mt-2"
+                        />
+                      )
+                    })()
+                  ) : null}
                 </div>
 
                 <div>
@@ -720,18 +777,22 @@ function RecordPaymentMadeInner() {
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {outstandingBills.map((bill) => {
-                          const allocation = allocations.find((a) => a.bill_id === bill.id)
+                          const aid = allocBillId(bill)
+                          const allocation = allocations.find((a) => a.bill_id === aid)
                           const allocatedAmount = allocation?.allocated_amount || 0
                           const balanceDue = parseNum(bill.balance_due)
-                          const payFullChecked = balanceDue > 0 && payFullBalanceBillIds.has(bill.id)
+                          const payFullChecked = balanceDue > 0 && payFullBalanceBillIds.has(aid)
                           return (
-                            <tr key={bill.id} className={allocatedAmount > 0 ? 'bg-blue-50' : ''}>
+                            <tr
+                              key={bill.synthetic ? `oa-v-${bill.vendor_id}` : bill.id}
+                              className={allocatedAmount > 0 ? 'bg-blue-50' : ''}
+                            >
                               <td className="px-2 py-3 text-center align-middle">
                                 <input
                                   type="checkbox"
                                   checked={payFullChecked}
                                   disabled={balanceDue <= 0}
-                                  onChange={(e) => handleRowPayFullToggle(bill.id, e.target.checked)}
+                                  onChange={(e) => handleRowPayFullToggle(aid, e.target.checked)}
                                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   title="Allocate full balance on this bill"
                                   aria-label={`Pay full balance for bill ${bill.bill_number}`}
@@ -739,7 +800,12 @@ function RecordPaymentMadeInner() {
                               </td>
                               <td className="px-4 py-3 text-sm font-medium text-gray-900">
                                 {bill.bill_number}
-                                {bill.days_overdue && bill.days_overdue > 0 && (
+                                {bill.synthetic ? (
+                                  <span className="ml-1 text-xs font-normal text-gray-500">
+                                    (A/P not on a bill)
+                                  </span>
+                                ) : null}
+                                {!bill.synthetic && bill.days_overdue && bill.days_overdue > 0 && (
                                   <span className="ml-2 text-xs text-red-600">
                                     ({bill.days_overdue}d overdue)
                                   </span>
@@ -749,15 +815,27 @@ function RecordPaymentMadeInner() {
                                 {formatDateOnly(bill.bill_date)}
                               </td>
                               <td className="px-4 py-3 text-sm text-gray-600">
-                                {bill.due_date ? formatDateOnly(bill.due_date) : '-'}
+                                {bill.due_date ? formatDateOnly(bill.due_date) : '—'}
                               </td>
                               <td className="px-4 py-3 text-sm text-right text-gray-900">
-                                {currencySymbol}
-                                {parseNum(bill.total_amount).toFixed(2)}
+                                {bill.synthetic ? (
+                                  '—'
+                                ) : (
+                                  <>
+                                    {currencySymbol}
+                                    {parseNum(bill.total_amount).toFixed(2)}
+                                  </>
+                                )}
                               </td>
                               <td className="px-4 py-3 text-sm text-right text-gray-600">
-                                {currencySymbol}
-                                {parseNum(bill.amount_paid).toFixed(2)}
+                                {bill.synthetic ? (
+                                  '—'
+                                ) : (
+                                  <>
+                                    {currencySymbol}
+                                    {parseNum(bill.amount_paid).toFixed(2)}
+                                  </>
+                                )}
                               </td>
                               <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                                 {currencySymbol}
@@ -771,7 +849,7 @@ function RecordPaymentMadeInner() {
                                   max={parseNum(bill.balance_due)}
                                   value={allocatedAmount}
                                   onChange={(e) =>
-                                    handleAllocationChange(bill.id, Number(e.target.value))
+                                    handleAllocationChange(aid, Number(e.target.value))
                                   }
                                   className={AMOUNT_ALLOCATE_BLUE_CLASS}
                                 />

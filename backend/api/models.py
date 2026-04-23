@@ -456,6 +456,14 @@ class PayrollRun(models.Model):
     total_net = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     status = models.CharField(max_length=32, default="draft")
     notes = models.TextField(blank=True)
+    # Posted salary payment ( Dr salary expense, Cr bank / statutory; see gl_posting.post_payroll_salary )
+    salary_journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payroll_runs",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -761,6 +769,10 @@ class ShiftSession(models.Model):
     cash_variance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total_sales_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     sale_transaction_count = models.IntegerField(default=0)
+    # Snapshot at open: [{ "meter_id", "reading", "previous_reading", "meter_name", "dispenser_name" }, ...]
+    opening_meters = models.JSONField(default=list, blank=True)
+    # Planned staff: [{ "employee_id", "first_name", "last_name", "scheduled_start", "scheduled_end", "notes" }, ...]
+    employee_schedule = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

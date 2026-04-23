@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Nozzle, Meter, Tank, Item
+from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 
 
 def _decimal_val(v, default=0):
@@ -119,6 +120,12 @@ def nozzles_list_post(request):
         return JsonResponse({"detail": "Tank not found"}, status=400)
     tank = Tank.objects.get(id=tank_id)
     name = (body.get("nozzle_name") or "").strip() or f"Nozzle-{meter_id}-{tank_id}"
+    num_in = (body.get("nozzle_number") or "").strip()
+    code, err = user_supplied_code_or_auto(
+        request.company_id, Nozzle, "nozzle_number", "NZL", num_in or None, None
+    )
+    if err:
+        return JsonResponse({"detail": err}, status=400)
     n = Nozzle(
         company_id=request.company_id,
         meter_id=meter_id,
@@ -126,16 +133,20 @@ def nozzles_list_post(request):
         product_id=tank.product_id,
         nozzle_name=name,
         nozzle_code=body.get("nozzle_code") or "",
-        nozzle_number=body.get("nozzle_number") or "",
+        nozzle_number=code or "",
         color_code=body.get("color_code") or "#3B82F6",
         is_operational=body.get("is_operational", True) if isinstance(body.get("is_operational"), bool) else (body.get("is_operational") not in ("N", "false", "0")),
         is_active=body.get("is_active", True),
     )
     n.save()
     if not n.nozzle_number:
-        n.nozzle_number = f"NZL-{n.id}"
-        Nozzle.objects.filter(pk=n.pk).update(nozzle_number=n.nozzle_number)
-        n.refresh_from_db()
+        assigned, err2 = assign_string_code_if_empty(
+            request.company_id, Nozzle, "nozzle_number", "NZL", n.pk, None, None
+        )
+        if err2:
+            n.delete()
+            return JsonResponse({"detail": err2}, status=400)
+        n.nozzle_number = assigned
     return JsonResponse(_nozzle_to_json(n), status=201)
 
 

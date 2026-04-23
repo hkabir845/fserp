@@ -9,6 +9,7 @@ import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDate } from '@/utils/date'
 import { printLedgerStatement } from '@/utils/printDocument'
+import { loadPrintBranding } from '@/utils/printBranding'
 import { ArrowLeft, BookOpen, Printer, RefreshCw } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 
@@ -60,8 +61,6 @@ export default function ContactLedgerPage({
   const router = useRouter()
   const toast = useToast()
   const [currencySymbol, setCurrencySymbol] = useState('৳')
-  const [printCompanyName, setPrintCompanyName] = useState('')
-  const [printCompanyAddress, setPrintCompanyAddress] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [data, setData] = useState<LedgerPayload | null>(null)
@@ -107,11 +106,6 @@ export default function ContactLedgerPage({
       .get('/companies/current/')
       .then((r) => {
         if (r.data?.currency) setCurrencySymbol(getCurrencySymbol(r.data.currency))
-        const raw = r.data as Record<string, unknown> | undefined
-        const n = raw?.name ?? raw?.company_name
-        setPrintCompanyName(typeof n === 'string' ? n : '')
-        const addr = raw?.address
-        setPrintCompanyAddress(typeof addr === 'string' ? addr : '')
       })
       .catch(() => {})
   }, [router])
@@ -120,13 +114,14 @@ export default function ContactLedgerPage({
     load()
   }, [load])
 
-  const handlePrintLedger = () => {
+  const handlePrintLedger = async () => {
     if (!data) return
     const titles: Record<LedgerEntity, string> = {
       customers: 'Customer account statement',
       vendors: 'Vendor account statement',
       employees: 'Employee ledger statement',
     }
+    const branding = await loadPrintBranding(api)
     const ok = printLedgerStatement(
       {
         display_name: data.display_name,
@@ -137,11 +132,13 @@ export default function ContactLedgerPage({
         transactions: data.transactions,
       },
       {
-        companyName: printCompanyName || 'Company',
-        companyAddress: printCompanyAddress || undefined,
+        companyName: branding.companyName,
+        companyAddress: branding.companyAddress,
+        stationName: branding.stationName,
         currencySymbol,
         documentTitle: titles[entity],
         printedAt: formatDate(new Date(), true),
+        branding,
       }
     )
     if (!ok) toast.error('Allow pop-ups in your browser to print.')

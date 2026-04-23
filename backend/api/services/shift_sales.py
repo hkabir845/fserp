@@ -42,6 +42,28 @@ def record_invoice_on_shift(
     ).update(**updates)
 
 
+def record_cash_payout_on_shift(
+    company_id: int,
+    shift_session_id: int | None,
+    amount: Decimal,
+    payment_method: str,
+) -> None:
+    """
+    When cash leaves the register (e.g. donation / social support), reduce expected drawer
+    the same way cash sales increase it (cash basis only).
+    """
+    if not shift_session_id or amount is None or amount <= 0:
+        return
+    pm = (payment_method or "").strip().lower()
+    if pm != "cash":
+        return
+    ShiftSession.objects.filter(
+        id=shift_session_id,
+        company_id=company_id,
+        closed_at__isnull=True,
+    ).update(expected_cash_total=F("expected_cash_total") - amount)
+
+
 def record_ar_collection_on_shift(
     company_id: int,
     shift_session_id: int | None,

@@ -3,11 +3,15 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { Plus, Eye, Search, X, PlusCircle, Trash2, Send, CheckCircle, Edit2, FileText } from 'lucide-react'
+import { Plus, Eye, Search, X, PlusCircle, Trash2, Send, CheckCircle, Edit2, FileText, Printer } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
-import { formatDateOnly } from '@/utils/date'
+import { formatDate, formatDateOnly } from '@/utils/date'
+import { escapeHtml, printDocument } from '@/utils/printDocument'
+import type { PrintBranding } from '@/utils/printBranding'
+import { loadPrintBranding } from '@/utils/printBranding'
+import { printListView } from '@/utils/printListView'
 import { AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 
 interface InvoiceLineItem {
@@ -114,6 +118,7 @@ export default function InvoicesPage() {
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
+  const [printBranding, setPrintBranding] = useState<PrintBranding | null>(null)
   const [formData, setFormData] = useState({
     customer_id: 0,
     invoice_date: new Date().toISOString().split('T')[0],
@@ -157,7 +162,7 @@ export default function InvoicesPage() {
         setLoading(true)
       }
 
-      // Fetch company currency
+      // Fetch company currency and print header (company + station)
       try {
         const companyRes = await api.get('/companies/current')
         if (companyRes.data?.currency) {
@@ -167,6 +172,9 @@ export default function InvoicesPage() {
         console.error('Error fetching company currency:', error)
         // Don't fail the whole fetch if currency fails
       }
+      void loadPrintBranding(api)
+        .then(setPrintBranding)
+        .catch(() => setPrintBranding(null))
 
       // Fetch invoices with proper error handling
       const includePos = sourceFilter === 'all' || sourceFilter === 'pos'
@@ -806,6 +814,121 @@ export default function InvoicesPage() {
     setViewingInvoice(null)
   }
 
+  const handlePrintInvoiceList = async () => {
+    if (filteredInvoices.length === 0) {
+      toast.error('No invoices to print for the current filter.')
+      return
+    }
+    const sub = [
+      `Source filter: ${sourceFilter}`,
+      searchTerm && `Search: ${searchTerm}`,
+      `Generated ${formatDate(new Date(), true)}`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    const rows = filteredInvoices
+      .map(
+        (inv) => `<tr>
+        <td>${escapeHtml(getDisplayNumber(inv))}</td>
+        <td>${escapeHtml(String(inv.source || '—'))}</td>
+        <td>${escapeHtml(formatDateOnly(inv.invoice_date))}</td>
+        <td>${escapeHtml(inv.due_date ? formatDateOnly(inv.due_date) : '—')}</td>
+        <td>${escapeHtml(resolveInvoiceCustomerLabel(inv))}</td>
+        <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(Number(inv.total_amount || 0).toFixed(2))}</td>
+        <td>${escapeHtml(inv.status)}</td>
+      </tr>`
+      )
+      .join('')
+    const tableHtml = `<table><thead><tr><th>Invoice #</th><th>Source</th><th>Date</th><th>Due</th><th>Customer</th><th class="right">Total</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`
+    const ok = await printListView({
+      title: 'Invoices (list)',
+      subtitle: sub,
+      tableHtml,
+    })
+    if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
+  }
+
+  const handlePrintViewingInvoice = async () => {
+    if (!viewingInvoice) return
+    const branding = printBranding ?? (await loadPrintBranding(api))
+    const inv = viewingInvoice
+    const displayNo = getDisplayNumber(inv)
+    const glRef =
+      inv.invoice_number && displayNo !== inv.invoice_number
+        ? ` · GL # ${escapeHtml(inv.invoice_number)}`
+        : ''
+    const cust = resolveInvoiceCustomerLabel(inv)
+    const lines = inv.line_items || []
+    const lineRows = lines
+      .map((item) => {
+        const itemLabel =
+          items.find((i) => i.id === item.item_id)?.name ||
+          item.item_name ||
+          (item.item_id ? `Item #${item.item_id}` : '—')
+        return `<tr>
+          <td>${escapeHtml(String(itemLabel))}</td>
+          <td>${escapeHtml(item.description || '—')}</td>
+          <td class="right">${escapeHtml(Number(item.quantity).toFixed(2))}</td>
+          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(Number(item.unit_price || 0).toFixed(2))}</td>
+          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(Number(item.amount || 0).toFixed(2))}</td>
+        </tr>`
+      })
+      .join('')
+    const disc =
+      inv.discount_amount && inv.discount_amount > 0
+        ? `<tr><td colspan="4" class="right">Discount</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
+            Number(inv.discount_amount).toFixed(2)
+          )}</td></tr>`
+        : ''
+    const paidBlock =
+      inv.amount_paid != null && Number(inv.amount_paid) > 0
+        ? `<p><strong>Amount paid:</strong> ${escapeHtml(currencySymbol)}${escapeHtml(
+            Number(inv.amount_paid).toFixed(2)
+          )} &nbsp;|&nbsp; <strong>Balance due:</strong> ${escapeHtml(currencySymbol)}${escapeHtml(
+            Number(inv.balance_due || 0).toFixed(2)
+          )}</p>`
+        : ''
+    const bodyHtml = `
+      <h1>Invoice / receipt</h1>
+      <div class="period">
+        <strong>Invoice #</strong> ${escapeHtml(displayNo)}${glRef}<br/>
+        <strong>Status:</strong> ${escapeHtml(inv.status)} · <strong>Date:</strong> ${escapeHtml(
+      formatDateOnly(inv.invoice_date)
+    )}${inv.due_date ? ` · <strong>Due:</strong> ${escapeHtml(formatDateOnly(inv.due_date))}` : ''}
+        <br/>Printed ${escapeHtml(formatDate(new Date(), true))}
+      </div>
+      <p><strong>Bill to:</strong> ${escapeHtml(cust)}</p>
+      <table>
+        <thead><tr><th>Item</th><th>Description</th><th class="right">Qty</th><th class="right">Unit</th><th class="right">Amount</th></tr></thead>
+        <tbody>
+          ${
+            lineRows ||
+            '<tr><td colspan="5" style="text-align:center;color:#6b7280">No line items</td></tr>'
+          }
+        </tbody>
+        <tfoot>
+          <tr><td colspan="4" class="right">Subtotal</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
+      Number(inv.subtotal || 0).toFixed(2)
+    )}</td></tr>
+          <tr><td colspan="4" class="right">Tax</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
+      Number(inv.tax_amount || 0).toFixed(2)
+    )}</td></tr>
+          ${disc}
+          <tr class="row-total"><td colspan="4" class="right">Total</td><td class="right">${escapeHtml(
+            currencySymbol
+          )}${escapeHtml(Number(inv.total_amount || 0).toFixed(2))}</td></tr>
+        </tfoot>
+      </table>
+      ${paidBlock}
+    `
+    const ok = printDocument({
+      title: `Invoice ${displayNo}`,
+      branding,
+      bodyHtml,
+    })
+    if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
+  }
+
   const isAdmin = userRole === 'admin'
 
   return (
@@ -815,6 +938,19 @@ export default function InvoicesPage() {
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
           <p className="text-gray-600 mt-1">Manage customer invoices</p>
+          {printBranding && (
+            <p className="text-sm text-gray-800 mt-2 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-2 max-w-2xl">
+              <span className="font-semibold">{printBranding.companyName}</span>
+              {printBranding.stationName ? (
+                <span className="text-gray-600"> · Station: {printBranding.stationName}</span>
+              ) : null}
+              {printBranding.companyAddress ? (
+                <span className="block text-gray-500 text-xs mt-1 font-normal">
+                  {printBranding.companyAddress}
+                </span>
+              ) : null}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
@@ -839,13 +975,24 @@ export default function InvoicesPage() {
               <option value="manual">Manual Invoices</option>
             </select>
           </div>
-          <button
-            onClick={handleOpenModal}
-            className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg font-medium"
-          >
-            <Plus className="h-5 w-5" />
-            <span>New Invoice</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handlePrintInvoiceList()}
+              disabled={filteredInvoices.length === 0}
+              className="flex items-center space-x-2 px-4 py-2.5 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50 transition-all shadow-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Printer className="h-5 w-5" />
+              <span>Print list</span>
+            </button>
+            <button
+              onClick={handleOpenModal}
+              className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg font-medium"
+            >
+              <Plus className="h-5 w-5" />
+              <span>New Invoice</span>
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -1312,19 +1459,55 @@ export default function InvoicesPage() {
 
         {/* View Invoice Modal */}
         {showViewModal && viewingInvoice && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-white rounded-lg p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8">
-              <div className="flex justify-between items-center mb-6">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto print:p-4 print:bg-white print:items-start">
+            <div className="bg-white rounded-lg p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8 print:shadow-none print:max-h-none print:m-0 print:w-full">
+              <div className="flex justify-between items-start gap-3 mb-6 print:hidden">
                 <h2 className="text-2xl font-bold">Invoice Details</h2>
-                <button
-                  onClick={handleCloseViewModal}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handlePrintViewingInvoice()}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+                  >
+                    <Printer className="h-4 w-4" />
+                    Print
+                  </button>
+                  <button
+                    onClick={handleCloseViewModal}
+                    className="text-gray-400 hover:text-gray-600 p-1"
+                    aria-label="Close"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-6">
+              {printBranding && (
+                <div className="hidden print:block border-b border-gray-200 pb-3 mb-4 text-center">
+                  <p className="text-base font-bold text-gray-900">{printBranding.companyName}</p>
+                  {printBranding.stationName ? (
+                    <p className="text-xs font-semibold text-gray-600 mt-1">Station: {printBranding.stationName}</p>
+                  ) : null}
+                  {printBranding.companyAddress ? (
+                    <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{printBranding.companyAddress}</p>
+                  ) : null}
+                </div>
+              )}
+
+              <div className="space-y-6 print:space-y-4">
+                {/* On-screen: company + station (same as list header when data loaded) */}
+                {printBranding && (
+                  <div className="print:hidden rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+                    <p className="font-semibold">{printBranding.companyName}</p>
+                    {printBranding.stationName ? (
+                      <p className="text-slate-600 mt-0.5">Station: {printBranding.stationName}</p>
+                    ) : null}
+                    {printBranding.companyAddress ? (
+                      <p className="text-slate-500 text-xs mt-1">{printBranding.companyAddress}</p>
+                    ) : null}
+                  </div>
+                )}
+
                 {/* Invoice Header */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>

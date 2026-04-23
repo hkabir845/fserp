@@ -31,6 +31,9 @@ type OutstandingInvoice = {
   customer_name: string
   balance_due: string | number
   days_overdue: number | null
+  /** A/R on opening / not on an invoice; allocate with invoice_id 0 */
+  synthetic?: boolean
+  on_account?: boolean
 }
 
 type ActiveShift = { id: number; expected_cash_total?: string }
@@ -119,7 +122,7 @@ export function CashierCollectPayment({
         setOutstanding(rows as OutstandingInvoice[])
         const next: Record<number, number> = {}
         for (const inv of rows as OutstandingInvoice[]) {
-          next[inv.id] = 0
+          next[inv.synthetic ? 0 : inv.id] = 0
         }
         setAllocations(next)
       })
@@ -135,8 +138,12 @@ export function CashierCollectPayment({
     Object.values(allocations).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0)
   )
 
+  const rowKey = (inv: OutstandingInvoice) => (inv.synthetic ? `oa-${inv.customer_id}` : String(inv.id))
+
   const setAlloc = (invoiceId: number, raw: number) => {
-    const inv = outstanding.find(i => i.id === invoiceId)
+    const inv = outstanding.find(
+      i => (i.synthetic && invoiceId === 0 && i.id === 0) || i.id === invoiceId
+    )
     if (!inv) return
     const maxAmt = Number(inv.balance_due) || 0
     const v = roundTwo(Math.min(Math.max(0, raw), maxAmt))
@@ -148,9 +155,11 @@ export function CashierCollectPayment({
       outstanding.reduce((s, i) => s + (Number(i.balance_due) || 0), 0)
     )
     let remaining = totalBal
-    const sorted = [...outstanding].sort(
-      (a, b) => new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
-    )
+    const sorted = [...outstanding].sort((a, b) => {
+      if (a.synthetic && !b.synthetic) return 1
+      if (!a.synthetic && b.synthetic) return -1
+      return new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
+    })
     const next: Record<number, number> = { ...allocations }
     for (const k of Object.keys(next)) {
       next[Number(k)] = 0
@@ -160,7 +169,8 @@ export function CashierCollectPayment({
       if (left <= 0) break
       const bal = Number(inv.balance_due) || 0
       const take = roundTwo(Math.min(left, bal))
-      next[inv.id] = take
+      const aid = inv.synthetic ? 0 : inv.id
+      next[aid] = take
       left = roundTwo(left - take)
     }
     setAllocations(next)
@@ -177,7 +187,10 @@ export function CashierCollectPayment({
       return
     }
     const valid = Object.entries(allocations)
-      .map(([id, amt]) => ({ invoice_id: Number(id), allocated_amount: amt }))
+      .map(([id, amt]) => {
+        const n = Number(id)
+        return { invoice_id: n, allocated_amount: amt }
+      })
       .filter(a => a.allocated_amount > 0)
     if (!valid.length) {
       toast.error("Allocate to at least one invoice.")
@@ -412,9 +425,16 @@ export function CashierCollectPayment({
                   </tr>
                 </thead>
                 <tbody>
-                  {outstanding.map(inv => (
-                    <tr key={inv.id} className="border-b border-border/60 last:border-0">
-                      <td className="px-3 py-2 font-medium">{inv.invoice_number}</td>
+                  {outstanding.map(inv => {
+                    const allocId = inv.synthetic ? 0 : inv.id
+                    return (
+                    <tr key={rowKey(inv)} className="border-b border-border/60 last:border-0">
+                      <td className="px-3 py-2 font-medium">
+                        {inv.invoice_number}
+                        {inv.synthetic ? (
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">(A/R not on an invoice)</span>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2 text-muted-foreground">{inv.invoice_date}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {currencySymbol}
@@ -425,13 +445,14 @@ export function CashierCollectPayment({
                           type="number"
                           min={0}
                           step="0.01"
-                          value={allocations[inv.id] ?? 0}
-                          onChange={e => setAlloc(inv.id, parseFloat(e.target.value) || 0)}
+                          value={allocations[allocId] ?? 0}
+                          onChange={e => setAlloc(allocId, parseFloat(e.target.value) || 0)}
                           className={`${inputClassName} max-w-[7rem] text-right tabular-nums`}
                         />
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

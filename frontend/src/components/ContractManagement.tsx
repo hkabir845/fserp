@@ -7,6 +7,7 @@ import api from '@/lib/api'
 import { safeLogError } from '@/utils/connectionError'
 import { formatDateOnly } from '@/utils/date'
 import { printContractAgreement } from '@/utils/printDocument'
+import { loadPrintBranding } from '@/utils/printBranding'
 
 interface Company {
   id: number
@@ -215,6 +216,11 @@ export default function ContractManagement() {
   const handlePrint = async (contract: Contract) => {
     try {
       await api.get(`/contracts/${contract.id}/print`)
+      const baseBranding = await loadPrintBranding(api)
+      const branding = {
+        ...baseBranding,
+        companyName: (contract.company_name || '').trim() || baseBranding.companyName,
+      }
       const ok = printContractAgreement(
         {
           contract_number: contract.contract_number,
@@ -230,7 +236,8 @@ export default function ContractManagement() {
           payment_reminder_message: contract.payment_reminder_message,
           terms_and_conditions: contract.terms_and_conditions,
         },
-        formatDateOnly
+        formatDateOnly,
+        branding
       )
       if (!ok) toast.error('Allow pop-ups in your browser to print.')
     } catch (error: any) {

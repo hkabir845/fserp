@@ -27,6 +27,8 @@ import {
 } from 'lucide-react'
 import { getCurrencySymbol } from '@/utils/currency'
 import { printCurrentWindow, printDocument, escapeHtml } from '@/utils/printDocument'
+import type { PrintBranding } from '@/utils/printBranding'
+import { loadPrintBranding } from '@/utils/printBranding'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import {
   MAX_ANNUAL_APR,
@@ -484,6 +486,7 @@ export default function LoansPage() {
   const [statementLoan, setStatementLoan] = useState<LoanRow | null>(null)
   const [statementPayload, setStatementPayload] = useState<LoanStatementResponse | null>(null)
   const [statementLoading, setStatementLoading] = useState(false)
+  const [statementPrintBranding, setStatementPrintBranding] = useState<PrintBranding | null>(null)
   const [loanAccruals, setLoanAccruals] = useState<
     {
       id: number
@@ -1308,7 +1311,7 @@ export default function LoansPage() {
     URL.revokeObjectURL(url)
   }
 
-  const printPaymentScheduleSheet = () => {
+  const printPaymentScheduleSheet = async () => {
     if (!actionLoan || !scheduleData?.schedule?.length) return
     const isl = loanUsesIslamicTerminology(actionLoan)
     const role =
@@ -1337,8 +1340,10 @@ export default function LoansPage() {
           </tr>`
       )
       .join('')
+    const branding = await loadPrintBranding(api)
     printDocument({
       title,
+      branding,
       bodyHtml: `
         <div class="period">${escapeHtml(sub)}</div>
         <p class="co"><span class="label">Outstanding principal (now):</span> ${escapeHtml(
@@ -1366,10 +1371,15 @@ export default function LoansPage() {
   const openLoanStatement = async (row: LoanRow) => {
     setStatementLoan(row)
     setStatementPayload(null)
+    setStatementPrintBranding(null)
     setStatementLoading(true)
     try {
-      const { data } = await api.get(`/loans/${row.id}/statement/`)
+      const [{ data }, branding] = await Promise.all([
+        api.get(`/loans/${row.id}/statement/`),
+        loadPrintBranding(api).catch(() => null),
+      ])
       setStatementPayload(data as LoanStatementResponse)
+      if (branding) setStatementPrintBranding(branding)
     } catch (e) {
       toast.error(errDetail(e))
       setStatementLoan(null)
@@ -2888,7 +2898,7 @@ export default function LoansPage() {
                                   <button
                                     type="button"
                                     className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-                                    onClick={printPaymentScheduleSheet}
+                                    onClick={() => void printPaymentScheduleSheet()}
                                   >
                                     <Printer className="h-3.5 w-3.5" />
                                     Print sheet
@@ -3384,6 +3394,7 @@ export default function LoansPage() {
                     onClick={() => {
                       setStatementLoan(null)
                       setStatementPayload(null)
+                      setStatementPrintBranding(null)
                     }}
                     className="text-gray-400 hover:text-gray-600 p-1"
                     aria-label="Close"
@@ -3396,6 +3407,21 @@ export default function LoansPage() {
                 {statementLoading && <p className="text-gray-500">Loading…</p>}
                 {!statementLoading && statementPayload && (
                   <>
+                    {statementPrintBranding ? (
+                      <div className="hidden print:block text-center border-b border-gray-200 pb-3 mb-3">
+                        <p className="text-base font-bold text-gray-900">{statementPrintBranding.companyName}</p>
+                        {statementPrintBranding.stationName ? (
+                          <p className="text-xs font-semibold text-gray-600 mt-1">
+                            Station: {statementPrintBranding.stationName}
+                          </p>
+                        ) : null}
+                        {statementPrintBranding.companyAddress ? (
+                          <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">
+                            {statementPrintBranding.companyAddress}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="hidden print:block text-center mb-4">
                       <h1 className="text-xl font-bold">
                         {statementUsesIslamicTerms ? 'Financing statement' : 'Loan statement'}

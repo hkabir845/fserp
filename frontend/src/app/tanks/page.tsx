@@ -8,6 +8,7 @@ import { Plus, Edit, Trash2, Search, Droplet, AlertTriangle, RefreshCw } from 'l
 import { useToast } from '@/components/Toast'
 import api, { getApiDocsUrl, getBackendOrigin } from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 interface Tank {
   id: number
@@ -53,6 +54,8 @@ export default function TanksPage() {
   const [showModal, setShowModal] = useState(false)
   const [selectedStation, setSelectedStation] = useState<string>('')
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [tankRefCode, setTankRefCode] = useState('')
+  const [createCodeNonce, setCreateCodeNonce] = useState(0)
   const [formData, setFormData] = useState({
     tank_name: '',
     station_id: 0,
@@ -91,7 +94,9 @@ export default function TanksPage() {
       if (editingId) {
         await api.put(`/tanks/${editingId}/`, formData)
       } else {
-        await api.post('/tanks/', formData)
+        const payload: Record<string, unknown> = { ...formData }
+        if (tankRefCode.trim()) payload.tank_number = tankRefCode.trim()
+        await api.post('/tanks/', payload)
       }
       toast.success(editingId ? 'Tank updated successfully!' : 'Tank created successfully!')
       setShowModal(false)
@@ -145,6 +150,7 @@ export default function TanksPage() {
       min_stock_level: 2000,
       is_active: true
     })
+    setTankRefCode('')
     setEditingId(null)
   }
 
@@ -289,8 +295,10 @@ export default function TanksPage() {
           </div>
           
           <button
+            type="button"
             onClick={() => {
               resetForm()
+              setCreateCodeNonce((n) => n + 1)
               setShowModal(true)
             }}
             className="ml-4 flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -407,7 +415,12 @@ export default function TanksPage() {
               <p className="text-gray-600 mb-4">No tanks match your current search or filter criteria.</p>
             )}
             <button
-              onClick={() => setShowModal(true)}
+              type="button"
+              onClick={() => {
+                resetForm()
+                setCreateCodeNonce((n) => n + 1)
+                setShowModal(true)
+              }}
               className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               <Plus className="h-5 w-5" />
@@ -593,6 +606,27 @@ export default function TanksPage() {
                 {editingId ? 'Edit Tank' : 'Add New Tank'}
               </h2>
               <form onSubmit={handleSubmit}>
+                {editingId ? (
+                  <ReferenceCodePicker
+                    kind="tank"
+                    id="tank_ref_ro"
+                    label="Tank number"
+                    value={tanks.find((t) => t.id === editingId)?.tank_number || ''}
+                    onChange={() => {}}
+                    disabled
+                    className="mb-4"
+                  />
+                ) : (
+                  <ReferenceCodePicker
+                    key={createCodeNonce}
+                    kind="tank"
+                    id="tank_ref"
+                    label="Tank number"
+                    value={tankRefCode}
+                    onChange={setTankRefCode}
+                    className="mb-4"
+                  />
+                )}
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">

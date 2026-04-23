@@ -587,6 +587,7 @@ function BroadcastingPageContent() {
                       <option value="admin">Admin</option>
                       <option value="accountant">Accountant</option>
                       <option value="cashier">Cashier</option>
+                      <option value="operator">Operator</option>
                     </select>
                   </div>
                 </div>

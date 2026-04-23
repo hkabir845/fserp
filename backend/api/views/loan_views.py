@@ -902,6 +902,7 @@ def loan_disburse(request, loan_id: int):
             )
     except ValidationError as e:
         return JsonResponse({"detail": str(e)}, status=400)
+    d.refresh_from_db()
     lo.refresh_from_db()
     return JsonResponse(
         {
@@ -971,6 +972,7 @@ def loan_repay(request, loan_id: int):
             )
     except ValidationError as e:
         return JsonResponse({"detail": str(e)}, status=400)
+    r.refresh_from_db()
     lo.refresh_from_db()
     return JsonResponse(
         {
@@ -1668,6 +1670,8 @@ def loan_schedule_preview(request):
     if request.method != "GET":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
     p = _dec(request.GET.get("principal"))
+    if p < 0:
+        return JsonResponse({"detail": "principal must be zero or positive"}, status=400)
     rate = _dec(request.GET.get("rate"))
     months = request.GET.get("months") or "12"
     try:

@@ -2,11 +2,21 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Optional
 
 from django.db import transaction
 from django.db.models import Sum
 
-from api.models import Bill, Invoice, PaymentBillAllocation, PaymentInvoiceAllocation
+from api.models import (
+    Bill,
+    Customer,
+    Invoice,
+    Payment,
+    PaymentBillAllocation,
+    PaymentInvoiceAllocation,
+    Vendor,
+)
+from api.services.gl_posting import _is_walkin_customer
 
 
 def total_allocated_to_invoice(company_id: int, invoice_id: int) -> Decimal:
@@ -69,6 +79,76 @@ def invoice_balance_due(inv: Invoice, company_id: int) -> Decimal:
     if inv.status == "draft":
         return inv.total or Decimal("0")
     return invoice_open_amount(inv, company_id)
+
+
+def customer_uninvoiced_receivable(
+    company_id: int,
+    customer: Customer,
+    *,
+    exclude_payment: Optional[Payment] = None,
+) -> Decimal:
+    """
+    A/R represented in customer subledger that is not covered by open invoice lines
+    (e.g. opening balance with no bill yet). When editing a receipt, pass exclude_payment so
+    the receipt is treated as not yet applied while validating the new split.
+    """
+    if _is_walkin_customer(customer):
+        return Decimal("0")
+    a = Decimal("0")
+    for inv in Invoice.objects.filter(
+        company_id=company_id, customer_id=customer.id
+    ).exclude(status="draft"):
+        if exclude_payment is not None:
+            a += invoice_balance_due_excluding_payment(
+                inv, company_id, exclude_payment.id
+            )
+        else:
+            a += invoice_balance_due(inv, company_id)
+    cb = customer.current_balance or Decimal("0")
+    if exclude_payment is not None and (exclude_payment.amount or 0) > 0:
+        cb = cb + (exclude_payment.amount or Decimal("0"))
+    u = cb - a
+    ob = customer.opening_balance or Decimal("0")
+    if a == 0 and cb == 0 and ob > 0:
+        u = max(u, ob)
+    if u < 0:
+        u = Decimal("0")
+    return u.quantize(Decimal("0.01"))
+
+
+def vendor_unbilled_payable(
+    company_id: int,
+    vendor: Vendor,
+    *,
+    exclude_payment: Optional[Payment] = None,
+) -> Decimal:
+    """
+    A/P in vendor subledger not covered by open bill lines (e.g. opening / legacy opening only).
+    """
+    a = Decimal("0")
+    for b in Bill.objects.filter(company_id=company_id, vendor_id=vendor.id).exclude(
+        status="draft"
+    ):
+        total = b.total or Decimal("0")
+        if total <= 0:
+            continue
+        if exclude_payment is not None:
+            paid = total_allocated_to_bill_excluding_payment(
+                company_id, b.id, exclude_payment.id
+            )
+        else:
+            paid = total_allocated_to_bill(company_id, b.id)
+        a += max(Decimal("0"), total - paid)
+    cb = vendor.current_balance or Decimal("0")
+    if exclude_payment is not None and (exclude_payment.amount or 0) > 0:
+        cb = cb + (exclude_payment.amount or Decimal("0"))
+    u = cb - a
+    ob = vendor.opening_balance or Decimal("0")
+    if a == 0 and cb == 0 and ob > 0:
+        u = max(u, ob)
+    if u < 0:
+        u = Decimal("0")
+    return u.quantize(Decimal("0.01"))
 
 
 def refresh_invoice_from_allocations(inv: Invoice, company_id: int) -> None:

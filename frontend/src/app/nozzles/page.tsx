@@ -8,6 +8,7 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 interface Nozzle {
   id: number
@@ -108,6 +109,8 @@ export default function NozzlesPage() {
   const [selectedDispenser, setSelectedDispenser] = useState<number | null>(null)
   const [selectedMeterId, setSelectedMeterId] = useState<number | null>(null)
   const [selectedTank, setSelectedTank] = useState<number | null>(null)
+  const [nozzleRefCode, setNozzleRefCode] = useState('')
+  const [createCodeNonce, setCreateCodeNonce] = useState(0)
   
   // Form data
   const [formData, setFormData] = useState({
@@ -307,13 +310,17 @@ export default function NozzlesPage() {
     }
     
     try {
-      await api.post('/nozzles/', {
+      const payload: Record<string, unknown> = {
         nozzle_name: nozzleName,
         meter_id: formData.meter_id,
         tank_id: formData.tank_id,
         color_code: formData.color_code,
         is_operational: formData.is_operational
-      })
+      }
+      if (nozzleRefCode.trim()) {
+        payload.nozzle_number = nozzleRefCode.trim()
+      }
+      await api.post('/nozzles/', payload)
       toast.success('Nozzle created successfully!')
       setShowModal(false)
       resetForm()
@@ -419,6 +426,7 @@ export default function NozzlesPage() {
       color_code: '#3B82F6',
       is_operational: true
     })
+    setNozzleRefCode('')
     setEditingId(null)
     setSelectedStation(null)
     setSelectedIsland(null)
@@ -477,7 +485,12 @@ export default function NozzlesPage() {
           </div>
           
           <button
-            onClick={() => setShowModal(true)}
+            type="button"
+            onClick={() => {
+              resetForm()
+              setCreateCodeNonce((n) => n + 1)
+              setShowModal(true)
+            }}
             className="ml-4 flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <Plus className="h-5 w-5" />
@@ -495,7 +508,12 @@ export default function NozzlesPage() {
             <h3 className="text-lg font-medium text-gray-900 mb-2">No nozzles found</h3>
             <p className="text-gray-600 mb-4">Get started by creating your first fuel nozzle</p>
             <button
-              onClick={() => setShowModal(true)}
+              type="button"
+              onClick={() => {
+                resetForm()
+                setCreateCodeNonce((n) => n + 1)
+                setShowModal(true)
+              }}
               className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               <Plus className="h-5 w-5" />
@@ -934,6 +952,26 @@ export default function NozzlesPage() {
                     <Fuel className="h-5 w-5 mr-2 text-blue-600" />
                     Nozzle Details
                   </h3>
+
+                  {editingId ? (
+                    <ReferenceCodePicker
+                      kind="nozzle"
+                      id="nozzle_ref_code_ro"
+                      label="Nozzle number"
+                      value={nozzles.find((n) => n.id === editingId)?.nozzle_number || ''}
+                      onChange={() => {}}
+                      disabled
+                    />
+                  ) : (
+                    <ReferenceCodePicker
+                      key={createCodeNonce}
+                      kind="nozzle"
+                      id="nozzle_ref_code"
+                      label="Nozzle number"
+                      value={nozzleRefCode}
+                      onChange={setNozzleRefCode}
+                    />
+                  )}
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Auto-generated Nozzle Name Preview */}

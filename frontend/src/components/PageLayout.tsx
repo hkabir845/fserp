@@ -15,9 +15,9 @@ interface PageLayoutProps {
  */
 export default function PageLayout({ children, className = '' }: PageLayoutProps) {
   return (
-    <div className={`page-with-sidebar flex h-screen bg-gray-100 ${className}`}>
+    <div className={`page-with-sidebar flex h-screen min-h-0 w-full min-w-0 max-w-full bg-gray-100 ${className}`}>
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {/* Master/Tenant Company Banner */}
         <MasterCompanyBanner />
         <TenantCompanyBanner />

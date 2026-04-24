@@ -31,3 +31,7 @@ Thumbs.db
 # Misc
 *.pyc
 .pytest_cache/
+
+# Windows: reserved name `nul` cannot be versioned; breaks `git add` (see e.g. accidental `> nul` in wrong cwd)
+nul
+**/nul

@@ -451,7 +451,7 @@ export default function NozzlesPage() {
   return (
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Nozzle Configuration</h1>
           <p className="text-gray-600 mt-1">Configure nozzles by selecting station, island, dispenser, meter, and tank</p>
@@ -618,7 +618,7 @@ export default function NozzlesPage() {
         {/* Create/Edit Modal with Cascading Dropdowns */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-white rounded-lg p-8 max-w-4xl w-full my-8 max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-lg app-modal-pad max-w-4xl w-full my-8 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold">{editingId ? 'Edit Nozzle' : 'Configure Nozzle'}</h2>
                 <button
@@ -1074,7 +1074,7 @@ export default function NozzlesPage() {
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-8 max-w-md w-full">
+            <div className="bg-white rounded-lg app-modal-pad max-w-md w-full">
               <h2 className="text-2xl font-bold mb-4 text-red-600">Delete Nozzle</h2>
               <p className="text-gray-700 mb-6">
                 Are you sure you want to delete this nozzle? This action cannot be undone.

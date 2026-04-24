@@ -370,7 +370,7 @@ function RecordPaymentReceivedInner() {
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto">
-        <div className="p-8 max-w-5xl mx-auto">
+        <div className="app-scroll-pad max-w-5xl mx-auto">
           <div className="mb-6">
             <Link
               href="/payments/received"

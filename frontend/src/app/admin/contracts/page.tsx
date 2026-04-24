@@ -518,8 +518,8 @@ function ContractsPageContent() {
     return (
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
-        <div className="flex-1 overflow-y-auto p-8">
-          <div className="bg-white rounded-lg shadow p-8 text-center">
+        <div className="flex-1 overflow-y-auto app-scroll-pad">
+          <div className="bg-white rounded-lg shadow app-modal-pad text-center">
             <p className="text-gray-600">Please switch to SaaS Dashboard mode to manage contracts.</p>
           </div>
         </div>
@@ -531,7 +531,7 @@ function ContractsPageContent() {
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-y-auto">
-        <div className="p-8">
+        <div className="app-scroll-pad">
           {/* Breadcrumb */}
           <nav className="flex items-center gap-2 text-sm text-gray-500 mb-4">
             <Link href="/admin" className="hover:text-gray-700 transition-colors">Admin</Link>
@@ -591,12 +591,12 @@ function ContractsPageContent() {
 
           {/* Companies List with Contracts */}
           {loading ? (
-            <div className="bg-white rounded-lg shadow p-8 text-center">
+            <div className="bg-white rounded-lg shadow app-modal-pad text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-600">Loading companies...</p>
             </div>
           ) : companies.length === 0 ? (
-            <div className="bg-white rounded-lg shadow p-8 text-center">
+            <div className="bg-white rounded-lg shadow app-modal-pad text-center">
               <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-600 text-lg mb-2">No companies found</p>
               <p className="text-gray-500 text-sm">Add companies from the Admin dashboard first.</p>

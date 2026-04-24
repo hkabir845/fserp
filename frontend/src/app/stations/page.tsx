@@ -188,7 +188,7 @@ export default function StationsPage() {
     <CompanyProvider>
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto app-scroll-pad">
           <div className="mb-6">
             <h1 className="text-3xl font-bold text-gray-900">Stations</h1>
             <p className="text-gray-600 mt-1">Manage your filling station locations</p>
@@ -237,7 +237,7 @@ export default function StationsPage() {
               </div>
             </div>
           ) : error ? (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-8">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 sm:p-6 md:p-8">
               <div className="text-center mb-6">
                 <AlertTriangle className="h-16 w-16 text-red-600 mx-auto mb-4" />
                 <h3 className="text-xl font-bold text-red-800 mb-2">Error Loading Stations</h3>
@@ -380,7 +380,7 @@ export default function StationsPage() {
               onClick={(e) => e.target === e.currentTarget && handleCloseModal()}
             >
               <div
-                className="bg-white rounded-xl shadow-xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+                className="bg-white rounded-xl shadow-xl app-modal-pad max-w-2xl w-full max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
               >
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">
@@ -482,7 +482,7 @@ export default function StationsPage() {
               }}
             >
               <div
-                className="bg-white rounded-xl shadow-xl p-8 max-w-md w-full"
+                className="bg-white rounded-xl shadow-xl app-modal-pad max-w-md w-full"
                 onClick={(e) => e.stopPropagation()}
               >
                 <h2 className="text-xl font-bold text-red-600 mb-4">Delete Station</h2>

@@ -409,7 +409,7 @@ export default function EmployeesPage() {
         <Sidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           {error ? (
-            <div className="flex-1 overflow-auto p-8">
+            <div className="flex-1 overflow-auto app-scroll-pad">
               <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
                 <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
                 <h3 className="text-xl font-bold text-red-800 mb-2">Error Loading Employees</h3>
@@ -429,7 +429,7 @@ export default function EmployeesPage() {
               <MasterCompanyBanner />
               <TenantCompanyBanner />
               
-              <div className="p-8">
+              <div className="app-scroll-pad">
                 <div className="flex items-center justify-between mb-8">
                   <div>
                     <h1 className="text-3xl font-bold text-gray-900">Employees</h1>

@@ -156,7 +156,7 @@ function ResetPasswordForm() {
 export default function ResetPasswordPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 px-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-xl border border-slate-100">
+      <div className="w-full max-w-md rounded-xl bg-white app-modal-pad shadow-xl border border-slate-100">
         <h1 className="text-2xl font-semibold text-slate-900">Set a new password</h1>
         <p className="mt-2 text-sm text-slate-600">
           Choose a strong password you have not used here before. This link expires after a short time.

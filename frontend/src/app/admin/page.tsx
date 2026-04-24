@@ -865,7 +865,7 @@ function SuperAdminPageContent() {
 
           {/* Show Company ERP Management content when in FSMS ERP mode */}
           {mode === 'fsms_erp' && (
-            <div className="bg-white rounded-lg shadow p-8">
+            <div className="bg-white rounded-lg shadow app-modal-pad">
               {!selectedCompany ? (
                 <div className="text-center py-12">
                   <Building2 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
@@ -1005,7 +1005,7 @@ function SuperAdminPageContent() {
                       </div>
                     </>
                   ) : (
-                    <div className="bg-white rounded-lg shadow p-8 text-center">
+                    <div className="bg-white rounded-lg shadow app-modal-pad text-center">
                       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
                       <p className="text-gray-600">Loading platform statistics...</p>
                     </div>
@@ -1048,7 +1048,7 @@ function SuperAdminPageContent() {
               {/* Companies Grid - World Class Design */}
               <div className="grid grid-cols-1 gap-6">
                 {companies.length === 0 ? (
-                  <div className="bg-white rounded-lg shadow p-8 text-center">
+                  <div className="bg-white rounded-lg shadow app-modal-pad text-center">
                     <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-600 text-lg mb-2">No companies found</p>
                     <p className="text-gray-500 text-sm mb-4">Create your first company to get started</p>

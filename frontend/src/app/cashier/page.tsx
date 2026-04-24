@@ -1533,7 +1533,7 @@ export default function CashierPOSPage() {
                   })}
 
                   {!filteredItems.length && (
-                    <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                    <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-center text-sm text-muted-foreground sm:p-6 md:p-8">
                       No matching items found.
                     </div>
                   )}

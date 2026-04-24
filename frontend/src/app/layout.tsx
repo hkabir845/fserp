@@ -14,6 +14,10 @@ const inter = Inter({
 })
 
 export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  /** Allow pinch-zoom for accessibility (avoid locking maximumScale to 1). */
+  maximumScale: 5,
   themeColor: '#1d4ed8',
 }
 
@@ -44,11 +48,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        {/* Suppress CSS preload warning - CSS is loaded synchronously */}
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-      </head>
-      <body className={`${inter.className} min-h-screen bg-gray-50`} suppressHydrationWarning>
+      <body className={`${inter.className} min-h-screen min-h-[100dvh] bg-gray-50 antialiased`} suppressHydrationWarning>
         <noscript>
           <div style={{ padding: '2rem', textAlign: 'center', background: '#f3f4f6' }}>
             Please enable JavaScript to run this app.

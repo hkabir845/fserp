@@ -138,7 +138,7 @@ function OverviewPageContent() {
       <div className="flex min-h-0 flex-1 overflow-y-auto">
         <div className="w-full min-w-0 p-4 sm:p-6 lg:p-8">
           {loading ? (
-            <div className="bg-white rounded-lg shadow p-8 text-center">
+            <div className="bg-white rounded-lg shadow app-modal-pad text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-600">Loading platform statistics...</p>
             </div>
@@ -273,7 +273,7 @@ function OverviewPageContent() {
               </div>
             </>
           ) : (
-            <div className="bg-white rounded-lg shadow p-8 text-center">
+            <div className="bg-white rounded-lg shadow app-modal-pad text-center">
               <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h2 className="text-xl font-semibold text-gray-900 mb-2">Platform Overview</h2>
               <p className="text-gray-600 text-lg mb-2">No statistics available</p>

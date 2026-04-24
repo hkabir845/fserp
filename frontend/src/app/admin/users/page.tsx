@@ -307,8 +307,8 @@ function UsersPageContent() {
     return (
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
-        <div className="flex-1 overflow-y-auto p-8">
-          <div className="bg-white rounded-lg shadow p-8 text-center">
+        <div className="flex-1 overflow-y-auto app-scroll-pad">
+          <div className="bg-white rounded-lg shadow app-modal-pad text-center">
             <p className="text-gray-600">Please switch to SaaS Dashboard mode to manage users.</p>
           </div>
         </div>
@@ -320,7 +320,7 @@ function UsersPageContent() {
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-y-auto">
-        <div className="p-8">
+        <div className="app-scroll-pad">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-xl font-bold text-gray-900">All Users</h2>
@@ -358,7 +358,7 @@ function UsersPageContent() {
           </div>
 
           {loading ? (
-            <div className="bg-white rounded-lg shadow p-8 text-center">
+            <div className="bg-white rounded-lg shadow app-modal-pad text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-600">Loading users...</p>
             </div>

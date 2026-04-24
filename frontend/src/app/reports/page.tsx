@@ -7,8 +7,9 @@ import { useCompany } from '@/contexts/CompanyContext'
 import { 
   FileText, TrendingUp, DollarSign, Users, Package, 
   BarChart3, Calendar, Download, Filter, RefreshCw, Printer,
-  Gauge, Droplet, ClipboardList
+  Gauge, Droplet, ClipboardList, Layers
 } from 'lucide-react'
+import { canViewInventorySkuReport } from '@/utils/rbac'
 import api from '@/lib/api'
 import { formatDate, formatDateOnly, formatDateRange, localDateISO, toDateInputValue } from '@/utils/date'
 import { formatCurrency, formatNumber } from '@/utils/formatting'
@@ -30,13 +31,14 @@ type ReportType =
   | 'meter-readings'
   | 'sales-by-nozzle'
   | 'daily-summary'
+  | 'inventory-sku-valuation'
 
 interface ReportCard {
   id: ReportType
   title: string
   description: string
   icon: React.ElementType
-  category: 'financial' | 'operational' | 'analytical'
+  category: 'financial' | 'operational' | 'analytical' | 'inventory'
 }
 
 const reports: ReportCard[] = [
@@ -75,6 +77,14 @@ const reports: ReportCard[] = [
     description: 'Accounts Payable summary',
     icon: Users,
     category: 'financial'
+  },
+
+  {
+    id: 'inventory-sku-valuation',
+    title: 'Inventory: Valuation & Velocity',
+    description: 'Per-SKU on-hand, cost and list value, period sales, velocity, and days of cover',
+    icon: Layers,
+    category: 'inventory',
   },
   
   // Operational Reports (Filling Station)
@@ -145,6 +155,7 @@ const SUMMARY_EXCLUDED_REPORTS: ReportType[] = [
   'tank-dip-variance',
   'tank-dip-register',
   'meter-readings',
+  'inventory-sku-valuation',
 ]
 
 /** Single source of truth: APIs that accept `start_date` / `end_date` (used for fetch + period UI). */
@@ -162,6 +173,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'tank-dip-variance',
   'tank-dip-register',
   'meter-readings',
+  'inventory-sku-valuation',
 ])
 
 export default function ReportsPage() {
@@ -178,7 +190,9 @@ export default function ReportsPage() {
     startDate: localDateISO(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
     endDate: localDateISO(),
   })
-  const [filterCategory, setFilterCategory] = useState<'all' | 'financial' | 'operational' | 'analytical'>('all')
+  const [filterCategory, setFilterCategory] = useState<
+    'all' | 'financial' | 'operational' | 'analytical' | 'inventory'
+  >('all')
   
   useEffect(() => {
     let cancelled = false
@@ -253,6 +267,11 @@ export default function ReportsPage() {
         report.id === 'daily-summary'
       )
     }
+
+    roleFilteredReports = roleFilteredReports.filter(
+      (report) =>
+        report.id !== 'inventory-sku-valuation' || canViewInventorySkuReport(userRole)
+    )
     
     // Then filter by category
     if (filterCategory === 'all') {
@@ -454,6 +473,14 @@ export default function ReportsPage() {
         contentHTML += `<tr><td>${tank.tank_name || ''}</td><td>${tank.station_name || ''}</td><td>${tank.product_name || ''}</td><td style="text-align:right">${Number(tank.capacity || 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.current_stock || 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.fill_percentage || 0).toFixed(1)}%</td><td>${tank.needs_refill ? 'Yes' : 'No'}</td></tr>`
       })
       contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'inventory-sku-valuation' && reportData.rows) {
+      const rows: any[] = reportData.rows || []
+      contentHTML += '<h2>SKU details</h2><table><thead><tr><th>SKU</th><th>Item</th><th>Unit</th><th style="text-align:right">On hand</th><th style="text-align:right">Cost value</th><th style="text-align:right">List value</th><th style="text-align:right">Period qty</th><th style="text-align:right">Period rev</th><th style="text-align:right">Units/day</th><th style="text-align:right">Days cover</th><th>Status</th></tr></thead><tbody>'
+      rows.forEach((r: any) => {
+        const dc = r.days_of_cover == null ? '—' : String(r.days_of_cover)
+        contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.unit || ''))}</td><td style="text-align:right">${r.quantity_on_hand != null ? Number(r.quantity_on_hand).toFixed(2) : ''}</td><td style="text-align:right">${formatCurrency(r.extended_cost_value)}</td><td style="text-align:right">${formatCurrency(r.extended_list_value)}</td><td style="text-align:right">${r.period_quantity_sold != null ? Number(r.period_quantity_sold).toFixed(2) : ''}</td><td style="text-align:right">${formatCurrency(r.period_revenue)}</td><td style="text-align:right">${r.velocity_per_day != null ? Number(r.velocity_per_day).toFixed(3) : ''}</td><td style="text-align:right">${escapeHtml(dc)}</td><td>${escapeHtml(String(r.stock_status || ''))}</td></tr>`
+      })
+      contentHTML += '</tbody></table>'
     } else if (selectedReport === 'shift-summary' && reportData.sessions) {
       contentHTML += '<h2>Session Details</h2><table><thead><tr><th>Cashier</th><th>Station</th><th>Opened</th><th>Closed</th><th style="text-align:right">Transactions</th><th style="text-align:right">Sales</th><th style="text-align:right">Liters</th><th style="text-align:right">Cash Expected</th><th style="text-align:right">Cash Counted</th><th style="text-align:right">Variance</th><th>Status</th></tr></thead><tbody>'
       reportData.sessions.forEach((session: any) => {
@@ -589,6 +616,27 @@ export default function ReportsPage() {
         reportData.inventory.forEach((tank: any) => {
           csvContent += `${escapeCsv(tank.tank_name)},${escapeCsv(tank.station_name)},${escapeCsv(tank.product_name)},${tank.capacity || 0},${tank.current_stock || 0},${Number(tank.fill_percentage || 0).toFixed(1)},${tank.needs_refill ? 'Yes' : 'No'}\n`
         })
+      } else if (selectedReport === 'inventory-sku-valuation' && reportData.rows) {
+        csvContent +=
+          'SKU,Name,Unit,On hand,Unit cost,Cost value,List value,Period qty,Period rev,Units per day,Days cover,Status\n'
+        const rows: any[] = reportData.rows || []
+        rows.forEach((r: any) => {
+          csvContent += [
+            escapeCsv(r.sku),
+            escapeCsv(r.name),
+            escapeCsv(r.unit),
+            r.quantity_on_hand ?? '',
+            r.unit_cost ?? '',
+            r.extended_cost_value ?? '',
+            r.extended_list_value ?? '',
+            r.period_quantity_sold ?? '',
+            r.period_revenue ?? '',
+            r.velocity_per_day ?? '',
+            r.days_of_cover == null ? '' : r.days_of_cover,
+            escapeCsv(r.stock_status),
+          ].join(',')
+          csvContent += '\n'
+        })
       } else if (selectedReport === 'shift-summary' && reportData.sessions) {
         csvContent += 'Cashier,Station,Opened,Closed,Status,Transactions,Sales,Liters,Cash Expected,Cash Counted,Variance\n'
         reportData.sessions.forEach((session: any) => {
@@ -689,7 +737,7 @@ export default function ReportsPage() {
   return (
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -742,6 +790,16 @@ export default function ReportsPage() {
               >
                 Analytical
               </button>
+              <button
+                onClick={() => setFilterCategory('inventory')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  filterCategory === 'inventory' 
+                    ? 'bg-white text-blue-600 shadow-sm' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Inventory
+              </button>
             </div>
           )}
 
@@ -775,6 +833,7 @@ export default function ReportsPage() {
                         <span className={`inline-block mt-2 text-xs px-2 py-1 rounded-full ${
                           report.category === 'financial' ? 'bg-green-100 text-green-700' :
                           report.category === 'operational' ? 'bg-blue-100 text-blue-700' :
+                          report.category === 'inventory' ? 'bg-amber-100 text-amber-800' :
                           'bg-purple-100 text-purple-700'
                         }`}>
                           {report.category.charAt(0).toUpperCase() + report.category.slice(1)}
@@ -1854,6 +1913,137 @@ function renderReportTable(
             </tbody>
           </table>
         </div>
+      </div>
+    )
+  }
+
+  // Inventory: valuation & velocity (SKU)
+  if (reportType === 'inventory-sku-valuation' && data) {
+    const period = data?.period || {}
+    const rows: any[] = Array.isArray(data.rows) ? data.rows : []
+    const s = data.summary || {}
+    const statusLabel: Record<string, string> = {
+      no_period_sales: 'No period sales',
+      sold_out: 'Sold out (period)',
+      static_stock: 'No movement',
+      under_7d_cover: 'Under 7d cover',
+      over_60d_cover: 'Over 60d cover',
+      healthy: 'Balanced',
+    }
+    return (
+      <div className="space-y-6">
+        {hasPeriod && renderPeriodFilter(
+          period,
+          dateRange,
+          reportType,
+          handleReportDateChange,
+          'Period sales and velocity use invoice lines in this date range. On-hand values are current (as of now).',
+        )}
+
+        <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-slate-800">What this report shows</h3>
+          <p className="mt-1 text-sm text-slate-600 max-w-4xl leading-relaxed">
+            Per-SKU view of <strong>stock on hand</strong> with <strong>cost basis</strong> and <strong>retail (list) extension</strong>,
+            plus <strong>invoiced quantity and revenue</strong> in the period. <strong>Velocity</strong> is average units per day;
+            <strong> days of cover</strong> estimates how long current stock lasts at that pace (where period sales exist).
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { label: 'SKUs in scope', v: s.line_count ?? 0, fmt: 'n' as const },
+            { label: 'Total on-hand (units)', v: s.total_qty_on_hand ?? 0, fmt: 'n' as const },
+            { label: 'Total cost value', v: s.total_cost_value ?? 0, fmt: 'c' as const },
+            { label: 'Total list value', v: s.total_list_value ?? 0, fmt: 'c' as const },
+            { label: 'Period units sold', v: s.total_period_quantity_sold ?? 0, fmt: 'n' as const },
+            { label: 'Period revenue', v: s.total_period_revenue ?? 0, fmt: 'c' as const },
+            { label: 'List − cost (on hand)', v: s.implied_list_minus_cost ?? 0, fmt: 'c' as const },
+            { label: 'Period days', v: s.period_days ?? 0, fmt: 'n' as const },
+          ].map((k) => (
+            <div
+              key={k.label}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm"
+            >
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{k.label}</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">
+                {k.fmt === 'c' ? formatCurrency(Number(k.v) || 0) : formatNumber(Number(k.v) || 0, 2)}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-100">
+              <tr>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">SKU</th>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Item</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">On hand</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Unit cost</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Cost value</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">List value</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Period qty</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Period revenue</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Units / day</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Days cover</th>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="px-4 py-10 text-center text-slate-500">
+                    No tracked inventory items found. Add products (inventory type) or record sales in the period.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r: any, idx: number) => (
+                  <tr key={idx} className="hover:bg-slate-50/80">
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-900">{r.sku || '—'}</td>
+                    <td className="max-w-[200px] px-3 py-2 text-slate-800">
+                      <span className="line-clamp-2" title={r.name}>
+                        {r.name}
+                      </span>
+                      {r.unit ? <span className="ml-1 text-xs text-slate-500">({r.unit})</span> : null}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-800">
+                      {formatNumber(r.quantity_on_hand, 2)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
+                      {formatCurrency(r.unit_cost)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right font-medium text-slate-900">
+                      {formatCurrency(r.extended_cost_value)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">
+                      {formatCurrency(r.extended_list_value)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">
+                      {formatNumber(r.period_quantity_sold, 2)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">
+                      {formatCurrency(r.period_revenue)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
+                      {formatNumber(r.velocity_per_day, 3)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">
+                      {r.days_of_cover == null ? '—' : `${r.days_of_cover} d`}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600">
+                      {statusLabel[r.stock_status] || r.stock_status}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {data.accounting_note ? (
+          <p className="text-xs text-slate-500 max-w-4xl leading-relaxed border-t border-slate-100 pt-3">
+            {data.accounting_note}
+          </p>
+        ) : null}
       </div>
     )
   }

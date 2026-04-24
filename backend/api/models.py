@@ -98,6 +98,29 @@ class TenantPlatformReleaseEvent(models.Model):
         return f"{self.category} company={self.company_id} @ {self.created_at}"
 
 
+class CompanyRole(models.Model):
+    """
+    Tenant-defined role template: name + permission keys (see api.services.permission_service).
+    Users may optionally reference one custom_role; if set, their effective permissions
+    come from that template instead of the built-in role defaults.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="custom_roles")
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=500, blank=True)
+    permissions = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True)
+
+    class Meta:
+        db_table = "company_role"
+        unique_together = [["company", "name"]]
+        ordering = ["company_id", "name"]
+
+    def __str__(self):
+        return f"{self.name} (company {self.company_id})"
+
+
 class Contract(models.Model):
     """SaaS contract per company. Super Admin manages via /api/contracts/."""
     contract_number = models.CharField(max_length=64, unique=True)
@@ -134,6 +157,13 @@ class User(models.Model):
     email = models.EmailField(blank=True)
     full_name = models.CharField(max_length=255, blank=True)
     role = models.CharField(max_length=64, default="user")
+    custom_role = models.ForeignKey(
+        CompanyRole,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_users",
+    )
     password_hash = models.CharField(max_length=255, blank=True)
     company_id = models.IntegerField(null=True, blank=True)
     is_active = models.BooleanField(default=True)

@@ -261,7 +261,7 @@ export default function TanksPage() {
     <CompanyProvider>
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Tanks</h1>
           <p className="text-gray-600 mt-1">Manage fuel storage tanks and inventory</p>
@@ -326,7 +326,7 @@ export default function TanksPage() {
             </div>
           </div>
         ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-8">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 sm:p-6 md:p-8">
             <div className="text-center mb-6">
               <AlertTriangle className="h-16 w-16 text-red-600 mx-auto mb-4" />
               <h3 className="text-xl font-bold text-red-800 mb-2">Backend Connection Error</h3>
@@ -445,7 +445,7 @@ export default function TanksPage() {
             
             if (tankCount <= 3) {
               gridCols = 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-              cardPadding = 'p-8'
+              cardPadding = 'p-4 sm:p-6 md:p-8'
               cardGap = 'gap-6'
               fontSize = {
                 title: 'text-2xl',
@@ -601,7 +601,7 @@ export default function TanksPage() {
         {/* Create/Edit Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-lg app-modal-pad max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-2xl font-bold mb-6">
                 {editingId ? 'Edit Tank' : 'Add New Tank'}
               </h2>

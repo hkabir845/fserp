@@ -180,7 +180,7 @@ function SaasBackupRestoreContent() {
     <div className="page-with-sidebar flex h-screen bg-gray-100">
       <Sidebar />
       <div className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-3xl p-8">
+        <div className="mx-auto max-w-3xl app-scroll-pad">
           <div className="mb-8 flex items-start gap-3">
             <div className="rounded-lg bg-indigo-100 p-3">
               <Database className="h-8 w-8 text-indigo-800" />

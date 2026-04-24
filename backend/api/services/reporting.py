@@ -17,6 +17,7 @@ from api.models import (
     Customer,
     Invoice,
     InvoiceLine,
+    Item,
     JournalEntryLine,
     Meter,
     Nozzle,
@@ -26,6 +27,7 @@ from api.models import (
     Vendor,
 )
 from api.services.gl_posting import item_inventory_unit_cost
+from api.services.item_catalog import item_tracks_physical_stock
 from api.services.coa_constants import (
     is_debit_normal_chart_type,
     is_pl_credit_normal_type,
@@ -1129,5 +1131,140 @@ def report_daily_summary(company_id: int, start: date, end: date) -> dict[str, A
         "accounting_note": (
             "Sales from invoices in range; liters only on fuel-classified lines. "
             "Meter/nozzle reports allocate by product. Dip net variance is liters (stick − book at dip), not currency."
+        ),
+    }
+
+
+def report_inventory_sku_valuation(company_id: int, start: date, end: date) -> dict[str, Any]:
+    """
+    Per-SKU: on-hand, cost & list extension, period sales, velocity, days of cover.
+    Uses Item.cost (fallback per gl_posting) and invoice lines in [start, end] for the selected company.
+    """
+    period_days = (end - start).days + 1
+    if period_days < 1:
+        period_days = 1
+    period_days_dec = Decimal(str(period_days))
+
+    inv_ids = Invoice.objects.filter(
+        company_id=company_id,
+        invoice_date__gte=start,
+        invoice_date__lte=end,
+    ).values_list("id", flat=True)
+    inv_id_set = set(inv_ids)
+    line_agg: dict[int, dict[str, Decimal]] = {}
+    for row in (
+        InvoiceLine.objects.filter(
+            invoice_id__in=inv_id_set, item_id__isnull=False
+        )
+        .values("item_id")
+        .annotate(
+            q=Coalesce(Sum("quantity"), Decimal("0")),
+            a=Coalesce(Sum("amount"), Decimal("0")),
+        )
+    ):
+        iid = row.get("item_id")
+        if iid:
+            line_agg[int(iid)] = {
+                "q": _d(row.get("q")),
+                "a": _d(row.get("a")),
+            }
+
+    rows_out: list[dict[str, Any]] = []
+    tot_cost = Decimal("0")
+    tot_list = Decimal("0")
+    tot_qoh = Decimal("0")
+    tot_period_qty = Decimal("0")
+    tot_period_rev = Decimal("0")
+
+    for item in (
+        Item.objects.filter(company_id=company_id, is_active=True)
+        .order_by("item_number", "name")
+    ):
+        if not item_tracks_physical_stock(item):
+            continue
+        qoh = _d(getattr(item, "quantity_on_hand", None) or 0)
+        if qoh < 0:
+            qoh = Decimal("0")
+        uc = item_inventory_unit_cost(item)
+        list_p = _d(getattr(item, "unit_price", None) or 0)
+        ext_cost = qoh * uc
+        ext_list = qoh * list_p
+        agg = line_agg.get(int(item.id)) or {"q": Decimal("0"), "a": Decimal("0")}
+        pq = agg["q"]
+        pa = agg["a"]
+        daily_avg = pq / period_days_dec
+        doc: Optional[float] = None
+        if daily_avg and daily_avg > 0 and qoh > 0:
+            doc = float(qoh / daily_avg)
+        stock_status = "no_period_sales"
+        if pq > 0 and qoh <= 0:
+            stock_status = "sold_out"
+        elif qoh > 0 and (daily_avg is None or daily_avg <= 0):
+            stock_status = "static_stock"
+        elif doc is not None and doc < 7:
+            stock_status = "under_7d_cover"
+        elif doc is not None and doc > 60:
+            stock_status = "over_60d_cover"
+        elif pq > 0 and doc is not None and 7 <= doc <= 60:
+            stock_status = "healthy"
+
+        tot_cost += ext_cost
+        tot_list += ext_list
+        tot_qoh += qoh
+        tot_period_qty += pq
+        tot_period_rev += pa
+        margin_pct: Optional[float] = None
+        cogs_est = pq * uc
+        if pa > 0:
+            margin_pct = float((pa - cogs_est) / pa * Decimal("100"))
+        elif pa == 0 and pq == 0:
+            margin_pct = None
+
+        rows_out.append(
+            {
+                "sku": (item.item_number or "").strip() or f"#{item.id}",
+                "name": (item.name or "")[:200],
+                "item_type": (getattr(item, "item_type", None) or "") or "",
+                "unit": (item.unit or "")[:24],
+                "quantity_on_hand": _f(qoh),
+                "unit_cost": _f(uc),
+                "extended_cost_value": _f(ext_cost),
+                "list_price": _f(list_p),
+                "extended_list_value": _f(ext_list),
+                "period_quantity_sold": _f(pq),
+                "period_revenue": _f(pa),
+                "period_days": int(period_days),
+                "velocity_per_day": _f(daily_avg) if daily_avg is not None else 0.0,
+                "days_of_cover": None if doc is None else round(doc, 1),
+                "gross_margin_pct": None if margin_pct is None else round(margin_pct, 2),
+                "stock_status": stock_status,
+            }
+        )
+
+    # Highest inventory value (cost) first
+    rows_out.sort(
+        key=lambda r: (float(r.get("extended_cost_value", 0) or 0), r.get("sku") or ""),
+        reverse=True,
+    )
+
+    return {
+        "report_id": "inventory-sku-valuation",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": {
+            "line_count": len(rows_out),
+            "total_qty_on_hand": _f(tot_qoh),
+            "total_cost_value": _f(tot_cost),
+            "total_list_value": _f(tot_list),
+            "total_period_quantity_sold": _f(tot_period_qty),
+            "total_period_revenue": _f(tot_period_rev),
+            "period_days": int(period_days),
+            "implied_list_minus_cost": _f(tot_list - tot_cost),
+        },
+        "rows": rows_out,
+        "accounting_note": (
+            "On-hand is live Item quantity (including tank-synced products). "
+            "Cost uses Item.cost with a fallback to list price for zero-cost items. "
+            "Velocity = period quantity ÷ day count. Days of cover = on-hand ÷ average daily period sales; "
+            "N/A when there is no period movement."
         ),
     }

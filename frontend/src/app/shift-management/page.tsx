@@ -449,7 +449,7 @@ export default function ShiftManagementPage() {
     return (
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto app-scroll-pad">
           <div className="text-center text-gray-600">Loading shift management…</div>
         </div>
       </div>
@@ -459,7 +459,7 @@ export default function ShiftManagementPage() {
   return (
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Shift Management</h1>
           <p className="text-gray-600">Open and close cashier shifts by template and station</p>

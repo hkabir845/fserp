@@ -533,15 +533,15 @@ function DashboardPageContent() {
 
           {/* Error Message */}
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <svg className="h-5 w-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-700">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-start sm:items-center">
+                  <svg className="mr-2 mt-0.5 h-5 w-5 shrink-0 sm:mt-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
-                  <p className="font-semibold">{error}</p>
+                  <p className="min-w-0 font-semibold break-words">{error}</p>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <button
                     onClick={() => {
                       setError(null)

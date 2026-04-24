@@ -325,7 +325,7 @@ export default function SubscriptionsPage() {
     <div className="page-with-sidebar flex h-screen bg-gray-50">
       <Sidebar />
       <div className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto p-8">
+        <div className="max-w-7xl mx-auto app-scroll-pad">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-gray-900 mb-2">Subscription & Billing</h1>

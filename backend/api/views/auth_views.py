@@ -4,6 +4,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from api.models import User
+from api.services.permission_service import user_client_dict
 from api.utils.auth import create_tokens, get_user_from_request, tenant_company_allows_access
 
 
@@ -34,14 +35,7 @@ def _parse_login_body(request):
 
 
 def _user_to_json(user):
-    return {
-        "id": user.id,
-        "username": user.username,
-        "email": getattr(user, "email", "") or "",
-        "full_name": getattr(user, "full_name", "") or "",
-        "role": getattr(user, "role", "") or "user",
-        "company_id": getattr(user, "company_id", None),
-    }
+    return user_client_dict(user)
 
 
 @csrf_exempt
@@ -51,7 +45,9 @@ def login(request):
     username, password = _parse_login_body(request)
     if not username or not password:
         return JsonResponse({"detail": "username and password required"}, status=400)
-    user = User.objects.filter(username__iexact=username, is_active=True).first()
+    user = User.objects.filter(username__iexact=username, is_active=True).select_related(
+        "custom_role"
+    ).first()
     if not user or not user.check_password(password):
         return JsonResponse({"detail": "Invalid credentials"}, status=401)
     if not tenant_company_allows_access(user):
@@ -117,7 +113,9 @@ def refresh(request):
     if not isinstance(username, str):
         username = str(username)
     try:
-        user = User.objects.filter(username__iexact=username, is_active=True).first()
+        user = User.objects.filter(username__iexact=username, is_active=True).select_related(
+        "custom_role"
+    ).first()
     except Exception:
         return JsonResponse({"detail": "Server error"}, status=500)
     if not user:

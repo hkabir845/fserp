@@ -310,7 +310,7 @@ function BroadcastingPageContent() {
     <div className="page-with-sidebar flex h-screen bg-gray-50">
       <Sidebar />
       <div className="flex-1 overflow-y-auto">
-        <div className="p-8">
+        <div className="app-scroll-pad">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-gray-900 flex items-center space-x-2">
               <Megaphone className="h-6 w-6 text-blue-600" />

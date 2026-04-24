@@ -183,7 +183,7 @@ export default function ContactLedgerPage({
     <CompanyProvider>
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto app-scroll-pad">
           <div className="mb-6 flex flex-wrap items-center gap-4">
             <Link
               href={backHref}

@@ -701,7 +701,7 @@ export default function PayrollPage() {
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto">
-        <div className="p-8">
+        <div className="app-scroll-pad">
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Payroll</h1>

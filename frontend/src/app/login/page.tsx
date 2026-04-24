@@ -356,7 +356,7 @@ export default function LoginPage() {
       } else if (userRole === 'cashier' || userRole === 'operator') {
         router.push('/cashier')
       } else {
-        router.push('/dashboard')
+        router.push('/apps')
       }
     } catch (err: any) {
       // Log detailed error information for debugging
@@ -416,10 +416,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Filling Station ERP</h1>
+    <div className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4 py-8">
+      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl sm:p-8">
+        <div className="mb-8 text-center">
+          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Filling Station ERP</h1>
           <p className="text-gray-600 mt-2">QuickBooks Style Business Management</p>
         </div>
 

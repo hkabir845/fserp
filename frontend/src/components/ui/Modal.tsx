@@ -23,15 +23,19 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-      <div className={`bg-white rounded-lg p-8 ${sizeClasses[size]} w-full mx-4 my-8`}>
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">{title}</h2>
+    <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto overflow-x-hidden bg-black/50 p-0 pb-[env(safe-area-inset-bottom,0px)] sm:items-center sm:p-4">
+      <div
+        className={`my-0 w-full min-w-0 max-w-full overflow-y-auto overscroll-y-contain rounded-t-xl bg-white p-4 shadow-lg sm:my-auto sm:max-h-[min(100dvh-1.5rem,100%)] sm:rounded-lg sm:p-6 md:p-8 ${sizeClasses[size]} mx-auto`}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3 sm:mb-6">
+          <h2 className="min-w-0 pr-2 text-lg font-bold sm:text-2xl">{title}</h2>
           <button
+            type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="touch-min -m-1 flex shrink-0 items-center justify-center rounded-lg p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            aria-label="Close dialog"
           >
-            <X size={24} />
+            <X className="h-6 w-6" aria-hidden />
           </button>
         </div>
         {children}

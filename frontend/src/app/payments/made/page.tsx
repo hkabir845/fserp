@@ -319,7 +319,7 @@ export default function PaymentMadePage() {
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto">
-        <div className="p-8">
+        <div className="app-scroll-pad">
           <Link
             href="/payments"
             className="mb-4 inline-flex items-center text-sm font-medium text-gray-600 hover:text-gray-900"

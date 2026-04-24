@@ -16,6 +16,7 @@ from api.views import (
     broadcasts_views,
     admin_views,
     users_views,
+    company_roles_views,
     contracts_views,
     station_views,
     tank_views,
@@ -150,6 +151,9 @@ urlpatterns = [
     # Users (Super Admin)
     path("users/", users_views.users_list_or_create),
     path("users/<int:user_id>/", users_views.user_detail),
+    path("permission-catalog/", company_roles_views.permission_catalog),
+    path("company-roles/", company_roles_views.company_roles_list_or_create),
+    path("company-roles/<int:role_id>/", company_roles_views.company_role_detail),
     # Admin (Super Admin)
     path("admin/stats/", admin_views.admin_stats),
     path("admin/companies/", admin_views.admin_companies),

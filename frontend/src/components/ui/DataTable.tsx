@@ -25,13 +25,14 @@ export default function DataTable<T extends { id: number | string }>({
 }: DataTableProps<T>) {
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
-      <table className="min-w-full divide-y divide-gray-200">
+      <div className="min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+        <table className="min-w-full divide-y divide-gray-200">
         <thead className="bg-gray-50">
           <tr>
             {columns.map((column, index) => (
               <th
                 key={index}
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                className="px-3 py-2.5 text-left text-[10px] font-medium uppercase tracking-wider text-gray-500 sm:px-4 sm:py-3 sm:text-xs md:px-6"
               >
                 {column.header}
               </th>
@@ -41,7 +42,7 @@ export default function DataTable<T extends { id: number | string }>({
         <tbody className="bg-white divide-y divide-gray-200">
           {data.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-6 py-12 text-center">
+              <td colSpan={columns.length} className="px-3 py-8 text-center sm:px-6 sm:py-12">
                 {emptyIcon && <div className="flex justify-center mb-4">{emptyIcon}</div>}
                 <p className="text-gray-600">{emptyMessage}</p>
               </td>
@@ -54,7 +55,10 @@ export default function DataTable<T extends { id: number | string }>({
                 onClick={() => onRowClick?.(row)}
               >
                 {columns.map((column, colIndex) => (
-                  <td key={colIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td
+                    key={colIndex}
+                    className="max-w-[11rem] px-3 py-2.5 text-xs text-gray-900 sm:max-w-none sm:whitespace-nowrap sm:px-4 sm:py-3 sm:text-sm md:px-6"
+                  >
                     {column.render
                       ? column.render(row)
                       : String(row[column.accessor as keyof T] ?? '-')}
@@ -65,6 +69,7 @@ export default function DataTable<T extends { id: number | string }>({
           )}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

@@ -810,7 +810,7 @@ function CompaniesPageContent() {
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
         <div className="flex min-h-0 flex-1 overflow-y-auto p-4 sm:p-8">
-          <div className="bg-white rounded-lg shadow p-8 text-center">
+          <div className="bg-white rounded-lg shadow app-modal-pad text-center">
             <p className="text-gray-600">Please switch to SaaS Dashboard mode to manage companies.</p>
           </div>
         </div>
@@ -1046,17 +1046,17 @@ function CompaniesPageContent() {
 
           {/* Companies Grid */}
           {loading ? (
-            <div className="bg-white rounded-lg shadow p-8 text-center">
+            <div className="bg-white rounded-lg shadow app-modal-pad text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-600">Loading companies...</p>
             </div>
           ) : companies.length === 0 ? (
             companiesFetchError ? (
-              <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-600">
+              <div className="rounded-lg border border-gray-200 bg-white app-modal-pad text-center text-gray-600">
                 <p className="text-sm">Fix the issue above (API URL, sign-in, or Super Admin role), then use Retry.</p>
               </div>
             ) : (
-            <div className="bg-white rounded-lg shadow p-8 text-center">
+            <div className="bg-white rounded-lg shadow app-modal-pad text-center">
               <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-600 text-lg mb-2">No companies found</p>
               <p className="text-gray-500 text-sm mb-4">Create your first company to get started</p>
@@ -1074,7 +1074,7 @@ function CompaniesPageContent() {
             </div>
             )
           ) : filteredCompanies.length === 0 ? (
-            <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-600">
+            <div className="rounded-lg border border-gray-200 bg-white app-modal-pad text-center text-gray-600">
               <p>No companies match &quot;{companySearch.trim()}&quot;.</p>
               <button
                 type="button"

@@ -433,7 +433,7 @@ export default function TankDipsPage() {
     return (
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto app-scroll-pad">
           <div className="text-center">Loading...</div>
         </div>
       </div>
@@ -443,7 +443,7 @@ export default function TankDipsPage() {
   return (
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Tank Dip Readings</h1>

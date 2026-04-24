@@ -53,7 +53,7 @@ function SubscriptionLedgerPageContent() {
     <div className="page-with-sidebar flex h-screen bg-gray-50">
       <Sidebar />
       <div className="flex-1 overflow-y-auto">
-        <div className="p-8">
+        <div className="app-scroll-pad">
           {/* Header Section - Removed duplicate header since SubscriptionLedger component has its own */}
 
           {/* Info Banner - How SaaS Subscription Billing Works */}

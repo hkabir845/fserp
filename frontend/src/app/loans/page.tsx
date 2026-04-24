@@ -1710,7 +1710,7 @@ export default function LoansPage() {
                 </span>
               </div>
               {counterpartiesAll.length === 0 ? (
-                <div className="p-8 text-center">
+                <div className="p-4 text-center sm:p-8">
                   <p className="text-sm text-slate-600">No counterparties yet.</p>
                   <button
                     type="button"

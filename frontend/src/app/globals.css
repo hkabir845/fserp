@@ -98,8 +98,39 @@
   * {
     @apply border-border;
   }
+  html {
+    -webkit-text-size-adjust: 100%;
+    @apply w-full min-w-0 max-w-full overflow-x-hidden;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply w-full min-w-0 max-w-full overflow-x-hidden bg-background text-foreground;
+    /* Notched phones / home indicator / gesture bar */
+    padding-left: env(safe-area-inset-left, 0);
+    padding-right: env(safe-area-inset-right, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}
+
+@layer components {
+  /**
+   * Main scroll columns (replaces raw p-8 on mobile). Use on flex-1 overflow-auto areas.
+   */
+  .app-scroll-pad {
+    @apply w-full min-w-0 max-w-full px-3 py-4 sm:px-4 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8;
+  }
+
+  /**
+   * Large modals & sheet panels: comfortable on phones without squashing.
+   */
+  .app-modal-pad {
+    @apply p-4 sm:p-5 md:p-6 lg:p-8;
+  }
+
+  /**
+   * Inset focus rings for touch targets
+   */
+  .touch-min {
+    @apply min-h-11 min-w-11;
   }
 }
 
@@ -130,6 +161,9 @@
 /* App shell: lock viewport height so sidebar + main scroll independently (not the whole page). */
 .page-with-sidebar {
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
 }
 
@@ -141,10 +175,10 @@
   min-height: 0;
 }
 
-/* Reserve space for the mobile menu (hamburger) button — lg:hidden in Sidebar */
+/* Reserve space for the mobile menu (hamburger) + notch / status bar */
 @media (max-width: 1023px) {
   .page-with-sidebar > div.flex-1 {
-    padding-top: 3.5rem;
+    padding-top: max(3.5rem, env(safe-area-inset-top, 0px) + 0.5rem);
   }
 }
 

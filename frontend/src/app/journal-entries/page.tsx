@@ -507,7 +507,7 @@ export default function JournalEntriesPage() {
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto">
-        <div className="p-8">
+        <div className="app-scroll-pad">
           {error ? (
             <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
               <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
@@ -821,7 +821,7 @@ export default function JournalEntriesPage() {
       {/* View Modal */}
       {showViewModal && viewingEntry && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-          <div className="bg-white rounded-lg p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8">
+          <div className="bg-white rounded-lg app-modal-pad max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">Journal Entry: {viewingEntry.entry_number}</h2>
               <button
@@ -914,7 +914,7 @@ export default function JournalEntriesPage() {
           {/* Create/Edit Modal */}
           {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-          <div className="bg-white rounded-lg p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto my-8">
+          <div className="bg-white rounded-lg app-modal-pad max-w-5xl w-full max-h-[90vh] overflow-y-auto my-8">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">
                 {editingEntry ? 'Edit Journal Entry' : 'New Journal Entry'}

@@ -457,7 +457,7 @@ export default function CustomersPage() {
       <div className="page-with-sidebar flex h-screen bg-gray-50">
         <Sidebar />
         <div className="flex-1 overflow-auto">
-          <div className="p-8">
+          <div className="app-scroll-pad">
             {/* Header */}
             <div className="mb-8">
               <div className="flex items-center justify-between">
@@ -608,7 +608,7 @@ export default function CustomersPage() {
                 </div>
               </div>
             ) : error ? (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-8">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 sm:p-6 md:p-8">
                 <div className="text-center mb-6">
                   <AlertTriangle className="h-16 w-16 text-red-600 mx-auto mb-4" />
                   <h3 className="text-xl font-bold text-red-800 mb-2">Backend Connection Error</h3>
@@ -928,7 +928,7 @@ export default function CustomersPage() {
             {/* Create/Edit Modal */}
             {showModal && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-                <div className="bg-white rounded-lg p-8 max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-xl my-8">
+                <div className="bg-white rounded-lg app-modal-pad max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-xl my-8">
                   <div className="flex items-center justify-between mb-6">
                     <h2 className="text-2xl font-bold text-gray-900">
                       {editingCustomer ? 'Edit Customer' : 'Add New Customer'}

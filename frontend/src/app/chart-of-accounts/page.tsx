@@ -1009,7 +1009,7 @@ export default function ChartOfAccountsPage() {
     return (
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto app-scroll-pad">
           <div className="flex flex-col justify-center items-center h-64 bg-white rounded-lg shadow">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
             <p className="text-gray-600">Loading chart of accounts...</p>
@@ -1023,7 +1023,7 @@ export default function ChartOfAccountsPage() {
     return (
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto app-scroll-pad">
           <div className="mb-6">
             <h1 className="text-3xl font-bold text-gray-900">Chart of accounts</h1>
             <p className="text-gray-600 mt-1">Manage your accounting chart of accounts</p>
@@ -1049,7 +1049,7 @@ export default function ChartOfAccountsPage() {
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto">
-        <div className="p-8">
+        <div className="app-scroll-pad">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Chart of accounts</h1>
@@ -1633,7 +1633,7 @@ export default function ChartOfAccountsPage() {
       {/* Statement Modal */}
       {showStatement && statement && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-          <div className="bg-white rounded-lg p-8 max-w-6xl w-full max-h-[90vh] overflow-y-auto my-8">
+          <div className="bg-white rounded-lg app-modal-pad max-w-6xl w-full max-h-[90vh] overflow-y-auto my-8">
             <div className="flex justify-between items-start gap-4 mb-6">
               <div>
                 {statementPrintBranding ? (
@@ -1926,7 +1926,7 @@ export default function ChartOfAccountsPage() {
       {/* Create/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-          <div className="bg-white rounded-lg p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto my-8">
+          <div className="bg-white rounded-lg app-modal-pad max-w-2xl w-full max-h-[90vh] overflow-y-auto my-8">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">
                 {editingAccount ? 'Edit Account' : 'New Account'}

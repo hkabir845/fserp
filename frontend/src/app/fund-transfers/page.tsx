@@ -276,7 +276,7 @@ export default function FundTransfersPage() {
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
         <div className="flex-1 overflow-auto">
-          <div className="p-8 flex justify-center items-center h-64">
+          <div className="app-scroll-pad flex justify-center items-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
           </div>
         </div>
@@ -288,7 +288,7 @@ export default function FundTransfersPage() {
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto">
-        <div className="p-8">
+        <div className="app-scroll-pad">
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Fund Transfers</h1>

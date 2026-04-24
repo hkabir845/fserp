@@ -13,6 +13,44 @@ export type UserRole =
 /**
  * Get current user role from localStorage
  */
+/** Effective permission keys from login (optional). When absent, UI falls back to role-based rules. */
+export function getCurrentUserPermissions(): string[] | null {
+  if (typeof window === 'undefined') return null
+  const userStr = localStorage.getItem('user')
+  if (!userStr || userStr === 'undefined' || userStr === 'null') {
+    return null
+  }
+  try {
+    const user = JSON.parse(userStr) as { permissions?: unknown }
+    if (user && Array.isArray(user.permissions)) {
+      return user.permissions as string[]
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+/**
+ * When `user.permissions` is present from the API, checks the list. When absent (legacy session), returns true so existing role-based UI still works.
+ */
+export function hasPermission(key: string): boolean {
+  const p = getCurrentUserPermissions()
+  if (p == null) return true
+  if (p.includes('*')) return true
+  return p.includes(key)
+}
+
+/** Inventory valuation & velocity report: extra key `report.inventory_sku` when permissions are in use. */
+export function canViewInventorySkuReport(userRole: string | null): boolean {
+  const p = getCurrentUserPermissions()
+  const r = (userRole || '').toLowerCase()
+  if (p != null) {
+    return p.includes('*') || p.includes('report.inventory_sku')
+  }
+  return ['super_admin', 'admin', 'accountant', 'manager'].includes(r)
+}
+
 export function getCurrentUserRole(): UserRole | null {
   if (typeof window === 'undefined') return null
 

@@ -184,7 +184,7 @@ export default function IslandsPage() {
   return (
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Islands</h1>
           <p className="text-gray-600 mt-1">Manage pump islands and dispenser locations</p>
@@ -320,7 +320,7 @@ export default function IslandsPage() {
         {/* Create/Edit Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-8 max-w-2xl w-full">
+            <div className="bg-white rounded-lg app-modal-pad max-w-2xl w-full">
               <h2 className="text-2xl font-bold mb-6">{editingId ? 'Edit Island' : 'Add New Island'}</h2>
               <form onSubmit={editingId ? handleUpdate : handleCreate}>
                 <div className="space-y-4">
@@ -403,7 +403,7 @@ export default function IslandsPage() {
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-8 max-w-md w-full">
+            <div className="bg-white rounded-lg app-modal-pad max-w-md w-full">
               <h2 className="text-2xl font-bold mb-4 text-red-600">Delete Island</h2>
               <p className="text-gray-700 mb-6">
                 Are you sure you want to delete this island? This action cannot be undone.

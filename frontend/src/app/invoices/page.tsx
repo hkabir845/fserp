@@ -934,9 +934,9 @@ export default function InvoicesPage() {
   return (
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
-      <div className="flex-1 overflow-auto p-8">
+      <div className="min-w-0 flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
+          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Invoices</h1>
           <p className="text-gray-600 mt-1">Manage customer invoices</p>
           {printBranding && (
             <p className="text-sm text-gray-800 mt-2 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-2 max-w-2xl">
@@ -953,9 +953,9 @@ export default function InvoicesPage() {
           )}
         </div>
 
-        <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-          <div className="flex items-center gap-4 flex-1 min-w-[300px]">
-            <div className="relative flex-1 max-w-md">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:flex-wrap">
+          <div className="flex min-w-0 w-full flex-1 flex-col gap-3 sm:min-w-[16rem] sm:flex-row sm:items-center sm:gap-4">
+            <div className="relative max-w-md flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
                 type="text"
@@ -1001,7 +1001,7 @@ export default function InvoicesPage() {
             <p className="text-gray-600">Loading invoices...</p>
           </div>
         ) : error ? (
-          <div className="bg-white rounded-lg shadow p-8">
+          <div className="bg-white rounded-lg shadow app-modal-pad">
             <div className="flex flex-col items-center justify-center text-center">
               <div className="bg-red-100 rounded-full p-4 mb-4">
                 <FileText className="h-12 w-12 text-red-600" />
@@ -1193,7 +1193,7 @@ export default function InvoicesPage() {
         {/* Create Invoice Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-white rounded-lg p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto my-8">
+            <div className="bg-white rounded-lg app-modal-pad max-w-5xl w-full max-h-[90vh] overflow-y-auto my-8">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Add New Invoice</h2>
                 <button
@@ -1460,7 +1460,7 @@ export default function InvoicesPage() {
         {/* View Invoice Modal */}
         {showViewModal && viewingInvoice && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto print:p-4 print:bg-white print:items-start">
-            <div className="bg-white rounded-lg p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8 print:shadow-none print:max-h-none print:m-0 print:w-full">
+            <div className="bg-white rounded-lg app-modal-pad max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8 print:shadow-none print:max-h-none print:m-0 print:w-full">
               <div className="flex justify-between items-start gap-3 mb-6 print:hidden">
                 <h2 className="text-2xl font-bold">Invoice Details</h2>
                 <div className="flex items-center gap-2">
@@ -1633,7 +1633,7 @@ export default function InvoicesPage() {
         {/* Edit Invoice Modal */}
         {showEditModal && editingInvoice && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-white rounded-lg p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto my-8">
+            <div className="bg-white rounded-lg app-modal-pad max-w-5xl w-full max-h-[90vh] overflow-y-auto my-8">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Edit Invoice {editingInvoice.invoice_number}</h2>
                 <button

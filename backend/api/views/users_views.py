@@ -6,11 +6,43 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
-from api.models import BroadcastRead, User, Company
+from api.models import BroadcastRead, User, Company, CompanyRole
+from api.services.permission_service import user_client_dict
 
 logger = logging.getLogger(__name__)
 
 TENANT_USER_ROLES = frozenset({"admin", "accountant", "cashier", "operator"})
+
+
+def _set_custom_role_from_request(user: User, data: dict, api_user, company_id: int | None) -> "JsonResponse|None":
+    if "custom_role_id" not in data:
+        return None
+    if not _is_super_admin(api_user) and not _is_company_admin(api_user):
+        return JsonResponse(
+            {"detail": "Only administrators can assign custom roles."},
+            status=403,
+        )
+    raw = data.get("custom_role_id")
+    if raw in (None, "", False):
+        user.custom_role = None
+        return None
+    if company_id is None:
+        return JsonResponse(
+            {"detail": "Custom roles can only be assigned to users in a company."},
+            status=400,
+        )
+    try:
+        crid = int(raw)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "custom_role_id must be a number or null."}, status=400)
+    cr = CompanyRole.objects.filter(pk=crid).first()
+    if not cr or int(cr.company_id) != int(company_id):
+        return JsonResponse(
+            {"detail": "The selected role does not belong to this company."},
+            status=400,
+        )
+    user.custom_role = cr
+    return None
 
 
 def _api_user(request):
@@ -43,17 +75,11 @@ def _user_to_json(u):
         if co:
             company_name = co.name
     created_at = getattr(u, "created_at", None)
-    return {
-        "id": u.id,
-        "username": u.username,
-        "email": (getattr(u, "email", None) or "") if hasattr(u, "email") else "",
-        "full_name": (getattr(u, "full_name", None) or "") if hasattr(u, "full_name") else "",
-        "role": getattr(u, "role", "user") or "user",
-        "company_id": getattr(u, "company_id", None),
-        "company_name": company_name,
-        "is_active": getattr(u, "is_active", True),
-        "created_at": created_at.isoformat() if created_at else None,
-    }
+    base = user_client_dict(u)
+    base["company_name"] = company_name
+    base["is_active"] = getattr(u, "is_active", True)
+    base["created_at"] = created_at.isoformat() if created_at else None
+    return base
 
 
 @csrf_exempt
@@ -71,12 +97,17 @@ def users_list_or_create(request):
         skip = int(request.GET.get("skip", 0))
         limit = min(int(request.GET.get("limit", 100)), 200)
         if _is_super_admin(api_user):
-            qs = User.objects.order_by("id")[skip : skip + limit]
+            qs = (
+                User.objects.select_related("custom_role")
+                .order_by("id")
+            )[skip : skip + limit]
         else:
             # Company admins see active and inactive so they can reactivate without extra flags.
-            qs = User.objects.filter(company_id=api_user.company_id).order_by("-is_active", "id")[
-                skip : skip + limit
-            ]
+            qs = (
+                User.objects.filter(company_id=api_user.company_id)
+                .select_related("custom_role")
+                .order_by("-is_active", "id")
+            )[skip : skip + limit]
         result = [_user_to_json(u) for u in qs]
         return JsonResponse(result, safe=False)
 
@@ -135,9 +166,17 @@ def users_list_or_create(request):
             role=role,
             company_id=company_id,
         )
+        err = _set_custom_role_from_request(user, data, api_user, company_id)
+        if err is not None:
+            return err
         user.set_password(password)
         user.save()
-        return JsonResponse(_user_to_json(user), status=201)
+        return JsonResponse(
+            _user_to_json(
+                User.objects.filter(pk=user.pk).select_related("custom_role").first() or user
+            ),
+            status=201,
+        )
     except Exception as e:
         logger.exception("create user error")
         return JsonResponse({"detail": "Failed to create user", "error": str(e)}, status=500)
@@ -154,7 +193,7 @@ def user_detail(request, user_id):
             return JsonResponse({"detail": "Authentication required"}, status=401)
 
         try:
-            user = User.objects.filter(id=user_id).first()
+            user = User.objects.filter(id=user_id).select_related("custom_role").first()
         except Exception as e:
             logger.exception("user_detail load error")
             return JsonResponse({"detail": "Server error", "error": str(e)}, status=500)
@@ -238,6 +277,10 @@ def user_detail(request, user_id):
                     user.company_id = int(cid)
                 except (TypeError, ValueError):
                     user.company_id = None
+        if "custom_role_id" in data:
+            err = _set_custom_role_from_request(user, data, api_user, user.company_id)
+            if err is not None:
+                return err
         if data.get("password"):
             user.set_password(data["password"])
         final_username = (user.username or "").strip()

@@ -719,7 +719,7 @@ function SubscriptionBillingContent() {
       <div className="flex h-screen bg-slate-100 page-with-sidebar">
         <Sidebar />
         <div className="flex min-h-0 flex-1 overflow-y-auto p-4 sm:p-8">
-          <div className="w-full max-w-lg mx-auto rounded-xl bg-white p-8 shadow text-center">
+          <div className="w-full max-w-lg mx-auto rounded-xl bg-white app-modal-pad shadow text-center">
             <CreditCard className="h-12 w-12 text-slate-400 mx-auto mb-4" />
             <h2 className="text-xl font-semibold text-slate-900 mb-2">Subscription &amp; Billing</h2>
             <p className="text-slate-600 mb-4">Switch to SaaS Dashboard mode in the sidebar to manage tenant billing.</p>

@@ -48,7 +48,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 px-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-xl border border-slate-100">
+      <div className="w-full max-w-md rounded-xl bg-white app-modal-pad shadow-xl border border-slate-100">
         <h1 className="text-2xl font-semibold text-slate-900">Forgot password</h1>
         <p className="mt-2 text-sm text-slate-600">
           Enter the email or username you use to sign in. We send the reset link to the email on your account (or to your

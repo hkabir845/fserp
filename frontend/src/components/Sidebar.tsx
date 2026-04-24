@@ -3,57 +3,20 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import {
-  LayoutDashboard,
-  Users,
-  Package,
-  FileText,
-  DollarSign,
-  ShoppingCart,
-  TrendingUp,
-  Building2,
-  Droplet,
-  MapPin,
-  Zap,
-  Fuel,
-  Gauge,
-  Clock,
-  BarChart3,
-  Landmark,
-  Settings,
-  LogOut,
-  BookOpen,
-  Receipt,
-  Crown,
-  Shield,
-  ChevronDown,
-  Megaphone,
-  Menu,
-  Search,
-  X,
-  CreditCard,
-  KeyRound,
-  Database,
-} from 'lucide-react'
+import { Building2, Crown, Shield, Menu, Search, X, LogOut, KeyRound } from 'lucide-react'
 import { useCompany } from '@/contexts/CompanyContext'
 import CompanySwitcher from '@/components/CompanySwitcher'
 import api from '@/lib/api'
 import { isConnectionError, safeLogError } from '@/utils/connectionError'
-
-/** Extra tokens matched by sidebar menu search (section → keywords). */
-const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
-  main: 'home dashboard pos cashier point of sale register',
-  station: 'station pump fuel tank island dispenser nozzle meter forecourt',
-  operations: 'operations shift dip variance inventory fuel ops',
-    accounting:
-      'accounting ledger chart coa bank accounts journal fund transfer loan borrow lend receivable payable book undeposited cash petty 1010 1020 1120',
-  sales: 'sales customer vendor ar ap invoice bill payment receivable payable',
-  inventory: 'inventory product item stock sku shop c-store',
-  hr: 'hr human resources employee payroll staff',
-  management: 'management company settings subscription user tax admin backup restore',
-  reports: 'reports analytics export print',
-  saas: 'saas platform admin tenant companies users contract subscription billing overview ledger backup restore export',
-}
+import {
+  MENU_SECTION_SEARCH_HINTS,
+  getFsmsErpMenuItems,
+  getSaasMenuItems,
+  getFilteredMenuItems,
+  filterTenantBackupMenuItem,
+  getSectionDefinitions,
+  type ErpAppSection,
+} from '@/navigation/erpAppMenu'
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'sidebar_width_px'
 const SIDEBAR_WIDTH_DEFAULT = 256
@@ -65,6 +28,7 @@ export default function Sidebar() {
   const router = useRouter()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [userPermissions, setUserPermissions] = useState<string[] | null>(null)
   const { selectedCompany, setSelectedCompany, isSaaSDashboard, isMasterCompany, mode, setMode } = useCompany()
   const [companiesCount, setCompaniesCount] = useState<number>(0)
   const [usersCount, setUsersCount] = useState<number>(0)
@@ -176,6 +140,11 @@ export default function Sidebar() {
           const parsedUser = JSON.parse(userStr)
           if (parsedUser && typeof parsedUser === 'object') {
             setUserRole(parsedUser.role?.toLowerCase() || null)
+            setUserPermissions(
+              Array.isArray((parsedUser as { permissions?: unknown }).permissions)
+                ? (parsedUser as { permissions: string[] }).permissions
+                : null
+            )
           }
         } catch (error) {
           console.error('Error parsing user data:', error)
@@ -332,12 +301,10 @@ export default function Sidebar() {
             console.error('Error saving to localStorage:', e)
           }
         }
-        // Navigate to dashboard - use window.location for more reliable navigation
-        router.push('/dashboard')
-        // Also use window.location as fallback to ensure navigation happens
+        router.push('/apps')
         setTimeout(() => {
-          if (window.location.pathname !== '/dashboard') {
-            window.location.href = '/dashboard'
+          if (window.location.pathname !== '/apps') {
+            window.location.href = '/apps'
           }
         }, 500)
       } else {
@@ -347,10 +314,10 @@ export default function Sidebar() {
         } catch (error) {
           safeLogError('Error fetching default company:', error)
           // If fetching fails, still try to navigate - user can select company later
-          router.push('/dashboard')
+          router.push('/apps')
           setTimeout(() => {
-            if (window.location.pathname !== '/dashboard') {
-              window.location.href = '/dashboard'
+            if (window.location.pathname !== '/apps') {
+              window.location.href = '/apps'
             }
           }, 500)
         }
@@ -417,8 +384,7 @@ export default function Sidebar() {
         // Wait for state and localStorage to be fully updated
         await new Promise(resolve => setTimeout(resolve, 300))
         
-        // Now navigate to dashboard
-        router.push('/dashboard')
+        router.push('/apps')
       } else {
         // Stay on current page if no companies available
       }
@@ -433,134 +399,28 @@ export default function Sidebar() {
     }
   }
 
-  // FSMS ERP Menu Items
-  const fsmsErpMenuItems = [
-    { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', section: 'main' },
-    { href: '/cashier', icon: ShoppingCart, label: 'POS / Cashier', section: 'main' },
-    
-    // Station Management (physical hierarchy: station → tank → island → dispenser → meter → nozzle)
-    { href: '/stations', icon: Building2, label: 'Stations', section: 'station' },
-    { href: '/tanks', icon: Droplet, label: 'Tanks', section: 'station' },
-    { href: '/islands', icon: MapPin, label: 'Islands', section: 'station' },
-    { href: '/dispensers', icon: Zap, label: 'Dispensers', section: 'station' },
-    { href: '/meters', icon: Gauge, label: 'Meters', section: 'station' },
-    { href: '/nozzles', icon: Fuel, label: 'Nozzles', section: 'station' },
-    
-    // Operations
-    { href: '/shift-management', icon: Clock, label: 'Shift Management', section: 'operations' },
-    { href: '/tank-dips', icon: Droplet, label: 'Tank Dips', section: 'operations' },
-    
-    // Accounting
-    { href: '/chart-of-accounts', icon: BookOpen, label: 'Chart of Accounts', section: 'accounting' },
-    { href: '/journal-entries', icon: Receipt, label: 'Journal Entries', section: 'accounting' },
-    { href: '/fund-transfers', icon: TrendingUp, label: 'Fund Transfer', section: 'accounting' },
-    { href: '/loans', icon: Landmark, label: 'Loans', section: 'accounting' },
-    
-    // Customers & Sales
-    { href: '/customers', icon: Users, label: 'Customers', section: 'sales' },
-    { href: '/vendors', icon: Users, label: 'Vendors', section: 'sales' },
-    { href: '/invoices', icon: FileText, label: 'Invoices', section: 'sales' },
-    { href: '/bills', icon: Receipt, label: 'Bills', section: 'sales' },
-    { href: '/payments', icon: DollarSign, label: 'Payments', section: 'sales' },
-    
-    // Products & services (single /items screen)
-    { href: '/items', icon: Package, label: 'Products & services', section: 'inventory' },
-    
-    // HR & Payroll
-    { href: '/employees', icon: Users, label: 'Employees', section: 'hr' },
-    { href: '/payroll', icon: DollarSign, label: 'Payroll', section: 'hr' },
-    
-    // Management
-    { href: '/company', icon: Building2, label: 'Company', section: 'management' },
-    { href: '/subscriptions', icon: Crown, label: 'Subscriptions', section: 'management' },
-    { href: '/users', icon: Users, label: 'Users', section: 'management' },
-    { href: '/tax', icon: Receipt, label: 'Tax', section: 'management' },
-    { href: '/backup', icon: Database, label: 'Backup & Restore', section: 'management' },
-    
-    // Reports
-    { href: '/reports', icon: BarChart3, label: 'Reports', section: 'reports' },
-  ]
+  const fsmsErpMenuItems = useMemo(() => getFsmsErpMenuItems(), [])
 
-  // SaaS Dashboard Menu Items - with dynamic counts
-  const saasMenuItems = [
-    { href: '/admin/overview', icon: BarChart3, label: 'Platform Overview', section: 'saas' },
-    { href: '/admin/subscription-billing', icon: CreditCard, label: 'Subscription & Billing', section: 'saas' },
-    { href: '/admin/companies', icon: Building2, label: `Companies (${companiesCount})`, section: 'saas', count: companiesCount },
-    { href: '/admin/users', icon: Users, label: `All Users (${usersCount})`, section: 'saas', count: usersCount },
-    { href: '/admin/contracts', icon: FileText, label: 'Contract Management', section: 'saas' },
-    { href: '/admin/subscription-ledger', icon: Receipt, label: 'Subscription Ledger', section: 'saas' },
-    { href: '/admin/broadcasting', icon: Megaphone, label: 'Broadcasting', section: 'saas' },
-    { href: '/admin/backup', icon: Database, label: 'Backup & Restore', section: 'saas' },
-  ]
+  const saasMenuItems = useMemo(
+    () => getSaasMenuItems(companiesCount, usersCount),
+    [companiesCount, usersCount]
+  )
 
-  // Select menu items based on mode - CRITICAL: Always show FSMS ERP menu when in FSMS ERP mode
-  const menuItems = (isSuperAdmin && mode === 'saas_dashboard') ? saasMenuItems : fsmsErpMenuItems
-
-  // Filter menu items based on user role
-  const getFilteredMenuItems = () => {
-    const role = userRole?.toLowerCase() || ''
-    
-    // For Super Admin in FSMS ERP mode, show ALL ERP menu items (full access)
-    if (isSuperAdmin && mode === 'fsms_erp') {
-      return fsmsErpMenuItems // Always return full ERP menu for super admin in FSMS ERP mode
-    }
-    
-    // Operator / Worker: POS only (New sale + Donation); no other ERP areas
-    if (role === 'operator') {
-      return menuItems.filter((item) => item.href === '/cashier')
-    }
-
-    // Cashier: Limited access
-    if (role === 'cashier') {
-      return menuItems.filter(item => 
-        item.href === '/dashboard' ||
-        item.href === '/cashier' || 
-        item.href === '/customers' ||
-        item.href === '/reports'
-      )
-    }
-    
-    // Accountant: No station management, no user management
-    if (role === 'accountant') {
-      return menuItems.filter(item => {
-        // Exclude station management items
-        const stationItems = ['/stations', '/tanks', '/islands', '/dispensers', '/meters', '/nozzles']
-        if (stationItems.includes(item.href)) return false
-        
-        // Exclude user management
-        if (item.href === '/users') return false
-        if (item.href === '/backup') return false
-
-        return true
-      })
-    }
-    
-    // Admin: Full access
-    if (role === 'admin') {
-      return menuItems
-    }
-    
-    // Super Admin: Full access (SaaS Dashboard is accessed via tabs, not menu)
-    if (role === 'super_admin') {
-      return menuItems
-    }
-
-    // Default: Show all menu items
-    return menuItems
-  }
-
-  /** Company-owner backup lives under ERP Management (/backup). Super admins use SaaS → /admin/backup only. */
-  const filterTenantBackupMenuItem = (items: typeof fsmsErpMenuItems, role: string) => {
-    const r = role.toLowerCase()
-    return items.filter((item) => {
-      if (item.href !== '/backup') return true
-      return r === 'admin'
-    })
-  }
-
-  const filteredMenuItems = filterTenantBackupMenuItem(
-    getFilteredMenuItems(),
-    userRole?.toLowerCase() || ''
+  const filteredMenuItems = useMemo(
+    () =>
+      filterTenantBackupMenuItem(
+        getFilteredMenuItems(
+          userRole,
+          isSuperAdmin,
+          mode,
+          fsmsErpMenuItems,
+          saasMenuItems,
+          userPermissions
+        ),
+        userRole?.toLowerCase() || '',
+        userPermissions
+      ),
+    [userRole, userPermissions, isSuperAdmin, mode, fsmsErpMenuItems, saasMenuItems]
   )
 
   const menuItemsForNav = useMemo(() => {
@@ -580,50 +440,12 @@ export default function Sidebar() {
     })
   }, [filteredMenuItems, navSearchQuery])
 
-  // Filter sections based on visible menu items
-  const getFilteredSections = () => {
-    const visibleSections = new Set(filteredMenuItems.map((item) => item.section))
-    
-    // SaaS Dashboard sections
-    if (isSuperAdmin && mode === 'saas_dashboard') {
-      return [
-        { id: 'saas', label: 'SaaS Management' },
-      ]
-    }
-    
-    // FSMS ERP sections - Show ALL sections when in FSMS ERP mode for Super Admin
-    if (isSuperAdmin && mode === 'fsms_erp') {
-      return [
-        { id: 'main', label: 'Main' },
-        { id: 'station', label: 'Station Management' },
-        { id: 'operations', label: 'Operations' },
-        { id: 'accounting', label: 'Accounting' },
-        { id: 'sales', label: 'Sales & Customers' },
-        { id: 'inventory', label: 'Products & services' },
-        { id: 'hr', label: 'HR & Payroll' },
-        { id: 'management', label: 'Management' },
-        { id: 'reports', label: 'Reports & Analytics' },
-      ]
-    }
-    
-    // FSMS ERP sections for other users
-    const allSections = [
-      { id: 'main', label: 'Main' },
-      { id: 'station', label: 'Station Management' },
-      { id: 'operations', label: 'Operations' },
-      { id: 'accounting', label: 'Accounting' },
-      { id: 'sales', label: 'Sales & Customers' },
-      { id: 'inventory', label: 'Products & services' },
-      { id: 'hr', label: 'HR & Payroll' },
-      { id: 'management', label: 'Management' },
-      { id: 'reports', label: 'Reports & Analytics' },
-    ]
-    
-    // Return only sections that have visible items
-    return allSections.filter(section => visibleSections.has(section.id))
-  }
-
-  const sections = getFilteredSections()
+  const sections = useMemo(() => {
+    const visibleSections = new Set<ErpAppSection>(
+      filteredMenuItems.map((item) => item.section)
+    )
+    return getSectionDefinitions(isSuperAdmin, mode, visibleSections)
+  }, [filteredMenuItems, isSuperAdmin, mode])
 
   const sectionsForNav = useMemo(() => {
     const ids = new Set(menuItemsForNav.map((i) => i.section))
@@ -646,7 +468,7 @@ export default function Sidebar() {
       <button
         type="button"
         onClick={() => setMobileNavOpen(true)}
-        className="fixed top-3 left-3 z-[60] flex h-11 w-11 items-center justify-center rounded-lg bg-gray-900 text-white shadow-lg ring-1 ring-white/10 lg:hidden"
+        className="fixed left-[max(0.75rem,env(safe-area-inset-left,0px))] top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[60] flex h-11 w-11 items-center justify-center rounded-lg bg-gray-900 text-white shadow-lg ring-1 ring-white/10 lg:hidden"
         aria-label="Open navigation menu"
       >
         <Menu className="h-6 w-6" />
@@ -840,7 +662,9 @@ export default function Sidebar() {
                 <p className="text-sm">No menu items available</p>
                 {isSuperAdmin && (
                   <p className="mt-2 text-xs text-gray-500">
-                    Debug: Mode={mode}, MenuItems={menuItems.length}, Filtered={filteredMenuItems.length},
+                    Debug: Mode={mode}, SourceItems=
+                    {isSuperAdmin && mode === 'saas_dashboard' ? saasMenuItems.length : fsmsErpMenuItems.length},
+                    Filtered={filteredMenuItems.length},
                     Sections={sections.length}
                   </p>
                 )}

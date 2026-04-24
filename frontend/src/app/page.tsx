@@ -24,7 +24,7 @@ export default function Home() {
       const token = localStorage.getItem('access_token')
 
       if (token && token !== 'undefined' && token !== 'null' && token.trim() !== '') {
-        router.replace('/dashboard')
+        router.replace('/apps')
       } else {
         router.replace('/login')
       }
@@ -54,10 +54,10 @@ export default function Home() {
                 Go to Login
               </Link>
               <Link
-                href="/dashboard"
+                href="/apps"
                 className="text-blue-600 hover:underline font-medium"
               >
-                Go to Dashboard
+                Go to Apps
               </Link>
             </div>
           </div>

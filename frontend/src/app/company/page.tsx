@@ -229,7 +229,7 @@ export default function CompanyPage() {
           </header>
 
           {!companyId ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-center text-amber-900">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-6 md:p-8 text-center text-amber-900">
               <p className="font-medium">No company is linked to this session.</p>
               <p className="mt-2 text-sm text-amber-800/90">
                 Ask a Super Admin to assign your user to a company, or sign in with a tenant account.

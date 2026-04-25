@@ -40,6 +40,12 @@ from api.services.loan_interest_basis import (
 from api.services.loan_business_line import quarterly_interest_schedule_rows
 from api.services.loan_islamic import loan_uses_islamic_terminology
 from api.services.loan_schedule import amortized_schedule
+from api.services.loan_counterparty_opening import (
+    post_loan_counterparty_opening,
+    resolve_default_loan_principal,
+    resolve_opening_balance_equity,
+)
+from api.services.loan_counterparty_ledger import build_counterparty_ledger
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 
@@ -132,6 +138,43 @@ def _norm_product(val) -> str:
     return s if s in ALLOWED_PRODUCTS else Loan.PRODUCT_GENERAL
 
 
+ALLOWED_PARTY_KINDS = frozenset(
+    {
+        LoanCounterparty.PARTY_CUSTOMER,
+        LoanCounterparty.PARTY_SUPPLIER,
+        LoanCounterparty.PARTY_LENDER,
+        LoanCounterparty.PARTY_BORROWER,
+        LoanCounterparty.PARTY_BOTH,
+        LoanCounterparty.PARTY_OTHER,
+    }
+)
+ALLOWED_OPENING_TYPES = frozenset(
+    {
+        LoanCounterparty.OPENING_ZERO,
+        LoanCounterparty.OPENING_RECEIVABLE,
+        LoanCounterparty.OPENING_PAYABLE,
+    }
+)
+
+
+def _norm_party_kind(val) -> str:
+    s = (val or LoanCounterparty.PARTY_OTHER).strip().lower()[:20]
+    return s if s in ALLOWED_PARTY_KINDS else LoanCounterparty.PARTY_OTHER
+
+
+def _norm_opening_type(val) -> str:
+    s = (val or LoanCounterparty.OPENING_ZERO).strip().lower()[:20]
+    return s if s in ALLOWED_OPENING_TYPES else LoanCounterparty.OPENING_ZERO
+
+
+def _parse_optional_annual_interest_rate(ar_raw):
+    """None if absent; else Decimal 0.0000–_MAX_APR for opening metadata."""
+    if ar_raw is None or str(ar_raw).strip() == "":
+        return None
+    v = _parse_required_annual_interest_rate(ar_raw)
+    return v
+
+
 def _facility_child_metrics(facility: Loan) -> tuple[Decimal, Decimal, int]:
     """(sum outstanding on deals, sum sanction on deals, deal count). Uses prefetch if present."""
     if facility.product_type != Loan.PRODUCT_ISLAMIC_FACILITY:
@@ -180,12 +223,45 @@ def _counterparty_name_taken(cid: int, name: str, exclude_id: int | None = None)
     return q.exists()
 
 
-def _counterparty_json(c: LoanCounterparty):
+def _counterparty_opening_principal_meta(c: LoanCounterparty) -> dict:
+    """Code/name/type of the principal GL (1160/2410 by default) for opening; list views should select_related the FK."""
+    if not c.opening_principal_account_id:
+        return {
+            "opening_principal_account_code": None,
+            "opening_principal_account_name": None,
+            "opening_principal_account_type": None,
+        }
+    acc = getattr(c, "opening_principal_account", None)
+    if acc is None:
+        acc = (
+            ChartOfAccount.objects.filter(
+                id=c.opening_principal_account_id, company_id=c.company_id
+            )
+            .only("account_code", "account_name", "account_type")
+            .first()
+        )
+    if acc is None:
+        return {
+            "opening_principal_account_code": None,
+            "opening_principal_account_name": None,
+            "opening_principal_account_type": None,
+        }
     return {
+        "opening_principal_account_code": acc.account_code,
+        "opening_principal_account_name": acc.account_name,
+        "opening_principal_account_type": acc.account_type,
+    }
+
+
+def _counterparty_json(c: LoanCounterparty):
+    oar = c.opening_annual_interest_rate
+    ob_t = c.opening_balance_type or LoanCounterparty.OPENING_ZERO
+    base = {
         "id": c.id,
         "code": c.code,
         "name": c.name,
         "role_type": c.role_type,
+        "party_kind": c.party_kind or LoanCounterparty.PARTY_OTHER,
         "employee_id": c.employee_id,
         "customer_id": c.customer_id,
         "vendor_id": c.vendor_id,
@@ -195,7 +271,22 @@ def _counterparty_json(c: LoanCounterparty):
         "tax_id": c.tax_id or "",
         "notes": c.notes or "",
         "is_active": c.is_active,
+        "opening_balance_type": ob_t,
+        "opening_balance": str(c.opening_balance or Decimal("0")),
+        "opening_balance_as_of": _ser_date(c.opening_balance_as_of),
+        "opening_interest_applicable": bool(c.opening_interest_applicable),
+        "opening_annual_interest_rate": (str(oar) if oar is not None else None),
+        "opening_principal_account_id": c.opening_principal_account_id,
+        "opening_equity_account_id": c.opening_equity_account_id,
+        "opening_balance_journal_id": c.opening_balance_journal_id,
+        "default_lent_principal_account_id": c.opening_principal_account_id
+        if ob_t == LoanCounterparty.OPENING_RECEIVABLE
+        else None,
+        "default_borrowed_principal_account_id": c.opening_principal_account_id
+        if ob_t == LoanCounterparty.OPENING_PAYABLE
+        else None,
     }
+    return {**base, **_counterparty_opening_principal_meta(c)}
 
 
 def _loan_json(lo: Loan):
@@ -299,13 +390,127 @@ def _parse_optional_positive_int(val, field: str) -> int | None:
     return n
 
 
+def _opening_fields_snapshot(c: LoanCounterparty) -> dict:
+    oar = c.opening_annual_interest_rate
+    return {
+        "opening_balance_type": c.opening_balance_type,
+        "opening_balance": str(c.opening_balance or 0),
+        "opening_balance_as_of": _ser_date(c.opening_balance_as_of),
+        "opening_interest_applicable": c.opening_interest_applicable,
+        "opening_annual_interest_rate": str(oar) if oar is not None else None,
+        "opening_principal_account_id": c.opening_principal_account_id,
+        "opening_equity_account_id": c.opening_equity_account_id,
+        "post_opening_to_gl": True,
+    }
+
+
+def _counterparty_opening_from_body(cid, body) -> tuple[dict, bool, JsonResponse | None]:
+    """Return (field dict for create/update, post_to_gl, error)."""
+    ob_type = _norm_opening_type(body.get("opening_balance_type"))
+    ob_amt = _dec(body.get("opening_balance"))
+    as_of = _parse_date(body.get("opening_balance_as_of"))
+    int_app = bool(body.get("opening_interest_applicable", False))
+    post_gl = bool(body.get("post_opening_to_gl", True))
+
+    oar = None
+    ar_raw = body.get("opening_annual_interest_rate")
+    if int_app:
+        try:
+            oar = _parse_required_annual_interest_rate(ar_raw)
+        except ValueError as e:
+            return {}, True, JsonResponse({"detail": str(e)}, status=400)
+    elif ar_raw is not None and str(ar_raw).strip() != "":
+        oar = _parse_optional_annual_interest_rate(ar_raw)
+
+    out: dict = {
+        "opening_balance_type": ob_type,
+        "opening_balance": ob_amt,
+        "opening_balance_as_of": as_of,
+        "opening_interest_applicable": int_app,
+        "opening_annual_interest_rate": oar,
+    }
+
+    if ob_type == LoanCounterparty.OPENING_ZERO or ob_amt <= Decimal("0.005"):
+        out["opening_balance_type"] = LoanCounterparty.OPENING_ZERO
+        out["opening_balance"] = Decimal("0")
+        out["opening_balance_as_of"] = None
+        out["opening_interest_applicable"] = False
+        out["opening_annual_interest_rate"] = None
+        out["opening_principal_account_id"] = None
+        out["opening_equity_account_id"] = None
+        return out, post_gl, None
+
+    if not as_of:
+        return {}, True, JsonResponse(
+            {"detail": "opening_balance_as_of is required for a non-zero opening balance"}, status=400
+        )
+
+    if ob_type not in (LoanCounterparty.OPENING_RECEIVABLE, LoanCounterparty.OPENING_PAYABLE):
+        return {}, True, JsonResponse(
+            {"detail": "opening_balance_type must be receivable, payable, or zero"},
+            status=400,
+        )
+
+    need_recv = ob_type == LoanCounterparty.OPENING_RECEIVABLE
+    pa = body.get("opening_principal_account_id")
+    if pa in (None, "", 0, "0"):
+        dflt = resolve_default_loan_principal(cid, need_recv)
+        if not dflt:
+            return {}, True, JsonResponse(
+                {
+                    "detail": (
+                        "Set opening_principal_account_id or add built-in lines 1160 (lent) / 2410 (borrowed) "
+                        "in Chart of accounts."
+                    )
+                },
+                status=400,
+            )
+        out["opening_principal_account_id"] = dflt.id
+    else:
+        try:
+            p_id = int(pa)
+        except (TypeError, ValueError):
+            return {}, True, JsonResponse({"detail": "Invalid opening_principal_account_id"}, status=400)
+        if not _coa_belongs(cid, p_id):
+            return {}, True, JsonResponse({"detail": "Invalid opening_principal_account_id"}, status=400)
+        out["opening_principal_account_id"] = p_id
+
+    oeq = body.get("opening_equity_account_id")
+    if oeq in (None, "", 0, "0"):
+        out["opening_equity_account_id"] = None
+        if post_gl and not resolve_opening_balance_equity(cid):
+            return {}, True, JsonResponse(
+                {
+                    "detail": (
+                        "Add account 3200 Opening Balance Equity, pass opening_equity_account_id, "
+                        "or set post_opening_to_gl to false to save without posting."
+                    )
+                },
+                status=400,
+            )
+    else:
+        try:
+            oeq_id = int(oeq)
+        except (TypeError, ValueError):
+            return {}, True, JsonResponse({"detail": "Invalid opening_equity_account_id"}, status=400)
+        if not _coa_belongs(cid, oeq_id):
+            return {}, True, JsonResponse({"detail": "Invalid opening_equity_account_id"}, status=400)
+        out["opening_equity_account_id"] = oeq_id
+
+    return out, post_gl, None
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
 def loan_counterparties_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
-        qs = LoanCounterparty.objects.filter(company_id=cid).order_by("code", "id")
+        qs = (
+            LoanCounterparty.objects.filter(company_id=cid)
+            .select_related("opening_principal_account", "opening_equity_account")
+            .order_by("code", "id")
+        )
         return JsonResponse([_counterparty_json(c) for c in qs], safe=False)
     if request.method == "POST":
         body, err = parse_json_body(request)
@@ -319,53 +524,75 @@ def loan_counterparties_list_or_create(request):
                 {"detail": "A counterparty with this name already exists for this company"},
                 status=400,
             )
+        ob_fields, post_gl, ob_err = _counterparty_opening_from_body(cid, body)
+        if ob_err is not None:
+            return ob_err
         code_in = (body.get("code") or "").strip()[:32]
-        if code_in:
-            if LoanCounterparty.objects.filter(company_id=cid, code=code_in).exists():
-                return JsonResponse({"detail": "code already exists"}, status=400)
-            c = LoanCounterparty.objects.create(
-                company_id=cid,
-                code=code_in,
-                name=name,
-                role_type=(body.get("role_type") or "other").strip()[:32] or "other",
-                employee_id=body.get("employee_id") or None,
-                customer_id=body.get("customer_id") or None,
-                vendor_id=body.get("vendor_id") or None,
-                phone=(body.get("phone") or "")[:40],
-                email=(body.get("email") or "")[:150],
-                address=body.get("address") or "",
-                tax_id=(body.get("tax_id") or "")[:80],
-                notes=body.get("notes") or "",
-                is_active=bool(body.get("is_active", True)),
+        if code_in and LoanCounterparty.objects.filter(company_id=cid, code=code_in).exists():
+            return JsonResponse({"detail": "code already exists"}, status=400)
+        try:
+            with transaction.atomic():
+                if code_in:
+                    c = LoanCounterparty.objects.create(
+                        company_id=cid,
+                        code=code_in,
+                        name=name,
+                        role_type=(body.get("role_type") or "other").strip()[:32] or "other",
+                        party_kind=_norm_party_kind(body.get("party_kind")),
+                        employee_id=body.get("employee_id") or None,
+                        customer_id=body.get("customer_id") or None,
+                        vendor_id=body.get("vendor_id") or None,
+                        phone=(body.get("phone") or "")[:40],
+                        email=(body.get("email") or "")[:150],
+                        address=body.get("address") or "",
+                        tax_id=(body.get("tax_id") or "")[:80],
+                        notes=body.get("notes") or "",
+                        is_active=bool(body.get("is_active", True)),
+                        **ob_fields,
+                    )
+                else:
+                    temp_code = f"TMP-{uuid.uuid4().hex}"[:32]
+                    c = LoanCounterparty.objects.create(
+                        company_id=cid,
+                        code=temp_code,
+                        name=name,
+                        role_type=(body.get("role_type") or "other").strip()[:32] or "other",
+                        party_kind=_norm_party_kind(body.get("party_kind")),
+                        employee_id=body.get("employee_id") or None,
+                        customer_id=body.get("customer_id") or None,
+                        vendor_id=body.get("vendor_id") or None,
+                        phone=(body.get("phone") or "")[:40],
+                        email=(body.get("email") or "")[:150],
+                        address=body.get("address") or "",
+                        tax_id=(body.get("tax_id") or "")[:80],
+                        notes=body.get("notes") or "",
+                        is_active=bool(body.get("is_active", True)),
+                        **ob_fields,
+                    )
+                    base = f"CP-{c.id:05d}"
+                    candidate = base
+                    suffix = 0
+                    while LoanCounterparty.objects.filter(company_id=cid, code=candidate).exclude(
+                        pk=c.pk
+                    ).exists():
+                        suffix += 1
+                        candidate = f"{base}-{suffix}"[:32]
+                    c.code = candidate
+                    c.save(update_fields=["code"])
+                c.refresh_from_db()
+                if not post_loan_counterparty_opening(cid, c, post_to_gl=post_gl):
+                    raise ValidationError(
+                        "Could not post opening balance to the general ledger. "
+                        "Check principal and equity lines, or save with post_opening_to_gl false."
+                    )
+        except ValidationError as e:
+            return JsonResponse(
+                {"detail": e.messages[0] if getattr(e, "messages", None) else str(e)},
+                status=400,
             )
-            return JsonResponse(_counterparty_json(c), status=201)
-        temp_code = f"TMP-{uuid.uuid4().hex}"[:32]
-        with transaction.atomic():
-            c = LoanCounterparty.objects.create(
-                company_id=cid,
-                code=temp_code,
-                name=name,
-                role_type=(body.get("role_type") or "other").strip()[:32] or "other",
-                employee_id=body.get("employee_id") or None,
-                customer_id=body.get("customer_id") or None,
-                vendor_id=body.get("vendor_id") or None,
-                phone=(body.get("phone") or "")[:40],
-                email=(body.get("email") or "")[:150],
-                address=body.get("address") or "",
-                tax_id=(body.get("tax_id") or "")[:80],
-                notes=body.get("notes") or "",
-                is_active=bool(body.get("is_active", True)),
-            )
-            base = f"CP-{c.id:05d}"
-            candidate = base
-            suffix = 0
-            while LoanCounterparty.objects.filter(company_id=cid, code=candidate).exclude(
-                pk=c.pk
-            ).exists():
-                suffix += 1
-                candidate = f"{base}-{suffix}"[:32]
-            c.code = candidate
-            c.save(update_fields=["code"])
+        c = LoanCounterparty.objects.select_related(
+            "opening_principal_account", "opening_equity_account"
+        ).get(pk=c.pk)
         return JsonResponse(_counterparty_json(c), status=201)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
@@ -375,7 +602,11 @@ def loan_counterparties_list_or_create(request):
 @require_company_id
 def loan_counterparty_detail(request, counterparty_id: int):
     cid = request.company_id
-    c = LoanCounterparty.objects.filter(id=counterparty_id, company_id=cid).first()
+    c = (
+        LoanCounterparty.objects.filter(id=counterparty_id, company_id=cid)
+        .select_related("opening_principal_account", "opening_equity_account")
+        .first()
+    )
     if not c:
         return JsonResponse({"detail": "Not found"}, status=404)
     if request.method == "GET":
@@ -384,6 +615,25 @@ def loan_counterparty_detail(request, counterparty_id: int):
         body, err = parse_json_body(request)
         if err:
             return err
+        opening_lock_keys = frozenset(
+            {
+                "opening_balance_type",
+                "opening_balance",
+                "opening_balance_as_of",
+                "opening_interest_applicable",
+                "opening_annual_interest_rate",
+                "opening_principal_account_id",
+                "opening_equity_account_id",
+                "post_opening_to_gl",
+            }
+        )
+        if c.opening_balance_journal_id and any(k in body for k in opening_lock_keys):
+            return JsonResponse(
+                {
+                    "detail": "Opening balance is posted to the general ledger; it cannot be changed in this form.",
+                },
+                status=400,
+            )
         if "name" in body:
             new_name = (body.get("name") or c.name).strip()[:200]
             if not new_name:
@@ -396,6 +646,8 @@ def loan_counterparty_detail(request, counterparty_id: int):
             c.name = new_name
         if "role_type" in body:
             c.role_type = (body.get("role_type") or c.role_type).strip()[:32]
+        if "party_kind" in body:
+            c.party_kind = _norm_party_kind(body.get("party_kind"))
         for fld in ("phone", "email", "address", "notes", "tax_id"):
             if fld in body:
                 setattr(c, fld, body.get(fld) or "")
@@ -404,14 +656,74 @@ def loan_counterparty_detail(request, counterparty_id: int):
                 setattr(c, fk, body.get(fk) or None)
         if "is_active" in body:
             c.is_active = bool(body.get("is_active"))
-        c.save()
+        if not c.opening_balance_journal_id and any(k in body for k in opening_lock_keys):
+            sub = {k: body[k] for k in body if k in opening_lock_keys}
+            merged = {**_opening_fields_snapshot(c), **sub}
+            ob_fields, post_gl, ob_err = _counterparty_opening_from_body(cid, merged)
+            if ob_err is not None:
+                return ob_err
+            for k, v in ob_fields.items():
+                setattr(c, k, v)
+            try:
+                with transaction.atomic():
+                    c.save()
+                    c.refresh_from_db()
+                    if not post_loan_counterparty_opening(cid, c, post_to_gl=post_gl):
+                        raise ValidationError(
+                            "Could not post opening to the general ledger. "
+                            "Check accounts or set post_opening_to_gl to false."
+                        )
+            except ValidationError as e:
+                return JsonResponse(
+                    {
+                        "detail": e.messages[0]
+                        if getattr(e, "messages", None)
+                        else str(e)
+                    },
+                    status=400,
+                )
+        else:
+            c.save()
+        c.refresh_from_db()
+        c = (
+            LoanCounterparty.objects.filter(pk=c.pk, company_id=cid)
+            .select_related("opening_principal_account", "opening_equity_account")
+            .first()
+        )
+        if not c:
+            return JsonResponse({"detail": "Not found"}, status=404)
         return JsonResponse(_counterparty_json(c))
     if request.method == "DELETE":
+        if c.opening_balance_journal_id:
+            return JsonResponse(
+                {
+                    "detail": "This counterparty has a posted opening balance. Remove or reverse the journal in GL first.",
+                },
+                status=400,
+            )
         if Loan.objects.filter(counterparty=c).exists():
             return JsonResponse({"detail": "Counterparty has loans"}, status=400)
         c.delete()
         return JsonResponse({"detail": "Deleted"}, status=200)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
+def loan_counterparty_ledger(request, counterparty_id: int):
+    """Chronological opening + all loan activity for this party (receivable / payable running totals)."""
+    if request.method != "GET":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    cid = request.company_id
+    c = (
+        LoanCounterparty.objects.filter(id=counterparty_id, company_id=cid)
+        .select_related("opening_balance_journal", "opening_principal_account", "opening_equity_account")
+        .first()
+    )
+    if not c:
+        return JsonResponse({"detail": "Not found"}, status=404)
+    return JsonResponse(build_counterparty_ledger(c))
 
 
 @csrf_exempt

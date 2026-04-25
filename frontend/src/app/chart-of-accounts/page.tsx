@@ -61,6 +61,8 @@ interface StatementTransaction {
   date: string
   reference: string
   description: string
+  /** Full journal entry header (e.g. "Loan payable opening — Name") — source of the movement */
+  journal_description?: string
   debit_amount: number
   credit_amount: number
   amount: number
@@ -220,12 +222,17 @@ function mapStatementApiToView(
     const credit = Number(t.credit ?? t.credit_amount ?? 0)
     const type = debit > 0 ? 'Debit' : credit > 0 ? 'Credit' : '—'
     const amount = debit > 0 ? debit : credit
+    const journalDesc = String(
+      t.journal_description ?? (t as { journal_entry_description?: string }).journal_entry_description ?? ''
+    ).trim()
+    const lineDesc = String(t.description ?? '').trim()
     return {
       id: Number(t.id),
       type,
       date: (t.date as string) || '',
       reference: String(t.reference ?? t.entry_number ?? ''),
-      description: String(t.description ?? ''),
+      description: lineDesc,
+      journal_description: journalDesc || undefined,
       debit_amount: debit,
       credit_amount: credit,
       amount,
@@ -303,7 +310,14 @@ function accountStatementToLedgerPrintInput(
       txn.other_account_name != null
         ? ` (${txn.other_account_code ?? '—'} — ${txn.other_account_name})`
         : ''
-    const description = (txn.description || '') + extra
+    const mainDesc = txn.journal_description || txn.description || ''
+    const subLine =
+      txn.journal_description &&
+      txn.description &&
+      txn.journal_description !== txn.description
+        ? ` · ${txn.description}`
+        : ''
+    const description = (mainDesc + subLine + extra).trim() || '—'
     rows.push({
       date: formatDateOnly(txn.date),
       type: txn.type,
@@ -1748,8 +1762,10 @@ export default function ChartOfAccountsPage() {
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Entry / ref.
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source & detail</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Balance</th>
@@ -1821,14 +1837,30 @@ export default function ChartOfAccountsPage() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {transaction.type}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {transaction.reference}
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            <span className="font-mono whitespace-nowrap">{transaction.reference || '—'}</span>
+                            {transaction.journal_entry_id > 0 && (
+                              <span className="text-gray-400 text-xs block mt-0.5">JE #{transaction.journal_entry_id}</span>
+                            )}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-900">
-                            {transaction.description}
+                            {transaction.journal_description || transaction.description ? (
+                              <>
+                                <div className="text-gray-900">
+                                  {transaction.journal_description || transaction.description}
+                                </div>
+                                {transaction.journal_description &&
+                                transaction.description &&
+                                transaction.journal_description !== transaction.description && (
+                                  <div className="text-gray-500 text-xs mt-0.5">Line: {transaction.description}</div>
+                                )}
+                              </>
+                            ) : (
+                              '—'
+                            )}
                             {transaction.other_account_name && (
-                              <span className="text-gray-500 text-xs block">
-                                {transaction.other_account_code} - {transaction.other_account_name}
+                              <span className="text-gray-500 text-xs block mt-0.5">
+                                With {transaction.other_account_code} — {transaction.other_account_name}
                               </span>
                             )}
                           </td>

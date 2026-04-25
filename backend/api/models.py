@@ -884,6 +884,17 @@ class SubscriptionLedgerInvoice(models.Model):
 class LoanCounterparty(models.Model):
     """Bank, person, employee, vendor, customer, or other party on a loan."""
 
+    PARTY_CUSTOMER = "customer"
+    PARTY_SUPPLIER = "supplier"
+    PARTY_LENDER = "lender"
+    PARTY_BORROWER = "borrower"
+    PARTY_BOTH = "both"
+    PARTY_OTHER = "other"
+
+    OPENING_ZERO = "zero"
+    OPENING_RECEIVABLE = "receivable"  # party owes your company
+    OPENING_PAYABLE = "payable"  # your company owes the party
+
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="loan_counterparties")
     code = models.CharField(max_length=32)
     name = models.CharField(max_length=200)
@@ -891,6 +902,46 @@ class LoanCounterparty(models.Model):
         max_length=32,
         default="other",
         help_text="bank, finance_company, individual, employee, vendor, customer, sister_concern, other",
+    )
+    party_kind = models.CharField(
+        max_length=20,
+        default=PARTY_OTHER,
+        help_text="customer, supplier, lender, borrower, both, other (business context for the party)",
+    )
+    opening_balance_type = models.CharField(
+        max_length=20,
+        default=OPENING_ZERO,
+        help_text="receivable | payable | zero (opening loan with no history in this system)",
+    )
+    opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    opening_balance_as_of = models.DateField(null=True, blank=True)
+    opening_interest_applicable = models.BooleanField(default=False)
+    opening_annual_interest_rate = models.DecimalField(
+        max_digits=8, decimal_places=4, null=True, blank=True,
+        help_text="Indicative annual % on opening; accrual uses loan facilities once booked.",
+    )
+    opening_principal_account = models.ForeignKey(
+        "ChartOfAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="loan_counterparties_opening_principal",
+        help_text="GL used in opening entry (receivable 1160- or payable 2410-style line).",
+    )
+    opening_equity_account = models.ForeignKey(
+        "ChartOfAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="loan_counterparties_opening_equity",
+        help_text="If set, use instead of default 3200 Opening Balance Equity for the Cr/Dr on opening.",
+    )
+    opening_balance_journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="loan_counterparty_openings",
     )
     employee = models.ForeignKey(
         "Employee", null=True, blank=True, on_delete=models.SET_NULL, related_name="loan_counterparties"

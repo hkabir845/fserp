@@ -86,12 +86,16 @@ def build_statement_transactions(
                 other_account_name = oa.account_name
                 other_account_code = oa.account_code
 
+        je_desc = (je.description or "").strip()
+        line_desc = (line.description or "").strip()
         transactions.append(
             {
                 "id": line.id,
+                "journal_entry_id": je.id,
                 "date": je.entry_date.isoformat() if je.entry_date else None,
                 "entry_number": je.entry_number or "",
-                "description": line.description or "",
+                "journal_description": je_desc,
+                "description": line_desc,
                 "debit": str(debit),
                 "credit": str(credit),
                 "balance": str(running),

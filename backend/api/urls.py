@@ -283,6 +283,7 @@ urlpatterns = [
     path("fund-transfers/<int:transfer_id>/unpost/", fund_transfers_views.fund_transfer_unpost),
     # Loans (borrowed / lent) — GL via JournalEntry
     path("loans/counterparties/", loan_views.loan_counterparties_list_or_create),
+    path("loans/counterparties/<int:counterparty_id>/ledger/", loan_views.loan_counterparty_ledger),
     path("loans/counterparties/<int:counterparty_id>/", loan_views.loan_counterparty_detail),
     path("loans/schedule-preview/", loan_views.loan_schedule_preview),
     path("loans/<int:loan_id>/schedule-remaining/", loan_views.loan_schedule_remaining),

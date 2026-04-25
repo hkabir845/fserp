@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useToast } from '@/components/Toast'
@@ -38,12 +38,38 @@ import {
   isBankOrFinanceCompanyRole,
 } from './loanInterestForm'
 
+type PartyKind = 'customer' | 'supplier' | 'lender' | 'borrower' | 'both' | 'other'
+type OpeningType = 'zero' | 'receivable' | 'payable'
+
 interface Counterparty {
   id: number
   code: string
   name: string
   role_type: string
+  party_kind?: PartyKind
   is_active: boolean
+  opening_balance_type?: OpeningType
+  opening_balance?: string
+  opening_balance_as_of?: string | null
+  opening_interest_applicable?: boolean
+  opening_annual_interest_rate?: string | null
+  opening_principal_account_id?: number | null
+  opening_equity_account_id?: number | null
+  opening_balance_journal_id?: number | null
+  default_lent_principal_account_id?: number | null
+  default_borrowed_principal_account_id?: number | null
+  /** Resolved from opening_principal_account; default GL is 1160 (recv) / 2410 (pay) type loan in COA */
+  opening_principal_account_code?: string | null
+  opening_principal_account_name?: string | null
+  opening_principal_account_type?: string | null
+}
+
+function openingPrincipalGlLine(c: Counterparty): string | null {
+  if (!c.opening_principal_account_code) return null
+  const n = c.opening_principal_account_name
+  const t = c.opening_principal_account_type
+  const a = n ? `${c.opening_principal_account_code} — ${n}` : c.opening_principal_account_code
+  return t ? `${a} (${t})` : a
 }
 
 type LoanProductType =
@@ -167,9 +193,68 @@ const CP_ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: 'other', label: 'Other' },
 ]
 
+const CP_PARTY_KIND_OPTIONS: { value: PartyKind; label: string }[] = [
+  { value: 'other', label: 'Unspecified' },
+  { value: 'customer', label: 'Customer' },
+  { value: 'supplier', label: 'Supplier' },
+  { value: 'lender', label: 'Lender (owes you / funds you)' },
+  { value: 'borrower', label: 'Borrower (you owe / you funded)' },
+  { value: 'both', label: 'Both lender & borrower' },
+]
+
 function formatRoleType(role: string) {
   const o = CP_ROLE_OPTIONS.find((x) => x.value === role)
   return o?.label || role
+}
+
+function formatPartyKind(k: string | undefined) {
+  const o = CP_PARTY_KIND_OPTIONS.find((x) => x.value === (k as PartyKind))
+  return o?.label || k || '—'
+}
+
+function counterpartyPositionSummary(
+  c: Counterparty,
+  loanList: LoanRow[]
+): { recv: string; pay: string } {
+  const ob = Number(c.opening_balance ?? 0) || 0
+  const ot = c.opening_balance_type || 'zero'
+  let recv = ot === 'receivable' ? ob : 0
+  let pay = ot === 'payable' ? ob : 0
+  for (const l of loanList) {
+    if (l.counterparty_id !== c.id) continue
+    if (l.product_type === 'islamic_facility') continue
+    const o = Number(l.outstanding_principal ?? 0) || 0
+    if (l.direction === 'lent') recv += o
+    else pay += o
+  }
+  return { recv: recv.toFixed(2), pay: pay.toFixed(2) }
+}
+
+function todayISODateLocal(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function validateCounterpartyOpening(args: {
+  opening_balance_type: OpeningType
+  opening_balance: string
+  opening_balance_as_of: string
+  opening_interest_applicable: boolean
+  opening_annual_interest_rate: string
+}): string | null {
+  if (args.opening_balance_type === 'zero') return null
+  const amt = Number(String(args.opening_balance).replace(/,/g, ''))
+  if (!String(args.opening_balance).trim() || !Number.isFinite(amt) || amt <= 0) {
+    return 'Enter a positive opening amount, or set the position to “None”.'
+  }
+  if (!args.opening_balance_as_of?.trim()) {
+    return 'Choose the “as of” date for the opening position.'
+  }
+  if (args.opening_interest_applicable) {
+    const r = (args.opening_annual_interest_rate || '').trim()
+    if (r === '') return 'Enter a nominal annual rate, or uncheck “Interest / return”.'
+  }
+  return null
 }
 
 /** Table subtitle + tooltip; uses API fields when present, else derives from role + rate. */
@@ -331,6 +416,36 @@ interface LoanStatementResponse {
   as_of?: string
 }
 
+interface CounterpartyLedgerResponse {
+  counterparty: { id: number; code: string; name: string; party_kind?: string; role_type: string }
+  lines: {
+    date: string
+    kind: string
+    kind_label?: string
+    loan_no?: string
+    loan_id?: number | null
+    loan_direction?: string
+    reference: string
+    memo?: string
+    disbursement: string
+    repayment_total: string
+    principal: string
+    interest: string
+    outstanding_principal_after_loan: string
+    receivable_principal_total: string
+    payable_principal_total: string
+    /** Present on loan-activity rows */
+    product_type?: string
+  }[]
+  summary: {
+    total_receivable_principal: string
+    total_payable_principal: string
+    opening_receivable: string
+    opening_payable: string
+  }
+  as_of?: string
+}
+
 function sanctionFieldLabel(pt: LoanProductType): string {
   if (pt === 'islamic_facility') return 'Facility limit (Shariah ceiling)'
   if (pt === 'islamic_deal') return 'Deal amount (commitment for this purpose)'
@@ -455,13 +570,38 @@ export default function LoansPage() {
   /** True when edit session started on a closed loan — save uses minimal payload until reopened. */
   const [loanEditInitiallyClosed, setLoanEditInitiallyClosed] = useState(false)
   const [loanForm, setLoanForm] = useState<LoanFormState>(() => emptyLoanForm())
-  const [cpForm, setCpForm] = useState({ name: '', role_type: 'other' })
+  const [cpForm, setCpForm] = useState({
+    name: '',
+    role_type: 'other',
+    party_kind: 'other' as PartyKind,
+    opening_balance_type: 'zero' as OpeningType,
+    opening_balance: '',
+    opening_balance_as_of: '',
+    opening_interest_applicable: false,
+    opening_annual_interest_rate: '',
+    post_opening_to_gl: true,
+  })
   const [cpEditForm, setCpEditForm] = useState({
     code: '',
     name: '',
     role_type: 'other',
+    party_kind: 'other' as PartyKind,
     is_active: true,
+    opening_balance_type: 'zero' as OpeningType,
+    opening_balance: '',
+    opening_balance_as_of: '',
+    opening_interest_applicable: false,
+    opening_annual_interest_rate: '',
+    post_opening_to_gl: true,
+    opening_balance_journal_id: null as number | null,
+    opening_principal_account_code: null as string | null,
+    opening_principal_account_name: null as string | null,
+    opening_principal_account_type: null as string | null,
   })
+  const [cpLedgerId, setCpLedgerId] = useState<number | null>(null)
+  const [cpLedgerPayload, setCpLedgerPayload] = useState<CounterpartyLedgerResponse | null>(null)
+  const [cpLedgerLoading, setCpLedgerLoading] = useState(false)
+  const [cpSaving, setCpSaving] = useState(false)
   const [actionLoan, setActionLoan] = useState<LoanRow | null>(null)
   const [disbAmt, setDisbAmt] = useState('')
   const [repayAmt, setRepayAmt] = useState('')
@@ -517,6 +657,8 @@ export default function LoansPage() {
   const [loanRegisterQuery, setLoanRegisterQuery] = useState('')
   const [loanFilterDirection, setLoanFilterDirection] = useState<'all' | 'borrowed' | 'lent'>('all')
   const [loanFilterStatus, setLoanFilterStatus] = useState<'all' | 'draft' | 'active' | 'closed'>('all')
+  const [loanFilterBalance, setLoanFilterBalance] = useState<'all' | 'outstanding' | 'settled'>('all')
+  const newCpNameInputRef = useRef<HTMLInputElement | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -549,15 +691,70 @@ export default function LoansPage() {
     load()
   }, [router, load])
 
+  useEffect(() => {
+    if (!showCp) return
+    const t = window.setTimeout(() => newCpNameInputRef.current?.focus(), 50)
+    return () => clearTimeout(t)
+  }, [showCp])
+
+  useEffect(() => {
+    document.title = 'Loans & financing · FSERP'
+  }, [])
+
+  useEffect(() => {
+    if (!showCp && cpEditId == null && cpLedgerId == null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      if (cpLedgerId != null) {
+        setCpLedgerId(null)
+        setCpLedgerPayload(null)
+        return
+      }
+      if (cpEditId != null) {
+        setCpEditId(null)
+        return
+      }
+      if (showCp) setShowCp(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [showCp, cpEditId, cpLedgerId])
+
   const activeCounterparties = counterpartiesAll.filter((c) => c.is_active)
 
-  const loanFormInterestBankFinance = useMemo(
-    () =>
-      isBankOrFinanceCompanyRole(
-        counterpartiesAll.find((c) => c.id === loanForm.counterparty_id)?.role_type ?? ''
-      ),
+  const selectedCounterparty = useMemo(
+    () => counterpartiesAll.find((c) => c.id === loanForm.counterparty_id),
     [counterpartiesAll, loanForm.counterparty_id]
   )
+
+  const selectedCounterpartyPosition = useMemo(() => {
+    if (!selectedCounterparty) return null
+    return counterpartyPositionSummary(selectedCounterparty, loans)
+  }, [selectedCounterparty, loans])
+
+  const loanFormInterestBankFinance = useMemo(
+    () => isBankOrFinanceCompanyRole(selectedCounterparty?.role_type ?? ''),
+    [selectedCounterparty]
+  )
+
+  useEffect(() => {
+    if (!loanModalOpen || loanModalMode !== 'new' || !selectedCounterparty) return
+    if (loanForm.principal_account_id) return
+    const d =
+      loanForm.direction === 'lent'
+        ? selectedCounterparty.default_lent_principal_account_id
+        : selectedCounterparty.default_borrowed_principal_account_id
+    if (d && d > 0) {
+      setLoanForm((f) => ({ ...f, principal_account_id: d }))
+    }
+  }, [
+    loanModalOpen,
+    loanModalMode,
+    selectedCounterparty,
+    loanForm.direction,
+    loanForm.principal_account_id,
+  ])
 
   const coaFilteredForLoan = useMemo(() => {
     const principal = coa.filter((a) => isPrincipalCoaForDirection(a, loanForm.direction))
@@ -607,7 +804,18 @@ export default function LoansPage() {
       code: c.code,
       name: c.name,
       role_type: c.role_type,
+      party_kind: (c.party_kind as PartyKind) || 'other',
       is_active: c.is_active,
+      opening_balance_type: (c.opening_balance_type as OpeningType) || 'zero',
+      opening_balance: c.opening_balance != null ? String(c.opening_balance) : '',
+      opening_balance_as_of: c.opening_balance_as_of || '',
+      opening_interest_applicable: Boolean(c.opening_interest_applicable),
+      opening_annual_interest_rate: c.opening_annual_interest_rate != null ? String(c.opening_annual_interest_rate) : '',
+      post_opening_to_gl: true,
+      opening_balance_journal_id: c.opening_balance_journal_id ?? null,
+      opening_principal_account_code: c.opening_principal_account_code ?? null,
+      opening_principal_account_name: c.opening_principal_account_name ?? null,
+      opening_principal_account_type: c.opening_principal_account_type ?? null,
     })
   }
 
@@ -615,27 +823,84 @@ export default function LoansPage() {
     setCpEditId(null)
   }
 
+  const openCounterpartyLedger = async (c: Counterparty) => {
+    setCpLedgerId(c.id)
+    setCpLedgerPayload(null)
+    setCpLedgerLoading(true)
+    try {
+      const { data } = await api.get<CounterpartyLedgerResponse>(`/loans/counterparties/${c.id}/ledger/`)
+      setCpLedgerPayload(data)
+    } catch (e: unknown) {
+      setCpLedgerId(null)
+      toast.error(errDetail(e))
+    } finally {
+      setCpLedgerLoading(false)
+    }
+  }
+
+  const closeCounterpartyLedger = () => {
+    setCpLedgerId(null)
+    setCpLedgerPayload(null)
+  }
+
   const submitEditCounterparty = async (e: React.FormEvent) => {
     e.preventDefault()
     if (cpEditId == null) return
+    if (cpEditForm.opening_balance_journal_id == null) {
+      const oerr = validateCounterpartyOpening({
+        opening_balance_type: cpEditForm.opening_balance_type,
+        opening_balance: cpEditForm.opening_balance,
+        opening_balance_as_of: cpEditForm.opening_balance_as_of,
+        opening_interest_applicable: cpEditForm.opening_interest_applicable,
+        opening_annual_interest_rate: cpEditForm.opening_annual_interest_rate,
+      })
+      if (oerr) {
+        toast.error(oerr)
+        return
+      }
+    }
+    setCpSaving(true)
     try {
-      await api.put(`/loans/counterparties/${cpEditId}/`, {
+      const payload: Record<string, string | number | boolean | null | undefined> = {
         name: cpEditForm.name.trim(),
         role_type: cpEditForm.role_type,
+        party_kind: cpEditForm.party_kind,
         is_active: cpEditForm.is_active,
-      })
+      }
+      if (cpEditForm.opening_balance_journal_id == null) {
+        Object.assign(payload, {
+          opening_balance_type: cpEditForm.opening_balance_type,
+          opening_balance: cpEditForm.opening_balance,
+          opening_balance_as_of: cpEditForm.opening_balance_as_of || null,
+          opening_interest_applicable: cpEditForm.opening_interest_applicable,
+          post_opening_to_gl: cpEditForm.post_opening_to_gl,
+        })
+        if (cpEditForm.opening_interest_applicable) {
+          const ar = (cpEditForm.opening_annual_interest_rate || '0').trim() || '0'
+          payload.opening_annual_interest_rate = ar
+        } else {
+          if ((cpEditForm.opening_annual_interest_rate || '').trim() !== '') {
+            payload.opening_annual_interest_rate = (cpEditForm.opening_annual_interest_rate || '').trim()
+          } else {
+            payload.opening_annual_interest_rate = null
+          }
+        }
+      }
+      await api.put(`/loans/counterparties/${cpEditId}/`, payload)
       toast.success('Counterparty updated')
       closeEditCounterparty()
       load()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
       toast.error(err.response?.data?.detail || 'Update failed')
+    } finally {
+      setCpSaving(false)
     }
   }
 
   const deleteCounterparty = async (c: Counterparty) => {
     const ok = window.confirm(
-      `Delete counterparty ${c.code} — ${c.name}? This cannot be undone. You can only delete if no loans use this party.`
+      `Delete counterparty ${c.code} — ${c.name}? This cannot be undone. Deletion is only allowed when there are no loans, no posted opening balance journal, and no other blockers.`
     )
     if (!ok) return
     try {
@@ -651,18 +916,62 @@ export default function LoansPage() {
 
   const submitCounterparty = async (e: React.FormEvent) => {
     e.preventDefault()
+    const oerr = validateCounterpartyOpening({
+      opening_balance_type: cpForm.opening_balance_type,
+      opening_balance: cpForm.opening_balance,
+      opening_balance_as_of: cpForm.opening_balance_as_of,
+      opening_interest_applicable: cpForm.opening_interest_applicable,
+      opening_annual_interest_rate: cpForm.opening_annual_interest_rate,
+    })
+    if (oerr) {
+      toast.error(oerr)
+      return
+    }
+    setCpSaving(true)
     try {
-      await api.post('/loans/counterparties/', {
+      const payload: Record<string, string | number | boolean> = {
         name: cpForm.name.trim(),
         role_type: cpForm.role_type,
-      })
+        party_kind: cpForm.party_kind,
+        opening_balance_type: cpForm.opening_balance_type,
+        post_opening_to_gl: cpForm.post_opening_to_gl,
+        opening_interest_applicable: cpForm.opening_interest_applicable,
+      }
+      if (cpForm.opening_balance_type !== 'zero' && (Number(cpForm.opening_balance) || 0) > 0) {
+        payload.opening_balance = Number(cpForm.opening_balance) || 0
+        if (cpForm.opening_balance_as_of) payload.opening_balance_as_of = cpForm.opening_balance_as_of
+        if (cpForm.opening_interest_applicable) {
+          const ar = (cpForm.opening_annual_interest_rate || '0').trim() || '0'
+          payload.opening_annual_interest_rate = ar
+        } else {
+          if ((cpForm.opening_annual_interest_rate || '').trim() !== '') {
+            payload.opening_annual_interest_rate = (cpForm.opening_annual_interest_rate || '').trim()
+          }
+        }
+      } else {
+        payload.opening_balance = 0
+        payload.opening_balance_type = 'zero'
+      }
+      await api.post('/loans/counterparties/', payload)
       toast.success('Counterparty saved')
       setShowCp(false)
-      setCpForm({ name: '', role_type: 'other' })
+      setCpForm({
+        name: '',
+        role_type: 'other',
+        party_kind: 'other',
+        opening_balance_type: 'zero',
+        opening_balance: '',
+        opening_balance_as_of: '',
+        opening_interest_applicable: false,
+        opening_annual_interest_rate: '',
+        post_opening_to_gl: true,
+      })
       load()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
       toast.error(err.response?.data?.detail || 'Save failed')
+    } finally {
+      setCpSaving(false)
     }
   }
 
@@ -1490,6 +1799,104 @@ export default function LoansPage() {
     URL.revokeObjectURL(url)
   }
 
+  const downloadCounterpartyLedgerCsv = () => {
+    if (!cpLedgerPayload) return
+    const esc = (v: string) => {
+      const s = String(v ?? '')
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) return `"${s.replace(/"/g, '""')}"`
+      return s
+    }
+    const header = [
+      'date',
+      'loan_ref',
+      'type',
+      'disbursement',
+      'repayment_or_payment',
+      'principal',
+      'interest',
+      'receivable_running',
+      'payable_running',
+      'memo',
+    ]
+    const rows = cpLedgerPayload.lines.map((ln) =>
+      [
+        (ln.date || '').split('T')[0],
+        ln.loan_no || '',
+        ln.kind_label || ln.kind,
+        ln.disbursement,
+        ln.repayment_total,
+        ln.principal,
+        ln.interest,
+        ln.receivable_principal_total,
+        ln.payable_principal_total,
+        (ln.memo || '').replace(/\n/g, ' ').trim(),
+      ]
+        .map((v) => esc(String(v ?? '')))
+        .join(',')
+    )
+    const csv = [header.join(','), ...rows].join('\n')
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const code = (cpLedgerPayload.counterparty.code || 'party').replace(/[^\w.-]+/g, '_')
+    a.download = `party-ledger-${code}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const printCounterpartyLedger = async () => {
+    if (!cpLedgerPayload) return
+    const cp = cpLedgerPayload.counterparty
+    const s = cpLedgerPayload.summary
+    const branding = await loadPrintBranding(api).catch(() => null)
+    const rowsHtml = cpLedgerPayload.lines
+      .map(
+        (ln) => `<tr>
+      <td>${escapeHtml((ln.date || '').split('T')[0])}</td>
+      <td>${escapeHtml(ln.loan_no || '—')}</td>
+      <td>${escapeHtml(ln.kind_label || ln.kind)}</td>
+      <td class="right">${escapeHtml(ln.disbursement || '')}</td>
+      <td class="right">${escapeHtml(ln.repayment_total || '')}</td>
+      <td class="right">${escapeHtml(
+        [ln.principal, ln.interest].filter((x) => x && x !== '0' && x !== '0.00').join(' / ') || '—'
+      )}</td>
+      <td class="right">${escapeHtml(ln.receivable_principal_total || '')}</td>
+      <td class="right">${escapeHtml(ln.payable_principal_total || '')}</td>
+      <td>${escapeHtml((ln.memo || '').slice(0, 280))}</td>
+    </tr>`
+      )
+      .join('')
+    printDocument({
+      title: `Party ledger — ${cp.name} (${cp.code})`,
+      branding: branding ?? undefined,
+      bodyHtml: `
+        <div class="period">As of ${escapeHtml(
+          (cpLedgerPayload.as_of || '').split('T')[0] || '—'
+        )} &nbsp;|&nbsp; Receivable total: ${escapeHtml(
+          s.total_receivable_principal
+        )} &nbsp;|&nbsp; Payable total: ${escapeHtml(s.total_payable_principal)}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Loan / ref</th>
+              <th>Type</th>
+              <th class="right">Disb.</th>
+              <th class="right">Pmt / repay</th>
+              <th class="right">Prin / int.</th>
+              <th class="right">Recv run.</th>
+              <th class="right">Pay run.</th>
+              <th>Memo</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        <p class="muted">Running totals: principal receivable and payable (opening + all loans for this party).</p>
+      `,
+    })
+  }
+
   const loanPortfolioSummary = useMemo(() => {
     let borrowedOutstanding = 0
     let lentOutstanding = 0
@@ -1504,6 +1911,11 @@ export default function LoansPage() {
       else if (l.status === 'draft') draftCount += 1
       else if (l.status === 'closed') closedCount += 1
     }
+    let partiesWithBalance = 0
+    for (const c of counterpartiesAll) {
+      const p = counterpartyPositionSummary(c, loans)
+      if (Number(p.recv) + Number(p.pay) > 0.0001) partiesWithBalance += 1
+    }
     return {
       borrowedOutstanding,
       lentOutstanding,
@@ -1511,14 +1923,19 @@ export default function LoansPage() {
       draftCount,
       closedCount,
       registerCount: loans.length,
+      counterpartyCount: counterpartiesAll.length,
+      partiesWithBalance,
     }
-  }, [loans])
+  }, [loans, counterpartiesAll])
 
   const filteredLoans = useMemo(() => {
     const q = loanRegisterQuery.trim().toLowerCase()
     return loans.filter((row) => {
       if (loanFilterDirection !== 'all' && row.direction !== loanFilterDirection) return false
       if (loanFilterStatus !== 'all' && row.status !== loanFilterStatus) return false
+      const out = Number(outstandingDisplayed(row))
+      if (loanFilterBalance === 'outstanding' && out <= 0.0001) return false
+      if (loanFilterBalance === 'settled' && out > 0.0001) return false
       if (!q) return true
       const party =
         counterpartiesAll.find((c) => c.id === row.counterparty_id)?.name?.toLowerCase() ?? ''
@@ -1535,7 +1952,7 @@ export default function LoansPage() {
         .toLowerCase()
       return blob.includes(q)
     })
-  }, [loans, loanRegisterQuery, loanFilterDirection, loanFilterStatus, counterpartiesAll])
+  }, [loans, loanRegisterQuery, loanFilterDirection, loanFilterStatus, loanFilterBalance, counterpartiesAll])
 
   const cpName = (id: number) => counterpartiesAll.find((c) => c.id === id)?.name || `#${id}`
 
@@ -1564,10 +1981,17 @@ export default function LoansPage() {
                       Loans &amp; financing register
                     </h1>
                     <p className="mt-3 text-sm text-slate-300 max-w-3xl leading-relaxed">
-                      Record bank and non-bank facilities with full double-entry: principal, settlement (bank/cash),
-                      interest or Islamic profit recognition, optional accruals, and auditable statements (print / CSV).
-                      Conventional and Shariah-labelled products share the same GL discipline; always reconcile to your
-                      facility letter and regulator reporting (e.g. Bangladesh Bank returns where applicable).
+                      Set up <strong>counterparties</strong> with optional <strong>opening receivable or payable</strong>{' '}
+                      (posts to loan principal and Opening Balance Equity), then add facilities. Use each party’s{' '}
+                      <strong>Ledger</strong> for a single timeline: opening + all loans, disbursements, repayments, and
+                      interest — with print and CSV.                       Conventional and Shariah-labelled products use the same GL
+                      discipline; reconcile to your facility letter and local reporting.
+                    </p>
+                    <p className="mt-4 text-xs text-slate-400 max-w-3xl leading-relaxed">
+                      <span className="text-slate-500">Typical path:</span> add a <strong>counterparty</strong> (and opening
+                      balance if needed) → <strong>new loan</strong> in draft → <strong>Disburse / Repay</strong> when money
+                      moves. <strong>Statement</strong> per loan; <strong>Party ledger</strong> for the full relationship
+                      in one place.
                     </p>
                   </div>
                 </div>
@@ -1599,7 +2023,7 @@ export default function LoansPage() {
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-100 bg-white">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 bg-white">
               <div className="p-4 sm:p-5">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Register</p>
                 <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900">
@@ -1632,12 +2056,24 @@ export default function LoansPage() {
               </div>
               <div className="p-4 sm:p-5 col-span-2 lg:col-span-1">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-slate-600" aria-hidden />
+                  Counterparties
+                </p>
+                <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900">
+                  {loanPortfolioSummary.counterpartyCount}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {loanPortfolioSummary.partiesWithBalance} with receivable or payable (opening + loans)
+                </p>
+              </div>
+              <div className="p-4 sm:p-5 col-span-2 sm:col-span-2 lg:col-span-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
                   <BookOpen className="h-3.5 w-3.5 text-slate-600" aria-hidden />
-                  Workflow
+                  Tools
                 </p>
                 <p className="mt-2 text-sm text-slate-600 leading-snug">
-                  <span className="font-medium text-slate-800">Statement</span> — activity &amp; balance.{' '}
-                  <span className="font-medium text-slate-800">Disburse / Repay</span> — cash, EMI schedule, estimates.
+                  <span className="font-medium text-slate-800">Per loan</span> — Statement, schedule, accrual.{' '}
+                  <span className="font-medium text-slate-800">Per party</span> — Ledger (all facilities + opening).
                 </p>
               </div>
             </div>
@@ -1700,8 +2136,9 @@ export default function LoansPage() {
                   <div>
                     <h2 className="text-base font-semibold text-slate-900">Counterparties</h2>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Master data for lenders, borrowers, and other parties. Names unique; deletion blocked if used on a
-                      loan.
+                      Openings post to <strong>Opening Balance Equity (3200)</strong> and the principal GL (default{' '}
+                      <strong>1160</strong>/<strong>2410</strong>, <strong>Loan</strong> type in chart). One subledger per
+                      party. Delete blocked with loans or posted opening.
                     </p>
                   </div>
                 </div>
@@ -1728,7 +2165,14 @@ export default function LoansPage() {
                       <tr>
                         <th className="px-4 py-3 font-semibold">Code</th>
                         <th className="px-4 py-3 font-semibold">Name</th>
-                        <th className="px-4 py-3 font-semibold">Type</th>
+                        <th className="px-4 py-3 font-semibold">Category</th>
+                        <th className="px-4 py-3 font-semibold">Open / due</th>
+                        <th
+                          className="px-4 py-3 font-semibold text-right"
+                          title="Total loan principal receivable vs payable for this party (including opening position)"
+                        >
+                          Rcv / Pay
+                        </th>
                         <th className="px-4 py-3 font-semibold">Status</th>
                         <th className="px-4 py-3 font-semibold text-right">Actions</th>
                       </tr>
@@ -1738,7 +2182,50 @@ export default function LoansPage() {
                         <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="px-4 py-2.5 font-mono text-slate-800">{c.code}</td>
                           <td className="px-4 py-2.5 text-slate-900 font-medium">{c.name}</td>
-                          <td className="px-4 py-2.5 text-slate-700">{formatRoleType(c.role_type)}</td>
+                          <td className="px-4 py-2.5 text-slate-700 text-sm">
+                            <div>{formatRoleType(c.role_type)}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">{formatPartyKind(c.party_kind)}</div>
+                          </td>
+                          <td className="px-4 py-2.5 text-sm text-slate-700">
+                            {c.opening_balance_type && c.opening_balance_type !== 'zero' && Number(c.opening_balance) > 0 ? (
+                              <div>
+                                <div>
+                                  {(c.opening_balance_type as string) === 'receivable' ? 'Recv' : 'Pay'}{' '}
+                                  {formatMoneyAmount(c.opening_balance, currencySymbol)} ·{' '}
+                                  {(c.opening_balance_as_of || '—').split('T')[0]}
+                                </div>
+                                {openingPrincipalGlLine(c) ? (
+                                  <p
+                                    className="text-[0.7rem] text-slate-500 font-mono mt-1 max-w-[14rem]"
+                                    title="Principal general ledger for this opening (Chart of accounts)"
+                                  >
+                                    {openingPrincipalGlLine(c)}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-xs text-slate-800 tabular-nums">
+                            {(() => {
+                              const p = counterpartyPositionSummary(c, loans)
+                              return (
+                                <span className="inline-block text-left sm:text-right">
+                                  <span className="text-emerald-800 font-medium">
+                                    {formatMoneyAmount(p.recv, currencySymbol)}
+                                  </span>
+                                  <span className="text-slate-400"> / </span>
+                                  <span className="text-amber-800 font-medium">
+                                    {formatMoneyAmount(p.pay, currencySymbol)}
+                                  </span>
+                                </span>
+                              )
+                            })()}
+                            <p className="text-[0.65rem] text-slate-400 font-normal normal-case">
+                              Receivable / Payable principal
+                            </p>
+                          </td>
                           <td className="px-4 py-2.5">
                             <span
                               className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -1750,7 +2237,15 @@ export default function LoansPage() {
                               {c.is_active ? 'Active' : 'Inactive'}
                             </span>
                           </td>
-                          <td className="px-4 py-2.5 text-right whitespace-nowrap space-x-3">
+                          <td className="px-4 py-2.5 text-right whitespace-nowrap space-x-2 sm:space-x-3">
+                            <button
+                              type="button"
+                              onClick={() => openCounterpartyLedger(c)}
+                              className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900"
+                            >
+                              <BookOpen className="h-3.5 w-3.5" />
+                              Ledger
+                            </button>
                             <button
                               type="button"
                               onClick={() => openEditCounterparty(c)}
@@ -1861,12 +2356,24 @@ export default function LoansPage() {
                         <option value="active">Active</option>
                         <option value="closed">Closed</option>
                       </select>
+                      <select
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 max-w-[9.5rem]"
+                        value={loanFilterBalance}
+                        onChange={(e) => setLoanFilterBalance(e.target.value as typeof loanFilterBalance)}
+                        title="Filter by current principal balance (excludes product-specific totals such as undrawn limits)"
+                        aria-label="Filter by outstanding principal"
+                      >
+                        <option value="all">All balances</option>
+                        <option value="outstanding">With balance</option>
+                        <option value="settled">Settled (zero O/S)</option>
+                      </select>
                     </div>
                   </div>
                 </div>
                 {filteredLoans.length !== loans.length && (
                   <p className="text-xs text-slate-500">
                     Showing <strong className="text-slate-700">{filteredLoans.length}</strong> of {loans.length} facilities
+                    — adjust direction, status, or balance to narrow the list
                   </p>
                 )}
               </div>
@@ -1880,6 +2387,7 @@ export default function LoansPage() {
                       setLoanRegisterQuery('')
                       setLoanFilterDirection('all')
                       setLoanFilterStatus('all')
+                      setLoanFilterBalance('all')
                     }}
                   >
                     Clear filters
@@ -2060,34 +2568,58 @@ export default function LoansPage() {
         </div>
 
         {showCp && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+          <div
+            className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+            onClick={() => {
+              if (!cpSaving) setShowCp(false)
+            }}
+            role="presentation"
+          >
+            <div
+              className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 max-h-[min(90vh,36rem)] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="cp-new-title"
+            >
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold">New counterparty</h2>
-                <button type="button" onClick={() => setShowCp(false)} className="text-gray-400 hover:text-gray-600">
+                <h2 id="cp-new-title" className="text-lg font-semibold">
+                  New counterparty
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => !cpSaving && setShowCp(false)}
+                  className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                  disabled={cpSaving}
+                >
                   <X className="h-5 w-5" />
                 </button>
               </div>
               <form onSubmit={submitCounterparty} className="space-y-3">
                 <p className="text-sm text-gray-500">
-                  A short code (e.g. CP-00001) is assigned automatically when you save.
+                  Code is assigned on save. Opening balance posts to <strong>Opening Balance Equity (3200)</strong> and
+                  the loan principal GL (<strong>1160</strong> receivable / <strong>2410</strong> payable) unless you pass{' '}
+                  <code className="text-xs bg-slate-100 px-1 rounded">opening_principal_account_id</code> in the API.
+                </p>
+                <p className="text-xs text-slate-500">
+                  In Chart of Accounts, those default lines are usually <strong>account type &quot;Loan&quot;</strong> (not
+                  generic liability). Customer/vendor links on the counterparty do not post to A/R or A/P—only to the
+                  selected principal line.
                 </p>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                   <input
+                    ref={newCpNameInputRef}
                     className="w-full border rounded-lg px-3 py-2"
                     value={cpForm.name}
                     onChange={(e) => setCpForm({ ...cpForm, name: e.target.value })}
                     required
+                    autoComplete="organization"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                  <p className="text-xs text-gray-500 mb-1">
-                    Only <strong>Bank</strong> and <strong>Finance company</strong> use annual (actual/365) interest
-                    estimates; all other types use monthly-style (30/360). Pick the party that matches the lender /
-                    borrower.
-                  </p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category (for interest day-count)</label>
+                  <p className="text-xs text-gray-500 mb-1">Bank &amp; finance: actual/365. Others: 30/360 in hints &amp; tools.</p>
                   <select
                     className="w-full border rounded-lg px-3 py-2"
                     value={cpForm.role_type}
@@ -2100,8 +2632,120 @@ export default function LoansPage() {
                     ))}
                   </select>
                 </div>
-                <button type="submit" className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-                  Save
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Business role</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2"
+                    value={cpForm.party_kind}
+                    onChange={(e) => setCpForm({ ...cpForm, party_kind: e.target.value as PartyKind })}
+                  >
+                    {CP_PARTY_KIND_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="border-t border-slate-100 pt-3 space-y-2">
+                    <h3 className="text-sm font-semibold text-slate-800">Opening loan position</h3>
+                  <p className="text-xs text-slate-500">
+                    Record legacy receivable or payable in <strong>one</strong> line; add loan facilities after save. After
+                    posting, the balance appears on the principal GL (default <strong>1160</strong> or <strong>2410</strong>—look
+                    under the <strong>Loan</strong> type on the chart, not a separate A/R line). Same person as customer
+                    and lender: link <strong>Business role</strong> and optional CRM ids; the opening still maps to
+                    1160/2410, not customer receivables.
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2"
+                      value={cpForm.opening_balance_type}
+                      onChange={(e) => {
+                        const t = e.target.value as OpeningType
+                        setCpForm((f) => {
+                          if (t === 'zero') {
+                            return {
+                              ...f,
+                              opening_balance_type: t,
+                              opening_balance: '',
+                              opening_balance_as_of: '',
+                            }
+                          }
+                          return {
+                            ...f,
+                            opening_balance_type: t,
+                            opening_balance_as_of: f.opening_balance_as_of || todayISODateLocal(),
+                          }
+                        })
+                      }}
+                    >
+                      <option value="zero">None (zero — no opening loan)</option>
+                      <option value="receivable">Receivable — they owe the company (loan receivable)</option>
+                      <option value="payable">Payable — company owes them (loan payable)</option>
+                    </select>
+                  </div>
+                  {cpForm.opening_balance_type !== 'zero' && (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                          <input
+                            className="w-full border rounded-lg px-3 py-2"
+                            type="text"
+                            inputMode="decimal"
+                            value={cpForm.opening_balance}
+                            onChange={(e) => setCpForm({ ...cpForm, opening_balance: e.target.value })}
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">As of</label>
+                          <input
+                            className="w-full border rounded-lg px-3 py-2"
+                            type="date"
+                            value={cpForm.opening_balance_as_of}
+                            onChange={(e) => setCpForm({ ...cpForm, opening_balance_as_of: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={cpForm.opening_interest_applicable}
+                          onChange={(e) =>
+                            setCpForm({ ...cpForm, opening_interest_applicable: e.target.checked })
+                          }
+                        />
+                        Interest / return applies (stored rate; post accrual via loans/GL)
+                      </label>
+                      {cpForm.opening_interest_applicable && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Annual % (nominal)</label>
+                          <input
+                            className="w-full border rounded-lg px-3 py-2"
+                            value={cpForm.opening_annual_interest_rate}
+                            onChange={(e) => setCpForm({ ...cpForm, opening_annual_interest_rate: e.target.value })}
+                            placeholder="0 for zero"
+                          />
+                        </div>
+                      )}
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={cpForm.post_opening_to_gl}
+                          onChange={(e) => setCpForm({ ...cpForm, post_opening_to_gl: e.target.checked })}
+                        />
+                        Post opening to general ledger
+                      </label>
+                    </>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  disabled={cpSaving}
+                  className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {cpSaving ? 'Saving…' : 'Save counterparty'}
                 </button>
               </form>
             </div>
@@ -2109,15 +2753,37 @@ export default function LoansPage() {
         )}
 
         {cpEditId != null && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+          <div
+            className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+            onClick={() => {
+              if (!cpSaving) closeEditCounterparty()
+            }}
+            role="presentation"
+          >
+            <div
+              className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 max-h-[min(90vh,40rem)] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+            >
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-semibold">Edit counterparty</h2>
-                <button type="button" onClick={closeEditCounterparty} className="text-gray-400 hover:text-gray-600">
+                <button
+                  type="button"
+                  onClick={() => !cpSaving && closeEditCounterparty()}
+                  className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                  disabled={cpSaving}
+                >
                   <X className="h-5 w-5" />
                 </button>
               </div>
               <form onSubmit={submitEditCounterparty} className="space-y-3">
+                {cpEditForm.opening_balance_journal_id != null && (
+                  <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                    Opening balance is posted to the general ledger; amounts here are read-only. Adjust via GL if
+                    required.
+                  </p>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
                   <input
@@ -2137,10 +2803,8 @@ export default function LoansPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                  <p className="text-xs text-gray-500 mb-1">
-                    Bank / Finance company → annual (/365) interest hints; other types → monthly (/360).
-                  </p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <p className="text-xs text-gray-500 mb-1">Bank / finance: annual /365 hints; other: 30/360.</p>
                   <select
                     className="w-full border rounded-lg px-3 py-2"
                     value={cpEditForm.role_type}
@@ -2153,18 +2817,281 @@ export default function LoansPage() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Business role</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2"
+                    value={cpEditForm.party_kind}
+                    onChange={(e) =>
+                      setCpEditForm({ ...cpEditForm, party_kind: e.target.value as PartyKind })
+                    }
+                  >
+                    {CP_PARTY_KIND_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {cpEditForm.opening_balance_journal_id == null && (
+                  <div className="border-t border-slate-100 pt-3 space-y-2">
+                    <h3 className="text-sm font-semibold text-slate-800">Opening loan (not posted yet)</h3>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2"
+                      value={cpEditForm.opening_balance_type}
+                      onChange={(e) => {
+                        const t = e.target.value as OpeningType
+                        setCpEditForm((f) => {
+                          if (t === 'zero') {
+                            return { ...f, opening_balance_type: t, opening_balance: '', opening_balance_as_of: '' }
+                          }
+                          return {
+                            ...f,
+                            opening_balance_type: t,
+                            opening_balance_as_of: f.opening_balance_as_of || todayISODateLocal(),
+                          }
+                        })
+                      }}
+                    >
+                      <option value="zero">None (zero)</option>
+                      <option value="receivable">Receivable (they owe you)</option>
+                      <option value="payable">Payable (you owe them)</option>
+                    </select>
+                    {cpEditForm.opening_balance_type !== 'zero' && (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            className="w-full border rounded-lg px-3 py-2"
+                            type="text"
+                            value={cpEditForm.opening_balance}
+                            onChange={(e) => setCpEditForm({ ...cpEditForm, opening_balance: e.target.value })}
+                            placeholder="Amount"
+                          />
+                          <input
+                            className="w-full border rounded-lg px-3 py-2"
+                            type="date"
+                            value={cpEditForm.opening_balance_as_of}
+                            onChange={(e) =>
+                              setCpEditForm({ ...cpEditForm, opening_balance_as_of: e.target.value })
+                            }
+                          />
+                        </div>
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={cpEditForm.opening_interest_applicable}
+                            onChange={(e) =>
+                              setCpEditForm({ ...cpEditForm, opening_interest_applicable: e.target.checked })
+                            }
+                          />
+                          Interest applicable
+                        </label>
+                        {cpEditForm.opening_interest_applicable && (
+                          <input
+                            className="w-full border rounded-lg px-3 py-2"
+                            value={cpEditForm.opening_annual_interest_rate}
+                            onChange={(e) =>
+                              setCpEditForm({ ...cpEditForm, opening_annual_interest_rate: e.target.value })
+                            }
+                            placeholder="Annual %"
+                          />
+                        )}
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={cpEditForm.post_opening_to_gl}
+                            onChange={(e) =>
+                              setCpEditForm({ ...cpEditForm, post_opening_to_gl: e.target.checked })
+                            }
+                          />
+                          Post to GL on save
+                        </label>
+                      </>
+                    )}
+                  </div>
+                )}
+                {cpEditForm.opening_balance_journal_id != null && (
+                  <div className="text-sm text-slate-600">
+                    <p>
+                      <strong>Opening (posted)</strong> — {cpEditForm.opening_balance_type} {cpEditForm.opening_balance}
+                    </p>
+                    {cpEditForm.opening_principal_account_code ? (
+                      <p className="text-xs font-mono text-slate-700 mt-1">
+                        Principal GL: {cpEditForm.opening_principal_account_code}
+                        {cpEditForm.opening_principal_account_name
+                          ? ` — ${cpEditForm.opening_principal_account_name}`
+                          : ''}
+                        {cpEditForm.opening_principal_account_type
+                          ? ` (${cpEditForm.opening_principal_account_type})`
+                          : ''}
+                      </p>
+                    ) : null}
+                    <p className="text-xs mt-1">Journal # {cpEditForm.opening_balance_journal_id}</p>
+                  </div>
+                )}
                 <label className="flex items-center gap-2 text-sm text-gray-700">
                   <input
                     type="checkbox"
                     checked={cpEditForm.is_active}
                     onChange={(e) => setCpEditForm({ ...cpEditForm, is_active: e.target.checked })}
                   />
-                  Active (inactive parties are hidden from the new-loan dropdown)
+                  Active
                 </label>
-                <button type="submit" className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-                  Save changes
+                <button
+                  type="submit"
+                  disabled={cpSaving}
+                  className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {cpSaving ? 'Saving…' : 'Save changes'}
                 </button>
               </form>
+            </div>
+          </div>
+        )}
+
+        {cpLedgerId != null && (
+          <div
+            className="fixed inset-0 z-[55] flex items-center justify-center bg-black/40 p-4"
+            onClick={closeCounterpartyLedger}
+            role="presentation"
+          >
+            <div
+              className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[min(90vh,44rem)] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              id="cp-ledger-panel"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 px-5 py-4 print:border-0">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Party ledger (subledger)</h2>
+                  {cpLedgerPayload && (
+                    <p className="text-sm text-slate-500 mt-1">
+                      {cpLedgerPayload.counterparty.name}{' '}
+                      <span className="font-mono text-xs">({cpLedgerPayload.counterparty.code})</span>
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0 print:hidden">
+                  {!cpLedgerLoading && cpLedgerPayload && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={downloadCounterpartyLedgerCsv}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                        title="Download CSV for Excel or audit"
+                      >
+                        <Download className="h-4 w-4" />
+                        CSV
+                      </button>
+                      <button
+                        type="button"
+                        onClick={printCounterpartyLedger}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                        title="Print"
+                      >
+                        <Printer className="h-4 w-4" />
+                        Print
+                      </button>
+                    </>
+                  )}
+                <button
+                  type="button"
+                  onClick={closeCounterpartyLedger}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                </div>
+              </div>
+              {cpLedgerLoading && (
+                <div className="flex items-center justify-center gap-2 p-10 text-slate-500">
+                  <RefreshCw className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                  <span>Loading party activity…</span>
+                </div>
+              )}
+              {!cpLedgerLoading && cpLedgerPayload && (
+                <div className="p-4 overflow-y-auto flex-1 space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    <div className="rounded-lg border border-slate-100 p-2 bg-slate-50/80">
+                      <p className="text-xs text-slate-500">Receivable (principal)</p>
+                      <p className="font-mono font-semibold text-emerald-900">
+                        {formatMoneyAmount(cpLedgerPayload.summary.total_receivable_principal, currencySymbol)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 p-2 bg-slate-50/80">
+                      <p className="text-xs text-slate-500">Payable (principal)</p>
+                      <p className="font-mono font-semibold text-amber-900">
+                        {formatMoneyAmount(cpLedgerPayload.summary.total_payable_principal, currencySymbol)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 p-2">
+                      <p className="text-xs text-slate-500">Opening receivable</p>
+                      <p className="font-mono text-slate-800">
+                        {formatMoneyAmount(cpLedgerPayload.summary.opening_receivable, currencySymbol)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 p-2">
+                      <p className="text-xs text-slate-500">Opening payable</p>
+                      <p className="font-mono text-slate-800">
+                        {formatMoneyAmount(cpLedgerPayload.summary.opening_payable, currencySymbol)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-slate-50 text-slate-700 text-left">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Date</th>
+                          <th className="px-3 py-2 font-medium">Loan / ref</th>
+                          <th className="px-3 py-2 font-medium min-w-[7rem]">Type</th>
+                          <th className="px-3 py-2 text-right">Disb / Pay</th>
+                          <th className="px-3 py-2 text-right">Principal / Int.</th>
+                          <th className="px-3 py-2 text-right min-w-[8.5rem]">Rcv / Pay run.</th>
+                          <th className="px-3 py-2 font-medium text-slate-500 max-w-[10rem]">Note</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {cpLedgerPayload.lines.map((ln, i) => (
+                          <tr key={i} className="hover:bg-slate-50/80">
+                            <td className="px-3 py-1.5 font-mono text-xs whitespace-nowrap">{(ln.date || '').split('T')[0]}</td>
+                            <td className="px-3 py-1.5">
+                              <span className="font-mono text-xs text-indigo-700">{ln.loan_no || '—'}</span>
+                            </td>
+                            <td className="px-3 py-1.5 text-xs text-slate-800">{ln.kind_label || ln.kind}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-800">
+                              {ln.disbursement && Number(ln.disbursement) ? ln.disbursement : ln.repayment_total || '—'}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-800">
+                              {[ln.principal, ln.interest].filter((x) => x && x !== '0' && x !== '0.00').join(' / ') || '—'}
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-[0.7rem] sm:text-xs font-mono text-slate-700">
+                              {ln.receivable_principal_total && ln.payable_principal_total ? (
+                                <span>
+                                  {formatMoneyAmount(ln.receivable_principal_total, currencySymbol)} /{' '}
+                                  {formatMoneyAmount(ln.payable_principal_total, currencySymbol)}
+                                </span>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td
+                              className="px-3 py-1.5 text-xs text-slate-500 max-w-[10rem] truncate"
+                              title={(ln.memo || ln.reference || '').replace(/\s+/g, ' ').trim()}
+                            >
+                              {(ln.memo || ln.reference || '').trim() ? (ln.memo || ln.reference).slice(0, 48) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {cpLedgerPayload.lines.length === 0 && (
+                    <p className="text-sm text-slate-500">No lines yet — set opening or create a loan.</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2430,6 +3357,38 @@ export default function LoansPage() {
                           ))}
                         </select>
                       </div>
+                      {selectedCounterparty && selectedCounterpartyPosition && loanForm.counterparty_id > 0 && (
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2.5 text-sm">
+                          <div className="min-w-0 text-slate-800">
+                            <span className="text-slate-500 text-xs uppercase tracking-wide font-medium">
+                              Party (all loans + opening)
+                            </span>
+                            <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                              <span
+                                className="text-emerald-800 font-mono text-sm"
+                                title="Principal receivable — you are owed this amount"
+                              >
+                                Recv {formatMoneyAmount(selectedCounterpartyPosition.recv, currencySymbol)}
+                              </span>
+                              <span className="text-slate-300 hidden sm:inline">|</span>
+                              <span
+                                className="text-amber-800 font-mono text-sm"
+                                title="Principal payable — you owe this amount"
+                              >
+                                Pay {formatMoneyAmount(selectedCounterpartyPosition.pay, currencySymbol)}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => openCounterpartyLedger(selectedCounterparty)}
+                            className="shrink-0 inline-flex items-center gap-1.5 self-start sm:self-center text-xs font-semibold text-indigo-700 hover:text-indigo-900 rounded-lg px-2 py-1 hover:bg-white/80"
+                          >
+                            <BookOpen className="h-3.5 w-3.5" aria-hidden />
+                            Party ledger
+                          </button>
+                        </div>
+                      )}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           {sanctionFieldLabel(loanForm.product_type)}

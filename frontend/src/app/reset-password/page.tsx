@@ -159,7 +159,8 @@ export default function ResetPasswordPage() {
       <div className="w-full max-w-md rounded-xl bg-white app-modal-pad shadow-xl border border-slate-100">
         <h1 className="text-2xl font-semibold text-slate-900">Set a new password</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Choose a strong password you have not used here before. This link expires after a short time.
+          You opened a confirmation link from your email. Choose a new password. This link expires in 30 minutes. For a
+          code instead of a link, use Forgot password and choose the one-time code option (5-minute code).
         </p>
         <div className="mt-8">
           <Suspense

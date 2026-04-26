@@ -193,7 +193,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://adib.localhost:3000",
     "https://mahasoftcorporation.com",
     "https://www.mahasoftcorporation.com",
-    "https://localhost:3000 ",
+    "https://localhost:3000",
 ]
 
 REST_FRAMEWORK = {"DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"]}

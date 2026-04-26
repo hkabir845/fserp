@@ -22,10 +22,17 @@ interface Nozzle {
   product_id: number
   product_name?: string
   unit_price?: number
+  /** Kept in sync with `is_operational` on save (see API). */
   is_active: boolean
   color_code?: string
   is_operational?: boolean | string
   tank_id?: number
+}
+
+/** Source of truth for "active" in the list and POS: operational flag. */
+function nozzleIsOperational(n: Pick<Nozzle, 'is_operational'>): boolean {
+  const op = n.is_operational
+  return op === true || (typeof op === 'string' && (op === 'Y' || op === 'y'))
 }
 
 interface Station {
@@ -315,7 +322,8 @@ export default function NozzlesPage() {
         meter_id: formData.meter_id,
         tank_id: formData.tank_id,
         color_code: formData.color_code,
-        is_operational: formData.is_operational
+        is_operational: formData.is_operational,
+        is_active: formData.is_operational
       }
       if (nozzleRefCode.trim()) {
         payload.nozzle_number = nozzleRefCode.trim()
@@ -388,6 +396,7 @@ export default function NozzlesPage() {
         nozzle_name: nozzleName,
         color_code: formData.color_code,
         is_operational: formData.is_operational,
+        is_active: formData.is_operational,
         tank_id: formData.tank_id || null,
         meter_id: formData.meter_id || null
       })
@@ -543,9 +552,9 @@ export default function NozzlesPage() {
                     </div>
                   </div>
                   <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                    nozzle.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    nozzleIsOperational(nozzle) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                   }`}>
-                    {nozzle.is_active ? 'Active' : 'Off'}
+                    {nozzleIsOperational(nozzle) ? 'Active' : 'Off'}
                   </span>
                 </div>
                 

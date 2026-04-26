@@ -94,7 +94,7 @@ def nozzles_list_or_create(request):
 def nozzles_details(request):
     """GET /api/nozzles/details/ - enriched list for POS (product, meter, tank, station)."""
     qs = (
-        Nozzle.objects.filter(company_id=request.company_id)
+        Nozzle.objects.filter(company_id=request.company_id, is_active=True, is_operational=True)
         .select_related("meter", "tank", "product", "meter__dispenser__island__station")
         .order_by("id")
     )
@@ -126,6 +126,17 @@ def nozzles_list_post(request):
     )
     if err:
         return JsonResponse({"detail": err}, status=400)
+    is_op = (
+        body.get("is_operational", True)
+        if isinstance(body.get("is_operational"), bool)
+        else (body.get("is_operational") not in ("N", "false", "0"))
+    )
+    if "is_operational" in body:
+        is_active_val = is_op
+    elif "is_active" in body:
+        is_active_val = bool(body["is_active"])
+    else:
+        is_active_val = is_op
     n = Nozzle(
         company_id=request.company_id,
         meter_id=meter_id,
@@ -135,8 +146,8 @@ def nozzles_list_post(request):
         nozzle_code=body.get("nozzle_code") or "",
         nozzle_number=code or "",
         color_code=body.get("color_code") or "#3B82F6",
-        is_operational=body.get("is_operational", True) if isinstance(body.get("is_operational"), bool) else (body.get("is_operational") not in ("N", "false", "0")),
-        is_active=body.get("is_active", True),
+        is_operational=is_op,
+        is_active=is_active_val,
     )
     n.save()
     if not n.nozzle_number:
@@ -178,7 +189,8 @@ def nozzle_detail(request, nozzle_id: int):
         if "is_operational" in body:
             v = body["is_operational"]
             n.is_operational = v is True or v not in ("N", "false", "0", False)
-        if "is_active" in body:
+            n.is_active = n.is_operational
+        elif "is_active" in body:
             n.is_active = bool(body["is_active"])
         n.save()
         return JsonResponse(_nozzle_to_json(n))

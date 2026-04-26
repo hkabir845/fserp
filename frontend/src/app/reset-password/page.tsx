@@ -4,7 +4,7 @@ import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getApiBaseUrl } from '@/lib/api'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, Loader2 } from 'lucide-react'
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -155,14 +155,24 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 px-4">
-      <div className="w-full max-w-md rounded-xl bg-white app-modal-pad shadow-xl border border-slate-100">
-        <h1 className="text-2xl font-semibold text-slate-900">Set a new password</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          You opened a confirmation link from your email. Choose a new password. This link expires in 30 minutes. For a
-          code instead of a link, use Forgot password and choose the one-time code option (5-minute code).
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 px-4 py-10">
+      <div className="w-full max-w-md rounded-2xl bg-white app-modal-pad shadow-xl border border-slate-200/80">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-white">
+          <KeyRound className="h-6 w-6" aria-hidden />
+        </div>
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-slate-900">Set a new password</h1>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
+          You followed a link from your email. Choose a new password for <strong>your user in this app</strong> (company
+          staff, company administrators, and platform users all use the same flow). Links expire in about 30 minutes.
         </p>
-        <div className="mt-8">
+        <p className="mt-2 text-xs text-slate-500">
+          Prefer a one-time code? Open{' '}
+          <Link href="/forgot-password" className="font-medium text-blue-600 hover:underline">
+            Forgot password
+          </Link>{' '}
+          and select the 6-digit code option.
+        </p>
+        <div className="mt-6">
           <Suspense
             fallback={
               <div className="flex items-center gap-2 text-sm text-slate-600">

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getApiBaseUrl } from '@/lib/api'
-import { ArrowLeft, Loader2, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, Loader2, Eye, EyeOff, Building2, KeyRound, Mail, Shield } from 'lucide-react'
 
 type ResetMethod = 'link' | 'otp'
 
@@ -112,14 +112,45 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 px-4">
-      <div className="w-full max-w-md rounded-xl bg-white app-modal-pad shadow-xl border border-slate-100">
-        <h1 className="text-2xl font-semibold text-slate-900">Forgot password</h1>
-        <p className="mt-2 text-sm text-slate-600">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 px-4 py-10">
+      <div className="w-full max-w-md rounded-2xl bg-white app-modal-pad shadow-xl border border-slate-200/80">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-white">
+          <KeyRound className="h-6 w-6" aria-hidden />
+        </div>
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-slate-900">Reset your password</h1>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
           {step === 1
-            ? 'Use the same email or username you use to sign in. We send to that account: if your username is an email, that mailbox receives the message; otherwise we use the email on your profile.'
-            : 'Enter the 6-digit code we emailed you and your new password.'}
+            ? 'Enter the email or username for your account. We will send a secure link or a one-time code to the mailbox on file for that user.'
+            : 'Enter the 6-digit code from your email, then choose a new password.'}
         </p>
+
+        <div className="mt-4 flex gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-xs text-slate-600">
+          <Mail className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" aria-hidden />
+          <p>
+            <span className="font-medium text-slate-800">Where we send the message: </span>
+            If you sign in with an email, we use that inbox. If you use a short username, we use the
+            <strong> profile email </strong>
+            on your user (ask your company administrator if it is missing).
+          </p>
+        </div>
+        <div className="mt-2 flex gap-2 rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5 text-xs text-amber-950/90">
+          <Building2 className="h-4 w-4 shrink-0 text-amber-700/80 mt-0.5" aria-hidden />
+          <p>
+            <span className="font-medium text-amber-950">Company owners &amp; staff: </span>
+            use the <strong>same</strong> email or username you enter on the sign-in page. Your organization should keep
+            your profile email up to date if you do not use an email as your username. After a successful reset, if
+            sign-in still fails, your             <strong>organization account</strong> may be suspended—contact an administrator.
+          </p>
+        </div>
+        <div className="mt-2 flex gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-xs text-slate-700">
+          <Shield className="h-4 w-4 shrink-0 text-blue-600 mt-0.5" aria-hidden />
+          <p>
+            We never tell you whether an account exists, so the same message appears in every case. If the same
+            <strong> email is shared by several user accounts</strong> (rare and discouraged), use your
+            <strong> username</strong> here instead; password reset only matches a shared email unambiguously when it
+            is unique in the system.
+          </p>
+        </div>
 
         {step === 1 ? (
           <form onSubmit={handleRequestSubmit} className="mt-8 space-y-4">
@@ -323,11 +354,12 @@ export default function ForgotPasswordPage() {
           Back to sign in
         </Link>
 
-        <p className="mt-8 text-xs text-slate-500">
-          For production email, configure SMTP (<code className="rounded bg-slate-100 px-1">EMAIL_HOST</code>,{' '}
-          <code className="rounded bg-slate-100 px-1">DEFAULT_FROM_EMAIL</code>) and set{' '}
-          <code className="rounded bg-slate-100 px-1">FRONTEND_BASE_URL</code> so reset links point to this app. Use the same
-          mailbox you use to sign in.
+        <p className="mt-8 text-xs leading-relaxed text-slate-500">
+          <strong className="font-medium text-slate-600">Operators:</strong> configure SMTP (
+          <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px]">EMAIL_HOST</code>,{' '}
+          <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px]">DEFAULT_FROM_EMAIL</code>) and{' '}
+          <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px]">FRONTEND_BASE_URL</code> on the
+          server so messages deliver and links open in this app.
         </p>
       </div>
     </div>

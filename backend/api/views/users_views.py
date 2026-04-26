@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
+from api.utils.recovery_email import profile_allows_password_recovery
 from api.models import BroadcastRead, User, Company, CompanyRole
 from api.services.permission_service import user_client_dict
 
@@ -156,6 +157,22 @@ def users_list_or_create(request):
         return JsonResponse({"detail": "email/username required"}, status=400)
     if not password:
         return JsonResponse({"detail": "password required"}, status=400)
+    if not profile_allows_password_recovery(username=username, email=email):
+        return JsonResponse(
+            {
+                "detail": (
+                    "If the username is not an email address, profile email is required (used for sign-in, "
+                    "forgot password, and notifications). Either set a valid email as username, or add email."
+                ),
+            },
+            status=400,
+        )
+    e_norm = (email or "").strip()
+    if e_norm and User.objects.filter(email__iexact=e_norm).exists():
+        return JsonResponse(
+            {"detail": "Another user already uses this email address."},
+            status=400,
+        )
     if User.objects.filter(username__iexact=username).exists():
         return JsonResponse({"detail": "User with this username already exists"}, status=400)
     try:
@@ -288,6 +305,25 @@ def user_detail(request, user_id):
             return JsonResponse({"detail": "username cannot be empty"}, status=400)
         if User.objects.filter(username__iexact=final_username).exclude(pk=user.pk).exists():
             return JsonResponse({"detail": "User with this username already exists"}, status=400)
+        if "email" in data or "username" in data:
+            if not profile_allows_password_recovery(
+                username=final_username, email=(user.email or "").strip()
+            ):
+                return JsonResponse(
+                    {
+                        "detail": (
+                            "When the username is not an email, profile email is required for forgot password. "
+                            "Set a non-empty email or change the username to a valid email address."
+                        ),
+                    },
+                    status=400,
+                )
+            fin_e = (user.email or "").strip()
+            if fin_e and User.objects.filter(email__iexact=fin_e).exclude(pk=user.pk).exists():
+                return JsonResponse(
+                    {"detail": "Another user already uses this email address."},
+                    status=400,
+                )
         user.save()
         return JsonResponse(_user_to_json(user))
     except json.JSONDecodeError:

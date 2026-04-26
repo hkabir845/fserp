@@ -3,7 +3,6 @@ import hashlib
 import hmac
 import json
 import logging
-import re
 import secrets
 from datetime import timedelta
 from html import escape
@@ -19,6 +18,7 @@ from django.views.decorators.http import require_http_methods
 
 from api.models import PasswordResetToken, User
 from api.utils.auth import auth_required
+from api.utils.recovery_email import username_looks_like_email
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +32,6 @@ MAX_OTP_ATTEMPTS = 5
 OTP_LOCKOUT_SEC = 900
 OTP_FAIL_TRACK_TTL_SEC = OTP_LOCKOUT_SEC
 
-_EMAIL_LIKE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+", re.IGNORECASE)
-
-
 def _reset_link_expires_display() -> str:
     m = RESET_LINK_VALIDITY_MINUTES
     if m <= 0:
@@ -42,6 +39,36 @@ def _reset_link_expires_display() -> str:
     if m == 1:
         return "1 minute"
     return f"{m} minutes"
+
+
+def _app_display_name() -> str:
+    return (getattr(settings, "FSERP_APP_DISPLAY_NAME", None) or "FS ERP").strip() or "FS ERP"
+
+
+def _email_html_layout(*, title: str, preheader: str, inner_html: str) -> str:
+    """Single-column HTML email, readable in most clients; text/plain is still sent separately."""
+    brand = escape(_app_display_name())
+    safe_pre = escape(preheader[:200])
+    return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>{escape(title)}</title></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;">
+<span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;">{safe_pre}</span>
+<table role="presentation" width="100%" cellPadding="0" cellSpacing="0" style="background-color:#f1f5f9;padding:24px 12px;">
+<tr><td align="center">
+<table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
+<tr><td style="background:#0f172a;padding:20px 24px;">
+<p style="margin:0;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:18px;font-weight:600;color:#f8fafc;">{brand}</p>
+</td></tr>
+<tr><td style="padding:24px 24px 8px;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#0f172a;">
+{inner_html}
+</td></tr>
+<tr><td style="padding:8px 24px 24px;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#64748b;">
+<p style="margin:0 0 8px;">This message was sent by {brand} for account security. If you did not request it, you can ignore this email.</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>"""
 
 
 def _hash_token(raw: str) -> str:
@@ -72,7 +99,7 @@ def _password_reset_delivery_email(user: User) -> str | None:
     (username = email); otherwise use the profile email field.
     """
     un = (user.username or "").strip()
-    if un and _EMAIL_LIKE.search(un or ""):
+    if username_looks_like_email(un):
         return un
     em = (getattr(user, "email", None) or "").strip()
     if em:
@@ -104,25 +131,32 @@ def _store_otp(user_id: int, raw_otp: str) -> None:
 
 
 def _send_password_reset_link_email(to_email: str, reset_link: str, user_name: str) -> None:
+    app = _app_display_name()
     display_name = (user_name or "").strip() or "there"
-    subject = "Confirm password reset – FS ERP"
+    subject = f"Reset your {app} password"
     exp = _reset_link_expires_display()
     text_body = (
         f"Hello {display_name},\n\n"
-        "We received a request to reset the password for your account.\n\n"
-        f"To confirm you want to choose a new password, open this link in your browser "
-        f"(it expires in {exp}):\n{reset_link}\n\n"
-        "If you did not request a reset, ignore this message. Your password will stay the same.\n\n"
-        "— FS ERP"
+        f"We received a request to reset the password for your {app} account.\n\n"
+        f"Open this link in your browser to choose a new password (link expires in {exp}):\n{reset_link}\n\n"
+        "If you did not request a password reset, you can ignore this message.\n\n"
+        f"— {app}"
     )
     safe_link = escape(reset_link, quote=True)
-    html_body = (
-        f"<p>Hello {escape(display_name)},</p>"
-        "<p>We received a request to reset the password for your account.</p>"
-        f'<p><a href="{safe_link}">Confirm and set a new password</a></p>'
-        f"<p>This link expires in {exp}.</p>"
-        "<p>If you did not request a reset, you can ignore this email.</p>"
-        "<p>— FS ERP</p>"
+    inner = (
+        f'<p style="margin:0 0 12px;">Hello {escape(display_name)},</p>'
+        f'<p style="margin:0 0 20px;">We received a request to reset the password for your <strong>{escape(app)}</strong> account. '
+        f"Click the button below to continue. The link expires in <strong>{escape(exp)}</strong>.</p>"
+        f'<p style="margin:0 0 12px;">'
+        f'<a href="{safe_link}" style="display:inline-block;padding:12px 24px;background-color:#2563eb;color:#ffffff;'
+        f'text-decoration:none;border-radius:8px;font-weight:600;font-size:15px;">Set a new password</a></p>'
+        f'<p style="margin:16px 0 0;font-size:12px;word-break:break-all;color:#64748b;">'
+        f"If the button does not work, copy and paste this address into your browser:<br/>{safe_link}</p>"
+    )
+    html_body = _email_html_layout(
+        title=subject,
+        preheader=f"Use this link to set a new {app} password (expires in {exp}).",
+        inner_html=inner,
     )
     send_mail(
         subject=subject,
@@ -135,21 +169,27 @@ def _send_password_reset_link_email(to_email: str, reset_link: str, user_name: s
 
 
 def _send_password_reset_otp_email(to_email: str, otp: str, user_name: str) -> None:
+    app = _app_display_name()
     display_name = (user_name or "").strip() or "there"
-    subject = f"{otp} is your FS ERP password reset code"
+    minutes = max(1, OTP_TTL_SEC // 60)
+    subject = f"Your {app} security code: {otp}"
     text_body = (
         f"Hello {display_name},\n\n"
-        f"Use this one-time code to set a new password: {otp}\n\n"
-        f"The code expires in {max(1, OTP_TTL_SEC // 60)} minutes. If you did not request a reset, ignore this message.\n\n"
-        "— FS ERP"
+        f"Your {app} password reset code is: {otp}\n\n"
+        f"This code expires in {minutes} minutes. If you did not request a reset, ignore this message.\n\n"
+        f"— {app}"
     )
     safe_otp = escape(otp, quote=True)
-    html_body = (
-        f"<p>Hello {escape(display_name)},</p>"
-        f"<p>Your one-time password reset code is: <strong>{safe_otp}</strong></p>"
-        f"<p>It expires in {max(1, OTP_TTL_SEC // 60)} minutes.</p>"
-        "<p>If you did not request a reset, ignore this email.</p>"
-        "<p>— FS ERP</p>"
+    inner = (
+        f'<p style="margin:0 0 12px;">Hello {escape(display_name)},</p>'
+        f'<p style="margin:0 0 20px;">Use this one-time code to set a new password for <strong>{escape(app)}</strong>:</p>'
+        f'<p style="margin:0 0 8px;font-size:32px;letter-spacing:8px;font-weight:700;font-family:ui-monospace,Consolas,monospace;color:#0f172a;">{safe_otp}</p>'
+        f'<p style="margin:16px 0 0;font-size:13px;color:#64748b;">Expires in {minutes} minutes. Do not share this code with anyone.</p>'
+    )
+    html_body = _email_html_layout(
+        title=subject,
+        preheader=f"{otp} is your {app} password reset code.",
+        inner_html=inner,
     )
     send_mail(
         subject=subject,
@@ -161,23 +201,44 @@ def _send_password_reset_otp_email(to_email: str, otp: str, user_name: str) -> N
     )
 
 
-FORGOT_GENERIC_RESPONSE = {
-    "detail": (
-        "If an account exists for that address, we sent password reset instructions. "
-        "Check your inbox and spam folder."
+def _forgot_success_detail() -> str:
+    return (
+        f"If an account matches what you entered, we sent { _app_display_name() } password reset "
+        "instructions. Check your inbox and spam or promotions folder."
     )
+
+
+FORGOT_GENERIC_RESPONSE = {
+    "detail": _forgot_success_detail(),
 }
 
 
 def _find_active_user_by_identifier(identifier: str) -> User | None:
-    """Match login identifier: unique username, then email field."""
+    """
+    Match login identifier: unique username, then profile email (same as login + forgot form).
+
+    Works for platform super_admins, company owners (admin), and all tenant roles — no
+    company_id filter: inactive companies do not block reset; the user can still be unable
+    to sign in until the company is reactivated.
+    """
     q = (identifier or "").strip()
     if not q:
         return None
     user = User.objects.filter(is_active=True, username__iexact=q).first()
     if user:
         return user
-    return User.objects.filter(is_active=True, email__iexact=q).first()
+    # Ambiguous: two+ active users share this email — do not pick one (wrong-account risk).
+    # The person can still reset using their unique username.
+    n = User.objects.filter(is_active=True, email__iexact=q).count()
+    if n > 1:
+        logger.warning(
+            "password reset: %s active users share email %r; refusing email-only match. "
+            "Use username on forgot form, or fix duplicate profile emails in admin.",
+            n,
+            q,
+        )
+        return None
+    return User.objects.filter(is_active=True, email__iexact=q).order_by("id").first()
 
 
 @csrf_exempt

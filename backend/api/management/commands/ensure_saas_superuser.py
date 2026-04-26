@@ -7,6 +7,7 @@ Usage:
   python manage.py ensure_saas_superuser --username superuser@sasfserp.com
   python manage.py ensure_saas_superuser --password "Admin@123"
 """
+from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from api.models import User
@@ -48,6 +49,9 @@ class Command(BaseCommand):
         user.is_active = True
         if not (user.full_name or "").strip():
             user.full_name = "Super Admin"
+        recovery = (getattr(settings, "FSERP_PLATFORM_OWNER_EMAIL", None) or "").strip()
+        if recovery and not (user.email or "").strip():
+            user.email = recovery
         pwd = options.get("password")
         if pwd:
             user.set_password(pwd)

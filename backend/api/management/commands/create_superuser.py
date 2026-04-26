@@ -4,8 +4,13 @@ Usage: python manage.py create_superuser
        python manage.py create_superuser --username admin --password admin --email admin@localhost
 """
 import getpass
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from api.models import User
+
+
+def _default_platform_email() -> str:
+    return (getattr(settings, "FSERP_PLATFORM_OWNER_EMAIL", None) or "admin@localhost").strip()
 
 
 class Command(BaseCommand):
@@ -14,12 +19,17 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--username", type=str, default="admin", help="Username (default: admin)")
         parser.add_argument("--password", type=str, help="Password (prompted if not given)")
-        parser.add_argument("--email", type=str, default="admin@localhost", help="Email (default: admin@localhost)")
+        parser.add_argument(
+            "--email",
+            type=str,
+            default="",
+            help=f"Profile email for password recovery (default: FSERP_PLATFORM_OWNER_EMAIL or admin@localhost)",
+        )
         parser.add_argument("--no-input", action="store_true", help="Use defaults and fail if user exists")
 
     def handle(self, *args, **options):
         username = options["username"]
-        email = options["email"]
+        email = (options["email"] or "").strip() or _default_platform_email()
         password = options["password"]
         no_input = options["no_input"]
 

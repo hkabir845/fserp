@@ -39,6 +39,9 @@ _manage_insecure_secret_ok = _manage_cmd in frozenset(
         "changepassword",
         "compilemessages",
         "makemessages",
+        "ensure_platform_owner_email",
+        "ensure_saas_superuser",
+        "create_superuser",
     }
 )
 
@@ -199,6 +202,14 @@ CSRF_TRUSTED_ORIGINS = [
 REST_FRAMEWORK = {"DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"]}
 
 FRONTEND_BASE_URL = "https://mahasoftcorporation.com"
+
+# Platform owner (role=super_admin) recovery mailbox. Used by ensure_platform_owner_email and
+# create_superuser default. Override per deployment with FSERP_PLATFORM_OWNER_EMAIL.
+FSERP_PLATFORM_OWNER_EMAIL = (
+    (os.environ.get("FSERP_PLATFORM_OWNER_EMAIL") or "bismillah.filling@gmail.com").strip()
+)
+# Shown in password-reset and system emails.
+FSERP_APP_DISPLAY_NAME = (os.environ.get("FSERP_APP_DISPLAY_NAME") or "FS ERP").strip() or "FS ERP"
 
 EMAIL_BACKEND = (
     "django.core.mail.backends.smtp.EmailBackend"

@@ -10,6 +10,30 @@ export type UserRole =
   | 'cashier'
   | 'operator'
 
+/** What this login may sell at POS (from login / user API). */
+export type PosSaleScope = 'both' | 'general' | 'fuel'
+
+const POS_SALE_SCOPES: ReadonlySet<string> = new Set(['both', 'general', 'fuel'])
+
+/**
+ * From localStorage `user` (set at login). Defaults to `both` if missing (legacy session).
+ */
+export function getPosSaleScope(): PosSaleScope {
+  if (typeof window === 'undefined') return 'both'
+  const userStr = localStorage.getItem('user')
+  if (!userStr || userStr === 'undefined' || userStr === 'null') {
+    return 'both'
+  }
+  try {
+    const user = JSON.parse(userStr) as { pos_sale_scope?: string }
+    const s = (user?.pos_sale_scope || 'both').toString().trim().toLowerCase()
+    if (POS_SALE_SCOPES.has(s)) return s as PosSaleScope
+  } catch {
+    /* ignore */
+  }
+  return 'both'
+}
+
 /**
  * Get current user role from localStorage
  */

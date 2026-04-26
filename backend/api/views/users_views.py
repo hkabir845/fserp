@@ -8,11 +8,30 @@ from django.views.decorators.http import require_http_methods
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.utils.recovery_email import profile_allows_password_recovery
 from api.models import BroadcastRead, User, Company, CompanyRole
-from api.services.permission_service import user_client_dict
+from api.services.permission_service import user_client_dict, POS_SALE_SCOPES, normalize_role_key
 
 logger = logging.getLogger(__name__)
 
 TENANT_USER_ROLES = frozenset({"admin", "accountant", "cashier", "operator"})
+
+
+def _set_pos_sale_scope_cashier_operator(user: User, data: dict, force_default: bool) -> "JsonResponse|None":
+    """Set User.pos_sale_scope. force_default: create user when key omitted (use 'both')."""
+    r = normalize_role_key(user.role)
+    if r not in ("cashier", "operator"):
+        user.pos_sale_scope = "both"
+        return None
+    if not force_default and "pos_sale_scope" not in data:
+        return None
+    raw = data.get("pos_sale_scope", "both")
+    val = (str(raw) if raw is not None else "both").strip().lower()
+    if val not in POS_SALE_SCOPES:
+        return JsonResponse(
+            {"detail": f"pos_sale_scope must be one of: {', '.join(POS_SALE_SCOPES)}"},
+            status=400,
+        )
+    user.pos_sale_scope = val
+    return None
 
 
 def _set_custom_role_from_request(user: User, data: dict, api_user, company_id: int | None) -> "JsonResponse|None":
@@ -186,6 +205,9 @@ def users_list_or_create(request):
         err = _set_custom_role_from_request(user, data, api_user, company_id)
         if err is not None:
             return err
+        err2 = _set_pos_sale_scope_cashier_operator(user, data, force_default=True)
+        if err2 is not None:
+            return err2
         user.set_password(password)
         user.save()
         return JsonResponse(
@@ -285,6 +307,9 @@ def user_detail(request, user_id):
             user.full_name = (data.get("full_name") or "").strip()
         if data.get("role") is not None:
             user.role = (data.get("role") or "user").strip() or "user"
+        serr = _set_pos_sale_scope_cashier_operator(user, data, force_default=False)
+        if serr is not None:
+            return serr
         if "company_id" in data and _is_super_admin(api_user):
             cid = data.get("company_id")
             if cid is None or cid == "":

@@ -17,6 +17,7 @@ interface AdminUser {
   email: string
   full_name: string
   role: string
+  pos_sale_scope?: string
   company_id: number | null
   company_name: string | null
   is_active: boolean
@@ -40,6 +41,7 @@ function UsersPageContent() {
     email: '',
     full_name: '',
     role: 'admin',
+    pos_sale_scope: 'both',
     password: '',
     confirmPassword: '',
     company_id: ''
@@ -136,6 +138,7 @@ function UsersPageContent() {
       email: '',
       full_name: '',
       role: 'admin',
+      pos_sale_scope: 'both',
       password: '',
       confirmPassword: '',
       company_id: ''
@@ -149,6 +152,7 @@ function UsersPageContent() {
       email: user.email || user.username,
       full_name: user.full_name,
       role: user.role,
+      pos_sale_scope: user.pos_sale_scope || 'both',
       password: '',
       confirmPassword: '',
       company_id: user.company_id?.toString() || ''
@@ -209,6 +213,11 @@ function UsersPageContent() {
 
       if (userFormData.password) {
         userData.password = userFormData.password
+      }
+      if (userFormData.role === 'cashier' || userFormData.role === 'operator') {
+        userData.pos_sale_scope = userFormData.pos_sale_scope || 'both'
+      } else {
+        userData.pos_sale_scope = 'both'
       }
 
       if (editingUser) {
@@ -540,6 +549,27 @@ function UsersPageContent() {
                         <option value="operator">Operator — POS: New sale and Donation only (select company)</option>
                       </select>
                     </div>
+
+                    {(userFormData.role === 'cashier' || userFormData.role === 'operator') && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">POS register scope</label>
+                        <select
+                          value={userFormData.pos_sale_scope}
+                          onChange={(e) =>
+                            setUserFormData((fd) => ({ ...fd, pos_sale_scope: e.target.value }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="both">Fuel and general products</option>
+                          <option value="general">General / shop only</option>
+                          <option value="fuel">Fuel only</option>
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          What this user may sell at the POS (server-enforced). They must log out and back in for the
+                          register UI to match.
+                        </p>
+                      </div>
+                    )}
 
                     {userFormData.role === 'super_admin' ? (
                       <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">

@@ -22,6 +22,9 @@ def _dedupe_keep_order(items: Iterable[str]) -> list[str]:
 # Wildcard: full access (SaaS super admin and equivalent).
 PERM_WILDCARD = "*"
 
+# POS line types allowed for cashier/operator (User.pos_sale_scope). Enforced in api.views.cashier_views.
+POS_SALE_SCOPES: tuple[str, ...] = ("both", "general", "fuel")
+
 # ——— Catalog (UI + API): stable string keys ———
 PERMISSION_CATALOG: list[dict[str, str]] = [
     {"id": "app.launcher", "label": "Apps & dashboard", "group": "Core"},
@@ -147,6 +150,20 @@ def custom_role_belongs_to_user_company(user, role_company_id: int | None) -> bo
     return uid is not None and int(uid) == int(role_company_id)
 
 
+def user_pos_sale_scope(user) -> str:
+    """
+    What the user may sell at POST /api/cashier/pos/: general lines, fuel lines, or both.
+    Exposed in login / user JSON. Non-cashier/operator always 'both' (ignores column).
+    """
+    rk = normalize_role_key(getattr(user, "role", None))
+    if rk not in ("cashier", "operator"):
+        return "both"
+    raw = (getattr(user, "pos_sale_scope", None) or "both").strip().lower()
+    if raw in POS_SALE_SCOPES:
+        return raw
+    return "both"
+
+
 def user_client_dict(user) -> dict[str, Any]:
     """
     Public user object for login and /api/users (includes effective permissions and optional custom role).
@@ -164,4 +181,5 @@ def user_client_dict(user) -> dict[str, Any]:
         "custom_role_id": getattr(user, "custom_role_id", None),
         "custom_role_name": (cr.name if cr is not None else None),
         "permissions": perms,
+        "pos_sale_scope": user_pos_sale_scope(user),
     }

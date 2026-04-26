@@ -23,6 +23,8 @@ interface SystemUser {
   company_name?: string
   custom_role_id?: number | null
   custom_role_name?: string | null
+  /** General / fuel / both — applies to cashier and operator. */
+  pos_sale_scope?: string
 }
 
 interface CompanyOption {
@@ -88,6 +90,7 @@ export default function UsersPage() {
     role: 'cashier',
     company_id: '' as string | number,
     custom_role_id: '' as string | number,
+    pos_sale_scope: 'both' as string,
     password: '',
     confirmPassword: ''
   })
@@ -360,6 +363,7 @@ export default function UsersPage() {
       role: 'cashier',
       company_id: '',
       custom_role_id: '',
+      pos_sale_scope: 'both',
       password: '',
       confirmPassword: '',
     })
@@ -415,6 +419,9 @@ export default function UsersPage() {
               : formData.custom_role_id
         }
       }
+      if (formData.role === 'cashier' || formData.role === 'operator') {
+        payload.pos_sale_scope = formData.pos_sale_scope || 'both'
+      }
       await api.post('/users/', payload)
       toast.success('User created successfully!')
       setShowModal(false)
@@ -441,6 +448,7 @@ export default function UsersPage() {
       role: user.role,
       company_id: user.company_id ?? '',
       custom_role_id: user.custom_role_id ?? '',
+      pos_sale_scope: user.pos_sale_scope || 'both',
       password: '',
       confirmPassword: ''
     })
@@ -486,6 +494,11 @@ export default function UsersPage() {
             : typeof formData.custom_role_id === 'string'
               ? parseInt(String(formData.custom_role_id), 10)
               : formData.custom_role_id
+      }
+      if (formData.role === 'cashier' || formData.role === 'operator') {
+        updateData.pos_sale_scope = formData.pos_sale_scope || 'both'
+      } else {
+        updateData.pos_sale_scope = 'both'
       }
 
       await api.put(`/users/${editingId}/`, updateData)
@@ -1242,6 +1255,27 @@ export default function UsersPage() {
                         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         {JOB_TITLE_HINT[formData.role] || 'Default app areas apply when no custom profile is selected.'}
                       </p>
+                      {(formData.role === 'cashier' || formData.role === 'operator') && (
+                        <div className="mt-3 max-w-md">
+                          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                            POS register scope
+                          </label>
+                          <select
+                            value={formData.pos_sale_scope}
+                            onChange={(e) =>
+                              setFormData((fd) => ({ ...fd, pos_sale_scope: e.target.value }))
+                            }
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="both">Fuel and general products</option>
+                            <option value="general">General / shop only</option>
+                            <option value="fuel">Fuel only</option>
+                          </select>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Choose what this login may ring up at the register (enforced on the server).
+                          </p>
+                        </div>
+                      )}
                     </div>
                     {hasAccessContext && (
                       <div className="space-y-3 border-t border-gray-100 pt-3">

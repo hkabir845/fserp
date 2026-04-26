@@ -9,7 +9,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from api.utils.auth import auth_required
+from api.utils.auth import auth_required, get_user_from_request
 from api.utils.pos_payment import is_on_account_payment, normalize_pos_payment_method
 from api.views.common import require_company_id, parse_json_body
 from api.models import (
@@ -36,6 +36,7 @@ from api.services.gl_posting import (
 )
 from api.services.payment_allocation import refresh_invoices_touched_by_payment
 from api.services.shift_sales import record_cash_payout_on_shift, record_invoice_on_shift
+from api.services.permission_service import user_pos_sale_scope
 from api.services.inventory_validation import (
     assert_pos_fuel_sale_within_stock,
     assert_pos_general_lines_within_qoh,
@@ -249,7 +250,7 @@ def _parse_optional_amount_paid_now(body: dict) -> tuple[Decimal | None, JsonRes
     return d, None
 
 
-def _cashier_pos_unified(company_id: int, body: dict) -> JsonResponse:
+def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResponse:
     """Create one invoice from general item lines and/or fuel nozzle lines."""
     items_raw = body.get("items")
     fuel_raw = body.get("fuel_lines")
@@ -266,6 +267,16 @@ def _cashier_pos_unified(company_id: int, body: dict) -> JsonResponse:
     fuel_entries, ferr = _parse_fuel_lines(company_id, fuel_lines_in)
     if ferr:
         return ferr
+
+    pos_scope = user_pos_sale_scope(api_user) if api_user is not None else "both"
+    if pos_scope == "general" and fuel_entries:
+        return _cashier_pos_error(
+            "This register is limited to general (non-fuel) items. Remove fuel lines or use a full-POS user."
+        )
+    if pos_scope == "fuel" and lines_data:
+        return _cashier_pos_error(
+            "This register is limited to fuel. Remove product lines or use a full-POS user."
+        )
 
     if not lines_data and not fuel_entries:
         return _cashier_pos_error(
@@ -519,7 +530,8 @@ def cashier_sale(request):
             }
         ],
     }
-    return _cashier_pos_unified(company_id, unified_body)
+    api_u = getattr(request, "api_user", None) or get_user_from_request(request)
+    return _cashier_pos_unified(company_id, unified_body, api_u)
 
 
 @csrf_exempt
@@ -531,7 +543,8 @@ def cashier_pos(request):
     body, err = parse_json_body(request)
     if err:
         return err
-    return _cashier_pos_unified(request.company_id, body)
+    api_u = getattr(request, "api_user", None) or get_user_from_request(request)
+    return _cashier_pos_unified(request.company_id, body, api_u)
 
 
 @csrf_exempt

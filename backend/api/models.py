@@ -165,6 +165,8 @@ class User(models.Model):
         related_name="assigned_users",
     )
     password_hash = models.CharField(max_length=255, blank=True)
+    # Cashier/operator: what this login may sell at POS (enforced in /api/cashier/pos/). Others ignore (both).
+    pos_sale_scope = models.CharField(max_length=16, default="both")
     company_id = models.IntegerField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)

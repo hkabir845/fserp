@@ -11,7 +11,7 @@ import api, { getApiBaseUrl } from "@/lib/api"
 import { useCompany } from "@/contexts/CompanyContext"
 import { getCurrencySymbol, formatNumber } from "@/utils/currency"
 import { formatDate } from "@/utils/date"
-import { isLimitedPosRegisterUser } from "@/utils/rbac"
+import { getPosSaleScope, isLimitedPosRegisterUser, type PosSaleScope } from "@/utils/rbac"
 import { escapeHtml, printDocument, printLedgerStatement } from "@/utils/printDocument"
 import { loadPrintBranding } from "@/utils/printBranding"
 import type { LedgerPayload } from "@/components/ContactLedgerPage"
@@ -30,6 +30,7 @@ import {
   Printer,
   Search,
   ShoppingCart,
+  Store,
   Wallet,
   X,
   XCircle,
@@ -39,9 +40,57 @@ import { CashierDonation } from "./CashierDonation"
 import { CashierPayBills } from "./CashierPayBills"
 
 const inputClassName =
-  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+  "w-full min-h-11 touch-manipulation rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:min-h-10"
 const selectClassName =
-  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+  "w-full min-h-11 touch-manipulation rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:min-h-10"
+
+/** Visual + layout metadata per register scope (server-enforced). */
+const POS_SCOPE_UI: Record<
+  PosSaleScope,
+  {
+    badgeClass: string
+    loadingHint: string
+    shell: string
+    grid: string
+    primarySpan: string
+    checkoutSpan: string
+    checkoutSticky: string
+  }
+> = {
+  both: {
+    badgeClass:
+      "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200 sm:text-xs",
+    loadingHint: "Preparing forecourt, catalog, and tills…",
+    shell: "w-full max-w-[1600px] mx-auto",
+    grid: "grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-12 xl:items-start xl:gap-6 2xl:gap-8",
+    primarySpan: "min-w-0 xl:col-span-7",
+    checkoutSpan: "min-w-0 xl:col-span-5",
+    checkoutSticky:
+      "xl:sticky xl:top-3 xl:z-[5] xl:max-h-[min(100dvh,100vh)] xl:overflow-y-auto xl:overflow-x-hidden xl:overscroll-contain xl:pr-0.5 xl:pb-2",
+  },
+  general: {
+    badgeClass:
+      "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-900 dark:text-emerald-100 sm:text-xs",
+    loadingHint: "Preparing your retail catalog…",
+    shell: "w-full max-w-5xl mx-auto",
+    grid: "grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-12 lg:items-start lg:gap-6 2xl:gap-8",
+    primarySpan: "min-w-0 lg:col-span-7",
+    checkoutSpan: "min-w-0 lg:col-span-5",
+    checkoutSticky:
+      "lg:sticky lg:top-3 lg:z-[5] lg:max-h-[min(100dvh,100vh)] lg:overflow-y-auto lg:overflow-x-hidden lg:overscroll-contain lg:pr-0.5 lg:pb-2",
+  },
+  fuel: {
+    badgeClass:
+      "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-500/35 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-950 dark:text-amber-100 sm:text-xs",
+    loadingHint: "Preparing pumps, nozzles, and prices…",
+    shell: "w-full max-w-[1600px] mx-auto",
+    grid: "grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-12 xl:items-start xl:gap-6 2xl:gap-8",
+    primarySpan: "min-w-0 xl:col-span-7",
+    checkoutSpan: "min-w-0 xl:col-span-5",
+    checkoutSticky:
+      "xl:sticky xl:top-3 xl:z-[5] xl:max-h-[min(100dvh,100vh)] xl:overflow-y-auto xl:overflow-x-hidden xl:overscroll-contain xl:pr-0.5 xl:pb-2",
+  },
+}
 
 type Company = {
   id: number
@@ -204,6 +253,13 @@ export default function CashierPOSPage() {
   const toast = useToast()
   const { selectedCompany } = useCompany()
 
+  /** What this login may sell: from localStorage user (set at login). */
+  const posSaleScope: PosSaleScope = getPosSaleScope()
+  const showNozzleColumn = posSaleScope !== "general"
+  const showCatalog = posSaleScope !== "fuel"
+  const showFuelDispensePanel = posSaleScope !== "general"
+  const scopeUi = POS_SCOPE_UI[posSaleScope]
+
   const [loading, setLoading] = useState(true)
   const [currencySymbol, setCurrencySymbol] = useState<string>("৳") // Default to BDT
   
@@ -340,6 +396,7 @@ export default function CashierPOSPage() {
         return
       }
       if (e.key === "/" && !isEditable(e.target) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (!showCatalog) return
         e.preventDefault()
         itemSearchRef.current?.focus()
         itemSearchRef.current?.select()
@@ -356,7 +413,7 @@ export default function CashierPOSPage() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [posMode, showInvoicePreview, printMenuOpen, showShortcuts])
+  }, [posMode, showInvoicePreview, printMenuOpen, showShortcuts, showCatalog])
 
   const loadInitialData = async () => {
     setLoading(true)
@@ -367,14 +424,15 @@ export default function CashierPOSPage() {
         return
       }
 
+      const scope = getPosSaleScope()
       const [nozzleRes, customerRes, vendorRes, companyRes, itemRes, tanksRes, banksRes] =
         await Promise.all([
-          api.get("/nozzles/details/"),
+          scope !== "general" ? api.get("/nozzles/details/") : Promise.resolve({ data: [] }),
           api.get("/customers/"),
           api.get("/vendors/", { params: { skip: 0, limit: 10000 } }),
           api.get("/companies/current/"),
-          api.get("/items/", { params: { pos_only: "true" } }),
-          api.get("/tanks/"),
+          scope !== "fuel" ? api.get("/items/", { params: { pos_only: "true" } }) : Promise.resolve({ data: [] }),
+          scope !== "fuel" ? api.get("/tanks/") : Promise.resolve({ data: [] }),
           api.get("/bank-accounts/"),
         ])
 
@@ -1019,7 +1077,7 @@ export default function CashierPOSPage() {
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
             <div>
               <p className="text-sm font-medium text-foreground">Loading POS</p>
-              <p className="mt-1 text-xs text-muted-foreground">Preparing catalog and pumps…</p>
+              <p className="mt-1 text-xs text-muted-foreground">{scopeUi.loadingHint}</p>
             </div>
           </div>
         </div>
@@ -1032,15 +1090,31 @@ export default function CashierPOSPage() {
       <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-l border-border/60 shadow-sm">
-        <header className="sticky top-0 z-40 border-b border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+        <header className="sticky top-0 z-40 border-b border-border bg-background/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4">
+          <div className="mx-auto flex max-w-[1600px] flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Point of sale
                 </p>
                 <span
-                  className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
+                  className={scopeUi.badgeClass}
+                  title="This register is configured for your login (POS scope)"
+                >
+                  {posSaleScope === "both" && (
+                    <span className="inline-flex items-center gap-0.5" aria-hidden>
+                      <Fuel className="h-3.5 w-3.5 shrink-0 opacity-90" />
+                      <Store className="h-3.5 w-3.5 shrink-0 opacity-90" />
+                    </span>
+                  )}
+                  {posSaleScope === "general" && <Store className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />}
+                  {posSaleScope === "fuel" && <Fuel className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />}
+                  {posSaleScope === "both" && "Fuel & shop"}
+                  {posSaleScope === "general" && "Shop only"}
+                  {posSaleScope === "fuel" && "Fuel only"}
+                </span>
+                <span
+                  className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground sm:text-xs"
                   title="Local time at this workstation"
                 >
                   <Clock className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
@@ -1055,20 +1129,35 @@ export default function CashierPOSPage() {
                   </time>
                 </span>
               </div>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                Checkout — fuel &amp; retail
+              <h1 className="mt-2 text-xl font-bold tracking-tight text-foreground sm:mt-1 sm:text-2xl md:text-3xl">
+                {posSaleScope === "general" && "Checkout — retail"}
+                {posSaleScope === "fuel" && "Checkout — fuel"}
+                {posSaleScope === "both" && "Checkout — fuel & retail"}
               </h1>
-              <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                One ticket for pump dispense and counter items. Credit sales post to A/R; settle later
-                under Payments → Received.
+              <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
+                {posSaleScope === "general" && (
+                  <>
+                    Shop and services only on this register. Credit sales post to A/R; settle later under Payments
+                    → Received.
+                  </>
+                )}
+                {posSaleScope === "fuel" && (
+                  <>Pump sales only. Credit sales post to A/R; settle later under Payments → Received.</>
+                )}
+                {posSaleScope === "both" && (
+                  <>
+                    One ticket for pump dispense and counter items. Credit sales post to A/R; settle later under
+                    Payments → Received.
+                  </>
+                )}
               </p>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3 lg:shrink-0">
+            <div className="flex w-full flex-wrap items-center justify-end gap-2 min-[400px]:w-auto sm:gap-3 lg:shrink-0">
               <div className="relative" ref={shortcutsRef}>
                 <button
                   type="button"
                   onClick={() => setShowShortcuts(o => !o)}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation active:scale-[0.99] sm:min-h-10"
                   aria-expanded={showShortcuts}
                   aria-controls="pos-shortcuts-panel"
                 >
@@ -1133,7 +1222,7 @@ export default function CashierPOSPage() {
                   type="button"
                   disabled={printBusy}
                   onClick={() => setPrintMenuOpen(o => !o)}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-10"
                 >
                   {printBusy ? (
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -1190,7 +1279,7 @@ export default function CashierPOSPage() {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-destructive/30 bg-background px-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-destructive/30 bg-background px-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation active:scale-[0.99] sm:min-h-10"
               >
                 <LogOut className="h-4 w-4" />
                 Logout
@@ -1200,76 +1289,78 @@ export default function CashierPOSPage() {
         </header>
 
         <main
-          className="flex-1 overflow-auto px-4 py-6 sm:px-6"
+          className="flex-1 overflow-auto px-3 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:px-6 sm:py-6"
           id="pos-workspace"
           aria-label="Point of sale workspace"
         >
-          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <div
+            className={`mb-5 flex flex-col gap-2 sm:mb-6 sm:flex-row sm:items-center sm:justify-between ${scopeUi.shell}`}
+          >
+            <p className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Register mode
             </p>
             <div
-              className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted/40 p-1"
+              className="-mx-1 flex max-w-full min-w-0 flex-nowrap gap-1 overflow-x-auto overscroll-x-contain rounded-xl border border-border/80 bg-muted/50 p-1.5 [scrollbar-width:thin] sm:mx-0 sm:flex-wrap sm:overflow-x-visible"
               role="group"
               aria-label="POS mode"
             >
               <button
                 type="button"
                 onClick={() => setPosMode("sale")}
-                className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
+                className={`inline-flex min-h-11 shrink-0 touch-manipulation snap-start items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all active:scale-[0.99] sm:min-h-10 sm:rounded-md sm:px-4 ${
                   posMode === "sale"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                    : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
                 }`}
               >
-                <ShoppingCart className="h-4 w-4" />
-                New sale
+                <ShoppingCart className="h-4 w-4 shrink-0" />
+                <span className="whitespace-nowrap">New sale</span>
               </button>
               {!limitedPosRegister ? (
                 <>
                   <button
                     type="button"
                     onClick={() => setPosMode("collect")}
-                    className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
+                    className={`inline-flex min-h-11 shrink-0 touch-manipulation snap-start items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all active:scale-[0.99] sm:min-h-10 sm:rounded-md sm:px-4 ${
                       posMode === "collect"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                        : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
                     }`}
                   >
-                    <Wallet className="h-4 w-4" />
-                    Collect due
+                    <Wallet className="h-4 w-4 shrink-0" />
+                    <span className="whitespace-nowrap">Collect due</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setPosMode("pay")}
-                    className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
+                    className={`inline-flex min-h-11 shrink-0 touch-manipulation snap-start items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all active:scale-[0.99] sm:min-h-10 sm:rounded-md sm:px-4 ${
                       posMode === "pay"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                        : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
                     }`}
                   >
-                    <Banknote className="h-4 w-4" />
-                    Pay bills
+                    <Banknote className="h-4 w-4 shrink-0" />
+                    <span className="whitespace-nowrap">Pay bills</span>
                   </button>
                 </>
               ) : null}
               <button
                 type="button"
                 onClick={() => setPosMode("donation")}
-                className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
+                className={`inline-flex min-h-11 shrink-0 touch-manipulation snap-start items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all active:scale-[0.99] sm:min-h-10 sm:rounded-md sm:px-4 ${
                   posMode === "donation"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                    : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
                 }`}
               >
-                <HeartHandshake className="h-4 w-4" />
-                Donation
+                <HeartHandshake className="h-4 w-4 shrink-0" />
+                <span className="whitespace-nowrap">Donation</span>
               </button>
             </div>
           </div>
 
           {posMode === "collect" ? (
-            <div className="mx-auto max-w-3xl">
+            <div className={`mx-auto w-full max-w-3xl ${scopeUi.shell}`}>
               <CashierCollectPayment
                 customers={customers}
                 currencySymbol={currencySymbol}
@@ -1280,7 +1371,7 @@ export default function CashierPOSPage() {
           ) : null}
 
           {posMode === "pay" ? (
-            <div className="mx-auto max-w-3xl">
+            <div className={`mx-auto w-full max-w-3xl ${scopeUi.shell}`}>
               <CashierPayBills
                 vendors={vendors}
                 currencySymbol={currencySymbol}
@@ -1291,7 +1382,7 @@ export default function CashierPOSPage() {
           ) : null}
 
           {posMode === "donation" ? (
-            <div className="mx-auto max-w-3xl">
+            <div className={`mx-auto w-full max-w-3xl ${scopeUi.shell}`}>
               <CashierDonation
                 currencySymbol={currencySymbol}
                 bankAccounts={bankRegisters}
@@ -1301,10 +1392,16 @@ export default function CashierPOSPage() {
           ) : null}
 
           {posMode === "sale" ? (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)] lg:items-start">
-            <div className="min-w-0 space-y-6">
-              <section className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-card via-card to-muted/25 p-5 text-card-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset,0_12px_40px_-12px_rgba(15,23,42,0.15)] dark:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)] sm:p-6">
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
+          <div className={scopeUi.shell}>
+            <div className={scopeUi.grid}>
+            <div className={`${scopeUi.primarySpan} space-y-5 sm:space-y-6`}>
+              {showNozzleColumn && (
+              <section
+                className={`relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-amber-500/[0.06] via-card to-muted/25 p-4 text-card-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset,0_12px_40px_-12px_rgba(15,23,42,0.15)] ring-1 ring-amber-500/10 dark:from-amber-500/10 dark:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)] dark:ring-amber-500/15 sm:p-6 ${
+                  posSaleScope === "fuel" ? "ring-2 ring-amber-500/25" : ""
+                } `}
+              >
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-500/30 to-transparent" />
                 <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -1318,7 +1415,7 @@ export default function CashierPOSPage() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+                <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] sm:gap-3">
                   {nozzles.map(nozzle => {
                     const isSelected = selectedNozzle?.id === nozzle.id
                     const capacity = nozzle.tank_capacity || 0
@@ -1429,8 +1526,14 @@ export default function CashierPOSPage() {
                   )}
                 </div>
               </section>
+              )}
 
-              <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
+              {showCatalog && (
+              <section
+                className={`rounded-2xl border border-border bg-card p-4 text-card-foreground shadow-sm ring-1 ring-emerald-500/10 sm:p-6 dark:ring-emerald-500/15 ${
+                  posSaleScope === "general" ? "ring-2 ring-emerald-500/20" : "bg-gradient-to-b from-emerald-500/[0.04] to-card"
+                } `}
+              >
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -1463,7 +1566,7 @@ export default function CashierPOSPage() {
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 sm:grid-cols-2 2xl:grid-cols-3">
                   {filteredItems.map(item => {
                     const isSelected = selectedItem?.id === item.id
                     return (
@@ -1539,11 +1642,15 @@ export default function CashierPOSPage() {
                   )}
                 </div>
               </section>
+              )}
             </div>
 
-            <div className="space-y-6 lg:sticky lg:top-[var(--pos-header-offset)] lg:max-h-[calc(100vh-var(--pos-header-offset)-1.5rem)] lg:overflow-y-auto lg:self-start lg:pr-0.5">
-              <section className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-b from-card via-card to-muted/20 p-5 text-card-foreground shadow-[0_8px_32px_-12px_rgba(15,23,42,0.14)] ring-1 ring-black/5 dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.5)] dark:ring-white/10 sm:p-6">
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary/50 via-primary/25 to-transparent" />
+            <div
+              className={`${scopeUi.checkoutSpan} space-y-5 sm:space-y-6 ${scopeUi.checkoutSticky}`}
+            >
+              {showFuelDispensePanel && (
+              <section className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-b from-amber-500/[0.07] via-card to-muted/20 p-4 text-card-foreground shadow-[0_8px_32px_-12px_rgba(15,23,42,0.14)] ring-1 ring-amber-500/15 dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.5)] dark:ring-amber-500/20 sm:p-6">
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-500/40 via-amber-500/20 to-transparent" />
                 <div className="mb-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                     Dispensed fuel
@@ -1663,11 +1770,11 @@ export default function CashierPOSPage() {
                       </div>
                     )}
 
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-2.5 min-[400px]:grid-cols-2 sm:gap-2">
                       <button
                         type="button"
                         onClick={() => setShowInvoicePreview(true)}
-                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10"
                         disabled={!Number.isFinite(grandTotal) || grandTotal <= 0}
                       >
                         Invoice Preview
@@ -1675,7 +1782,7 @@ export default function CashierPOSPage() {
                       <button
                         type="button"
                         onClick={() => printUnifiedDraft()}
-                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10"
                         disabled={!canPrintUnifiedDraft}
                       >
                         <Printer className="h-4 w-4" />
@@ -1684,13 +1791,14 @@ export default function CashierPOSPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-                    Select a nozzle on the left to begin a fuel sale.
+                  <div className="rounded-lg border border-dashed border-border bg-muted/20 p-5 text-center text-sm text-muted-foreground sm:p-6">
+                    Select a pump lane above to begin a fuel sale.
                   </div>
                 )}
               </section>
+              )}
 
-              <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
+              <section className="rounded-2xl border border-border bg-gradient-to-b from-card to-muted/20 p-4 text-card-foreground shadow-md ring-1 ring-border/50 sm:p-6">
                   <div className="mb-4 flex items-center justify-between gap-2">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -1717,8 +1825,10 @@ export default function CashierPOSPage() {
 
                   {!cartEntries.length && pendingFuelAmount <= 0 && (
                     <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-                      Enter fuel in the panel above and/or add products from the catalog. Fuel-only or
-                      shop-only sales are both supported.
+                      {posSaleScope === "both" &&
+                        "Enter fuel in the panel above and/or add products from the catalog. Fuel-only or shop-only sales are both supported."}
+                      {posSaleScope === "general" && "Add products from the catalog to the cart, then complete checkout."}
+                      {posSaleScope === "fuel" && "Set quantity in the fuel panel and add the line, or add fuel to the cart above."}
                     </div>
                   )}
                   {pendingFuelAmount > 0 && selectedNozzle && (
@@ -2118,11 +2228,11 @@ export default function CashierPOSPage() {
                           </div>
                         ) : null}
 
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <div className="grid grid-cols-1 gap-2.5 min-[500px]:grid-cols-3 sm:gap-2">
                           <button
                             type="button"
                             onClick={() => setShowInvoicePreview(true)}
-                            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10"
                             disabled={!Number.isFinite(grandTotal) || grandTotal <= 0}
                           >
                             Invoice Preview
@@ -2130,7 +2240,7 @@ export default function CashierPOSPage() {
                           <button
                             type="button"
                             onClick={() => printUnifiedDraft()}
-                            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10"
                             disabled={!canPrintUnifiedDraft}
                           >
                             <Printer className="h-4 w-4" />
@@ -2140,7 +2250,7 @@ export default function CashierPOSPage() {
                             type="button"
                             onClick={() => void handleUnifiedSale()}
                             disabled={!canCompleteUnifiedSale}
-                            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1"
+                            className="inline-flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 min-[500px]:min-h-11"
                           >
                             <ShoppingCart className="h-4 w-4" />
                             Complete sale
@@ -2151,6 +2261,7 @@ export default function CashierPOSPage() {
                   )}
               </section>
             </div>
+          </div>
           </div>
           ) : null}
         </main>

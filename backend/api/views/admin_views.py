@@ -165,12 +165,17 @@ def admin_users(request):
             if co:
                 company_name = co.name
         created = getattr(u, "created_at", None)
+        rlow = (getattr(u, "role", "user") or "user").strip().lower()
+        pss = getattr(u, "pos_sale_scope", None) or "both"
+        if rlow not in ("cashier", "operator"):
+            pss = "both"
         result.append({
             "id": u.id,
             "username": u.username,
             "email": u.email or "",
             "full_name": u.full_name or "",
             "role": getattr(u, "role", "user") or "user",
+            "pos_sale_scope": pss,
             "company_id": u.company_id,
             "company_name": company_name,
             "is_active": u.is_active,

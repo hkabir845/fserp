@@ -12,12 +12,17 @@ from django.db.models import DecimalField, Exists, F, OuterRef, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
 
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id, _serialize_decimal
 from api.models import Item, Tank
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.item_catalog import item_tracks_physical_stock, normalize_item_type
+from api.services.item_reporting_categories import (
+    SUGGESTED_ITEM_REPORTING_CATEGORIES,
+    normalize_item_reporting_category,
+)
 
 
 def _parse_decimal(val, default="0"):
@@ -259,6 +264,17 @@ def items_list_or_create(request):
         )
         if ierr:
             return JsonResponse({"detail": ierr}, status=400)
+        cat = normalize_item_reporting_category(body.get("category"))
+        if not cat:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Item category is required. Pick a reporting category (e.g. General, Fuel, "
+                        "Fish feed, Poultry feed) so item and category reports stay accurate."
+                    )
+                },
+                status=400,
+            )
         i = Item(
             company_id=request.company_id,
             name=name,
@@ -269,7 +285,7 @@ def items_list_or_create(request):
             quantity_on_hand=qty,
             unit=_truncate(body.get("unit") or "piece", 20) or "piece",
             pos_category=_truncate(body.get("pos_category") or "general", 64) or "general",
-            category=_truncate(body.get("category"), 100),
+            category=cat,
             barcode=bc,
             is_taxable=body.get("is_taxable", True),
             is_pos_available=body.get("is_pos_available", True),
@@ -397,7 +413,17 @@ def item_detail(request, item_id: int):
         if "pos_category" in body:
             i.pos_category = _truncate(body.get("pos_category") or "general", 64) or "general"
         if "category" in body:
-            i.category = _truncate(body.get("category"), 100)
+            cat = normalize_item_reporting_category(body.get("category"))
+            if not cat:
+                return JsonResponse(
+                    {
+                        "detail": (
+                            "Item category cannot be empty. Set a reporting category for this product."
+                        )
+                    },
+                    status=400,
+                )
+            i.category = cat
         if "barcode" in body:
             bc = _truncate(body.get("barcode"), 64).strip()
             if bc and Item.objects.filter(company_id=request.company_id, barcode__iexact=bc).exclude(
@@ -460,6 +486,33 @@ def item_detail(request, item_id: int):
         return JsonResponse({"detail": "Deleted"}, status=200)
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+
+@require_GET
+@auth_required
+@require_company_id
+def item_reporting_category_suggestions(request):
+    """
+    Preset reporting labels plus any category strings already in use for this company
+    (for dropdowns; users may still type a new value when creating an item).
+    """
+    in_use = (
+        Item.objects.filter(company_id=request.company_id)
+        .values_list("category", flat=True)
+        .distinct()
+    )
+    custom = sorted(
+        {str(c).strip() for c in in_use if c and str(c).strip()},
+        key=str.lower,
+    )
+    suggested_set = set(SUGGESTED_ITEM_REPORTING_CATEGORIES)
+    only_custom = [c for c in custom if c not in suggested_set]
+    return JsonResponse(
+        {
+            "presets": list(SUGGESTED_ITEM_REPORTING_CATEGORIES),
+            "custom_in_use": only_custom,
+        }
+    )
 
 
 @csrf_exempt

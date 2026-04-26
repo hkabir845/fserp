@@ -73,7 +73,7 @@ export default function ItemsPage() {
     is_taxable: true,
     is_active: true,
     barcode: '',
-    category: '',
+    category: 'General',
     image_url: ''
   })
   const [fuelTanksForProduct, setFuelTanksForProduct] = useState<ProductTankRow[]>([])
@@ -83,6 +83,9 @@ export default function ItemsPage() {
   const [showCamera, setShowCamera] = useState(false)
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
   const [cameraVideoRef, setCameraVideoRef] = useState<HTMLVideoElement | null>(null)
+  const [categoryPresets, setCategoryPresets] = useState<string[]>([])
+  const [categoryCustomInUse, setCategoryCustomInUse] = useState<string[]>([])
+
   const [viewMode, setViewMode] = useState<'card' | 'list'>(() => {
     // Load view mode from localStorage if available
     if (typeof window !== 'undefined') {
@@ -94,6 +97,18 @@ export default function ItemsPage() {
     return 'card'
   })
 
+  const loadCategoryOptions = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('access_token')
+      if (!token) return
+      const r = await api.get('/items/categories/', { headers: { Authorization: `Bearer ${token}` } })
+      if (Array.isArray(r.data?.presets)) setCategoryPresets(r.data.presets)
+      if (Array.isArray(r.data?.custom_in_use)) setCategoryCustomInUse(r.data.custom_in_use)
+    } catch {
+      /* keep empty; form still works with manual entry */
+    }
+  }, [])
+
   useEffect(() => {
     const token = localStorage.getItem('access_token')
     if (!token) {
@@ -101,7 +116,12 @@ export default function ItemsPage() {
       return
     }
     fetchItems()
-  }, [router])
+    loadCategoryOptions()
+  }, [router, loadCategoryOptions])
+
+  useEffect(() => {
+    if (showModal) void loadCategoryOptions()
+  }, [showModal, loadCategoryOptions])
 
   useEffect(() => {
     if (!showModal || !editingId) {
@@ -210,6 +230,12 @@ export default function ItemsPage() {
         return
       }
 
+      const categoryTrim = formData.category?.trim() || ''
+      if (!categoryTrim) {
+        toast.error('Reporting category is required (e.g. General, Fuel, Fish feed).')
+        return
+      }
+
       if (formData.item_type.toLowerCase() === 'inventory') {
         const q = Number(formData.quantity_on_hand)
         if (isNaN(q) || q < 0) {
@@ -248,7 +274,7 @@ export default function ItemsPage() {
           ...qtyPayload,
           unit: formData.unit,
           pos_category: formData.pos_category || 'general',
-          category: formData.category?.trim() || null,
+          category: categoryTrim,
           barcode: formData.barcode?.trim() || null,
           is_taxable: formData.is_taxable !== undefined ? formData.is_taxable : true,
           is_pos_available: formData.is_pos_available !== undefined ? formData.is_pos_available : true,
@@ -267,6 +293,7 @@ export default function ItemsPage() {
         setShowModal(false)
         setEditingId(null)
         fetchItems()
+        void loadCategoryOptions()
         resetForm()
       }
     } catch (error: any) {
@@ -292,7 +319,7 @@ export default function ItemsPage() {
       is_taxable: (item as any).is_taxable !== undefined ? (item as any).is_taxable : true,
       is_active: item.is_active !== undefined ? item.is_active : true,
       barcode: (item as any).barcode || '',
-      category: (item as any).category || '',
+      category: (item as any).category?.trim() || 'General',
       image_url: (item as any).image_url || '',
     })
     const itemImageUrl = (item as any).image_url
@@ -350,7 +377,7 @@ export default function ItemsPage() {
       is_taxable: true,
       is_active: true,
       barcode: '',
-      category: '',
+      category: 'General',
       image_url: '',
     })
     setImagePreview(null)
@@ -756,6 +783,12 @@ export default function ItemsPage() {
 
                 <div className="space-y-2 mb-4 text-sm">
                   <div className="flex justify-between">
+                    <span className="text-gray-500">Report category:</span>
+                    <span className="font-medium text-amber-800 text-right max-w-[55%] truncate" title={item.category || 'General'}>
+                      {item.category || 'General'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
                     <span className="text-gray-500">Type:</span>
                     <span className="font-medium text-gray-900">
                       {item.item_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
@@ -811,6 +844,9 @@ export default function ItemsPage() {
                     Item
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Report category
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Type
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -862,6 +898,11 @@ export default function ItemsPage() {
                           <div className="text-xs text-gray-400 mt-1 line-clamp-1">{item.description}</div>
                         )}
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-amber-900 max-w-[140px]">
+                      <span className="line-clamp-2" title={item.category || 'General'}>
+                        {item.category || 'General'}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getItemColor(item.item_type)}`}>
@@ -1204,17 +1245,51 @@ export default function ItemsPage() {
                     </p>
                   </div>
 
-                  <div className="col-span-2">
+                  <div className="col-span-2 space-y-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Category (Optional)
+                      Reporting category <span className="text-red-500">*</span>
                     </label>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Used for business reports (by category and by item). This is separate from the POS tab (Fuel / General) above.
+                    </p>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                      value=""
+                      onChange={(e) => {
+                        const v = e.target.value
+                        if (v) setFormData((f) => ({ ...f, category: v }))
+                      }}
+                    >
+                      <option value="">Apply a common category to the field below…</option>
+                      {[...categoryPresets, ...categoryCustomInUse].map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       type="text"
+                      required
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., Electronics, Food, Beverages"
+                      placeholder="e.g. Poultry feed, General, Medicine — or pick from the list above"
+                      list="item-reporting-categories"
+                      autoComplete="off"
                     />
+                    <datalist id="item-reporting-categories">
+                      {Array.from(
+                        new Set(
+                          [
+                            ...categoryPresets,
+                            ...categoryCustomInUse,
+                            formData.category,
+                          ].filter((x): x is string => Boolean(x && x.trim()))
+                        )
+                      ).map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
                   </div>
 
                   <div>

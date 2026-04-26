@@ -165,7 +165,7 @@ def seed_general_demo_products_for_company(company_id: int) -> int:
             quantity_on_hand=Decimal("100.0000") if row["item_type"] == "inventory" else Decimal("0"),
             unit=row["unit"][:20],
             pos_category=pos_cat,
-            category=(row.get("category") or "")[:100],
+            category=(row.get("category") or "General")[:100],
             barcode="",
             is_taxable=True,
             is_pos_available=True,

@@ -279,7 +279,11 @@ class Item(models.Model):
     quantity_on_hand = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     unit = models.CharField(max_length=20, default="piece")
     pos_category = models.CharField(max_length=64, default="general")
-    category = models.CharField(max_length=100, blank=True)
+    category = models.CharField(
+        max_length=100,
+        default="General",
+        help_text="Reporting / merchandising category (for item and category sales reports).",
+    )
     barcode = models.CharField(max_length=64, blank=True)
     is_taxable = models.BooleanField(default=True)
     is_pos_available = models.BooleanField(default=True)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useCompany } from '@/contexts/CompanyContext'
@@ -17,6 +17,20 @@ import { escapeHtml, printDocument } from '@/utils/printDocument'
 import type { PrintBranding } from '@/utils/printBranding'
 import { loadPrintBranding } from '@/utils/printBranding'
 
+type ItemScopeTableProps = {
+  reportType: ReportType
+  category: string
+  onCategoryChange: (v: string) => void
+  selectedItemIds: number[]
+  onToggleItem: (id: number) => void
+  onSelectAllVisible: () => void
+  onClearItems: () => void
+  /** Items shown in the checkbox list (filtered by category when set). */
+  visibleItemOptions: { id: number; name: string; item_number?: string; category?: string }[]
+  categoryList: string[]
+  fetchReport: (id: ReportType) => void | Promise<void>
+}
+
 type ReportType = 
   | 'trial-balance'
   | 'balance-sheet'
@@ -32,6 +46,17 @@ type ReportType =
   | 'sales-by-nozzle'
   | 'daily-summary'
   | 'inventory-sku-valuation'
+  | 'item-master-by-category'
+  | 'item-sales-by-category'
+  | 'item-sales-custom'
+  | 'item-stock-movement'
+  | 'item-velocity-analysis'
+
+const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [
+  'item-sales-custom',
+  'item-stock-movement',
+  'item-velocity-analysis',
+] as const
 
 interface ReportCard {
   id: ReportType
@@ -84,6 +109,41 @@ const reports: ReportCard[] = [
     title: 'Inventory: Valuation & Velocity',
     description: 'Per-SKU on-hand, cost and list value, period sales, velocity, and days of cover',
     icon: Layers,
+    category: 'inventory',
+  },
+  {
+    id: 'item-master-by-category',
+    title: 'Item catalog by category',
+    description: 'All products with reporting category, POS class, and stock & value (snapshot)',
+    icon: Package,
+    category: 'inventory',
+  },
+  {
+    id: 'item-sales-by-category',
+    title: 'Sales by reporting category',
+    description: 'Invoiced quantity and revenue in the period, grouped by item category',
+    icon: BarChart3,
+    category: 'inventory',
+  },
+  {
+    id: 'item-sales-custom',
+    title: 'Custom item sales (filtered)',
+    description: 'Sales by SKU for the period; filter by category and one or more products',
+    icon: Filter,
+    category: 'inventory',
+  },
+  {
+    id: 'item-stock-movement',
+    title: 'Stock movement (purchases vs sales)',
+    description: 'Compare vendor receipts (bills) and customer sales in the range by product',
+    icon: TrendingUp,
+    category: 'inventory',
+  },
+  {
+    id: 'item-velocity-analysis',
+    title: 'Fast & slow movers',
+    description: 'Per-SKU sales velocity; tier fast / medium / slow and zero-sales items',
+    icon: BarChart3,
     category: 'inventory',
   },
   
@@ -174,6 +234,10 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'tank-dip-register',
   'meter-readings',
   'inventory-sku-valuation',
+  'item-sales-by-category',
+  'item-sales-custom',
+  'item-stock-movement',
+  'item-velocity-analysis',
 ])
 
 export default function ReportsPage() {
@@ -193,7 +257,79 @@ export default function ReportsPage() {
   const [filterCategory, setFilterCategory] = useState<
     'all' | 'financial' | 'operational' | 'analytical' | 'inventory'
   >('all')
-  
+
+  /** Shared filters for item-scoped reports (category + multi-select products). */
+  const [itemScopeCategory, setItemScopeCategory] = useState('')
+  const [itemScopeItemIds, setItemScopeItemIds] = useState<number[]>([])
+  const [itemScopeItemOptions, setItemScopeItemOptions] = useState<
+    { id: number; name: string; item_number?: string; category?: string }[]
+  >([])
+  const [itemFilterCategoryList, setItemFilterCategoryList] = useState<string[]>([])
+
+  const onItemScopeCategoryChange = useCallback((v: string) => {
+    setItemScopeCategory(v)
+    setItemScopeItemIds([])
+  }, [])
+
+  const itemScopeVisibleOptions = useMemo(() => {
+    if (!itemScopeCategory.trim()) return itemScopeItemOptions
+    return itemScopeItemOptions.filter(
+      (i) => (i.category || 'General') === itemScopeCategory.trim()
+    )
+  }, [itemScopeCategory, itemScopeItemOptions])
+
+  const toggleItemScopeId = useCallback((id: number) => {
+    setItemScopeItemIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }, [])
+
+  const selectAllVisibleItemScope = useCallback(() => {
+    setItemScopeItemIds(itemScopeVisibleOptions.map((i) => i.id))
+  }, [itemScopeVisibleOptions])
+
+  const clearItemScopeSelection = useCallback(() => setItemScopeItemIds([]), [])
+
+  useEffect(() => {
+    let c = true
+    api
+      .get('/items/categories/')
+      .then((r) => {
+        if (!c) return
+        const p = Array.isArray(r.data?.presets) ? r.data.presets : []
+        const u = Array.isArray(r.data?.custom_in_use) ? r.data.custom_in_use : []
+        setItemFilterCategoryList(
+          Array.from(new Set([...p, ...u].map((s: string) => String(s).trim()).filter(Boolean))).sort(
+            (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })
+          )
+        )
+      })
+      .catch(() => {})
+    return () => {
+      c = false
+    }
+  }, [selectedCompany?.id])
+
+  useEffect(() => {
+    if (!selectedReport || !ITEM_SCOPED_REPORT_IDS.includes(selectedReport)) return
+    let c = true
+    api
+      .get('/items/')
+      .then((r) => {
+        if (!c || !Array.isArray(r.data)) return
+        setItemScopeItemOptions(
+          r.data.map((it: { id: number; name: string; item_number?: string; category?: string }) => ({
+            id: it.id,
+            name: it.name,
+            item_number: it.item_number,
+            category: it.category,
+          }))
+        )
+      })
+      .catch(() => {})
+    return () => {
+      c = false
+    }
+  }, [selectedReport, selectedCompany?.id]) // load item list for scoped reports
+
   useEffect(() => {
     let cancelled = false
     api
@@ -268,9 +404,17 @@ export default function ReportsPage() {
       )
     }
 
+    const inventoryExtraReports: ReportType[] = [
+      'inventory-sku-valuation',
+      'item-master-by-category',
+      'item-sales-by-category',
+      'item-sales-custom',
+      'item-stock-movement',
+      'item-velocity-analysis',
+    ]
     roleFilteredReports = roleFilteredReports.filter(
       (report) =>
-        report.id !== 'inventory-sku-valuation' || canViewInventorySkuReport(userRole)
+        !inventoryExtraReports.includes(report.id) || canViewInventorySkuReport(userRole)
     )
     
     // Then filter by category
@@ -290,6 +434,14 @@ export default function ReportsPage() {
     if (REPORTS_WITH_PERIOD.has(reportId)) {
       params.start_date = dateRange.startDate
       params.end_date = dateRange.endDate
+    }
+    if (
+      reportId === 'item-sales-custom' ||
+      reportId === 'item-stock-movement' ||
+      reportId === 'item-velocity-analysis'
+    ) {
+      if (itemScopeCategory.trim()) params.category = itemScopeCategory.trim()
+      if (itemScopeItemIds.length > 0) params.item_ids = itemScopeItemIds.join(',')
     }
 
     try {
@@ -354,7 +506,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
-  }, [dateRange, router])
+  }, [dateRange, router, itemScopeCategory, itemScopeItemIds])
   
   // Debounced date change handler for all period-based reports
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -475,10 +627,54 @@ export default function ReportsPage() {
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'inventory-sku-valuation' && reportData.rows) {
       const rows: any[] = reportData.rows || []
-      contentHTML += '<h2>SKU details</h2><table><thead><tr><th>SKU</th><th>Item</th><th>Unit</th><th style="text-align:right">On hand</th><th style="text-align:right">Cost value</th><th style="text-align:right">List value</th><th style="text-align:right">Period qty</th><th style="text-align:right">Period rev</th><th style="text-align:right">Units/day</th><th style="text-align:right">Days cover</th><th>Status</th></tr></thead><tbody>'
+      contentHTML += '<h2>SKU details</h2><table><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th>Unit</th><th style="text-align:right">On hand</th><th style="text-align:right">Cost value</th><th style="text-align:right">List value</th><th style="text-align:right">Period qty</th><th style="text-align:right">Period rev</th><th style="text-align:right">Units/day</th><th style="text-align:right">Days cover</th><th>Status</th></tr></thead><tbody>'
       rows.forEach((r: any) => {
         const dc = r.days_of_cover == null ? '—' : String(r.days_of_cover)
-        contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.unit || ''))}</td><td style="text-align:right">${r.quantity_on_hand != null ? Number(r.quantity_on_hand).toFixed(2) : ''}</td><td style="text-align:right">${formatCurrency(r.extended_cost_value)}</td><td style="text-align:right">${formatCurrency(r.extended_list_value)}</td><td style="text-align:right">${r.period_quantity_sold != null ? Number(r.period_quantity_sold).toFixed(2) : ''}</td><td style="text-align:right">${formatCurrency(r.period_revenue)}</td><td style="text-align:right">${r.velocity_per_day != null ? Number(r.velocity_per_day).toFixed(3) : ''}</td><td style="text-align:right">${escapeHtml(dc)}</td><td>${escapeHtml(String(r.stock_status || ''))}</td></tr>`
+        contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.reporting_category || ''))}</td><td>${escapeHtml(String(r.unit || ''))}</td><td style="text-align:right">${r.quantity_on_hand != null ? Number(r.quantity_on_hand).toFixed(2) : ''}</td><td style="text-align:right">${formatCurrency(r.extended_cost_value)}</td><td style="text-align:right">${formatCurrency(r.extended_list_value)}</td><td style="text-align:right">${r.period_quantity_sold != null ? Number(r.period_quantity_sold).toFixed(2) : ''}</td><td style="text-align:right">${formatCurrency(r.period_revenue)}</td><td style="text-align:right">${r.velocity_per_day != null ? Number(r.velocity_per_day).toFixed(3) : ''}</td><td style="text-align:right">${escapeHtml(dc)}</td><td>${escapeHtml(String(r.stock_status || ''))}</td></tr>`
+      })
+      contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'item-master-by-category' && (reportData.by_category || reportData.rows)) {
+      const byC: any[] = reportData.by_category || []
+      contentHTML += '<h2>By category</h2><table><thead><tr><th>Category</th><th style="text-align:right">Items</th><th style="text-align:right">On hand</th><th style="text-align:right">Cost value</th><th style="text-align:right">List value</th></tr></thead><tbody>'
+      byC.forEach((c: any) => {
+        contentHTML += `<tr><td>${escapeHtml(String(c.reporting_category || ''))}</td><td style="text-align:right">${c.item_count ?? 0}</td><td style="text-align:right">${formatNumber(c.quantity_on_hand, 2)}</td><td style="text-align:right">${formatCurrency(c.extended_cost_value)}</td><td style="text-align:right">${formatCurrency(c.extended_list_value)}</td></tr>`
+      })
+      contentHTML += '</tbody></table>'
+      const rows: any[] = reportData.rows || []
+      contentHTML += '<h2>Items</h2><table><thead><tr><th>SKU</th><th>Name</th><th>Category</th><th style="text-align:right">On hand</th><th style="text-align:right">Cost value</th><th style="text-align:right">List value</th></tr></thead><tbody>'
+      rows.forEach((r: any) => {
+        contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.reporting_category || ''))}</td><td style="text-align:right">${formatNumber(r.quantity_on_hand, 2)}</td><td style="text-align:right">${formatCurrency(r.extended_cost_value)}</td><td style="text-align:right">${formatCurrency(r.extended_list_value)}</td></tr>`
+      })
+      contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'item-sales-by-category' && reportData.rows) {
+      const cr: any[] = reportData.rows || []
+      contentHTML += '<h2>Sales by category</h2><table><thead><tr><th>Category</th><th style="text-align:right">Lines</th><th style="text-align:right">Qty</th><th style="text-align:right">Revenue</th></tr></thead><tbody>'
+      cr.forEach((c: any) => {
+        contentHTML += `<tr><td>${escapeHtml(String(c.reporting_category || ''))}</td><td style="text-align:right">${c.line_count ?? 0}</td><td style="text-align:right">${formatNumber(c.total_quantity, 2)}</td><td style="text-align:right">${formatCurrency(c.total_revenue)}</td></tr>`
+      })
+      contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'item-sales-custom' && reportData.rows) {
+      const cr: any[] = reportData.rows || []
+      contentHTML += '<h2>Item sales (filtered)</h2><table><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th style="text-align:right">Qty</th><th style="text-align:right">Revenue</th><th style="text-align:right">Margin %</th></tr></thead><tbody>'
+      cr.forEach((r: any) => {
+        const m = r.gross_margin_pct == null ? '—' : String(r.gross_margin_pct)
+        contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.reporting_category || ''))}</td><td style="text-align:right">${formatNumber(r.period_quantity_sold, 2)}</td><td style="text-align:right">${formatCurrency(r.period_revenue)}</td><td style="text-align:right">${escapeHtml(m)}</td></tr>`
+      })
+      contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'item-stock-movement' && reportData.rows) {
+      const cr: any[] = reportData.rows || []
+      contentHTML +=
+        '<h2>Stock movement (purchases vs sales)</h2><table><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th style="text-align:right">Qty in</th><th style="text-align:right">Purchase</th><th style="text-align:right">Qty out</th><th style="text-align:right">Sales</th><th style="text-align:right">Net qty</th></tr></thead><tbody>'
+      cr.forEach((r: any) => {
+        contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.reporting_category || ''))}</td><td style="text-align:right">${formatNumber(r.quantity_purchased, 2)}</td><td style="text-align:right">${formatCurrency(r.purchase_amount)}</td><td style="text-align:right">${formatNumber(r.quantity_sold, 2)}</td><td style="text-align:right">${formatCurrency(r.sales_revenue)}</td><td style="text-align:right">${formatNumber(r.net_quantity_in, 2)}</td></tr>`
+      })
+      contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'item-velocity-analysis' && reportData.rows) {
+      const cr: any[] = reportData.rows || []
+      contentHTML +=
+        '<h2>Fast & slow movers</h2><table><thead><tr><th>Tier</th><th>SKU</th><th>Item</th><th>On hand</th><th>Period qty</th><th>Vel/day</th><th>Rank</th></tr></thead><tbody>'
+      cr.forEach((r: any) => {
+        contentHTML += `<tr><td>${escapeHtml(String(r.movement_tier || ''))}</td><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td style="text-align:right">${formatNumber(r.quantity_on_hand, 2)}</td><td style="text-align:right">${formatNumber(r.period_quantity_sold, 2)}</td><td style="text-align:right">${formatNumber(r.velocity_per_day, 4)}</td><td style="text-align:right">${r.velocity_rank ?? '—'}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'shift-summary' && reportData.sessions) {
@@ -618,12 +814,13 @@ export default function ReportsPage() {
         })
       } else if (selectedReport === 'inventory-sku-valuation' && reportData.rows) {
         csvContent +=
-          'SKU,Name,Unit,On hand,Unit cost,Cost value,List value,Period qty,Period rev,Units per day,Days cover,Status\n'
+          'SKU,Name,Reporting category,Unit,On hand,Unit cost,Cost value,List value,Period qty,Period rev,Units per day,Days cover,Status\n'
         const rows: any[] = reportData.rows || []
         rows.forEach((r: any) => {
           csvContent += [
             escapeCsv(r.sku),
             escapeCsv(r.name),
+            escapeCsv(r.reporting_category),
             escapeCsv(r.unit),
             r.quantity_on_hand ?? '',
             r.unit_cost ?? '',
@@ -634,6 +831,89 @@ export default function ReportsPage() {
             r.velocity_per_day ?? '',
             r.days_of_cover == null ? '' : r.days_of_cover,
             escapeCsv(r.stock_status),
+          ].join(',')
+          csvContent += '\n'
+        })
+      } else if (selectedReport === 'item-master-by-category' && reportData.rows) {
+        csvContent +=
+          'SKU,Name,Reporting category,POS category,Item type,Active,On hand,Cost value,List value\n'
+        const rows: any[] = reportData.rows || []
+        rows.forEach((r: any) => {
+          csvContent += [
+            escapeCsv(r.sku),
+            escapeCsv(r.name),
+            escapeCsv(r.reporting_category),
+            escapeCsv(r.pos_category),
+            escapeCsv(r.item_type),
+            r.is_active ? 'yes' : 'no',
+            r.quantity_on_hand ?? '',
+            r.extended_cost_value ?? '',
+            r.extended_list_value ?? '',
+          ].join(',')
+          csvContent += '\n'
+        })
+      } else if (selectedReport === 'item-sales-by-category' && reportData.rows) {
+        csvContent += 'Category,Invoice lines,Distinct products,Quantity,Revenue\n'
+        const cr: any[] = reportData.rows || []
+        cr.forEach((c: any) => {
+          csvContent += [
+            escapeCsv(c.reporting_category),
+            c.line_count ?? '',
+            c.distinct_items ?? '',
+            c.total_quantity ?? '',
+            c.total_revenue ?? '',
+          ].join(',')
+          csvContent += '\n'
+        })
+      } else if (selectedReport === 'item-sales-custom' && reportData.rows) {
+        csvContent +=
+          'SKU,Name,Reporting category,POS,Period quantity,Revenue,Est COGS,Margin %\n'
+        const cr: any[] = reportData.rows || []
+        cr.forEach((r: any) => {
+          csvContent += [
+            escapeCsv(r.sku),
+            escapeCsv(r.name),
+            escapeCsv(r.reporting_category),
+            escapeCsv(r.pos_category),
+            r.period_quantity_sold ?? '',
+            r.period_revenue ?? '',
+            r.est_cogs ?? '',
+            r.gross_margin_pct == null ? '' : r.gross_margin_pct,
+          ].join(',')
+          csvContent += '\n'
+        })
+      } else if (selectedReport === 'item-stock-movement' && reportData.rows) {
+        csvContent +=
+          'SKU,Name,Reporting category,Qty in (bills),Purchase amount,Qty out (invoices),Sales amount,Net qty in\n'
+        const cr: any[] = reportData.rows || []
+        cr.forEach((r: any) => {
+          csvContent += [
+            escapeCsv(r.sku),
+            escapeCsv(r.name),
+            escapeCsv(r.reporting_category),
+            r.quantity_purchased ?? '',
+            r.purchase_amount ?? '',
+            r.quantity_sold ?? '',
+            r.sales_revenue ?? '',
+            r.net_quantity_in ?? '',
+          ].join(',')
+          csvContent += '\n'
+        })
+      } else if (selectedReport === 'item-velocity-analysis' && reportData.rows) {
+        csvContent +=
+          'Movement tier,SKU,Name,Category,On hand,Period quantity,Revenue,Velocity per day,Rank\n'
+        const cr: any[] = reportData.rows || []
+        cr.forEach((r: any) => {
+          csvContent += [
+            escapeCsv(r.movement_tier),
+            escapeCsv(r.sku),
+            escapeCsv(r.name),
+            escapeCsv(r.reporting_category),
+            r.quantity_on_hand ?? '',
+            r.period_quantity_sold ?? '',
+            r.period_revenue ?? '',
+            r.velocity_per_day ?? '',
+            r.velocity_rank ?? '',
           ].join(',')
           csvContent += '\n'
         })
@@ -955,7 +1235,28 @@ export default function ReportsPage() {
                       {/* No separate period display needed here */}
 
                       {/* Table Data */}
-                      {renderReportTable(selectedReport, reportData, dateRange, setDateRange, fetchReport, handleReportDateChange)}
+                      {renderReportTable(
+                        selectedReport,
+                        reportData,
+                        dateRange,
+                        setDateRange,
+                        fetchReport,
+                        handleReportDateChange,
+                        selectedReport && ITEM_SCOPED_REPORT_IDS.includes(selectedReport)
+                          ? {
+                              reportType: selectedReport,
+                              category: itemScopeCategory,
+                              onCategoryChange: onItemScopeCategoryChange,
+                              selectedItemIds: itemScopeItemIds,
+                              onToggleItem: toggleItemScopeId,
+                              onSelectAllVisible: selectAllVisibleItemScope,
+                              onClearItems: clearItemScopeSelection,
+                              visibleItemOptions: itemScopeVisibleOptions,
+                              categoryList: itemFilterCategoryList,
+                              fetchReport,
+                            }
+                          : undefined
+                      )}
 
                       {/* Alerts */}
                       {reportData.alerts && reportData.alerts.low_stock_tanks && reportData.alerts.low_stock_tanks.length > 0 && (
@@ -1099,7 +1400,8 @@ function renderReportTable(
   dateRange?: { startDate: string; endDate: string },
   setDateRange?: (range: { startDate: string; endDate: string }) => void,
   fetchReport?: (reportId: ReportType) => Promise<void>,
-  handleReportDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: ReportType) => void
+  handleReportDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: ReportType) => void,
+  itemScope?: ItemScopeTableProps
 ) {
   const period = data?.period || {}
   const hasPeriod =
@@ -1978,6 +2280,7 @@ function renderReportTable(
               <tr>
                 <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">SKU</th>
                 <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Item</th>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
                 <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">On hand</th>
                 <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Unit cost</th>
                 <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Cost value</th>
@@ -1992,7 +2295,7 @@ function renderReportTable(
             <tbody className="divide-y divide-slate-100 bg-white">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={12} className="px-4 py-10 text-center text-slate-500">
                     No tracked inventory items found. Add products (inventory type) or record sales in the period.
                   </td>
                 </tr>
@@ -2005,6 +2308,11 @@ function renderReportTable(
                         {r.name}
                       </span>
                       {r.unit ? <span className="ml-1 text-xs text-slate-500">({r.unit})</span> : null}
+                    </td>
+                    <td className="px-3 py-2 text-slate-700 max-w-[140px]">
+                      <span className="line-clamp-2" title={r.reporting_category || '—'}>
+                        {r.reporting_category || '—'}
+                      </span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-800">
                       {formatNumber(r.quantity_on_hand, 2)}
@@ -2039,6 +2347,498 @@ function renderReportTable(
             </tbody>
           </table>
         </div>
+        {data.accounting_note ? (
+          <p className="text-xs text-slate-500 max-w-4xl leading-relaxed border-t border-slate-100 pt-3">
+            {data.accounting_note}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
+  // Item catalog (snapshot) by reporting category
+  if (reportType === 'item-master-by-category' && data) {
+    const period = data?.period || {}
+    const byCat: any[] = Array.isArray(data.by_category) ? data.by_category : []
+    const rows: any[] = Array.isArray(data.rows) ? data.rows : []
+    return (
+      <div className="space-y-6">
+        {period?.note ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
+            {String(period.note)} Dates below label the printout; stock is current.
+          </div>
+        ) : null}
+
+        <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+          <h3 className="bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-800">Summary by category</h3>
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-slate-600">Items</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-slate-600">Active</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-slate-600">On hand (units)</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-slate-600">Cost value</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-slate-600">List value</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {byCat.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                    No items in the catalog.
+                  </td>
+                </tr>
+              ) : (
+                byCat.map((c: any, i: number) => (
+                  <tr key={i} className="hover:bg-slate-50/80">
+                    <td className="px-3 py-2 font-medium text-slate-900">{c.reporting_category}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{c.item_count ?? 0}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{c.active_count ?? 0}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatNumber(c.quantity_on_hand, 2)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(c.extended_cost_value)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(c.extended_list_value)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+          <h3 className="bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-800">All items (detail)</h3>
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">SKU</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">Name</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">POS</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">Type</th>
+                <th className="px-3 py-2 text-center text-xs font-semibold uppercase text-slate-600">Active</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-slate-600">On hand</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-slate-600">Cost value</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-slate-600">List value</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                    No rows.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r: any, idx: number) => (
+                  <tr key={idx} className="hover:bg-slate-50/80">
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-800">{r.sku}</td>
+                    <td className="max-w-[180px] px-3 py-2 text-slate-800">
+                      <span className="line-clamp-2" title={r.name}>
+                        {r.name}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-amber-900/90 max-w-[120px]">
+                      <span className="line-clamp-2" title={r.reporting_category}>
+                        {r.reporting_category}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-600 text-xs">{r.pos_category}</td>
+                    <td className="px-3 py-2 text-slate-600 text-xs">{r.item_type}</td>
+                    <td className="px-3 py-2 text-center">
+                      {r.is_active ? (
+                        <span className="text-xs text-green-700">Yes</span>
+                      ) : (
+                        <span className="text-xs text-slate-400">No</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(r.extended_cost_value)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(r.extended_list_value)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {data.accounting_note ? (
+          <p className="text-xs text-slate-500 max-w-4xl leading-relaxed border-t border-slate-100 pt-3">
+            {data.accounting_note}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
+  if (reportType === 'item-sales-by-category' && data) {
+    const period = data?.period || {}
+    const catRows: any[] = Array.isArray(data.rows) ? data.rows : []
+    return (
+      <div className="space-y-6">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Invoice lines in this date range; grouped by each product reporting category.',
+          )}
+
+        <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-100">
+              <tr>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Inv. lines</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Products</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Quantity</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Revenue</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {catRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                    No invoice lines with linked items in this period.
+                  </td>
+                </tr>
+              ) : (
+                catRows.map((c: any, i: number) => (
+                  <tr key={i} className="hover:bg-slate-50/80">
+                    <td className="px-3 py-2 font-medium text-amber-950">{c.reporting_category}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-800">{c.line_count ?? 0}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-800">{c.distinct_items ?? 0}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatNumber(c.total_quantity, 2)}</td>
+                    <td className="px-3 py-2 text-right font-medium">{formatCurrency(c.total_revenue)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {data.accounting_note ? (
+          <p className="text-xs text-slate-500 max-w-4xl leading-relaxed border-t border-slate-100 pt-3">
+            {data.accounting_note}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
+  if (
+    (reportType === 'item-sales-custom' || reportType === 'item-stock-movement' || reportType === 'item-velocity-analysis') &&
+    data
+  ) {
+    const period = data?.period || {}
+    const filters = data?.filters || {}
+    const ic = itemScope
+
+    const selectedIds: number[] = (filters?.item_ids as number[] | undefined) || []
+    const filterText =
+      (filters?.category as string) ? `category = ${String(filters.category)}` : 'any category'
+    const itemPart =
+      selectedIds.length > 0
+        ? `${selectedIds.length} selected product(s): #${selectedIds.join(', #')}`
+        : 'all products in scope (by category, or with activity)'
+
+    return (
+      <div className="space-y-6">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Choose a date range, set filters, then apply. Multi-select: pick any number of products in the list for sales & velocity; movement uses the same selection.',
+          )}
+
+        {ic && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+            <p className="mb-3 text-sm font-medium text-slate-800">Scope: category and products (optional)</p>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+              <div className="min-w-[200px] flex-1">
+                <label className="mb-1 block text-xs font-medium uppercase text-slate-500">Category</label>
+                <select
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                  value={ic!.category}
+                  onChange={(e) => ic!.onCategoryChange(e.target.value)}
+                >
+                  <option value="">All categories (list shows every product)</option>
+                  {ic!.categoryList.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  Narrow the checklist. Leave empty to see all products (still multi-selectable).
+                </p>
+              </div>
+              <div className="min-w-0 flex-[2]">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-medium uppercase text-slate-500">Products (multi-select)</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-blue-700 hover:underline"
+                      onClick={() => ic!.onSelectAllVisible()}
+                    >
+                      Select all in list
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-slate-600 hover:underline"
+                      onClick={() => ic!.onClearItems()}
+                    >
+                      Clear selection
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white p-2">
+                  {ic!.visibleItemOptions.length === 0 ? (
+                    <p className="p-2 text-sm text-slate-500">No products match this category. Clear category or add items in Products.</p>
+                  ) : (
+                    <ul className="grid gap-1 sm:grid-cols-1 md:grid-cols-2">
+                      {ic!.visibleItemOptions.map((it) => {
+                        const checked = ic!.selectedItemIds.includes(it.id)
+                        return (
+                          <li key={it.id} className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              id={`rpt-item-${it.id}`}
+                              checked={checked}
+                              onChange={() => ic!.onToggleItem(it.id)}
+                              className="h-4 w-4 rounded border-slate-300"
+                            />
+                            <label htmlFor={`rpt-item-${it.id}`} className="flex-1 cursor-pointer truncate text-slate-800">
+                              <span className="font-mono text-xs text-slate-500">{it.item_number || it.id}</span> — {it.name}
+                            </label>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  {ic!.selectedItemIds.length} selected. Leave all unchecked to include <strong>every</strong> product
+                  in scope (category-only or company-wide, depending on report). Check specific rows to run the report
+                  for only those SKUs.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-end">
+                <button
+                  type="button"
+                  onClick={() => void ic!.fetchReport(reportType)}
+                  className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+                >
+                  Apply filters
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-slate-600">
+          <span className="font-medium">Active view:</span> {filterText}; {itemPart}.
+        </p>
+
+        {reportType === 'item-sales-custom' ? (
+          <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+            {(() => {
+              const cRows: any[] = Array.isArray(data.rows) ? data.rows : []
+              return (
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">SKU</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Item</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">POS</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Period qty</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Revenue</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Est. COGS</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Margin %</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {cRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                      No rows for this selection. Try a wider range or different products.
+                    </td>
+                  </tr>
+                ) : (
+                  cRows.map((r: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-slate-50/80">
+                      <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-900">{r.sku || '—'}</td>
+                      <td className="max-w-[200px] px-3 py-2 text-slate-800">
+                        <span className="line-clamp-2" title={r.name}>
+                          {r.name}
+                        </span>
+                        {r.unit ? <span className="ml-1 text-xs text-slate-500">({r.unit})</span> : null}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">{r.reporting_category}</td>
+                      <td className="px-3 py-2 text-slate-600 text-xs">{r.pos_category}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.period_quantity_sold, 2)}</td>
+                      <td className="px-3 py-2 text-right font-medium">{formatCurrency(r.period_revenue)}</td>
+                      <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.est_cogs)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                        {r.gross_margin_pct == null ? '—' : `${formatNumber(r.gross_margin_pct, 2)}%`}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+              );
+            })()}
+          </div>
+        ) : null}
+
+        {reportType === 'item-stock-movement' ? (
+          <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+            {(() => {
+              const cRows: any[] = Array.isArray(data.rows) ? data.rows : []
+              return (
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">SKU</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Item</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Qty in (bills)</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Purchase $</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Qty out (sales)</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Sales $</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Net qty (in−out)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {cRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                      No data. Try a wider range or a category with bill and/or invoice lines.
+                    </td>
+                  </tr>
+                ) : (
+                  cRows.map((r: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-slate-50/80">
+                      <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-900">{r.sku || '—'}</td>
+                      <td className="max-w-[200px] px-3 py-2 text-slate-800">
+                        <span className="line-clamp-2" title={r.name}>
+                          {r.name}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">{r.reporting_category}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_purchased, 2)}</td>
+                      <td className="px-3 py-2 text-right text-slate-800">{formatCurrency(r.purchase_amount)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_sold, 2)}</td>
+                      <td className="px-3 py-2 text-right text-slate-800">{formatCurrency(r.sales_revenue)}</td>
+                      <td
+                        className={`px-3 py-2 text-right font-medium tabular-nums ${
+                          (r.net_quantity_in ?? 0) > 0
+                            ? 'text-green-800'
+                            : (r.net_quantity_in ?? 0) < 0
+                              ? 'text-amber-900'
+                              : 'text-slate-600'
+                        }`}
+                      >
+                        {formatNumber(r.net_quantity_in, 2)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+              );
+            })()}
+          </div>
+        ) : null}
+
+        {reportType === 'item-velocity-analysis' ? (
+          <div className="space-y-3">
+            {data.summary && (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+                {[
+                  { k: 'fast', label: 'Fast' },
+                  { k: 'medium', label: 'Medium' },
+                  { k: 'slow', label: 'Slow' },
+                  { k: 'no_period_sales', label: 'No period sales' },
+                ].map(({ k, label }) => (
+                  <div
+                    key={k}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm shadow-sm"
+                  >
+                    <div className="text-xs text-slate-500">{label}</div>
+                    <div className="text-lg font-semibold text-slate-900">{(data.summary as any)[k] ?? 0}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+              {(() => {
+                const cRows: any[] = Array.isArray(data.rows) ? data.rows : []
+                const tierClass = (t: string) => {
+                  if (t === 'fast') return 'bg-emerald-100 text-emerald-900'
+                  if (t === 'medium') return 'bg-amber-100 text-amber-900'
+                  if (t === 'slow') return 'bg-orange-100 text-orange-950'
+                  return 'bg-slate-100 text-slate-700'
+                }
+                return (
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Tier</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">SKU</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Item</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">On hand</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Period qty</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Period $</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Velocity / day</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Rank</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {cRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
+                        No products in scope. Adjust category or add items.
+                      </td>
+                    </tr>
+                  ) : (
+                    cRows.map((r: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-slate-50/80">
+                        <td className="whitespace-nowrap px-3 py-2">
+                          <span
+                            className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${tierClass(r.movement_tier || '')}`}
+                          >
+                            {String(r.movement_tier || '').replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-900">{r.sku || '—'}</td>
+                        <td className="max-w-[200px] px-3 py-2 text-slate-800">
+                          <span className="line-clamp-2" title={r.name}>
+                            {r.name}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">{r.reporting_category}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.period_quantity_sold, 2)}</td>
+                        <td className="px-3 py-2 text-right text-slate-800">{formatCurrency(r.period_revenue)}</td>
+                        <td className="px-3 py-2 text-right text-slate-800">{formatNumber(r.velocity_per_day, 4)}</td>
+                        <td className="px-3 py-2 text-right text-slate-600">{r.velocity_rank || '—'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+                );
+              })()}
+            </div>
+          </div>
+        ) : null}
+
         {data.accounting_note ? (
           <p className="text-xs text-slate-500 max-w-4xl leading-relaxed border-t border-slate-100 pt-3">
             {data.accounting_note}

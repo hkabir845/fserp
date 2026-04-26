@@ -248,7 +248,7 @@ def test_items_reject_duplicate_name_same_company(
     api_client: Client, auth_super_headers, company_master
 ):
     h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
-    payload = {"name": "Audit Dup Product", "unit_price": "10", "cost": "5"}
+    payload = {"name": "Audit Dup Product", "unit_price": "10", "cost": "5", "category": "General"}
     r1 = api_client.post(
         "/api/items/",
         data=json.dumps(payload),
@@ -269,7 +269,7 @@ def test_items_reject_duplicate_name_same_company(
 def test_items_same_name_allowed_in_different_companies(
     api_client: Client, auth_super_headers, company_master, company_tenant
 ):
-    body = {"name": "Shared Label OK", "unit_price": "1", "cost": "0"}
+    body = {"name": "Shared Label OK", "unit_price": "1", "cost": "0", "category": "General"}
     h_m = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
     h_t = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_tenant.id)}
     r1 = api_client.post(
@@ -286,7 +286,9 @@ def test_items_reject_negative_unit_price(api_client: Client, auth_super_headers
     h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
     r = api_client.post(
         "/api/items/",
-        data=json.dumps({"name": "Neg price item", "unit_price": "-1", "cost": "0"}),
+        data=json.dumps(
+            {"name": "Neg price item", "unit_price": "-1", "cost": "0", "category": "General"}
+        ),
         content_type="application/json",
         **h,
     )
@@ -522,7 +524,9 @@ def test_invoice_list_create_detail_and_status(
 
     item_r = api_client.post(
         "/api/items/",
-        data=json.dumps({"name": "Audit Line Item", "unit_price": "10.00"}),
+        data=json.dumps(
+            {"name": "Audit Line Item", "unit_price": "10.00", "category": "General", "cost": "0"}
+        ),
         content_type="application/json",
         **h,
     )
@@ -1136,7 +1140,15 @@ def test_cashier_pos_shop_qty_over_qoh_returns_400(
     h = _audit_master_headers(auth_super_headers, company_master)
     item_r = api_client.post(
         "/api/items/",
-        data=json.dumps({"name": "Low Stock SKU", "unit_price": "5.00", "quantity_on_hand": "10"}),
+        data=json.dumps(
+            {
+                "name": "Low Stock SKU",
+                "unit_price": "5.00",
+                "quantity_on_hand": "10",
+                "category": "General",
+                "cost": "0",
+            }
+        ),
         content_type="application/json",
         **h,
     )
@@ -1172,6 +1184,8 @@ def test_cashier_pos_service_item_ignores_qoh(
                 "quantity_on_hand": "0",
                 "unit": "service",
                 "item_type": "service",
+                "category": "General",
+                "cost": "0",
             }
         ),
         content_type="application/json",
@@ -1413,7 +1427,15 @@ def test_cashier_pos_general_sale(api_client: Client, auth_super_headers, compan
     h = _audit_master_headers(auth_super_headers, company_master)
     item_r = api_client.post(
         "/api/items/",
-        data=json.dumps({"name": "POS Snack", "unit_price": "5.00", "quantity_on_hand": "100"}),
+        data=json.dumps(
+            {
+                "name": "POS Snack",
+                "unit_price": "5.00",
+                "quantity_on_hand": "100",
+                "category": "General",
+                "cost": "0",
+            }
+        ),
         content_type="application/json",
         **h,
     )
@@ -1467,6 +1489,8 @@ def test_cashier_pos_mixed_fuel_and_general(
                 "name": "Mixed POS Snack",
                 "unit_price": "4.00",
                 "quantity_on_hand": "50",
+                "category": "General",
+                "cost": "0",
             }
         ),
         content_type="application/json",
@@ -1743,7 +1767,7 @@ def test_payment_invoice_allocation_clears_outstanding(
     customer_id = json.loads(api_client.get("/api/customers/", **h).content)[0]["id"]
     item_r = api_client.post(
         "/api/items/",
-        data=json.dumps({"name": "Alloc Item", "unit_price": "10.00"}),
+        data=json.dumps({"name": "Alloc Item", "unit_price": "10.00", "category": "General", "cost": "0"}),
         content_type="application/json",
         **h,
     )

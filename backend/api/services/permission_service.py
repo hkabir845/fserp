@@ -41,11 +41,20 @@ PERMISSION_CATALOG: list[dict[str, str]] = [
     {"id": "app.roles", "label": "Custom roles", "group": "Settings"},
     {"id": "app.backup", "label": "Backup & restore", "group": "Settings"},
     {"id": "app.reports", "label": "Reports hub (general)", "group": "Reports"},
-    {"id": "report.inventory_sku", "label": "Inventory: valuation & velocity (SKU)", "group": "Reports"},
+    {
+        "id": "report.inventory_sku",
+        "label": "Inventory & item reports (valuation, catalog, sales by category, custom filters)",
+        "group": "Reports",
+    },
 ]
 
 REPORT_ID_EXTRA_PERMISSION: dict[str, str] = {
     "inventory-sku-valuation": "report.inventory_sku",
+    "item-master-by-category": "report.inventory_sku",
+    "item-sales-by-category": "report.inventory_sku",
+    "item-sales-custom": "report.inventory_sku",
+    "item-stock-movement": "report.inventory_sku",
+    "item-velocity-analysis": "report.inventory_sku",
 }
 
 # Only catalog keys are stored for tenant custom roles (unknown keys are dropped).

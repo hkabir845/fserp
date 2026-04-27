@@ -3,6 +3,7 @@ Company-scoped report payloads matching frontend /reports/* expectations.
 """
 from __future__ import annotations
 
+from calendar import monthrange
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
@@ -13,6 +14,7 @@ from django.db.models.functions import Coalesce, Trim
 from django.utils import timezone
 
 from api.models import (
+    Bill,
     BillLine,
     ChartOfAccount,
     Customer,
@@ -345,6 +347,74 @@ def _period_pl_amount(coa: ChartOfAccount, company_id: int, start: date, end: da
     if is_pl_credit_normal_type(coa.account_type):
         return c - d
     return d - c
+
+
+def _period_income_statement_totals(company_id: int, start: date, end: date) -> dict[str, Decimal]:
+    """
+    P&L totals for [start, end] from posted journal lines (same basis as income statement).
+    """
+    ti = tcogs = te = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        t = normalize_chart_account_type(coa.account_type)
+        if t not in ("income", "cost_of_goods_sold", "expense"):
+            continue
+        amt = _period_pl_amount(coa, company_id, start, end)
+        if t == "income":
+            ti += amt
+        elif t == "cost_of_goods_sold":
+            tcogs += amt
+        else:
+            te += amt
+    gross = ti - tcogs
+    net = gross - te
+    return {
+        "income": ti,
+        "cogs": tcogs,
+        "expenses": te,
+        "gross_profit": gross,
+        "net_income": net,
+    }
+
+
+def _sum_invoice_totals(company_id: int, start: date, end: date) -> Decimal:
+    r = Invoice.objects.filter(
+        company_id=company_id,
+        invoice_date__gte=start,
+        invoice_date__lte=end,
+    ).aggregate(t=Coalesce(Sum("total"), Decimal("0")))
+    return _d(r["t"])
+
+
+def _sum_bill_totals(company_id: int, start: date, end: date) -> Decimal:
+    r = Bill.objects.filter(
+        company_id=company_id,
+        bill_date__gte=start,
+        bill_date__lte=end,
+    ).aggregate(t=Coalesce(Sum("total"), Decimal("0")))
+    return _d(r["t"])
+
+
+def _iter_month_periods_in_range(start: date, end: date) -> list[tuple[date, date, str]]:
+    """Clipped calendar months within [start, end], each (seg_start, seg_end, 'YYYY-MM')."""
+    if start > end:
+        start, end = end, start
+    out: list[tuple[date, date, str]] = []
+    cur = date(start.year, start.month, 1)
+    end_marker = date(end.year, end.month, 1)
+    while cur <= end_marker:
+        y, m = cur.year, cur.month
+        last_d = monthrange(y, m)[1]
+        ms = date(y, m, 1)
+        me = date(y, m, last_d)
+        seg_s = max(ms, start)
+        seg_e = min(me, end)
+        if seg_s <= seg_e:
+            out.append((seg_s, seg_e, f"{y:04d}-{m:02d}"))
+        if m == 12:
+            cur = date(y + 1, 1, 1)
+        else:
+            cur = date(y, m + 1, 1)
+    return out
 
 
 def report_income_statement(company_id: int, start: date, end: date) -> dict[str, Any]:
@@ -1753,5 +1823,341 @@ def report_item_velocity_analysis(
             "Fast / medium / slow are **tertiles by invoiced quantity** in the range among items with sales &gt; 0. "
             "No sales in the period = \"no_period_sales\" (check on-hand for dead stock). "
             "Velocity is units sold ÷ days in range."
+        ),
+    }
+
+
+def report_item_purchases_by_category(company_id: int, start: date, end: date) -> dict[str, Any]:
+    """
+    Vendor bill line quantity and spend by item reporting category (lines with catalog items only).
+    """
+    base = BillLine.objects.filter(
+        bill__company_id=company_id,
+        bill__bill_date__gte=start,
+        bill__bill_date__lte=end,
+        item_id__isnull=False,
+    )
+    agg = (
+        base.annotate(
+            rc=Coalesce(Trim("item__category"), Value("")),
+        )
+        .values("rc")
+        .annotate(
+            total_qty=Coalesce(Sum("quantity"), Decimal("0")),
+            total_amount=Coalesce(Sum("amount"), Decimal("0")),
+            line_count=Count("id"),
+            item_count=Count("item_id", distinct=True),
+        )
+        .order_by("rc")
+    )
+    rows_out: list[dict[str, Any]] = []
+    tot_q = Decimal("0")
+    tot_a = Decimal("0")
+    for row in agg:
+        label = (row.get("rc") or "").strip() or "General"
+        tq = _d(row.get("total_qty"))
+        ta = _d(row.get("total_amount"))
+        tot_q += tq
+        tot_a += ta
+        rows_out.append(
+            {
+                "reporting_category": label,
+                "line_count": int(row.get("line_count") or 0),
+                "distinct_items": int(row.get("item_count") or 0),
+                "total_quantity": _f(tq),
+                "total_purchase_amount": _f(ta),
+            }
+        )
+    return {
+        "report_id": "item-purchases-by-category",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": {
+            "category_rows": len(rows_out),
+            "total_quantity": _f(tot_q),
+            "total_purchase_amount": _f(tot_a),
+        },
+        "rows": rows_out,
+        "accounting_note": (
+            "Quantity and amount from vendor bill lines in the period, grouped by each "
+            "product's reporting category. Only lines linked to a catalog item are included."
+        ),
+    }
+
+
+def report_item_purchases_custom(
+    company_id: int,
+    start: date,
+    end: date,
+    category: str | None = None,
+    item_id: int | None = None,
+    item_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """
+    Period purchases by SKU (vendor bills) with optional category and/or product filter.
+    """
+    base = BillLine.objects.filter(
+        bill__company_id=company_id,
+        bill__bill_date__gte=start,
+        bill__bill_date__lte=end,
+        item_id__isnull=False,
+    )
+    if item_ids:
+        base = base.filter(item_id__in=item_ids)
+    elif item_id is not None:
+        base = base.filter(item_id=item_id)
+    if category:
+        base = base.filter(item__category=category)
+    line_agg: dict[int, dict[str, Decimal]] = {}
+    for row in base.values("item_id").annotate(
+        q=Coalesce(Sum("quantity"), Decimal("0")),
+        a=Coalesce(Sum("amount"), Decimal("0")),
+    ):
+        iid = row.get("item_id")
+        if iid:
+            line_agg[int(iid)] = {"q": _d(row.get("q")), "a": _d(row.get("a"))}
+    if item_ids:
+        for iid in item_ids:
+            if iid not in line_agg:
+                line_agg[iid] = {"q": Decimal("0"), "a": Decimal("0")}
+        id_list = sorted({int(x) for x in item_ids})
+    else:
+        id_list = sorted(line_agg.keys())
+    items_by_id = {i.id: i for i in Item.objects.filter(company_id=company_id, id__in=id_list)}
+    rows_out: list[dict[str, Any]] = []
+    tot_q = Decimal("0")
+    tot_a = Decimal("0")
+    for iid in id_list:
+        it = items_by_id.get(iid)
+        if not it:
+            continue
+        agg = line_agg.get(iid) or {"q": Decimal("0"), "a": Decimal("0")}
+        pq, pa = agg["q"], agg["a"]
+        tot_q += pq
+        tot_a += pa
+        avg_unit = (pa / pq) if pq > 0 else Decimal("0")
+        rows_out.append(
+            {
+                "sku": (it.item_number or "").strip() or f"#{it.id}",
+                "name": (it.name or "")[:200],
+                "reporting_category": (it.category or "").strip() or "General",
+                "pos_category": (it.pos_category or "general")[:64],
+                "item_type": (it.item_type or "") or "",
+                "unit": (it.unit or "")[:24],
+                "period_quantity_purchased": _f(pq),
+                "period_purchase_amount": _f(pa),
+                "avg_purchase_unit_cost": _f(avg_unit) if pq > 0 else None,
+            }
+        )
+    rows_out.sort(
+        key=lambda r: (float(r.get("period_purchase_amount", 0) or 0), r.get("sku") or ""), reverse=True
+    )
+    return {
+        "report_id": "item-purchases-custom",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": {
+            "line_count": len(rows_out),
+            "total_quantity": _f(tot_q),
+            "total_purchase_amount": _f(tot_a),
+        },
+        "filters": {
+            "category": category or "",
+            "item_id": item_id if item_id is not None and not item_ids else None,
+            "item_ids": list(item_ids) if item_ids else None,
+        },
+        "rows": rows_out,
+        "accounting_note": (
+            "Purchases in the period from bill lines, with optional category and/or product filter. "
+            "Selected products appear even with zero purchase quantity in the range. "
+            "Average unit cost = line amount ÷ quantity when quantity &gt; 0."
+        ),
+    }
+
+
+def report_item_purchase_velocity_analysis(
+    company_id: int,
+    start: date,
+    end: date,
+    category: str | None = None,
+    item_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """
+    Classify products into fast / medium / slow purchase volume from bill line quantity
+    in the period (tertiles among items with purchases &gt; 0). Items with no bill lines in
+    range are ``no_period_purchases``.
+    """
+    period_days = (end - start).days + 1
+    if period_days < 1:
+        period_days = 1
+    pdd = Decimal(str(period_days))
+
+    bill_base = BillLine.objects.filter(
+        bill__company_id=company_id,
+        bill__bill_date__gte=start,
+        bill__bill_date__lte=end,
+        item_id__isnull=False,
+    )
+    if category:
+        bill_base = bill_base.filter(item__category=category)
+    if item_ids:
+        bill_base = bill_base.filter(item_id__in=item_ids)
+
+    qty_by: dict[int, Decimal] = {}
+    amt_by: dict[int, Decimal] = {}
+    for row in bill_base.values("item_id").annotate(
+        q=Coalesce(Sum("quantity"), Decimal("0")),
+        a=Coalesce(Sum("amount"), Decimal("0")),
+    ):
+        iid = row.get("item_id")
+        if not iid:
+            continue
+        iid = int(iid)
+        qty_by[iid] = _d(row.get("q"))
+        amt_by[iid] = _d(row.get("a"))
+
+    scope = _item_scope_queryset(company_id, category, item_ids)
+    if not scope:
+        return {
+            "report_id": "item-purchase-velocity-analysis",
+            "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+            "summary": {
+                "line_count": 0,
+                "fast": 0,
+                "medium": 0,
+                "slow": 0,
+                "no_period_purchases": 0,
+            },
+            "filters": {"category": category or "", "item_ids": list(item_ids) if item_ids else None},
+            "rows": [],
+            "accounting_note": "No active items match the filter.",
+        }
+
+    rows: list[dict[str, Any]] = []
+    for it in scope:
+        iid = int(it.id)
+        pqty = qty_by.get(iid) or Decimal("0")
+        pamt = amt_by.get(iid) or Decimal("0")
+        qoh = _d(getattr(it, "quantity_on_hand", None) or 0)
+        if qoh < 0:
+            qoh = Decimal("0")
+        daily = (pqty / pdd) if pdd else Decimal("0")
+        rows.append(
+            {
+                "sku": (it.item_number or "").strip() or f"#{it.id}",
+                "name": (it.name or "")[:200],
+                "reporting_category": (it.category or "").strip() or "General",
+                "item_type": (it.item_type or "") or "",
+                "unit": (it.unit or "")[:24],
+                "quantity_on_hand": _f(qoh),
+                "period_quantity_purchased": _f(pqty),
+                "period_purchase_amount": _f(pamt),
+                "purchase_velocity_per_day": _f(daily),
+                "velocity_rank": 0,
+                "movement_tier": "no_period_purchases",
+            }
+        )
+
+    movers = [r for r in rows if float(r.get("period_quantity_purchased", 0) or 0) > 0]
+    movers.sort(
+        key=lambda r: (
+            -float(r.get("period_quantity_purchased", 0) or 0),
+            (r.get("sku") or "") or "",
+        )
+    )
+    n = len(movers)
+    if n:
+        k = max(1, (n + 2) // 3)
+        for i, r in enumerate(movers):
+            r["velocity_rank"] = i + 1
+            if i < k:
+                r["movement_tier"] = "fast"
+            elif i < 2 * k:
+                r["movement_tier"] = "medium"
+            else:
+                r["movement_tier"] = "slow"
+
+    rows.sort(
+        key=lambda r: (
+            {"fast": 0, "medium": 1, "slow": 2, "no_period_purchases": 3}.get(
+                str(r.get("movement_tier")), 4
+            ),
+            -float(r.get("period_quantity_purchased", 0) or 0),
+        )
+    )
+    summary = {
+        "line_count": len(rows),
+        "fast": sum(1 for r in rows if r.get("movement_tier") == "fast"),
+        "medium": sum(1 for r in rows if r.get("movement_tier") == "medium"),
+        "slow": sum(1 for r in rows if r.get("movement_tier") == "slow"),
+        "no_period_purchases": sum(1 for r in rows if r.get("movement_tier") == "no_period_purchases"),
+    }
+    return {
+        "report_id": "item-purchase-velocity-analysis",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": summary,
+        "filters": {
+            "category": category or "",
+            "item_ids": list(item_ids) if item_ids else None,
+        },
+        "rows": rows,
+        "accounting_note": (
+            "Fast / medium / slow are **tertiles by purchase quantity** (vendor bill lines) in the range among "
+            "items with purchases &gt; 0. No purchases in the period = \"no_period_purchases\". "
+            "Velocity is units purchased ÷ days in range."
+        ),
+    }
+
+
+def report_financial_analytics(company_id: int, start: date, end: date) -> dict[str, Any]:
+    """
+    KPIs and monthly buckets: invoice sales and bill purchases (subledger documents) vs
+    P&L from posted journals (income, COGS, operating expenses) for the same sub-periods.
+    """
+    if start > end:
+        start, end = end, start
+
+    pl = _period_income_statement_totals(company_id, start, end)
+    sales = _sum_invoice_totals(company_id, start, end)
+    purchases = _sum_bill_totals(company_id, start, end)
+    op_exp = pl["expenses"]  # operating and other P&L expense types
+
+    months = _iter_month_periods_in_range(start, end)
+    if len(months) > 36:
+        months = months[:36]
+    timeseries: list[dict[str, Any]] = []
+    for seg_s, seg_e, label in months:
+        pl_m = _period_income_statement_totals(company_id, seg_s, seg_e)
+        timeseries.append(
+            {
+                "label": label,
+                "start_date": seg_s.isoformat(),
+                "end_date": seg_e.isoformat(),
+                "total_sales": _f(_sum_invoice_totals(company_id, seg_s, seg_e)),
+                "total_purchases": _f(_sum_bill_totals(company_id, seg_s, seg_e)),
+                "pl_income": _f(pl_m["income"]),
+                "pl_cogs": _f(pl_m["cogs"]),
+                "pl_expenses": _f(pl_m["expenses"]),
+                "gross_profit": _f(pl_m["gross_profit"]),
+                "net_income": _f(pl_m["net_income"]),
+            }
+        )
+
+    return {
+        "report_id": "financial-analytics",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "kpis": {
+            "total_sales": _f(sales),
+            "total_purchases": _f(purchases),
+            "pl_income": _f(pl["income"]),
+            "pl_cogs": _f(pl["cogs"]),
+            "pl_expenses": _f(op_exp),
+            "gross_profit": _f(pl["gross_profit"]),
+            "net_income": _f(pl["net_income"]),
+        },
+        "timeseries": timeseries,
+        "accounting_note": (
+            "Sales = sum of invoice totals by invoice date; purchases = sum of vendor bill totals by bill date. "
+            "P&L figures are from posted general-ledger activity (same basis as the Income Statement). "
+            "Document totals and accrual P&L can differ if invoices/bills are not yet posted. "
+            "Trend uses calendar months (partial first/last months are clipped to your selected range)."
         ),
     }

@@ -1,8 +1,9 @@
 """
 Automatic GL posting for invoices, POS sales, payments, bills, and fund transfers.
 
-Uses fuel-station template account codes when present; skips posting if required
-accounts are missing (operations still succeed).
+Uses fuel-station template account codes when present. For payment/receipt paths,
+missing accounts raise GlPostingError so the operation rolls back and the subledger
+stays consistent with the general ledger.
 """
 from __future__ import annotations
 
@@ -35,7 +36,7 @@ from api.models import (
     TankDip,
     Vendor,
 )
-from api.exceptions import StockBusinessError
+from api.exceptions import GlPostingError, StockBusinessError
 from api.services.item_catalog import item_tracks_physical_stock
 from api.utils.customer_display import customer_display_name
 from api.services.coa_constants import normalize_chart_account_type
@@ -716,7 +717,7 @@ def post_invoice_receipt_journal(
 
 
 def post_payment_received_journal(company_id: int, p: Payment) -> bool:
-    """Dr Bank, Cr AR. AUTO-PAY-{id}-RCV."""
+    """Dr Bank, Cr AR. AUTO-PAY-{id}-RCV. Raises GlPostingError if a new post cannot be created."""
     if p.payment_type != "received" or p.amount <= 0:
         return False
     entry_number = f"AUTO-PAY-{p.id}-RCV"
@@ -726,12 +727,18 @@ def post_payment_received_journal(company_id: int, p: Payment) -> bool:
         return True
     ar = _coa(company_id, CODE_AR)
     if not ar:
-        return False
+        raise GlPostingError(
+            "G/L: Accounts Receivable (code 1100) is missing or inactive. Add or enable it in the "
+            "chart of accounts before recording customer payments."
+        )
     # Match POS / invoice receipt: cash → 1010 (Cash on Hand), not 1030 (bank) first.
     pm = (getattr(p, "payment_method", None) or "cash").strip().lower() or "cash"
     cash_bank = _debit_account_for_paid_sale(company_id, pm, p.bank_account_id)
     if not cash_bank:
-        return False
+        raise GlPostingError(
+            "G/L: No debit (cash) account for this payment method. Ensure account 1010 (Cash on Hand) "
+            "or 1020/1120, or a bank/till register linked to a G/L line, is available."
+        )
     lines = [
         (cash_bank, p.amount, Decimal("0"), p.reference or f"PAY-{p.id}"),
         (ar, Decimal("0"), p.amount, p.reference or f"PAY-{p.id}"),
@@ -743,13 +750,17 @@ def post_payment_received_journal(company_id: int, p: Payment) -> bool:
         f"Payment received #{p.id}",
         lines,
     )
+    if not je:
+        raise GlPostingError(
+            "G/L: The payment journal was not created (unbalanced or invalid lines). Check chart of accounts."
+        )
     if je and p.customer_id and not _is_walkin_customer(
         Customer.objects.filter(pk=p.customer_id).first()
     ):
         Customer.objects.filter(pk=p.customer_id).update(
             current_balance=F("current_balance") - p.amount
         )
-    return je is not None
+    return True
 
 
 def reverse_payment_received_posting(company_id: int, p: Payment) -> tuple[bool, str]:
@@ -797,7 +808,10 @@ def reverse_payment_made_posting(company_id: int, p: Payment) -> tuple[bool, str
 
 
 def post_payment_made_journal(company_id: int, p: Payment) -> bool:
-    """Dr AP, Cr Bank. AUTO-PAY-{id}-MADE."""
+    """
+    Dr AP, Cr Bank. AUTO-PAY-{id}-MADE. Raises GlPostingError if a new post cannot be created;
+    A/P subledger is only updated when a journal (or an idempotent prior journal) is in place.
+    """
     if p.payment_type != "made" or p.amount <= 0:
         return False
     entry_number = f"AUTO-PAY-{p.id}-MADE"
@@ -818,24 +832,33 @@ def post_payment_made_journal(company_id: int, p: Payment) -> bool:
                 Payment.objects.filter(pk=lp.pk).update(vendor_ap_decremented=True)
         return True
     ap = _coa(company_id, CODE_AP)
+    if not ap:
+        raise GlPostingError(
+            "G/L: Accounts Payable (code 2000) is missing or inactive. Add or enable it in the "
+            "chart of accounts before recording vendor payments."
+        )
     pm = (getattr(p, "payment_method", None) or "cash").strip().lower() or "cash"
     cash_bank = _debit_account_for_paid_sale(company_id, pm, p.bank_account_id)
-
-    je = None
-    if ap and cash_bank:
-        lines = [
-            (ap, p.amount, Decimal("0"), p.reference or f"PAY-{p.id}"),
-            (cash_bank, Decimal("0"), p.amount, p.reference or f"PAY-{p.id}"),
-        ]
-        je = _create_posted_entry(
-            company_id,
-            p.payment_date,
-            entry_number,
-            f"Payment made #{p.id}",
-            lines,
+    if not cash_bank:
+        raise GlPostingError(
+            "G/L: No credit (bank/cash) line for this payment. Ensure 1010/1030, card clearing, or a "
+            "register linked to the chart, is available for vendor payments."
         )
-
-    vendor_decremented = False
+    lines = [
+        (ap, p.amount, Decimal("0"), p.reference or f"PAY-{p.id}"),
+        (cash_bank, Decimal("0"), p.amount, p.reference or f"PAY-{p.id}"),
+    ]
+    je = _create_posted_entry(
+        company_id,
+        p.payment_date,
+        entry_number,
+        f"Payment made #{p.id}",
+        lines,
+    )
+    if not je:
+        raise GlPostingError(
+            "G/L: The vendor payment journal was not created (unbalanced or invalid). Check the chart of accounts."
+        )
     with transaction.atomic():
         lp = Payment.objects.select_for_update().filter(pk=p.pk).first()
         if (
@@ -848,9 +871,7 @@ def post_payment_made_journal(company_id: int, p: Payment) -> bool:
                 current_balance=F("current_balance") - lp.amount
             )
             Payment.objects.filter(pk=lp.pk).update(vendor_ap_decremented=True)
-            vendor_decremented = True
-
-    return je is not None or vendor_decremented
+    return True
 
 
 def _normalize_label(s: str) -> str:

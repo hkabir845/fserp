@@ -36,6 +36,28 @@ type OutstandingInvoice = {
   on_account?: boolean
 }
 
+function mergeCollectOutstanding(
+  apiRows: OutstandingInvoice[],
+  customerId: number
+): OutstandingInvoice[] {
+  const rows = [...apiRows]
+  if (!rows.some(r => r.synthetic && r.on_account)) {
+    rows.push({
+      id: 0,
+      synthetic: true,
+      on_account: true,
+      invoice_number: "On-account & customer advance (prepayment)",
+      invoice_date: new Date().toISOString().split("T")[0],
+      due_date: null,
+      customer_id: customerId,
+      customer_name: "",
+      balance_due: 0,
+      days_overdue: null,
+    })
+  }
+  return rows
+}
+
 type ActiveShift = { id: number; expected_cash_total?: string }
 
 function roundTwo(value: number) {
@@ -118,18 +140,24 @@ export function CashierCollectPayment({
     api
       .get("/payments/received/outstanding/", { params: { customer_id: customerId } })
       .then(res => {
-        const rows = Array.isArray(res.data) ? res.data : []
-        setOutstanding(rows as OutstandingInvoice[])
+        const raw = Array.isArray(res.data) ? res.data : []
+        const rows = mergeCollectOutstanding(raw as OutstandingInvoice[], customerId)
+        setOutstanding(rows)
         const next: Record<number, number> = {}
-        for (const inv of rows as OutstandingInvoice[]) {
+        for (const inv of rows) {
           next[inv.synthetic ? 0 : inv.id] = 0
         }
         setAllocations(next)
       })
       .catch(() => {
-        setOutstanding([])
-        setAllocations({})
-        toast.error("Could not load open invoices for this customer.")
+        const rows = mergeCollectOutstanding([], customerId)
+        setOutstanding(rows)
+        const next: Record<number, number> = {}
+        for (const inv of rows) {
+          next[inv.synthetic ? 0 : inv.id] = 0
+        }
+        setAllocations(next)
+        toast.error("Could not load open invoices; you can still record on-account or advance below.")
       })
       .finally(() => setLoadingInvoices(false))
   }, [customerId, customers, toast])
@@ -145,7 +173,8 @@ export function CashierCollectPayment({
       i => (i.synthetic && invoiceId === 0 && i.id === 0) || i.id === invoiceId
     )
     if (!inv) return
-    const maxAmt = Number(inv.balance_due) || 0
+    const open = Number(inv.balance_due) || 0
+    const maxAmt = inv.synthetic && inv.on_account ? 1e12 : open
     const v = roundTwo(Math.min(Math.max(0, raw), maxAmt))
     setAllocations(prev => ({ ...prev, [invoiceId]: v }))
   }
@@ -168,7 +197,7 @@ export function CashierCollectPayment({
     for (const inv of sorted) {
       if (left <= 0) break
       const bal = Number(inv.balance_due) || 0
-      const take = roundTwo(Math.min(left, bal))
+      const take = inv.synthetic && inv.on_account ? left : roundTwo(Math.min(left, bal))
       const aid = inv.synthetic ? 0 : inv.id
       next[aid] = take
       left = roundTwo(left - take)
@@ -216,7 +245,7 @@ export function CashierCollectPayment({
       }
 
       await api.post("/payments/received/", payload)
-      toast.success("Payment recorded and applied to invoice(s).")
+      toast.success("Payment recorded.")
       setCustomerId(null)
       setOutstanding([])
       setAllocations({})
@@ -241,11 +270,11 @@ export function CashierCollectPayment({
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">Collect due (A/R)</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Apply payment to open invoices for a customer. Same as{" "}
+              Invoices, on-account A/R, and customer advance (prepayment) on the on-account line. Full profile:{" "}
               <Link href="/payments/received/new" className="font-medium text-primary underline underline-offset-2">
-                Payments → Received
-              </Link>
-              , at the register.
+                Record payment
+              </Link>{" "}
+              (e.g. add a new customer first).
             </p>
           </div>
         </div>
@@ -389,7 +418,7 @@ export function CashierCollectPayment({
 
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="text-sm font-medium text-foreground">Open invoices</label>
+            <label className="text-sm font-medium text-foreground">Open items & on-account / advance</label>
             {customerId && outstanding.length > 0 ? (
               <button
                 type="button"
@@ -407,11 +436,7 @@ export function CashierCollectPayment({
             </div>
           ) : !customerId ? (
             <p className="rounded-lg border border-dashed border-border bg-muted/20 py-8 text-center text-sm text-muted-foreground">
-              Choose a customer to see unpaid invoices.
-            </p>
-          ) : outstanding.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border bg-muted/20 py-8 text-center text-sm text-muted-foreground">
-              No open balance for this customer.
+              Choose a customer to see unpaid invoices, on-account A/R, and customer advance.
             </p>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-border">
@@ -432,7 +457,11 @@ export function CashierCollectPayment({
                       <td className="px-3 py-2 font-medium">
                         {inv.invoice_number}
                         {inv.synthetic ? (
-                          <span className="ml-1 text-xs font-normal text-muted-foreground">(A/R not on an invoice)</span>
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            {inv.on_account
+                              ? "(on-account; prepayment as customer credit)"
+                              : "(A/R not on an invoice)"}
+                          </span>
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">{inv.invoice_date}</td>

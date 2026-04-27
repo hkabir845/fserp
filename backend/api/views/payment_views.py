@@ -10,6 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
 from api.utils.customer_display import customer_display_name
+from api.exceptions import GlPostingError
 from api.views.common import parse_json_body, require_company_id
 from api.models import (
     BankAccount,
@@ -382,17 +383,8 @@ def _validate_invoice_allocations(
         if amount > 0:
             return False, "invoice_allocations must sum to payment amount", [], Decimal("0")
         return True, "", [], Decimal("0")
-    cust = Customer.objects.filter(
-        id=customer_id, company_id=company_id
-    ).first()
-    if not cust:
+    if not Customer.objects.filter(id=customer_id, company_id=company_id).exists():
         return False, "Customer not found", [], Decimal("0")
-    ex_pay = None
-    if exclude_payment_id is not None:
-        ex_pay = Payment.objects.filter(
-            id=exclude_payment_id, company_id=company_id, payment_type="received"
-        ).first()
-    cap_on_account = customer_uninvoiced_receivable(company_id, cust, exclude_payment=ex_pay)
 
     on_account_total = Decimal("0")
     total_alloc = Decimal("0")
@@ -442,14 +434,8 @@ def _validate_invoice_allocations(
             return False, f"allocation exceeds balance for invoice {iid}", [], Decimal("0")
         cleaned.append((inv.id, d_amt))
         total_alloc += d_amt
-    if on_account_total > cap_on_account + Decimal("0.01"):
-        if not coerced_from_empty or cap_on_account > Decimal("0.01"):
-            return (
-                False,
-                "on-account amount exceeds unapplied receivable (not covered by open invoices)",
-                [],
-                Decimal("0"),
-            )
+    # on_account may exceed customer_uninvoiced_receivable: the difference is
+    # customer prepayment (credit on account), not an error.
     if abs(total_alloc - amount) > Decimal("0.01"):
         return False, "invoice_allocations must sum to payment amount", [], Decimal("0")
     return True, "", cleaned, on_account_total
@@ -506,34 +492,37 @@ def payments_received_create(request):
 
     pm_norm = _normalize_payment_method(body)
 
-    with transaction.atomic():
-        if on_acct and on_acct > 0:
-            _align_stored_receivable_before_receipt(
-                request.company_id, int(customer_id)
+    try:
+        with transaction.atomic():
+            if on_acct and on_acct > 0:
+                _align_stored_receivable_before_receipt(
+                    request.company_id, int(customer_id)
+                )
+            p = Payment(
+                company_id=request.company_id,
+                payment_type="received",
+                customer_id=customer_id,
+                bank_account_id=bank_id,
+                amount=amount,
+                payment_date=_parse_date(body.get("payment_date")) or date.today(),
+                payment_method=pm_norm,
+                reference=body.get("reference_number") or body.get("reference") or "",
+                memo=body.get("memo") or "",
             )
-        p = Payment(
-            company_id=request.company_id,
-            payment_type="received",
-            customer_id=customer_id,
-            bank_account_id=bank_id,
-            amount=amount,
-            payment_date=_parse_date(body.get("payment_date")) or date.today(),
-            payment_method=pm_norm,
-            reference=body.get("reference_number") or body.get("reference") or "",
-            memo=body.get("memo") or "",
-        )
-        p.save()
-        PaymentInvoiceAllocation.objects.filter(payment_id=p.id).delete()
-        for iid, d_amt in cleaned:
-            PaymentInvoiceAllocation.objects.create(
-                payment_id=p.id, invoice_id=iid, amount=d_amt
-            )
-        post_payment_received_journal(request.company_id, p)
-        refresh_invoices_touched_by_payment(request.company_id, p.id)
-        if shift_session_id_for_roll is not None:
-            record_ar_collection_on_shift(
-                request.company_id, shift_session_id_for_roll, amount, pm_norm
-            )
+            p.save()
+            PaymentInvoiceAllocation.objects.filter(payment_id=p.id).delete()
+            for iid, d_amt in cleaned:
+                PaymentInvoiceAllocation.objects.create(
+                    payment_id=p.id, invoice_id=iid, amount=d_amt
+                )
+            post_payment_received_journal(request.company_id, p)
+            refresh_invoices_touched_by_payment(request.company_id, p.id)
+            if shift_session_id_for_roll is not None:
+                record_ar_collection_on_shift(
+                    request.company_id, shift_session_id_for_roll, amount, pm_norm
+                )
+    except GlPostingError as e:
+        return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 
     p = (
         Payment.objects.filter(id=p.id)
@@ -817,30 +806,33 @@ def payments_made_create(request):
     if not ok:
         return JsonResponse({"detail": msg}, status=400)
 
-    with transaction.atomic():
-        if on_acct and on_acct > 0:
-            _align_stored_ap_before_made_payment(
-                request.company_id, int(vendor_id)
+    try:
+        with transaction.atomic():
+            if on_acct and on_acct > 0:
+                _align_stored_ap_before_made_payment(
+                    request.company_id, int(vendor_id)
+                )
+            p = Payment(
+                company_id=request.company_id,
+                payment_type="made",
+                vendor_id=vendor_id,
+                bank_account_id=bank_id,
+                amount=amount,
+                payment_date=_parse_date(body.get("payment_date")) or date.today(),
+                payment_method=_normalize_payment_method(body),
+                reference=(body.get("reference_number") or body.get("reference") or ""),
+                memo=body.get("memo") or "",
             )
-        p = Payment(
-            company_id=request.company_id,
-            payment_type="made",
-            vendor_id=vendor_id,
-            bank_account_id=bank_id,
-            amount=amount,
-            payment_date=_parse_date(body.get("payment_date")) or date.today(),
-            payment_method=_normalize_payment_method(body),
-            reference=(body.get("reference_number") or body.get("reference") or ""),
-            memo=body.get("memo") or "",
-        )
-        p.save()
-        PaymentBillAllocation.objects.filter(payment_id=p.id).delete()
-        for bid, d_amt in cleaned:
-            PaymentBillAllocation.objects.create(
-                payment_id=p.id, bill_id=bid, amount=d_amt
-            )
-        post_payment_made_journal(request.company_id, p)
-        refresh_bills_touched_by_payment(request.company_id, p.id)
+            p.save()
+            PaymentBillAllocation.objects.filter(payment_id=p.id).delete()
+            for bid, d_amt in cleaned:
+                PaymentBillAllocation.objects.create(
+                    payment_id=p.id, bill_id=bid, amount=d_amt
+                )
+            post_payment_made_journal(request.company_id, p)
+            refresh_bills_touched_by_payment(request.company_id, p.id)
+    except GlPostingError as e:
+        return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 
     p = Payment.objects.filter(id=p.id).prefetch_related("bill_allocations").first()
     return JsonResponse(_payment_to_json(p), status=201)
@@ -1181,29 +1173,32 @@ def payment_detail_update_delete(request, payment_id: int):
                 return JsonResponse({"detail": msg}, status=400)
 
             journal_ref = f"AUTO-PAY-{p.id}-RCV"
-            with transaction.atomic():
-                ok, msg = reverse_payment_received_posting(cid, p)
-                if not ok:
-                    return JsonResponse({"detail": msg}, status=400)
-                p.refresh_from_db()
-                if on_acct and on_acct > 0:
-                    _align_stored_receivable_before_receipt(cid, int(customer_id))
-                p.payment_date = _parse_date(body.get("payment_date")) or p.payment_date
-                p.payment_method = _normalize_payment_method(body)
-                p.reference = (body.get("reference_number") or body.get("reference") or "").strip()[
-                    :200
-                ]
-                p.memo = (body.get("memo") or "")[:500]
-                p.bank_account_id = bank_id
-                p.amount = amount
-                p.save()
-                PaymentInvoiceAllocation.objects.filter(payment_id=p.id).delete()
-                for iid, d_amt in cleaned:
-                    PaymentInvoiceAllocation.objects.create(
-                        payment_id=p.id, invoice_id=iid, amount=d_amt
-                    )
-                post_payment_received_journal(cid, p)
-                refresh_invoices_touched_by_payment(cid, p.id)
+            try:
+                with transaction.atomic():
+                    ok, msg = reverse_payment_received_posting(cid, p)
+                    if not ok:
+                        return JsonResponse({"detail": msg}, status=400)
+                    p.refresh_from_db()
+                    if on_acct and on_acct > 0:
+                        _align_stored_receivable_before_receipt(cid, int(customer_id))
+                    p.payment_date = _parse_date(body.get("payment_date")) or p.payment_date
+                    p.payment_method = _normalize_payment_method(body)
+                    p.reference = (body.get("reference_number") or body.get("reference") or "").strip()[
+                        :200
+                    ]
+                    p.memo = (body.get("memo") or "")[:500]
+                    p.bank_account_id = bank_id
+                    p.amount = amount
+                    p.save()
+                    PaymentInvoiceAllocation.objects.filter(payment_id=p.id).delete()
+                    for iid, d_amt in cleaned:
+                        PaymentInvoiceAllocation.objects.create(
+                            payment_id=p.id, invoice_id=iid, amount=d_amt
+                        )
+                    post_payment_received_journal(cid, p)
+                    refresh_invoices_touched_by_payment(cid, p.id)
+            except GlPostingError as e:
+                return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 
             p.refresh_from_db()
             p = (
@@ -1268,29 +1263,32 @@ def payment_detail_update_delete(request, payment_id: int):
                 return JsonResponse({"detail": msg}, status=400)
 
             journal_ref = f"AUTO-PAY-{p.id}-MADE"
-            with transaction.atomic():
-                ok, msg = reverse_payment_made_posting(cid, p)
-                if not ok:
-                    return JsonResponse({"detail": msg}, status=400)
-                p.refresh_from_db()
-                if on_acct and on_acct > 0:
-                    _align_stored_ap_before_made_payment(cid, int(vendor_id))
-                p.payment_date = _parse_date(body.get("payment_date")) or p.payment_date
-                p.payment_method = _normalize_payment_method(body)
-                p.reference = (body.get("reference_number") or body.get("reference") or "").strip()[
-                    :200
-                ]
-                p.memo = (body.get("memo") or "")[:500]
-                p.bank_account_id = bank_id
-                p.amount = amount
-                p.save()
-                PaymentBillAllocation.objects.filter(payment_id=p.id).delete()
-                for bid, d_amt in cleaned:
-                    PaymentBillAllocation.objects.create(
-                        payment_id=p.id, bill_id=bid, amount=d_amt
-                    )
-                post_payment_made_journal(cid, p)
-                refresh_bills_touched_by_payment(cid, p.id)
+            try:
+                with transaction.atomic():
+                    ok, msg = reverse_payment_made_posting(cid, p)
+                    if not ok:
+                        return JsonResponse({"detail": msg}, status=400)
+                    p.refresh_from_db()
+                    if on_acct and on_acct > 0:
+                        _align_stored_ap_before_made_payment(cid, int(vendor_id))
+                    p.payment_date = _parse_date(body.get("payment_date")) or p.payment_date
+                    p.payment_method = _normalize_payment_method(body)
+                    p.reference = (body.get("reference_number") or body.get("reference") or "").strip()[
+                        :200
+                    ]
+                    p.memo = (body.get("memo") or "")[:500]
+                    p.bank_account_id = bank_id
+                    p.amount = amount
+                    p.save()
+                    PaymentBillAllocation.objects.filter(payment_id=p.id).delete()
+                    for bid, d_amt in cleaned:
+                        PaymentBillAllocation.objects.create(
+                            payment_id=p.id, bill_id=bid, amount=d_amt
+                        )
+                    post_payment_made_journal(cid, p)
+                    refresh_bills_touched_by_payment(cid, p.id)
+            except GlPostingError as e:
+                return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 
             p = (
                 Payment.objects.filter(id=p.id, company_id=cid)

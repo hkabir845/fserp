@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { useCompany } from '@/contexts/CompanyContext'
 import { 
   FileText, TrendingUp, DollarSign, Users, Package, 
   BarChart3, Calendar, Download, Filter, RefreshCw, Printer,
-  Gauge, Droplet, ClipboardList, Layers
+  Gauge, Droplet,   ClipboardList, Layers, ShoppingCart
 } from 'lucide-react'
 import { canViewInventorySkuReport } from '@/utils/rbac'
 import api from '@/lib/api'
@@ -48,14 +49,19 @@ type ReportType =
   | 'inventory-sku-valuation'
   | 'item-master-by-category'
   | 'item-sales-by-category'
+  | 'item-purchases-by-category'
   | 'item-sales-custom'
+  | 'item-purchases-custom'
   | 'item-stock-movement'
   | 'item-velocity-analysis'
+  | 'item-purchase-velocity-analysis'
 
 const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [
   'item-sales-custom',
+  'item-purchases-custom',
   'item-stock-movement',
   'item-velocity-analysis',
+  'item-purchase-velocity-analysis',
 ] as const
 
 interface ReportCard {
@@ -126,10 +132,24 @@ const reports: ReportCard[] = [
     category: 'inventory',
   },
   {
+    id: 'item-purchases-by-category',
+    title: 'Purchases by reporting category',
+    description: 'Vendor bill quantity and amount in the period, grouped by item category',
+    icon: ShoppingCart,
+    category: 'inventory',
+  },
+  {
     id: 'item-sales-custom',
     title: 'Custom item sales (filtered)',
     description: 'Sales by SKU for the period; filter by category and one or more products',
     icon: Filter,
+    category: 'inventory',
+  },
+  {
+    id: 'item-purchases-custom',
+    title: 'Custom item purchases (filtered)',
+    description: 'Purchases by SKU from bills; filter by category and one or more products',
+    icon: ShoppingCart,
     category: 'inventory',
   },
   {
@@ -141,9 +161,16 @@ const reports: ReportCard[] = [
   },
   {
     id: 'item-velocity-analysis',
-    title: 'Fast & slow movers',
-    description: 'Per-SKU sales velocity; tier fast / medium / slow and zero-sales items',
+    title: 'Fast & slow movers (sales)',
+    description: 'Per-SKU sales velocity; fast / medium / slow tiers and items with no sales in range',
     icon: BarChart3,
+    category: 'inventory',
+  },
+  {
+    id: 'item-purchase-velocity-analysis',
+    title: 'Fast & slow purchases',
+    description: 'Per-SKU purchase volume from bills; fast / medium / slow and items not bought in range',
+    icon: ShoppingCart,
     category: 'inventory',
   },
   
@@ -235,9 +262,12 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'meter-readings',
   'inventory-sku-valuation',
   'item-sales-by-category',
+  'item-purchases-by-category',
   'item-sales-custom',
+  'item-purchases-custom',
   'item-stock-movement',
   'item-velocity-analysis',
+  'item-purchase-velocity-analysis',
 ])
 
 export default function ReportsPage() {
@@ -408,9 +438,12 @@ export default function ReportsPage() {
       'inventory-sku-valuation',
       'item-master-by-category',
       'item-sales-by-category',
+      'item-purchases-by-category',
       'item-sales-custom',
+      'item-purchases-custom',
       'item-stock-movement',
       'item-velocity-analysis',
+      'item-purchase-velocity-analysis',
     ]
     roleFilteredReports = roleFilteredReports.filter(
       (report) =>
@@ -437,8 +470,10 @@ export default function ReportsPage() {
     }
     if (
       reportId === 'item-sales-custom' ||
+      reportId === 'item-purchases-custom' ||
       reportId === 'item-stock-movement' ||
-      reportId === 'item-velocity-analysis'
+      reportId === 'item-velocity-analysis' ||
+      reportId === 'item-purchase-velocity-analysis'
     ) {
       if (itemScopeCategory.trim()) params.category = itemScopeCategory.trim()
       if (itemScopeItemIds.length > 0) params.item_ids = itemScopeItemIds.join(',')
@@ -653,12 +688,29 @@ export default function ReportsPage() {
         contentHTML += `<tr><td>${escapeHtml(String(c.reporting_category || ''))}</td><td style="text-align:right">${c.line_count ?? 0}</td><td style="text-align:right">${formatNumber(c.total_quantity, 2)}</td><td style="text-align:right">${formatCurrency(c.total_revenue)}</td></tr>`
       })
       contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'item-purchases-by-category' && reportData.rows) {
+      const cr: any[] = reportData.rows || []
+      contentHTML +=
+        '<h2>Purchases by category</h2><table><thead><tr><th>Category</th><th style="text-align:right">Lines</th><th style="text-align:right">Qty</th><th style="text-align:right">Purchase amount</th></tr></thead><tbody>'
+      cr.forEach((c: any) => {
+        contentHTML += `<tr><td>${escapeHtml(String(c.reporting_category || ''))}</td><td style="text-align:right">${c.line_count ?? 0}</td><td style="text-align:right">${formatNumber(c.total_quantity, 2)}</td><td style="text-align:right">${formatCurrency(c.total_purchase_amount)}</td></tr>`
+      })
+      contentHTML += '</tbody></table>'
     } else if (selectedReport === 'item-sales-custom' && reportData.rows) {
       const cr: any[] = reportData.rows || []
       contentHTML += '<h2>Item sales (filtered)</h2><table><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th style="text-align:right">Qty</th><th style="text-align:right">Revenue</th><th style="text-align:right">Margin %</th></tr></thead><tbody>'
       cr.forEach((r: any) => {
         const m = r.gross_margin_pct == null ? '—' : String(r.gross_margin_pct)
         contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.reporting_category || ''))}</td><td style="text-align:right">${formatNumber(r.period_quantity_sold, 2)}</td><td style="text-align:right">${formatCurrency(r.period_revenue)}</td><td style="text-align:right">${escapeHtml(m)}</td></tr>`
+      })
+      contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'item-purchases-custom' && reportData.rows) {
+      const cr: any[] = reportData.rows || []
+      contentHTML +=
+        '<h2>Item purchases (filtered)</h2><table><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th style="text-align:right">Qty</th><th style="text-align:right">Amount</th><th style="text-align:right">Avg unit</th></tr></thead><tbody>'
+      cr.forEach((r: any) => {
+        const au = r.avg_purchase_unit_cost == null ? '—' : String(r.avg_purchase_unit_cost)
+        contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.reporting_category || ''))}</td><td style="text-align:right">${formatNumber(r.period_quantity_purchased, 2)}</td><td style="text-align:right">${formatCurrency(r.period_purchase_amount)}</td><td style="text-align:right">${escapeHtml(au)}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'item-stock-movement' && reportData.rows) {
@@ -672,9 +724,17 @@ export default function ReportsPage() {
     } else if (selectedReport === 'item-velocity-analysis' && reportData.rows) {
       const cr: any[] = reportData.rows || []
       contentHTML +=
-        '<h2>Fast & slow movers</h2><table><thead><tr><th>Tier</th><th>SKU</th><th>Item</th><th>On hand</th><th>Period qty</th><th>Vel/day</th><th>Rank</th></tr></thead><tbody>'
+        '<h2>Fast & slow movers (sales)</h2><table><thead><tr><th>Tier</th><th>SKU</th><th>Item</th><th>On hand</th><th>Sold qty</th><th>Vel/day</th><th>Rank</th></tr></thead><tbody>'
       cr.forEach((r: any) => {
         contentHTML += `<tr><td>${escapeHtml(String(r.movement_tier || ''))}</td><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td style="text-align:right">${formatNumber(r.quantity_on_hand, 2)}</td><td style="text-align:right">${formatNumber(r.period_quantity_sold, 2)}</td><td style="text-align:right">${formatNumber(r.velocity_per_day, 4)}</td><td style="text-align:right">${r.velocity_rank ?? '—'}</td></tr>`
+      })
+      contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'item-purchase-velocity-analysis' && reportData.rows) {
+      const cr: any[] = reportData.rows || []
+      contentHTML +=
+        '<h2>Fast & slow purchases</h2><table><thead><tr><th>Tier</th><th>SKU</th><th>Item</th><th>On hand</th><th>Purch qty</th><th>Purch / day</th><th>Rank</th></tr></thead><tbody>'
+      cr.forEach((r: any) => {
+        contentHTML += `<tr><td>${escapeHtml(String(r.movement_tier || ''))}</td><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td style="text-align:right">${formatNumber(r.quantity_on_hand, 2)}</td><td style="text-align:right">${formatNumber(r.period_quantity_purchased, 2)}</td><td style="text-align:right">${formatNumber(r.purchase_velocity_per_day, 4)}</td><td style="text-align:right">${r.velocity_rank ?? '—'}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'shift-summary' && reportData.sessions) {
@@ -865,6 +925,19 @@ export default function ReportsPage() {
           ].join(',')
           csvContent += '\n'
         })
+      } else if (selectedReport === 'item-purchases-by-category' && reportData.rows) {
+        csvContent += 'Category,Bill lines,Distinct products,Quantity,Purchase amount\n'
+        const cr: any[] = reportData.rows || []
+        cr.forEach((c: any) => {
+          csvContent += [
+            escapeCsv(c.reporting_category),
+            c.line_count ?? '',
+            c.distinct_items ?? '',
+            c.total_quantity ?? '',
+            c.total_purchase_amount ?? '',
+          ].join(',')
+          csvContent += '\n'
+        })
       } else if (selectedReport === 'item-sales-custom' && reportData.rows) {
         csvContent +=
           'SKU,Name,Reporting category,POS,Period quantity,Revenue,Est COGS,Margin %\n'
@@ -879,6 +952,21 @@ export default function ReportsPage() {
             r.period_revenue ?? '',
             r.est_cogs ?? '',
             r.gross_margin_pct == null ? '' : r.gross_margin_pct,
+          ].join(',')
+          csvContent += '\n'
+        })
+      } else if (selectedReport === 'item-purchases-custom' && reportData.rows) {
+        csvContent += 'SKU,Name,Reporting category,POS,Period qty purchased,Purchase amount,Avg unit cost\n'
+        const cr: any[] = reportData.rows || []
+        cr.forEach((r: any) => {
+          csvContent += [
+            escapeCsv(r.sku),
+            escapeCsv(r.name),
+            escapeCsv(r.reporting_category),
+            escapeCsv(r.pos_category),
+            r.period_quantity_purchased ?? '',
+            r.period_purchase_amount ?? '',
+            r.avg_purchase_unit_cost == null ? '' : r.avg_purchase_unit_cost,
           ].join(',')
           csvContent += '\n'
         })
@@ -901,7 +989,7 @@ export default function ReportsPage() {
         })
       } else if (selectedReport === 'item-velocity-analysis' && reportData.rows) {
         csvContent +=
-          'Movement tier,SKU,Name,Category,On hand,Period quantity,Revenue,Velocity per day,Rank\n'
+          'Movement tier,SKU,Name,Category,On hand,Period quantity sold,Revenue,Velocity per day,Rank\n'
         const cr: any[] = reportData.rows || []
         cr.forEach((r: any) => {
           csvContent += [
@@ -913,6 +1001,24 @@ export default function ReportsPage() {
             r.period_quantity_sold ?? '',
             r.period_revenue ?? '',
             r.velocity_per_day ?? '',
+            r.velocity_rank ?? '',
+          ].join(',')
+          csvContent += '\n'
+        })
+      } else if (selectedReport === 'item-purchase-velocity-analysis' && reportData.rows) {
+        csvContent +=
+          'Movement tier,SKU,Name,Category,On hand,Period quantity purchased,Purchase amount,Purchase velocity per day,Rank\n'
+        const cr: any[] = reportData.rows || []
+        cr.forEach((r: any) => {
+          csvContent += [
+            escapeCsv(r.movement_tier),
+            escapeCsv(r.sku),
+            escapeCsv(r.name),
+            escapeCsv(r.reporting_category),
+            r.quantity_on_hand ?? '',
+            r.period_quantity_purchased ?? '',
+            r.period_purchase_amount ?? '',
+            r.purchase_velocity_per_day ?? '',
             r.velocity_rank ?? '',
           ].join(',')
           csvContent += '\n'
@@ -1020,11 +1126,20 @@ export default function ReportsPage() {
       <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
               <p className="text-gray-600 mt-1">Generate comprehensive business and operational reports</p>
             </div>
+            {userRole !== 'cashier' && userRole !== 'operator' && (
+              <Link
+                href="/reports/analytics"
+                className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-medium text-violet-800 hover:bg-violet-100"
+              >
+                <TrendingUp className="h-4 w-4" />
+                Financial analytics (KPIs &amp; charts)
+              </Link>
+            )}
           </div>
 
           {/* Category Filters - Hide for cashiers */}
@@ -1061,16 +1176,6 @@ export default function ReportsPage() {
                 Operational
               </button>
               <button
-                onClick={() => setFilterCategory('analytical')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  filterCategory === 'analytical' 
-                    ? 'bg-white text-blue-600 shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Analytical
-              </button>
-              <button
                 onClick={() => setFilterCategory('inventory')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   filterCategory === 'inventory' 
@@ -1079,6 +1184,16 @@ export default function ReportsPage() {
                 }`}
               >
                 Inventory
+              </button>
+              <button
+                onClick={() => setFilterCategory('analytical')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  filterCategory === 'analytical' 
+                    ? 'bg-white text-blue-600 shadow-sm' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Analytical
               </button>
             </div>
           )}
@@ -2524,8 +2639,67 @@ function renderReportTable(
     )
   }
 
+  if (reportType === 'item-purchases-by-category' && data) {
+    const period = data?.period || {}
+    const catRows: any[] = Array.isArray(data.rows) ? data.rows : []
+    return (
+      <div className="space-y-6">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Vendor bill lines in this date range; grouped by each product reporting category.',
+          )}
+
+        <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-100">
+              <tr>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Bill lines</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Products</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Quantity</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Purchase amount</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {catRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                    No bill lines with linked items in this period.
+                  </td>
+                </tr>
+              ) : (
+                catRows.map((c: any, i: number) => (
+                  <tr key={i} className="hover:bg-slate-50/80">
+                    <td className="px-3 py-2 font-medium text-amber-950">{c.reporting_category}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-800">{c.line_count ?? 0}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-800">{c.distinct_items ?? 0}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatNumber(c.total_quantity, 2)}</td>
+                    <td className="px-3 py-2 text-right font-medium">{formatCurrency(c.total_purchase_amount)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {data.accounting_note ? (
+          <p className="text-xs text-slate-500 max-w-4xl leading-relaxed border-t border-slate-100 pt-3">
+            {data.accounting_note}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
   if (
-    (reportType === 'item-sales-custom' || reportType === 'item-stock-movement' || reportType === 'item-velocity-analysis') &&
+    (reportType === 'item-sales-custom' ||
+      reportType === 'item-purchases-custom' ||
+      reportType === 'item-stock-movement' ||
+      reportType === 'item-velocity-analysis' ||
+      reportType === 'item-purchase-velocity-analysis') &&
     data
   ) {
     const period = data?.period || {}
@@ -2548,7 +2722,7 @@ function renderReportTable(
             dateRange,
             reportType,
             handleReportDateChange,
-            'Choose a date range, set filters, then apply. Multi-select: pick any number of products in the list for sales & velocity; movement uses the same selection.',
+            'Choose a date range, set filters, then apply. Multi-select: pick products for custom sales, custom purchases, stock movement, sales velocity, and purchase velocity.',
           )}
 
         {ic && (
@@ -2695,6 +2869,61 @@ function renderReportTable(
           </div>
         ) : null}
 
+        {reportType === 'item-purchases-custom' ? (
+          <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+            {(() => {
+              const cRows: any[] = Array.isArray(data.rows) ? data.rows : []
+              return (
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">SKU</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Item</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">POS</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Period qty</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Purchase $</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Avg unit $</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {cRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                          No rows for this selection. Try a wider range or different products.
+                        </td>
+                      </tr>
+                    ) : (
+                      cRows.map((r: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-slate-50/80">
+                          <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-900">{r.sku || '—'}</td>
+                          <td className="max-w-[200px] px-3 py-2 text-slate-800">
+                            <span className="line-clamp-2" title={r.name}>
+                              {r.name}
+                            </span>
+                            {r.unit ? <span className="ml-1 text-xs text-slate-500">({r.unit})</span> : null}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">
+                            {r.reporting_category}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600 text-xs">{r.pos_category}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {formatNumber(r.period_quantity_purchased, 2)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(r.period_purchase_amount)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                            {r.avg_purchase_unit_cost == null ? '—' : formatCurrency(r.avg_purchase_unit_cost)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              )
+            })()}
+          </div>
+        ) : null}
+
         {reportType === 'item-stock-movement' ? (
           <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
             {(() => {
@@ -2793,8 +3022,8 @@ function renderReportTable(
                     <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Item</th>
                     <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
                     <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">On hand</th>
-                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Period qty</th>
-                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Period $</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Sold qty</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Sales $</th>
                     <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Velocity / day</th>
                     <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Rank</th>
                   </tr>
@@ -2834,6 +3063,98 @@ function renderReportTable(
                 </tbody>
               </table>
                 );
+              })()}
+            </div>
+          </div>
+        ) : null}
+
+        {reportType === 'item-purchase-velocity-analysis' ? (
+          <div className="space-y-3">
+            {data.summary && (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+                {[
+                  { k: 'fast', label: 'Fast' },
+                  { k: 'medium', label: 'Medium' },
+                  { k: 'slow', label: 'Slow' },
+                  { k: 'no_period_purchases', label: 'No period purchases' },
+                ].map(({ k, label }) => (
+                  <div
+                    key={k}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm shadow-sm"
+                  >
+                    <div className="text-xs text-slate-500">{label}</div>
+                    <div className="text-lg font-semibold text-slate-900">{(data.summary as any)[k] ?? 0}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+              {(() => {
+                const cRows: any[] = Array.isArray(data.rows) ? data.rows : []
+                const tierClass = (t: string) => {
+                  if (t === 'fast') return 'bg-emerald-100 text-emerald-900'
+                  if (t === 'medium') return 'bg-amber-100 text-amber-900'
+                  if (t === 'slow') return 'bg-orange-100 text-orange-950'
+                  return 'bg-slate-100 text-slate-700'
+                }
+                return (
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-100">
+                      <tr>
+                        <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Tier</th>
+                        <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">SKU</th>
+                        <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Item</th>
+                        <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600">Category</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">On hand</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Purch. qty</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Purch. $</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Purch. / day</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-600">Rank</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {cRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
+                            No products in scope. Adjust category or add items.
+                          </td>
+                        </tr>
+                      ) : (
+                        cRows.map((r: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-slate-50/80">
+                            <td className="whitespace-nowrap px-3 py-2">
+                              <span
+                                className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${tierClass(r.movement_tier || '')}`}
+                              >
+                                {String(r.movement_tier || '').replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-900">{r.sku || '—'}</td>
+                            <td className="max-w-[200px] px-3 py-2 text-slate-800">
+                              <span className="line-clamp-2" title={r.name}>
+                                {r.name}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">
+                              {r.reporting_category}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">
+                              {formatNumber(r.period_quantity_purchased, 2)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-800">
+                              {formatCurrency(r.period_purchase_amount)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-800">
+                              {formatNumber(r.purchase_velocity_per_day, 4)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-600">{r.velocity_rank || '—'}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )
               })()}
             </div>
           </div>

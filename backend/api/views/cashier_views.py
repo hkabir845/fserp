@@ -25,7 +25,7 @@ from api.models import (
     ShiftSession,
     Tank,
 )
-from api.exceptions import StockBusinessError
+from api.exceptions import GlPostingError, StockBusinessError
 from api.chart_templates.fuel_station import ensure_donation_social_support_account
 from api.services.gl_posting import (
     _is_walkin_customer,
@@ -485,6 +485,8 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
             if split_payment_id is not None:
                 payload["payment_id"] = split_payment_id
         return JsonResponse(payload, status=201)
+    except GlPostingError as e:
+        return _cashier_pos_error(e.detail)
     except StockBusinessError as e:
         return _cashier_pos_error(e.detail)
     except Exception as e:

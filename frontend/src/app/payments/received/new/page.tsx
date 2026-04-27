@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
-import { ArrowLeft, AlertCircle } from 'lucide-react'
+import { ArrowLeft, AlertCircle, UserPlus } from 'lucide-react'
 import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
@@ -29,6 +29,45 @@ interface OutstandingInvoice {
 
 function allocInvoiceId(inv: OutstandingInvoice) {
   return inv.synthetic ? 0 : inv.id
+}
+
+/** Ensure one on-account / advance line (invoice_id 0) so prepayment is always available in the grid. */
+function mergeOutstandingForCustomer(
+  apiRows: OutstandingInvoice[] | null | undefined,
+  customerId: number
+): OutstandingInvoice[] {
+  const rows = Array.isArray(apiRows) ? [...apiRows] : []
+  const hasOa = rows.some((r) => r.synthetic && r.on_account)
+  if (!hasOa) {
+    rows.push({
+      id: 0,
+      synthetic: true,
+      on_account: true,
+      invoice_number: 'On-account & customer advance (prepayment)',
+      invoice_date: new Date().toISOString().split('T')[0],
+      due_date: null,
+      customer_id: customerId,
+      customer_name: '',
+      balance_due: 0,
+      days_overdue: null,
+    })
+  }
+  return rows
+}
+
+function isOaOrAdvanceRow(inv: OutstandingInvoice) {
+  return Boolean(inv.synthetic && inv.on_account)
+}
+
+/** Open balance to pre-fill when a line is checked (user can still reduce for partial payment). */
+function defaultAllocWhenSelected(inv: OutstandingInvoice) {
+  return Math.max(0, Number(inv.balance_due) || 0)
+}
+
+/** Stable key for selection state (synthetic on-account is always `oa`) */
+function rowKey(inv: OutstandingInvoice) {
+  if (inv.synthetic && inv.on_account) return 'oa'
+  return `inv-${inv.id}`
 }
 
 interface Customer {
@@ -137,6 +176,13 @@ function RecordPaymentReceivedInner() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳')
+  const [showNewCustomer, setShowNewCustomer] = useState(false)
+  const [newDisplayName, setNewDisplayName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [creatingCustomer, setCreatingCustomer] = useState(false)
+  /** false = deselected (exclude from allocation); true = include */
+  const [lineSelected, setLineSelected] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -179,9 +225,13 @@ function RecordPaymentReceivedInner() {
           params: { customer_id: selectedCustomerId },
         })
         if (response.data) {
-          setOutstandingInvoices(response.data)
+          const merged = mergeOutstandingForCustomer(
+            response.data,
+            selectedCustomerId
+          )
+          setOutstandingInvoices(merged)
           setAllocations(
-            response.data.map((inv: OutstandingInvoice) => ({
+            merged.map((inv: OutstandingInvoice) => ({
               invoice_id: allocInvoiceId(inv),
               allocated_amount: 0,
               discount_amount: 0,
@@ -190,9 +240,47 @@ function RecordPaymentReceivedInner() {
         }
       } catch (e) {
         console.error('Error fetching invoices:', e)
+        if (selectedCustomerId != null) {
+          const merged = mergeOutstandingForCustomer([], selectedCustomerId)
+          setOutstandingInvoices(merged)
+          setAllocations(
+            merged.map((inv: OutstandingInvoice) => ({
+              invoice_id: allocInvoiceId(inv),
+              allocated_amount: 0,
+              discount_amount: 0,
+            }))
+          )
+        }
       }
     })()
   }, [selectedCustomerId])
+
+  useEffect(() => {
+    setLineSelected((prev) => {
+      const next: Record<string, boolean> = {}
+      for (const inv of outstandingInvoices) {
+        const k = rowKey(inv)
+        next[k] = k in prev ? (prev[k] as boolean) : true
+      }
+      return next
+    })
+  }, [outstandingInvoices])
+
+  const isRowSelected = (inv: OutstandingInvoice) => lineSelected[rowKey(inv)] !== false
+  const isRealInvoice = (inv: OutstandingInvoice) => !inv.synthetic
+  const realInvoices = outstandingInvoices.filter(isRealInvoice)
+  /** Invoices and other open lines, excluding the synthetic on-account / advance line (rendered below with a gap). */
+  const allocateRowsExcludingOa = outstandingInvoices.filter((i) => !isOaOrAdvanceRow(i))
+  const onAccountAdvanceRow = outstandingInvoices.find((i) => isOaOrAdvanceRow(i)) ?? null
+  const allInvoicesTicked =
+    realInvoices.length > 0 && realInvoices.every((i) => isRowSelected(i))
+  const someInvoicesTicked = realInvoices.some((i) => isRowSelected(i)) && !allInvoicesTicked
+  const selectAllInvoicesRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (selectAllInvoicesRef.current) {
+      selectAllInvoicesRef.current.indeterminate = someInvoicesTicked
+    }
+  }, [someInvoicesTicked, allInvoicesTicked, realInvoices.length])
 
   const handleCustomerSelectChange = (raw: string) => {
     if (!raw) {
@@ -201,6 +289,7 @@ function RecordPaymentReceivedInner() {
       setReferenceNumber('')
       setAllocations([])
       setTotalPaymentAmount(0)
+      setLineSelected({})
       return
     }
     const id = Number(raw)
@@ -210,6 +299,7 @@ function RecordPaymentReceivedInner() {
       setReferenceNumber('')
       setAllocations([])
       setTotalPaymentAmount(0)
+      setLineSelected({})
       return
     }
     const c = customers.find((x) => Number(x.id) === id)
@@ -219,6 +309,7 @@ function RecordPaymentReceivedInner() {
       setReferenceNumber('')
       setAllocations([])
       setTotalPaymentAmount(0)
+      setLineSelected({})
       return
     }
     setSelectedCustomerId(id)
@@ -241,12 +332,83 @@ function RecordPaymentReceivedInner() {
       ? customers.find((c) => Number(c.id) === Number(selectedCustomerId)) ?? null
       : null
 
+  const toggleLine = (inv: OutstandingInvoice) => {
+    const k = rowKey(inv)
+    setLineSelected((prev) => {
+      const was = prev[k] !== false
+      const aid = allocInvoiceId(inv)
+      if (was) {
+        setAllocations((a) => {
+          const n = a.map((x) =>
+            x.invoice_id === aid ? { ...x, allocated_amount: 0 } : x
+          )
+          setTotalPaymentAmount(n.reduce((s, x) => s + x.allocated_amount, 0))
+          return n
+        })
+      } else {
+        const full = defaultAllocWhenSelected(inv)
+        setAllocations((a) => {
+          const n = a.map((x) =>
+            x.invoice_id === aid ? { ...x, allocated_amount: full } : x
+          )
+          setTotalPaymentAmount(n.reduce((s, x) => s + x.allocated_amount, 0))
+          return n
+        })
+      }
+      return { ...prev, [k]: !was }
+    })
+  }
+
+  const toggleSelectAllInvoices = () => {
+    if (realInvoices.length === 0) return
+    if (allInvoicesTicked) {
+      setLineSelected((prev) => {
+        const n = { ...prev }
+        for (const i of realInvoices) n[rowKey(i)] = false
+        return n
+      })
+      setAllocations((a) => {
+        const n = a.map((x) => {
+          const oa = outstandingInvoices.find(
+            (inv) => allocInvoiceId(inv) === x.invoice_id
+          )
+          if (!oa || oa.synthetic) return x
+          return { ...x, allocated_amount: 0 }
+        })
+        setTotalPaymentAmount(n.reduce((s, el) => s + el.allocated_amount, 0))
+        return n
+      })
+    } else {
+      setLineSelected((prev) => {
+        const n = { ...prev }
+        for (const i of realInvoices) n[rowKey(i)] = true
+        return n
+      })
+      setAllocations((a) => {
+        const n = a.map((x) => {
+          const oa = outstandingInvoices.find(
+            (inv) => allocInvoiceId(inv) === x.invoice_id
+          )
+          if (!oa || oa.synthetic) return x
+          return { ...x, allocated_amount: defaultAllocWhenSelected(oa) }
+        })
+        setTotalPaymentAmount(
+          n.reduce((s, el) => s + el.allocated_amount, 0)
+        )
+        return n
+      })
+    }
+  }
+
   const handleAllocationChange = (invoiceId: number, amount: number) => {
     const invoice = outstandingInvoices.find(
       (inv) => (inv.synthetic && invoiceId === 0) || (!inv.synthetic && inv.id === invoiceId)
     )
-    if (!invoice) return
-    const maxAmount = Number(invoice.balance_due) || 0
+    if (!invoice || !isRowSelected(invoice)) return
+    const openInv = Number(invoice.balance_due) || 0
+    const maxAmount = isOaOrAdvanceRow(invoice)
+      ? 1e12
+      : openInv
     const allocatedAmount = Math.min(Math.max(0, amount), maxAmount)
     setAllocations((prev) => {
       const updated = prev.map((alloc) =>
@@ -260,47 +422,114 @@ function RecordPaymentReceivedInner() {
 
   const handleAutoAllocate = () => {
     let remaining = totalPaymentAmount
-    const order = [...outstandingInvoices].sort((a, b) => {
-      if (a.synthetic && !b.synthetic) return 1
-      if (!a.synthetic && b.synthetic) return -1
-      return new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
-    })
-    const newAllocations = order.map((invoice) => {
-      const aid = allocInvoiceId(invoice)
-      if (remaining <= 0) {
-        return { invoice_id: aid, discount_amount: 0, allocated_amount: 0 }
-      }
-      const balanceDue = Number(invoice.balance_due) || 0
-      const amt = Math.min(remaining, balanceDue)
-      remaining -= amt
-      return { invoice_id: aid, discount_amount: 0, allocated_amount: amt }
-    })
-    setAllocations(newAllocations)
+    const order = [...outstandingInvoices]
+      .filter((inv) => isRowSelected(inv))
+      .sort((a, b) => {
+        if (a.synthetic && !b.synthetic) return 1
+        if (!a.synthetic && b.synthetic) return -1
+        return new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
+      })
+    const byAid = new Map(
+      order.map((inv) => {
+        const aid = allocInvoiceId(inv)
+        if (remaining <= 0) {
+          return [aid, 0] as const
+        }
+        const balanceDue = Number(inv.balance_due) || 0
+        const cap = isOaOrAdvanceRow(inv) ? remaining : Math.min(remaining, balanceDue)
+        const amt = cap
+        remaining -= amt
+        return [aid, amt] as const
+      })
+    )
+    setAllocations(
+      outstandingInvoices.map((inv) => {
+        const aid = allocInvoiceId(inv)
+        if (!isRowSelected(inv)) {
+          return { invoice_id: aid, discount_amount: 0, allocated_amount: 0 }
+        }
+        return {
+          invoice_id: aid,
+          discount_amount: 0,
+          allocated_amount: byAid.get(aid) ?? 0,
+        }
+      })
+    )
   }
 
   const handlePaymentAmountChange = (amount: number) => {
     setTotalPaymentAmount(amount)
     if (amount > 0) {
       let remaining = amount
-      const order = [...outstandingInvoices].sort((a, b) => {
-        if (a.synthetic && !b.synthetic) return 1
-        if (!a.synthetic && b.synthetic) return -1
-        return new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
+      const order = [...outstandingInvoices]
+        .filter((inv) => isRowSelected(inv))
+        .sort((a, b) => {
+          if (a.synthetic && !b.synthetic) return 1
+          if (!a.synthetic && b.synthetic) return -1
+          return new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
+        })
+      const byAid = new Map(
+        order.map((invoice) => {
+          if (remaining <= 0) {
+            return [allocInvoiceId(invoice), 0] as const
+          }
+          const balanceDue = Number(invoice.balance_due) || 0
+          const take = isOaOrAdvanceRow(invoice) ? remaining : Math.min(remaining, balanceDue)
+          const allocatedAmount = take
+          remaining -= allocatedAmount
+          return [allocInvoiceId(invoice), allocatedAmount] as const
+        })
+      )
+      setAllocations(
+        outstandingInvoices.map((inv) => {
+          const aid = allocInvoiceId(inv)
+          if (!isRowSelected(inv)) {
+            return { invoice_id: aid, discount_amount: 0, allocated_amount: 0 }
+          }
+          return {
+            invoice_id: aid,
+            discount_amount: 0,
+            allocated_amount: byAid.get(aid) ?? 0,
+          }
+        })
+      )
+    }
+  }
+
+  const handleCreateCustomer = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const name = newDisplayName.trim()
+    if (!name) {
+      setError('Enter a name for the new customer.')
+      return
+    }
+    setCreatingCustomer(true)
+    setError('')
+    try {
+      const res = await api.post('/customers/', {
+        display_name: name,
+        phone: newPhone.trim() || null,
+        email: newEmail.trim() || null,
+        is_active: true,
       })
-      const newAllocations = order.map((invoice) => {
-        if (remaining <= 0) {
-          return { invoice_id: allocInvoiceId(invoice), allocated_amount: 0, discount_amount: 0 }
-        }
-        const balanceDue = Number(invoice.balance_due) || 0
-        const allocatedAmount = Math.min(remaining, balanceDue)
-        remaining -= allocatedAmount
-        return {
-          invoice_id: allocInvoiceId(invoice),
-          allocated_amount: allocatedAmount,
-          discount_amount: 0,
-        }
-      })
-      setAllocations(newAllocations)
+      const created = normalizeCustomersFromApi([res.data])[0]
+      if (!created) {
+        setError('Could not read new customer from server response.')
+        return
+      }
+      setCustomers((prev) => (prev.some((c) => c.id === created.id) ? prev : [created, ...prev]))
+      setSelectedCustomerId(created.id)
+      setMemo(buildCustomerPaymentMemo(created))
+      setReferenceNumber((created.customer_number || '').trim())
+      setNewDisplayName('')
+      setNewPhone('')
+      setNewEmail('')
+      setShowNewCustomer(false)
+    } catch (err: unknown) {
+      const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(typeof d === 'string' ? d : 'Could not create customer. Try again.')
+    } finally {
+      setCreatingCustomer(false)
     }
   }
 
@@ -321,7 +550,7 @@ function RecordPaymentReceivedInner() {
     }
     const validAllocations = allocations.filter((a) => a.allocated_amount > 0)
     if (validAllocations.length === 0) {
-      setError('Please allocate payment to at least one invoice')
+      setError('Allocate the payment to at least one line (invoice or on-account / advance).')
       setSubmitting(false)
       return
     }
@@ -380,8 +609,11 @@ function RecordPaymentReceivedInner() {
               Back to Payments Received
             </Link>
             <h1 className="text-3xl font-bold text-gray-900">Record payment received</h1>
-            <p className="text-gray-600 mt-1">
-              Apply a customer payment to one or more open invoices.
+            <p className="text-gray-600 mt-1 max-w-3xl">
+              Apply cash or transfer to <strong>open invoices</strong>, to{' '}
+              <strong>on-account A/R</strong> (e.g. opening / not on an invoice), or record a{' '}
+              <strong>customer advance (prepayment)</strong> that appears as a credit on the
+              customer balance until invoiced.
             </p>
           </div>
 
@@ -420,6 +652,68 @@ function RecordPaymentReceivedInner() {
                       No customers returned from the server. Add customers under Customers or check API access.
                     </p>
                   ) : null}
+                  <div className="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50/80 p-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowNewCustomer((s) => !s)}
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-green-800 hover:text-green-950"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      {showNewCustomer ? 'Hide' : 'Add'} new customer and pay
+                    </button>
+                    {showNewCustomer && (
+                      <form
+                        onSubmit={handleCreateCustomer}
+                        className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 border-t border-gray-200 pt-3"
+                        autoComplete="off"
+                      >
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                            Display / business name <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            value={newDisplayName}
+                            onChange={(e) => setNewDisplayName(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            placeholder="e.g. ABC Ltd"
+                            maxLength={200}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-0.5">Phone</label>
+                          <input
+                            value={newPhone}
+                            onChange={(e) => setNewPhone(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            placeholder="Optional"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-0.5">Email</label>
+                          <input
+                            type="email"
+                            value={newEmail}
+                            onChange={(e) => setNewEmail(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            placeholder="Optional"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <button
+                            type="submit"
+                            disabled={creatingCustomer}
+                            className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                          >
+                            {creatingCustomer ? 'Creating…' : 'Create customer & select'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-500 sm:col-span-2">
+                          A customer account is always required to record a receipt. This creates a normal
+                          customer, then you can post payment including advances on the line below.
+                        </p>
+                      </form>
+                    )}
+                  </div>
                   {selectedCustomer && (
                     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
                       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
@@ -559,8 +853,120 @@ function RecordPaymentReceivedInner() {
 
               {selectedCustomerId && outstandingInvoices.length > 0 && (
                 <div className="mt-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold">Allocate Payment to Invoices</h3>
+                  <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
+                    <aside
+                      className="flex min-h-0 w-full min-w-0 flex-col rounded-lg border border-gray-200 bg-gray-50/80 p-3 sm:p-4"
+                      aria-label="Include lines in this payment"
+                    >
+                      <div className="flex shrink-0 items-start justify-between gap-2 border-b border-gray-200 pb-2.5">
+                        <h3 className="text-sm font-semibold text-gray-900 pr-1">
+                          Include in payment
+                        </h3>
+                        {realInvoices.length > 0 ? (
+                          <label
+                            className="flex cursor-pointer items-center gap-1.5 shrink-0 text-xs font-medium text-gray-800"
+                            title="Toggles every invoice (not the on-account row)"
+                          >
+                            <input
+                              ref={selectAllInvoicesRef}
+                              type="checkbox"
+                              checked={allInvoicesTicked}
+                              onChange={toggleSelectAllInvoices}
+                              className="h-4 w-4 rounded border-2 border-gray-400 text-green-600 focus:ring-green-500/80"
+                            />
+                            <span className="whitespace-nowrap leading-tight sm:text-sm">
+                              Select all invoices
+                            </span>
+                          </label>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 mb-2.5 shrink-0 text-xs text-gray-500">
+                        When you tick a line, its open balance is filled in; you can lower the
+                        amount for a partial payment. Use <strong>Allocate</strong> in the table
+                        to enter amounts. On-account / prepayment is listed <strong>under</strong>{' '}
+                        the invoice numbers.
+                      </p>
+                      <ul
+                        className="min-h-0 flex-1 list-none space-y-0 overflow-y-auto rounded border border-gray-200 bg-white divide-y divide-gray-200"
+                        role="list"
+                      >
+                        {allocateRowsExcludingOa.map((inv) => {
+                          const k = rowKey(inv)
+                          const sel = isRowSelected(inv)
+                          const isInv = isRealInvoice(inv)
+                          return (
+                            <li key={k} role="listitem" className="w-full">
+                              <label
+                                className={[
+                                  'grid w-full cursor-pointer grid-cols-[1.25rem_1fr_auto] items-center gap-2.5 px-2.5 py-3 sm:px-3 text-sm',
+                                  sel ? 'bg-white' : 'bg-gray-50/50 opacity-80',
+                                ].join(' ')}
+                              >
+                                <div className="flex items-center justify-center self-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={sel}
+                                    onChange={() => {
+                                      toggleLine(inv)
+                                    }}
+                                    className="h-4 w-4 rounded border-2 border-gray-400 text-green-600 focus:ring-green-500/80"
+                                    aria-label={
+                                      isInv
+                                        ? `Include invoice ${inv.invoice_number}`
+                                        : 'Include line'
+                                    }
+                                  />
+                                </div>
+                                <p className="min-w-0 text-left text-sm font-medium text-gray-900">
+                                  {isInv ? inv.invoice_number : 'Open item'}
+                                </p>
+                                <p className="shrink-0 text-right text-xs text-gray-600 tabular-nums sm:text-sm">
+                                  {currencySymbol}
+                                  {(Number(inv.balance_due) || 0).toFixed(2)}
+                                </p>
+                              </label>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                      {onAccountAdvanceRow ? (
+                        <div
+                          key="oa-aside"
+                          className="mt-0 shrink-0 border-t-2 border-amber-200/90 bg-amber-50/40"
+                        >
+                          <label
+                            className={[
+                              'grid w-full cursor-pointer grid-cols-[1.25rem_1fr_auto] items-center gap-2.5 px-2.5 py-3 sm:px-3 text-sm',
+                              isRowSelected(onAccountAdvanceRow)
+                                ? 'bg-white/90'
+                                : 'bg-amber-50/60 opacity-90',
+                            ].join(' ')}
+                          >
+                            <div className="flex items-center justify-center self-center">
+                              <input
+                                type="checkbox"
+                                checked={isRowSelected(onAccountAdvanceRow)}
+                                onChange={() => {
+                                  toggleLine(onAccountAdvanceRow)
+                                }}
+                                className="h-4 w-4 rounded border-2 border-amber-500 text-green-600 focus:ring-amber-500/50"
+                                aria-label="Include on-account and customer advance in this payment"
+                              />
+                            </div>
+                            <p className="min-w-0 text-left text-sm font-semibold text-amber-950">
+                              On-account / advance
+                            </p>
+                            <p className="shrink-0 text-right text-sm font-medium text-amber-900/90 tabular-nums">
+                              {currencySymbol}
+                              {(Number(onAccountAdvanceRow.balance_due) || 0).toFixed(2)}
+                            </p>
+                          </label>
+                        </div>
+                      ) : null}
+                    </aside>
+                    <div className="min-h-0 min-w-0">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-lg font-semibold">Allocate payment</h3>
                     <button
                       type="button"
                       onClick={handleAutoAllocate}
@@ -569,7 +975,7 @@ function RecordPaymentReceivedInner() {
                       Auto-allocate (FIFO)
                     </button>
                   </div>
-                  <div className="border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
+                  <div className="overflow-x-auto overflow-hidden rounded-lg border border-gray-200">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
@@ -597,18 +1003,25 @@ function RecordPaymentReceivedInner() {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {outstandingInvoices.map((invoice) => {
+                        {allocateRowsExcludingOa.map((invoice) => {
                           const aid = allocInvoiceId(invoice)
                           const allocation = allocations.find((a) => a.invoice_id === aid)
                           const allocatedAmount = allocation?.allocated_amount || 0
+                          const canEdit = isRowSelected(invoice)
                           return (
                             <tr
-                              key={invoice.synthetic ? `oa-${invoice.customer_id}` : invoice.id}
-                              className={allocatedAmount > 0 ? 'bg-green-50' : ''}
+                              key={invoice.synthetic ? `syn-${invoice.customer_id}` : invoice.id}
+                              className={[
+                                'align-middle',
+                                allocatedAmount > 0 && canEdit ? 'bg-green-50' : '',
+                                !canEdit ? 'bg-gray-50/80 opacity-60' : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' ')}
                             >
-                              <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                              <td className="px-4 py-3 text-sm font-medium text-gray-900 max-w-[16rem]">
                                 {invoice.invoice_number}
-                                {invoice.synthetic ? (
+                                {invoice.synthetic && !isOaOrAdvanceRow(invoice) ? (
                                   <span className="ml-1 text-xs font-normal text-gray-500">
                                     (A/R not on an invoice)
                                   </span>
@@ -659,32 +1072,86 @@ function RecordPaymentReceivedInner() {
                                   step="0.01"
                                   min="0"
                                   max={Number(invoice.balance_due) || 0}
-                                  value={allocatedAmount}
+                                  value={canEdit ? allocatedAmount : 0}
+                                  disabled={!canEdit}
                                   onChange={(e) =>
                                     handleAllocationChange(aid, Number(e.target.value))
                                   }
-                                  className={AMOUNT_ALLOCATE_GREEN_CLASS}
+                                  className={AMOUNT_ALLOCATE_GREEN_CLASS + (!canEdit ? ' cursor-not-allowed' : '')}
                                 />
                               </td>
                             </tr>
                           )
                         })}
+                        {onAccountAdvanceRow
+                          ? (() => {
+                              const invoice = onAccountAdvanceRow
+                              const aid = allocInvoiceId(invoice)
+                              const allocation = allocations.find((a) => a.invoice_id === aid)
+                              const allocatedAmount = allocation?.allocated_amount || 0
+                              const canEdit = isRowSelected(invoice)
+                              return (
+                                <tr
+                                  key="on-account-advance"
+                                  className={[
+                                    'align-middle border-t-2 border-amber-300/80',
+                                    !canEdit
+                                      ? 'bg-amber-50/50 opacity-60'
+                                      : allocatedAmount > 0
+                                        ? 'bg-green-50'
+                                        : 'bg-amber-50/30',
+                                  ].join(' ')}
+                                >
+                                  <td
+                                    className="px-4 py-3 text-sm text-gray-400 max-w-[16rem]"
+                                    title="Same line as On-account / advance in the list on the left (not an invoice number)."
+                                    aria-label="On-account or prepayment (see left panel)"
+                                  >
+                                    —
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-600">
+                                    {formatDateOnly(invoice.invoice_date)}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-500">—</td>
+                                  <td className="px-4 py-3 text-right text-sm text-gray-500">—</td>
+                                  <td className="px-4 py-3 text-right text-sm text-gray-500">—</td>
+                                  <td className="px-4 py-3 text-right text-sm font-medium text-amber-950">
+                                    {currencySymbol}
+                                    {(Number(invoice.balance_due) || 0).toFixed(2)}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-right">
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={canEdit ? allocatedAmount : 0}
+                                      disabled={!canEdit}
+                                      onChange={(e) =>
+                                        handleAllocationChange(aid, Number(e.target.value))
+                                      }
+                                      className={
+                                        AMOUNT_ALLOCATE_GREEN_CLASS +
+                                        (!canEdit ? ' cursor-not-allowed' : '')
+                                      }
+                                    />
+                                  </td>
+                                </tr>
+                              )
+                            })()
+                          : null}
                       </tbody>
-                      <tfoot className="bg-gray-50">
-                        <tr>
-                          <td
-                            colSpan={6}
-                            className="px-4 py-3 text-sm font-medium text-right text-gray-900"
-                          >
-                            Total Allocated:
-                          </td>
-                          <td className="px-4 py-3 text-sm font-bold text-right text-gray-900">
-                            {currencySymbol}
-                            {allocations.reduce((sum, a) => sum + a.allocated_amount, 0).toFixed(2)}
-                          </td>
-                        </tr>
-                      </tfoot>
                     </table>
+                  </div>
+                    </div>
+                  <div className="col-span-full flex flex-col gap-0 rounded-b-lg border border-gray-200 bg-gray-50 sm:flex-row sm:items-center sm:justify-end sm:gap-4 sm:pl-4 sm:pr-4">
+                    <span className="px-4 py-3 text-sm font-medium text-gray-900 sm:py-2.5 sm:pr-0 sm:pl-0 sm:text-right">
+                      Total allocated:
+                    </span>
+                    <span className="px-4 pb-3 text-sm font-bold text-gray-900 sm:py-2.5 sm:pl-0 sm:pr-0 sm:text-right tabular-nums">
+                      {currencySymbol}
+                      {allocations.reduce((sum, a) => sum + a.allocated_amount, 0).toFixed(2)}
+                    </span>
+                  </div>
                   </div>
                 </div>
               )}

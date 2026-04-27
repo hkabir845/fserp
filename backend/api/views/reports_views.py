@@ -10,9 +10,13 @@ from api.services.reporting import (
     report_customer_balances,
     report_daily_summary,
     report_fuel_sales,
+    report_financial_analytics,
     report_income_statement,
     report_inventory_sku_valuation,
     report_item_master_by_category,
+    report_item_purchases_by_category,
+    report_item_purchases_custom,
+    report_item_purchase_velocity_analysis,
     report_item_sales_by_category,
     report_item_sales_custom,
     report_item_stock_movement,
@@ -43,9 +47,11 @@ _REPORT_HANDLERS = {
     "tank-dip-register": report_tank_dip_register,
     "meter-readings": report_meter_readings,
     "daily-summary": report_daily_summary,
+    "financial-analytics": report_financial_analytics,
     "inventory-sku-valuation": report_inventory_sku_valuation,
     "item-master-by-category": report_item_master_by_category,
     "item-sales-by-category": report_item_sales_by_category,
+    "item-purchases-by-category": report_item_purchases_by_category,
 }
 
 
@@ -118,12 +124,20 @@ def report_by_id(request, report_id: str):
         payload = report_item_sales_custom(cid, start, end, category, None, item_ids)
         return JsonResponse(payload)
 
-    if report_id in ("item-stock-movement", "item-velocity-analysis"):
+    if report_id == "item-purchases-custom":
+        category, item_ids, err = _parse_item_scope_query(request, cid)
+        if err:
+            return err
+        return JsonResponse(report_item_purchases_custom(cid, start, end, category, None, item_ids))
+
+    if report_id in ("item-stock-movement", "item-velocity-analysis", "item-purchase-velocity-analysis"):
         category, item_ids, err = _parse_item_scope_query(request, cid)
         if err:
             return err
         if report_id == "item-stock-movement":
             return JsonResponse(report_item_stock_movement(cid, start, end, category, item_ids))
+        if report_id == "item-purchase-velocity-analysis":
+            return JsonResponse(report_item_purchase_velocity_analysis(cid, start, end, category, item_ids))
         return JsonResponse(report_item_velocity_analysis(cid, start, end, category, item_ids))
 
     handler = _REPORT_HANDLERS.get(report_id)

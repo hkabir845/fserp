@@ -677,6 +677,34 @@ def test_payments_received_and_outstanding(
     assert isinstance(out, list)
 
 
+def test_payments_received_on_account_explicit_prepayment(
+    api_client: Client, auth_super_headers, company_master
+):
+    """Customer advance: explicit invoice_id 0 with no open on-account A/R is valid."""
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    api_client.post("/api/customers/add-dummy/", **h)
+    customer_id = json.loads(api_client.get("/api/customers/", **h).content)[0]["id"]
+
+    pay = api_client.post(
+        "/api/payments/received/",
+        data=json.dumps(
+            {
+                "customer_id": customer_id,
+                "amount": "75.00",
+                "payment_method": "cash",
+                "allocations": [
+                    {"invoice_id": 0, "allocated_amount": "75.00"},
+                ],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert pay.status_code == 201, pay.content
+    assert json.loads(pay.content)["amount"] == "75.00"
+
+
 def test_payments_received_cash_with_shift_updates_expected_cash_drawer(
     api_client: Client, auth_super_headers, company_master
 ):
@@ -729,6 +757,7 @@ def test_payments_received_cash_with_shift_updates_expected_cash_drawer(
 def test_payments_made_create_and_list(
     api_client: Client, auth_super_headers, company_master
 ):
+    _audit_seed_min_gl_accounts(company_master)
     h = _audit_master_headers(auth_super_headers, company_master)
     v = api_client.post(
         "/api/vendors/",
@@ -761,6 +790,7 @@ def test_payments_made_partial_accepts_allocations_and_allocated_amount(
     """UI sends allocations[].allocated_amount; backend must apply to bills (vendor subledger)."""
     from decimal import Decimal
 
+    _audit_seed_min_gl_accounts(company_master)
     h = _audit_master_headers(auth_super_headers, company_master)
     v = api_client.post(
         "/api/vendors/",
@@ -1756,6 +1786,31 @@ def test_reports_unknown_report_404(api_client: Client, auth_super_headers, comp
     h = _audit_master_headers(auth_super_headers, company_master)
     r = api_client.get("/api/reports/not-a-real-report/", **h)
     assert r.status_code == 404
+
+
+def test_reports_item_purchases_by_category_ok(api_client: Client, auth_super_headers, company_master):
+    h = _audit_master_headers(auth_super_headers, company_master)
+    r = api_client.get(
+        "/api/reports/item-purchases-by-category/?start_date=2026-01-01&end_date=2026-12-31",
+        **h,
+    )
+    assert r.status_code == 200
+    data = json.loads(r.content)
+    assert data.get("report_id") == "item-purchases-by-category"
+    assert "rows" in data and "summary" in data
+
+
+def test_reports_financial_analytics_ok(api_client: Client, auth_super_headers, company_master):
+    h = _audit_master_headers(auth_super_headers, company_master)
+    r = api_client.get(
+        "/api/reports/financial-analytics/?start_date=2026-01-01&end_date=2026-12-31",
+        **h,
+    )
+    assert r.status_code == 200
+    data = json.loads(r.content)
+    assert data.get("report_id") == "financial-analytics"
+    assert "kpis" in data and "timeseries" in data
+    assert "total_sales" in data["kpis"] and "net_income" in data["kpis"]
 
 
 def test_payment_invoice_allocation_clears_outstanding(

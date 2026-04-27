@@ -333,6 +333,7 @@ export default function ContactLedgerPage({
                         className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                       >
                         <option value="salary">Salary / wages</option>
+                        <option value="overtime">Overtime</option>
                         <option value="advance">Advance to employee</option>
                         <option value="repayment">Repayment / deduction</option>
                         <option value="bonus">Bonus</option>

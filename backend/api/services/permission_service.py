@@ -53,8 +53,12 @@ REPORT_ID_EXTRA_PERMISSION: dict[str, str] = {
     "item-master-by-category": "report.inventory_sku",
     "item-sales-by-category": "report.inventory_sku",
     "item-sales-custom": "report.inventory_sku",
+    "item-purchases-by-category": "report.inventory_sku",
+    "item-purchases-custom": "report.inventory_sku",
     "item-stock-movement": "report.inventory_sku",
     "item-velocity-analysis": "report.inventory_sku",
+    "item-purchase-velocity-analysis": "report.inventory_sku",
+    "financial-analytics": "app.reports",
 }
 
 # Only catalog keys are stored for tenant custom roles (unknown keys are dropped).

@@ -194,6 +194,48 @@ def test_payroll_post_to_books_uses_chart_account_without_bank_register(
 
 
 @pytest.mark.django_db
+def test_payroll_put_earning_breakdown_sets_total_gross(api_client: Client, auth_admin_headers):
+    """base + overtime + bonus + other → total_gross; deductions/net validated."""
+    r = api_client.post(
+        "/api/payroll/",
+        data=json.dumps(
+            {
+                "pay_period_start": "2026-05-01",
+                "pay_period_end": "2026-05-31",
+                "payment_date": "2026-05-31",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    pid = json.loads(r.content)["id"]
+
+    r = api_client.put(
+        f"/api/payroll/{pid}/",
+        data=json.dumps(
+            {
+                "base_salary_total": "4000.00",
+                "overtime_amount": "350.50",
+                "bonus_amount": "200",
+                "other_earnings_amount": "0",
+                "total_deductions": "0",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    d = json.loads(r.content)
+    assert d["total_gross"] == 4550.5
+    assert d["base_salary_total"] == 4000.0
+    assert d["overtime_amount"] == 350.5
+    assert d["bonus_amount"] == 200.0
+    assert d["other_earnings_amount"] == 0.0
+    assert d["total_net"] == 4550.5
+
+
+@pytest.mark.django_db
 def test_payroll_from_one_employee(api_client: Client, auth_admin_headers, user_admin):
     from decimal import Decimal
 

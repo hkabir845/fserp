@@ -176,7 +176,6 @@ export function getFsmsErpMenuItems(): ErpAppMenuItem[] {
     { href: '/backup', label: 'Backup & Restore', section: 'management', icon: Database, tileClass: tile('bg-neutral-100', 'text-neutral-600') },
 
     { href: '/reports', label: 'Reports', section: 'reports', icon: BarChart3, tileClass: tile('bg-violet-100', 'text-violet-600') },
-    { href: '/reports/analytics', label: 'Financial analytics', section: 'reports', icon: TrendingUp, tileClass: tile('bg-fuchsia-100', 'text-fuchsia-700') },
   ]
 }
 

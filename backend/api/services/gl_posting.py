@@ -106,7 +106,11 @@ def _is_walkin_customer(customer: Optional[Customer]) -> bool:
 
 
 def _debit_account_for_paid_sale(
-    company_id: int, payment_method: str, bank_account_id: Optional[int]
+    company_id: int,
+    payment_method: str,
+    bank_account_id: Optional[int],
+    *,
+    prefer_undeposited_clearing: bool = False,
 ) -> Optional[ChartOfAccount]:
     pm = (payment_method or "cash").strip().lower()
     if pm in ("card", "credit_card", "debit_card"):
@@ -125,6 +129,14 @@ def _debit_account_for_paid_sale(
         a = _coa(company_id, CODE_BANK_OP)
         if a:
             return a
+    # POS / cash invoice sales: till cash (1010) first when both exist.
+    # Payments received without a bank register: prefer 1020 undeposited when both exist (deposit workflow).
+    if prefer_undeposited_clearing:
+        undep = _coa(company_id, CODE_UNDEPOSITED)
+        cash = _coa(company_id, CODE_CASH)
+        if undep and cash:
+            return undep
+        return undep or cash
     return _coa(company_id, CODE_CASH) or _coa(company_id, CODE_UNDEPOSITED)
 
 
@@ -731,9 +743,14 @@ def post_payment_received_journal(company_id: int, p: Payment) -> bool:
             "G/L: Accounts Receivable (code 1100) is missing or inactive. Add or enable it in the "
             "chart of accounts before recording customer payments."
         )
-    # Match POS / invoice receipt: cash → 1010 (Cash on Hand), not 1030 (bank) first.
+    # Undeposited clearing (1020) before till cash (1010) when both exist and no bank register — matches UI.
     pm = (getattr(p, "payment_method", None) or "cash").strip().lower() or "cash"
-    cash_bank = _debit_account_for_paid_sale(company_id, pm, p.bank_account_id)
+    cash_bank = _debit_account_for_paid_sale(
+        company_id,
+        pm,
+        p.bank_account_id,
+        prefer_undeposited_clearing=True,
+    )
     if not cash_bank:
         raise GlPostingError(
             "G/L: No debit (cash) account for this payment method. Ensure account 1010 (Cash on Hand) "

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import PageLayout from '@/components/PageLayout'
 import PermissionMatrix, { type PermItem } from '@/components/users/PermissionMatrix'
+import { PosSaleScopeSelector } from '@/components/pos/PosSaleScopeSelector'
 import { Plus, Edit2, Trash2, Shield, User, X, Eye, EyeOff, Grid3x3, List, Ban, UserCheck, Sparkles, Search, ChevronRight, KeyRound, Users, Briefcase, Info } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl } from '@/lib/api'
@@ -35,8 +36,10 @@ interface CompanyOption {
 const JOB_TITLE_HINT: Record<string, string> = {
   admin: 'Company admin: can manage people, company settings, and all modules (unless a custom access profile below overrides).',
   accountant: 'Full accounting, sales, inventory, and reports. Typical back-office user.',
-  cashier: 'Register, customers, and basic reports. Good for front-desk and pump staff.',
-  operator: 'POS only: new sale and donation. Minimal surface area.',
+  cashier:
+    'Register, customers, and basic reports. Set POS lane (fuel + shop, shop only, or fuel only) in the box below.',
+  operator:
+    'POS only: new sale and donation. Set POS lane (fuel + shop, shop only, or fuel only) in the box below.',
 }
 
 const CREATE_STEPS = [
@@ -1256,24 +1259,14 @@ export default function UsersPage() {
                         {JOB_TITLE_HINT[formData.role] || 'Default app areas apply when no custom profile is selected.'}
                       </p>
                       {(formData.role === 'cashier' || formData.role === 'operator') && (
-                        <div className="mt-3 max-w-md">
-                          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                            POS register scope
-                          </label>
-                          <select
+                        <div className="mt-4 max-w-4xl rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                          <PosSaleScopeSelector
+                            name="tenant-user-pos-scope"
                             value={formData.pos_sale_scope}
-                            onChange={(e) =>
-                              setFormData((fd) => ({ ...fd, pos_sale_scope: e.target.value }))
+                            onChange={(next) =>
+                              setFormData((fd) => ({ ...fd, pos_sale_scope: next }))
                             }
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="both">Fuel and general products</option>
-                            <option value="general">General / shop only</option>
-                            <option value="fuel">Fuel only</option>
-                          </select>
-                          <p className="mt-1 text-xs text-gray-500">
-                            Choose what this login may ring up at the register (enforced on the server).
-                          </p>
+                          />
                         </div>
                       )}
                     </div>

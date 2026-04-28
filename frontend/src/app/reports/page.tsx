@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
@@ -261,6 +261,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'tank-dip-register',
   'meter-readings',
   'inventory-sku-valuation',
+  'item-master-by-category',
   'item-sales-by-category',
   'item-purchases-by-category',
   'item-sales-custom',
@@ -615,7 +616,7 @@ export default function ReportsPage() {
           section.data.accounts.forEach((acc: any) => {
             contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td></tr>`
           })
-          contentHTML += '</tbody></table>'
+          contentHTML += `<tfoot><tr><td colspan="2"><strong>Sub-total — ${section.title}</strong></td><td style="text-align:right"><strong>${formatCurrency(section.data.total || 0)}</strong></td></tr></tfoot></tbody></table>`
         }
       })
     } else if (selectedReport === 'income-statement') {
@@ -630,36 +631,50 @@ export default function ReportsPage() {
           section.data.accounts.forEach((acc: any) => {
             contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td></tr>`
           })
-          contentHTML += '</tbody></table>'
+          contentHTML += `<tfoot><tr><td colspan="2"><strong>Sub-total — ${section.title}</strong></td><td style="text-align:right"><strong>${formatCurrency(section.data.total || 0)}</strong></td></tr></tfoot></tbody></table>`
         }
       })
       contentHTML += `<div class="summary"><h2>Summary</h2><p><strong>Gross Profit:</strong> ${formatCurrency(reportData.gross_profit || 0)}</p><p><strong>Net Income:</strong> ${formatCurrency(reportData.net_income || 0)}</p></div>`
-    } else if ((selectedReport === 'customer-balances' || selectedReport === 'vendor-balances') && reportData.customers || reportData.vendors) {
-      const entries = reportData.customers || reportData.vendors || []
+    } else if (
+      (selectedReport === 'customer-balances' && reportData.customers) ||
+      (selectedReport === 'vendor-balances' && reportData.vendors)
+    ) {
+      const entries =
+        selectedReport === 'customer-balances'
+          ? reportData.customers || []
+          : reportData.vendors || []
       const type = selectedReport === 'customer-balances' ? 'Customer' : 'Vendor'
       contentHTML += `<h2>${type} Balances</h2><table><thead><tr><th>${type} #</th><th>${type} Name</th><th>Email</th><th>Phone</th><th style="text-align:right">Balance</th></tr></thead><tbody>`
       entries.forEach((entry: any) => {
         contentHTML += `<tr><td>${entry.customer_number || entry.vendor_number || ''}</td><td>${entry.display_name || entry.company_name || ''}</td><td>${entry.email || '—'}</td><td>${entry.phone || '—'}</td><td style="text-align:right">${formatCurrency(Math.abs(Number(entry.balance || 0)))}</td></tr>`
       })
-      contentHTML += '</tbody></table>'
+      const posTot = selectedReport === 'customer-balances' ? reportData.total_ar : reportData.total_ap
+      const netTot = reportData.total_net_balance
+      contentHTML += `<tfoot><tr><td colspan="4" style="text-align:right"><strong>Sub-total — outstanding (${selectedReport === 'customer-balances' ? 'AR' : 'AP'})</strong></td><td style="text-align:right"><strong>${formatCurrency(Number(posTot ?? 0))}</strong></td></tr>`
+      contentHTML += `<tr><td colspan="4" style="text-align:right"><strong>Total — net balance</strong></td><td style="text-align:right"><strong>${formatCurrency(Number(netTot ?? 0))}</strong></td></tr></tfoot></tbody></table>`
     } else if (selectedReport === 'meter-readings' && reportData.meters) {
       contentHTML += '<h2>Meter Details</h2><table><thead><tr><th>Meter Number</th><th>Meter Name</th><th style="text-align:right">Opening</th><th style="text-align:right">Closing</th><th style="text-align:right">Dispensed</th><th style="text-align:right">Sales</th><th style="text-align:right">Liters</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
       reportData.meters.forEach((meter: any) => {
         contentHTML += `<tr><td>${meter.meter_number || ''}</td><td>${meter.meter_name || ''}</td><td style="text-align:right">${Number(meter.opening_reading || 0).toFixed(2)}L</td><td style="text-align:right">${Number(meter.closing_reading || 0).toFixed(2)}L</td><td style="text-align:right">${Number(meter.period_dispensed || 0).toFixed(2)}L</td><td style="text-align:right">${meter.total_sales || 0}</td><td style="text-align:right">${Number(meter.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">${formatCurrency(meter.total_amount || 0)}</td></tr>`
       })
-      contentHTML += '</tbody></table>'
+      const ms = reportData.summary || {}
+      contentHTML += `<tfoot><tr><td colspan="5" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${ms.total_sales ?? ''}</strong></td><td style="text-align:right"><strong>${Number(ms.total_liters_dispensed ?? 0).toFixed(2)}L</strong></td><td style="text-align:right"><strong>${formatCurrency(ms.total_amount ?? 0)}</strong></td></tr></tfoot></tbody></table>`
     } else if (selectedReport === 'sales-by-nozzle' && reportData.nozzles) {
       contentHTML += '<h2>Sales by Nozzle</h2><table><thead><tr><th>Nozzle</th><th>Product</th><th>Station</th><th style="text-align:right">Transactions</th><th style="text-align:right">Liters</th><th style="text-align:right">Amount</th><th style="text-align:right">Avg Sale</th></tr></thead><tbody>'
       reportData.nozzles.forEach((nozzle: any) => {
         contentHTML += `<tr><td>${nozzle.nozzle_name || nozzle.nozzle_number || ''}</td><td>${nozzle.product_name || ''}</td><td>${nozzle.station_name || ''}</td><td style="text-align:right">${nozzle.total_transactions || 0}</td><td style="text-align:right">${Number(nozzle.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">${formatCurrency(nozzle.total_amount || 0)}</td><td style="text-align:right">${formatCurrency(nozzle.average_sale_amount || 0)}</td></tr>`
       })
-      contentHTML += '</tbody></table>'
+      const ns = reportData.summary || {}
+      contentHTML += `<tfoot><tr><td colspan="3" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${ns.total_transactions ?? ''}</strong></td><td style="text-align:right"><strong>${Number(ns.total_liters ?? 0).toFixed(2)}L</strong></td><td style="text-align:right"><strong>${formatCurrency(ns.total_amount ?? 0)}</strong></td><td>—</td></tr></tfoot></tbody></table>`
     } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
       contentHTML += '<h2>Tank Inventory</h2><table><thead><tr><th>Tank</th><th>Station</th><th>Product</th><th style="text-align:right">Capacity (L)</th><th style="text-align:right">Stock (L)</th><th style="text-align:right">Fill %</th><th>Needs Refill</th></tr></thead><tbody>'
       reportData.inventory.forEach((tank: any) => {
         contentHTML += `<tr><td>${tank.tank_name || ''}</td><td>${tank.station_name || ''}</td><td>${tank.product_name || ''}</td><td style="text-align:right">${Number(tank.capacity || 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.current_stock || 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.fill_percentage || 0).toFixed(1)}%</td><td>${tank.needs_refill ? 'Yes' : 'No'}</td></tr>`
       })
-      contentHTML += '</tbody></table>'
+      const inv = reportData.inventory || []
+      const tc = inv.reduce((s: number, t: any) => s + Number(t.capacity || 0), 0)
+      const ts = inv.reduce((s: number, t: any) => s + Number(t.current_stock || 0), 0)
+      contentHTML += `<tfoot><tr><td colspan="3" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${tc.toLocaleString()}</strong></td><td style="text-align:right"><strong>${ts.toLocaleString()}</strong></td><td colspan="2"></td></tr></tfoot></tbody></table>`
     } else if (selectedReport === 'inventory-sku-valuation' && reportData.rows) {
       const rows: any[] = reportData.rows || []
       contentHTML += '<h2>SKU details</h2><table><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th>Unit</th><th style="text-align:right">On hand</th><th style="text-align:right">Cost value</th><th style="text-align:right">List value</th><th style="text-align:right">Period qty</th><th style="text-align:right">Period rev</th><th style="text-align:right">Units/day</th><th style="text-align:right">Days cover</th><th>Status</th></tr></thead><tbody>'
@@ -767,6 +782,48 @@ export default function ReportsPage() {
         const vt = dip.variance_type || (vq > 0 ? 'GAIN' : vq < 0 ? 'LOSS' : 'EVEN')
         contentHTML += `<tr><td>${date}</td><td>${dip.tank_name || ''}</td><td>${dip.product_name || ''}</td><td style="text-align:right">${sys.toFixed(2)}</td><td style="text-align:right">${meas.toFixed(2)}</td><td style="text-align:right">${vt === 'GAIN' ? '+' : ''}${vq.toFixed(2)}</td><td style="text-align:right">${formatCurrency(dip.variance_value)}</td><td>${vt}</td><td>${dip.recorded_by || '—'}</td></tr>`
       })
+      contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'daily-summary' && reportData.sales) {
+      const s = reportData.sales || {}
+      const sh = reportData.shifts || {}
+      const dp = reportData.dips || {}
+      contentHTML += '<h2>Summary</h2><table><tbody>'
+      contentHTML += `<tr><td><strong>Total transactions</strong></td><td>${s.total_transactions ?? 0}</td></tr>`
+      contentHTML += `<tr><td><strong>Total liters</strong></td><td>${Number(s.total_liters ?? 0).toFixed(2)}</td></tr>`
+      contentHTML += `<tr><td><strong>Total amount</strong></td><td>${formatCurrency(s.total_amount)}</td></tr>`
+      contentHTML += `<tr><td><strong>Average sale</strong></td><td>${formatCurrency(s.average_sale)}</td></tr>`
+      contentHTML += `<tr><td><strong>Total shifts</strong></td><td>${sh.total_shifts ?? 0}</td></tr>`
+      contentHTML += `<tr><td><strong>Total cash variance</strong></td><td>${formatCurrency(sh.total_cash_variance)}</td></tr>`
+      contentHTML += `<tr><td><strong>Dip readings</strong></td><td>${dp.total_readings ?? 0}</td></tr>`
+      contentHTML += `<tr><td><strong>Net dip variance (L)</strong></td><td>${Number(dp.net_variance ?? 0).toFixed(2)}</td></tr>`
+      contentHTML += '</tbody></table>'
+      const bp = s.by_product || {}
+      const keys = Object.keys(bp)
+      if (keys.length > 0) {
+        contentHTML +=
+          '<h2>Sales by product</h2><table><thead><tr><th>Product</th><th style="text-align:right">Lines</th><th style="text-align:right">Liters</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
+        keys.forEach((k) => {
+          const m = bp[k] as { line_count?: number; liters?: number; amount?: number }
+          contentHTML += `<tr><td>${escapeHtml(k)}</td><td style="text-align:right">${m.line_count ?? 0}</td><td style="text-align:right">${Number(m.liters ?? 0).toFixed(2)}</td><td style="text-align:right">${formatCurrency(m.amount ?? 0)}</td></tr>`
+        })
+        contentHTML += '</tbody></table>'
+      }
+      const tanks = Array.isArray(reportData.tanks) ? reportData.tanks : []
+      if (tanks.length > 0) {
+        contentHTML +=
+          '<h2>Tank status</h2><table><thead><tr><th>Tank</th><th>Product</th><th style="text-align:right">Capacity</th><th style="text-align:right">Stock</th><th style="text-align:right">Fill %</th></tr></thead><tbody>'
+        tanks.forEach((tank: any) => {
+          contentHTML += `<tr><td>${escapeHtml(String(tank.tank_name ?? ''))}</td><td>${escapeHtml(String(tank.product ?? ''))}</td><td style="text-align:right">${Number(tank.capacity ?? 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.current_stock ?? 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.fill_percentage ?? 0).toFixed(1)}%</td></tr>`
+        })
+        contentHTML += '</tbody></table>'
+      }
+    } else if (selectedReport === 'fuel-sales' && reportData) {
+      contentHTML += '<h2>Fuel sales (invoice fuel lines)</h2><table><tbody>'
+      contentHTML += `<tr><td><strong>Fuel line count</strong></td><td>${reportData.total_sales ?? 0}</td></tr>`
+      contentHTML += `<tr><td><strong>Invoices with fuel</strong></td><td>${reportData.invoice_count ?? 0}</td></tr>`
+      contentHTML += `<tr><td><strong>Total liters</strong></td><td>${Number(reportData.total_quantity_liters ?? 0).toFixed(2)}</td></tr>`
+      contentHTML += `<tr><td><strong>Total amount</strong></td><td>${formatCurrency(reportData.total_amount)}</td></tr>`
+      contentHTML += `<tr><td><strong>Average per fuel line</strong></td><td>${formatCurrency(reportData.average_sale_amount)}</td></tr>`
       contentHTML += '</tbody></table>'
     } else {
       contentHTML += '<p>Report data not available for printing in this format.</p>'
@@ -1096,6 +1153,13 @@ export default function ReportsPage() {
           csvContent += `Total Dip Readings,${reportData.dips.total_readings || 0}\n`
           csvContent += `Net Dip Variance,${reportData.dips.net_variance || 0}\n`
         }
+      } else if (selectedReport === 'fuel-sales') {
+        csvContent += 'Metric,Value\n'
+        csvContent += `Fuel line count,${reportData.total_sales ?? 0}\n`
+        csvContent += `Invoices with fuel,${reportData.invoice_count ?? 0}\n`
+        csvContent += `Total liters,${reportData.total_quantity_liters ?? 0}\n`
+        csvContent += `Total amount,${reportData.total_amount ?? 0}\n`
+        csvContent += `Average per fuel line,${reportData.average_sale_amount ?? 0}\n`
       } else {
         // Fallback to JSON if CSV not supported
         const dataStr = JSON.stringify(reportData, null, 2)
@@ -1126,20 +1190,9 @@ export default function ReportsPage() {
       <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
-              <p className="text-gray-600 mt-1">Generate comprehensive business and operational reports</p>
-            </div>
-            {userRole !== 'cashier' && userRole !== 'operator' && (
-              <Link
-                href="/reports/analytics"
-                className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-medium text-violet-800 hover:bg-violet-100"
-              >
-                <TrendingUp className="h-4 w-4" />
-                Financial analytics (KPIs &amp; charts)
-              </Link>
-            )}
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
+            <p className="text-gray-600 mt-1">Generate comprehensive business and operational reports</p>
           </div>
 
           {/* Category Filters - Hide for cashiers */}
@@ -1201,6 +1254,27 @@ export default function ReportsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Report Cards */}
             <div className="lg:col-span-1 space-y-3">
+              {userRole !== 'cashier' && filterCategory === 'analytical' && (
+                <Link
+                  href="/reports/analytics"
+                  className="block w-full rounded-lg border-2 border-fuchsia-300 bg-gradient-to-br from-fuchsia-50 to-violet-50 p-4 text-left shadow-sm transition-all hover:border-fuchsia-400 hover:shadow-md"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-fuchsia-100 p-2">
+                      <TrendingUp className="h-5 w-5 text-fuchsia-700" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold text-gray-900">Analytics &amp; KPIs</h3>
+                      <p className="mt-1 text-sm text-gray-600">
+                        Charts and comparisons for sales, COGS, expenses, purchases, and net income — open the full analytics workspace.
+                      </p>
+                      <span className="mt-2 inline-block rounded-full bg-purple-100 px-2 py-1 text-xs text-purple-800">
+                        Analytical
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              )}
               {filteredReports.map((report) => {
                 const Icon = report.icon
                 return (
@@ -1676,6 +1750,26 @@ function renderReportTable(
                     )
                   })}
                 </tbody>
+                {meters.length > 0 && (
+                  <tfoot className="bg-gray-50">
+                    <tr>
+                      <td colSpan={5} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                        Totals
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                        {summary.total_sales ?? meters.reduce((s: number, m: any) => s + Number(m.total_sales ?? 0), 0)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                        {Number(summary.total_liters_dispensed ?? meters.reduce((s: number, m: any) => s + Number(m.total_liters ?? 0), 0)).toFixed(2)}{' '}
+                        L
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
+                        {formatCurrency(Number(summary.total_amount ?? meters.reduce((s: number, m: any) => s + Number(m.total_amount ?? 0), 0)))}
+                      </td>
+                      <td className="px-4 py-3" />
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           ) : (
@@ -1771,10 +1865,14 @@ function renderReportTable(
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {Object.entries(byProduct as Record<string, { transactions?: number; liters?: number; amount?: number }>).map(([product, metrics], pIdx) => (
+                  {Object.entries(
+                    byProduct as Record<string, { line_count?: number; transactions?: number; liters?: number; amount?: number }>
+                  ).map(([product, metrics], pIdx) => (
                     <tr key={`${pIdx}-${product}`}>
                       <td className="px-4 py-3 text-sm text-gray-900">{product}</td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-600">{metrics.transactions}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-600">
+                        {metrics.line_count ?? metrics.transactions ?? '—'}
+                      </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-600">
                         {Number(metrics.liters ?? 0).toFixed(2)} L
                       </td>
@@ -1784,6 +1882,20 @@ function renderReportTable(
                     </tr>
                   ))}
                 </tbody>
+                <tfoot className="bg-gray-50">
+                  <tr>
+                    <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Totals</td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {Object.values(byProduct as Record<string, { line_count?: number }>).reduce((s, m) => s + Number(m.line_count ?? 0), 0)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {Number(summary.total_liters ?? 0).toFixed(2)} L
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
+                      {formatCurrency(Number(summary.total_amount ?? 0))}
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -1820,6 +1932,20 @@ function renderReportTable(
                     </tr>
                   ))}
                 </tbody>
+                <tfoot className="bg-gray-50">
+                  <tr>
+                    <td colSpan={2} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                      Totals
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {tanks.reduce((s: number, t: any) => s + Number(t.capacity ?? 0), 0).toLocaleString()} L
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {tanks.reduce((s: number, t: any) => s + Number(t.current_stock ?? 0), 0).toLocaleString()} L
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">—</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -2011,6 +2137,12 @@ function renderReportTable(
                     </div>
                   </div>
                 )}
+                {(payload?.accounts ?? []).length > 0 && (
+                  <div className="flex justify-between items-center px-4 py-3 bg-slate-50 border-t border-slate-200">
+                    <span className="text-sm font-semibold text-slate-800">Sub-total — {title}</span>
+                    <span className="text-sm font-bold tabular-nums text-slate-900">{formatCurrency(payload?.total)}</span>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -2156,6 +2288,12 @@ function renderReportTable(
                     No {title.toLowerCase()} accounts found
                   </div>
                 )}
+                {(payload?.accounts ?? []).length > 0 && (
+                  <div className="flex justify-between items-center px-4 py-3 bg-slate-50 border-t border-slate-200">
+                    <span className="text-sm font-semibold text-slate-800">Sub-total — {title}</span>
+                    <span className="text-sm font-bold tabular-nums text-slate-900">{formatCurrency(payload?.total)}</span>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -2261,6 +2399,9 @@ function renderReportTable(
   if (reportType === 'tank-inventory' && data) {
     const inventory = Array.isArray(data.inventory) ? data.inventory : (Array.isArray(data) ? data : [])
     const period = data?.period || {}
+    const invSummary = data.summary || {}
+    const totCap = inventory.reduce((s: number, t: any) => s + Number(t.capacity ?? 0), 0)
+    const totStock = inventory.reduce((s: number, t: any) => s + Number(t.current_stock ?? 0), 0)
 
     return (
       <div className="space-y-6">
@@ -2271,6 +2412,23 @@ function renderReportTable(
           reportType,
           handleReportDateChange,
           "Tank inventory shows current stock levels as of the end date."
+        )}
+
+        {(invSummary.total_capacity_liters != null || invSummary.tank_count != null) && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Tanks</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{invSummary.tank_count ?? inventory.length}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total capacity (L)</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{Number(invSummary.total_capacity_liters ?? totCap).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total stock (L)</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{Number(invSummary.total_current_stock_liters ?? totStock).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+            </div>
+          </div>
         )}
 
         {/* Table */}
@@ -2328,6 +2486,22 @@ function renderReportTable(
                 </tr>
               )}
             </tbody>
+            {inventory.length > 0 && (
+              <tfoot className="bg-slate-50">
+                <tr>
+                  <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-slate-800">
+                    Totals
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-slate-900">
+                    {totCap.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-slate-900">
+                    {totStock.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </td>
+                  <td colSpan={2} className="px-4 py-3 text-sm text-slate-600" />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
@@ -2460,6 +2634,32 @@ function renderReportTable(
                 ))
               )}
             </tbody>
+            {rows.length > 0 && (
+              <tfoot className="bg-slate-100">
+                <tr>
+                  <td colSpan={3} className="px-3 py-2.5 text-right text-xs font-bold uppercase text-slate-700">
+                    Totals
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">
+                    {formatNumber(Number(s.total_qty_on_hand ?? 0), 2)}
+                  </td>
+                  <td className="px-3 py-2.5" />
+                  <td className="px-3 py-2.5 text-right font-semibold text-slate-900">
+                    {formatCurrency(Number(s.total_cost_value ?? 0))}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-slate-900">
+                    {formatCurrency(Number(s.total_list_value ?? 0))}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">
+                    {formatNumber(Number(s.total_period_quantity_sold ?? 0), 2)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-slate-900">
+                    {formatCurrency(Number(s.total_period_revenue ?? 0))}
+                  </td>
+                  <td colSpan={3} className="px-3 py-2.5" />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
         {data.accounting_note ? (
@@ -2476,8 +2676,35 @@ function renderReportTable(
     const period = data?.period || {}
     const byCat: any[] = Array.isArray(data.by_category) ? data.by_category : []
     const rows: any[] = Array.isArray(data.rows) ? data.rows : []
+    const ms = data.summary || {}
+    const catTotals = byCat.reduce(
+      (acc, c) => ({
+        items: acc.items + Number(c.item_count ?? 0),
+        active: acc.active + Number(c.active_count ?? 0),
+        qoh: acc.qoh + Number(c.quantity_on_hand ?? 0),
+        cost: acc.cost + Number(c.extended_cost_value ?? 0),
+        list: acc.list + Number(c.extended_list_value ?? 0),
+      }),
+      { items: 0, active: 0, qoh: 0, cost: 0, list: 0 }
+    )
+    const detailTotals = rows.reduce(
+      (acc, r) => ({
+        qoh: acc.qoh + Number(r.quantity_on_hand ?? 0),
+        cost: acc.cost + Number(r.extended_cost_value ?? 0),
+        list: acc.list + Number(r.extended_list_value ?? 0),
+      }),
+      { qoh: 0, cost: 0, list: 0 }
+    )
     return (
       <div className="space-y-6">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Catalog is a live snapshot; dates label the printout only.',
+          )}
         {period?.note ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
             {String(period.note)} Dates below label the printout; stock is current.
@@ -2517,6 +2744,26 @@ function renderReportTable(
                 ))
               )}
             </tbody>
+            {byCat.length > 0 && (
+              <tfoot className="bg-slate-100">
+                <tr>
+                  <td className="px-3 py-2 text-right text-xs font-bold uppercase text-slate-700">Totals</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
+                    {ms.total_items != null ? ms.total_items : catTotals.items}
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{catTotals.active}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
+                    {formatNumber(Number(ms.total_quantity_on_hand ?? catTotals.qoh), 2)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                    {formatCurrency(Number(ms.total_extended_cost_value ?? catTotals.cost))}
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                    {formatCurrency(Number(ms.total_extended_list_value ?? catTotals.list))}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
 
@@ -2573,6 +2820,20 @@ function renderReportTable(
                 ))
               )}
             </tbody>
+            {rows.length > 0 && (
+              <tfoot className="bg-slate-100">
+                <tr>
+                  <td colSpan={6} className="px-3 py-2 text-right text-xs font-bold uppercase text-slate-700">
+                    Totals
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
+                    {formatNumber(detailTotals.qoh, 2)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(detailTotals.cost)}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(detailTotals.list)}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
         {data.accounting_note ? (
@@ -2587,6 +2848,11 @@ function renderReportTable(
   if (reportType === 'item-sales-by-category' && data) {
     const period = data?.period || {}
     const catRows: any[] = Array.isArray(data.rows) ? data.rows : []
+    const sm = data.summary || {}
+    const subLines = catRows.reduce((s, c) => s + Number(c.line_count ?? 0), 0)
+    const subDist = catRows.reduce((s, c) => s + Number(c.distinct_items ?? 0), 0)
+    const subQty = catRows.reduce((s, c) => s + Number(c.total_quantity ?? 0), 0)
+    const subRev = catRows.reduce((s, c) => s + Number(c.total_revenue ?? 0), 0)
     return (
       <div className="space-y-6">
         {hasPeriod &&
@@ -2628,6 +2894,21 @@ function renderReportTable(
                 ))
               )}
             </tbody>
+            {catRows.length > 0 && (
+              <tfoot className="bg-slate-100">
+                <tr>
+                  <td className="px-3 py-2 text-right text-xs font-bold uppercase text-slate-700">Totals</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{subLines}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{subDist}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
+                    {formatNumber(Number(sm.total_quantity ?? subQty), 2)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                    {formatCurrency(Number(sm.total_revenue ?? subRev))}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
         {data.accounting_note ? (
@@ -2642,6 +2923,11 @@ function renderReportTable(
   if (reportType === 'item-purchases-by-category' && data) {
     const period = data?.period || {}
     const catRows: any[] = Array.isArray(data.rows) ? data.rows : []
+    const sm = data.summary || {}
+    const subLines = catRows.reduce((s, c) => s + Number(c.line_count ?? 0), 0)
+    const subDist = catRows.reduce((s, c) => s + Number(c.distinct_items ?? 0), 0)
+    const subQty = catRows.reduce((s, c) => s + Number(c.total_quantity ?? 0), 0)
+    const subAmt = catRows.reduce((s, c) => s + Number(c.total_purchase_amount ?? 0), 0)
     return (
       <div className="space-y-6">
         {hasPeriod &&
@@ -2683,6 +2969,21 @@ function renderReportTable(
                 ))
               )}
             </tbody>
+            {catRows.length > 0 && (
+              <tfoot className="bg-slate-100">
+                <tr>
+                  <td className="px-3 py-2 text-right text-xs font-bold uppercase text-slate-700">Totals</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{subLines}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{subDist}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
+                    {formatNumber(Number(sm.total_quantity ?? subQty), 2)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                    {formatCurrency(Number(sm.total_purchase_amount ?? subAmt))}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
         {data.accounting_note ? (
@@ -2820,6 +3121,10 @@ function renderReportTable(
           <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
             {(() => {
               const cRows: any[] = Array.isArray(data.rows) ? data.rows : []
+              const sum = data.summary || {}
+              const tq = Number(sum.total_quantity ?? cRows.reduce((s, r) => s + Number(r.period_quantity_sold ?? 0), 0))
+              const tr = Number(sum.total_revenue ?? cRows.reduce((s, r) => s + Number(r.period_revenue ?? 0), 0))
+              const tc = cRows.reduce((s, r) => s + Number(r.est_cogs ?? 0), 0)
               return (
             <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-100">
@@ -2863,6 +3168,19 @@ function renderReportTable(
                   ))
                 )}
               </tbody>
+              {cRows.length > 0 && (
+                <tfoot className="bg-slate-100">
+                  <tr>
+                    <td colSpan={4} className="px-3 py-2 text-right text-xs font-bold uppercase text-slate-700">
+                      Totals
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{formatNumber(tq, 2)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(tr)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(tc)}</td>
+                    <td className="px-3 py-2" />
+                  </tr>
+                </tfoot>
+              )}
             </table>
               );
             })()}
@@ -2873,6 +3191,9 @@ function renderReportTable(
           <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
             {(() => {
               const cRows: any[] = Array.isArray(data.rows) ? data.rows : []
+              const sum = data.summary || {}
+              const tq = Number(sum.total_quantity ?? cRows.reduce((s, r) => s + Number(r.period_quantity_purchased ?? 0), 0))
+              const ta = Number(sum.total_purchase_amount ?? cRows.reduce((s, r) => s + Number(r.period_purchase_amount ?? 0), 0))
               return (
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-100">
@@ -2918,6 +3239,18 @@ function renderReportTable(
                       ))
                     )}
                   </tbody>
+                  {cRows.length > 0 && (
+                    <tfoot className="bg-slate-100">
+                      <tr>
+                        <td colSpan={4} className="px-3 py-2 text-right text-xs font-bold uppercase text-slate-700">
+                          Totals
+                        </td>
+                        <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{formatNumber(tq, 2)}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(ta)}</td>
+                        <td className="px-3 py-2 text-sm text-slate-500">—</td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               )
             })()}
@@ -2928,6 +3261,12 @@ function renderReportTable(
           <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
             {(() => {
               const cRows: any[] = Array.isArray(data.rows) ? data.rows : []
+              const sum = data.summary || {}
+              const tp = Number(sum.total_qty_purchased ?? cRows.reduce((s, r) => s + Number(r.quantity_purchased ?? 0), 0))
+              const ts = Number(sum.total_qty_sold ?? cRows.reduce((s, r) => s + Number(r.quantity_sold ?? 0), 0))
+              const tpa = Number(sum.total_purchase_amount ?? cRows.reduce((s, r) => s + Number(r.purchase_amount ?? 0), 0))
+              const tsr = Number(sum.total_sales_revenue ?? cRows.reduce((s, r) => s + Number(r.sales_revenue ?? 0), 0))
+              const tn = cRows.reduce((s, r) => s + Number(r.net_quantity_in ?? 0), 0)
               return (
             <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-100">
@@ -2978,6 +3317,20 @@ function renderReportTable(
                   ))
                 )}
               </tbody>
+              {cRows.length > 0 && (
+                <tfoot className="bg-slate-100">
+                  <tr>
+                    <td colSpan={3} className="px-3 py-2 text-right text-xs font-bold uppercase text-slate-700">
+                      Totals
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{formatNumber(tp, 2)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(tpa)}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{formatNumber(ts, 2)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(tsr)}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{formatNumber(tn, 2)}</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
               );
             })()}
@@ -3007,12 +3360,21 @@ function renderReportTable(
             <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
               {(() => {
                 const cRows: any[] = Array.isArray(data.rows) ? data.rows : []
+                const tierOrder = ['fast', 'medium', 'slow', 'no_period_sales'] as const
                 const tierClass = (t: string) => {
                   if (t === 'fast') return 'bg-emerald-100 text-emerald-900'
                   if (t === 'medium') return 'bg-amber-100 text-amber-900'
                   if (t === 'slow') return 'bg-orange-100 text-orange-950'
                   return 'bg-slate-100 text-slate-700'
                 }
+                const gt = cRows.reduce(
+                  (a, r) => ({
+                    ooh: a.ooh + Number(r.quantity_on_hand ?? 0),
+                    pq: a.pq + Number(r.period_quantity_sold ?? 0),
+                    rev: a.rev + Number(r.period_revenue ?? 0),
+                  }),
+                  { ooh: 0, pq: 0, rev: 0 }
+                )
                 return (
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-100">
@@ -3036,31 +3398,76 @@ function renderReportTable(
                       </td>
                     </tr>
                   ) : (
-                    cRows.map((r: any, idx: number) => (
-                      <tr key={idx} className="hover:bg-slate-50/80">
-                        <td className="whitespace-nowrap px-3 py-2">
-                          <span
-                            className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${tierClass(r.movement_tier || '')}`}
-                          >
-                            {String(r.movement_tier || '').replace(/_/g, ' ')}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-900">{r.sku || '—'}</td>
-                        <td className="max-w-[200px] px-3 py-2 text-slate-800">
-                          <span className="line-clamp-2" title={r.name}>
-                            {r.name}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">{r.reporting_category}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.period_quantity_sold, 2)}</td>
-                        <td className="px-3 py-2 text-right text-slate-800">{formatCurrency(r.period_revenue)}</td>
-                        <td className="px-3 py-2 text-right text-slate-800">{formatNumber(r.velocity_per_day, 4)}</td>
-                        <td className="px-3 py-2 text-right text-slate-600">{r.velocity_rank || '—'}</td>
-                      </tr>
-                    ))
+                    tierOrder.map((tier) => {
+                      const tierRows = cRows.filter((r) => String(r.movement_tier || '') === tier)
+                      if (tierRows.length === 0) return null
+                      const st = tierRows.reduce(
+                        (a, r) => ({
+                          ooh: a.ooh + Number(r.quantity_on_hand ?? 0),
+                          pq: a.pq + Number(r.period_quantity_sold ?? 0),
+                          rev: a.rev + Number(r.period_revenue ?? 0),
+                        }),
+                        { ooh: 0, pq: 0, rev: 0 }
+                      )
+                      const label = String(tier).replace(/_/g, ' ')
+                      return (
+                        <Fragment key={tier}>
+                          {tierRows.map((r: any, idx: number) => (
+                            <tr key={`${tier}-${idx}`} className="hover:bg-slate-50/80">
+                              <td className="whitespace-nowrap px-3 py-2">
+                                <span
+                                  className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${tierClass(r.movement_tier || '')}`}
+                                >
+                                  {String(r.movement_tier || '').replace(/_/g, ' ')}
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-900">{r.sku || '—'}</td>
+                              <td className="max-w-[200px] px-3 py-2 text-slate-800">
+                                <span className="line-clamp-2" title={r.name}>
+                                  {r.name}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">{r.reporting_category}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.period_quantity_sold, 2)}</td>
+                              <td className="px-3 py-2 text-right text-slate-800">{formatCurrency(r.period_revenue)}</td>
+                              <td className="px-3 py-2 text-right text-slate-800">{formatNumber(r.velocity_per_day, 4)}</td>
+                              <td className="px-3 py-2 text-right text-slate-600">{r.velocity_rank || '—'}</td>
+                            </tr>
+                          ))}
+                          <tr className="bg-slate-100/90">
+                            <td colSpan={4} className="px-3 py-2 text-right text-xs font-semibold uppercase text-slate-600">
+                              Sub-total — {label}
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">
+                              {formatNumber(st.ooh, 2)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">
+                              {formatNumber(st.pq, 2)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs font-semibold text-slate-900">{formatCurrency(st.rev)}</td>
+                            <td colSpan={2} className="px-3 py-2 text-xs text-slate-500">
+                              {tierRows.length} SKU{tierRows.length === 1 ? '' : 's'}
+                            </td>
+                          </tr>
+                        </Fragment>
+                      )
+                    })
                   )}
                 </tbody>
+                {cRows.length > 0 && (
+                  <tfoot className="bg-slate-200/80">
+                    <tr>
+                      <td colSpan={4} className="px-3 py-2.5 text-right text-xs font-bold uppercase text-slate-800">
+                        Total — all tiers
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatNumber(gt.ooh, 2)}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatNumber(gt.pq, 2)}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold text-slate-900">{formatCurrency(gt.rev)}</td>
+                      <td colSpan={2} className="px-3 py-2.5" />
+                    </tr>
+                  </tfoot>
+                )}
               </table>
                 );
               })()}
@@ -3091,12 +3498,21 @@ function renderReportTable(
             <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
               {(() => {
                 const cRows: any[] = Array.isArray(data.rows) ? data.rows : []
+                const tierOrder = ['fast', 'medium', 'slow', 'no_period_purchases'] as const
                 const tierClass = (t: string) => {
                   if (t === 'fast') return 'bg-emerald-100 text-emerald-900'
                   if (t === 'medium') return 'bg-amber-100 text-amber-900'
                   if (t === 'slow') return 'bg-orange-100 text-orange-950'
                   return 'bg-slate-100 text-slate-700'
                 }
+                const gt = cRows.reduce(
+                  (a, r) => ({
+                    ooh: a.ooh + Number(r.quantity_on_hand ?? 0),
+                    pq: a.pq + Number(r.period_quantity_purchased ?? 0),
+                    pam: a.pam + Number(r.period_purchase_amount ?? 0),
+                  }),
+                  { ooh: 0, pq: 0, pam: 0 }
+                )
                 return (
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
                     <thead className="bg-slate-100">
@@ -3120,39 +3536,84 @@ function renderReportTable(
                           </td>
                         </tr>
                       ) : (
-                        cRows.map((r: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-slate-50/80">
-                            <td className="whitespace-nowrap px-3 py-2">
-                              <span
-                                className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${tierClass(r.movement_tier || '')}`}
-                              >
-                                {String(r.movement_tier || '').replace(/_/g, ' ')}
-                              </span>
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-900">{r.sku || '—'}</td>
-                            <td className="max-w-[200px] px-3 py-2 text-slate-800">
-                              <span className="line-clamp-2" title={r.name}>
-                                {r.name}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">
-                              {r.reporting_category}
-                            </td>
-                            <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
-                            <td className="px-3 py-2 text-right tabular-nums">
-                              {formatNumber(r.period_quantity_purchased, 2)}
-                            </td>
-                            <td className="px-3 py-2 text-right text-slate-800">
-                              {formatCurrency(r.period_purchase_amount)}
-                            </td>
-                            <td className="px-3 py-2 text-right text-slate-800">
-                              {formatNumber(r.purchase_velocity_per_day, 4)}
-                            </td>
-                            <td className="px-3 py-2 text-right text-slate-600">{r.velocity_rank || '—'}</td>
-                          </tr>
-                        ))
+                        tierOrder.map((tier) => {
+                          const tierRows = cRows.filter((r) => String(r.movement_tier || '') === tier)
+                          if (tierRows.length === 0) return null
+                          const st = tierRows.reduce(
+                            (a, r) => ({
+                              ooh: a.ooh + Number(r.quantity_on_hand ?? 0),
+                              pq: a.pq + Number(r.period_quantity_purchased ?? 0),
+                              pam: a.pam + Number(r.period_purchase_amount ?? 0),
+                            }),
+                            { ooh: 0, pq: 0, pam: 0 }
+                          )
+                          const label = String(tier).replace(/_/g, ' ')
+                          return (
+                            <Fragment key={tier}>
+                              {tierRows.map((r: any, idx: number) => (
+                                <tr key={`${tier}-${idx}`} className="hover:bg-slate-50/80">
+                                  <td className="whitespace-nowrap px-3 py-2">
+                                    <span
+                                      className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${tierClass(r.movement_tier || '')}`}
+                                    >
+                                      {String(r.movement_tier || '').replace(/_/g, ' ')}
+                                    </span>
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-900">{r.sku || '—'}</td>
+                                  <td className="max-w-[200px] px-3 py-2 text-slate-800">
+                                    <span className="line-clamp-2" title={r.name}>
+                                      {r.name}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">
+                                    {r.reporting_category}
+                                  </td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">
+                                    {formatNumber(r.period_quantity_purchased, 2)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-slate-800">
+                                    {formatCurrency(r.period_purchase_amount)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-slate-800">
+                                    {formatNumber(r.purchase_velocity_per_day, 4)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-slate-600">{r.velocity_rank || '—'}</td>
+                                </tr>
+                              ))}
+                              <tr className="bg-slate-100/90">
+                                <td colSpan={4} className="px-3 py-2 text-right text-xs font-semibold uppercase text-slate-600">
+                                  Sub-total — {label}
+                                </td>
+                                <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">
+                                  {formatNumber(st.ooh, 2)}
+                                </td>
+                                <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">
+                                  {formatNumber(st.pq, 2)}
+                                </td>
+                                <td className="px-3 py-2 text-right text-xs font-semibold text-slate-900">{formatCurrency(st.pam)}</td>
+                                <td colSpan={2} className="px-3 py-2 text-xs text-slate-500">
+                                  {tierRows.length} SKU{tierRows.length === 1 ? '' : 's'}
+                                </td>
+                              </tr>
+                            </Fragment>
+                          )
+                        })
                       )}
                     </tbody>
+                    {cRows.length > 0 && (
+                      <tfoot className="bg-slate-200/80">
+                        <tr>
+                          <td colSpan={4} className="px-3 py-2.5 text-right text-xs font-bold uppercase text-slate-800">
+                            Total — all tiers
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatNumber(gt.ooh, 2)}</td>
+                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatNumber(gt.pq, 2)}</td>
+                          <td className="px-3 py-2.5 text-right font-semibold text-slate-900">{formatCurrency(gt.pam)}</td>
+                          <td colSpan={2} className="px-3 py-2.5" />
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 )
               })()}
@@ -3267,6 +3728,25 @@ function renderReportTable(
                 </tr>
               )}
             </tbody>
+            {nozzles.length > 0 && (
+              <tfoot className="bg-gray-50">
+                <tr>
+                  <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                    Totals
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                    {summary.total_transactions ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_transactions ?? 0), 0)}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                    {Number(summary.total_liters ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_liters ?? 0), 0)).toFixed(2)} L
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
+                    {formatCurrency(Number(summary.total_amount ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_amount ?? 0), 0)))}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-500">—</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
@@ -3276,8 +3756,16 @@ function renderReportTable(
   // Customer & Vendor Balances
   if ((reportType === 'customer-balances' || reportType === 'vendor-balances') && data) {
     const isCustomer = reportType === 'customer-balances'
-    const entries = Array.isArray(data.customers) ? data.customers : (Array.isArray(data.vendors) ? data.vendors : (Array.isArray(data) ? data : []))
-    const totalBalance = isCustomer ? (data?.total_ar || entries.reduce((sum: number, entry: any) => sum + (Number(entry.balance) || 0), 0)) : (data?.total_ap || entries.reduce((sum: number, entry: any) => sum + (Number(entry.balance) || 0), 0))
+    const entries = isCustomer
+      ? Array.isArray(data.customers)
+        ? data.customers
+        : []
+      : Array.isArray(data.vendors)
+        ? data.vendors
+        : []
+    const totalPositive = isCustomer ? Number(data?.total_ar ?? 0) : Number(data?.total_ap ?? 0)
+    const netListed = entries.reduce((sum: number, entry: any) => sum + Number(entry.balance ?? 0), 0)
+    const totalNet = data?.total_net_balance != null ? Number(data.total_net_balance) : netListed
     const period = data?.period || {}
     
     return (
@@ -3299,8 +3787,8 @@ function renderReportTable(
           </div>
           <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
             <p className="text-sm text-gray-500 uppercase tracking-wide">Total {isCustomer ? 'Accounts Receivable' : 'Accounts Payable'}</p>
-            <p className={`text-2xl font-semibold mt-2 ${totalBalance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
-                      {formatCurrency(Math.abs(totalBalance))}
+            <p className={`text-2xl font-semibold mt-2 ${totalPositive >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+                      {formatCurrency(Math.abs(totalPositive))}
             </p>
           </div>
           <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
@@ -3373,6 +3861,23 @@ function renderReportTable(
                 </tr>
               )}
             </tbody>
+            {entries.length > 0 && (
+              <tfoot className="bg-gray-50">
+                <tr>
+                  <td colSpan={4} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                    Sub-total —{' '}
+                    {isCustomer ? 'accounts receivable (balance > 0)' : 'accounts payable (balance > 0)'}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(totalPositive)}</td>
+                </tr>
+                <tr>
+                  <td colSpan={4} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                    Total — net of all listed balances
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">{formatCurrency(totalNet)}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
@@ -3384,7 +3889,18 @@ function renderReportTable(
     const summary = data.summary || {}
     const sessions = Array.isArray(data.sessions) ? data.sessions : []
     const byCashier = data.by_cashier || {}
-    
+    const sessTotals =
+      sessions.length > 0
+        ? {
+            tx: Number(summary.total_transactions ?? sessions.reduce((s: number, x: any) => s + Number(x.transaction_count ?? 0), 0)),
+            sales: Number(summary.total_sales ?? sessions.reduce((s: number, x: any) => s + Number(x.total_sales ?? 0), 0)),
+            L: Number(summary.total_liters ?? sessions.reduce((s: number, x: any) => s + Number(x.total_liters ?? 0), 0)),
+            exp: Number(summary.total_cash_expected ?? sessions.reduce((s: number, x: any) => s + Number(x.cash_expected ?? 0), 0)),
+            cnt: Number(summary.total_cash_counted ?? sessions.reduce((s: number, x: any) => s + Number(x.cash_counted ?? 0), 0)),
+            var: Number(summary.total_variance ?? sessions.reduce((s: number, x: any) => s + Number(x.variance ?? 0), 0)),
+          }
+        : null
+
     return (
       <div className="space-y-6">
         {/* Period Info - Editable inline date inputs */}
@@ -3673,6 +4189,24 @@ function renderReportTable(
                     </tr>
                   ))}
                 </tbody>
+                {sessTotals && (
+                  <tfoot className="bg-gray-50">
+                    <tr>
+                      <td colSpan={4} className="px-6 py-3 text-right text-sm font-semibold text-gray-800">
+                        Totals — all sessions
+                      </td>
+                      <td className="px-6 py-3 text-right text-sm font-bold tabular-nums text-gray-900">{sessTotals.tx}</td>
+                      <td className="px-6 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(sessTotals.sales)}</td>
+                      <td className="px-6 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                        {sessTotals.L.toFixed(2)} L
+                      </td>
+                      <td className="px-6 py-3 text-right text-sm font-semibold text-gray-900">{formatCurrency(sessTotals.exp)}</td>
+                      <td className="px-6 py-3 text-right text-sm font-semibold text-gray-900">{formatCurrency(sessTotals.cnt)}</td>
+                      <td className="px-6 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(sessTotals.var)}</td>
+                      <td className="px-6 py-3" />
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           ) : (
@@ -3695,6 +4229,16 @@ function renderReportTable(
     const byTank = Array.isArray(data.by_tank) ? data.by_tank : []
     const summary = data.summary || {}
     const netV = Number(summary.net_variance_liters ?? 0)
+    const entryVarSum = entries.reduce((s: number, row: any) => {
+      const v = row.variance_liters
+      if (v == null || v === '') return s
+      return s + Number(v)
+    }, 0)
+    const entryValSum = entries.reduce((s: number, row: any) => {
+      const v = row.variance_value_estimate
+      if (v == null || v === '') return s
+      return s + Number(v)
+    }, 0)
 
     return (
       <div className="space-y-6">
@@ -3791,6 +4335,22 @@ function renderReportTable(
                     </tr>
                   ))}
                 </tbody>
+                <tfoot className="bg-gray-50">
+                  <tr>
+                    <td className="px-4 py-2 text-right text-xs font-semibold text-gray-800">Totals — all tanks</td>
+                    <td className="px-4 py-2 text-right text-xs font-bold tabular-nums text-gray-900">
+                      {byTank.reduce((s: number, r: any) => s + Number(r.readings ?? 0), 0)}
+                    </td>
+                    <td
+                      className={`px-4 py-2 text-right text-xs font-bold tabular-nums ${
+                        netV >= 0 ? 'text-emerald-800' : 'text-red-800'
+                      }`}
+                    >
+                      {netV >= 0 ? '+' : ''}
+                      {netV.toFixed(2)}
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -3864,6 +4424,24 @@ function renderReportTable(
                     )
                   })}
                 </tbody>
+                <tfoot className="bg-slate-100">
+                  <tr>
+                    <td colSpan={7} className="px-3 py-2.5 text-right text-xs font-bold uppercase text-slate-800">
+                      Totals — all readings
+                    </td>
+                    <td
+                      className={`px-3 py-2.5 text-right text-xs font-bold tabular-nums ${
+                        entryVarSum >= 0 ? 'text-emerald-900' : 'text-red-900'
+                      }`}
+                    >
+                      {entryVarSum >= 0 ? '+' : ''}
+                      {entryVarSum.toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2.5 text-sm text-slate-500">—</td>
+                    <td className="px-3 py-2.5 text-right text-xs font-bold text-slate-900">{formatCurrency(entryValSum)}</td>
+                    <td colSpan={3} className="px-3 py-2.5" />
+                  </tr>
+                </tfoot>
               </table>
             </div>
           ) : (
@@ -3883,7 +4461,16 @@ function renderReportTable(
     const dips = Array.isArray(data.dips) ? data.dips : []
     const byTank = data.by_tank || {}
     const summary = data.summary || {}
-    
+    const dipVq = dips.reduce(
+      (s: number, d: { variance_quantity?: unknown; variance?: unknown }) =>
+        s + Number(d.variance_quantity ?? d.variance ?? 0),
+      0
+    )
+    const dipVval = dips.reduce(
+      (s: number, d: { variance_value?: unknown }) => s + Number(d.variance_value ?? 0),
+      0
+    )
+
     return (
       <div className="space-y-6">
         {/* Period Info - Editable inline date inputs */}
@@ -4074,6 +4661,47 @@ function renderReportTable(
                     )
                   })}
                 </tbody>
+                <tfoot className="bg-gray-50">
+                  <tr>
+                    <td colSpan={4} className="px-4 py-2 text-right text-xs font-semibold text-emerald-800">
+                      Sub-total — gains (summary)
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs font-medium tabular-nums text-emerald-800">
+                      +{Number(summary.total_gain_quantity_liters ?? 0).toFixed(2)} L
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs font-medium text-emerald-800">
+                      {formatCurrency(Number(summary.total_gain_value ?? 0))}
+                    </td>
+                    <td colSpan={3} />
+                  </tr>
+                  <tr>
+                    <td colSpan={4} className="px-4 py-2 text-right text-xs font-semibold text-red-800">
+                      Sub-total — losses (summary)
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs font-medium tabular-nums text-red-800">
+                      −{Number(summary.total_loss_quantity_liters ?? 0).toFixed(2)} L
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs font-medium text-red-800">
+                      {formatCurrency(Number(summary.total_loss_value ?? 0))}
+                    </td>
+                    <td colSpan={3} />
+                  </tr>
+                  <tr>
+                    <td colSpan={5} className="px-4 py-3 text-right text-sm font-bold text-gray-900">
+                      Total — net variance (all dips)
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-right text-sm font-bold tabular-nums ${
+                        dipVq >= 0 ? 'text-green-800' : 'text-red-800'
+                      }`}
+                    >
+                      {dipVq >= 0 ? '+' : ''}
+                      {dipVq.toFixed(2)} L
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(dipVval)}</td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
               </table>
             </div>
           ) : (

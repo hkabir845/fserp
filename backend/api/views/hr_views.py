@@ -45,6 +45,56 @@ def _parse_date(val):
         return None
 
 
+EARNING_KEYS = (
+    "base_salary_total",
+    "overtime_amount",
+    "bonus_amount",
+    "other_earnings_amount",
+)
+
+
+def _q_money(v: Decimal) -> Decimal:
+    return (v or Decimal("0")).quantize(Decimal("0.01"))
+
+
+def _gross_from_earning_parts(
+    base: Decimal, ot: Decimal, bonus: Decimal, other: Decimal
+) -> Decimal:
+    return _q_money(base + ot + bonus + other)
+
+
+def _earning_tuple_from_body(body: dict, p: PayrollRun | None) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """Resolve four earning amounts; missing keys use existing payroll row when `p` is set."""
+
+    def pick(attr: str) -> Decimal:
+        if attr in body:
+            return _decimal(body.get(attr), Decimal("0"))
+        if p is not None:
+            return _q_money(getattr(p, attr, None) or Decimal("0"))
+        return Decimal("0")
+
+    return (
+        pick("base_salary_total"),
+        pick("overtime_amount"),
+        pick("bonus_amount"),
+        pick("other_earnings_amount"),
+    )
+
+
+def _validate_earning_parts_non_negative(
+    base: Decimal, ot: Decimal, bonus: Decimal, other: Decimal
+) -> str | None:
+    if base < 0:
+        return "Base salary cannot be negative"
+    if ot < 0:
+        return "Overtime cannot be negative"
+    if bonus < 0:
+        return "Bonus cannot be negative"
+    if other < 0:
+        return "Other earnings cannot be negative"
+    return None
+
+
 def _employee_to_json(e: Employee) -> dict:
     return {
         "id": e.id,
@@ -306,12 +356,20 @@ def _payroll_run_to_json(p: PayrollRun) -> dict:
             sj = JournalEntry.objects.filter(pk=p.salary_journal_id).only("entry_number").first()
         if sj is not None:
             jn = (sj.entry_number or "").strip()
+    base = float(getattr(p, "base_salary_total", None) or Decimal("0"))
+    ot = float(getattr(p, "overtime_amount", None) or Decimal("0"))
+    bon = float(getattr(p, "bonus_amount", None) or Decimal("0"))
+    oth = float(getattr(p, "other_earnings_amount", None) or Decimal("0"))
     return {
         "id": p.id,
         "payroll_number": p.payroll_number or "",
         "pay_period_start": _serialize_date(p.pay_period_start),
         "pay_period_end": _serialize_date(p.pay_period_end),
         "payment_date": _serialize_date(p.payment_date),
+        "base_salary_total": base,
+        "overtime_amount": ot,
+        "bonus_amount": bon,
+        "other_earnings_amount": oth,
         "total_gross": float(p.total_gross or Decimal("0")),
         "total_deductions": float(p.total_deductions or Decimal("0")),
         "total_net": float(p.total_net or Decimal("0")),
@@ -372,17 +430,31 @@ def payroll_list_or_create(request):
     else:
         notes_str = str(notes)[:5000]
 
-    g, d, n = Decimal("0"), Decimal("0"), Decimal("0")
-    if any(
-        k in body
-        for k in ("total_gross", "total_deductions", "total_net")
-    ):
+    base = ot = bonus = other = Decimal("0")
+    g = Decimal("0")
+    has_earn = any(k in body for k in EARNING_KEYS)
+    has_legacy_totals = any(
+        k in body for k in ("total_gross", "total_deductions", "total_net")
+    )
+
+    if has_earn:
+        base, ot, bonus, other = _earning_tuple_from_body(body, None)
+        ev = _validate_earning_parts_non_negative(base, ot, bonus, other)
+        if ev:
+            return JsonResponse({"detail": ev}, status=400)
+        g = _gross_from_earning_parts(base, ot, bonus, other)
+    elif has_legacy_totals:
         g = _decimal(body.get("total_gross"), Decimal("0"))
+        base = _q_money(g)
+        ot = bonus = other = Decimal("0")
+
+    d, n = Decimal("0"), Decimal("0")
+    if has_earn or has_legacy_totals:
         d = _decimal(body.get("total_deductions"), Decimal("0"))
         if "total_net" in body and body.get("total_net") is not None and str(body.get("total_net")).strip() != "":
             n = _decimal(body.get("total_net"), Decimal("0"))
         else:
-            n = (g or Decimal("0")) - (d or Decimal("0"))
+            n = _q_money(g - d)
         aerr = _validate_payroll_amounts(g, d, n)
         if aerr:
             return JsonResponse({"detail": aerr}, status=400)
@@ -393,6 +465,10 @@ def payroll_list_or_create(request):
         pay_period_end=pe,
         payment_date=pd,
         notes=notes_str,
+        base_salary_total=base,
+        overtime_amount=ot,
+        bonus_amount=bonus,
+        other_earnings_amount=other,
         total_gross=g,
         total_deductions=d,
         total_net=n,
@@ -445,11 +521,31 @@ def payroll_detail(request, payroll_id: int):
         if "notes" in body:
             n = body.get("notes")
             p.notes = "" if n is None else str(n)[:5000]
-        if "total_gross" in body or "total_deductions" in body or "total_net" in body:
-            g = _decimal(
-                body.get("total_gross") if "total_gross" in body else p.total_gross,
-                p.total_gross,
-            )
+
+        amount_touched = False
+        if any(k in body for k in EARNING_KEYS):
+            base, ot, bonus, other_amt = _earning_tuple_from_body(body, p)
+            ev = _validate_earning_parts_non_negative(base, ot, bonus, other_amt)
+            if ev:
+                return JsonResponse({"detail": ev}, status=400)
+            g_new = _gross_from_earning_parts(base, ot, bonus, other_amt)
+            p.base_salary_total = _q_money(base)
+            p.overtime_amount = _q_money(ot)
+            p.bonus_amount = _q_money(bonus)
+            p.other_earnings_amount = _q_money(other_amt)
+            p.total_gross = g_new
+            amount_touched = True
+        elif "total_gross" in body:
+            g = _decimal(body.get("total_gross"), p.total_gross)
+            p.base_salary_total = _q_money(g)
+            p.overtime_amount = Decimal("0")
+            p.bonus_amount = Decimal("0")
+            p.other_earnings_amount = Decimal("0")
+            p.total_gross = _q_money(g)
+            amount_touched = True
+
+        if amount_touched or "total_deductions" in body or "total_net" in body:
+            g = _q_money(p.total_gross)
             d = _decimal(
                 body.get("total_deductions") if "total_deductions" in body else p.total_deductions,
                 p.total_deductions,
@@ -457,13 +553,10 @@ def payroll_detail(request, payroll_id: int):
             if "total_net" in body and body.get("total_net") is not None and str(body.get("total_net")).strip() != "":
                 n = _decimal(body.get("total_net"), p.total_net)
             else:
-                n = (g or Decimal("0")) - (d or Decimal("0"))
-            aerr = _validate_payroll_amounts(
-                g or Decimal("0"), d or Decimal("0"), n or Decimal("0")
-            )
+                n = _q_money(g - d)
+            aerr = _validate_payroll_amounts(g, d, n)
             if aerr:
                 return JsonResponse({"detail": aerr}, status=400)
-            p.total_gross = g
             p.total_deductions = d
             p.total_net = n
         if "status" in body and body.get("status") is not None:
@@ -506,6 +599,10 @@ def payroll_from_employees(request, payroll_id: int):
         ).aggregate(t=Sum("salary"))["t"]
     ) or Decimal("0")
     s = s.quantize(Decimal("0.01"))
+    p.base_salary_total = s
+    p.overtime_amount = Decimal("0")
+    p.bonus_amount = Decimal("0")
+    p.other_earnings_amount = Decimal("0")
     p.total_gross = s
     p.total_deductions = Decimal("0")
     p.total_net = s
@@ -571,6 +668,10 @@ def payroll_from_one_employee(request, payroll_id: int):
             },
             status=400,
         )
+    p.base_salary_total = s
+    p.overtime_amount = Decimal("0")
+    p.bonus_amount = Decimal("0")
+    p.other_earnings_amount = Decimal("0")
     p.total_gross = s
     p.total_deductions = Decimal("0")
     p.total_net = s

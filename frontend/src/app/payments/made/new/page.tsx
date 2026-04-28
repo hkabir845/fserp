@@ -1,13 +1,13 @@
 'use client'
 
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { ArrowLeft, AlertCircle } from 'lucide-react'
 import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
-import { formatDateOnly } from '@/utils/date'
+import { formatDateOnly, localDateISO } from '@/utils/date'
 import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_EDITABLE_FULL_BLUE_CLASS } from '@/utils/amountFieldStyles'
 import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
 
@@ -22,6 +22,8 @@ interface OutstandingBill {
   amount_paid: number
   balance_due: number
   days_overdue: number | null
+  /** Bill workflow status; draft bills appear for visibility but cannot be paid until Open. */
+  status?: string
   synthetic?: boolean
   on_account?: boolean
 }
@@ -34,6 +36,48 @@ function parseNum(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0
   const n = Number(v)
   return Number.isFinite(n) ? n : 0
+}
+
+/** Ensure one on-account / vendor advance line (bill_id 0) so prepayment is always available in the grid. */
+function mergeOutstandingForVendor(
+  apiRows: OutstandingBill[] | null | undefined,
+  vendorId: number
+): OutstandingBill[] {
+  const rows = Array.isArray(apiRows) ? [...apiRows] : []
+  const hasOa = rows.some((r) => r.synthetic && r.on_account)
+  if (!hasOa) {
+    rows.push({
+      id: 0,
+      synthetic: true,
+      on_account: true,
+      bill_number: 'On-account & vendor advance (prepayment)',
+      bill_date: new Date().toISOString().split('T')[0],
+      due_date: null,
+      vendor_id: vendorId,
+      vendor_name: '',
+      total_amount: 0,
+      amount_paid: 0,
+      balance_due: 0,
+      days_overdue: null,
+    })
+  }
+  return rows
+}
+
+function isVendorAdvanceRow(bill: OutstandingBill): boolean {
+  return Boolean(bill.synthetic && bill.on_account)
+}
+
+function isDraftBillRow(bill: OutstandingBill): boolean {
+  if (bill.synthetic) return false
+  return (bill.status || '').toLowerCase() === 'draft'
+}
+
+/** Max amount that can be applied to this row (draft = 0 until bill is approved Open). */
+function maxAllocatableForBill(bill: OutstandingBill): number {
+  if (isVendorAdvanceRow(bill)) return Number.MAX_SAFE_INTEGER
+  if (isDraftBillRow(bill)) return 0
+  return parseNum(bill.balance_due)
 }
 
 function normalizeOutstandingBill(row: Record<string, unknown>): OutstandingBill {
@@ -51,6 +95,7 @@ function normalizeOutstandingBill(row: Record<string, unknown>): OutstandingBill
       row.days_overdue === null || row.days_overdue === undefined
         ? null
         : parseNum(row.days_overdue),
+    status: row.status != null && row.status !== '' ? String(row.status) : undefined,
     synthetic: row.synthetic === true,
     on_account: row.on_account === true,
   }
@@ -211,7 +256,7 @@ function RecordPaymentMadeInner() {
   const [selectedVendorId, setSelectedVendorId] = useState<number | null>(null)
   const [selectedBankAccountId, setSelectedBankAccountId] = useState<number | null>(null)
   const [outstandingBills, setOutstandingBills] = useState<OutstandingBill[]>([])
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0])
+  const [paymentDate, setPaymentDate] = useState(() => localDateISO())
   const [paymentMethod, setPaymentMethod] = useState('check')
   const [referenceNumber, setReferenceNumber] = useState('')
   const [memo, setMemo] = useState('')
@@ -267,9 +312,10 @@ function RecordPaymentMadeInner() {
         const response = await api.get(`/payments/made/outstanding`, {
           params: { vendor_id: selectedVendorId },
         })
-        const data = Array.isArray(response.data)
+        const raw = Array.isArray(response.data)
           ? response.data.map((r: Record<string, unknown>) => normalizeOutstandingBill(r))
           : []
+        const data = mergeOutstandingForVendor(raw, selectedVendorId)
         setOutstandingBills(data)
         setPayFullBalanceBillIds(new Set())
         setAllocations(
@@ -368,7 +414,7 @@ function RecordPaymentMadeInner() {
     )
     if (!bill) return
     const allocKey = allocBillId(bill)
-    const maxAmount = parseNum(bill.balance_due)
+    const maxAmount = maxAllocatableForBill(bill)
     const allocatedAmount = Math.min(Math.max(0, amount), maxAmount)
     const fullBalance = maxAmount
     const isFullLine = fullBalance > 0 && Math.abs(allocatedAmount - fullBalance) < 0.005
@@ -379,9 +425,15 @@ function RecordPaymentMadeInner() {
       return next
     })
     setAllocations((prev) => {
-      const updated = prev.map((alloc) =>
+      let updated = prev.map((alloc) =>
         alloc.bill_id === allocKey ? { ...alloc, allocated_amount: allocatedAmount } : alloc
       )
+      // Clearing a real bill's allocation (typed 0 or reduced) also clears overpay on vendor advance.
+      if (allocatedAmount === 0 && !isVendorAdvanceRow(bill)) {
+        updated = updated.map((alloc) =>
+          alloc.bill_id === 0 ? { ...alloc, allocated_amount: 0 } : alloc
+        )
+      }
       const newTotal = updated.reduce((sum, a) => sum + a.allocated_amount, 0)
       setTotalPaymentAmount(newTotal)
       return updated
@@ -391,6 +443,7 @@ function RecordPaymentMadeInner() {
   const handleRowPayFullToggle = (allocKey: number, checked: boolean) => {
     const bill = outstandingBills.find((b) => allocBillId(b) === allocKey)
     if (!bill) return
+    if (isDraftBillRow(bill) && checked) return
     const balance = parseNum(bill.balance_due)
     if (balance <= 0 && checked) return
     setPayFullBalanceBillIds((prev) => {
@@ -400,15 +453,86 @@ function RecordPaymentMadeInner() {
       return next
     })
     setAllocations((prev) => {
-      const updated = prev.map((alloc) =>
+      let updated = prev.map((alloc) =>
         alloc.bill_id === allocKey
           ? { ...alloc, allocated_amount: checked ? balance : 0 }
           : alloc
       )
+      // Unchecking a real bill must also clear vendor advance: overflow from overpay lives there
+      // and would otherwise stay allocated when the bill line is cleared.
+      if (!checked && !isVendorAdvanceRow(bill)) {
+        updated = updated.map((alloc) =>
+          alloc.bill_id === 0 ? { ...alloc, allocated_amount: 0 } : alloc
+        )
+      }
       const newTotal = updated.reduce((s, a) => s + a.allocated_amount, 0)
       setTotalPaymentAmount(newTotal)
       return updated
     })
+  }
+
+  const realBillsWithPositiveBalance = useMemo(
+    () =>
+      outstandingBills.filter(
+        (b) =>
+          !isVendorAdvanceRow(b) &&
+          !isDraftBillRow(b) &&
+          parseNum(b.balance_due) > 0
+      ),
+    [outstandingBills]
+  )
+
+  const allFullBalanceTicked =
+    realBillsWithPositiveBalance.length > 0 &&
+    realBillsWithPositiveBalance.every((b) => payFullBalanceBillIds.has(allocBillId(b)))
+
+  const someFullBalanceTicked =
+    realBillsWithPositiveBalance.some((b) => payFullBalanceBillIds.has(allocBillId(b))) &&
+    !allFullBalanceTicked
+
+  const selectAllFullRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (selectAllFullRef.current) {
+      selectAllFullRef.current.indeterminate = someFullBalanceTicked
+    }
+  }, [someFullBalanceTicked, allFullBalanceTicked, realBillsWithPositiveBalance.length])
+
+  const toggleSelectAllFullBalance = () => {
+    if (realBillsWithPositiveBalance.length === 0) return
+    if (allFullBalanceTicked) {
+      setPayFullBalanceBillIds((prev) => {
+        const next = new Set(prev)
+        for (const b of realBillsWithPositiveBalance) {
+          next.delete(allocBillId(b))
+        }
+        return next
+      })
+      setAllocations((prev) => {
+        const updated = prev.map((alloc) => ({ ...alloc, allocated_amount: 0 }))
+        setTotalPaymentAmount(0)
+        return updated
+      })
+    } else {
+      setPayFullBalanceBillIds((prev) => {
+        const next = new Set(prev)
+        for (const b of realBillsWithPositiveBalance) {
+          next.add(allocBillId(b))
+        }
+        return next
+      })
+      setAllocations((prev) => {
+        const updated = prev.map((alloc) => {
+          const bill = outstandingBills.find((x) => allocBillId(x) === alloc.bill_id)
+          if (!bill || isVendorAdvanceRow(bill)) return alloc
+          const bd = parseNum(bill.balance_due)
+          if (bd <= 0) return alloc
+          return { ...alloc, allocated_amount: bd }
+        })
+        const tot = updated.reduce((s, a) => s + a.allocated_amount, 0)
+        setTotalPaymentAmount(tot)
+        return updated
+      })
+    }
   }
 
   const handlePaymentAmountChange = (amount: number) => {
@@ -425,7 +549,7 @@ function RecordPaymentMadeInner() {
         if (remaining <= 0) {
           return { bill_id: allocBillId(bill), allocated_amount: 0, discount_amount: 0 }
         }
-        const bd = parseNum(bill.balance_due)
+        const bd = isVendorAdvanceRow(bill) ? remaining : maxAllocatableForBill(bill)
         const allocatedAmount = Math.min(remaining, bd)
         remaining -= allocatedAmount
         return { bill_id: allocBillId(bill), allocated_amount: allocatedAmount, discount_amount: 0 }
@@ -741,16 +865,46 @@ function RecordPaymentMadeInner() {
 
               {selectedVendorId && outstandingBills.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="text-lg font-semibold mb-4">Allocate Payment to Bills</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">Allocate Payment to Bills</h3>
+                  <p className="mt-1 mb-4 text-sm text-gray-600">
+                    <strong className="font-medium text-gray-800">All bills</strong> fills the full open
+                    balance on each real bill only;{' '}
+                    <span className="whitespace-nowrap">vendor advance / on-account</span> is always listed
+                    separately and is not toggled by that control.{' '}
+                    <strong className="font-medium text-gray-800">Draft</strong> bills are listed so you can
+                    see the balance; approve them on{' '}
+                    <Link href="/bills" className="text-blue-600 hover:underline">
+                      Bills
+                    </Link>{' '}
+                    before allocating payment here.
+                  </p>
                   <div className="border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th
-                            className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase w-14"
-                            title="Fill this line with the full outstanding balance"
-                          >
-                            Full
+                          <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 w-[5.5rem]">
+                            <label
+                              className="flex cursor-pointer flex-col items-center gap-1"
+                              title="Select full balance on every open bill (excludes vendor advance / on-account)"
+                            >
+                              <span className="flex items-center gap-1">
+                                <input
+                                  ref={selectAllFullRef}
+                                  type="checkbox"
+                                  checked={allFullBalanceTicked}
+                                  disabled={realBillsWithPositiveBalance.length === 0}
+                                  onChange={toggleSelectAllFullBalance}
+                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  aria-label="Select full balance on all open bills except vendor advance"
+                                />
+                                <span className="whitespace-nowrap text-[10px] font-semibold uppercase leading-tight text-gray-600">
+                                  All bills
+                                </span>
+                              </span>
+                              <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                                Full
+                              </span>
+                            </label>
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                             Bill #
@@ -781,7 +935,9 @@ function RecordPaymentMadeInner() {
                           const allocation = allocations.find((a) => a.bill_id === aid)
                           const allocatedAmount = allocation?.allocated_amount || 0
                           const balanceDue = parseNum(bill.balance_due)
-                          const payFullChecked = balanceDue > 0 && payFullBalanceBillIds.has(aid)
+                          const draft = isDraftBillRow(bill)
+                          const payFullChecked =
+                            balanceDue > 0 && !draft && payFullBalanceBillIds.has(aid)
                           return (
                             <tr
                               key={bill.synthetic ? `oa-v-${bill.vendor_id}` : bill.id}
@@ -791,15 +947,28 @@ function RecordPaymentMadeInner() {
                                 <input
                                   type="checkbox"
                                   checked={payFullChecked}
-                                  disabled={balanceDue <= 0}
+                                  disabled={balanceDue <= 0 || draft}
                                   onChange={(e) => handleRowPayFullToggle(aid, e.target.checked)}
                                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                  title="Allocate full balance on this bill"
-                                  aria-label={`Pay full balance for bill ${bill.bill_number}`}
+                                  title={
+                                    isVendorAdvanceRow(bill)
+                                      ? 'Allocate full balance on vendor advance / on-account (not included in Select all bills)'
+                                      : 'Allocate full balance on this bill'
+                                  }
+                                  aria-label={
+                                    isVendorAdvanceRow(bill)
+                                      ? `Pay full balance for vendor advance line ${bill.bill_number}`
+                                      : `Pay full balance for bill ${bill.bill_number}`
+                                  }
                                 />
                               </td>
                               <td className="px-4 py-3 text-sm font-medium text-gray-900">
                                 {bill.bill_number}
+                                {draft ? (
+                                  <span className="ml-1 text-xs font-normal text-amber-800">
+                                    (Draft — approve on Bills to pay)
+                                  </span>
+                                ) : null}
                                 {bill.synthetic ? (
                                   <span className="ml-1 text-xs font-normal text-gray-500">
                                     (A/P not on a bill)
@@ -846,7 +1015,17 @@ function RecordPaymentMadeInner() {
                                   type="number"
                                   step="0.01"
                                   min="0"
-                                  max={parseNum(bill.balance_due)}
+                                  disabled={draft}
+                                  title={
+                                    draft
+                                      ? 'Approve this bill (Open) on the Bills page before allocating payment.'
+                                      : undefined
+                                  }
+                                  {...(isVendorAdvanceRow(bill)
+                                    ? {}
+                                    : draft
+                                      ? { max: 0 }
+                                      : { max: parseNum(bill.balance_due) })}
                                   value={allocatedAmount}
                                   onChange={(e) =>
                                     handleAllocationChange(aid, Number(e.target.value))

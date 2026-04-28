@@ -70,11 +70,17 @@ FUEL_STATION_TEMPLATE_META: Dict[str, Any] = {
 ERP_AUTOMATION_ACCOUNT_GUIDE: List[Dict[str, str]] = [
     {
         "account_code": "1010",
-        "purpose": "Default cash/bank side for paid POS invoices and undeposited cash when no bank account is linked on payment.",
+        "purpose": (
+            "Default cash side for paid POS invoices and similar flows; also used for Payments received when "
+            "1020 is not in the chart."
+        ),
     },
     {
         "account_code": "1020",
-        "purpose": "Fallback cash clearing if 1010 is not in the chart.",
+        "purpose": (
+            "Undeposited funds — preferred debit for Payments received when no bank register is selected "
+            "(both 1010 and 1020 present); batch deposits move from here into the bank GL."
+        ),
     },
     {
         "account_code": "1030",

@@ -677,6 +677,47 @@ def test_payments_received_and_outstanding(
     assert isinstance(out, list)
 
 
+def test_payments_received_prefers_1020_undeposited_when_both_cash_accounts_exist(
+    api_client: Client, auth_super_headers, company_master
+):
+    """Full chart with 1010 + 1020: AR receipts without a bank debit undeposited (1020), not till cash (1010)."""
+    from api.models import ChartOfAccount, JournalEntry, JournalEntryLine
+
+    _audit_seed_min_gl_accounts(company_master)
+    ChartOfAccount.objects.get_or_create(
+        company=company_master,
+        account_code="1020",
+        defaults={"account_name": "Cash Clearing — Undeposited", "account_type": "asset"},
+    )
+    h = _audit_master_headers(auth_super_headers, company_master)
+    api_client.post("/api/customers/add-dummy/", **h)
+    customer_id = json.loads(api_client.get("/api/customers/", **h).content)[0]["id"]
+
+    pay = api_client.post(
+        "/api/payments/received/",
+        data=json.dumps(
+            {
+                "customer_id": customer_id,
+                "amount": "33.00",
+                "payment_method": "cash",
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert pay.status_code == 201
+    pay_id = json.loads(pay.content)["id"]
+    je = JournalEntry.objects.get(
+        company_id=company_master.id, entry_number=f"AUTO-PAY-{pay_id}-RCV"
+    )
+    undep = ChartOfAccount.objects.get(
+        company_id=company_master.id, account_code="1020"
+    )
+    assert JournalEntryLine.objects.filter(
+        journal_entry=je, account_id=undep.id, debit__gt=0
+    ).exists()
+
+
 def test_payments_received_on_account_explicit_prepayment(
     api_client: Client, auth_super_headers, company_master
 ):
@@ -859,6 +900,40 @@ def test_payments_made_partial_accepts_allocations_and_allocated_amount(
     bill_row = next((r for r in out if r["id"] == bill_id), None)
     assert bill_row is not None
     assert Decimal(str(bill_row["balance_due"])) == Decimal("60.00")
+
+
+def test_payments_made_explicit_vendor_prepayment_bill_id_zero(
+    api_client: Client, auth_super_headers, company_master
+):
+    """Vendor advance: UI sends bill_id 0 when no unbilled A/P — must accept like empty allocations."""
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    v = api_client.post(
+        "/api/vendors/",
+        data=json.dumps({"company_name": "Prepay Vendor Ltd"}),
+        content_type="application/json",
+        **h,
+    )
+    assert v.status_code == 201
+    vendor_id = json.loads(v.content)["id"]
+
+    pay = api_client.post(
+        "/api/payments/made/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor_id,
+                "amount": "100.00",
+                "payment_date": "2026-04-15",
+                "allocations": [{"bill_id": 0, "allocated_amount": "100.00"}],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert pay.status_code == 201, pay.content.decode()
+    pj = json.loads(pay.content)
+    assert pj["amount"] == "100.00"
+    assert pj["payment_date"] == "2026-04-15"
 
 
 def test_bills_create_list_get_delete(api_client: Client, auth_super_headers, company_master):
@@ -1811,6 +1886,8 @@ def test_reports_financial_analytics_ok(api_client: Client, auth_super_headers, 
     assert data.get("report_id") == "financial-analytics"
     assert "kpis" in data and "timeseries" in data
     assert "total_sales" in data["kpis"] and "net_income" in data["kpis"]
+    assert "profit_mix" in data and "components" in data["profit_mix"]
+    assert "revenue_non_draft" in data["kpis"]
 
 
 def test_payment_invoice_allocation_clears_outstanding(

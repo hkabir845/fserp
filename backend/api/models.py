@@ -487,6 +487,11 @@ class PayrollRun(models.Model):
     pay_period_start = models.DateField()
     pay_period_end = models.DateField()
     payment_date = models.DateField()
+    # Gross pay = base_salary_total + overtime_amount + bonus_amount + other_earnings_amount
+    base_salary_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    overtime_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    bonus_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    other_earnings_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total_gross = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total_deductions = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total_net = models.DecimalField(max_digits=14, decimal_places=2, default=0)

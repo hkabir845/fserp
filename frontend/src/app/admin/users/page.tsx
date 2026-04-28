@@ -10,6 +10,10 @@ import api from '@/lib/api'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { formatDate } from '@/utils/date'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
+import {
+  PosSaleScopeSelector,
+  formatPosSaleScopeShort,
+} from '@/components/pos/PosSaleScopeSelector'
 
 interface AdminUser {
   id: number
@@ -432,6 +436,11 @@ function UsersPageContent() {
                           }`}>
                             {user.role.replace('_', ' ').toUpperCase()}
                           </span>
+                          {(user.role === 'cashier' || user.role === 'operator') && (
+                            <div className="mt-1 text-[11px] font-medium tabular-nums text-gray-500">
+                              Lane: {formatPosSaleScopeShort(user.pos_sale_scope)}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">
@@ -551,23 +560,14 @@ function UsersPageContent() {
                     </div>
 
                     {(userFormData.role === 'cashier' || userFormData.role === 'operator') && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">POS register scope</label>
-                        <select
+                      <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                        <PosSaleScopeSelector
+                          name="admin-user-pos-scope"
                           value={userFormData.pos_sale_scope}
-                          onChange={(e) =>
-                            setUserFormData((fd) => ({ ...fd, pos_sale_scope: e.target.value }))
+                          onChange={(next) =>
+                            setUserFormData((fd) => ({ ...fd, pos_sale_scope: next }))
                           }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        >
-                          <option value="both">Fuel and general products</option>
-                          <option value="general">General / shop only</option>
-                          <option value="fuel">Fuel only</option>
-                        </select>
-                        <p className="mt-1 text-xs text-gray-500">
-                          What this user may sell at the POS (server-enforced). They must log out and back in for the
-                          register UI to match.
-                        </p>
+                        />
                       </div>
                     )}
 

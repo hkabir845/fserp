@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { Plus, Edit, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText } from 'lucide-react'
+import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl } from '@/lib/api'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
@@ -294,7 +294,6 @@ export default function BillsPage() {
     needsServerAck: boolean
     draftNote: boolean
   } | null>(null)
-  const [userRole, setUserRole] = useState<string | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [formData, setFormData] = useState(() => {
     const billDate = new Date().toISOString().split('T')[0]
@@ -316,18 +315,7 @@ export default function BillsPage() {
       router.push('/login')
       return
     }
-    
-    // Get user role from localStorage
-    const userStr = localStorage.getItem('user')
-    if (userStr) {
-      try {
-        const user = JSON.parse(userStr)
-        setUserRole(user.role?.toLowerCase() || null)
-      } catch (error) {
-        console.error('Error parsing user data:', error)
-      }
-    }
-    
+
     fetchData()
   }, [router, statusFilter])
 
@@ -821,26 +809,17 @@ export default function BillsPage() {
     resetForm()
   }
 
-  const isAdmin = userRole === 'admin'
-  const isAccountant = userRole === 'accountant'
-  const canEditDelete = isAdmin || isAccountant
-
   /** Normalize API/UI status variants (e.g. partially_paid, Partially paid). */
   const billStatusNorm = (status: string | undefined) =>
     (status || '').toLowerCase().replace(/\s+/g, '_')
 
-  /** Any user who can open Bills may edit non-final bills (incl. partial) to fix lines / inventory. */
-  const canEditBillRow = (bill: Bill) => {
-    const s = billStatusNorm(bill.status)
-    if (s === 'paid' || s === 'void') return false
-    return true
-  }
+  /** Same pattern as Invoices: show actions unless void; backend enforces delete rules. */
+  const canShowBillActions = (bill: Bill) => billStatusNorm(bill.status) !== 'void'
 
-  const canDeleteBillRow = (bill: Bill) => {
+  /** Edit disabled for paid / partial — aligns with invoice paid / partially_paid. */
+  const isBillEditDisabled = (bill: Bill) => {
     const s = billStatusNorm(bill.status)
-    if (s === 'paid' || s === 'void') return false
-    if (s === 'draft') return true
-    return canEditDelete
+    return s === 'paid' || s === 'partial'
   }
 
   const getStatusColor = (status: string) => {
@@ -984,30 +963,39 @@ export default function BillsPage() {
                         <button
                           type="button"
                           onClick={() => handleViewBill(bill.id)}
-                          className="text-blue-600 hover:text-blue-900 transition-colors"
+                          className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
                           title="View bill"
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        {canEditBillRow(bill) && (
-                          <button
-                            type="button"
-                            onClick={() => handleEdit(bill)}
-                            className="text-indigo-600 hover:text-indigo-900 transition-colors"
-                            title="Edit bill"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                        )}
-                        {canDeleteBillRow(bill) && (
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(bill.id, bill.bill_number)}
-                            className="text-red-600 hover:text-red-900 transition-colors"
-                            title="Delete bill"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                        {canShowBillActions(bill) && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleEdit(bill)}
+                              disabled={isBillEditDisabled(bill)}
+                              className={`p-2 rounded-lg transition-colors ${
+                                isBillEditDisabled(bill)
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50'
+                              }`}
+                              title={
+                                isBillEditDisabled(bill)
+                                  ? 'Cannot edit paid or partially paid bill'
+                                  : 'Edit bill'
+                              }
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(bill.id, bill.bill_number)}
+                              className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete bill"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -1124,15 +1112,25 @@ export default function BillsPage() {
               </div>
 
               <div className="mt-6 flex flex-wrap justify-end gap-2">
-                {canEditBillRow(viewingBill) && (
+                {canShowBillActions(viewingBill) && (
                   <button
                     type="button"
+                    disabled={isBillEditDisabled(viewingBill)}
                     onClick={() => {
                       const b = viewingBill
                       handleCloseViewModal()
                       void handleEdit(b)
                     }}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                    className={`px-4 py-2 rounded-lg text-white ${
+                      isBillEditDisabled(viewingBill)
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-indigo-600 hover:bg-indigo-700'
+                    }`}
+                    title={
+                      isBillEditDisabled(viewingBill)
+                        ? 'Cannot edit paid or partially paid bill'
+                        : 'Edit bill'
+                    }
                   >
                     Edit bill
                   </button>

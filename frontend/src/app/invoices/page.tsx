@@ -116,7 +116,6 @@ export default function InvoicesPage() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null)
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null)
-  const [userRole, setUserRole] = useState<string | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [printBranding, setPrintBranding] = useState<PrintBranding | null>(null)
   const [formData, setFormData] = useState({
@@ -132,18 +131,7 @@ export default function InvoicesPage() {
       router.push('/login')
       return
     }
-    
-    // Get user role from localStorage
-    const userStr = localStorage.getItem('user')
-    if (userStr) {
-      try {
-        const user = JSON.parse(userStr)
-        setUserRole(user.role?.toLowerCase() || null)
-      } catch (error) {
-        console.error('Error parsing user data:', error)
-      }
-    }
-    
+
     fetchData()
   }, [router, sourceFilter]) // Refetch when sourceFilter changes
 
@@ -552,6 +540,9 @@ export default function InvoicesPage() {
         customer_id: formData.customer_id,
         invoice_date: formData.invoice_date,
         due_date: formData.due_date || null,
+        subtotal,
+        tax_total: taxAmount,
+        total,
         line_items: validLines.map((line) => {
           const quantity = parseFloat(line.quantity.toString())
           const unitPrice = parseFloat(line.unit_price.toString())
@@ -752,10 +743,14 @@ export default function InvoicesPage() {
     }
 
     try {
+      const { subtotal, taxAmount, total } = calculateTotals()
       const response = await api.put(`/invoices/${editingInvoice.id}`, {
         customer_id: formData.customer_id,
         invoice_date: formData.invoice_date,
         due_date: formData.due_date || null,
+        subtotal,
+        tax_total: taxAmount,
+        total,
         line_items: validLines.map((line) => ({
           item_id: line.item_id && line.item_id > 0 ? line.item_id : null,
           description: line.description && line.description.trim() ? line.description.trim() : null,
@@ -928,8 +923,6 @@ export default function InvoicesPage() {
     })
     if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
   }
-
-  const isAdmin = userRole === 'admin'
 
   return (
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
@@ -1148,24 +1141,26 @@ export default function InvoicesPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          {isAdmin && invoice.status !== 'void' && (
+                          {invoice.status !== 'void' && (
                             <>
                               <button
+                                type="button"
                                 onClick={() => handleEditInvoice(invoice)}
                                 disabled={invoice.status === 'paid' || invoice.status === 'partially_paid'}
                                 className={`p-2 rounded-lg transition-colors ${
                                   invoice.status === 'paid' || invoice.status === 'partially_paid'
                                     ? 'text-gray-400 cursor-not-allowed'
-                                    : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+                                    : 'text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50'
                                 }`}
-                                title={invoice.status === 'paid' || invoice.status === 'partially_paid' ? 'Cannot edit paid invoice' : 'Edit Invoice'}
+                                title={invoice.status === 'paid' || invoice.status === 'partially_paid' ? 'Cannot edit paid invoice' : 'Edit invoice'}
                               >
                                 <Edit2 className="h-4 w-4" />
                               </button>
                               <button
+                                type="button"
                                 onClick={() => handleDeleteInvoice(invoice.id, invoice.invoice_number)}
                                 className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete Invoice"
+                                title="Delete invoice"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>

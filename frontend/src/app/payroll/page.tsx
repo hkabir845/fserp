@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Eye, DollarSign, X, Calendar, FileText, CheckCircle, Clock, XCircle, Edit2, Trash2, BookOpen, RefreshCw, Landmark, ArrowRight, User } from 'lucide-react'
@@ -15,6 +15,10 @@ interface PayrollRun {
   pay_period_start: string
   pay_period_end: string
   payment_date: string
+  base_salary_total?: number
+  overtime_amount?: number
+  bonus_amount?: number
+  other_earnings_amount?: number
   total_gross: number
   total_deductions: number
   total_net: number
@@ -26,6 +30,33 @@ interface PayrollRun {
   message?: string
   created_at: string
   updated_at: string
+}
+
+function parseMoneyInput(s: string): number {
+  const t = s.trim()
+  if (t === '') return 0
+  const n = Number(t)
+  return Number.isFinite(n) ? n : 0
+}
+
+function sumEarningInputs(base: string, ot: string, bonus: string, other: string): number {
+  return (
+    parseMoneyInput(base) +
+    parseMoneyInput(ot) +
+    parseMoneyInput(bonus) +
+    parseMoneyInput(other)
+  )
+}
+
+function detailAmountsFromPayrollApi(data: PayrollRun) {
+  return {
+    base: data.base_salary_total != null ? String(data.base_salary_total) : '',
+    ot: data.overtime_amount != null ? String(data.overtime_amount) : '',
+    bonus: data.bonus_amount != null ? String(data.bonus_amount) : '',
+    other: data.other_earnings_amount != null ? String(data.other_earnings_amount) : '',
+    d: data.total_deductions != null ? String(data.total_deductions) : '',
+    n: data.total_net != null ? String(data.total_net) : '',
+  }
 }
 
 interface BankAccountRow {
@@ -76,10 +107,29 @@ export default function PayrollPage() {
     pay_period_end: '',
     payment_date: '',
     notes: '',
-    total_gross: '',
+    base_salary_total: '',
+    overtime_amount: '',
+    bonus_amount: '',
+    other_earnings_amount: '',
     total_deductions: '',
     total_net: '',
   })
+
+  const formComputedGross = useMemo(
+    () =>
+      sumEarningInputs(
+        formData.base_salary_total,
+        formData.overtime_amount,
+        formData.bonus_amount,
+        formData.other_earnings_amount
+      ),
+    [
+      formData.base_salary_total,
+      formData.overtime_amount,
+      formData.bonus_amount,
+      formData.other_earnings_amount,
+    ]
+  )
   const [bankRegisters, setBankRegisters] = useState<BankAccountRow[]>([])
   const [glPayAccounts, setGlPayAccounts] = useState<GlPayAccountRow[]>([])
   /** Shown in details: 6400 is not user-pickable; we resolve it from the chart for display. */
@@ -91,7 +141,20 @@ export default function PayrollPage() {
   const payFromTouched = useRef(false)
   const [amountSaving, setAmountSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
-  const [detailAmounts, setDetailAmounts] = useState({ g: '', d: '', n: '' })
+  const [detailAmounts, setDetailAmounts] = useState({
+    base: '',
+    ot: '',
+    bonus: '',
+    other: '',
+    d: '',
+    n: '',
+  })
+
+  const detailComputedGross = useMemo(
+    () =>
+      sumEarningInputs(detailAmounts.base, detailAmounts.ot, detailAmounts.bonus, detailAmounts.other),
+    [detailAmounts.base, detailAmounts.ot, detailAmounts.bonus, detailAmounts.other]
+  )
   const [employees, setEmployees] = useState<EmployeeRow[]>([])
   const [oneEmployeeId, setOneEmployeeId] = useState<string>('')
 
@@ -265,7 +328,10 @@ export default function PayrollPage() {
       pay_period_end: '',
       payment_date: '',
       notes: '',
-      total_gross: '',
+      base_salary_total: '',
+      overtime_amount: '',
+      bonus_amount: '',
+      other_earnings_amount: '',
       total_deductions: '',
       total_net: '',
     })
@@ -279,23 +345,28 @@ export default function PayrollPage() {
       pay_period_end: payroll.pay_period_end || '',
       payment_date: payroll.payment_date || '',
       notes: payroll.notes || '',
-      total_gross: payroll.total_gross != null ? String(payroll.total_gross) : '',
+      base_salary_total:
+        payroll.base_salary_total != null ? String(payroll.base_salary_total) : '',
+      overtime_amount: payroll.overtime_amount != null ? String(payroll.overtime_amount) : '',
+      bonus_amount: payroll.bonus_amount != null ? String(payroll.bonus_amount) : '',
+      other_earnings_amount:
+        payroll.other_earnings_amount != null ? String(payroll.other_earnings_amount) : '',
       total_deductions: payroll.total_deductions != null ? String(payroll.total_deductions) : '',
       total_net: payroll.total_net != null ? String(payroll.total_net) : '',
     })
     setShowModal(true)
   }
 
-  const amountFieldsToPayload = () => {
-    const g = formData.total_gross.trim()
-    const d = formData.total_deductions.trim()
-    const n = formData.total_net.trim()
-    if (g === '' && d === '' && n === '') return {}
-    const parseN = (s: string) => (s === '' ? 0 : Number(s))
+  /** Earnings breakdown + deductions; server derives total gross from the four earning lines. */
+  const payrollAmountsPayload = () => {
+    const nField = formData.total_net.trim()
     return {
-      total_gross: parseN(g),
-      total_deductions: parseN(d),
-      ...(n !== '' ? { total_net: parseN(n) } : {}),
+      base_salary_total: parseMoneyInput(formData.base_salary_total),
+      overtime_amount: parseMoneyInput(formData.overtime_amount),
+      bonus_amount: parseMoneyInput(formData.bonus_amount),
+      other_earnings_amount: parseMoneyInput(formData.other_earnings_amount),
+      total_deductions: parseMoneyInput(formData.total_deductions),
+      ...(nField !== '' ? { total_net: parseMoneyInput(formData.total_net) } : {}),
     }
   }
 
@@ -336,7 +407,7 @@ export default function PayrollPage() {
           pay_period_end: formData.pay_period_end,
           payment_date: formData.payment_date,
           notes: formData.notes || null,
-          ...amountFieldsToPayload(),
+          ...payrollAmountsPayload(),
         })
       })
 
@@ -422,7 +493,7 @@ export default function PayrollPage() {
           pay_period_end: formData.pay_period_end,
           payment_date: formData.payment_date,
           notes: formData.notes || null,
-          ...amountFieldsToPayload(),
+          ...payrollAmountsPayload(),
         })
       })
 
@@ -465,11 +536,7 @@ export default function PayrollPage() {
       if (response.ok) {
         const data = await response.json()
         setSelectedPayroll(data)
-        setDetailAmounts({
-          g: data.total_gross != null ? String(data.total_gross) : '',
-          d: data.total_deductions != null ? String(data.total_deductions) : '',
-          n: data.total_net != null ? String(data.total_net) : '',
-        })
+        setDetailAmounts(detailAmountsFromPayrollApi(data))
         payFromTouched.current = false
         setShowDetailsModal(true)
       } else {
@@ -487,10 +554,14 @@ export default function PayrollPage() {
     try {
       const token = localStorage.getItem('access_token')
       const baseUrl = getApiBaseUrl()
-      const g = detailAmounts.g.trim() === '' ? 0 : Number(detailAmounts.g)
-      const d = detailAmounts.d.trim() === '' ? 0 : Number(detailAmounts.d)
       const nRaw = detailAmounts.n.trim()
-      const body: Record<string, number> = { total_gross: g, total_deductions: d }
+      const body: Record<string, number> = {
+        base_salary_total: parseMoneyInput(detailAmounts.base),
+        overtime_amount: parseMoneyInput(detailAmounts.ot),
+        bonus_amount: parseMoneyInput(detailAmounts.bonus),
+        other_earnings_amount: parseMoneyInput(detailAmounts.other),
+        total_deductions: parseMoneyInput(detailAmounts.d),
+      }
       if (nRaw !== '') body.total_net = Number(nRaw)
       const response = await fetch(`${baseUrl}/payroll/${selectedPayroll.id}/`, {
         method: 'PUT',
@@ -506,11 +577,7 @@ export default function PayrollPage() {
       if (response.ok) {
         const data = await response.json()
         setSelectedPayroll(data)
-        setDetailAmounts({
-          g: data.total_gross != null ? String(data.total_gross) : '',
-          d: data.total_deductions != null ? String(data.total_deductions) : '',
-          n: data.total_net != null ? String(data.total_net) : '',
-        })
+        setDetailAmounts(detailAmountsFromPayrollApi(data))
         fetchPayrolls()
         toast.success('Amounts updated')
       } else {
@@ -546,11 +613,7 @@ export default function PayrollPage() {
       if (response.ok) {
         const data = await response.json()
         setSelectedPayroll(data)
-        setDetailAmounts({
-          g: String(data.total_gross ?? ''),
-          d: String(data.total_deductions ?? ''),
-          n: String(data.total_net ?? ''),
-        })
+        setDetailAmounts(detailAmountsFromPayrollApi(data))
         fetchPayrolls()
         toast.success('Totals set from active employee salaries (same period sum)')
       } else {
@@ -590,11 +653,7 @@ export default function PayrollPage() {
       if (response.ok) {
         const data = await response.json()
         setSelectedPayroll(data)
-        setDetailAmounts({
-          g: String(data.total_gross ?? ''),
-          d: String(data.total_deductions ?? ''),
-          n: String(data.total_net ?? ''),
-        })
+        setDetailAmounts(detailAmountsFromPayrollApi(data))
         fetchPayrolls()
         toast.success('Gross and net set from that employee. Add optional notes (name, period) before posting.')
       } else {
@@ -728,10 +787,10 @@ export default function PayrollPage() {
               <li>Pay staff in real life (bank transfer, cash, MFS) from your company account or cash float.</li>
               <li>Create a payroll run and set the pay period and payment date (e.g. April 2026: 1st–30th, payment the day you paid).</li>
               <li>
-                Set <strong>gross / deductions / net</strong>. For <strong>one person only</strong> (e.g. Yunus
-                Khan, EMP-00006), open <strong>View</strong> and use <strong>Fill from one employee</strong> so
-                amounts match HR, or type the paid amounts by hand. Use <strong>Sum from employees</strong> only
-                when the run is for the whole team’s combined salaries.
+                Set <strong>earnings</strong> (base salary, overtime, bonus, other — total gross is their sum),
+                then <strong>deductions / net</strong>. For one person only, open <strong>View</strong> and use{' '}
+                <strong>Apply one employee</strong> to pull base salary from HR; add overtime/bonus lines as
+                needed. Use <strong>Sum from employees</strong> when the run covers the whole team’s regular pay.
               </li>
               <li>
                 <strong>Post to general ledger</strong> to record Dr salary expense, Cr your bank (and Cr
@@ -951,26 +1010,92 @@ export default function PayrollPage() {
                         placeholder="e.g. April 2026 — Yunus Khan (EMP-00006). Optional; helps you find this run later."
                       />
                     </div>
-                    <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Gross (optional)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.total_gross}
-                          onChange={(e) => setFormData({ ...formData, total_gross: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        />
+                    <div className="md:col-span-2 rounded-lg border border-gray-200 bg-gray-50/80 p-4">
+                      <p className="mb-3 text-sm font-semibold text-gray-900">Earnings (optional)</p>
+                      <p className="mb-3 text-xs text-gray-600">
+                        Enter regular pay plus overtime, bonus, or other earnings for this run.{' '}
+                        <strong>Total gross</strong> is the sum of the four lines below (same figure posted to
+                        salary expense).
+                      </p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Base salary / regular pay
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={formData.base_salary_total}
+                            onChange={(e) =>
+                              setFormData({ ...formData, base_salary_total: e.target.value })
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Overtime</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={formData.overtime_amount}
+                            onChange={(e) =>
+                              setFormData({ ...formData, overtime_amount: e.target.value })
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Bonus</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={formData.bonus_amount}
+                            onChange={(e) =>
+                              setFormData({ ...formData, bonus_amount: e.target.value })
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Other earnings
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={formData.other_earnings_amount}
+                            onChange={(e) =>
+                              setFormData({ ...formData, other_earnings_amount: e.target.value })
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
                       </div>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-3">
+                        <span className="text-sm font-medium text-gray-800">Total gross (computed)</span>
+                        <span className="text-lg font-bold tabular-nums text-gray-900">
+                          {currencySymbol}
+                          {formatNumber(formComputedGross)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Deductions (optional)</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Deductions (optional)
+                        </label>
                         <input
                           type="number"
                           min="0"
                           step="0.01"
                           value={formData.total_deductions}
-                          onChange={(e) => setFormData({ ...formData, total_deductions: e.target.value })}
+                          onChange={(e) =>
+                            setFormData({ ...formData, total_deductions: e.target.value })
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         />
                       </div>
@@ -984,7 +1109,9 @@ export default function PayrollPage() {
                           onChange={(e) => setFormData({ ...formData, total_net: e.target.value })}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Leave net blank to use gross minus deductions</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Leave net blank to use total gross minus deductions
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1104,6 +1231,36 @@ export default function PayrollPage() {
                   )}
                   {selectedPayroll.is_salary_posted ? (
                     <div className="space-y-3">
+                      <div className="space-y-1 rounded-lg border border-gray-100 bg-gray-50/90 px-3 py-2 text-sm">
+                        <div className="flex justify-between text-gray-600">
+                          <span>Base / regular</span>
+                          <span className="tabular-nums text-gray-900">
+                            {currencySymbol}
+                            {formatNumber(Number(selectedPayroll.base_salary_total) || 0)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-gray-600">
+                          <span>Overtime</span>
+                          <span className="tabular-nums text-gray-900">
+                            {currencySymbol}
+                            {formatNumber(Number(selectedPayroll.overtime_amount) || 0)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-gray-600">
+                          <span>Bonus</span>
+                          <span className="tabular-nums text-gray-900">
+                            {currencySymbol}
+                            {formatNumber(Number(selectedPayroll.bonus_amount) || 0)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-gray-600">
+                          <span>Other earnings</span>
+                          <span className="tabular-nums text-gray-900">
+                            {currencySymbol}
+                            {formatNumber(Number(selectedPayroll.other_earnings_amount) || 0)}
+                          </span>
+                        </div>
+                      </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Total Gross Pay</span>
                         <span className="text-xl font-bold text-gray-900">
@@ -1129,21 +1286,70 @@ export default function PayrollPage() {
                   ) : (
                     <>
                       <p className="text-sm text-gray-600 mb-3">
-                        Edit amounts below, or sum salaries from the employee list. When ready, post to
-                        the ledger after you have actually paid.
+                        Edit earnings (base, overtime, bonus, other), then deductions and net — or use{' '}
+                        <strong>Sum from employees</strong> / <strong>Apply one employee</strong> to fill base
+                        salary from HR. Total gross is always the sum of the four earning lines.
                       </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
-                          <label className="block text-xs font-medium text-gray-600">Gross</label>
+                          <label className="block text-xs font-medium text-gray-600">Base / regular</label>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
                             className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5"
-                            value={detailAmounts.g}
-                            onChange={(e) => setDetailAmounts((x) => ({ ...x, g: e.target.value }))}
+                            value={detailAmounts.base}
+                            onChange={(e) =>
+                              setDetailAmounts((x) => ({ ...x, base: e.target.value }))
+                            }
                           />
                         </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600">Overtime</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5"
+                            value={detailAmounts.ot}
+                            onChange={(e) => setDetailAmounts((x) => ({ ...x, ot: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600">Bonus</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5"
+                            value={detailAmounts.bonus}
+                            onChange={(e) =>
+                              setDetailAmounts((x) => ({ ...x, bonus: e.target.value }))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600">Other earnings</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5"
+                            value={detailAmounts.other}
+                            onChange={(e) =>
+                              setDetailAmounts((x) => ({ ...x, other: e.target.value }))
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-gray-100 bg-gray-50 px-3 py-2">
+                        <span className="text-xs font-semibold text-gray-700">Total gross</span>
+                        <span className="text-sm font-bold tabular-nums text-gray-900">
+                          {currencySymbol}
+                          {formatNumber(detailComputedGross)}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                           <label className="block text-xs font-medium text-gray-600">Deductions</label>
                           <input

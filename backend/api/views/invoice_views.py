@@ -1,6 +1,8 @@
 """Invoices API: list, create, get, update, delete, status (company-scoped)."""
 from datetime import date
 from decimal import Decimal
+
+from django.db.models import Sum
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -86,6 +88,15 @@ def _resolve_shift(company_id: int, shift_session_id) -> ShiftSession | None:
     ).first()
 
 
+def _refresh_invoice_totals_from_lines(inv: Invoice) -> None:
+    """Set header subtotal/total from line amounts; preserve invoice-level tax_total."""
+    sub = inv.lines.aggregate(s=Sum("amount"))["s"] or Decimal("0")
+    tax = inv.tax_total if inv.tax_total is not None else Decimal("0")
+    inv.subtotal = sub
+    inv.total = sub + tax
+    inv.save(update_fields=["subtotal", "total", "updated_at"])
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
@@ -123,7 +134,8 @@ def invoices_list_or_create(request):
             payment_method=pm,
         )
         inv.save()
-        for row in body.get("lines") or body.get("line_items") or []:
+        line_rows = list(body.get("lines") or body.get("line_items") or [])
+        for row in line_rows:
             amount = _decimal(row.get("amount"), _decimal(row.get("quantity"), 1) * _decimal(row.get("unit_price"), 0))
             InvoiceLine.objects.create(
                 invoice=inv,
@@ -133,6 +145,8 @@ def invoices_list_or_create(request):
                 unit_price=_decimal(row.get("unit_price"), 0),
                 amount=amount,
             )
+        if line_rows:
+            _refresh_invoice_totals_from_lines(inv)
         inv.refresh_from_db()
         inv = (
             Invoice.objects.filter(id=inv.id)
@@ -197,6 +211,7 @@ def invoice_detail(request, invoice_id: int):
                     unit_price=_decimal(row.get("unit_price"), 0),
                     amount=amount,
                 )
+            _refresh_invoice_totals_from_lines(inv)
         inv.refresh_from_db()
         inv = (
             Invoice.objects.filter(id=inv.id)

@@ -30,7 +30,7 @@ import { confirmDeletePaymentDialog, deletePaymentRequest } from '../paymentMuta
 interface AllocationRow {
   invoice_id?: number | null
   bill_id?: number | null
-  allocated_amount: number
+  allocated_amount: number | string
 }
 
 interface PaymentRow {
@@ -589,12 +589,13 @@ export default function AllPaymentsPage() {
                                           {a.invoice_id != null && (
                                             <>
                                               Invoice #{a.invoice_id} —{' '}
-                                              {formatMoney(currencySymbol, a.allocated_amount)}
+                                              {formatMoney(currencySymbol, parseAmount(a.allocated_amount))}
                                             </>
                                           )}
                                           {a.bill_id != null && (
                                             <>
-                                              Bill #{a.bill_id} — {formatMoney(currencySymbol, a.allocated_amount)}
+                                              Bill #{a.bill_id} —{' '}
+                                              {formatMoney(currencySymbol, parseAmount(a.allocated_amount))}
                                             </>
                                           )}
                                         </li>

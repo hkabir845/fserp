@@ -85,6 +85,42 @@ def _decimal(val, default=0):
         return default
 
 
+def _manual_journal_eligible_for_post(entry: JournalEntry) -> tuple[bool, str]:
+    """
+    User-created journals must be balanced double-entry before posting (hits GL reports).
+    System AUTO-* journals are expected to already satisfy this when created by gl_posting.
+    """
+    lines = list(entry.lines.all())
+    if not lines:
+        return False, "Add at least one journal line before posting."
+
+    total_debit = Decimal("0")
+    total_credit = Decimal("0")
+    for line in lines:
+        d = line.debit or Decimal("0")
+        c = line.credit or Decimal("0")
+        if d < 0 or c < 0:
+            return False, "Line amounts cannot be negative."
+        if d > 0 and c > 0:
+            return False, "Each line must be either a debit or a credit, not both."
+        total_debit += d
+        total_credit += c
+
+    total_debit = total_debit.quantize(Decimal("0.01"))
+    total_credit = total_credit.quantize(Decimal("0.01"))
+
+    if total_debit <= 0:
+        return False, "Total debits must be greater than zero."
+
+    if total_debit != total_credit:
+        return (
+            False,
+            f"Total debits ({total_debit}) must equal total credits ({total_credit}) before posting.",
+        )
+
+    return True, ""
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
@@ -200,6 +236,14 @@ def journal_entry_post(request, entry_id: int):
         if not e_out:
             return JsonResponse({"detail": "Journal entry not found"}, status=404)
         return JsonResponse(_entry_to_json(e_out))
+
+    ok, err = _manual_journal_eligible_for_post(e)
+    if not ok:
+        return JsonResponse(
+            {"detail": err, "code": "journal_not_balanced"},
+            status=400,
+        )
+
     e.is_posted = True
     e.posted_at = django_timezone.now()
     e.save()

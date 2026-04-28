@@ -24,6 +24,7 @@ from api.models import (
     JournalEntryLine,
     Meter,
     Nozzle,
+    Payment,
     ShiftSession,
     Tank,
     TankDip,
@@ -394,6 +395,51 @@ def _sum_bill_totals(company_id: int, start: date, end: date) -> Decimal:
     return _d(r["t"])
 
 
+def _sum_invoice_totals_non_draft(company_id: int, start: date, end: date) -> Decimal:
+    r = (
+        Invoice.objects.filter(
+            company_id=company_id,
+            invoice_date__gte=start,
+            invoice_date__lte=end,
+        )
+        .exclude(status="draft")
+        .aggregate(t=Coalesce(Sum("total"), Decimal("0")))
+    )
+    return _d(r["t"])
+
+
+def _sum_invoice_totals_non_draft_all_time(company_id: int) -> Decimal:
+    r = Invoice.objects.filter(company_id=company_id).exclude(status="draft").aggregate(
+        t=Coalesce(Sum("total"), Decimal("0"))
+    )
+    return _d(r["t"])
+
+
+def _sum_bill_totals_non_draft(company_id: int, start: date, end: date) -> Decimal:
+    r = (
+        Bill.objects.filter(
+            company_id=company_id,
+            bill_date__gte=start,
+            bill_date__lte=end,
+        )
+        .exclude(status="draft")
+        .aggregate(t=Coalesce(Sum("total"), Decimal("0")))
+    )
+    return _d(r["t"])
+
+
+def _count_invoices_non_draft(company_id: int, start: date, end: date) -> int:
+    return (
+        Invoice.objects.filter(
+            company_id=company_id,
+            invoice_date__gte=start,
+            invoice_date__lte=end,
+        )
+        .exclude(status="draft")
+        .count()
+    )
+
+
 def _iter_month_periods_in_range(start: date, end: date) -> list[tuple[date, date, str]]:
     """Clipped calendar months within [start, end], each (seg_start, seg_end, 'YYYY-MM')."""
     if start > end:
@@ -495,11 +541,13 @@ def report_customer_balances(company_id: int, start: date, end: date) -> dict[st
         )
         if bal > 0:
             total_ar += bal
+    net_sum = sum((_d(r["balance"]) for r in rows), start=Decimal("0"))
     return {
         "report_id": "customer-balances",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "customers": rows,
         "total_ar": _f(total_ar),
+        "total_net_balance": _f(net_sum),
         "accounting_note": (
             "Subledger current_balance per customer. total_ar is the sum of positive balances only "
             "(typical receivable exposure); credit balances are customer prepayments."
@@ -527,11 +575,13 @@ def report_vendor_balances(company_id: int, start: date, end: date) -> dict[str,
         )
         if bal > 0:
             total_ap += bal
+    net_sum = sum((_d(r["balance"]) for r in rows), start=Decimal("0"))
     return {
         "report_id": "vendor-balances",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "vendors": rows,
         "total_ap": _f(total_ap),
+        "total_net_balance": _f(net_sum),
         "accounting_note": (
             "Subledger current_balance per vendor. total_ap is the sum of positive balances owed to vendors; "
             "negative balances may indicate vendor credits."
@@ -614,10 +664,17 @@ def report_tank_inventory(company_id: int, start: date, end: date) -> dict[str, 
             }
         )
     low = [x for x in out if x["needs_refill"]]
+    tot_cap = sum((_d(x["capacity"]) for x in out), start=Decimal("0"))
+    tot_stock = sum((_d(x["current_stock"]) for x in out), start=Decimal("0"))
     return {
         "report_id": "tank-inventory",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "inventory": out,
+        "summary": {
+            "tank_count": len(out),
+            "total_capacity_liters": _f(tot_cap),
+            "total_current_stock_liters": _f(tot_stock),
+        },
         "alerts": {"low_stock_tanks": low[:20]},
     }
 
@@ -691,6 +748,12 @@ def report_shift_summary(company_id: int, start: date, end: date) -> dict[str, A
                 "status": "closed" if s.closed_at else "open",
             }
         )
+    sum_tx = sum(int(x["transaction_count"] or 0) for x in sessions)
+    sum_sales = sum((_d(x["total_sales"]) for x in sessions), start=Decimal("0"))
+    sum_liters = sum((_d(x["total_liters"]) for x in sessions), start=Decimal("0"))
+    sum_exp = sum((_d(x["cash_expected"]) for x in sessions), start=Decimal("0"))
+    sum_cnt = sum((_d(x["cash_counted"]) for x in sessions), start=Decimal("0"))
+    sum_var = sum((_d(x["variance"]) for x in sessions), start=Decimal("0"))
     bc_out = {
         k: {
             "sessions": v["sessions"],
@@ -706,6 +769,12 @@ def report_shift_summary(company_id: int, start: date, end: date) -> dict[str, A
         "summary": {
             "total_sessions": len(sessions),
             "total_cash_variance": _f(total_var),
+            "total_transactions": sum_tx,
+            "total_sales": _f(sum_sales),
+            "total_liters": _f(sum_liters),
+            "total_cash_expected": _f(sum_exp),
+            "total_cash_counted": _f(sum_cnt),
+            "total_variance": _f(sum_var),
         },
         "sessions": sessions,
         "by_cashier": bc_out,
@@ -1408,6 +1477,9 @@ def report_item_master_by_category(company_id: int, start: date, end: date) -> d
             }
         )
 
+    g_qoh = sum((_d(c["quantity_on_hand"]) for c in cat_summary), start=Decimal("0"))
+    g_cost = sum((_d(c["extended_cost_value"]) for c in cat_summary), start=Decimal("0"))
+    g_list = sum((_d(c["extended_list_value"]) for c in cat_summary), start=Decimal("0"))
     return {
         "report_id": "item-master-by-category",
         "period": {
@@ -1418,6 +1490,9 @@ def report_item_master_by_category(company_id: int, start: date, end: date) -> d
         "summary": {
             "total_items": len(items),
             "distinct_categories": len(by_cat),
+            "total_quantity_on_hand": _f(g_qoh),
+            "total_extended_cost_value": _f(g_cost),
+            "total_extended_list_value": _f(g_list),
         },
         "by_category": cat_summary,
         "rows": detail,
@@ -1678,6 +1753,8 @@ def report_item_stock_movement(
         key=lambda r: (abs(float(r.get("net_quantity_in", 0) or 0)), r.get("sku") or ""),
         reverse=True,
     )
+    tot_purch_a = sum((v["a"] for v in purch_m.values()), start=Decimal("0"))
+    tot_sales_a = sum((v["a"] for v in sales_m.values()), start=Decimal("0"))
     return {
         "report_id": "item-stock-movement",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -1685,6 +1762,8 @@ def report_item_stock_movement(
             "line_count": len(rows_out),
             "total_qty_purchased": _f(sum((v["q"] for v in purch_m.values()), start=Decimal("0"))),
             "total_qty_sold": _f(sum((v["q"] for v in sales_m.values()), start=Decimal("0"))),
+            "total_purchase_amount": _f(tot_purch_a),
+            "total_sales_revenue": _f(tot_sales_a),
         },
         "filters": {
             "category": category or "",
@@ -2120,6 +2199,81 @@ def report_financial_analytics(company_id: int, start: date, end: date) -> dict[
     purchases = _sum_bill_totals(company_id, start, end)
     op_exp = pl["expenses"]  # operating and other P&L expense types
 
+    today = timezone.localdate()
+    revenue_nd = _sum_invoice_totals_non_draft(company_id, start, end)
+    purchases_nd = _sum_bill_totals_non_draft(company_id, start, end)
+    inv_period_ct = _count_invoices_non_draft(company_id, start, end)
+    lifetime_rev = _sum_invoice_totals_non_draft_all_time(company_id)
+    lifetime_inv_ct = Invoice.objects.filter(company_id=company_id).exclude(status="draft").count()
+
+    today_sales = _sum_invoice_totals_non_draft(company_id, today, today)
+    today_inv_ct = (
+        Invoice.objects.filter(company_id=company_id, invoice_date=today)
+        .exclude(status="draft")
+        .count()
+    )
+
+    bills_qs = Bill.objects.filter(
+        company_id=company_id,
+        bill_date__gte=start,
+        bill_date__lte=end,
+    ).exclude(status="draft")
+    bills_count_period = bills_qs.count()
+    bills_total_period = _d(bills_qs.aggregate(t=Coalesce(Sum("total"), Decimal("0")))["t"])
+
+    pay_recv = (
+        Payment.objects.filter(
+            company_id=company_id,
+            payment_type=Payment.PAYMENT_TYPE_RECEIVED,
+            payment_date__gte=start,
+            payment_date__lte=end,
+        ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
+    )
+    pay_made = (
+        Payment.objects.filter(
+            company_id=company_id,
+            payment_type=Payment.PAYMENT_TYPE_MADE,
+            payment_date__gte=start,
+            payment_date__lte=end,
+        ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
+    )
+
+    avg_inv = Decimal("0")
+    if inv_period_ct > 0:
+        avg_inv = revenue_nd / inv_period_ct
+
+    def _pct_of_rev(amount: Decimal) -> float:
+        if revenue_nd <= 0:
+            return 0.0
+        return _f(amount / revenue_nd * Decimal("100"))
+
+    profit_mix_components: list[dict[str, Any]] = [
+        {
+            "key": "period_sales",
+            "label": "Total sales",
+            "amount": _f(revenue_nd),
+            "pct_of_revenue": _pct_of_rev(revenue_nd),
+        },
+        {
+            "key": "cogs",
+            "label": "COGS",
+            "amount": _f(pl["cogs"]),
+            "pct_of_revenue": _pct_of_rev(pl["cogs"]),
+        },
+        {
+            "key": "expenses",
+            "label": "Operating expenses",
+            "amount": _f(op_exp),
+            "pct_of_revenue": _pct_of_rev(op_exp),
+        },
+        {
+            "key": "net_income",
+            "label": "Net income",
+            "amount": _f(pl["net_income"]),
+            "pct_of_revenue": _pct_of_rev(pl["net_income"]),
+        },
+    ]
+
     months = _iter_month_periods_in_range(start, end)
     if len(months) > 36:
         months = months[:36]
@@ -2141,6 +2295,9 @@ def report_financial_analytics(company_id: int, start: date, end: date) -> dict[
             }
         )
 
+    active_customers = Customer.objects.filter(company_id=company_id, is_active=True).count()
+    active_vendors = Vendor.objects.filter(company_id=company_id, is_active=True).count()
+
     return {
         "report_id": "financial-analytics",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -2152,6 +2309,26 @@ def report_financial_analytics(company_id: int, start: date, end: date) -> dict[
             "pl_expenses": _f(op_exp),
             "gross_profit": _f(pl["gross_profit"]),
             "net_income": _f(pl["net_income"]),
+            # Dashboard analytics (non-draft revenue, counts, payments — same reporting window)
+            "today_sales": _f(today_sales),
+            "today_invoice_count": today_inv_ct,
+            "revenue_non_draft": _f(revenue_nd),
+            "lifetime_revenue_non_draft": _f(lifetime_rev),
+            "lifetime_invoice_count": lifetime_inv_ct,
+            "active_customers": active_customers,
+            "active_vendors": active_vendors,
+            "bills_total_period": _f(bills_total_period),
+            "bills_count_period": bills_count_period,
+            "payments_received_period": _f(_d(pay_recv)),
+            "payments_made_period": _f(_d(pay_made)),
+            "invoices_period_count": inv_period_ct,
+            "invoices_all_time_count": lifetime_inv_ct,
+            "avg_invoice_period": _f(avg_inv),
+            "total_purchases_non_draft": _f(purchases_nd),
+        },
+        "profit_mix": {
+            "revenue_base": _f(revenue_nd),
+            "components": profit_mix_components,
         },
         "timeseries": timeseries,
         "accounting_note": (

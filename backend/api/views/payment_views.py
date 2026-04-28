@@ -121,7 +121,7 @@ def _payment_register_json(p: Payment) -> dict:
                 {
                     "invoice_id": a.invoice_id,
                     "bill_id": None,
-                    "allocated_amount": float(a.amount),
+                    "allocated_amount": str(a.amount),
                 }
             )
     elif p.payment_type == "made":
@@ -130,7 +130,7 @@ def _payment_register_json(p: Payment) -> dict:
                 {
                     "invoice_id": None,
                     "bill_id": a.bill_id,
-                    "allocated_amount": float(a.amount),
+                    "allocated_amount": str(a.amount),
                 }
             )
     row["allocations"] = allocs
@@ -220,10 +220,35 @@ def payments_received_list(request):
 @auth_required
 @require_company_id
 def payments_received_outstanding(request):
-    """Invoices with remaining balance (respects payment allocations)."""
+    """Invoices with remaining balance (respects payment allocations).
+
+    Optional ``exclude_payment_id`` (received payment id for this company): compute balances as if
+    that receipt were not applied—used when editing a payment so fully paid targets still appear.
+    """
     if request.method != "GET":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
     cid = request.company_id
+    cust_param = request.GET.get("customer_id")
+
+    exclude_pay = None
+    raw_ex = request.GET.get("exclude_payment_id")
+    if raw_ex is not None and str(raw_ex).strip() != "":
+        try:
+            eid = int(raw_ex)
+            exclude_pay = Payment.objects.filter(
+                id=eid, company_id=cid, payment_type="received"
+            ).first()
+            if exclude_pay is not None and cust_param is not None and str(cust_param).strip() != "":
+                try:
+                    if int(cust_param) != int(exclude_pay.customer_id or 0):
+                        exclude_pay = None
+                except (TypeError, ValueError):
+                    exclude_pay = None
+        except (TypeError, ValueError):
+            exclude_pay = None
+
+    ex_pid = exclude_pay.id if exclude_pay else None
+
     qs = (
         Invoice.objects.filter(company_id=cid)
         .exclude(status="draft")
@@ -231,7 +256,6 @@ def payments_received_outstanding(request):
         .prefetch_related("payment_allocations")
         .order_by("invoice_date")
     )
-    cust_param = request.GET.get("customer_id")
     if cust_param is not None and str(cust_param).strip() != "":
         try:
             qs = qs.filter(customer_id=int(cust_param))
@@ -241,7 +265,10 @@ def payments_received_outstanding(request):
     out = []
     today = date.today()
     for inv in qs:
-        bal = invoice_balance_due(inv, cid)
+        if ex_pid is not None:
+            bal = invoice_balance_due_excluding_payment(inv, cid, ex_pid)
+        else:
+            bal = invoice_balance_due(inv, cid)
         if bal <= Decimal("0.005"):
             continue
         total = inv.total or Decimal("0")
@@ -275,7 +302,10 @@ def payments_received_outstanding(request):
     def _append_uninvoiced_on_account(c: Customer) -> None:
         if _is_walkin_customer(c):
             return
-        u = customer_uninvoiced_receivable(cid, c)
+        if exclude_pay is not None and exclude_pay.customer_id == c.id:
+            u = customer_uninvoiced_receivable(cid, c, exclude_payment=exclude_pay)
+        else:
+            u = customer_uninvoiced_receivable(cid, c)
         if u <= Decimal("0.005"):
             return
         out.append(
@@ -648,14 +678,15 @@ def _validate_bill_allocations(
             return False, f"allocation exceeds balance for bill {bid}", [], Decimal("0")
         cleaned.append((bill.id, d_amt))
         total_alloc += d_amt
-    if on_account_total > cap_on + Decimal("0.01"):
-        if not coerced_from_empty or cap_on > Decimal("0.01"):
-            return (
-                False,
-                "on-account amount exceeds unbilled A/P (not covered by open bills)",
-                [],
-                Decimal("0"),
-            )
+    # Allow vendor prepayment when unbilled A/P (cap_on) is ~zero: explicit bill_id=0 allocations
+    # must not fail while empty-body coercion to on-account already succeeded.
+    if cap_on > Decimal("0.01") and on_account_total > cap_on + Decimal("0.01"):
+        return (
+            False,
+            "on-account amount exceeds unbilled A/P (not covered by open bills)",
+            [],
+            Decimal("0"),
+        )
     if abs(total_alloc - amount) > Decimal("0.01"):
         return False, "bill_allocations must sum to payment amount", [], Decimal("0")
     return True, "", cleaned, on_account_total
@@ -670,14 +701,20 @@ def _vendor_display_name(vendor) -> str:
     return (getattr(vendor, "company_name", None) or "").strip()
 
 
-def _outstanding_bill_payload(cid: int, b: Bill):
+def _outstanding_bill_payload(cid: int, b: Bill, exclude_payment_id: int | None = None):
     """One row for payments/made/outstanding; returns None if nothing due."""
-    from api.services.payment_allocation import total_allocated_to_bill
+    from api.services.payment_allocation import (
+        total_allocated_to_bill,
+        total_allocated_to_bill_excluding_payment,
+    )
 
-    paid = total_allocated_to_bill(cid, b.id)
+    if exclude_payment_id is not None:
+        paid = total_allocated_to_bill_excluding_payment(cid, b.id, exclude_payment_id)
+    else:
+        paid = total_allocated_to_bill(cid, b.id)
     total = b.total or Decimal("0")
     bal = max(Decimal("0"), total - paid)
-    if bal <= 0:
+    if bal <= Decimal("0.005"):
         return None
     vendor = getattr(b, "vendor", None)
     due = b.due_date
@@ -708,7 +745,11 @@ def _outstanding_bill_payload(cid: int, b: Bill):
 @auth_required
 @require_company_id
 def payments_made_outstanding(request):
-    """Open bills with balance due (non-draft, non-paid), with vendor and due-date for AP UI."""
+    """Bills with balance due (includes draft for visibility; paying drafts is rejected until posted Open).
+
+    Optional ``exclude_payment_id`` (vendor payment id for this company): balances ignore that
+    payment—used when editing so bills this payment fully paid still appear.
+    """
     if request.method != "GET":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
     cid = request.company_id
@@ -720,24 +761,51 @@ def payments_made_outstanding(request):
         except (TypeError, ValueError):
             vid = None
 
-    qs = (
-        Bill.objects.filter(company_id=cid)
-        .exclude(status="draft")
-        .exclude(status="paid")
-        .select_related("vendor")
-        .order_by("bill_date", "id")
-    )
+    exclude_pay = None
+    raw_ex = request.GET.get("exclude_payment_id")
+    if raw_ex is not None and str(raw_ex).strip() != "":
+        try:
+            eid = int(raw_ex)
+            exclude_pay = Payment.objects.filter(
+                id=eid, company_id=cid, payment_type="made"
+            ).first()
+            if exclude_pay is not None and vid is not None:
+                if exclude_pay.vendor_id != vid:
+                    exclude_pay = None
+        except (TypeError, ValueError):
+            exclude_pay = None
+
+    alloc_bill_ids: list[int] = []
+    if exclude_pay:
+        alloc_bill_ids = list(
+            PaymentBillAllocation.objects.filter(payment_id=exclude_pay.id).values_list(
+                "bill_id", flat=True
+            )
+        )
+
+    # Include draft bills so they appear in the payment UI (allocation remains blocked until Open).
+    qs = Bill.objects.filter(company_id=cid).select_related("vendor")
     if vid is not None:
         qs = qs.filter(vendor_id=vid)
+    if exclude_pay:
+        qs = qs.filter(~Q(status="paid") | Q(id__in=alloc_bill_ids))
+    else:
+        qs = qs.exclude(status="paid")
+    qs = qs.order_by("bill_date", "id")
+
+    ex_pid = exclude_pay.id if exclude_pay else None
 
     out = []
     for b in qs:
-        row = _outstanding_bill_payload(cid, b)
+        row = _outstanding_bill_payload(cid, b, ex_pid)
         if row:
             out.append(row)
 
     def _append_unbilled_on_account(v: Vendor) -> None:
-        u = vendor_unbilled_payable(cid, v)
+        if exclude_pay is not None and exclude_pay.vendor_id == v.id:
+            u = vendor_unbilled_payable(cid, v, exclude_payment=exclude_pay)
+        else:
+            u = vendor_unbilled_payable(cid, v)
         if u <= Decimal("0.005"):
             return
         t = date.today()

@@ -130,6 +130,8 @@ function InventoryContent() {
   const [transferMemo, setTransferMemo] = useState('')
   const [lineRows, setLineRows] = useState<TransferLineRow[]>([{ item_id: 0, quantity: '1' }])
   const [saving, setSaving] = useState(false)
+  const [transferPostingId, setTransferPostingId] = useState<number | null>(null)
+  const [transferDeletingId, setTransferDeletingId] = useState<number | null>(null)
   const [itemAvail, setItemAvail] = useState<Record<number, ItemAvailState>>({})
   const [availFetchSeq, setAvailFetchSeq] = useState(0)
 
@@ -450,25 +452,33 @@ function InventoryContent() {
 
   const postTransfer = async (id: number) => {
     if (!confirm('Post this transfer? Stock will move between stations and a journal entry will be created.')) return
+    setTransferPostingId(id)
     try {
       await api.post(`/inventory/transfers/${id}/`)
       toast.success('Transfer posted')
       void loadCore()
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not post transfer'))
+    } finally {
+      setTransferPostingId(null)
     }
   }
 
   const deleteDraft = async (id: number) => {
-    if (!confirm('Delete this draft transfer?')) return
+    if (!confirm('Delete this draft transfer? This cannot be undone.')) return
+    setTransferDeletingId(id)
     try {
       await api.delete(`/inventory/transfers/${id}/delete/`)
       toast.success('Draft deleted')
       void loadCore()
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not delete'))
+    } finally {
+      setTransferDeletingId(null)
     }
   }
+
+  const transferListBusy = transferPostingId !== null || transferDeletingId !== null
 
   const activeStationCount = stations.length
   const canTransferBetweenSites = activeStationCount >= 2
@@ -719,6 +729,17 @@ function InventoryContent() {
                       Save a <span className="font-medium text-foreground">draft</span> first; posting moves bins and
                       records the GL.
                     </p>
+                    <div
+                      className="mt-3 max-w-2xl rounded-md border border-border/70 bg-background/60 px-3 py-2 text-[11px] leading-snug text-muted-foreground"
+                      role="note"
+                    >
+                      <span className="font-medium text-foreground">Posting affects stock and books:</span> bin
+                      quantities shift between sites. The ledger gets an auto journal on each line&apos;s{' '}
+                      <span className="font-medium text-foreground">inventory</span> account (debit at receiver,
+                      credit at sender, same value at item cost) so company-wide inventory value is unchanged but
+                      station-tagged GL lines move. GL and inventory-by-site reports reflect this; sales, COGS, and
+                      bank accounts are not touched by a normal inter-site move.
+                    </div>
                   </div>
 
                   <div className="space-y-5 p-4 sm:p-5">
@@ -992,10 +1013,11 @@ function InventoryContent() {
                                       <button
                                         type="button"
                                         aria-label={`Remove line ${i + 1}`}
-                                        className={btnDanger}
+                                        title="Remove this line from the draft"
+                                        className={btnDanger + ' !p-2'}
                                         onClick={() => removeLine(i)}
                                       >
-                                        <Trash2 className="h-4 w-4" />
+                                        <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
                                       </button>
                                     ) : (
                                       <span className="text-xs text-muted-foreground">—</span>
@@ -1067,7 +1089,7 @@ function InventoryContent() {
                         <th className="px-3 py-2">From → To</th>
                         <th className="px-3 py-2">Status</th>
                         <th className="px-3 py-2">Lines</th>
-                        <th className="px-3 py-2 text-right">Actions</th>
+                        <th className="px-3 py-2 text-right whitespace-nowrap">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1104,24 +1126,41 @@ function InventoryContent() {
                               {t.lines?.map(l => `${l.item_name} (${l.quantity})`).join(' · ') || '—'}
                             </td>
                             <td className="px-3 py-2 text-right">
-                              {t.status === 'draft' && (
-                                <>
+                              {t.status === 'draft' ? (
+                                <div className="flex flex-wrap items-center justify-end gap-2">
                                   <button
                                     type="button"
-                                    className={btnPrimary + ' !py-1.5 !text-xs'}
+                                    className={btnPrimary + ' !gap-1.5 !py-1.5 !text-xs'}
+                                    disabled={transferListBusy}
+                                    title="Post draft: move stock and create GL entry"
                                     onClick={() => void postTransfer(t.id)}
                                   >
-                                    <Send className="h-3.5 w-3.5" />
-                                    Post
+                                    {transferPostingId === t.id ? (
+                                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                                    ) : (
+                                      <Send className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                    )}
+                                    {transferPostingId === t.id ? 'Posting…' : 'Post'}
                                   </button>
                                   <button
                                     type="button"
-                                    className={btnDanger + ' ml-2'}
+                                    className={btnDanger + ' !gap-1.5 !py-1.5 !text-xs'}
+                                    disabled={transferListBusy}
+                                    title="Remove this draft"
                                     onClick={() => void deleteDraft(t.id)}
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    {transferDeletingId === t.id ? (
+                                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                                    ) : (
+                                      <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                    )}
+                                    {transferDeletingId === t.id ? 'Deleting…' : 'Delete'}
                                   </button>
-                                </>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground" title="Posted transfers cannot be changed here">
+                                  —
+                                </span>
                               )}
                             </td>
                           </tr>

@@ -364,6 +364,12 @@ function InventoryContent() {
         issues.push(`Line ${row.i + 1}: ${st.message}`)
         continue
       }
+      if (st.status !== 'ok') {
+        if (st.status === 'idle') {
+          issues.push(`Line ${row.i + 1}: stock for this product is not loaded yet — use Refresh quantities.`)
+        }
+        continue
+      }
       const data = st.data
       if (!data.tracks_per_station) {
         issues.push(
@@ -902,6 +908,12 @@ function InventoryContent() {
                               } else if (st.status === 'error') {
                                 availMain = <span className="text-xs text-destructive">{st.message}</span>
                                 rowWarn = true
+                              } else if (st.status !== 'ok') {
+                                availMain = (
+                                  <span className="text-xs text-muted-foreground">
+                                    Use Refresh quantities to load stock.
+                                  </span>
+                                )
                               } else if (!st.data.tracks_per_station) {
                                 availMain = (
                                   <span className="text-xs text-amber-800 dark:text-amber-200">

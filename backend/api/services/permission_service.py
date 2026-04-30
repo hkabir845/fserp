@@ -59,6 +59,7 @@ REPORT_ID_EXTRA_PERMISSION: dict[str, str] = {
     "item-velocity-analysis": "report.inventory_sku",
     "item-purchase-velocity-analysis": "report.inventory_sku",
     "financial-analytics": "app.reports",
+    "sales-by-station": "app.reports",
 }
 
 # Only catalog keys are stored for tenant custom roles (unknown keys are dropped).
@@ -180,10 +181,12 @@ def user_pos_sale_scope(user) -> str:
 def user_client_dict(user) -> dict[str, Any]:
     """
     Public user object for login and /api/users (includes effective permissions and optional custom role).
-    List/login queries should `select_related("custom_role")` to avoid N+1.
+    List/login queries should `select_related("custom_role", "home_station")` to avoid N+1.
     """
     perms = resolve_user_permissions(user)
     cr = getattr(user, "custom_role", None)
+    hs = getattr(user, "home_station", None)
+    hs_id = getattr(user, "home_station_id", None)
     return {
         "id": getattr(user, "id", None),
         "username": getattr(user, "username", "") or "",
@@ -195,4 +198,6 @@ def user_client_dict(user) -> dict[str, Any]:
         "custom_role_name": (cr.name if cr is not None else None),
         "permissions": perms,
         "pos_sale_scope": user_pos_sale_scope(user),
+        "home_station_id": int(hs_id) if hs_id is not None else None,
+        "home_station_name": (hs.station_name if hs is not None else None) if hs_id else None,
     }

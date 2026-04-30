@@ -70,7 +70,19 @@ export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   // Save to localStorage when changed (only after mount)
   const setSelectedCompany = (company: Company | null) => {
-    setSelectedCompanyState(company)
+    setSelectedCompanyState((prev) => {
+      const prevId = prev?.id ?? null
+      const nextId = company?.id ?? null
+      if (mounted && typeof window !== 'undefined' && prevId !== nextId) {
+        try {
+          localStorage.removeItem('fserp_report_station_id')
+          localStorage.removeItem('fserp_preferred_print_station_id')
+        } catch (error) {
+          console.warn('Error clearing tenant-scoped station preferences:', error)
+        }
+      }
+      return company
+    })
     if (mounted && typeof window !== 'undefined') {
       try {
         if (company) {

@@ -24,6 +24,7 @@ import {
   Fuel,
   HeartHandshake,
   Keyboard,
+  Layers,
   Loader2,
   LogOut,
   PlusCircle,
@@ -127,6 +128,7 @@ type Nozzle = {
   product_name: string
   product_price: number
   product_unit?: string
+  station_id?: number
   station_name?: string
   station_number?: string
   island_name?: string
@@ -173,6 +175,34 @@ type POSItem = {
   image_url?: string
 }
 
+/** Response from GET /inventory/availability/?item_id= (shop / station bins). */
+type ShopStationStockAvailability =
+  | {
+      item_id: number
+      name: string
+      tracks_per_station: true
+      unit: string
+      total_on_hand: string
+      stations: {
+        station_id: number
+        station_name: string
+        station_number: string
+        quantity: string
+      }[]
+    }
+  | {
+      item_id: number
+      name: string
+      tracks_per_station: false
+      message?: string
+      stations: unknown[]
+    }
+
+function posItemSupportsShopStationStockView(item: POSItem): boolean {
+  if (item.item_type?.toLowerCase() !== "inventory") return false
+  return (item.pos_category || "").toLowerCase() !== "fuel"
+}
+
 type CartEntry = {
   item: POSItem
   quantity: number
@@ -186,6 +216,12 @@ type CartTotals = {
   paymentTotal: number
   total: number
   hasNegativeTotal: boolean
+}
+
+type StationOption = {
+  id: number
+  station_name: string
+  station_number?: string
 }
 
 const roundTwo = (value: number) =>
@@ -276,6 +312,9 @@ export default function CashierPOSPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [nozzles, setNozzles] = useState<Nozzle[]>([])
+  const [stations, setStations] = useState<StationOption[]>([])
+  /** Shop stock / selling location for general lines (server also uses shift and fuel nozzle). */
+  const [posStationId, setPosStationId] = useState<number | null>(null)
   const [posItems, setPosItems] = useState<POSItem[]>([])
 
   const [selectedNozzle, setSelectedNozzle] = useState<Nozzle | null>(null)
@@ -298,6 +337,10 @@ export default function CashierPOSPage() {
   const [showShortcuts, setShowShortcuts] = useState(false)
   const itemSearchRef = useRef<HTMLInputElement | null>(null)
   const [showInvoicePreview, setShowInvoicePreview] = useState(false)
+  /** Per-station shop QOH (read-only); same API as Inventory → Stock by station. */
+  const [stationStockItem, setStationStockItem] = useState<POSItem | null>(null)
+  const [stationStockData, setStationStockData] = useState<ShopStationStockAvailability | null>(null)
+  const [stationStockLoading, setStationStockLoading] = useState(false)
   const [printMenuOpen, setPrintMenuOpen] = useState(false)
   const [printBusy, setPrintBusy] = useState(false)
   /** New sale vs collect A/R vs pay A/P. */
@@ -310,6 +353,41 @@ export default function CashierPOSPage() {
   /** Avoid POSTing line items from company A after superadmin switched context to company B. */
   const prevTenantCompanyIdRef = useRef<number | undefined>(undefined)
   const limitedPosRegister = isLimitedPosRegisterUser()
+
+  useEffect(() => {
+    if (selectedNozzle?.station_id != null) {
+      const sid = Number(selectedNozzle.station_id)
+      if (Number.isFinite(sid)) setPosStationId(sid)
+    }
+  }, [selectedNozzle])
+
+  useEffect(() => {
+    if (!stationStockItem) {
+      setStationStockData(null)
+      setStationStockLoading(false)
+      return
+    }
+    let cancelled = false
+    setStationStockLoading(true)
+    setStationStockData(null)
+    void api
+      .get<ShopStationStockAvailability>("/inventory/availability/", {
+        params: { item_id: stationStockItem.id },
+      })
+      .then(res => {
+        if (!cancelled) setStationStockData(res.data)
+      })
+      .catch(err => {
+        if (!cancelled)
+          toast.error(extractErrorMessage(err, "Could not load stock by station"))
+      })
+      .finally(() => {
+        if (!cancelled) setStationStockLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [stationStockItem, toast])
 
   useEffect(() => {
     if (!limitedPosRegister) return
@@ -425,7 +503,7 @@ export default function CashierPOSPage() {
       }
 
       const scope = getPosSaleScope()
-      const [nozzleRes, customerRes, vendorRes, companyRes, itemRes, tanksRes, banksRes] =
+      const [nozzleRes, customerRes, vendorRes, companyRes, itemRes, tanksRes, banksRes, stationsRes] =
         await Promise.all([
           scope !== "general" ? api.get("/nozzles/details/") : Promise.resolve({ data: [] }),
           api.get("/customers/"),
@@ -434,6 +512,7 @@ export default function CashierPOSPage() {
           scope !== "fuel" ? api.get("/items/", { params: { pos_only: "true" } }) : Promise.resolve({ data: [] }),
           scope !== "fuel" ? api.get("/tanks/") : Promise.resolve({ data: [] }),
           api.get("/bank-accounts/"),
+          api.get("/stations/"),
         ])
 
       const banksRaw = Array.isArray(banksRes.data) ? banksRes.data : []
@@ -454,6 +533,18 @@ export default function CashierPOSPage() {
           .filter((b: BankRegister) => Number.isFinite(b.id))
       )
 
+      const stationsData = Array.isArray(stationsRes.data) ? stationsRes.data : []
+      const stationOptions: StationOption[] = stationsData
+        .map(
+          (s: { id?: unknown; station_name?: string; station_number?: string }) => ({
+            id: typeof s.id === "number" ? s.id : Number(s.id),
+            station_name: (s.station_name && String(s.station_name).trim()) || "Station",
+            station_number: s.station_number != null ? String(s.station_number) : undefined,
+          })
+        )
+        .filter(s => Number.isFinite(s.id))
+      setStations(stationOptions)
+
       const nozzlesData = Array.isArray(nozzleRes.data) ? nozzleRes.data : []
       setNozzles(nozzlesData)
       if (nozzlesData.length === 0) {
@@ -467,6 +558,16 @@ export default function CashierPOSPage() {
             : undefined
           return match ?? nozzlesData[0]
         })
+      }
+
+      {
+        const firstN = nozzlesData[0] as (Nozzle & { station_id?: number }) | undefined
+        const fromNozzle =
+          firstN && firstN.station_id != null && Number.isFinite(Number(firstN.station_id))
+            ? Number(firstN.station_id)
+            : null
+        const fromList = stationOptions[0]?.id ?? null
+        setPosStationId(fromNozzle ?? fromList)
       }
 
       setCustomers(Array.isArray(customerRes.data) ? customerRes.data : [])
@@ -853,6 +954,9 @@ export default function CashierPOSPage() {
       }
       if (isSplitPayment && parsedAmountPaidNow !== null) {
         payload.amount_paid_now = parsedAmountPaidNow
+      }
+      if (posStationId != null && Number.isFinite(posStationId)) {
+        payload.station_id = posStationId
       }
 
       const res = await api.post("/cashier/pos/", payload)
@@ -1294,16 +1398,42 @@ export default function CashierPOSPage() {
           aria-label="Point of sale workspace"
         >
           <div
-            className={`mb-5 flex flex-col gap-2 sm:mb-6 sm:flex-row sm:items-center sm:justify-between ${scopeUi.shell}`}
+            className={`mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4 ${scopeUi.shell}`}
           >
             <p className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Register mode
             </p>
-            <div
-              className="-mx-1 flex max-w-full min-w-0 flex-nowrap gap-1 overflow-x-auto overscroll-x-contain rounded-xl border border-border/80 bg-muted/50 p-1.5 [scrollbar-width:thin] sm:mx-0 sm:flex-wrap sm:overflow-x-visible"
-              role="group"
-              aria-label="POS mode"
-            >
+            <div className="flex min-w-0 w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:min-w-[min(100%,20rem)] sm:max-w-none sm:flex-1 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
+              {posMode === "sale" && stations.length > 0 && posSaleScope !== "fuel" ? (
+                <div className="w-full min-w-0 sm:max-w-[16rem] sm:shrink-0">
+                  <label
+                    className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                    htmlFor="pos-station-id"
+                  >
+                    Selling location (shop stock)
+                  </label>
+                  <select
+                    id="pos-station-id"
+                    value={posStationId ?? ""}
+                    onChange={e =>
+                      setPosStationId(e.target.value ? Number(e.target.value) : null)
+                    }
+                    className={selectClassName}
+                  >
+                    {stations.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.station_name}
+                        {s.station_number ? ` (${s.station_number})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+              <div
+                className="-mx-1 flex max-w-full min-w-0 flex-1 flex-nowrap justify-end gap-1 overflow-x-auto overscroll-x-contain rounded-xl border border-border/80 bg-muted/50 p-1.5 [scrollbar-width:thin] sm:mx-0 sm:flex-initial sm:flex-wrap sm:overflow-x-visible"
+                role="group"
+                aria-label="POS mode"
+              >
               <button
                 type="button"
                 onClick={() => setPosMode("sale")}
@@ -1357,6 +1487,14 @@ export default function CashierPOSPage() {
                 <span className="whitespace-nowrap">Donation</span>
               </button>
             </div>
+            </div>
+            {posMode === "sale" && stations.length > 0 && posSaleScope !== "fuel" ? (
+              <p className="w-full basis-full text-xs leading-relaxed text-muted-foreground">
+                Product lines deduct stock from this station. Fuel uses the selected nozzle’s station. On
+                a product, tap <span className="font-medium text-foreground">Stock at all stations</span> to
+                see quantities everywhere.
+              </p>
+            ) : null}
           </div>
 
           {posMode === "collect" ? (
@@ -1570,68 +1708,84 @@ export default function CashierPOSPage() {
                   {filteredItems.map(item => {
                     const isSelected = selectedItem?.id === item.id
                     return (
-                      <button
+                      <div
                         key={item.id}
-                        type="button"
-                        onClick={() => addItemToCart(item)}
-                        className={`rounded-xl border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                        className={`flex flex-col overflow-hidden rounded-xl border text-left transition-all duration-200 ${
                           isSelected
                             ? "border-primary bg-primary/5 shadow-md ring-2 ring-primary ring-offset-2 ring-offset-background"
                             : "border-border bg-card hover:border-primary/30 hover:shadow-md"
                         }`}
                       >
-                        {getImageUrl(item.image_url) && (
-                          <div className="mb-3 flex justify-center">
-                            <img
-                              src={getImageUrl(item.image_url)!}
-                              alt={item.name}
-                              className="h-24 w-24 object-contain rounded-lg border border-border bg-muted/30"
-                              onError={e => {
-                                ;(e.target as HTMLImageElement).style.display = "none"
-                              }}
+                        <button
+                          type="button"
+                          onClick={() => addItemToCart(item)}
+                          className="flex flex-1 flex-col p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                        >
+                          {getImageUrl(item.image_url) && (
+                            <div className="mb-3 flex justify-center">
+                              <img
+                                src={getImageUrl(item.image_url)!}
+                                alt={item.name}
+                                className="h-24 w-24 object-contain rounded-lg border border-border bg-muted/30"
+                                onError={e => {
+                                  ;(e.target as HTMLImageElement).style.display = "none"
+                                }}
+                              />
+                            </div>
+                          )}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p
+                                className={`truncate text-sm font-semibold ${
+                                  isSelected ? "text-foreground" : "text-foreground"
+                                }`}
+                              >
+                                {item.name}
+                              </p>
+                              <p className="text-xs uppercase text-muted-foreground">
+                                {item.item_type.replace(/_/g, " ")}
+                              </p>
+                              {item.pos_category && (
+                                <p className="text-xs text-muted-foreground">{item.pos_category}</p>
+                              )}
+                            </div>
+                            <PlusCircle
+                              className={`h-5 w-5 shrink-0 ${
+                                isSelected ? "text-primary" : "text-primary/80"
+                              }`}
                             />
                           </div>
-                        )}
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <p
-                              className={`truncate text-sm font-semibold ${
-                                isSelected ? "text-foreground" : "text-foreground"
-                              }`}
-                            >
-                              {item.name}
-                            </p>
-                            <p className="text-xs uppercase text-muted-foreground">
-                              {item.item_type.replace(/_/g, " ")}
-                            </p>
-                            {item.pos_category && (
-                              <p className="text-xs text-muted-foreground">{item.pos_category}</p>
+                          <p className="mt-3 text-sm font-semibold tabular-nums text-foreground">
+                            {currencySymbol}
+                            {formatNumber(Number(item.unit_price || 0))}
+                            {item.unit && (
+                              <span className="text-xs font-normal text-muted-foreground">
+                                {" "}
+                                / {item.unit}
+                              </span>
                             )}
+                          </p>
+                          {item.quantity_on_hand !== undefined &&
+                            item.item_type?.toLowerCase() === "inventory" && (
+                              <p className="text-xs text-muted-foreground">
+                                In stock: {formatNumber(Number(item.quantity_on_hand))}{" "}
+                                {item.unit || "units"}
+                              </p>
+                            )}
+                        </button>
+                        {posItemSupportsShopStationStockView(item) && (
+                          <div className="border-t border-border/70 bg-muted/30 px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => setStationStockItem(item)}
+                              className="inline-flex w-full min-h-10 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:justify-start"
+                            >
+                              <Layers className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                              Stock at all stations
+                            </button>
                           </div>
-                          <PlusCircle
-                            className={`h-5 w-5 shrink-0 ${
-                              isSelected ? "text-primary" : "text-primary/80"
-                            }`}
-                          />
-                        </div>
-                        <p className="mt-3 text-sm font-semibold tabular-nums text-foreground">
-                          {currencySymbol}
-                          {formatNumber(Number(item.unit_price || 0))}
-                          {item.unit && (
-                            <span className="text-xs font-normal text-muted-foreground">
-                              {" "}
-                              / {item.unit}
-                            </span>
-                          )}
-                        </p>
-                        {item.quantity_on_hand !== undefined &&
-                          item.item_type?.toLowerCase() === "inventory" && (
-                            <p className="text-xs text-muted-foreground">
-                              In stock: {formatNumber(Number(item.quantity_on_hand))}{" "}
-                              {item.unit || "units"}
-                            </p>
-                          )}
-                      </button>
+                        )}
+                      </div>
                     )
                   })}
 
@@ -2266,6 +2420,95 @@ export default function CashierPOSPage() {
           ) : null}
         </main>
       </div>
+
+      <Modal
+        isOpen={!!stationStockItem}
+        onClose={() => {
+          setStationStockItem(null)
+          setStationStockData(null)
+        }}
+        title={stationStockItem ? `Stock — ${stationStockItem.name}` : "Stock by station"}
+        size="md"
+      >
+        <div className="text-sm text-card-foreground">
+          {stationStockLoading && (
+            <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+              Loading…
+            </div>
+          )}
+          {!stationStockLoading && stationStockData && !stationStockData.tracks_per_station && (
+            <p className="text-muted-foreground">
+              {stationStockData.message ||
+                "This product is not tracked in per-station shop bins (e.g. fuel is in tanks)."}
+            </p>
+          )}
+          {!stationStockLoading && stationStockData?.tracks_per_station && (
+            <div className="space-y-4">
+              {posStationId != null && (() => {
+                const reg = stations.find(s => s.id === posStationId)
+                if (!reg) return null
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">This register</span> sells from:{" "}
+                    {reg.station_name}
+                    {reg.station_number ? ` (${reg.station_number})` : null}
+                  </p>
+                )
+              })()}
+              <p className="text-xs text-muted-foreground">
+                Total on hand (company):{" "}
+                <span className="font-semibold tabular-nums text-foreground">
+                  {formatNumber(Number(stationStockData.total_on_hand || 0))}{" "}
+                  {stationStockData.unit || "units"}
+                </span>
+              </p>
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full min-w-[16rem] text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <th className="px-3 py-2">Station</th>
+                      <th className="px-3 py-2 text-right">Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {stationStockData.stations.length ? (
+                      stationStockData.stations.map(row => {
+                        const isThisRegister = posStationId != null && row.station_id === posStationId
+                        return (
+                          <tr
+                            key={row.station_id}
+                            className={isThisRegister ? "bg-primary/5" : ""}
+                          >
+                            <td className="px-3 py-2.5 text-foreground">
+                              {row.station_name}
+                              {row.station_number ? ` (${row.station_number})` : ""}
+                              {isThisRegister && (
+                                <span className="ml-1.5 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                                  This register
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums font-medium text-foreground">
+                              {formatNumber(Number(row.quantity || 0))}
+                            </td>
+                          </tr>
+                        )
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={2} className="px-3 py-6 text-center text-muted-foreground">
+                          No station rows yet (quantities are zero or not initialized).
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showInvoicePreview && grandTotal > 0}

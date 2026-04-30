@@ -8,6 +8,7 @@ from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Vendor
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
+from api.services.station_defaults import parse_optional_station_fk
 from api.services.contact_ledgers import build_vendor_ledger, ledger_query_dates
 
 
@@ -35,6 +36,12 @@ def _vendor_to_json(v):
         "opening_balance_date": _serialize_date(v.opening_balance_date),
         "current_balance": str(v.current_balance),
         "is_active": v.is_active,
+        "default_station_id": v.default_station_id,
+        "default_station_name": (
+            (v.default_station.station_name or "").strip()
+            if getattr(v, "default_station_id", None) and getattr(v, "default_station", None)
+            else ""
+        ),
     }
 
 
@@ -62,7 +69,11 @@ def _parse_date(val):
 @require_company_id
 def vendors_list_or_create(request):
     if request.method == "GET":
-        qs = Vendor.objects.filter(company_id=request.company_id).order_by("id")
+        qs = (
+            Vendor.objects.filter(company_id=request.company_id)
+            .select_related("default_station")
+            .order_by("id")
+        )
         return JsonResponse([_vendor_to_json(v) for v in qs], safe=False)
 
     if request.method == "POST":
@@ -82,8 +93,14 @@ def vendors_list_or_create(request):
         )
         if verr:
             return JsonResponse({"detail": verr}, status=400)
+        vst_id = None
+        if "default_station_id" in body:
+            vst_id, verr2 = parse_optional_station_fk(request.company_id, body.get("default_station_id"))
+            if verr2:
+                return JsonResponse({"detail": verr2}, status=400)
         v = Vendor(
             company_id=request.company_id,
+            default_station_id=vst_id,
             company_name=company_name,
             display_name=body.get("display_name") or company_name,
             contact_person=body.get("contact_person") or "",
@@ -109,7 +126,13 @@ def vendors_list_or_create(request):
                 v.delete()
                 return JsonResponse({"detail": aerr}, status=400)
             v.vendor_number = assigned
-        return JsonResponse(_vendor_to_json(v), status=201)
+            v.save(update_fields=["vendor_number"])
+        v2 = (
+            Vendor.objects.filter(pk=v.pk, company_id=request.company_id)
+            .select_related("default_station")
+            .first()
+        )
+        return JsonResponse(_vendor_to_json(v2), status=201)
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
@@ -118,7 +141,11 @@ def vendors_list_or_create(request):
 @auth_required
 @require_company_id
 def vendor_detail(request, vendor_id: int):
-    v = Vendor.objects.filter(id=vendor_id, company_id=request.company_id).first()
+    v = (
+        Vendor.objects.filter(id=vendor_id, company_id=request.company_id)
+        .select_related("default_station")
+        .first()
+    )
     if not v:
         return JsonResponse({"detail": "Vendor not found"}, status=404)
 
@@ -161,7 +188,17 @@ def vendor_detail(request, vendor_id: int):
             v.current_balance = _decimal(body.get("current_balance"), v.current_balance)
         if "is_active" in body:
             v.is_active = bool(body["is_active"])
+        if "default_station_id" in body:
+            vst_id, verr2 = parse_optional_station_fk(request.company_id, body.get("default_station_id"))
+            if verr2:
+                return JsonResponse({"detail": verr2}, status=400)
+            v.default_station_id = vst_id
         v.save()
+        v = (
+            Vendor.objects.filter(pk=v.pk, company_id=request.company_id)
+            .select_related("default_station")
+            .first()
+        )
         return JsonResponse(_vendor_to_json(v))
 
     if request.method == "DELETE":

@@ -10,12 +10,15 @@ import {
   DEFAULT_COMPANY_TIME_FORMAT,
 } from '@/utils/companyLocaleFormats'
 import { setTenantLocaleConfig, type TenantLocaleConfig } from '@/utils/tenantLocale'
+import { DEFAULT_COMPANY_TIME_ZONE } from '@/utils/timeZones'
 
 const CompanyLocaleContext = createContext<TenantLocaleConfig | undefined>(undefined)
 
 const initialCtx: TenantLocaleConfig = {
   dateFormat: DEFAULT_COMPANY_DATE_FORMAT,
   timeFormat: DEFAULT_COMPANY_TIME_FORMAT,
+  timeZone: DEFAULT_COMPANY_TIME_ZONE,
+  stationMode: 'single',
 }
 
 export function CompanyLocaleProvider({ children }: { children: ReactNode }) {
@@ -43,11 +46,16 @@ export function CompanyLocaleProvider({ children }: { children: ReactNode }) {
         const { data } = await api.get<{
           date_format?: string
           time_format?: string
+          time_zone?: string
+          station_mode?: string
         }>('/companies/current/')
         if (cancelled) return
+        const sm = String(data?.station_mode ?? 'single').toLowerCase()
         const next: TenantLocaleConfig = {
           dateFormat: data?.date_format?.trim() || DEFAULT_COMPANY_DATE_FORMAT,
           timeFormat: data?.time_format?.trim() || DEFAULT_COMPANY_TIME_FORMAT,
+          timeZone: (data?.time_zone || DEFAULT_COMPANY_TIME_ZONE).trim() || DEFAULT_COMPANY_TIME_ZONE,
+          stationMode: sm === 'single' ? 'single' : 'multi',
         }
         setTenantLocaleConfig(next)
         setCtx(next)

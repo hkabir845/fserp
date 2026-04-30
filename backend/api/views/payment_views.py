@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from django.db import transaction
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Prefetch, Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -16,6 +16,7 @@ from api.models import (
     BankAccount,
     BankDeposit,
     Bill,
+    BillLine,
     Customer,
     Invoice,
     Payment,
@@ -24,6 +25,7 @@ from api.models import (
     ShiftSession,
     Vendor,
 )
+from api.services.payment_station import apply_payment_register_station
 from api.services.gl_posting import (
     post_bank_deposit_journal,
     post_payment_made_journal,
@@ -100,6 +102,9 @@ def _payment_to_json(p):
         out["deposit_id"] = bid
     if p.payment_type in ("received", "made"):
         out.update(_payment_mutation_flags(p))
+    st = getattr(p, "station", None)
+    out["station_id"] = int(p.station_id) if getattr(p, "station_id", None) else None
+    out["station_name"] = (st.station_name or "").strip() if st else ""
     return out
 
 
@@ -171,7 +176,7 @@ def payments_all_list(request):
     cid = request.company_id
     qs = (
         Payment.objects.filter(company_id=cid, payment_type__in=["received", "made"])
-        .select_related("customer", "vendor", "bank_account")
+        .select_related("customer", "vendor", "bank_account", "station")
         .prefetch_related("invoice_allocations", "bill_allocations")
         .order_by("-payment_date", "-id")
     )
@@ -204,6 +209,7 @@ def payments_received_list(request):
         return JsonResponse({"detail": "Method not allowed"}, status=405)
     qs = (
         Payment.objects.filter(company_id=request.company_id, payment_type="received")
+        .select_related("customer", "bank_account", "station")
         .prefetch_related("invoice_allocations")
         .order_by("-payment_date", "-id")
     )
@@ -464,6 +470,24 @@ def _validate_invoice_allocations(
             return False, f"allocation exceeds balance for invoice {iid}", [], Decimal("0")
         cleaned.append((inv.id, d_amt))
         total_alloc += d_amt
+    if len(cleaned) >= 2:
+        inv_sites: set[int] = set()
+        for iid, _ in cleaned:
+            inv2 = (
+                Invoice.objects.filter(id=iid, company_id=company_id)
+                .only("station_id")
+                .first()
+            )
+            if inv2 and inv2.station_id:
+                inv_sites.add(int(inv2.station_id))
+        if len(inv_sites) > 1:
+            return (
+                False,
+                "One payment cannot settle open amounts on invoices for different sites; "
+                "record a separate payment per site.",
+                [],
+                Decimal("0"),
+            )
     # on_account may exceed customer_uninvoiced_receivable: the difference is
     # customer prepayment (credit on account), not an error.
     if abs(total_alloc - amount) > Decimal("0.01"):
@@ -547,6 +571,8 @@ def payments_received_create(request):
                 )
             post_payment_received_journal(request.company_id, p)
             refresh_invoices_touched_by_payment(request.company_id, p.id)
+            p.refresh_from_db()
+            apply_payment_register_station(request.company_id, p)
             if shift_session_id_for_roll is not None:
                 record_ar_collection_on_shift(
                     request.company_id, shift_session_id_for_roll, amount, pm_norm
@@ -556,6 +582,7 @@ def payments_received_create(request):
 
     p = (
         Payment.objects.filter(id=p.id)
+        .select_related("station")
         .prefetch_related("invoice_allocations")
         .first()
     )
@@ -572,6 +599,7 @@ def payments_made_list(request):
         return JsonResponse({"detail": "Method not allowed"}, status=405)
     qs = (
         Payment.objects.filter(company_id=request.company_id, payment_type="made")
+        .select_related("vendor", "bank_account", "station")
         .prefetch_related("bill_allocations")
         .order_by("-payment_date", "-id")
     )
@@ -678,6 +706,41 @@ def _validate_bill_allocations(
             return False, f"allocation exceeds balance for bill {bid}", [], Decimal("0")
         cleaned.append((bill.id, d_amt))
         total_alloc += d_amt
+    if len(cleaned) >= 2:
+        bids = [b[0] for b in cleaned]
+        bills_map = {
+            b.id: b
+            for b in Bill.objects.filter(company_id=company_id, id__in=bids).prefetch_related(
+                Prefetch("lines", BillLine.objects.select_related("tank"))
+            )
+        }
+        per_payment_sites: set[int] = set()
+        for bid, _ in cleaned:
+            b = bills_map.get(bid)
+            if not b:
+                continue
+            ss: set[int] = set()
+            if b.receipt_station_id:
+                ss.add(int(b.receipt_station_id))
+            for line in b.lines.all():
+                if line.tank_id and line.tank and line.tank.station_id:
+                    ss.add(int(line.tank.station_id))
+            if len(ss) > 1:
+                return (
+                    False,
+                    f"Bill {bid} is tied to more than one site; correct the bill or split the payment.",
+                    [],
+                    Decimal("0"),
+                )
+            if len(ss) == 1:
+                per_payment_sites.add(ss.pop())
+        if len(per_payment_sites) > 1:
+            return (
+                False,
+                "One payment cannot pay bills for different sites; record a separate payment per site.",
+                [],
+                Decimal("0"),
+            )
     # Allow vendor prepayment when unbilled A/P (cap_on) is ~zero: explicit bill_id=0 allocations
     # must not fail while empty-body coercion to on-account already succeeded.
     if cap_on > Decimal("0.01") and on_account_total > cap_on + Decimal("0.01"):
@@ -899,10 +962,17 @@ def payments_made_create(request):
                 )
             post_payment_made_journal(request.company_id, p)
             refresh_bills_touched_by_payment(request.company_id, p.id)
+            p.refresh_from_db()
+            apply_payment_register_station(request.company_id, p)
     except GlPostingError as e:
         return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 
-    p = Payment.objects.filter(id=p.id).prefetch_related("bill_allocations").first()
+    p = (
+        Payment.objects.filter(id=p.id)
+        .select_related("station")
+        .prefetch_related("bill_allocations")
+        .first()
+    )
     return JsonResponse(_payment_to_json(p), status=201)
 
 
@@ -941,7 +1011,7 @@ def payments_undeposited_funds(request):
             bank_account_id__isnull=True,
             bank_deposit_id__isnull=True,
         )
-        .select_related("customer")
+        .select_related("customer", "station")
         .order_by("-payment_date", "-id")
     )
     total = Decimal("0")
@@ -950,6 +1020,7 @@ def payments_undeposited_funds(request):
         amt = p.amount or Decimal("0")
         total += amt
         cust = p.customer
+        st = getattr(p, "station", None)
         out.append(
             {
                 "id": p.id,
@@ -959,6 +1030,8 @@ def payments_undeposited_funds(request):
                 or "unspecified",
                 "amount": float(amt),
                 "reference_number": p.reference or None,
+                "station_id": p.station_id,
+                "station_name": (st.station_name or "").strip() if st else "",
                 "customer_id": p.customer_id,
                 "customer_name": customer_display_name(cust) if cust else "",
                 "memo": p.memo or None,
@@ -1099,7 +1172,7 @@ def payment_detail_update_delete(request, payment_id: int):
     cid = request.company_id
     p = (
         Payment.objects.filter(id=payment_id, company_id=cid)
-        .select_related("customer", "vendor", "bank_account")
+        .select_related("customer", "vendor", "bank_account", "station")
         .prefetch_related("invoice_allocations", "bill_allocations")
         .first()
     )
@@ -1265,13 +1338,15 @@ def payment_detail_update_delete(request, payment_id: int):
                         )
                     post_payment_received_journal(cid, p)
                     refresh_invoices_touched_by_payment(cid, p.id)
+                    p.refresh_from_db()
+                    apply_payment_register_station(cid, p)
             except GlPostingError as e:
                 return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 
             p.refresh_from_db()
             p = (
                 Payment.objects.filter(id=p.id, company_id=cid)
-                .select_related("customer", "vendor", "bank_account")
+                .select_related("customer", "vendor", "bank_account", "station")
                 .prefetch_related("invoice_allocations", "bill_allocations")
                 .first()
             )
@@ -1355,12 +1430,14 @@ def payment_detail_update_delete(request, payment_id: int):
                         )
                     post_payment_made_journal(cid, p)
                     refresh_bills_touched_by_payment(cid, p.id)
+                    p.refresh_from_db()
+                    apply_payment_register_station(cid, p)
             except GlPostingError as e:
                 return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 
             p = (
                 Payment.objects.filter(id=p.id, company_id=cid)
-                .select_related("customer", "vendor", "bank_account")
+                .select_related("customer", "vendor", "bank_account", "station")
                 .prefetch_related("invoice_allocations", "bill_allocations")
                 .first()
             )

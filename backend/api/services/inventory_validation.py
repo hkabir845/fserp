@@ -11,6 +11,7 @@ from api.services.gl_posting import (
     _pick_tank_for_bill_line,
     _tanks_for_stock_receipt,
 )
+from api.services.station_stock import assert_shop_lines_within_station_qoh, item_uses_station_bins
 
 
 def _fmt_qty(d: Decimal) -> str:
@@ -69,7 +70,7 @@ def lock_tanks_and_assert_receipt_capacity(
                 "Refresh the page and pick a valid receiving tank."
             )
     for tid, add_qty in additions.items():
-        t = locked[tid]
+        t = locked.get(tid)
         cap = t.capacity or Decimal("0")
         if cap <= 0:
             continue
@@ -126,18 +127,39 @@ def assert_pos_fuel_sale_within_stock(company_id: int, fuel_entries: list) -> No
             )
 
 
-def assert_pos_general_lines_within_qoh(company_id: int, lines_data: list) -> None:
-    """Perpetual-inventory POS lines only: quantity must not exceed quantity_on_hand (see item_catalog)."""
-    per: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+def assert_pos_general_lines_within_qoh(
+    company_id: int, lines_data: list, station_id: int | None
+) -> None:
+    """
+    Perpetual-inventory POS: shop items tracked per station use ItemStationStock; others use Item QOH.
+    When any line is a per-station SKU, station_id is required.
+    """
+    needs_station = any(
+        d.get("item") and item_uses_station_bins(company_id, d["item"]) for d in lines_data
+    )
+    if needs_station and not station_id:
+        raise StockBusinessError(
+            "This sale includes shop products tracked by location. Set station_id (selling / drawing stock location) "
+            "or open a shift for that station, then try again."
+        )
+    if needs_station and station_id:
+        assert_shop_lines_within_station_qoh(company_id, station_id, lines_data)
+    # Items not using per-station bins: company-level QOH (includes tank-sourced Item rows)
+    legacy: list = []
     for d in lines_data:
-        item = d.get("item")
-        if not item:
+        it = d.get("item")
+        if not it or not _item_receives_physical_stock(it):
             continue
-        # Match vendor receipt rules: services / non-inventory are not shop QOH.
-        if not _item_receives_physical_stock(item):
+        if item_uses_station_bins(company_id, it):
             continue
-        if item.quantity_on_hand is None:
+        if it.quantity_on_hand is None:
             continue
+        legacy.append(d)
+    if not legacy:
+        return
+    per: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    for d in legacy:
+        it = d["item"]
         q = d.get("quantity")
         if q is None:
             continue
@@ -147,9 +169,7 @@ def assert_pos_general_lines_within_qoh(company_id: int, lines_data: list) -> No
             continue
         if qq <= 0:
             continue
-        per[item.pk] += qq
-    if not per:
-        return
+        per[it.pk] += qq
     ids = sorted(per.keys())
     locked = {
         i.id: i

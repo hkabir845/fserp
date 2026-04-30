@@ -83,12 +83,12 @@ All loan endpoints are company-scoped (same auth / `company_id` pattern as the r
 ## Domain model (summary)
 
 - **`LoanCounterparty`**: `company`, `code`, `name`, `role_type`, `party_kind`, optional `customer_id` / `vendor_id` / `employee_id`, opening balance fields, `opening_principal_account_id`, `opening_equity_account_id`, `opening_balance_journal_id` (after GL post).
-- **`Loan`**: `counterparty`, `direction` (borrowed vs lent), `principal_account`, `settlement_account`, optional `interest_account`, `interest_accrual_account`, `banking_model`, `product_type`, Islamic parent/child for facilities/deals, amounts and dates, etc.
+- **`Loan`**: `counterparty`, `direction` (borrowed vs lent), `principal_account`, `settlement_account`, optional `interest_account`, `interest_accrual_account`, optional **`station`** (multi-site: tags auto-posted GL for segment reporting), `banking_model`, `product_type`, Islamic parent/child for facilities/deals, amounts and dates, etc.
 - **`LoanDisbursement`**, **`LoanRepayment`**, **`LoanInterestAccrual`**: link to `Loan`, amounts, optional `journal_entry` / reversal links.
 
 ## General ledger integration
 
-- Posting uses **`JournalEntry`** with `is_posted=True` and balanced lines on **`ChartOfAccount`**.
+- Posting uses **`JournalEntry`** with `is_posted=True` and balanced lines on **`ChartOfAccount`**. When **`Loan.station`** is set, disbursements, repayments, accruals, and their reversals pass **`gl_station_id`** so **`JournalEntry` / `JournalEntryLine`** carry that `station_id` for filtered statements and site-scoped reports.
 - **Idempotency** is enforced by **entry number** patterns, for example (see `loan_posting.py` and `loan_counterparty_opening.py`):
   - `AUTO-LOAN-DISP-<disbursement_id>` — disbursement
   - `AUTO-LOAN-REPAY-<repayment_id>` — repayment

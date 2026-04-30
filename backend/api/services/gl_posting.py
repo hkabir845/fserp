@@ -4,6 +4,9 @@ Automatic GL posting for invoices, POS sales, payments, bills, and fund transfer
 Uses fuel-station template account codes when present. For payment/receipt paths,
 missing accounts raise GlPostingError so the operation rolls back and the subledger
 stays consistent with the general ledger.
+
+Journal lines optionally carry ``station_id`` (5th tuple element in internal line lists)
+so multi-site tenants can run site-scoped trial balance and income statement.
 """
 from __future__ import annotations
 
@@ -25,6 +28,8 @@ from api.models import (
     ChartOfAccount,
     Customer,
     FundTransfer,
+    InventoryTransfer,
+    InventoryTransferLine,
     Invoice,
     InvoiceLine,
     Item,
@@ -32,6 +37,7 @@ from api.models import (
     JournalEntryLine,
     Payment,
     PayrollRun,
+    Station,
     Tank,
     TankDip,
     Vendor,
@@ -42,6 +48,23 @@ from api.utils.customer_display import customer_display_name
 from api.services.coa_constants import normalize_chart_account_type
 
 logger = logging.getLogger(__name__)
+
+
+def _unpack_gl_line(
+    line: tuple,
+) -> tuple[ChartOfAccount, Decimal, Decimal, str, Optional[int], bool]:
+    """
+    Parse internal GL line tuple.
+
+    - 4-tuple: station not set on tuple; caller's ``gl_station_id`` applies to the line.
+    - 5-tuple: explicit per-line site (``None`` = leave line untagged when header is also null).
+    """
+    acc, debit, credit, desc = line[0], line[1], line[2], line[3]
+    if len(line) >= 5:
+        s = line[4]
+        sid = int(s) if s is not None else None
+        return acc, debit, credit, desc, sid, True
+    return acc, debit, credit, desc, None, False
 
 
 def _gl_invoice_customer_label(inv: Invoice) -> str:
@@ -64,6 +87,22 @@ def _gl_invoice_journal_description(inv: Invoice, title: str) -> str:
     if cust:
         return f"{title} {inv_ref} — {cust}"[:500]
     return f"{title} {inv_ref}"[:500]
+
+
+def _gl_station_id(company_id: int, raw: int | None) -> Optional[int]:
+    """Active station for this company, or None if unset / invalid / inactive."""
+    if raw is None:
+        return None
+    try:
+        sid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if sid <= 0:
+        return None
+    if Station.objects.filter(pk=sid, company_id=company_id, is_active=True).exists():
+        return sid
+    return None
+
 
 # Default codes aligned with api.chart_templates.fuel_station
 CODE_CASH = "1010"
@@ -147,6 +186,7 @@ def post_pos_cash_donation_journal(
     entry_date,
     memo: str,
     bank_account_id: Optional[int],
+    gl_station_id: Optional[int] = None,
 ) -> tuple[Optional[JournalEntry], str]:
     """
     Record cash (or register-linked) payout for donation / social support from POS.
@@ -167,7 +207,14 @@ def post_pos_cash_donation_journal(
         (exp, amount, Decimal("0"), line_memo),
         (cash, Decimal("0"), amount, line_memo),
     ]
-    je = _create_posted_entry(company_id, entry_date, entry_num, desc, lines)
+    je = _create_posted_entry(
+        company_id,
+        entry_date,
+        entry_num,
+        desc,
+        lines,
+        gl_station_id=_gl_station_id(company_id, gl_station_id),
+    )
     if not je:
         return None, "Could not post journal. Please try again."
     return je, ""
@@ -336,12 +383,14 @@ def sync_tank_dip_variance_journal(company_id: int, dip_id: int) -> dict:
         lines.append((loss_acc, amount, Decimal("0"), memo_base[:300]))
         lines.append((inv_acc, Decimal("0"), amount, memo_base[:300]))
 
+    dip_sid = dip.tank.station_id if dip.tank_id else None
     je = _create_posted_entry(
         company_id,
         dip.dip_date,
         entry_number,
         desc,
         lines,
+        gl_station_id=_gl_station_id(company_id, dip_sid),
     )
     if je:
         return {"status": "posted", "entry_number": entry_number, "amount": float(amount)}
@@ -427,10 +476,12 @@ def _create_posted_entry(
     entry_date,
     entry_number: str,
     description: str,
-    lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]],
+    lines: list[tuple],
+    *,
+    gl_station_id: Optional[int] = None,
 ) -> Optional[JournalEntry]:
-    total_debit = sum(d for _, d, _, _ in lines)
-    total_credit = sum(c for _, _, c, _ in lines)
+    total_debit = sum(_unpack_gl_line(x)[1] for x in lines)
+    total_credit = sum(_unpack_gl_line(x)[2] for x in lines)
     if total_debit != total_credit or total_debit <= 0:
         logger.warning(
             "skip journal %s: unbalanced or zero (debit=%s credit=%s)",
@@ -451,14 +502,22 @@ def _create_posted_entry(
             entry_number=entry_number,
             entry_date=entry_date,
             description=description[:500],
+            station_id=_gl_station_id(company_id, gl_station_id),
             is_posted=True,
             posted_at=timezone.now(),
         )
         je.save()
-        for acc, debit, credit, desc in lines:
+        hdr = _gl_station_id(company_id, gl_station_id)
+        for raw in lines:
+            acc, debit, credit, desc, st_opt, explicit = _unpack_gl_line(raw)
+            if explicit:
+                line_st = _gl_station_id(company_id, st_opt) if st_opt is not None else None
+            else:
+                line_st = hdr
             JournalEntryLine.objects.create(
                 journal_entry=je,
                 account=acc,
+                station_id=line_st,
                 debit=debit,
                 credit=credit,
                 description=desc[:300],
@@ -526,11 +585,12 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
 
     if not lines:
         return False
-    debit = sum(d for _, d, _, _ in lines)
-    credit = sum(c for _, _, c, _ in lines)
+    debit = sum(_unpack_gl_line(x)[1] for x in lines)
+    credit = sum(_unpack_gl_line(x)[2] for x in lines)
     if debit != credit:
         return False
 
+    inv_st = _gl_station_id(company_id, inv.station_id)
     return (
         _create_posted_entry(
             company_id,
@@ -538,6 +598,7 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
             entry_number,
             _gl_invoice_journal_description(inv, "COGS"),
             lines,
+            gl_station_id=inv_st,
         )
         is not None
     )
@@ -622,9 +683,12 @@ def post_invoice_sale_journal(
         diff = debit_sum - credit_sum
         if len(lines) > 1:
             for i in range(1, len(lines)):
-                acc, d, c, desc = lines[i]
+                acc, d, c, desc, st_line, expl = _unpack_gl_line(lines[i])
                 if c > 0:
-                    lines[i] = (acc, d, (c + diff).quantize(Decimal("0.01")), desc)
+                    if expl:
+                        lines[i] = (acc, d, (c + diff).quantize(Decimal("0.01")), desc, st_line)
+                    else:
+                        lines[i] = (acc, d, (c + diff).quantize(Decimal("0.01")), desc)
                     break
         credit_sum = sum(x[2] for x in lines[1:])
     if debit_sum != credit_sum:
@@ -636,12 +700,14 @@ def post_invoice_sale_journal(
         )
         return False
 
+    inv_st = _gl_station_id(company_id, inv.station_id)
     je = _create_posted_entry(
         company_id,
         inv.invoice_date,
         entry_number,
         _gl_invoice_journal_description(inv, "Invoice"),
         lines,
+        gl_station_id=inv_st,
     )
     if je:
         post_invoice_cogs_journal(company_id, inv)
@@ -714,12 +780,14 @@ def post_invoice_receipt_journal(
         (cash_bank, amt, Decimal("0"), rcpt),
         (ar, Decimal("0"), amt, rcpt),
     ]
+    inv_st = _gl_station_id(company_id, inv.station_id)
     je = _create_posted_entry(
         company_id,
         inv.invoice_date,
         entry_number,
         _gl_invoice_journal_description(inv, "Payment for"),
         lines,
+        gl_station_id=inv_st,
     )
     if je and not _is_walkin_customer(inv.customer):
         Customer.objects.filter(pk=inv.customer_id).update(
@@ -760,12 +828,14 @@ def post_payment_received_journal(company_id: int, p: Payment) -> bool:
         (cash_bank, p.amount, Decimal("0"), p.reference or f"PAY-{p.id}"),
         (ar, Decimal("0"), p.amount, p.reference or f"PAY-{p.id}"),
     ]
+    pst = _gl_station_id(company_id, p.station_id)
     je = _create_posted_entry(
         company_id,
         p.payment_date,
         entry_number,
         f"Payment received #{p.id}",
         lines,
+        gl_station_id=pst,
     )
     if not je:
         raise GlPostingError(
@@ -865,12 +935,14 @@ def post_payment_made_journal(company_id: int, p: Payment) -> bool:
         (ap, p.amount, Decimal("0"), p.reference or f"PAY-{p.id}"),
         (cash_bank, Decimal("0"), p.amount, p.reference or f"PAY-{p.id}"),
     ]
+    pst = _gl_station_id(company_id, p.station_id)
     je = _create_posted_entry(
         company_id,
         p.payment_date,
         entry_number,
         f"Payment made #{p.id}",
         lines,
+        gl_station_id=pst,
     )
     if not je:
         raise GlPostingError(
@@ -999,12 +1071,19 @@ def receipt_inventory_from_posted_bill(
                 Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") + qty)
                 _sync_item_qoh_from_tanks(company_id, item.id)
         else:
-            Item.objects.filter(pk=item.pk).update(quantity_on_hand=F("quantity_on_hand") + qty)
+            from api.services.station_stock import add_station_stock, get_or_create_default_station
+
+            st_id = bill.receipt_station_id
+            if not st_id:
+                st_id = get_or_create_default_station(company_id).id
+            add_station_stock(company_id, st_id, item.id, qty)
     return applied_lines
 
 
 def reverse_receipt_inventory_from_posted_bill(bill: Bill) -> None:
     """Undo receipt_inventory_from_posted_bill for current line rows (mirror receipt logic)."""
+    from api.services.station_stock import add_station_stock, get_or_create_default_station
+
     company_id = bill.company_id
     for line in BillLine.objects.filter(bill_id=bill.id).select_related("item", "tank"):
         item = line.item
@@ -1022,7 +1101,10 @@ def reverse_receipt_inventory_from_posted_bill(bill: Bill) -> None:
                 Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") - qty)
                 _sync_item_qoh_from_tanks(company_id, item.id)
         else:
-            Item.objects.filter(pk=item.pk).update(quantity_on_hand=F("quantity_on_hand") - qty)
+            st_id = bill.receipt_station_id
+            if not st_id:
+                st_id = get_or_create_default_station(company_id).id
+            add_station_stock(company_id, st_id, item.id, -qty)
 
 
 def undo_bill_stock_receipt(bill: Bill) -> None:
@@ -1257,12 +1339,14 @@ def post_bill_journal(
     lines = _build_bill_journal_lines(company_id, bill)
     je = None
     if lines:
+        bst = _gl_station_id(company_id, bill.receipt_station_id)
         je = _create_posted_entry(
             company_id,
             bill.bill_date,
             entry_number,
             f"Bill {bill.bill_number}",
             lines,
+            gl_station_id=bst,
         )
 
     _ensure_vendor_ap_for_posted_bill(company_id, bill)
@@ -1579,15 +1663,90 @@ def post_payroll_salary(
 
     lines.append((pay_account, Decimal("0"), net, f"Net pay — {ref}"))
 
+    pr_st = _gl_station_id(company_id, pr.station_id)
     je = _create_posted_entry(
         company_id,
         pr.payment_date,
         en,
         f"Salary pay {pr.payroll_number or en}",
         lines,
+        gl_station_id=pr_st,
     )
     if not je:
         return None, "Failed to post journal (unbalanced or invalid)"
     with transaction.atomic():
         PayrollRun.objects.filter(pk=pr.pk).update(salary_journal=je, status="paid")
     return je, ""
+
+
+def post_inventory_transfer_journal(company_id: int, transfer_id: int) -> bool:
+    """
+    Inter-station stock move of shop inventory: Dr and Cr the same inventory GL account
+    (e.g. 1220) with different line memos so the entry balances and total asset is unchanged;
+    subledger is ItemStationStock. Idempotent: AUTO-ISTR-{id}.
+    """
+    from api.services.station_stock import item_uses_station_bins
+
+    tr = (
+        InventoryTransfer.objects.filter(pk=transfer_id, company_id=company_id)
+        .select_related("from_station", "to_station")
+        .first()
+    )
+    if not tr or tr.status != InventoryTransfer.STATUS_POSTED:
+        return False
+    en = f"AUTO-ISTR-{transfer_id}"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=en).exists():
+        return True
+    bucket: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    for line in (
+        InventoryTransferLine.objects.filter(transfer_id=tr.id).select_related("item")
+    ):
+        it = line.item
+        if not it or not item_uses_station_bins(company_id, it):
+            continue
+        cost = it.cost or Decimal("0")
+        if cost <= 0:
+            cost = it.unit_price or Decimal("0")
+        if cost <= 0:
+            continue
+        qty = line.quantity or Decimal("0")
+        if qty <= 0:
+            continue
+        a = (qty * cost).quantize(Decimal("0.01"))
+        if a <= 0:
+            continue
+        acc = _inventory_account_for_item(company_id, it)
+        if not acc:
+            continue
+        bucket[acc.id] += a
+    if not bucket:
+        return True
+    from_name = (tr.from_station.station_name or f"ST-{tr.from_station_id}")[:120]
+    to_name = (tr.to_station.station_name or f"ST-{tr.to_station_id}")[:120]
+    memo_in = f"Inter-station transfer — in @ {to_name} (TR-{transfer_id})"[:300]
+    memo_out = f"Inter-station transfer — out @ {from_name} (TR-{transfer_id})"[:300]
+    desc = f"Inventory transfer {tr.transfer_number or tr.id} {from_name} → {to_name}"[:500]
+    to_id = _gl_station_id(company_id, tr.to_station_id)
+    from_id = _gl_station_id(company_id, tr.from_station_id)
+    jlines: list[tuple] = []
+    for acc_id, amt in sorted(bucket.items()):
+        acc = ChartOfAccount.objects.filter(
+            id=acc_id, company_id=company_id, is_active=True
+        ).first()
+        if not acc or amt <= 0:
+            continue
+        jlines.append((acc, amt, Decimal("0"), memo_in, to_id))
+        jlines.append((acc, Decimal("0"), amt, memo_out, from_id))
+    if not jlines:
+        return True
+    return (
+        _create_posted_entry(company_id, tr.transfer_date, en, desc, jlines, gl_station_id=None)
+        is not None
+    )
+
+
+def delete_auto_inventory_transfer_journal(company_id: int, transfer_id: int) -> int:
+    deleted, _ = JournalEntry.objects.filter(
+        company_id=company_id, entry_number=f"AUTO-ISTR-{transfer_id}"
+    ).delete()
+    return deleted

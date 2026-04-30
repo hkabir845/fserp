@@ -24,13 +24,14 @@ import {
   CreditCard,
   Database,
   Shield,
+  ArrowRightLeft,
 } from 'lucide-react'
 
 /** Sidebar search hints (unchanged from Sidebar) */
 export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
   main: 'home apps launcher dashboard pos cashier point of sale register',
   station: 'station pump fuel tank island dispenser nozzle meter forecourt',
-  operations: 'operations shift dip variance inventory fuel ops',
+  operations: 'operations shift dip variance inventory transfer stock station fuel ops',
   accounting:
     'accounting ledger chart coa bank accounts journal fund transfer loan borrow lend receivable payable book undeposited cash petty 1010 1020 1120',
   sales: 'sales customer vendor ar ap invoice bill payment receivable payable',
@@ -95,6 +96,7 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   '/bills': ['app.sales'],
   '/payments': ['app.sales'],
   '/items': ['app.inventory'],
+  '/inventory': ['app.inventory'],
   '/employees': ['app.hr'],
   '/payroll': ['app.hr'],
   '/company': ['app.settings'],
@@ -164,6 +166,13 @@ export function getFsmsErpMenuItems(): ErpAppMenuItem[] {
     { href: '/payments', label: 'Payments', section: 'sales', icon: DollarSign, tileClass: tile('bg-green-100', 'text-green-700') },
 
     { href: '/items', label: 'Products & services', section: 'inventory', icon: Package, tileClass: tile('bg-cyan-100', 'text-cyan-700') },
+    {
+      href: '/inventory',
+      label: 'Inventory & transfers',
+      section: 'inventory',
+      icon: ArrowRightLeft,
+      tileClass: tile('bg-teal-100', 'text-teal-700'),
+    },
 
     { href: '/employees', label: 'Employees', section: 'hr', icon: Users, tileClass: tile('bg-orange-100', 'text-orange-700') },
     { href: '/payroll', label: 'Payroll', section: 'hr', icon: DollarSign, tileClass: tile('bg-amber-100', 'text-amber-700') },

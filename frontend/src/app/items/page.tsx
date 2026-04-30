@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
-import { Plus, Edit, Trash2, Search, Package, Box, Wrench, Camera, X, Grid3x3, List } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, Package, Box, Wrench, Camera, X, Grid3x3, List, ArrowRightLeft } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
@@ -21,6 +22,12 @@ function parseInventoryQty(raw: unknown): number {
   if (typeof raw === 'number' && Number.isFinite(raw)) return raw
   const n = parseFloat(String(raw).replace(/,/g, '').trim())
   return Number.isFinite(n) ? n : 0
+}
+
+function itemHasPerStationShopStock(item: Item): boolean {
+  const t = String(item.item_type).toLowerCase()
+  if (t !== 'inventory') return false
+  return (item.pos_category || '').toLowerCase() !== 'fuel'
 }
 
 interface ProductTankRow {
@@ -813,6 +820,15 @@ export default function ItemsPage() {
                 </div>
 
                 <div className="flex items-center justify-end space-x-2 pt-4 border-t">
+                  {itemHasPerStationShopStock(item) && (
+                    <Link
+                      href={`/inventory?tab=lookup&item_id=${item.id}`}
+                      className="p-2 text-teal-600 hover:bg-teal-50 rounded"
+                      title="Stock by station"
+                    >
+                      <ArrowRightLeft className="h-4 w-4" />
+                    </Link>
+                  )}
                   <button
                     onClick={() => handleEdit(item)}
                     className="p-2 text-blue-600 hover:bg-blue-50 rounded"
@@ -933,6 +949,15 @@ export default function ItemsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
+                        {itemHasPerStationShopStock(item) && (
+                          <Link
+                            href={`/inventory?tab=lookup&item_id=${item.id}`}
+                            className="p-2 text-teal-600 hover:bg-teal-50 rounded transition-colors"
+                            title="Stock by station"
+                          >
+                            <ArrowRightLeft className="h-4 w-4" />
+                          </Link>
+                        )}
                         <button
                           onClick={() => handleEdit(item)}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"

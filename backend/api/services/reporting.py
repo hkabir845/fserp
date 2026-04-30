@@ -32,6 +32,7 @@ from api.models import (
 )
 from api.services.gl_posting import item_inventory_unit_cost
 from api.services.item_catalog import item_tracks_physical_stock
+from api.services.station_stock import get_station_stock, item_uses_station_bins, tanks_exist_for_item
 from api.services.coa_constants import (
     is_debit_normal_chart_type,
     is_pl_credit_normal_type,
@@ -47,6 +48,20 @@ def _d(v: Any) -> Decimal:
 
 def _f(d: Decimal) -> float:
     return float(d.quantize(Decimal("0.01")))
+
+
+def _item_qoh_at_station(company_id: int, item: Item, station_id: int) -> Decimal:
+    """Shop bin or tank stock at one site; company-level QOH when the SKU is not split per site."""
+    if not item_tracks_physical_stock(item):
+        return Decimal("0")
+    if tanks_exist_for_item(company_id, item.id):
+        agg = Tank.objects.filter(
+            company_id=company_id, product_id=item.id, station_id=station_id
+        ).aggregate(s=Coalesce(Sum("current_stock"), Decimal("0")))
+        return _d(agg["s"])
+    if item_uses_station_bins(company_id, item):
+        return get_station_stock(company_id, station_id, item.id)
+    return _d(getattr(item, "quantity_on_hand", None) or 0)
 
 
 def parse_report_dates(request) -> tuple[date, date]:
@@ -70,19 +85,27 @@ def parse_report_dates(request) -> tuple[date, date]:
     return start_d, end_d
 
 
-def _je_lines_base(company_id: int):
-    return JournalEntryLine.objects.filter(
+def _je_lines_base(company_id: int, station_id: int | None = None):
+    qs = JournalEntryLine.objects.filter(
         journal_entry__company_id=company_id,
         journal_entry__is_posted=True,
     )
+    if station_id is not None:
+        qs = qs.filter(station_id=station_id)
+    return qs
 
 
-def report_trial_balance(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_trial_balance(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     """
     Period activity trial balance: sums posted journal lines with entry_date in [start, end].
     Total debits must equal total credits (double-entry). COA opening balances are not included.
+
+    When ``station_id`` is set, only lines tagged with that site are included (company-wide / untagged
+    lines are excluded).
     """
-    period_lines = _je_lines_base(company_id).filter(
+    period_lines = _je_lines_base(company_id, station_id).filter(
         journal_entry__entry_date__gte=start,
         journal_entry__entry_date__lte=end,
     )
@@ -135,7 +158,7 @@ def report_trial_balance(company_id: int, start: date, end: date) -> dict[str, A
         )
 
     diff = total_d - total_c
-    return {
+    out: dict[str, Any] = {
         "report_id": "trial-balance",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "accounts": accounts_out,
@@ -148,11 +171,20 @@ def report_trial_balance(company_id: int, start: date, end: date) -> dict[str, A
             "Total debit and total credit must match for a balanced GL period."
         ),
     }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+        out["accounting_note"] = (
+            out["accounting_note"]
+            + " Site filter: only journal lines with this station_id are included."
+        )
+    return out
 
 
-def _movement_through(company_id: int, account_id: int, as_of: date) -> tuple[Decimal, Decimal]:
+def _movement_through(
+    company_id: int, account_id: int, as_of: date, station_id: int | None = None
+) -> tuple[Decimal, Decimal]:
     agg = (
-        _je_lines_base(company_id)
+        _je_lines_base(company_id, station_id)
         .filter(
             account_id=account_id,
             journal_entry__entry_date__lte=as_of,
@@ -173,6 +205,19 @@ def _ending_balance(coa: ChartOfAccount, company_id: int, as_of: date) -> Decima
     return ob + c - d
 
 
+def _balance_sheet_balance_from_site_activity(
+    coa: ChartOfAccount, company_id: int, as_of: date, station_id: int
+) -> Decimal:
+    """
+    BS account balance from posted lines tagged with ``station_id`` only (no chart opening).
+    Matches site-scoped trial balance / P&L basis.
+    """
+    d, c = _movement_through(company_id, coa.id, as_of, station_id)
+    if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
+        return d - c
+    return c - d
+
+
 def _cumulative_net_income_through(company_id: int, as_of: date) -> Decimal:
     """
     P&L rolled to equity for balance-sheet balancing when income/expense/COSG
@@ -189,6 +234,33 @@ def _cumulative_net_income_through(company_id: int, as_of: date) -> Decimal:
         if t not in ("income", "cost_of_goods_sold", "expense"):
             continue
         bal = _ending_balance(coa, company_id, as_of)
+        if t == "income":
+            ni += bal
+        else:
+            ni -= bal
+    return ni
+
+
+def _site_pl_activity_balance(
+    coa: ChartOfAccount, company_id: int, as_of: date, station_id: int
+) -> Decimal:
+    """P&L movement through ``as_of`` on one site (posted lines only; no chart opening balance)."""
+    d, c = _movement_through(company_id, coa.id, as_of, station_id)
+    if is_pl_credit_normal_type(coa.account_type):
+        return c - d
+    return d - c
+
+
+def _cumulative_net_income_site_through(
+    company_id: int, as_of: date, station_id: int
+) -> Decimal:
+    """Same sign convention as ``_cumulative_net_income_through`` but journal lines for one site only."""
+    ni = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        t = normalize_chart_account_type(coa.account_type)
+        if t not in ("income", "cost_of_goods_sold", "expense"):
+            continue
+        bal = _site_pl_activity_balance(coa, company_id, as_of, station_id)
         if t == "income":
             ni += bal
         else:
@@ -225,7 +297,9 @@ def _unknown_type_balance_sheet_bucket(
     return "equity"
 
 
-def report_balance_sheet(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_balance_sheet(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     _ = start
     assets: list[dict[str, Any]] = []
     liabilities: list[dict[str, Any]] = []
@@ -238,7 +312,10 @@ def report_balance_sheet(company_id: int, start: date, end: date) -> dict[str, A
         st = (coa.account_sub_type or "").strip().lower()
         if t in ("income", "cost_of_goods_sold", "expense"):
             continue
-        bal = _ending_balance(coa, company_id, end)
+        if station_id is not None:
+            bal = _balance_sheet_balance_from_site_activity(coa, company_id, end, station_id)
+        else:
+            bal = _ending_balance(coa, company_id, end)
         if bal == 0:
             continue
 
@@ -279,7 +356,10 @@ def report_balance_sheet(company_id: int, start: date, end: date) -> dict[str, A
             equity.append(row)
             te_plain += bal
 
-    ni_cum = _cumulative_net_income_through(company_id, end)
+    if station_id is not None:
+        ni_cum = _cumulative_net_income_site_through(company_id, end, station_id)
+    else:
+        ni_cum = _cumulative_net_income_through(company_id, end)
     if ni_cum != 0:
         equity.append(
             {
@@ -310,7 +390,15 @@ def report_balance_sheet(company_id: int, start: date, end: date) -> dict[str, A
 
     tle = tl + te_total
     final_diff = ta - tle
-    return {
+    note = (
+        "Point-in-time as of end date. Unclosed P&L is included in equity as Σ-P&L; Σ-ADJ is an automatic tie-out if a small residual remains."
+    )
+    if station_id is not None:
+        note = (
+            note
+            + " Site filter: balances use only posted journal lines with this station_id (chart opening balances are excluded); Σ-P&L uses the same site-tagged activity."
+        )
+    out_bs: dict[str, Any] = {
         "report_id": "balance-sheet",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "assets": {"accounts": assets, "total": _f(ta)},
@@ -325,15 +413,22 @@ def report_balance_sheet(company_id: int, start: date, end: date) -> dict[str, A
         "auto_plug_amount": _f(auto_plug) if auto_plug != 0 else 0.0,
         "is_balanced": abs(final_diff) <= Decimal("0.02"),
         "assets_minus_liabilities_equity": _f(final_diff),
-        "accounting_note": (
-            "Point-in-time as of end date. Unclosed P&L is included in equity as Σ-P&L; Σ-ADJ is an automatic tie-out if a small residual remains."
-        ),
+        "accounting_note": note,
     }
+    if station_id is not None:
+        out_bs["filter_station_id"] = station_id
+    return out_bs
 
 
-def _period_pl_amount(coa: ChartOfAccount, company_id: int, start: date, end: date) -> Decimal:
+def _period_pl_amount(
+    coa: ChartOfAccount,
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+) -> Decimal:
     agg = (
-        _je_lines_base(company_id)
+        _je_lines_base(company_id, station_id)
         .filter(
             account_id=coa.id,
             journal_entry__entry_date__gte=start,
@@ -350,7 +445,9 @@ def _period_pl_amount(coa: ChartOfAccount, company_id: int, start: date, end: da
     return d - c
 
 
-def _period_income_statement_totals(company_id: int, start: date, end: date) -> dict[str, Decimal]:
+def _period_income_statement_totals(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Decimal]:
     """
     P&L totals for [start, end] from posted journal lines (same basis as income statement).
     """
@@ -359,7 +456,7 @@ def _period_income_statement_totals(company_id: int, start: date, end: date) -> 
         t = normalize_chart_account_type(coa.account_type)
         if t not in ("income", "cost_of_goods_sold", "expense"):
             continue
-        amt = _period_pl_amount(coa, company_id, start, end)
+        amt = _period_pl_amount(coa, company_id, start, end, station_id)
         if t == "income":
             ti += amt
         elif t == "cost_of_goods_sold":
@@ -463,7 +560,9 @@ def _iter_month_periods_in_range(start: date, end: date) -> list[tuple[date, dat
     return out
 
 
-def report_income_statement(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_income_statement(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     income_rows: list[dict[str, Any]] = []
     cogs_rows: list[dict[str, Any]] = []
     exp_rows: list[dict[str, Any]] = []
@@ -475,7 +574,7 @@ def report_income_statement(company_id: int, start: date, end: date) -> dict[str
         t = normalize_chart_account_type(coa.account_type)
         if t not in ("income", "cost_of_goods_sold", "expense"):
             continue
-        amt = _period_pl_amount(coa, company_id, start, end)
+        amt = _period_pl_amount(coa, company_id, start, end, station_id)
         if amt == 0:
             continue
         display_name = coa.account_name
@@ -499,11 +598,24 @@ def report_income_statement(company_id: int, start: date, end: date) -> dict[str
     net = gross - te
     # Posted activity in [start, end] should match Δ cumulative P&L unless COA opening balances exist on P&L rows.
     day_before = start - timedelta(days=1)
-    ni_before = _cumulative_net_income_through(company_id, day_before)
-    ni_end = _cumulative_net_income_through(company_id, end)
+    if station_id is not None:
+        ni_before = _cumulative_net_income_site_through(company_id, day_before, station_id)
+        ni_end = _cumulative_net_income_site_through(company_id, end, station_id)
+    else:
+        ni_before = _cumulative_net_income_through(company_id, day_before)
+        ni_end = _cumulative_net_income_through(company_id, end)
     cumulative_change = ni_end - ni_before
     period_matches_cumulative = abs(cumulative_change - net) <= Decimal("0.02")
-    return {
+    note = (
+        "Posted journal activity in the date range only; opening balances on income/COGS/expense accounts are not added here. "
+        "Cumulative change vs net income flags unusual opening-balance or dating issues."
+    )
+    if station_id is not None:
+        note += (
+            " Site filter: amounts use only journal lines tagged with this station_id "
+            "(company-wide or untagged lines are excluded)."
+        )
+    out_is: dict[str, Any] = {
         "report_id": "income-statement",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "income": {"accounts": income_rows, "total": _f(ti)},
@@ -514,11 +626,11 @@ def report_income_statement(company_id: int, start: date, end: date) -> dict[str
         "cumulative_net_income_change": _f(cumulative_change),
         "period_matches_cumulative_change": period_matches_cumulative,
         "cumulative_vs_period_difference": _f(cumulative_change - net),
-        "accounting_note": (
-            "Posted journal activity in the date range only; opening balances on income/COGS/expense accounts are not added here. "
-            "Cumulative change vs net income flags unusual opening-balance or dating issues."
-        ),
+        "accounting_note": note,
     }
+    if station_id is not None:
+        out_is["filter_station_id"] = station_id
+    return out_is
 
 
 def report_customer_balances(company_id: int, start: date, end: date) -> dict[str, Any]:
@@ -599,14 +711,17 @@ def _is_fuel_line(line: InvoiceLine) -> bool:
     return "fuel" in (it.pos_category or "").lower() or "fuel" in (it.category or "").lower()
 
 
-def report_fuel_sales(company_id: int, start: date, end: date) -> dict[str, Any]:
-    inv_ids = list(
-        Invoice.objects.filter(
-            company_id=company_id,
-            invoice_date__gte=start,
-            invoice_date__lte=end,
-        ).values_list("id", flat=True)
+def report_fuel_sales(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
+    inv_qs = Invoice.objects.filter(
+        company_id=company_id,
+        invoice_date__gte=start,
+        invoice_date__lte=end,
     )
+    if station_id is not None:
+        inv_qs = inv_qs.filter(station_id=station_id)
+    inv_ids = list(inv_qs.values_list("id", flat=True))
     lines = InvoiceLine.objects.filter(invoice_id__in=inv_ids).select_related(
         "item", "invoice"
     )
@@ -622,7 +737,7 @@ def report_fuel_sales(company_id: int, start: date, end: date) -> dict[str, Any]
         total_qty += line.quantity or Decimal("0")
         total_amt += line.amount or Decimal("0")
     avg = (total_amt / n) if n else Decimal("0")
-    return {
+    out = {
         "report_id": "fuel-sales",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "fuel_line_count": n,
@@ -636,16 +751,20 @@ def report_fuel_sales(company_id: int, start: date, end: date) -> dict[str, Any]
             "Amounts are line extensions, not audited cash — use GL / payments for settlement."
         ),
     }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
 
 
-def report_tank_inventory(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_tank_inventory(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     _ = start
     out: list[dict[str, Any]] = []
-    for tank in (
-        Tank.objects.filter(company_id=company_id, is_active=True)
-        .select_related("station", "product")
-        .order_by("tank_name")
-    ):
+    tank_qs = Tank.objects.filter(company_id=company_id, is_active=True).select_related("station", "product")
+    if station_id is not None:
+        tank_qs = tank_qs.filter(station_id=station_id)
+    for tank in tank_qs.order_by("tank_name"):
         cap = tank.capacity or Decimal("0")
         stock = tank.current_stock or Decimal("0")
         pct = Decimal("0")
@@ -666,7 +785,7 @@ def report_tank_inventory(company_id: int, start: date, end: date) -> dict[str, 
     low = [x for x in out if x["needs_refill"]]
     tot_cap = sum((_d(x["capacity"]) for x in out), start=Decimal("0"))
     tot_stock = sum((_d(x["current_stock"]) for x in out), start=Decimal("0"))
-    return {
+    tinv: dict[str, Any] = {
         "report_id": "tank-inventory",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "inventory": out,
@@ -677,24 +796,28 @@ def report_tank_inventory(company_id: int, start: date, end: date) -> dict[str, 
         },
         "alerts": {"low_stock_tanks": low[:20]},
     }
+    if station_id is not None:
+        tinv["filter_station_id"] = station_id
+    return tinv
 
 
-def report_shift_summary(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_shift_summary(company_id: int, start: date, end: date, station_id: int | None = None) -> dict[str, Any]:
     # Include shifts opened in the period and shifts that have invoices in the period (overnight shifts).
-    shift_ids_with_sales = (
-        Invoice.objects.filter(
-            company_id=company_id,
-            invoice_date__gte=start,
-            invoice_date__lte=end,
-            shift_session_id__isnull=False,
-        )
-        .values_list("shift_session_id", flat=True)
-        .distinct()
+    inv_for_shifts = Invoice.objects.filter(
+        company_id=company_id,
+        invoice_date__gte=start,
+        invoice_date__lte=end,
+        shift_session_id__isnull=False,
     )
+    if station_id is not None:
+        inv_for_shifts = inv_for_shifts.filter(station_id=station_id)
+    shift_ids_with_sales = inv_for_shifts.values_list("shift_session_id", flat=True).distinct()
     qs = ShiftSession.objects.filter(company_id=company_id).filter(
         Q(opened_at__date__gte=start, opened_at__date__lte=end)
         | Q(pk__in=shift_ids_with_sales)
     ).select_related("station")
+    if station_id is not None:
+        qs = qs.filter(station_id=station_id)
     sessions: list[dict[str, Any]] = []
     total_var = Decimal("0")
     by_cashier: dict[str, dict[str, Any]] = {}
@@ -763,7 +886,7 @@ def report_shift_summary(company_id: int, start: date, end: date) -> dict[str, A
         }
         for k, v in by_cashier.items()
     }
-    return {
+    sh_out: dict[str, Any] = {
         "report_id": "shift-summary",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -779,30 +902,32 @@ def report_shift_summary(company_id: int, start: date, end: date) -> dict[str, A
         "sessions": sessions,
         "by_cashier": bc_out,
     }
+    if station_id is not None:
+        sh_out["filter_station_id"] = station_id
+    return sh_out
 
 
-def report_sales_by_nozzle(company_id: int, start: date, end: date) -> dict[str, Any]:
-    inv_lines = (
-        InvoiceLine.objects.filter(
-            invoice__company_id=company_id,
-            invoice__invoice_date__gte=start,
-            invoice__invoice_date__lte=end,
-        )
-        .select_related("item")
-        .values("item_id")
-        .annotate(
-            tx=Count("id"),
-            liters=Coalesce(Sum("quantity"), Decimal("0")),
-            amt=Coalesce(Sum("amount"), Decimal("0")),
-        )
+def report_sales_by_nozzle(company_id: int, start: date, end: date, station_id: int | None = None) -> dict[str, Any]:
+    inv_line_qs = InvoiceLine.objects.filter(
+        invoice__company_id=company_id,
+        invoice__invoice_date__gte=start,
+        invoice__invoice_date__lte=end,
+    )
+    if station_id is not None:
+        inv_line_qs = inv_line_qs.filter(invoice__station_id=station_id)
+    inv_lines = inv_line_qs.select_related("item").values("item_id").annotate(
+        tx=Count("id"),
+        liters=Coalesce(Sum("quantity"), Decimal("0")),
+        amt=Coalesce(Sum("amount"), Decimal("0")),
     )
     by_product = {row["item_id"]: row for row in inv_lines if row["item_id"]}
 
-    nozzles = (
-        Nozzle.objects.filter(company_id=company_id, is_active=True)
-        .select_related("product", "meter__dispenser__island__station")
-        .order_by("id")
+    nz_qs = Nozzle.objects.filter(company_id=company_id, is_active=True).select_related(
+        "product", "meter__dispenser__island__station"
     )
+    if station_id is not None:
+        nz_qs = nz_qs.filter(meter__dispenser__island__station_id=station_id)
+    nozzles = nz_qs.order_by("id")
     out: list[dict[str, Any]] = []
     tot_tx = tot_l = tot_a = Decimal("0")
     for nz in nozzles:
@@ -833,7 +958,7 @@ def report_sales_by_nozzle(company_id: int, start: date, end: date) -> dict[str,
             }
         )
     n_nz = len(out) or 1
-    return {
+    snz: dict[str, Any] = {
         "report_id": "sales-by-nozzle",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -845,22 +970,26 @@ def report_sales_by_nozzle(company_id: int, start: date, end: date) -> dict[str,
         },
         "nozzles": out,
     }
+    if station_id is not None:
+        snz["filter_station_id"] = station_id
+    return snz
 
 
-def report_tank_dip_variance(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_tank_dip_variance(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     """
     Gain/loss style report. Payload keys match frontend /reports (reading_date, system_quantity, etc.).
     Book at dip = book_stock_when saved; else fallback to current tank book (legacy rows).
     """
-    dips = (
-        TankDip.objects.filter(
-            company_id=company_id,
-            dip_date__gte=start,
-            dip_date__lte=end,
-        )
-        .select_related("tank", "tank__product", "tank__station")
-        .order_by("-dip_date", "-id")
-    )
+    dip_qs = TankDip.objects.filter(
+        company_id=company_id,
+        dip_date__gte=start,
+        dip_date__lte=end,
+    ).select_related("tank", "tank__product", "tank__station")
+    if station_id is not None:
+        dip_qs = dip_qs.filter(tank__station_id=station_id)
+    dips = dip_qs.order_by("-dip_date", "-id")
     rows: list[dict[str, Any]] = []
     total_gain_l = total_loss_l = Decimal("0")
     total_gain_v = total_loss_v = Decimal("0")
@@ -957,7 +1086,7 @@ def report_tank_dip_variance(company_id: int, start: date, end: date) -> dict[st
         for name, v in sorted(by_tank.items(), key=lambda x: x[0].lower())
     }
 
-    return {
+    tdv: dict[str, Any] = {
         "report_id": "tank-dip-variance",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -980,22 +1109,24 @@ def report_tank_dip_variance(company_id: int, start: date, end: date) -> dict[st
             "GL: saving a dip can post AUTO-TANKDIP-{id}-VAR — gain Dr 1200 / Cr 5100; loss Dr 5200 / Cr 1200 (when COA exists)."
         ),
     }
+    if station_id is not None:
+        tdv["filter_station_id"] = station_id
+    return tdv
 
 
-def report_tank_dip_register(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_tank_dip_register(company_id: int, start: date, end: date, station_id: int | None = None) -> dict[str, Any]:
     """
     Chronological tank dip register: book-at-dip vs stick reading, variance, optional value estimate.
     Complements tank-dip-variance (which compares stick to current book for analytics).
     """
-    dips = (
-        TankDip.objects.filter(
-            company_id=company_id,
-            dip_date__gte=start,
-            dip_date__lte=end,
-        )
-        .select_related("tank", "tank__product", "tank__station")
-        .order_by("dip_date", "id")
-    )
+    dipr_qs = TankDip.objects.filter(
+        company_id=company_id,
+        dip_date__gte=start,
+        dip_date__lte=end,
+    ).select_related("tank", "tank__product", "tank__station")
+    if station_id is not None:
+        dipr_qs = dipr_qs.filter(tank__station_id=station_id)
+    dips = dipr_qs.order_by("dip_date", "id")
     entries: list[dict[str, Any]] = []
     net_var = Decimal("0")
     gain_ev = loss_ev = 0
@@ -1061,7 +1192,7 @@ def report_tank_dip_register(company_id: int, start: date, end: date) -> dict[st
         for name, v in sorted(by_tank.items(), key=lambda x: x[0].lower())
     ]
 
-    return {
+    tdr: dict[str, Any] = {
         "report_id": "tank-dip-register",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -1074,31 +1205,30 @@ def report_tank_dip_register(company_id: int, start: date, end: date) -> dict[st
         "by_tank": by_tank_list,
         "entries": entries,
     }
+    if station_id is not None:
+        tdr["filter_station_id"] = station_id
+    return tdr
 
 
-def report_meter_readings(company_id: int, start: date, end: date) -> dict[str, Any]:
-    inv_lines = (
-        InvoiceLine.objects.filter(
-            invoice__company_id=company_id,
-            invoice__invoice_date__gte=start,
-            invoice__invoice_date__lte=end,
-        )
-        .select_related("item")
-        .values("item_id")
-        .annotate(
-            tx=Count("id"),
-            liters=Coalesce(Sum("quantity"), Decimal("0")),
-            amt=Coalesce(Sum("amount"), Decimal("0")),
-        )
+def report_meter_readings(company_id: int, start: date, end: date, station_id: int | None = None) -> dict[str, Any]:
+    inv_line_m = InvoiceLine.objects.filter(
+        invoice__company_id=company_id,
+        invoice__invoice_date__gte=start,
+        invoice__invoice_date__lte=end,
+    )
+    if station_id is not None:
+        inv_line_m = inv_line_m.filter(invoice__station_id=station_id)
+    inv_lines = inv_line_m.select_related("item").values("item_id").annotate(
+        tx=Count("id"),
+        liters=Coalesce(Sum("quantity"), Decimal("0")),
+        amt=Coalesce(Sum("amount"), Decimal("0")),
     )
     by_product = {row["item_id"]: row for row in inv_lines if row["item_id"]}
 
-    meters = (
-        Meter.objects.filter(company_id=company_id)
-        .select_related("dispenser__island__station")
-        .prefetch_related("nozzles", "nozzles__product")
-        .order_by("meter_number", "id")
-    )
+    mtr_qs = Meter.objects.filter(company_id=company_id).select_related("dispenser__island__station")
+    if station_id is not None:
+        mtr_qs = mtr_qs.filter(dispenser__island__station_id=station_id)
+    meters = mtr_qs.prefetch_related("nozzles", "nozzles__product").order_by("meter_number", "id")
     meters_out: list[dict[str, Any]] = []
     tot_sales = tot_liters = tot_amt = Decimal("0")
     for m in meters:
@@ -1138,7 +1268,7 @@ def report_meter_readings(company_id: int, start: date, end: date) -> dict[str, 
             }
         )
     avg_sale = (tot_amt / tot_sales) if tot_sales else Decimal("0")
-    return {
+    mtr_out: dict[str, Any] = {
         "report_id": "meter-readings",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -1154,14 +1284,19 @@ def report_meter_readings(company_id: int, start: date, end: date) -> dict[str, 
             "not a physical opening stick. Amounts come from invoice lines by product linked to each meter."
         ),
     }
+    if station_id is not None:
+        mtr_out["filter_station_id"] = station_id
+    return mtr_out
 
 
-def report_daily_summary(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_daily_summary(company_id: int, start: date, end: date, station_id: int | None = None) -> dict[str, Any]:
     invs = Invoice.objects.filter(
         company_id=company_id,
         invoice_date__gte=start,
         invoice_date__lte=end,
     )
+    if station_id is not None:
+        invs = invs.filter(station_id=station_id)
     n_inv = invs.count()
     lines = InvoiceLine.objects.filter(invoice__in=invs).select_related("item")
     total_liters = Decimal("0")
@@ -1186,45 +1321,45 @@ def report_daily_summary(company_id: int, start: date, end: date) -> dict[str, A
                 total_liters += q
     avg = (total_amt / n_inv) if n_inv else Decimal("0")
 
-    shift_ids_with_sales = (
-        Invoice.objects.filter(
-            company_id=company_id,
-            invoice_date__gte=start,
-            invoice_date__lte=end,
-            shift_session_id__isnull=False,
-        )
-        .values_list("shift_session_id", flat=True)
-        .distinct()
+    s_inv = Invoice.objects.filter(
+        company_id=company_id,
+        invoice_date__gte=start,
+        invoice_date__lte=end,
+        shift_session_id__isnull=False,
     )
+    if station_id is not None:
+        s_inv = s_inv.filter(station_id=station_id)
+    shift_ids_with_sales = s_inv.values_list("shift_session_id", flat=True).distinct()
     dip_qs = TankDip.objects.filter(
         company_id=company_id,
         dip_date__gte=start,
         dip_date__lte=end,
     )
+    if station_id is not None:
+        dip_qs = dip_qs.filter(tank__station_id=station_id)
     dip_count = dip_qs.count()
     net_dip_liters = Decimal("0")
     for d in dip_qs.iterator():
         if d.book_stock_before is not None:
             net_dip_liters += _d(d.volume) - _d(d.book_stock_before)
 
-    shift_sessions_qs = (
-        ShiftSession.objects.filter(company_id=company_id)
-        .filter(
-            Q(opened_at__date__gte=start, opened_at__date__lte=end)
-            | Q(pk__in=shift_ids_with_sales)
-        )
-        .distinct()
+    shift_sessions_qs = ShiftSession.objects.filter(company_id=company_id).filter(
+        Q(opened_at__date__gte=start, opened_at__date__lte=end)
+        | Q(pk__in=shift_ids_with_sales)
     )
+    if station_id is not None:
+        shift_sessions_qs = shift_sessions_qs.filter(station_id=station_id)
+    shift_sessions_qs = shift_sessions_qs.distinct()
     cash_var_agg = shift_sessions_qs.filter(closed_at__isnull=False).aggregate(
         sv=Coalesce(Sum("cash_variance"), Decimal("0"))
     )
     total_cash_var = cash_var_agg["sv"] or Decimal("0")
 
-    tanks = Tank.objects.filter(company_id=company_id, is_active=True).select_related(
-        "product", "station"
-    )
+    tnk_qs = Tank.objects.filter(company_id=company_id, is_active=True).select_related("product", "station")
+    if station_id is not None:
+        tnk_qs = tnk_qs.filter(station_id=station_id)
     tank_rows: list[dict[str, Any]] = []
-    for t in tanks:
+    for t in tnk_qs:
         cap = t.capacity or Decimal("0")
         stock = t.current_stock or Decimal("0")
         pct = (stock / cap * Decimal("100")) if cap > 0 else Decimal("0")
@@ -1248,7 +1383,7 @@ def report_daily_summary(company_id: int, start: date, end: date) -> dict[str, A
         for k, v in by_product.items()
     }
 
-    return {
+    dsum: dict[str, Any] = {
         "report_id": "daily-summary",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "sales": {
@@ -1273,23 +1408,83 @@ def report_daily_summary(company_id: int, start: date, end: date) -> dict[str, A
             "Meter/nozzle reports allocate by product. Dip net variance is liters (stick − book at dip), not currency."
         ),
     }
+    if station_id is not None:
+        dsum["filter_station_id"] = station_id
+    return dsum
 
 
-def report_inventory_sku_valuation(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_sales_by_station(company_id: int, start: date, end: date, station_id: int | None = None) -> dict[str, Any]:
+    """
+    Invoice totals grouped by selling station (Invoice.station). Excludes draft invoices.
+    Rows with no station_id are rolled into "unspecified" for legacy data.
+    """
+    inv_qs = (
+        Invoice.objects.filter(
+            company_id=company_id,
+            invoice_date__gte=start,
+            invoice_date__lte=end,
+        )
+        .exclude(status="draft")
+        .select_related("station")
+    )
+    if station_id is not None:
+        inv_qs = inv_qs.filter(station_id=station_id)
+    by_key: dict[tuple[int | None, str], dict[str, Any]] = {}
+    for inv in inv_qs:
+        sid = inv.station_id
+        st = inv.station
+        if sid is None:
+            name = "— (unspecified)"
+        else:
+            name = (st.station_name or f"Station {sid}").strip() if st else f"Station {sid}"
+        k = (sid, name)
+        if k not in by_key:
+            by_key[k] = {
+                "station_id": sid,
+                "station_name": name,
+                "invoice_count": 0,
+                "total": Decimal("0"),
+            }
+        by_key[k]["invoice_count"] += 1
+        by_key[k]["total"] += inv.total or Decimal("0")
+    rows = sorted(by_key.values(), key=lambda r: (r["station_name"], r["station_id"] or 0))
+    for r in rows:
+        r["total"] = _f(r["total"])
+    sbs: dict[str, Any] = {
+        "report_id": "sales-by-station",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": {
+            "stations_with_sales": len([x for x in rows if x["station_id"] is not None]),
+            "total_invoices": sum(x["invoice_count"] for x in rows),
+        },
+        "rows": rows,
+    }
+    if station_id is not None:
+        sbs["filter_station_id"] = station_id
+    return sbs
+
+
+def report_inventory_sku_valuation(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     """
     Per-SKU: on-hand, cost & list extension, period sales, velocity, days of cover.
     Uses Item.cost (fallback per gl_posting) and invoice lines in [start, end] for the selected company.
+    When ``station_id`` is set, on-hand and period sales are for that site (invoice.station / shop bins / tanks).
     """
     period_days = (end - start).days + 1
     if period_days < 1:
         period_days = 1
     period_days_dec = Decimal(str(period_days))
 
-    inv_ids = Invoice.objects.filter(
+    inv_q = Invoice.objects.filter(
         company_id=company_id,
         invoice_date__gte=start,
         invoice_date__lte=end,
-    ).values_list("id", flat=True)
+    )
+    if station_id is not None:
+        inv_q = inv_q.filter(station_id=station_id)
+    inv_ids = inv_q.values_list("id", flat=True)
     inv_id_set = set(inv_ids)
     line_agg: dict[int, dict[str, Decimal]] = {}
     for row in (
@@ -1322,7 +1517,10 @@ def report_inventory_sku_valuation(company_id: int, start: date, end: date) -> d
     ):
         if not item_tracks_physical_stock(item):
             continue
-        qoh = _d(getattr(item, "quantity_on_hand", None) or 0)
+        if station_id is not None:
+            qoh = _item_qoh_at_station(company_id, item, station_id)
+        else:
+            qoh = _d(getattr(item, "quantity_on_hand", None) or 0)
         if qoh < 0:
             qoh = Decimal("0")
         uc = item_inventory_unit_cost(item)
@@ -1388,7 +1586,7 @@ def report_inventory_sku_valuation(company_id: int, start: date, end: date) -> d
         reverse=True,
     )
 
-    return {
+    out_val: dict[str, Any] = {
         "report_id": "inventory-sku-valuation",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -1409,11 +1607,21 @@ def report_inventory_sku_valuation(company_id: int, start: date, end: date) -> d
             "N/A when there is no period movement."
         ),
     }
+    if station_id is not None:
+        out_val["filter_station_id"] = station_id
+        out_val["accounting_note"] += (
+            " With a site filter, on-hand is that site’s tank or shop-bin quantity; "
+            "period sales are invoice lines on invoices for that site only."
+        )
+    return out_val
 
 
-def report_item_master_by_category(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_item_master_by_category(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     """
     Full catalog with reporting category, POS class, and stock value — grouped summary + detail rows.
+    With ``station_id``, quantity and value are for that site’s physical stock (bins / tanks).
     """
     items = list(
         Item.objects.filter(company_id=company_id).order_by("category", "item_number", "name")
@@ -1432,7 +1640,10 @@ def report_item_master_by_category(company_id: int, start: date, end: date) -> d
         ext_c = Decimal("0")
         ext_l = Decimal("0")
         for it in group:
-            qoh = _d(getattr(it, "quantity_on_hand", None) or 0)
+            if station_id is not None:
+                qoh = _item_qoh_at_station(company_id, it, station_id)
+            else:
+                qoh = _d(getattr(it, "quantity_on_hand", None) or 0)
             if qoh < 0:
                 qoh = Decimal("0")
             qoh_sum += qoh
@@ -1454,7 +1665,10 @@ def report_item_master_by_category(company_id: int, start: date, end: date) -> d
 
     detail: list[dict[str, Any]] = []
     for it in items:
-        qoh = _d(getattr(it, "quantity_on_hand", None) or 0)
+        if station_id is not None:
+            qoh = _item_qoh_at_station(company_id, it, station_id)
+        else:
+            qoh = _d(getattr(it, "quantity_on_hand", None) or 0)
         if qoh < 0:
             qoh = Decimal("0")
         uc = item_inventory_unit_cost(it)
@@ -1480,7 +1694,7 @@ def report_item_master_by_category(company_id: int, start: date, end: date) -> d
     g_qoh = sum((_d(c["quantity_on_hand"]) for c in cat_summary), start=Decimal("0"))
     g_cost = sum((_d(c["extended_cost_value"]) for c in cat_summary), start=Decimal("0"))
     g_list = sum((_d(c["extended_list_value"]) for c in cat_summary), start=Decimal("0"))
-    return {
+    out_m: dict[str, Any] = {
         "report_id": "item-master-by-category",
         "period": {
             "start_date": start.isoformat(),
@@ -1501,9 +1715,14 @@ def report_item_master_by_category(company_id: int, start: date, end: date) -> d
             "Values use live quantity on hand and item cost (with list fallback) for extension."
         ),
     }
+    if station_id is not None:
+        out_m["filter_station_id"] = station_id
+    return out_m
 
 
-def report_item_sales_by_category(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_item_sales_by_category(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     """
     Invoiced quantity and revenue by item reporting category (invoice lines with catalog items only).
     """
@@ -1513,6 +1732,8 @@ def report_item_sales_by_category(company_id: int, start: date, end: date) -> di
         invoice__invoice_date__lte=end,
         item_id__isnull=False,
     )
+    if station_id is not None:
+        base = base.filter(invoice__station_id=station_id)
     agg = (
         base.annotate(
             rc=Coalesce(Trim("item__category"), Value("")),
@@ -1544,7 +1765,7 @@ def report_item_sales_by_category(company_id: int, start: date, end: date) -> di
                 "total_revenue": _f(tr),
             }
         )
-    return {
+    out_cat: dict[str, Any] = {
         "report_id": "item-sales-by-category",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -1558,6 +1779,9 @@ def report_item_sales_by_category(company_id: int, start: date, end: date) -> di
             "product's reporting category. Only lines linked to a catalog item are included."
         ),
     }
+    if station_id is not None:
+        out_cat["filter_station_id"] = station_id
+    return out_cat
 
 
 def report_item_sales_custom(
@@ -1567,11 +1791,13 @@ def report_item_sales_custom(
     category: str | None = None,
     item_id: int | None = None,
     item_ids: list[int] | None = None,
+    station_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Period sales by SKU with optional reporting category and/or product filter.
     ``item_ids`` (one or more) restricts to those products; if set, rows include
     selected items even when period sales are zero. ``item_id`` is legacy single-id.
+    With ``station_id``, only invoice lines on invoices for that site are included.
     """
     base = InvoiceLine.objects.filter(
         invoice__company_id=company_id,
@@ -1579,6 +1805,8 @@ def report_item_sales_custom(
         invoice__invoice_date__lte=end,
         item_id__isnull=False,
     )
+    if station_id is not None:
+        base = base.filter(invoice__station_id=station_id)
     if item_ids:
         base = base.filter(item_id__in=item_ids)
     elif item_id is not None:
@@ -1635,7 +1863,7 @@ def report_item_sales_custom(
             }
         )
     rows_out.sort(key=lambda r: (float(r.get("period_revenue", 0) or 0), r.get("sku") or ""), reverse=True)
-    return {
+    out_cust: dict[str, Any] = {
         "report_id": "item-sales-custom",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -1655,6 +1883,9 @@ def report_item_sales_custom(
             "COGS and margin use item unit cost × period quantity sold."
         ),
     }
+    if station_id is not None:
+        out_cust["filter_station_id"] = station_id
+    return out_cust
 
 
 def _item_scope_queryset(
@@ -1677,9 +1908,11 @@ def report_item_stock_movement(
     end: date,
     category: str | None = None,
     item_ids: list[int] | None = None,
+    station_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Purchase quantities (vendor bills) vs sales (invoices) in the period, by item.
+    With ``station_id``, sales are that site’s invoices; purchases are bill lines for that receiving site.
     """
     inv_base = InvoiceLine.objects.filter(
         invoice__company_id=company_id,
@@ -1693,6 +1926,9 @@ def report_item_stock_movement(
         bill__bill_date__lte=end,
         item_id__isnull=False,
     )
+    if station_id is not None:
+        inv_base = inv_base.filter(invoice__station_id=station_id)
+        bill_base = bill_base.filter(bill__receipt_station_id=station_id)
     if category:
         inv_base = inv_base.filter(item__category=category)
         bill_base = bill_base.filter(item__category=category)
@@ -1755,7 +1991,7 @@ def report_item_stock_movement(
     )
     tot_purch_a = sum((v["a"] for v in purch_m.values()), start=Decimal("0"))
     tot_sales_a = sum((v["a"] for v in sales_m.values()), start=Decimal("0"))
-    return {
+    out_sm: dict[str, Any] = {
         "report_id": "item-stock-movement",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -1776,6 +2012,9 @@ def report_item_stock_movement(
             "With no category and no item pick, only items with purchase or sale activity are listed."
         ),
     }
+    if station_id is not None:
+        out_sm["filter_station_id"] = station_id
+    return out_sm
 
 
 def report_item_velocity_analysis(
@@ -1784,6 +2023,7 @@ def report_item_velocity_analysis(
     end: date,
     category: str | None = None,
     item_ids: list[int] | None = None,
+    station_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Classify products into fast / medium / slow movers from invoiced quantity in the period
@@ -1801,6 +2041,8 @@ def report_item_velocity_analysis(
         invoice__invoice_date__lte=end,
         item_id__isnull=False,
     )
+    if station_id is not None:
+        inv_base = inv_base.filter(invoice__station_id=station_id)
     if category:
         inv_base = inv_base.filter(item__category=category)
     if item_ids:
@@ -1821,7 +2063,7 @@ def report_item_velocity_analysis(
 
     scope = _item_scope_queryset(company_id, category, item_ids)
     if not scope:
-        return {
+        empty_vel: dict[str, Any] = {
             "report_id": "item-velocity-analysis",
             "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
             "summary": {"line_count": 0, "fast": 0, "medium": 0, "slow": 0, "no_period_sales": 0},
@@ -1829,13 +2071,19 @@ def report_item_velocity_analysis(
             "rows": [],
             "accounting_note": "No active items match the filter.",
         }
+        if station_id is not None:
+            empty_vel["filter_station_id"] = station_id
+        return empty_vel
 
     rows: list[dict[str, Any]] = []
     for it in scope:
         iid = int(it.id)
         pq = qty_by.get(iid) or Decimal("0")
         pa = rev_by.get(iid) or Decimal("0")
-        qoh = _d(getattr(it, "quantity_on_hand", None) or 0)
+        if station_id is not None:
+            qoh = _item_qoh_at_station(company_id, it, station_id)
+        else:
+            qoh = _d(getattr(it, "quantity_on_hand", None) or 0)
         if qoh < 0:
             qoh = Decimal("0")
         daily = (pq / pdd) if pdd else Decimal("0")
@@ -1889,7 +2137,7 @@ def report_item_velocity_analysis(
         "slow": sum(1 for r in rows if r.get("movement_tier") == "slow"),
         "no_period_sales": sum(1 for r in rows if r.get("movement_tier") == "no_period_sales"),
     }
-    return {
+    out_vel: dict[str, Any] = {
         "report_id": "item-velocity-analysis",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": summary,
@@ -1904,11 +2152,17 @@ def report_item_velocity_analysis(
             "Velocity is units sold ÷ days in range."
         ),
     }
+    if station_id is not None:
+        out_vel["filter_station_id"] = station_id
+    return out_vel
 
 
-def report_item_purchases_by_category(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_item_purchases_by_category(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     """
     Vendor bill line quantity and spend by item reporting category (lines with catalog items only).
+    With ``station_id``, only lines on bills with that receiving site.
     """
     base = BillLine.objects.filter(
         bill__company_id=company_id,
@@ -1916,6 +2170,8 @@ def report_item_purchases_by_category(company_id: int, start: date, end: date) -
         bill__bill_date__lte=end,
         item_id__isnull=False,
     )
+    if station_id is not None:
+        base = base.filter(bill__receipt_station_id=station_id)
     agg = (
         base.annotate(
             rc=Coalesce(Trim("item__category"), Value("")),
@@ -1947,7 +2203,7 @@ def report_item_purchases_by_category(company_id: int, start: date, end: date) -
                 "total_purchase_amount": _f(ta),
             }
         )
-    return {
+    out_pcat: dict[str, Any] = {
         "report_id": "item-purchases-by-category",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -1961,6 +2217,9 @@ def report_item_purchases_by_category(company_id: int, start: date, end: date) -
             "product's reporting category. Only lines linked to a catalog item are included."
         ),
     }
+    if station_id is not None:
+        out_pcat["filter_station_id"] = station_id
+    return out_pcat
 
 
 def report_item_purchases_custom(
@@ -1970,9 +2229,11 @@ def report_item_purchases_custom(
     category: str | None = None,
     item_id: int | None = None,
     item_ids: list[int] | None = None,
+    station_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Period purchases by SKU (vendor bills) with optional category and/or product filter.
+    With ``station_id``, only bill lines for that receiving site.
     """
     base = BillLine.objects.filter(
         bill__company_id=company_id,
@@ -1980,6 +2241,8 @@ def report_item_purchases_custom(
         bill__bill_date__lte=end,
         item_id__isnull=False,
     )
+    if station_id is not None:
+        base = base.filter(bill__receipt_station_id=station_id)
     if item_ids:
         base = base.filter(item_id__in=item_ids)
     elif item_id is not None:
@@ -2030,7 +2293,7 @@ def report_item_purchases_custom(
     rows_out.sort(
         key=lambda r: (float(r.get("period_purchase_amount", 0) or 0), r.get("sku") or ""), reverse=True
     )
-    return {
+    out_pc: dict[str, Any] = {
         "report_id": "item-purchases-custom",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
@@ -2050,6 +2313,9 @@ def report_item_purchases_custom(
             "Average unit cost = line amount ÷ quantity when quantity &gt; 0."
         ),
     }
+    if station_id is not None:
+        out_pc["filter_station_id"] = station_id
+    return out_pc
 
 
 def report_item_purchase_velocity_analysis(
@@ -2058,6 +2324,7 @@ def report_item_purchase_velocity_analysis(
     end: date,
     category: str | None = None,
     item_ids: list[int] | None = None,
+    station_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Classify products into fast / medium / slow purchase volume from bill line quantity
@@ -2075,6 +2342,8 @@ def report_item_purchase_velocity_analysis(
         bill__bill_date__lte=end,
         item_id__isnull=False,
     )
+    if station_id is not None:
+        bill_base = bill_base.filter(bill__receipt_station_id=station_id)
     if category:
         bill_base = bill_base.filter(item__category=category)
     if item_ids:
@@ -2095,7 +2364,7 @@ def report_item_purchase_velocity_analysis(
 
     scope = _item_scope_queryset(company_id, category, item_ids)
     if not scope:
-        return {
+        empty_p: dict[str, Any] = {
             "report_id": "item-purchase-velocity-analysis",
             "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
             "summary": {
@@ -2109,13 +2378,19 @@ def report_item_purchase_velocity_analysis(
             "rows": [],
             "accounting_note": "No active items match the filter.",
         }
+        if station_id is not None:
+            empty_p["filter_station_id"] = station_id
+        return empty_p
 
     rows: list[dict[str, Any]] = []
     for it in scope:
         iid = int(it.id)
         pqty = qty_by.get(iid) or Decimal("0")
         pamt = amt_by.get(iid) or Decimal("0")
-        qoh = _d(getattr(it, "quantity_on_hand", None) or 0)
+        if station_id is not None:
+            qoh = _item_qoh_at_station(company_id, it, station_id)
+        else:
+            qoh = _d(getattr(it, "quantity_on_hand", None) or 0)
         if qoh < 0:
             qoh = Decimal("0")
         daily = (pqty / pdd) if pdd else Decimal("0")
@@ -2169,7 +2444,7 @@ def report_item_purchase_velocity_analysis(
         "slow": sum(1 for r in rows if r.get("movement_tier") == "slow"),
         "no_period_purchases": sum(1 for r in rows if r.get("movement_tier") == "no_period_purchases"),
     }
-    return {
+    out_pvel: dict[str, Any] = {
         "report_id": "item-purchase-velocity-analysis",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": summary,
@@ -2184,9 +2459,14 @@ def report_item_purchase_velocity_analysis(
             "Velocity is units purchased ÷ days in range."
         ),
     }
+    if station_id is not None:
+        out_pvel["filter_station_id"] = station_id
+    return out_pvel
 
 
-def report_financial_analytics(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_financial_analytics(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     """
     KPIs and monthly buckets: invoice sales and bill purchases (subledger documents) vs
     P&L from posted journals (income, COGS, operating expenses) for the same sub-periods.
@@ -2194,7 +2474,7 @@ def report_financial_analytics(company_id: int, start: date, end: date) -> dict[
     if start > end:
         start, end = end, start
 
-    pl = _period_income_statement_totals(company_id, start, end)
+    pl = _period_income_statement_totals(company_id, start, end, station_id)
     sales = _sum_invoice_totals(company_id, start, end)
     purchases = _sum_bill_totals(company_id, start, end)
     op_exp = pl["expenses"]  # operating and other P&L expense types
@@ -2279,7 +2559,7 @@ def report_financial_analytics(company_id: int, start: date, end: date) -> dict[
         months = months[:36]
     timeseries: list[dict[str, Any]] = []
     for seg_s, seg_e, label in months:
-        pl_m = _period_income_statement_totals(company_id, seg_s, seg_e)
+        pl_m = _period_income_statement_totals(company_id, seg_s, seg_e, station_id)
         timeseries.append(
             {
                 "label": label,
@@ -2298,7 +2578,7 @@ def report_financial_analytics(company_id: int, start: date, end: date) -> dict[
     active_customers = Customer.objects.filter(company_id=company_id, is_active=True).count()
     active_vendors = Vendor.objects.filter(company_id=company_id, is_active=True).count()
 
-    return {
+    out_fa: dict[str, Any] = {
         "report_id": "financial-analytics",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "kpis": {
@@ -2338,3 +2618,11 @@ def report_financial_analytics(company_id: int, start: date, end: date) -> dict[
             "Trend uses calendar months (partial first/last months are clipped to your selected range)."
         ),
     }
+    if station_id is not None:
+        out_fa["filter_station_id"] = station_id
+        out_fa["accounting_note"] = (
+            out_fa["accounting_note"]
+            + " Site filter: P&L amounts (including timeseries pl_* and net income) use journal lines for this station only; "
+            "invoice/bill/payment KPIs remain company-wide totals."
+        )
+    return out_fa

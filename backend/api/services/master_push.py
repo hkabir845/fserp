@@ -138,7 +138,7 @@ def _sync_items(master_id: int, tenant_id: int) -> dict[str, Any]:
             if Item.objects.filter(company_id=tenant_id, name=mi.name).exists():
                 skipped += 1
                 continue
-        Item.objects.create(
+        it = Item(
             company_id=tenant_id,
             item_number=mi.item_number,
             name=mi.name,
@@ -156,6 +156,10 @@ def _sync_items(master_id: int, tenant_id: int) -> dict[str, Any]:
             is_active=bool(mi.is_active),
             image_url=mi.image_url or "",
         )
+        it.save()
+        from api.services.station_stock import ensure_item_station_row_for_new_shop_item
+
+        ensure_item_station_row_for_new_shop_item(tenant_id, it)
         added += 1
     return {"added": added, "skipped": skipped}
 

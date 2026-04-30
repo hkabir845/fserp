@@ -13,6 +13,7 @@ import {
   Phone,
   Save,
   User,
+  Layers,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
@@ -25,6 +26,11 @@ import {
   formatCompanyDate,
   formatCompanyTime,
 } from '@/utils/companyLocaleFormats'
+import {
+  COMPANY_TIME_ZONE_OPTIONS,
+  DEFAULT_COMPANY_TIME_ZONE,
+  isKnownCompanyTimeZone,
+} from '@/utils/timeZones'
 
 type CompanyForm = {
   company_name: string
@@ -43,6 +49,10 @@ type CompanyForm = {
   fiscal_year_start: string
   date_format: string
   time_format: string
+  /** IANA, e.g. Asia/Dhaka */
+  time_zone: string
+  /** single = one site; multi = many stations */
+  station_mode: 'single' | 'multi'
   subdomain: string
   custom_domain: string
 }
@@ -64,6 +74,8 @@ const emptyForm = (): CompanyForm => ({
   fiscal_year_start: '01-01',
   date_format: DEFAULT_COMPANY_DATE_FORMAT,
   time_format: DEFAULT_COMPANY_TIME_FORMAT,
+  time_zone: DEFAULT_COMPANY_TIME_ZONE,
+  station_mode: 'single',
   subdomain: '',
   custom_domain: '',
 })
@@ -76,6 +88,8 @@ export default function CompanyPage() {
   const [formData, setFormData] = useState<CompanyForm>(emptyForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [canEditStationMode, setCanEditStationMode] = useState(false)
+  const [activeStationCount, setActiveStationCount] = useState<number | null>(null)
 
   const currencies = useMemo(() => getUniqueCurrencies(), [])
 
@@ -90,6 +104,14 @@ export default function CompanyPage() {
       const id = data.id as number
       setCompanyId(id)
       setDisplayName(String(data.company_name || data.name || 'Company'))
+      const ext = data as {
+        can_edit_station_mode?: boolean
+        active_station_count?: number
+      }
+      setCanEditStationMode(Boolean(ext.can_edit_station_mode))
+      setActiveStationCount(
+        typeof ext.active_station_count === 'number' ? ext.active_station_count : null
+      )
       setFormData({
         company_name: String(data.company_name || data.name || ''),
         legal_name: String(data.legal_name ?? ''),
@@ -107,6 +129,12 @@ export default function CompanyPage() {
         fiscal_year_start: String(data.fiscal_year_start || '01-01').slice(0, 5),
         date_format: String(data.date_format || DEFAULT_COMPANY_DATE_FORMAT),
         time_format: String(data.time_format || DEFAULT_COMPANY_TIME_FORMAT),
+        time_zone: String(
+          (data as { time_zone?: string }).time_zone || DEFAULT_COMPANY_TIME_ZONE
+        ).trim() || DEFAULT_COMPANY_TIME_ZONE,
+        station_mode: String((data as { station_mode?: string }).station_mode ?? 'single').toLowerCase() === 'multi'
+          ? 'multi'
+          : 'single',
         subdomain: String(data.subdomain ?? ''),
         custom_domain: String(data.custom_domain ?? ''),
       })
@@ -145,7 +173,7 @@ export default function CompanyPage() {
 
     setSaving(true)
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         company_name: name,
         legal_name: formData.legal_name.trim(),
         tax_id: formData.tax_id.trim(),
@@ -162,8 +190,12 @@ export default function CompanyPage() {
         fiscal_year_start: formData.fiscal_year_start.trim().slice(0, 5) || '01-01',
         date_format: formData.date_format,
         time_format: formData.time_format,
+        time_zone: formData.time_zone,
         subdomain: formData.subdomain.trim(),
         custom_domain: formData.custom_domain.trim(),
+      }
+      if (canEditStationMode) {
+        payload.station_mode = formData.station_mode
       }
 
       const { data } = await api.put<Record<string, unknown>>(`/companies/${companyId}/`, payload)
@@ -214,7 +246,8 @@ export default function CompanyPage() {
               <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Tenant</p>
               <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Company profile</h1>
               <p className="mt-2 max-w-2xl text-slate-600">
-                Legal identity, address, currency, and how dates and times appear across the ERP.
+                Legal identity, address, currency, site preference (who may run one vs many active locations), and how
+                dates and times appear across the ERP.
               </p>
             </div>
             <button
@@ -375,6 +408,28 @@ export default function CompanyPage() {
                         ))}
                       </select>
                     </div>
+                    <div className="md:col-span-2">
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Time zone</label>
+                      <select
+                        value={formData.time_zone}
+                        onChange={(e) => updateField('time_zone', e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      >
+                        {COMPANY_TIME_ZONE_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                        {formData.time_zone && !isKnownCompanyTimeZone(formData.time_zone) && (
+                          <option value={formData.time_zone}>
+                            {formData.time_zone} (current)
+                          </option>
+                        )}
+                      </select>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Default: Dhaka (Bangladesh), IANA name. Used for business &ldquo;today&rdquo; and local context across the app.
+                      </p>
+                    </div>
                   </div>
 
                   <div className="mt-6 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -390,6 +445,73 @@ export default function CompanyPage() {
                       </span>
                     </div>
                   </div>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-amber-50 p-2 text-amber-800">
+                      <Layers className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">Site model</h3>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Saved preference for how many <span className="font-medium text-slate-600">active</span> sites you
+                        may run. POS, transfers, and report auto-scope still follow{' '}
+                        <span className="font-medium text-slate-600">how many stations are active right now</span>
+                        {activeStationCount !== null ? (
+                          <>
+                            {' '}
+                            (<span className="font-mono tabular-nums">{activeStationCount}</span> active)
+                          </>
+                        ) : null}
+                        . In single-site mode you may still keep closed sites as inactive rows for history. Manage sites on{' '}
+                        <a href="/stations" className="font-medium text-blue-600 hover:text-blue-800">
+                          Stations
+                        </a>
+                        .
+                      </p>
+                      {!canEditStationMode ? (
+                        <p className="mt-2 text-sm text-amber-900/90 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                          Only a platform Super Admin can change single vs multiple stations. Contact support if this
+                          tenant-wide setting must be updated.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <fieldset disabled={!canEditStationMode} className="mt-6 space-y-3 disabled:opacity-60">
+                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 hover:bg-slate-50">
+                      <input
+                        type="radio"
+                        name="station_mode"
+                        className="mt-1"
+                        checked={formData.station_mode === 'multi'}
+                        onChange={() => updateField('station_mode', 'multi')}
+                      />
+                      <div>
+                        <p className="font-medium text-slate-900">Multiple stations</p>
+                        <p className="text-sm text-slate-600">
+                          Default. Use a separate station for each site; filters and reports can split by location.
+                        </p>
+                      </div>
+                    </label>
+                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 hover:bg-slate-50">
+                      <input
+                        type="radio"
+                        name="station_mode"
+                        className="mt-1"
+                        checked={formData.station_mode === 'single'}
+                        onChange={() => updateField('station_mode', 'single')}
+                      />
+                      <div>
+                        <p className="font-medium text-slate-900">Single site</p>
+                        <p className="text-sm text-slate-600">
+                          At most one <span className="font-medium">active</span> station. Extra rows can stay as inactive
+                          (archived). You cannot save this if more than one site is still active—deactivate sold/closed
+                          locations on Stations first.
+                        </p>
+                      </div>
+                    </label>
+                  </fieldset>
                 </section>
 
                 <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

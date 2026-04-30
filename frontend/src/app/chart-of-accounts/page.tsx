@@ -93,6 +93,8 @@ interface AccountStatement {
   total_credits: number
   transactions: StatementTransaction[]
   transaction_count: number
+  /** When set, statement rows are limited to GL lines tagged with this station. */
+  filter_station_id?: number
 }
 
 // Account types
@@ -267,6 +269,10 @@ function mapStatementApiToView(
   const end =
     periodObj?.end_date ?? (data.end_date as string | null | undefined) ?? fallbackPeriod.end
 
+  const rawFid = data.filter_station_id
+  const filterStationId =
+    rawFid != null && rawFid !== '' && !Number.isNaN(Number(rawFid)) ? Number(rawFid) : undefined
+
   return {
     account: {
       ...account,
@@ -284,6 +290,7 @@ function mapStatementApiToView(
     total_credits: totalCredits,
     transactions,
     transaction_count: transactions.length,
+    ...(filterStationId != null ? { filter_station_id: filterStationId } : {}),
   }
 }
 
@@ -775,7 +782,12 @@ export default function ChartOfAccountsPage() {
       const params = new URLSearchParams()
       if (startDate) params.append('start_date', startDate)
       if (endDate) params.append('end_date', endDate)
-      
+      const reportStation =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('fserp_report_station_id')?.trim()
+          : ''
+      if (reportStation) params.append('station_id', reportStation)
+
       const [response, branding] = await Promise.all([
         api.get(`/chart-of-accounts/${accountId}/statement?${params.toString()}`),
         loadPrintBranding(api).catch(() => null),
@@ -1672,6 +1684,13 @@ export default function ChartOfAccountsPage() {
                 <p className="text-sm text-gray-500">
                   {statement.account.account_type} / {statement.account.account_sub_type}
                 </p>
+                {statement.filter_station_id != null ? (
+                  <p className="mt-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                    Site filter active: journal lines for station #{statement.filter_station_id} only.
+                    Opening balance is treated as zero for this slice (same basis as site-scoped trial
+                    balance).
+                  </p>
+                ) : null}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button

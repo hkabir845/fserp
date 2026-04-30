@@ -7,7 +7,7 @@ from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.utils.recovery_email import profile_allows_password_recovery
-from api.models import BroadcastRead, User, Company, CompanyRole
+from api.models import BroadcastRead, Company, CompanyRole, Station, User
 from api.services.permission_service import user_client_dict, POS_SALE_SCOPES, normalize_role_key
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,32 @@ def _set_pos_sale_scope_cashier_operator(user: User, data: dict, force_default: 
             status=400,
         )
     user.pos_sale_scope = val
+    return None
+
+
+def _set_home_station_from_request(user: User, data: dict, company_id: int | None) -> "JsonResponse|None":
+    if "home_station_id" not in data:
+        return None
+    raw = data.get("home_station_id")
+    if raw in (None, "", False):
+        user.home_station = None
+        return None
+    if company_id is None:
+        return JsonResponse(
+            {"detail": "home_station_id can only be set for users that belong to a company."},
+            status=400,
+        )
+    try:
+        sid = int(raw)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "home_station_id must be a number or null."}, status=400)
+    st = Station.objects.filter(pk=sid, company_id=company_id, is_active=True).first()
+    if not st:
+        return JsonResponse(
+            {"detail": "home_station_id must be an active station in this company."},
+            status=400,
+        )
+    user.home_station_id = sid
     return None
 
 
@@ -118,14 +144,14 @@ def users_list_or_create(request):
         limit = min(int(request.GET.get("limit", 100)), 200)
         if _is_super_admin(api_user):
             qs = (
-                User.objects.select_related("custom_role")
+                User.objects.select_related("custom_role", "home_station")
                 .order_by("id")
             )[skip : skip + limit]
         else:
             # Company admins see active and inactive so they can reactivate without extra flags.
             qs = (
                 User.objects.filter(company_id=api_user.company_id)
-                .select_related("custom_role")
+                .select_related("custom_role", "home_station")
                 .order_by("-is_active", "id")
             )[skip : skip + limit]
         result = [_user_to_json(u) for u in qs]
@@ -208,11 +234,17 @@ def users_list_or_create(request):
         err2 = _set_pos_sale_scope_cashier_operator(user, data, force_default=True)
         if err2 is not None:
             return err2
+        herr = _set_home_station_from_request(user, data, company_id)
+        if herr is not None:
+            return herr
         user.set_password(password)
         user.save()
         return JsonResponse(
             _user_to_json(
-                User.objects.filter(pk=user.pk).select_related("custom_role").first() or user
+                User.objects.filter(pk=user.pk)
+                .select_related("custom_role", "home_station")
+                .first()
+                or user
             ),
             status=201,
         )
@@ -232,7 +264,7 @@ def user_detail(request, user_id):
             return JsonResponse({"detail": "Authentication required"}, status=401)
 
         try:
-            user = User.objects.filter(id=user_id).select_related("custom_role").first()
+            user = User.objects.filter(id=user_id).select_related("custom_role", "home_station").first()
         except Exception as e:
             logger.exception("user_detail load error")
             return JsonResponse({"detail": "Server error", "error": str(e)}, status=500)
@@ -323,6 +355,10 @@ def user_detail(request, user_id):
             err = _set_custom_role_from_request(user, data, api_user, user.company_id)
             if err is not None:
                 return err
+        if "home_station_id" in data:
+            her = _set_home_station_from_request(user, data, user.company_id)
+            if her is not None:
+                return her
         if data.get("password"):
             user.set_password(data["password"])
         final_username = (user.username or "").strip()

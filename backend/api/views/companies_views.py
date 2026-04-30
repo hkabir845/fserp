@@ -14,16 +14,39 @@ from api.utils.auth import (
     get_company_id,
     user_is_super_admin,
 )
-from api.models import Company, User
+from api.models import Company, Station, User
 from api.chart_templates.fuel_station import seed_fuel_station_if_empty
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_tenant_company_data
 from api.services.company_code import resolved_company_code
+from api.services.station_policy import active_station_count, can_set_company_to_single
 from api.services.tenant_release import get_target_release
 
 logger = logging.getLogger(__name__)
 
+
+def _company_station_api_context(request, company: Company) -> dict:
+    user = getattr(request, "api_user", None) or get_user_from_request(request)
+    return {
+        "can_edit_station_mode": bool(user and user_is_super_admin(user)),
+        "active_station_count": active_station_count(company.id),
+    }
+
 ALLOWED_DATE_FORMATS = frozenset({"YYYY-MM-DD", "DD/MM/YYYY", "MM/DD/YYYY", "DD-MM-YYYY"})
 ALLOWED_TIME_FORMATS = frozenset({"HH:mm", "hh:mm A"})
+
+
+def _parse_station_mode_value(body, key: str = "station_mode") -> tuple[str | None, str | None]:
+    """
+    If key is absent, returns (None, None) to mean "no update".
+    If key is present and invalid, returns (None, error message).
+    """
+    if key not in body:
+        return (None, None)
+    v = body.get(key)
+    s = str(v).strip().lower() if v is not None else ""
+    if s in ("single", "multi"):
+        return (s, None)
+    return (None, "station_mode must be 'single' or 'multi'.")
 
 
 def _normalize_subdomain(val) -> str:
@@ -62,6 +85,24 @@ def _coerce_date_format(value) -> str:
 def _coerce_time_format(value) -> str:
     s = str(value or "").strip()
     return s if s in ALLOWED_TIME_FORMATS else "HH:mm"
+
+
+def _validate_time_zone(value) -> tuple[str | None, str | None]:
+    """
+    IANA time zone (e.g. Asia/Dhaka). Returns (canonical string, error detail).
+    """
+    s = str(value or "").strip()
+    if not s:
+        return (None, "time_zone is required. Use an IANA name, e.g. Asia/Dhaka, UTC.")
+    if len(s) > 64:
+        return (None, "time_zone must be at most 64 characters.")
+    try:
+        from zoneinfo import ZoneInfo
+
+        ZoneInfo(s)
+    except Exception:
+        return (None, f"Invalid IANA time zone: {s!r}. Example: Asia/Dhaka, America/New_York, Europe/London, UTC.")
+    return (s, None)
 
 
 def _is_master_company(c: Company) -> bool:
@@ -219,6 +260,8 @@ def _company_to_json(c: Company) -> dict:
         "billing_plan_code": (getattr(c, "billing_plan_code", None) or "").strip().lower(),
         "date_format": _coerce_date_format(getattr(c, "date_format", None)),
         "time_format": _coerce_time_format(getattr(c, "time_format", None)),
+        "time_zone": (getattr(c, "time_zone", None) or "Asia/Dhaka")[:64],
+        "station_mode": (getattr(c, "station_mode", None) or "single")[:16],
     }
 
 
@@ -240,8 +283,13 @@ def companies_current(request):
             "currency": "BDT",
             "date_format": "YYYY-MM-DD",
             "time_format": "HH:mm",
+            "time_zone": "Asia/Dhaka",
+            "station_mode": "single",
+            "can_edit_station_mode": False,
+            "active_station_count": 0,
         })
-    return JsonResponse(_company_to_json(company))
+    payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
+    return JsonResponse(payload)
 
 
 @csrf_exempt
@@ -332,6 +380,18 @@ def companies_list_or_create(request):
                     pass
             if "billing_plan_code" in body:
                 c.billing_plan_code = (str(body.get("billing_plan_code") or "").strip().lower())[:32]
+            sm_create, sm_err = _parse_station_mode_value(body, "station_mode")
+            if sm_err:
+                return JsonResponse({"detail": sm_err}, status=400)
+            if sm_create is not None:
+                c.station_mode = sm_create
+            raw_tz = body.get("time_zone", "Asia/Dhaka")
+            if raw_tz is not None and str(raw_tz).strip() == "":
+                raw_tz = "Asia/Dhaka"
+            tz, tz_err = _validate_time_zone(raw_tz)
+            if tz_err:
+                return JsonResponse({"detail": tz_err}, status=400)
+            c.time_zone = tz
             c.platform_release = get_target_release()[:64]
             c.save()
 
@@ -381,7 +441,8 @@ def company_detail(request, company_id: int):
         return JsonResponse({"detail": "Company not found"}, status=404)
 
     if request.method == "GET":
-        return JsonResponse(_company_to_json(company))
+        payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
+        return JsonResponse(payload)
 
     if request.method == "PUT":
         user = getattr(request, "api_user", None) or get_user_from_request(request)
@@ -451,6 +512,15 @@ def company_detail(request, company_id: int):
                 company.date_format = _coerce_date_format(body.get("date_format"))[:32]
             if "time_format" in body:
                 company.time_format = _coerce_time_format(body.get("time_format"))[:32]
+            if "time_zone" in body:
+                raw = body.get("time_zone")
+                if raw is None or (isinstance(raw, str) and not str(raw).strip()):
+                    company.time_zone = "Asia/Dhaka"
+                else:
+                    tzi, tze = _validate_time_zone(raw)
+                    if tze:
+                        return JsonResponse({"detail": tze}, status=400)
+                    company.time_zone = tzi
             if "is_active" in body:
                 company.is_active = bool(body["is_active"])
             if "contact_person" in body:
@@ -483,8 +553,32 @@ def company_detail(request, company_id: int):
                     company.payment_amount = None
             if "billing_plan_code" in body:
                 company.billing_plan_code = (str(body.get("billing_plan_code") or "").strip().lower())[:32]
+            sm, sm_err = _parse_station_mode_value(body, "station_mode")
+            if sm_err:
+                return JsonResponse({"detail": sm_err}, status=400)
+            if sm is not None:
+                current_mode = (getattr(company, "station_mode", None) or "single")[:16]
+                if sm != current_mode and not is_super:
+                    return JsonResponse(
+                        {
+                            "detail": "Only a platform Super Admin may change the site model (single vs multiple stations). "
+                            "Ask support if this setting must be updated."
+                        },
+                        status=403,
+                    )
+                if sm == "single":
+                    if not can_set_company_to_single(company.id):
+                        return JsonResponse(
+                            {
+                                "detail": "Cannot use single-site mode while this company has more than one *active* station. "
+                                "Set extra locations to Inactive on the Stations page (keeps history), or delete unused rows, then try again."
+                            },
+                            status=400,
+                        )
+                company.station_mode = sm
             company.save()
-            return JsonResponse(_company_to_json(company))
+            payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
+            return JsonResponse(payload)
         except Exception as e:
             return JsonResponse(
                 {"detail": "Failed to update company", "error": str(e)},

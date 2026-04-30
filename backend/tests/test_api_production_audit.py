@@ -762,9 +762,18 @@ def test_payments_received_cash_with_shift_updates_expected_cash_drawer(
     active_r = api_client.get("/api/shifts/sessions/active/", **h)
     body_raw = active_r.content.decode().strip()
     if body_raw in ("null", ""):
+        from api.models import Station
+
+        n_act = Station.objects.filter(company_id=company_master.id, is_active=True).count()
+        first_st = (
+            Station.objects.filter(company_id=company_master.id, is_active=True).order_by("id").first()
+        )
+        open_payload = {}
+        if n_act > 1 and first_st:
+            open_payload = {"station_id": first_st.id}
         open_r = api_client.post(
             "/api/shifts/sessions/open/",
-            data=json.dumps({}),
+            data=json.dumps(open_payload),
             content_type="application/json",
             **h,
         )
@@ -1524,7 +1533,7 @@ def test_chart_of_accounts_statement_for_seeded_account(
     stmt = api_client.get(f"/api/chart-of-accounts/{aid}/statement/", **h)
     assert stmt.status_code == 200
     body = json.loads(stmt.content)
-    assert "account" in body and "transactions" in body
+    assert "account" in body and "transactions" in body and "opening_balance" in body
     assert body["account"]["id"] == aid
 
 
@@ -1723,6 +1732,9 @@ def test_cashier_pos_on_account_creates_sent_invoice(
         unit_price=Decimal("4.00"),
         quantity_on_hand=Decimal("20"),
     )
+    from api.services.station_stock import ensure_item_station_row_for_new_shop_item
+
+    ensure_item_station_row_for_new_shop_item(company_master.id, item)
     r = api_client.post(
         "/api/cashier/pos/",
         data=json.dumps(
@@ -1768,6 +1780,9 @@ def test_cashier_pos_split_tender_cash_and_ar(
         unit_price=Decimal("10.00"),
         quantity_on_hand=Decimal("10"),
     )
+    from api.services.station_stock import ensure_item_station_row_for_new_shop_item
+
+    ensure_item_station_row_for_new_shop_item(company_master.id, item)
     r = api_client.post(
         "/api/cashier/pos/",
         data=json.dumps(

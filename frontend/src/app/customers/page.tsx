@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
-import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, Users, UserCheck, DollarSign, X, Mail, Phone, ArrowUpDown, ArrowUp, ArrowDown, Download, BookOpen } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, Users, UserCheck, DollarSign, X, Mail, Phone, ArrowUpDown, ArrowUp, ArrowDown, Download, BookOpen, Building2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getApiDocsUrl, getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -32,6 +32,15 @@ interface Customer {
   bank_name?: string | null
   bank_branch?: string | null
   bank_routing_number?: string | null
+  /** Primary site for sales / visits; new invoices default here */
+  default_station_id?: number | null
+  default_station_name?: string | null
+}
+
+interface StationOption {
+  id: number
+  station_name: string
+  is_active?: boolean
 }
 
 export default function CustomersPage() {
@@ -54,6 +63,7 @@ export default function CustomersPage() {
   const [addingDummy, setAddingDummy] = useState(false)
   const [customerRefCode, setCustomerRefCode] = useState('')
   const [createCodeNonce, setCreateCodeNonce] = useState(0)
+  const [stations, setStations] = useState<StationOption[]>([])
   const [formData, setFormData] = useState({
     company_name: '',
     contact_person: '',
@@ -69,7 +79,8 @@ export default function CustomersPage() {
     bank_routing_number: '',
     opening_balance: 0,
     opening_balance_date: new Date().toISOString().split('T')[0],
-    is_active: true
+    is_active: true,
+    default_station_id: '' as string | number,
   })
 
   useEffect(() => {
@@ -79,9 +90,26 @@ export default function CustomersPage() {
       return
     }
     
-    // Fetch customers directly - error handling will show if backend is down
+    fetchStationsList()
     fetchCustomers()
   }, [router])
+
+  const fetchStationsList = async () => {
+    try {
+      const res = await api.get<unknown[]>('/stations/', { timeout: 8000 })
+      const rows = Array.isArray(res.data) ? res.data : []
+      const parsed: StationOption[] = []
+      for (const r of rows) {
+        const o = r as { id?: number; station_name?: string; is_active?: boolean }
+        if (typeof o.id !== 'number') continue
+        if (o.is_active === false) continue
+        parsed.push({ id: o.id, station_name: o.station_name || `Site #${o.id}`, is_active: o.is_active })
+      }
+      setStations(parsed)
+    } catch {
+      setStations([])
+    }
+  }
 
   const fetchCustomers = async () => {
     setLoading(true)
@@ -220,6 +248,10 @@ export default function CustomersPage() {
           opening_balance: formData.opening_balance,
           opening_balance_date: formData.opening_balance_date || null,
           is_active: formData.is_active,
+          default_station_id:
+            formData.default_station_id !== '' && formData.default_station_id != null
+              ? parseInt(String(formData.default_station_id), 10)
+              : null,
           ...(customerRefCode.trim() ? { customer_number: customerRefCode.trim() } : {}),
         })
       })
@@ -258,7 +290,11 @@ export default function CustomersPage() {
       opening_balance_date: customer.opening_balance_date 
         ? new Date(customer.opening_balance_date).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0],
-      is_active: customer.is_active
+      is_active: customer.is_active,
+      default_station_id:
+        customer.default_station_id != null && customer.default_station_id > 0
+          ? String(customer.default_station_id)
+          : '',
     })
     setShowModal(true)
   }
@@ -292,7 +328,11 @@ export default function CustomersPage() {
           bank_routing_number: formData.bank_routing_number || null,
           is_active: formData.is_active,
           opening_balance: formData.opening_balance,
-          opening_balance_date: formData.opening_balance_date || null
+          opening_balance_date: formData.opening_balance_date || null,
+          default_station_id:
+            formData.default_station_id !== '' && formData.default_station_id != null
+              ? parseInt(String(formData.default_station_id), 10)
+              : null,
         })
       })
       if (response.ok) {
@@ -374,7 +414,8 @@ export default function CustomersPage() {
       bank_routing_number: '',
       opening_balance: 0,
       opening_balance_date: new Date().toISOString().split('T')[0],
-      is_active: true
+      is_active: true,
+      default_station_id: '',
     })
     setCustomerRefCode('')
     setEditingCustomer(null)
@@ -403,12 +444,14 @@ export default function CustomersPage() {
       const email = (customer.email || '').toLowerCase()
       const customerNumber = (customer.customer_number || '').toLowerCase()
       const phone = (customer.phone || '').toLowerCase()
+      const site = (customer.default_station_name || '').toLowerCase()
       
       return (
         displayName.includes(searchLower) ||
         email.includes(searchLower) ||
         customerNumber.includes(searchLower) ||
-        phone.includes(searchLower)
+        phone.includes(searchLower) ||
+        site.includes(searchLower)
       )
     })
     .sort((a, b) => {
@@ -450,6 +493,15 @@ export default function CustomersPage() {
     return sortDirection === 'asc' 
       ? <ArrowUp className="h-4 w-4 ml-1 text-blue-600" />
       : <ArrowDown className="h-4 w-4 ml-1 text-blue-600" />
+  }
+
+  const escapeCsvField = (val: string | number | null | undefined): string => {
+    if (val === null || val === undefined) return ''
+    const s = String(val)
+    if (/[",\n\r]/.test(s)) {
+      return `"${s.replace(/"/g, '""')}"`
+    }
+    return s
   }
 
   return (
@@ -545,7 +597,7 @@ export default function CustomersPage() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                   <input
                     type="text"
-                    placeholder="Search by name, email, phone, or customer number..."
+                    placeholder="Search by name, email, phone, customer #, or default site…"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -734,6 +786,16 @@ export default function CustomersPage() {
                             <SortIcon field="display_name" />
                           </div>
                         </th>
+                        <th
+                          className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider hidden md:table-cell"
+                          onClick={() => handleSort('default_station_name' as keyof Customer)}
+                        >
+                          <div className="flex items-center">
+                            <Building2 className="h-3.5 w-3.5 mr-1 text-amber-600/90 shrink-0" />
+                            Default site
+                            <SortIcon field={'default_station_name' as keyof Customer} />
+                          </div>
+                        </th>
                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                           Contact
                         </th>
@@ -774,6 +836,17 @@ export default function CustomersPage() {
                               <div className="text-sm font-medium text-gray-900">
                                 {customer.display_name || '-'}
                               </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-700 max-w-[11rem] hidden md:table-cell">
+                              <span className="inline-flex items-center gap-1.5">
+                                <Building2 className="h-3.5 w-3.5 text-amber-600/80 shrink-0" />
+                                <span
+                                  className="truncate"
+                                  title={customer.default_station_name || undefined}
+                                >
+                                  {(customer.default_station_name || '').trim() || '—'}
+                                </span>
+                              </span>
                             </td>
                             <td className="px-6 py-4">
                               <div className="space-y-1">
@@ -861,15 +934,18 @@ export default function CustomersPage() {
                       <button
                         onClick={() => {
                           const csv = [
-                            ['Customer #', 'Name', 'Email', 'Phone', 'Balance', 'Status'].join(','),
-                            ...filteredAndSortedCustomers.map(c => [
-                              c.customer_number,
-                              c.display_name || '',
-                              c.email || '',
-                              c.phone || '',
-                              c.current_balance || 0,
-                              c.is_active ? 'Active' : 'Inactive'
-                            ].join(','))
+                            ['Customer #', 'Name', 'Default site', 'Email', 'Phone', 'Balance', 'Status'].join(','),
+                            ...filteredAndSortedCustomers.map((c) =>
+                              [
+                                escapeCsvField(c.customer_number),
+                                escapeCsvField(c.display_name),
+                                escapeCsvField(c.default_station_name),
+                                escapeCsvField(c.email),
+                                escapeCsvField(c.phone),
+                                c.current_balance ?? 0,
+                                c.is_active ? 'Active' : 'Inactive',
+                              ].join(',')
+                            ),
                           ].join('\n')
                           const blob = new Blob([csv], { type: 'text/csv' })
                           const url = window.URL.createObjectURL(blob)
@@ -1006,6 +1082,32 @@ export default function CustomersPage() {
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           placeholder="+1 234 567 8900"
                         />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 inline-flex items-center gap-1.5">
+                          <Building2 className="h-4 w-4 text-amber-600" />
+                          Default site
+                        </label>
+                        <select
+                          value={formData.default_station_id === '' ? '' : String(formData.default_station_id)}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              default_station_id: e.target.value === '' ? '' : e.target.value,
+                            })
+                          }
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                        >
+                          <option value="">— Not set —</option>
+                          {stations.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.station_name}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1.5 text-xs text-gray-500">
+                          Usual site for this account (new invoices and AR reporting default here when not specified).
+                        </p>
                       </div>
                       <div className="md:col-span-2">
                         <p className="text-sm font-semibold text-gray-800 mb-3">Bank details (optional)</p>

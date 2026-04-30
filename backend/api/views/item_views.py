@@ -16,9 +16,16 @@ from django.views.decorators.http import require_GET
 
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id, _serialize_decimal
-from api.models import Item, Tank
+from api.models import Item, Station, Tank
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.item_catalog import item_tracks_physical_stock, normalize_item_type
+from api.services.station_stock import (
+    ensure_item_station_row_for_new_shop_item,
+    get_or_create_default_station,
+    item_uses_station_bins,
+    per_station_quantities,
+    set_station_stock,
+)
 from api.services.item_reporting_categories import (
     SUGGESTED_ITEM_REPORTING_CATEGORIES,
     normalize_item_reporting_category,
@@ -181,8 +188,8 @@ def _coerce_item_type_for_storage(raw) -> str:
     return s
 
 
-def _item_to_json(i):
-    return {
+def _item_to_json(i, *, company_id: int | None = None, include_location_stocks: bool = False):
+    row = {
         "id": i.id,
         "item_number": i.item_number or "",
         "name": i.name,
@@ -201,6 +208,14 @@ def _item_to_json(i):
         "is_active": i.is_active,
         "image_url": i.image_url or "",
     }
+    cid = company_id if company_id is not None else getattr(i, "company_id", None)
+    if (
+        include_location_stocks
+        and cid
+        and item_uses_station_bins(int(cid), i)
+    ):
+        row["location_stocks"] = per_station_quantities(int(cid), i.id)
+    return row
 
 
 @csrf_exempt
@@ -214,7 +229,12 @@ def items_list_or_create(request):
         elif request.GET.get("pos_only") in ("true", "1", "yes"):
             qs = qs.filter(is_pos_available=True, is_active=True)
         qs = _items_queryset_with_tank_annotations(qs)
-        return JsonResponse([_item_to_json(i) for i in qs], safe=False)
+        want_loc = request.GET.get("location_stocks") in ("1", "true", "yes")
+        cid = int(request.company_id)
+        return JsonResponse(
+            [_item_to_json(i, company_id=cid, include_location_stocks=want_loc) for i in qs],
+            safe=False,
+        )
 
     if request.method == "POST":
         body, err = parse_json_body(request)
@@ -297,6 +317,7 @@ def items_list_or_create(request):
             i.save()
         except ValidationError as e:
             return JsonResponse({"detail": "Validation failed", "errors": e.message_dict if hasattr(e, "message_dict") else str(e)}, status=400)
+        ensure_item_station_row_for_new_shop_item(request.company_id, i)
         if not i.item_number:
             assigned, aerr = assign_string_code_if_empty(
                 request.company_id, Item, "item_number", "ITM", i.pk, None, None
@@ -306,7 +327,10 @@ def items_list_or_create(request):
                 return JsonResponse({"detail": aerr}, status=400)
             i.item_number = assigned
         i2 = _items_queryset_with_tank_annotations(Item.objects.filter(pk=i.pk)).first()
-        return JsonResponse(_item_to_json(i2 or i), status=201)
+        return JsonResponse(
+            _item_to_json(i2 or i, company_id=request.company_id, include_location_stocks=True),
+            status=201,
+        )
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
@@ -324,7 +348,13 @@ def item_detail(request, item_id: int):
         return JsonResponse({"detail": "Item not found"}, status=404)
 
     if request.method == "GET":
-        return JsonResponse(_item_to_json(i))
+        return JsonResponse(
+            _item_to_json(
+                i,
+                company_id=request.company_id,
+                include_location_stocks=True,
+            )
+        )
 
     if request.method == "PUT":
         body, err = parse_json_body(request)
@@ -373,7 +403,44 @@ def item_detail(request, item_id: int):
                 product_id=i.pk, company_id=i.company_id, is_active=True
             ).order_by("id")
             tanks = list(tank_qs)
-            if not tanks:
+            if not tanks and item_uses_station_bins(i.company_id, i):
+                n_st = Station.objects.filter(company_id=i.company_id, is_active=True).count()
+                raw_sid = body.get("station_id")
+                if n_st > 1:
+                    if raw_sid is None or raw_sid == "":
+                        return JsonResponse(
+                            {
+                                "detail": (
+                                    "This company has multiple stations. Send station_id to set on-hand "
+                                    "quantity for that location, or use inventory transfer to move between stations."
+                                )
+                            },
+                            status=400,
+                        )
+                    try:
+                        target_sid = int(raw_sid)
+                    except (TypeError, ValueError):
+                        return JsonResponse({"detail": "Invalid station_id"}, status=400)
+                    if not Station.objects.filter(
+                        pk=target_sid, company_id=i.company_id, is_active=True
+                    ).exists():
+                        return JsonResponse({"detail": "Unknown station_id for this company"}, status=404)
+                else:
+                    target_sid = get_or_create_default_station(i.company_id).id
+                    if raw_sid is not None and raw_sid != "":
+                        try:
+                            target_sid = int(raw_sid)
+                        except (TypeError, ValueError):
+                            return JsonResponse({"detail": "Invalid station_id"}, status=400)
+                        if not Station.objects.filter(
+                            pk=target_sid, company_id=i.company_id, is_active=True
+                        ).exists():
+                            return JsonResponse(
+                                {"detail": "Unknown station_id for this company"}, status=404
+                            )
+                set_station_stock(i.company_id, target_sid, i.pk, q)
+                i.refresh_from_db()
+            elif not tanks:
                 i.quantity_on_hand = q
             elif len(tanks) == 1:
                 Tank.objects.filter(pk=tanks[0].pk).update(current_stock=q)
@@ -447,7 +514,13 @@ def item_detail(request, item_id: int):
         except ValidationError as e:
             return JsonResponse({"detail": "Validation failed", "errors": e.message_dict if hasattr(e, "message_dict") else str(e)}, status=400)
         i2 = _items_queryset_with_tank_annotations(Item.objects.filter(pk=i.pk)).first()
-        return JsonResponse(_item_to_json(i2 or i))
+        return JsonResponse(
+            _item_to_json(
+                i2 or i,
+                company_id=request.company_id,
+                include_location_stocks=True,
+            )
+        )
 
     if request.method == "DELETE":
         if i.tanks.exists():

@@ -26,6 +26,12 @@ class Company(models.Model):
     # Display formats for the tenant UI (see companies_views allowlists).
     date_format = models.CharField(max_length=32, default="YYYY-MM-DD")
     time_format = models.CharField(max_length=32, default="HH:mm")
+    # IANA tz database name (e.g. Asia/Dhaka); used for "today" and business-date semantics per tenant.
+    time_zone = models.CharField(
+        max_length=64,
+        default="Asia/Dhaka",
+        help_text="IANA time zone (e.g. Asia/Dhaka) for business date and local time display.",
+    )
     fiscal_year_start = models.CharField(max_length=5, default="01-01")
     address_line1 = models.CharField(max_length=200, blank=True)
     address_line2 = models.CharField(max_length=200, blank=True)
@@ -51,6 +57,12 @@ class Company(models.Model):
     platform_release_applied_at = models.DateTimeField(null=True, blank=True)
     # Set when apply_platform_release moves this company to a new tag; None = nothing to roll back.
     platform_release_previous = models.CharField(max_length=64, blank=True, null=True)
+    # Tenant choice: one operating site (at most one active Station row) vs many locations.
+    station_mode = models.CharField(
+        max_length=16,
+        default="single",
+        help_text="single = at most one active station (inactive rows allowed), default for new tenants; multi = multiple active stations.",
+    )
 
     class Meta:
         db_table = "company"
@@ -169,6 +181,14 @@ class User(models.Model):
     pos_sale_scope = models.CharField(max_length=16, default="both")
     company_id = models.IntegerField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    # When set, POS and station-scoped reports are limited to this site (cashier/operator, or a regional user).
+    home_station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="users_assigned_home",
+    )
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     updated_at = models.DateTimeField(auto_now=True, null=True)
 
@@ -296,6 +316,27 @@ class Item(models.Model):
         db_table = "item"
 
 
+class ItemStationStock(models.Model):
+    """
+    Per-station on-hand quantity for shop / non-tank inventory items.
+    Item.quantity_on_hand is the company-wide total for these SKUs (sum of this table).
+    Fuel and tank-tracked products use Tank.current_stock only; no rows here.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="item_station_stocks")
+    station = models.ForeignKey("Station", on_delete=models.CASCADE, related_name="item_stocks")
+    item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="station_stocks")
+    quantity = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "item_station_stock"
+        unique_together = [["station", "item"]]
+        indexes = [
+            models.Index(fields=["company", "item"]),
+        ]
+
+
 class Tank(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="tanks")
     station = models.ForeignKey(Station, on_delete=models.CASCADE, related_name="tanks")
@@ -383,6 +424,14 @@ class Nozzle(models.Model):
 # ---------------------------------------------------------------------------
 class Customer(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="customers")
+    default_station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="customers_preferred_site",
+        help_text="Default selling / visit site for new invoices; AR register when payment is on account.",
+    )
     customer_number = models.CharField(max_length=64, blank=True)
     display_name = models.CharField(max_length=200, blank=True)
     first_name = models.CharField(max_length=100, blank=True)
@@ -410,6 +459,14 @@ class Customer(models.Model):
 
 class Vendor(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="vendors")
+    default_station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="vendors_preferred_site",
+        help_text="Default receiving site for new bills and vendor payment routing when not bill-specific.",
+    )
     vendor_number = models.CharField(max_length=64, blank=True)
     company_name = models.CharField(max_length=200)
     display_name = models.CharField(max_length=200, blank=True)
@@ -436,6 +493,14 @@ class Employee(models.Model):
     """Company staff record; subledger entries track payables/advances until payroll is integrated."""
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="employees")
+    home_station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="employees_home",
+        help_text="Primary work site for this employee (ops / labor cost reporting).",
+    )
     employee_number = models.CharField(max_length=64, blank=True)
     employee_code = models.CharField(max_length=64, blank=True)
     first_name = models.CharField(max_length=100)
@@ -483,6 +548,14 @@ class PayrollRun(models.Model):
     """Pay period run; amounts default to zero until line items / GL posting exist."""
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="payroll_runs")
+    station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payroll_runs",
+        help_text="Optional: attribute this run to one site (management / job-cost reporting; GL still company-level).",
+    )
     payroll_number = models.CharField(max_length=64, blank=True)
     pay_period_start = models.DateField()
     pay_period_end = models.DateField()
@@ -588,6 +661,15 @@ class JournalEntry(models.Model):
     entry_number = models.CharField(max_length=64, blank=True)
     entry_date = models.DateField()
     description = models.TextField(blank=True)
+    # Optional analytic site (AUTO-* from invoice, bill, POS, dip, etc.); null = company-wide / treasury.
+    station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="journal_entries",
+        help_text="Site dimension for reporting; not required for balanced double-entry.",
+    )
     is_posted = models.BooleanField(default=False)
     posted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -600,6 +682,14 @@ class JournalEntry(models.Model):
 class JournalEntryLine(models.Model):
     journal_entry = models.ForeignKey(JournalEntry, on_delete=models.CASCADE, related_name="lines")
     account = models.ForeignKey(ChartOfAccount, on_delete=models.CASCADE, related_name="journal_lines")
+    station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="journal_lines",
+        help_text="Selling or register site for this line; enables site-scoped P&L and trial balance.",
+    )
     debit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     credit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     description = models.CharField(max_length=300, blank=True)
@@ -624,6 +714,43 @@ class FundTransfer(models.Model):
         db_table = "fund_transfer"
 
 
+class InventoryTransfer(models.Model):
+    """Inter-station movement of shop (non-tank) inventory. Posted = stock + GL (same inventory account)."""
+
+    STATUS_DRAFT = "draft"
+    STATUS_POSTED = "posted"
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="inventory_transfers")
+    from_station = models.ForeignKey(
+        "Station", on_delete=models.PROTECT, related_name="inventory_transfers_out"
+    )
+    to_station = models.ForeignKey(
+        "Station", on_delete=models.PROTECT, related_name="inventory_transfers_in"
+    )
+    transfer_number = models.CharField(max_length=64, blank=True)
+    transfer_date = models.DateField()
+    status = models.CharField(max_length=16, default=STATUS_DRAFT)
+    memo = models.CharField(max_length=500, blank=True)
+    posted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "inventory_transfer"
+        ordering = ["-transfer_date", "-id"]
+
+
+class InventoryTransferLine(models.Model):
+    transfer = models.ForeignKey(
+        InventoryTransfer, on_delete=models.CASCADE, related_name="lines"
+    )
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name="inventory_transfer_lines")
+    quantity = models.DecimalField(max_digits=14, decimal_places=4)
+
+    class Meta:
+        db_table = "inventory_transfer_line"
+
+
 # ---------------------------------------------------------------------------
 # Sales: Invoices, Bills, Payments
 # ---------------------------------------------------------------------------
@@ -636,6 +763,14 @@ class Invoice(models.Model):
         blank=True,
         on_delete=models.SET_NULL,
         related_name="invoices",
+    )
+    station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="invoices",
+        help_text="Selling location: ties sales and shop COGS to a station for reporting.",
     )
     invoice_number = models.CharField(max_length=64)
     invoice_date = models.DateField()
@@ -668,6 +803,14 @@ class InvoiceLine(models.Model):
 class Bill(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="bills")
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="bills")
+    receipt_station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bills_receipts",
+        help_text="Shop (non-tank) inventory from this bill is received into this station's stock.",
+    )
     bill_number = models.CharField(max_length=64)
     bill_date = models.DateField()
     due_date = models.DateField(null=True, blank=True)
@@ -743,6 +886,14 @@ class Payment(models.Model):
     vendor_ap_decremented = models.BooleanField(
         default=False,
         help_text="For payments made: True once amount was subtracted from vendor.current_balance.",
+    )
+    station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payments",
+        help_text="Register / management site: derived from invoices or bills, or from party default when on account.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1002,6 +1153,17 @@ class Loan(models.Model):
     ISLAMIC_VARIANT_OTHER = "other"
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="loans")
+    station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="loans",
+        help_text=(
+            "Optional site for GL tagging on disbursements, repayments, and accruals "
+            "(management / segment reporting; cash still settles through the chosen bank account)."
+        ),
+    )
     loan_no = models.CharField(max_length=64)
     direction = models.CharField(max_length=16)  # borrowed | lent
     status = models.CharField(max_length=24, default="draft")  # draft, active, closed

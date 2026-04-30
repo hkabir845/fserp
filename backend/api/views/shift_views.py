@@ -10,6 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Employee, Meter, ShiftTemplate, ShiftSession, Station
+from api.services.station_policy import active_station_count
 
 
 def _serialize_datetime(dt):
@@ -301,8 +302,37 @@ def shifts_sessions_open(request):
     template_id = body.get("template_id")
     if ShiftSession.objects.filter(company_id=request.company_id, closed_at__isnull=True).exists():
         return JsonResponse({"detail": "An active shift session already exists"}, status=400)
-    if station_id and not Station.objects.filter(id=station_id, company_id=request.company_id).exists():
-        return JsonResponse({"detail": "Station not found"}, status=400)
+    n_active = active_station_count(request.company_id)
+    raw_sid = body.get("station_id")
+    has_sid = raw_sid not in (None, "", 0, "0")
+    resolved_station_id = None
+    if has_sid:
+        try:
+            resolved_station_id = int(raw_sid)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "station_id must be an integer"}, status=400)
+        if not Station.objects.filter(
+            id=resolved_station_id, company_id=request.company_id, is_active=True
+        ).exists():
+            return JsonResponse(
+                {"detail": "Unknown or inactive station_id for this company."},
+                status=400,
+            )
+    elif n_active == 1:
+        one = Station.objects.filter(company_id=request.company_id, is_active=True).order_by("id").first()
+        if one:
+            resolved_station_id = int(one.id)
+    elif n_active > 1:
+        return JsonResponse(
+            {
+                "detail": (
+                    "station_id is required when the company has more than one active site. "
+                    "Choose the register / forecourt location for this shift."
+                )
+            },
+            status=400,
+        )
+    station_id = resolved_station_id
     opening = _decimal(body.get("opening_cash_float"), Decimal("0"))
     if opening is None:
         opening = Decimal("0")

@@ -19,6 +19,7 @@ from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.services.contact_ledgers import build_employee_ledger, ledger_query_dates
 from api.services.gl_posting import post_payroll_salary
+from api.services.station_defaults import parse_optional_station_fk
 
 
 def _serialize_date(d):
@@ -113,6 +114,12 @@ def _employee_to_json(e: Employee) -> dict:
         "opening_balance_date": _serialize_date(e.opening_balance_date),
         "current_balance": str(e.current_balance),
         "is_active": e.is_active,
+        "home_station_id": e.home_station_id,
+        "home_station_name": (
+            (e.home_station.station_name or "").strip()
+            if getattr(e, "home_station_id", None) and getattr(e, "home_station", None)
+            else ""
+        ),
     }
 
 
@@ -158,7 +165,7 @@ def employee_next_code_suggested(request):
 def employees_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
-        qs = Employee.objects.filter(company_id=cid).order_by("id")
+        qs = Employee.objects.filter(company_id=cid).select_related("home_station").order_by("id")
         return JsonResponse([_employee_to_json(e) for e in qs], safe=False)
 
     body, err = parse_json_body(request)
@@ -169,6 +176,11 @@ def employees_list_or_create(request):
     ln = (body.get("last_name") or "").strip()
     if not fn:
         return JsonResponse({"detail": "first_name is required"}, status=400)
+    hs_id = None
+    if "home_station_id" in body:
+        hs_id, hs_err = parse_optional_station_fk(cid, body.get("home_station_id"))
+        if hs_err:
+            return JsonResponse({"detail": hs_err}, status=400)
     ob = _decimal(body.get("opening_balance"), Decimal("0"))
     if code:
         if Employee.objects.filter(company_id=cid, employee_code__iexact=code[:64]).exists():
@@ -180,6 +192,7 @@ def employees_list_or_create(request):
             company_id=cid,
             employee_code=code[:64],
             employee_number=code[:64],
+            home_station_id=hs_id,
             first_name=fn[:100],
             last_name=(ln or "")[:100],
             email=(body.get("email") or "")[:150],
@@ -199,6 +212,7 @@ def employees_list_or_create(request):
             company_id=cid,
             employee_code="",
             employee_number="",
+            home_station_id=hs_id,
             first_name=fn[:100],
             last_name=(ln or "")[:100],
             email=(body.get("email") or "")[:150],
@@ -221,6 +235,11 @@ def employees_list_or_create(request):
             return JsonResponse({"detail": gen_err}, status=400)
         Employee.objects.filter(pk=e.pk).update(employee_code=gen, employee_number=gen)
         e.refresh_from_db()
+    e = (
+        Employee.objects.filter(pk=e.pk, company_id=cid)
+        .select_related("home_station")
+        .first()
+    )
     return JsonResponse(_employee_to_json(e), status=201)
 
 
@@ -230,7 +249,11 @@ def employees_list_or_create(request):
 @require_company_id
 def employee_detail(request, employee_id: int):
     cid = request.company_id
-    e = Employee.objects.filter(pk=employee_id, company_id=cid).first()
+    e = (
+        Employee.objects.filter(pk=employee_id, company_id=cid)
+        .select_related("home_station")
+        .first()
+    )
     if not e:
         return JsonResponse({"detail": "Not found"}, status=404)
 
@@ -278,9 +301,18 @@ def employee_detail(request, employee_id: int):
             e.opening_balance_date = _parse_date(body.get("opening_balance_date"))
         if "is_active" in body:
             e.is_active = bool(body["is_active"])
+        if "home_station_id" in body:
+            hs_id, hs_err = parse_optional_station_fk(cid, body.get("home_station_id"))
+            if hs_err:
+                return JsonResponse({"detail": hs_err}, status=400)
+            e.home_station_id = hs_id
         e.save()
         _refresh_employee_balance(e.id)
-        e.refresh_from_db()
+        e = (
+            Employee.objects.filter(pk=e.pk, company_id=cid)
+            .select_related("home_station")
+            .first()
+        )
         return JsonResponse(_employee_to_json(e))
 
     e.delete()
@@ -380,6 +412,12 @@ def _payroll_run_to_json(p: PayrollRun) -> dict:
         "is_salary_posted": bool(p.salary_journal_id),
         "created_at": p.created_at.isoformat() if p.created_at else "",
         "updated_at": p.updated_at.isoformat() if p.updated_at else "",
+        "station_id": p.station_id,
+        "station_name": (
+            (p.station.station_name or "").strip()
+            if getattr(p, "station_id", None) and getattr(p, "station", None)
+            else ""
+        ),
     }
 
 
@@ -411,7 +449,7 @@ def _validate_payroll_amounts(gross: Decimal, ded: Decimal, net: Decimal) -> str
 def payroll_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
-        qs = PayrollRun.objects.filter(company_id=cid).select_related("salary_journal")
+        qs = PayrollRun.objects.filter(company_id=cid).select_related("salary_journal", "station")
         return JsonResponse([_payroll_run_to_json(p) for p in qs], safe=False)
 
     body, err = parse_json_body(request)
@@ -459,8 +497,15 @@ def payroll_list_or_create(request):
         if aerr:
             return JsonResponse({"detail": aerr}, status=400)
 
+    pr_station_id = None
+    if "station_id" in body:
+        pr_station_id, pr_err = parse_optional_station_fk(cid, body.get("station_id"))
+        if pr_err:
+            return JsonResponse({"detail": pr_err}, status=400)
+
     p = PayrollRun(
         company_id=cid,
+        station_id=pr_station_id,
         pay_period_start=ps,
         pay_period_end=pe,
         payment_date=pd,
@@ -477,6 +522,11 @@ def payroll_list_or_create(request):
     if not p.payroll_number:
         PayrollRun.objects.filter(pk=p.pk).update(payroll_number=f"PR-{p.id:05d}")
         p.refresh_from_db()
+    p = (
+        PayrollRun.objects.filter(pk=p.pk, company_id=cid)
+        .select_related("salary_journal", "station")
+        .first()
+    )
     return JsonResponse(_payroll_run_to_json(p), status=201)
 
 
@@ -488,7 +538,7 @@ def payroll_detail(request, payroll_id: int):
     cid = request.company_id
     p = (
         PayrollRun.objects.filter(pk=payroll_id, company_id=cid)
-        .select_related("salary_journal")
+        .select_related("salary_journal", "station")
         .first()
     )
     if not p:
@@ -561,8 +611,18 @@ def payroll_detail(request, payroll_id: int):
             p.total_net = n
         if "status" in body and body.get("status") is not None:
             p.status = str(body.get("status") or "draft")[:32].lower()
+        if "station_id" in body:
+            pr_sid, pr_err = parse_optional_station_fk(cid, body.get("station_id"))
+            if pr_err:
+                return JsonResponse({"detail": pr_err}, status=400)
+            p.station_id = pr_sid
         p.save()
-        return JsonResponse(_payroll_run_to_json(p))
+        p2 = (
+            PayrollRun.objects.filter(pk=p.pk, company_id=cid)
+            .select_related("salary_journal", "station")
+            .first()
+        )
+        return JsonResponse(_payroll_run_to_json(p2))
 
     if p.salary_journal_id:
         return JsonResponse(

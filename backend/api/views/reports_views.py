@@ -23,6 +23,7 @@ from api.services.reporting import (
     report_item_velocity_analysis,
     report_meter_readings,
     report_sales_by_nozzle,
+    report_sales_by_station,
     report_shift_summary,
     report_tank_dip_register,
     report_tank_dip_variance,
@@ -32,6 +33,7 @@ from api.services.reporting import (
 )
 from api.utils.auth import auth_required
 from api.views.common import require_company_id
+from api.services.station_scope import effective_report_station_id
 
 _REPORT_HANDLERS = {
     "trial-balance": report_trial_balance,
@@ -47,6 +49,7 @@ _REPORT_HANDLERS = {
     "tank-dip-register": report_tank_dip_register,
     "meter-readings": report_meter_readings,
     "daily-summary": report_daily_summary,
+    "sales-by-station": report_sales_by_station,
     "financial-analytics": report_financial_analytics,
     "inventory-sku-valuation": report_inventory_sku_valuation,
     "item-master-by-category": report_item_master_by_category,
@@ -100,6 +103,40 @@ def _parse_item_scope_query(request, company_id: int):
     return category, item_ids, None
 
 
+# Financial reports that honor ``station_id`` / home station on posted GL lines (trial balance, P&L, BS).
+GL_STATION_AWARE_REPORTS = frozenset(
+    {
+        "trial-balance",
+        "balance-sheet",
+        "income-statement",
+        "financial-analytics",
+    }
+)
+
+STATION_SCOPED_REPORTS = frozenset(
+    {
+        "fuel-sales",
+        "tank-inventory",
+        "shift-summary",
+        "daily-summary",
+        "sales-by-station",
+        "sales-by-nozzle",
+        "meter-readings",
+        "tank-dip-variance",
+        "tank-dip-register",
+        "inventory-sku-valuation",
+        "item-master-by-category",
+        "item-sales-by-category",
+        "item-purchases-by-category",
+        "item-sales-custom",
+        "item-purchases-custom",
+        "item-stock-movement",
+        "item-velocity-analysis",
+        "item-purchase-velocity-analysis",
+    }
+)
+
+
 @require_GET
 @auth_required
 @require_company_id
@@ -108,7 +145,7 @@ def report_by_id(request, report_id: str):
     start, end = parse_report_dates(request)
     api = getattr(request, "api_user", None)
     if api:
-        u = User.objects.select_related("custom_role").filter(pk=api.pk).first()
+        u = User.objects.select_related("custom_role", "home_station").filter(pk=api.pk).first()
         if u and not can_access_report(resolve_user_permissions(u), report_id):
             return JsonResponse(
                 {
@@ -121,24 +158,35 @@ def report_by_id(request, report_id: str):
         category, item_ids, err = _parse_item_scope_query(request, cid)
         if err:
             return err
-        payload = report_item_sales_custom(cid, start, end, category, None, item_ids)
+        st_id, st_err = effective_report_station_id(request, cid)
+        if st_err:
+            return st_err
+        payload = report_item_sales_custom(cid, start, end, category, None, item_ids, st_id)
         return JsonResponse(payload)
 
     if report_id == "item-purchases-custom":
         category, item_ids, err = _parse_item_scope_query(request, cid)
         if err:
             return err
-        return JsonResponse(report_item_purchases_custom(cid, start, end, category, None, item_ids))
+        st_id, st_err = effective_report_station_id(request, cid)
+        if st_err:
+            return st_err
+        return JsonResponse(report_item_purchases_custom(cid, start, end, category, None, item_ids, st_id))
 
     if report_id in ("item-stock-movement", "item-velocity-analysis", "item-purchase-velocity-analysis"):
         category, item_ids, err = _parse_item_scope_query(request, cid)
         if err:
             return err
+        st_id, st_err = effective_report_station_id(request, cid)
+        if st_err:
+            return st_err
         if report_id == "item-stock-movement":
-            return JsonResponse(report_item_stock_movement(cid, start, end, category, item_ids))
+            return JsonResponse(report_item_stock_movement(cid, start, end, category, item_ids, st_id))
         if report_id == "item-purchase-velocity-analysis":
-            return JsonResponse(report_item_purchase_velocity_analysis(cid, start, end, category, item_ids))
-        return JsonResponse(report_item_velocity_analysis(cid, start, end, category, item_ids))
+            return JsonResponse(
+                report_item_purchase_velocity_analysis(cid, start, end, category, item_ids, st_id)
+            )
+        return JsonResponse(report_item_velocity_analysis(cid, start, end, category, item_ids, st_id))
 
     handler = _REPORT_HANDLERS.get(report_id)
     if not handler:
@@ -152,5 +200,16 @@ def report_by_id(request, report_id: str):
             },
             status=404,
         )
-    payload = handler(cid, start, end)
+    if report_id in STATION_SCOPED_REPORTS:
+        st_id, st_err = effective_report_station_id(request, cid)
+        if st_err:
+            return st_err
+        payload = handler(cid, start, end, st_id)
+    elif report_id in GL_STATION_AWARE_REPORTS:
+        st_id, st_err = effective_report_station_id(request, cid)
+        if st_err:
+            return st_err
+        payload = handler(cid, start, end, st_id)
+    else:
+        payload = handler(cid, start, end)
     return JsonResponse(payload)

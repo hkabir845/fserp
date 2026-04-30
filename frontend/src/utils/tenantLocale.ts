@@ -6,15 +6,24 @@ import {
   DEFAULT_COMPANY_DATE_FORMAT,
   DEFAULT_COMPANY_TIME_FORMAT,
 } from '@/utils/companyLocaleFormats'
+import { DEFAULT_COMPANY_TIME_ZONE } from '@/utils/timeZones'
+
+export type StationMode = 'single' | 'multi'
 
 export type TenantLocaleConfig = {
   dateFormat: string
   timeFormat: string
+  /** IANA name from GET /companies/current/; default Asia/Dhaka. */
+  timeZone: string
+  /** From GET /companies/current/; default multi when unset. */
+  stationMode: StationMode
 }
 
 const defaults: TenantLocaleConfig = {
   dateFormat: DEFAULT_COMPANY_DATE_FORMAT,
   timeFormat: DEFAULT_COMPANY_TIME_FORMAT,
+  timeZone: DEFAULT_COMPANY_TIME_ZONE,
+  stationMode: 'single',
 }
 
 let clientConfig: TenantLocaleConfig | null = null

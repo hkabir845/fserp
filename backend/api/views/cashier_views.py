@@ -23,7 +23,9 @@ from api.models import (
     Payment,
     PaymentInvoiceAllocation,
     ShiftSession,
+    Station,
     Tank,
+    User,
 )
 from api.exceptions import GlPostingError, StockBusinessError
 from api.chart_templates.fuel_station import ensure_donation_social_support_account
@@ -40,6 +42,12 @@ from api.services.permission_service import user_pos_sale_scope
 from api.services.inventory_validation import (
     assert_pos_fuel_sale_within_stock,
     assert_pos_general_lines_within_qoh,
+)
+from api.services.station_scope import enforce_pos_home_station
+from api.services.station_stock import (
+    decrement_station_lines,
+    get_or_create_default_station,
+    item_uses_station_bins,
 )
 
 logger = logging.getLogger(__name__)
@@ -237,6 +245,32 @@ def _resolve_pos_customer_and_bank(
     return customer, bank_account_id, None
 
 
+def _resolve_pos_station_id(
+    company_id: int, body: dict, shift: ShiftSession | None, station_from_fuel: int | None
+) -> tuple[int | None, JsonResponse | None]:
+    """
+    Selling / stock location: explicit station_id, else open shift's station, else fuel line station,
+    else first active station (or Default).
+    """
+    raw = body.get("station_id")
+    if raw is not None and raw != "":
+        try:
+            sid = int(raw)
+        except (TypeError, ValueError):
+            return None, _cashier_pos_error("station_id must be a valid integer")
+        if not Station.objects.filter(
+            pk=sid, company_id=company_id, is_active=True
+        ).exists():
+            return None, _cashier_pos_error("Unknown or inactive station_id for this company")
+        return sid, None
+    if shift and shift.station_id:
+        return int(shift.station_id), None
+    if station_from_fuel is not None:
+        return int(station_from_fuel), None
+    st = get_or_create_default_station(company_id)
+    return st.id, None
+
+
 def _parse_optional_amount_paid_now(body: dict) -> tuple[Decimal | None, JsonResponse | None]:
     raw = body.get("amount_paid_now")
     if raw is None or raw == "":
@@ -268,6 +302,17 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
     if ferr:
         return ferr
 
+    if api_user and fuel_entries:
+        u_row = User.objects.filter(pk=getattr(api_user, "id", None)).only("home_station_id").first()
+        hid = int(u_row.home_station_id) if u_row and u_row.home_station_id else None
+        if hid is not None:
+            for fe in fuel_entries:
+                t = fe.get("tank")
+                if t and t.station_id and int(t.station_id) != hid:
+                    return _cashier_pos_error(
+                        "Your account is limited to one site; use fuel nozzles and tanks at your assigned station only."
+                    )
+
     pos_scope = user_pos_sale_scope(api_user) if api_user is not None else "both"
     if pos_scope == "general" and fuel_entries:
         return _cashier_pos_error(
@@ -291,11 +336,6 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
     amount_paid_now, aerr = _parse_optional_amount_paid_now(body)
     if aerr:
         return aerr
-
-    station_id = None
-    if fuel_entries:
-        t0 = fuel_entries[0]["tank"]
-        station_id = t0.station_id if t0 else None
 
     subtotal = sum(d["amount"] for d in lines_data) + sum(
         fe["amount"] for fe in fuel_entries
@@ -340,7 +380,44 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
         if cerr:
             return cerr
 
-    shift = _shift_for_sale(company_id, body, station_id)
+    fuel_stations: set[int] = set()
+    for fe in fuel_entries:
+        t = fe.get("tank")
+        if t is not None and getattr(t, "station_id", None) is not None:
+            fuel_stations.add(int(t.station_id))
+    if len(fuel_stations) > 1:
+        return _cashier_pos_error(
+            "All fuel lines must use nozzles at the same station in a single sale."
+        )
+    fuel_unified = next(iter(fuel_stations), None)
+
+    if fuel_unified is not None:
+        raw_st = body.get("station_id")
+        if raw_st is not None and str(raw_st).strip() != "":
+            try:
+                if int(raw_st) != int(fuel_unified):
+                    return _cashier_pos_error(
+                        "Register / station must match the selected fuel nozzles' station."
+                    )
+            except (TypeError, ValueError):
+                return _cashier_pos_error("station_id must be a valid integer")
+        shift = _shift_for_sale(company_id, body, fuel_unified)
+        sale_station_id, s_err = _resolve_pos_station_id(
+            company_id, {**body, "station_id": fuel_unified}, shift, fuel_unified
+        )
+    else:
+        station_hint = None
+        if fuel_entries:
+            t0 = fuel_entries[0].get("tank")
+            if t0 is not None and getattr(t0, "station_id", None) is not None:
+                station_hint = int(t0.station_id)
+        shift = _shift_for_sale(company_id, body, station_hint)
+        sale_station_id, s_err = _resolve_pos_station_id(company_id, body, shift, station_hint)
+    if s_err:
+        return s_err
+    sale_station_id, h_err = enforce_pos_home_station(company_id, sale_station_id, api_user)
+    if h_err:
+        return h_err
     pm = pm_norm[:32]
     if split_tender:
         inv_status = "sent"
@@ -360,11 +437,12 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
     try:
         with transaction.atomic():
             assert_pos_fuel_sale_within_stock(company_id, fuel_entries)
-            assert_pos_general_lines_within_qoh(company_id, lines_data)
+            assert_pos_general_lines_within_qoh(company_id, lines_data, sale_station_id)
             inv = Invoice(
                 company_id=company_id,
                 customer=customer,
                 shift_session=shift,
+                station_id=sale_station_id,
                 invoice_number="INV-POS-TMP",
                 invoice_date=timezone.localdate(),
                 due_date=due_date,
@@ -402,6 +480,8 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
                         current_stock=F("current_stock") - qty
                     )
 
+            if lines_data and sale_station_id is not None:
+                decrement_station_lines(company_id, sale_station_id, lines_data)
             for d in lines_data:
                 InvoiceLine.objects.create(
                     invoice=inv,
@@ -411,12 +491,14 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
                     unit_price=d["unit_price"],
                     amount=d["amount"],
                 )
-                if _item_receives_physical_stock(d["item"]) and d[
-                    "item"
-                ].quantity_on_hand is not None:
-                    Item.objects.filter(pk=d["item"].pk).update(
-                        quantity_on_hand=F("quantity_on_hand") - d["quantity"]
-                    )
+                it = d["item"]
+                if not _item_receives_physical_stock(it) or it.quantity_on_hand is None:
+                    continue
+                if item_uses_station_bins(company_id, it):
+                    continue
+                Item.objects.filter(pk=it.pk).update(
+                    quantity_on_hand=F("quantity_on_hand") - d["quantity"]
+                )
 
             inv = Invoice.objects.filter(id=inv.id).select_related("customer").first()
             sync_invoice_gl(
@@ -593,15 +675,18 @@ def cashier_cash_donation(request):
     if memo is not None and not isinstance(memo, str):
         memo = str(memo)
     shift_session_id = body.get("shift_session_id")
+    gl_station_id = None
     if shift_session_id is not None and shift_session_id != "" and shift_session_id != 0:
         try:
             sid = int(shift_session_id)
         except (TypeError, ValueError):
             return _cashier_pos_error("Invalid shift_session_id")
-        if not ShiftSession.objects.filter(
+        shift_row = ShiftSession.objects.filter(
             id=sid, company_id=company_id, closed_at__isnull=True
-        ).exists():
+        ).values("id", "station_id").first()
+        if not shift_row:
             return _cashier_pos_error("Unknown or closed shift_session_id")
+        gl_station_id = shift_row.get("station_id")
     else:
         sid = None
 
@@ -611,6 +696,7 @@ def cashier_cash_donation(request):
         entry_date=entry_date,
         memo=(memo or "").strip() or "POS — donation & social support",
         bank_account_id=bank_account_id,
+        gl_station_id=gl_station_id,
     )
     if not je:
         return _cashier_pos_error(msg or "Could not post journal", status=400)

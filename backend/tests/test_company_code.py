@@ -33,6 +33,44 @@ def test_create_company_returns_computed_code(api_client, auth_super_headers):
 
 
 @pytest.mark.django_db
+def test_create_company_defaults_time_zone_asia_dhaka(api_client, auth_super_headers):
+    r = api_client.post(
+        "/api/companies/",
+        data=json.dumps(
+            {
+                "company_name": "Time Zone Default Co",
+                "admin_email": "tzdef_owner@example.com",
+                "admin_password": "secret12",
+            }
+        ),
+        content_type="application/json",
+        **auth_super_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    out = json.loads(r.content)
+    assert out.get("time_zone") == "Asia/Dhaka"
+
+
+@pytest.mark.django_db
+def test_create_company_rejects_invalid_time_zone(api_client, auth_super_headers):
+    r = api_client.post(
+        "/api/companies/",
+        data=json.dumps(
+            {
+                "company_name": "Bad TZ Co",
+                "admin_email": "badtz_owner@example.com",
+                "admin_password": "secret12",
+                "time_zone": "Not/A/Real/Zone",
+            }
+        ),
+        content_type="application/json",
+        **auth_super_headers,
+    )
+    assert r.status_code == 400
+    assert "time zone" in json.loads(r.content).get("detail", "").lower()
+
+
+@pytest.mark.django_db
 def test_admin_companies_list_includes_company_code(api_client, auth_super_headers, company_tenant):
     r = api_client.get("/api/admin/companies/", **auth_super_headers)
     assert r.status_code == 200

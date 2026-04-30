@@ -39,6 +39,11 @@ import {
   formatCompanyDate,
   formatCompanyTime,
 } from '@/utils/companyLocaleFormats'
+import {
+  COMPANY_TIME_ZONE_OPTIONS,
+  DEFAULT_COMPANY_TIME_ZONE,
+  isKnownCompanyTimeZone,
+} from '@/utils/timeZones'
 import { formatDateOnly } from '@/utils/date'
 import { displayCompanyCode } from '@/utils/companyCode'
 import { AMOUNT_ADMIN_TEXT_CLASS } from '@/utils/amountFieldStyles'
@@ -112,6 +117,8 @@ interface Company {
   date_format?: string
   /** Display pattern for times (24h or 12h). */
   time_format?: string
+  /** IANA time zone, e.g. Asia/Dhaka. */
+  time_zone?: string
   capacity_limits?: {
     stations?: number
     users?: number
@@ -199,6 +206,7 @@ function CompaniesPageContent() {
     currency: 'BDT',
     date_format: DEFAULT_COMPANY_DATE_FORMAT,
     time_format: DEFAULT_COMPANY_TIME_FORMAT,
+    time_zone: DEFAULT_COMPANY_TIME_ZONE,
     is_active: true,
     contact_person: '',
     payment_type: '',
@@ -521,6 +529,7 @@ function CompaniesPageContent() {
       currency: 'BDT',
       date_format: DEFAULT_COMPANY_DATE_FORMAT,
       time_format: DEFAULT_COMPANY_TIME_FORMAT,
+      time_zone: DEFAULT_COMPANY_TIME_ZONE,
       is_active: true,
       contact_person: '',
       payment_type: '',
@@ -547,6 +556,7 @@ function CompaniesPageContent() {
       currency: company.currency || 'BDT',
       date_format: company.date_format || DEFAULT_COMPANY_DATE_FORMAT,
       time_format: company.time_format || DEFAULT_COMPANY_TIME_FORMAT,
+      time_zone: company.time_zone || DEFAULT_COMPANY_TIME_ZONE,
       is_active: company.is_active,
       contact_person: company.contact_person || '',
       payment_type: company.payment_type || '',
@@ -2204,11 +2214,36 @@ function CompaniesPageContent() {
                         </select>
                       </div>
                     </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Time zone</label>
+                      <select
+                        value={companyFormData.time_zone}
+                        onChange={(e) =>
+                          setCompanyFormData({ ...companyFormData, time_zone: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      >
+                        {COMPANY_TIME_ZONE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                        {companyFormData.time_zone && !isKnownCompanyTimeZone(companyFormData.time_zone) && (
+                          <option value={companyFormData.time_zone}>
+                            {companyFormData.time_zone} (current)
+                          </option>
+                        )}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">Default: Dhaka (Bangladesh). IANA name for business &ldquo;today&rdquo; and local time.</p>
+                    </div>
+
                     <p className="text-xs text-gray-500 -mt-2">
                       Saved on the company record and returned from{' '}
                       <code className="rounded bg-gray-100 px-1">GET /api/companies/current</code> as{' '}
-                      <code className="rounded bg-gray-100 px-1">date_format</code> and{' '}
-                      <code className="rounded bg-gray-100 px-1">time_format</code>. Preview:{' '}
+                      <code className="rounded bg-gray-100 px-1">date_format</code>,{' '}
+                      <code className="rounded bg-gray-100 px-1">time_format</code>, and{' '}
+                      <code className="rounded bg-gray-100 px-1">time_zone</code>. Preview:{' '}
                       <span className="font-medium text-gray-700">
                         {formatCompanyDate('2026-04-06', companyFormData.date_format)} ·{' '}
                         {formatCompanyTime(new Date(2026, 3, 6, 14, 30), companyFormData.time_format)}

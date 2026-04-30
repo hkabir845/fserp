@@ -40,6 +40,25 @@ def _serialize_decimal(d):
     return str(d)
 
 
+def parse_optional_company_station_id(request_get, company_id: int):
+    """
+    Parse optional ``station_id`` from a query dict (e.g. request.GET) for tenant-scoped
+    GL statements and similar. Returns ``(station_id_or_None, JsonResponse_error_or_None)``.
+    """
+    from api.models import Station
+
+    raw = request_get.get("station_id")
+    if raw is None or str(raw).strip() == "":
+        return None, None
+    try:
+        sid = int(raw)
+    except (TypeError, ValueError):
+        return None, JsonResponse({"detail": "station_id must be an integer."}, status=400)
+    if not Station.objects.filter(pk=sid, company_id=company_id).exists():
+        return None, JsonResponse({"detail": "Station not found for this company."}, status=404)
+    return sid, None
+
+
 def require_company_id(view_func):
     """Decorator that resolves company_id and returns 403 if missing (for tenant-scoped resources)."""
     def wrapped(request, *args, **kwargs):

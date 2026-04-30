@@ -6,11 +6,11 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
-import { Plus, Edit2, Trash2, Mail, Phone, X, User, Briefcase, DollarSign, MapPin, AlertTriangle, RefreshCw, Search, Filter, BookOpen, Grid3x3, List } from 'lucide-react'
+import { Plus, Edit2, Trash2, Mail, Phone, X, User, Briefcase, DollarSign, MapPin, Building2, AlertTriangle, RefreshCw, Search, Filter, BookOpen, Grid3x3, List } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateLong } from '@/utils/date'
-import { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
+import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 interface Employee {
@@ -29,6 +29,15 @@ interface Employee {
   current_balance?: string | number
   opening_balance?: string | number
   is_active: boolean
+  /** Primary work site (ops / reporting) */
+  home_station_id?: number | null
+  home_station_name?: string | null
+}
+
+interface StationOption {
+  id: number
+  station_name: string
+  is_active?: boolean
 }
 
 export default function EmployeesPage() {
@@ -50,6 +59,7 @@ export default function EmployeesPage() {
     return 'card'
   })
   const [empCodePickerNonce, setEmpCodePickerNonce] = useState(0)
+  const [stations, setStations] = useState<StationOption[]>([])
   const [formData, setFormData] = useState({
     employee_code: '',
     first_name: '',
@@ -60,7 +70,8 @@ export default function EmployeesPage() {
     job_title: '',
     department: '',
     salary: '',
-    is_active: true
+    is_active: true,
+    home_station_id: '' as string | number,
   })
 
   useEffect(() => {
@@ -70,8 +81,26 @@ export default function EmployeesPage() {
       return
     }
     fetchCompanyCurrency()
+    fetchStations()
     fetchEmployees()
   }, [router])
+
+  const fetchStations = async () => {
+    try {
+      const res = await api.get<unknown[]>('/stations/', { timeout: 8000 })
+      const rows = Array.isArray(res.data) ? res.data : []
+      const parsed: StationOption[] = []
+      for (const r of rows) {
+        const o = r as { id?: number; station_name?: string; is_active?: boolean }
+        if (typeof o.id !== 'number') continue
+        if (o.is_active === false) continue
+        parsed.push({ id: o.id, station_name: o.station_name || `Site #${o.id}`, is_active: o.is_active })
+      }
+      setStations(parsed)
+    } catch {
+      setStations([])
+    }
+  }
 
   const fetchCompanyCurrency = async () => {
     try {
@@ -224,7 +253,8 @@ export default function EmployeesPage() {
           .toLowerCase()
           .includes(searchTerm.toLowerCase()) ||
         (emp.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (emp.phone || '').includes(searchTerm)
+        (emp.phone || '').includes(searchTerm) ||
+        (emp.home_station_name || '').toLowerCase().includes(searchTerm.toLowerCase())
 
       const matchesFilter =
         filterActive === 'all' ||
@@ -246,7 +276,8 @@ export default function EmployeesPage() {
       job_title: '',
       department: '',
       salary: '',
-      is_active: true
+      is_active: true,
+      home_station_id: '',
     })
     setEditingId(null)
   }
@@ -276,6 +307,14 @@ export default function EmployeesPage() {
       }
       if (code) {
         body.employee_code = code
+      }
+      if (formData.home_station_id !== '' && formData.home_station_id != null) {
+        const hid = parseInt(String(formData.home_station_id), 10)
+        if (!Number.isNaN(hid)) {
+          body.home_station_id = hid
+        }
+      } else {
+        body.home_station_id = null
       }
       const response = await fetch(`${baseUrl}/employees/`, {
         method: 'POST',
@@ -316,7 +355,11 @@ export default function EmployeesPage() {
       job_title: employee.position || employee.job_title || '',
       department: employee.department || '',
       salary: employee.salary ? employee.salary.toString() : '',
-      is_active: employee.is_active
+      is_active: employee.is_active,
+      home_station_id:
+        employee.home_station_id != null && employee.home_station_id > 0
+          ? String(employee.home_station_id)
+          : '',
     })
     setShowModal(true)
   }
@@ -346,7 +389,11 @@ export default function EmployeesPage() {
           job_title: formData.job_title || null,
           department: formData.department || null,
           salary: formData.salary ? parseFloat(formData.salary) : null,
-          is_active: formData.is_active
+          is_active: formData.is_active,
+          home_station_id:
+            formData.home_station_id !== '' && formData.home_station_id != null
+              ? parseInt(String(formData.home_station_id), 10)
+              : null,
         })
       })
 
@@ -457,7 +504,7 @@ export default function EmployeesPage() {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                         <input
                           type="text"
-                          placeholder="Search employees by name, code, email, or phone..."
+                          placeholder="Search by name, code, email, phone, or work site…"
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
                           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -574,6 +621,16 @@ export default function EmployeesPage() {
                               </span>
                             </div>
                           )}
+                          <div className="flex items-center space-x-2 text-sm">
+                            <Building2 className="h-4 w-4 text-amber-600/90 shrink-0" />
+                            <span className="text-gray-600">
+                              <span className="font-medium text-gray-700">Work site:</span>{' '}
+                              {(employee.home_station_name || '').trim() ||
+                                (employee.home_station_id
+                                  ? `Site #${employee.home_station_id}`
+                                  : '—')}
+                            </span>
+                          </div>
                           {employee.email && (
                             <div className="flex items-center space-x-2 text-sm text-gray-600">
                               <Mail className="h-4 w-4 text-gray-400 shrink-0" />
@@ -659,6 +716,9 @@ export default function EmployeesPage() {
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Name
                           </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
+                            Work site
+                          </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
                             Job / Dept
                           </th>
@@ -689,6 +749,14 @@ export default function EmployeesPage() {
                               <div className="text-xs text-gray-500 md:hidden mt-0.5 truncate max-w-[200px]">
                                 {employee.email || employee.phone || ''}
                               </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 hidden sm:table-cell max-w-[10rem]">
+                              <span className="inline-flex items-center gap-1">
+                                <Building2 className="h-3.5 w-3.5 shrink-0 text-amber-600/80" />
+                                <span className="truncate" title={employee.home_station_name || ''}>
+                                  {(employee.home_station_name || '').trim() || '—'}
+                                </span>
+                              </span>
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600 hidden lg:table-cell">
                               <div>{employee.position || employee.job_title || '—'}</div>
@@ -953,6 +1021,32 @@ export default function EmployeesPage() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="Sales"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 inline-flex items-center gap-1.5">
+                        <Building2 className="h-4 w-4 text-amber-600" />
+                        Work site (station)
+                      </label>
+                      <select
+                        value={formData.home_station_id === '' ? '' : String(formData.home_station_id)}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            home_station_id: e.target.value === '' ? '' : e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      >
+                        <option value="">— Not set —</option>
+                        {stations.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.station_name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Where this person primarily works (for rosters and site reporting).
+                      </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">

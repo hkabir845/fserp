@@ -8,6 +8,7 @@ from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Customer
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
+from api.services.station_defaults import parse_optional_station_fk
 from api.services.contact_ledgers import build_customer_ledger, ledger_query_dates
 
 
@@ -38,6 +39,12 @@ def _customer_to_json(c):
         "opening_balance_date": _serialize_date(c.opening_balance_date),
         "current_balance": str(c.current_balance),
         "is_active": c.is_active,
+        "default_station_id": c.default_station_id,
+        "default_station_name": (
+            (c.default_station.station_name or "").strip()
+            if getattr(c, "default_station_id", None) and getattr(c, "default_station", None)
+            else ""
+        ),
     }
 
 
@@ -65,7 +72,11 @@ def _parse_date(val):
 @require_company_id
 def customers_list(request):
     if request.method == "GET":
-        qs = Customer.objects.filter(company_id=request.company_id).order_by("id")
+        qs = (
+            Customer.objects.filter(company_id=request.company_id)
+            .select_related("default_station")
+            .order_by("id")
+        )
         skip = int(request.GET.get("skip", 0))
         limit = int(request.GET.get("limit", 10000))
         qs = qs[skip : skip + limit]
@@ -94,8 +105,14 @@ def customers_list(request):
         )
         if cerr:
             return JsonResponse({"detail": cerr}, status=400)
+        dst_id = None
+        if "default_station_id" in body:
+            dst_id, derr = parse_optional_station_fk(request.company_id, body.get("default_station_id"))
+            if derr:
+                return JsonResponse({"detail": derr}, status=400)
         c = Customer(
             company_id=request.company_id,
+            default_station_id=dst_id,
             display_name=display_name or company_name or first_name,
             first_name=first_name,
             company_name=company_name,
@@ -126,7 +143,13 @@ def customers_list(request):
                 c.delete()
                 return JsonResponse({"detail": aerr}, status=400)
             c.customer_number = assigned
-        return JsonResponse(_customer_to_json(c), status=201)
+            c.save(update_fields=["customer_number"])
+        c2 = (
+            Customer.objects.filter(pk=c.pk, company_id=request.company_id)
+            .select_related("default_station")
+            .first()
+        )
+        return JsonResponse(_customer_to_json(c2), status=201)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
 
@@ -161,7 +184,11 @@ def customers_add_dummy(request):
 @auth_required
 @require_company_id
 def customer_detail(request, customer_id: int):
-    c = Customer.objects.filter(id=customer_id, company_id=request.company_id).first()
+    c = (
+        Customer.objects.filter(id=customer_id, company_id=request.company_id)
+        .select_related("default_station")
+        .first()
+    )
     if not c:
         return JsonResponse({"detail": "Customer not found"}, status=404)
     if request.method == "GET":
@@ -208,7 +235,17 @@ def customer_detail(request, customer_id: int):
             c.current_balance = _decimal(body.get("current_balance"), c.current_balance)
         if "is_active" in body:
             c.is_active = bool(body["is_active"])
+        if "default_station_id" in body:
+            dst_id, derr = parse_optional_station_fk(request.company_id, body.get("default_station_id"))
+            if derr:
+                return JsonResponse({"detail": derr}, status=400)
+            c.default_station_id = dst_id
         c.save()
+        c = (
+            Customer.objects.filter(pk=c.pk, company_id=request.company_id)
+            .select_related("default_station")
+            .first()
+        )
         return JsonResponse(_customer_to_json(c))
     if request.method == "DELETE":
         c.delete()

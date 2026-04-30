@@ -173,6 +173,7 @@ export function clearAuthStorage(): void {
     localStorage.removeItem('refresh_token')
     localStorage.removeItem('user')
     localStorage.removeItem('superadmin_selected_company')
+    localStorage.removeItem('fserp_report_station_id')
     localStorage.removeItem(FSERP_AUTH_API_ORIGIN_KEY)
   } catch {
     /* ignore */
@@ -377,6 +378,25 @@ api.interceptors.request.use(
         }
       } catch (e) {
         // Ignore localStorage errors
+      }
+      // Optional: multi-site report filter (backend ignores if user has home_station in DB)
+      try {
+        const sid = localStorage.getItem('fserp_report_station_id')?.trim()
+        let hasHome = false
+        const ustr = localStorage.getItem('user')
+        if (ustr) {
+          try {
+            const u = JSON.parse(ustr) as { home_station_id?: unknown }
+            if (u?.home_station_id != null && u.home_station_id !== '') hasHome = true
+          } catch {
+            /* ignore */
+          }
+        }
+        if (sid && /^\d+$/.test(sid) && !hasHome) {
+          config.headers['X-Selected-Station-Id'] = sid
+        }
+      } catch {
+        /* ignore */
       }
     } catch (e) {
       // Silently handle any errors during interceptor execution

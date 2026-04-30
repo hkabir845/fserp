@@ -43,6 +43,7 @@ from api.views import (
     loan_views,
     backup_views,
     reference_code_views,
+    inventory_views,
 )
 
 
@@ -58,7 +59,9 @@ def api_docs(request):
             "/api/companies/current", "/api/dashboard/stats",
             "/api/system/tenant-data-summary/",
             "/api/admin/stats", "/api/admin/companies", "/api/admin/users",
-            "/api/broadcasts/", "/api/broadcasts/my", "/api/stations/", "/api/tanks/",
+            "/api/broadcasts/", "/api/broadcasts/my", "/api/stations/",
+            "/api/inventory/availability/", "/api/inventory/transfers/",
+            "/api/tanks/",
             "/api/items/", "/api/islands/", "/api/dispensers/", "/api/meters/", "/api/nozzles/",
             "/api/customers/", "/api/vendors/", "/api/invoices", "/api/bills/",
             "/api/chart-of-accounts/", "/api/chart-of-accounts/templates/fuel-station/",
@@ -224,6 +227,16 @@ urlpatterns = [
     # Station hierarchy
     path("stations/", station_views.stations_list_or_create),
     path("stations/<int:station_id>/", station_views.station_detail),
+    path("inventory/availability/", inventory_views.inventory_item_availability),
+    path("inventory/transfers/", inventory_views.inventory_transfers_list_or_create),
+    path(
+        "inventory/transfers/<int:transfer_id>/",
+        inventory_views.inventory_transfer_detail_or_post,
+    ),
+    path(
+        "inventory/transfers/<int:transfer_id>/delete/",
+        inventory_views.inventory_transfer_delete,
+    ),
     path("tanks/", tank_views.tanks_list_or_create),
     path("tanks/<int:tank_id>/", tank_views.tank_detail),
     path("tanks/<int:tank_id>", tank_views.tank_detail),

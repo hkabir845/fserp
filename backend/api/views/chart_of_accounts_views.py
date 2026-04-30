@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.services.coa_constants import CHART_ACCOUNT_TYPES, normalize_chart_account_type
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, parse_optional_company_station_id, require_company_id
 from api.models import BankAccount, ChartOfAccount, FundTransfer, JournalEntryLine, Payment
 from api.services.journal_statement import (
     build_statement_transactions,
@@ -470,16 +470,23 @@ def chart_of_account_statement(request, account_id: int):
         return JsonResponse({"detail": "Account not found"}, status=404)
     start_date = _parse_date(request.GET.get("start_date"))
     end_date = _parse_date(request.GET.get("end_date"))
-    transactions, running = build_statement_transactions(
-        a, start_date=start_date, end_date=end_date
+    st_sid, st_err = parse_optional_company_station_id(request.GET, request.company_id)
+    if st_err:
+        return st_err
+    transactions, running, opening = build_statement_transactions(
+        a, start_date=start_date, end_date=end_date, station_id=st_sid
     )
-    return JsonResponse({
+    payload = {
         "account": _account_to_json(a, linked_banks=_linked_banks_payload(a)),
         "start_date": start_date.isoformat() if start_date else None,
         "end_date": end_date.isoformat() if end_date else None,
+        "opening_balance": str(opening),
         "transactions": transactions,
         "ending_balance": str(running),
-    })
+    }
+    if st_sid is not None:
+        payload["filter_station_id"] = st_sid
+    return JsonResponse(payload)
 
 
 @csrf_exempt

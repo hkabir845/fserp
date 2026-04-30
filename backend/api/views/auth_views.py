@@ -46,7 +46,7 @@ def login(request):
     if not username or not password:
         return JsonResponse({"detail": "username and password required"}, status=400)
     user = User.objects.filter(username__iexact=username, is_active=True).select_related(
-        "custom_role"
+        "custom_role", "home_station"
     ).first()
     if not user or not user.check_password(password):
         return JsonResponse({"detail": "Invalid credentials"}, status=401)
@@ -114,7 +114,7 @@ def refresh(request):
         username = str(username)
     try:
         user = User.objects.filter(username__iexact=username, is_active=True).select_related(
-        "custom_role"
+        "custom_role", "home_station"
     ).first()
     except Exception:
         return JsonResponse({"detail": "Server error"}, status=500)

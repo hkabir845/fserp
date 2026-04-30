@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
-import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, BookOpen } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, BookOpen, Building2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
@@ -30,6 +30,15 @@ interface Vendor {
   bank_name?: string | null
   bank_branch?: string | null
   bank_routing_number?: string | null
+  /** Usual receiving site; new bills default here */
+  default_station_id?: number | null
+  default_station_name?: string | null
+}
+
+interface StationOption {
+  id: number
+  station_name: string
+  is_active?: boolean
 }
 
 export default function VendorsPage() {
@@ -45,6 +54,7 @@ export default function VendorsPage() {
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [vendorRefCode, setVendorRefCode] = useState('')
   const [createCodeNonce, setCreateCodeNonce] = useState(0)
+  const [stations, setStations] = useState<StationOption[]>([])
   const [formData, setFormData] = useState({
     company_name: '',
     contact_person: '',
@@ -57,7 +67,8 @@ export default function VendorsPage() {
     bank_routing_number: '',
     opening_balance: 0,
     opening_balance_date: new Date().toISOString().split('T')[0],
-    is_active: true
+    is_active: true,
+    default_station_id: '' as string | number,
   })
 
   useEffect(() => {
@@ -66,8 +77,26 @@ export default function VendorsPage() {
       router.push('/login')
       return
     }
+    fetchStationsList()
     fetchVendors()
   }, [router])
+
+  const fetchStationsList = async () => {
+    try {
+      const res = await api.get<unknown[]>('/stations/', { timeout: 8000 })
+      const rows = Array.isArray(res.data) ? res.data : []
+      const parsed: StationOption[] = []
+      for (const r of rows) {
+        const o = r as { id?: number; station_name?: string; is_active?: boolean }
+        if (typeof o.id !== 'number') continue
+        if (o.is_active === false) continue
+        parsed.push({ id: o.id, station_name: o.station_name || `Site #${o.id}`, is_active: o.is_active })
+      }
+      setStations(parsed)
+    } catch {
+      setStations([])
+    }
+  }
 
   const fetchVendors = async () => {
     setLoading(true)
@@ -134,6 +163,10 @@ export default function VendorsPage() {
         opening_balance: formData.opening_balance,
         opening_balance_date: formData.opening_balance_date || null,
         is_active: formData.is_active,
+        default_station_id:
+          formData.default_station_id !== '' && formData.default_station_id != null
+            ? parseInt(String(formData.default_station_id), 10)
+            : null,
         ...(vendorRefCode.trim() ? { vendor_number: vendorRefCode.trim() } : {}),
       })
       toast.success('Vendor created successfully!')
@@ -163,7 +196,11 @@ export default function VendorsPage() {
       opening_balance_date: vendor.opening_balance_date
         ? new Date(vendor.opening_balance_date).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0],
-      is_active: vendor.is_active
+      is_active: vendor.is_active,
+      default_station_id:
+        vendor.default_station_id != null && vendor.default_station_id > 0
+          ? String(vendor.default_station_id)
+          : '',
     })
     setShowModal(true)
   }
@@ -173,7 +210,7 @@ export default function VendorsPage() {
     if (!editingVendor) return
 
     try {
-      await api.put(`/vendors/${editingVendor.id}`, {
+      await api.put(`/vendors/${editingVendor.id}/`, {
         company_name: formData.company_name || null,
         contact_person: formData.contact_person || '',
         display_name: formData.company_name || formData.contact_person || '',
@@ -186,7 +223,11 @@ export default function VendorsPage() {
         bank_routing_number: formData.bank_routing_number || '',
         is_active: formData.is_active,
         opening_balance: formData.opening_balance,
-        opening_balance_date: formData.opening_balance_date || null
+        opening_balance_date: formData.opening_balance_date || null,
+        default_station_id:
+          formData.default_station_id !== '' && formData.default_station_id != null
+            ? parseInt(String(formData.default_station_id), 10)
+            : null,
       })
       toast.success('Vendor updated successfully!')
       setShowModal(false)
@@ -202,7 +243,7 @@ export default function VendorsPage() {
 
   const handleDelete = async (vendorId: number) => {
     try {
-      await api.delete(`/vendors/${vendorId}`)
+      await api.delete(`/vendors/${vendorId}/`)
       toast.success('Vendor deleted successfully!')
       setShowDeleteConfirm(null)
       fetchVendors()
@@ -226,7 +267,8 @@ export default function VendorsPage() {
       bank_routing_number: '',
       opening_balance: 0,
       opening_balance_date: new Date().toISOString().split('T')[0],
-      is_active: true
+      is_active: true,
+      default_station_id: '',
     })
     setVendorRefCode('')
     setEditingVendor(null)
@@ -237,11 +279,17 @@ export default function VendorsPage() {
     resetForm()
   }
 
-  const filteredVendors = vendors.filter(vendor =>
-    vendor.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vendor.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vendor.vendor_number.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredVendors = vendors.filter((vendor) => {
+    const q = searchTerm.toLowerCase()
+    if (!q) return true
+    return (
+      vendor.display_name.toLowerCase().includes(q) ||
+      vendor.company_name.toLowerCase().includes(q) ||
+      vendor.vendor_number.toLowerCase().includes(q) ||
+      (vendor.email || '').toLowerCase().includes(q) ||
+      (vendor.default_station_name || '').toLowerCase().includes(q)
+    )
+  })
 
   return (
     <CompanyProvider>
@@ -258,7 +306,7 @@ export default function VendorsPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
             <input
               type="text"
-              placeholder="Search vendors..."
+              placeholder="Search by name, #, email, or default site…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -296,7 +344,8 @@ export default function VendorsPage() {
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
+            <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -308,6 +357,12 @@ export default function VendorsPage() {
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Display Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
+                    <span className="inline-flex items-center gap-1">
+                      <Building2 className="h-3.5 w-3.5 text-amber-600/90" />
+                      Default site
+                    </span>
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Email
@@ -335,6 +390,14 @@ export default function VendorsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {vendor.display_name}
                     </td>
+                    <td className="px-6 py-4 text-sm text-gray-700 max-w-[11rem] hidden md:table-cell">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Building2 className="h-3.5 w-3.5 text-amber-600/80 shrink-0" />
+                        <span className="truncate" title={vendor.default_station_name || undefined}>
+                          {(vendor.default_station_name || '').trim() || '—'}
+                        </span>
+                      </span>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {vendor.email}
                     </td>
@@ -349,32 +412,37 @@ export default function VendorsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <Link
-                        href={`/vendors/${vendor.id}/ledger`}
-                        className="text-emerald-600 hover:text-emerald-900 mr-3 inline-block"
-                        title="Vendor ledger"
-                      >
-                        <BookOpen className="h-4 w-4" />
-                      </Link>
-                      <button 
-                        onClick={() => handleEdit(vendor)}
-                        className="text-blue-600 hover:text-blue-900 mr-3"
-                        title="Edit vendor"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button 
-                        onClick={() => setShowDeleteConfirm(vendor.id)}
-                        className="text-red-600 hover:text-red-900"
-                        title="Delete vendor"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1 sm:gap-2 shrink-0">
+                        <Link
+                          href={`/vendors/${vendor.id}/ledger`}
+                          className="inline-flex touch-min items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                          title="Vendor ledger"
+                        >
+                          <BookOpen className="h-4 w-4 shrink-0" />
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(vendor)}
+                          className="inline-flex touch-min items-center justify-center rounded-md text-blue-600 hover:bg-blue-50 hover:text-blue-800 transition-colors"
+                          title="Edit vendor"
+                        >
+                          <Edit className="h-4 w-4 shrink-0" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowDeleteConfirm(vendor.id)}
+                          className="inline-flex touch-min items-center justify-center rounded-md text-red-600 hover:bg-red-50 hover:text-red-800 transition-colors"
+                          title="Delete vendor"
+                        >
+                          <Trash2 className="h-4 w-4 shrink-0" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 
@@ -473,6 +541,32 @@ export default function VendorsPage() {
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2 inline-flex items-center gap-1.5">
+                      <Building2 className="h-4 w-4 text-amber-600" />
+                      Default site
+                    </label>
+                    <select
+                      value={formData.default_station_id === '' ? '' : String(formData.default_station_id)}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          default_station_id: e.target.value === '' ? '' : e.target.value,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">— Not set —</option>
+                      {stations.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.station_name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Usual site for deliveries and stock receipts; new bills default here when not specified.
+                    </p>
                   </div>
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>

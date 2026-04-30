@@ -12,6 +12,11 @@ from api.utils.customer_display import customer_display_name
 from api.views.common import parse_json_body, require_company_id
 from api.models import Invoice, InvoiceLine, Customer, ShiftSession
 from api.services.gl_posting import sync_invoice_gl
+from api.services.invoice_station import (
+    default_station_id_for_document,
+    parse_valid_station_id,
+    resolve_station_id_for_new_invoice,
+)
 from api.services.payment_allocation import invoice_balance_due
 
 
@@ -35,6 +40,12 @@ def _invoice_to_json(inv, company_id: int):
             else ""
         ),
         "shift_session_id": inv.shift_session_id,
+        "station_id": getattr(inv, "station_id", None),
+        "station_name": (
+            (inv.station.station_name or "").strip()
+            if getattr(inv, "station_id", None) and getattr(inv, "station", None)
+            else ""
+        ),
         "payment_method": inv.payment_method or "",
         "status": inv.status,
         "subtotal": str(inv.subtotal),
@@ -105,7 +116,7 @@ def invoices_list_or_create(request):
     if request.method == "GET":
         qs = (
             Invoice.objects.filter(company_id=cid)
-            .select_related("customer", "shift_session")
+            .select_related("customer", "shift_session", "station")
             .prefetch_related("lines", "lines__item", "payment_allocations")
             .order_by("-invoice_date", "-id")
         )
@@ -120,10 +131,18 @@ def invoices_list_or_create(request):
         count = Invoice.objects.filter(company_id=cid).count()
         pm = (body.get("payment_method") or "").strip()[:32]
         shift = _resolve_shift(cid, body.get("shift_session_id"))
+        st_raw = body.get("station_id", body.get("station"))
+        station_id, s_err = resolve_station_id_for_new_invoice(
+            cid, st_raw, int(customer_id)
+        )
+        if s_err:
+            return JsonResponse({"detail": s_err}, status=400)
+        assert station_id is not None
         inv = Invoice(
             company_id=cid,
             customer_id=customer_id,
             shift_session=shift,
+            station_id=station_id,
             invoice_number=f"INV-{count + 1}",
             invoice_date=_parse_date(body.get("invoice_date")) or timezone.localdate(),
             due_date=_parse_date(body.get("due_date")),
@@ -150,7 +169,7 @@ def invoices_list_or_create(request):
         inv.refresh_from_db()
         inv = (
             Invoice.objects.filter(id=inv.id)
-            .select_related("customer", "shift_session")
+            .select_related("customer", "shift_session", "station")
             .prefetch_related("lines", "lines__item", "payment_allocations")
             .first()
         )
@@ -171,7 +190,7 @@ def invoice_detail(request, invoice_id: int):
     cid = request.company_id
     inv = (
         Invoice.objects.filter(id=invoice_id, company_id=cid)
-        .select_related("customer", "shift_session")
+        .select_related("customer", "shift_session", "station")
         .prefetch_related("lines", "lines__item", "payment_allocations")
         .first()
     )
@@ -195,6 +214,18 @@ def invoice_detail(request, invoice_id: int):
             inv.payment_method = (body.get("payment_method") or "").strip()[:32]
         if "shift_session_id" in body:
             inv.shift_session = _resolve_shift(cid, body.get("shift_session_id"))
+        if "station_id" in body or "station" in body:
+            raw = body.get("station_id", body.get("station"))
+            if raw in (None, ""):
+                inv.station_id = default_station_id_for_document(cid)
+            else:
+                sid = parse_valid_station_id(cid, raw)
+                if sid is None:
+                    return JsonResponse(
+                        {"detail": "Unknown, inactive, or invalid station_id for this company."},
+                        status=400,
+                    )
+                inv.station_id = sid
         inv.save()
         line_payload = body.get("lines")
         if line_payload is None and "line_items" in body:
@@ -215,7 +246,7 @@ def invoice_detail(request, invoice_id: int):
         inv.refresh_from_db()
         inv = (
             Invoice.objects.filter(id=inv.id)
-            .select_related("customer", "shift_session")
+            .select_related("customer", "shift_session", "station")
             .prefetch_related("lines", "lines__item", "payment_allocations")
             .first()
         )
@@ -261,7 +292,7 @@ def invoice_status(request, invoice_id: int):
     inv = (
         Invoice.objects.filter(id=invoice_id, company_id=cid)
         .prefetch_related("lines", "lines__item", "payment_allocations")
-        .select_related("customer", "shift_session")
+        .select_related("customer", "shift_session", "station")
         .first()
     )
     return JsonResponse(_invoice_to_json(inv, cid))

@@ -27,12 +27,20 @@ interface BillLineItem {
   tax_amount: number
 }
 
+interface Station {
+  id: number
+  station_name: string
+  station_number?: string
+}
+
 interface Bill {
   id: number
   bill_number: string
   vendor_id: number
   vendor_name?: string
   vendor_number?: string
+  receipt_station_id?: number | null
+  receipt_station_name?: string | null
   bill_date: string
   due_date?: string
   vendor_reference?: string
@@ -295,6 +303,7 @@ export default function BillsPage() {
     draftNote: boolean
   } | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
+  const [stations, setStations] = useState<Station[]>([])
   const [formData, setFormData] = useState(() => {
     const billDate = new Date().toISOString().split('T')[0]
     const due = new Date(`${billDate}T12:00:00`)
@@ -305,6 +314,7 @@ export default function BillsPage() {
       due_date: due.toISOString().split('T')[0],
       vendor_reference: '',
       memo: '',
+      receipt_station_id: '' as number | '',
       lines: [] as BillLineItem[],
     }
   })
@@ -356,12 +366,13 @@ export default function BillsPage() {
         console.error('Error fetching company currency:', error)
       }
 
-      const [billsRes, vendorsRes, itemsRes, accountsRes, tanksRes] = await Promise.allSettled([
+      const [billsRes, vendorsRes, itemsRes, accountsRes, tanksRes, stationsRes] = await Promise.allSettled([
         api.get(`/bills/?status_filter=${statusFilter || ''}`),
         api.get('/vendors/'),
         api.get('/items/'),
         api.get('/chart-of-accounts/'),
-        api.get('/tanks/')
+        api.get('/tanks/'),
+        api.get('/stations/'),
       ])
 
       if (billsRes.status === 'fulfilled') {
@@ -421,6 +432,21 @@ export default function BillsPage() {
         toast.error(
           'Could not load tanks. Fuel bills need tanks to receive stock — refresh the page or check the Tanks API.'
         )
+      }
+
+      if (stationsRes.status === 'fulfilled') {
+        const raw = Array.isArray(stationsRes.value.data) ? stationsRes.value.data : []
+        setStations(
+          raw
+            .map((s: { id?: unknown; station_name?: string; station_number?: string }) => ({
+              id: typeof s.id === 'number' ? s.id : Number(s.id),
+              station_name: String(s.station_name || '').trim() || 'Station',
+              station_number: s.station_number != null ? String(s.station_number) : undefined,
+            }))
+            .filter((s: Station) => Number.isFinite(s.id))
+        )
+      } else {
+        setStations([])
       }
     } catch (error) {
       console.error('Error fetching data:', error)
@@ -533,12 +559,14 @@ export default function BillsPage() {
     }
 
     const sendAck = !!(confirm && confirm.acknowledgeTankOverfill)
+    const rsId = formData.receipt_station_id === '' ? null : formData.receipt_station_id
     await api.post('/bills/', {
       vendor_id: formData.vendor_id,
       bill_date: formData.bill_date,
       due_date: formData.due_date || null,
       vendor_reference: formData.vendor_reference || null,
       memo: formData.memo || null,
+      receipt_station_id: rsId,
       subtotal: subtotal,
       tax_amount: taxAmount,
       total_amount: total,
@@ -612,6 +640,10 @@ export default function BillsPage() {
           due_date: fullBill.due_date ? fullBill.due_date.split('T')[0] : '',
           vendor_reference: fullBill.vendor_reference || '',
           memo: fullBill.memo || '',
+          receipt_station_id:
+            fullBill.receipt_station_id != null && fullBill.receipt_station_id > 0
+              ? fullBill.receipt_station_id
+              : '',
           lines: fullBill.lines?.map((line: BillLineItem) => ({
             id: line.id,
             line_number: line.line_number,
@@ -660,12 +692,14 @@ export default function BillsPage() {
     }
 
     const sendAck = !!(confirm && confirm.acknowledgeTankOverfill)
+    const rsIdUpdate = formData.receipt_station_id === '' ? null : formData.receipt_station_id
     await api.put(`/bills/${editingBill.id}`, {
       vendor_id: formData.vendor_id,
       bill_date: formData.bill_date,
       due_date: formData.due_date || null,
       vendor_reference: formData.vendor_reference || null,
       memo: formData.memo || null,
+      receipt_station_id: rsIdUpdate,
       subtotal: subtotal,
       tax_amount: taxAmount,
       total_amount: total,
@@ -798,6 +832,7 @@ export default function BillsPage() {
       due_date: due.toISOString().split('T')[0],
       vendor_reference: '',
       memo: '',
+      receipt_station_id: '',
       lines: []
     })
     setEditingBill(null)
@@ -1042,6 +1077,14 @@ export default function BillsPage() {
                     <p className="text-sm text-gray-600">Vendor</p>
                     <p className="text-lg">{viewingBill.vendor_name || 'N/A'}</p>
                   </div>
+                  {(viewingBill.receipt_station_name || viewingBill.receipt_station_id) && (
+                    <div>
+                      <p className="text-sm text-gray-600">Receipt station (shop stock)</p>
+                      <p className="text-lg">
+                        {viewingBill.receipt_station_name || `Station #${viewingBill.receipt_station_id}`}
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <p className="text-sm text-gray-600">Bill Date</p>
                     <p className="text-lg">{formatDateOnly(viewingBill.bill_date)}</p>
@@ -1216,6 +1259,33 @@ export default function BillsPage() {
                       placeholder="Vendor invoice number"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Receive shop stock at station
+                    </label>
+                    <select
+                      value={formData.receipt_station_id === '' ? '' : String(formData.receipt_station_id)}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setFormData({
+                          ...formData,
+                          receipt_station_id: v === '' ? '' : parseInt(v, 10),
+                        })
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">— Not set —</option>
+                      {stations.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.station_name}
+                          {s.station_number ? ` (${s.station_number})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Optional. Non-fuel inventory lines post to this location when the bill is open or posted.
+                    </p>
                   </div>
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1637,6 +1707,33 @@ export default function BillsPage() {
                       placeholder="Vendor invoice number"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Receive shop stock at station
+                    </label>
+                    <select
+                      value={formData.receipt_station_id === '' ? '' : String(formData.receipt_station_id)}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setFormData({
+                          ...formData,
+                          receipt_station_id: v === '' ? '' : parseInt(v, 10),
+                        })
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">— Not set —</option>
+                      {stations.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.station_name}
+                          {s.station_number ? ` (${s.station_number})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Optional. Non-fuel inventory lines post to this location when the bill is open or posted.
+                    </p>
                   </div>
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">

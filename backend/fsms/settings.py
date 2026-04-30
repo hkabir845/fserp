@@ -1,6 +1,10 @@
 """
 Django settings — production (MahaSoft). Deploy with DJANGO_SECRET_KEY set on the host (32+ chars).
 Do not duplicate CORS headers in nginx; only Django should send Access-Control-Allow-Origin.
+
+Production cutover checklist (non-exhaustive): use PostgreSQL (or another server DB) with migrations and backups,
+DEBUG=False, ALLOWED_HOSTS / CSRF_TRUSTED_ORIGINS aligned to real domains, HTTPS termination, CORS allowlist for
+browser origins only, rate limiting or WAF on auth endpoints, structured logging, and periodic restore drills.
 """
 import os
 import sys
@@ -185,6 +189,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 ]
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-selected-company-id",
+    "x-selected-station-id",
     "x-tenant-subdomain",
     "x-request-id",
 ]

@@ -45,6 +45,8 @@ interface PaymentRow {
   memo?: string | null
   customer_name?: string
   vendor_name?: string
+  station_id?: number | null
+  station_name?: string
   deposit_status?: string
   bank_account_id?: number | null
   bank_account_name?: string | null
@@ -422,6 +424,9 @@ export default function AllPaymentsPage() {
                       Party
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Site
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                       Bank / register
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -494,6 +499,9 @@ export default function AllPaymentsPage() {
                             {isReceived && (payment.customer_name || '—')}
                             {isMade && (payment.vendor_name || '—')}
                             {!isReceived && !isMade && '—'}
+                          </td>
+                          <td className="max-w-[8rem] truncate px-3 py-2.5 text-slate-600" title={payment.station_name || ''}>
+                            {payment.station_name?.trim() || (isReceived || isMade ? '—' : '')}
                           </td>
                           <td className="max-w-[9rem] truncate px-3 py-2.5 text-slate-600" title={payment.bank_account_name ?? ''}>
                             {payment.bank_account_name || '—'}

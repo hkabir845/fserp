@@ -2,13 +2,12 @@
 
 import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { useCompany } from '@/contexts/CompanyContext'
 import { 
   FileText, TrendingUp, DollarSign, Users, Package, 
   BarChart3, Calendar, Download, Filter, RefreshCw, Printer,
-  Gauge, Droplet,   ClipboardList, Layers, ShoppingCart
+  Gauge, Droplet,   ClipboardList, Layers, ShoppingCart, MapPin
 } from 'lucide-react'
 import { canViewInventorySkuReport } from '@/utils/rbac'
 import api from '@/lib/api'
@@ -17,6 +16,7 @@ import { formatCurrency, formatNumber } from '@/utils/formatting'
 import { escapeHtml, printDocument } from '@/utils/printDocument'
 import type { PrintBranding } from '@/utils/printBranding'
 import { loadPrintBranding } from '@/utils/printBranding'
+import { FinancialAnalyticsPanel } from './analytics/FinancialAnalyticsPanel'
 
 type ItemScopeTableProps = {
   reportType: ReportType
@@ -45,6 +45,7 @@ type ReportType =
   | 'tank-dip-register'
   | 'meter-readings'
   | 'sales-by-nozzle'
+  | 'sales-by-station'
   | 'daily-summary'
   | 'inventory-sku-valuation'
   | 'item-master-by-category'
@@ -55,6 +56,7 @@ type ReportType =
   | 'item-stock-movement'
   | 'item-velocity-analysis'
   | 'item-purchase-velocity-analysis'
+  | 'analytics-kpi'
 
 const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [
   'item-sales-custom',
@@ -77,7 +79,7 @@ const reports: ReportCard[] = [
   {
     id: 'trial-balance',
     title: 'Trial Balance',
-    description: 'All accounts with debits and credits',
+    description: 'Posted debits and credits by account — optional site filter for multi-station GL',
     icon: BarChart3,
     category: 'financial'
   },
@@ -91,7 +93,7 @@ const reports: ReportCard[] = [
   {
     id: 'income-statement',
     title: 'Profit & Loss (P&L)',
-    description: 'Income and Expenses summary',
+    description: 'Income, COGS, and expenses from posted journals — optional site filter',
     icon: TrendingUp,
     category: 'financial'
   },
@@ -197,6 +199,13 @@ const reports: ReportCard[] = [
     category: 'operational'
   },
   {
+    id: 'sales-by-station',
+    title: 'Sales by station',
+    description: 'Invoice totals by selling location (POS / invoice station)',
+    icon: MapPin,
+    category: 'operational'
+  },
+  {
     id: 'fuel-sales',
     title: 'Fuel Sales Analytics',
     description: 'Sales trends and volume analysis',
@@ -219,6 +228,14 @@ const reports: ReportCard[] = [
   },
   
   // Analytical Reports
+  {
+    id: 'analytics-kpi',
+    title: 'Analytics & KPIs',
+    description:
+      'Charts and comparisons for sales, COGS, expenses, purchases, and net income — same workspace as the dedicated analytics view.',
+    icon: TrendingUp,
+    category: 'analytical',
+  },
   {
     id: 'tank-dip-variance',
     title: 'Tank Dip Variance',
@@ -245,6 +262,33 @@ const SUMMARY_EXCLUDED_REPORTS: ReportType[] = [
   'inventory-sku-valuation',
 ]
 
+/** Reports that accept optional `station_id` (all sites when empty; home-station users are always scoped in API). */
+const REPORTS_STATION_SCOPED = new Set<ReportType>([
+  'trial-balance',
+  'income-statement',
+  'fuel-sales',
+  'tank-inventory',
+  'shift-summary',
+  'daily-summary',
+  'sales-by-station',
+  'sales-by-nozzle',
+  'meter-readings',
+  'tank-dip-variance',
+  'tank-dip-register',
+  'inventory-sku-valuation',
+  'item-master-by-category',
+  'item-sales-by-category',
+  'item-purchases-by-category',
+  'item-sales-custom',
+  'item-purchases-custom',
+  'item-stock-movement',
+  'item-velocity-analysis',
+  'item-purchase-velocity-analysis',
+])
+
+/** Subset of station-scoped reports where amounts come from posted GL lines (not invoice subledgers). */
+const REPORTS_GL_STATION_SCOPED = new Set<ReportType>(['trial-balance', 'income-statement'])
+
 /** Single source of truth: APIs that accept `start_date` / `end_date` (used for fetch + period UI). */
 const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'trial-balance',
@@ -255,6 +299,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'daily-summary',
   'shift-summary',
   'sales-by-nozzle',
+  'sales-by-station',
   'fuel-sales',
   'tank-inventory',
   'tank-dip-variance',
@@ -271,6 +316,61 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'item-purchase-velocity-analysis',
 ])
 
+/** In-report + export label for which site(s) a station-scoped report covers. */
+function getReportSiteScopeDisplay(
+  reportId: ReportType | null,
+  reportData: { filter_station_id?: number } | null | undefined,
+  stations: { id: number; station_name: string }[],
+  userHasHomeStation: boolean,
+  homeStationId: number | null,
+  homeStationName: string | null,
+  reportStationId: string
+): { headline: string; detail: string } | null {
+  if (!reportId || !REPORTS_STATION_SCOPED.has(reportId)) return null
+  const gl = REPORTS_GL_STATION_SCOPED.has(reportId)
+  const rawFid = reportData && typeof reportData === 'object' && 'filter_station_id' in reportData
+    ? (reportData as { filter_station_id?: unknown }).filter_station_id
+    : undefined
+  const fid = typeof rawFid === 'number' && rawFid > 0 ? rawFid : undefined
+  if (fid != null) {
+    const name = stations.find((s) => s.id === fid)?.station_name?.trim() || `Station #${fid}`
+    return {
+      headline: `Site: ${name}`,
+      detail: gl
+        ? 'Trial balance and P&L use posted journal lines tagged to this site. Entries without a site tag are excluded.'
+        : 'Figures in this run are for this site only.',
+    }
+  }
+  if (userHasHomeStation) {
+    const name =
+      (homeStationName && homeStationName.trim()) ||
+      (homeStationId != null ? stations.find((s) => s.id === homeStationId)?.station_name?.trim() : undefined) ||
+      (homeStationId != null ? `Station #${homeStationId}` : 'Assigned site')
+    return {
+      headline: `Site: ${name}`,
+      detail: gl
+        ? 'Your account is limited to this site; GL figures are for this location only.'
+        : 'Your account is limited to this site for these reports.',
+    }
+  }
+  if (reportStationId && /^\d+$/.test(reportStationId)) {
+    const id = parseInt(reportStationId, 10)
+    const name = stations.find((s) => s.id === id)?.station_name?.trim() || `Station #${id}`
+    return {
+      headline: `Site: ${name}`,
+      detail: gl
+        ? 'Using the site selected above. Only posted GL lines for that site are included.'
+        : 'Using the site selected in the filter above.',
+    }
+  }
+  return {
+    headline: 'All sites',
+    detail: gl
+      ? 'All posted journal lines in the date range (every site). Pick a site above to see that location’s GL activity only.'
+      : 'This run includes every station. Use the site filter to narrow to one location.',
+  }
+}
+
 export default function ReportsPage() {
   const router = useRouter()
   const { selectedCompany } = useCompany()
@@ -281,6 +381,8 @@ export default function ReportsPage() {
   const [reportData, setReportData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
+  /** false until `user` is read in an effect — keeps report list in sync with SSR (no localStorage on server). */
+  const [reportRbacHydrated, setReportRbacHydrated] = useState(false)
   const [dateRange, setDateRange] = useState({
     startDate: localDateISO(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
     endDate: localDateISO(),
@@ -296,6 +398,13 @@ export default function ReportsPage() {
     { id: number; name: string; item_number?: string; category?: string }[]
   >([])
   const [itemFilterCategoryList, setItemFilterCategoryList] = useState<string[]>([])
+  const [reportStationList, setReportStationList] = useState<{ id: number; station_name: string }[]>([])
+  const [reportStationId, setReportStationId] = useState('')
+  const [userHasHomeStation, setUserHasHomeStation] = useState(false)
+  const [homeStationMeta, setHomeStationMeta] = useState<{
+    id: number | null
+    name: string | null
+  }>({ id: null, name: null })
 
   const onItemScopeCategoryChange = useCallback((v: string) => {
     setItemScopeCategory(v)
@@ -403,12 +512,30 @@ export default function ReportsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const userStr = localStorage.getItem('user')
-    if (!userStr || userStr === 'undefined' || userStr === 'null') return
+    if (!userStr || userStr === 'undefined' || userStr === 'null') {
+      setReportRbacHydrated(true)
+      return
+    }
     try {
-      const parsedUser = JSON.parse(userStr)
+      const parsedUser = JSON.parse(userStr) as {
+        role?: string
+        home_station_id?: unknown
+        home_station_name?: string | null
+      }
       if (parsedUser && typeof parsedUser === 'object') {
         const r = parsedUser.role?.toLowerCase() || null
         setUserRole(r)
+        const hs = parsedUser.home_station_id
+        if (hs != null && String(hs).trim() !== '') {
+          setUserHasHomeStation(true)
+          setHomeStationMeta({
+            id: Number(hs),
+            name: typeof parsedUser.home_station_name === 'string' ? parsedUser.home_station_name : null,
+          })
+        } else {
+          setUserHasHomeStation(false)
+          setHomeStationMeta({ id: null, name: null })
+        }
         if (r === 'operator') {
           router.replace('/cashier')
         }
@@ -416,7 +543,78 @@ export default function ReportsPage() {
     } catch (error) {
       console.error('Error parsing user data:', error)
     }
+    setReportRbacHydrated(true)
   }, [router])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const t = localStorage.getItem('access_token')?.trim()
+    if (!t) return
+    let cancelled = false
+    api
+      .get<{ id: number; station_name: string }[]>('/stations/')
+      .then((res) => {
+        if (cancelled) return
+        const rows = Array.isArray(res.data) ? res.data : []
+        const mapped = rows.map((s) => ({
+          id: s.id,
+          station_name: s.station_name || `Station ${s.id}`,
+        }))
+        setReportStationList(mapped)
+        const saved = localStorage.getItem('fserp_report_station_id')?.trim() || ''
+        if (saved && /^\d+$/.test(saved)) {
+          const sid = Number(saved)
+          if (!mapped.some((s) => s.id === sid)) {
+            try {
+              localStorage.removeItem('fserp_report_station_id')
+            } catch {
+              /* ignore */
+            }
+            setReportStationId('')
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setReportStationList([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCompany?.id])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const saved = localStorage.getItem('fserp_report_station_id')?.trim() || ''
+    if (saved && /^\d+$/.test(saved)) setReportStationId(saved)
+    else setReportStationId('')
+  }, [selectedCompany?.id])
+
+  const persistReportStation = useCallback((id: string) => {
+    setReportStationId(id)
+    try {
+      if (id && /^\d+$/.test(id)) {
+        localStorage.setItem('fserp_report_station_id', id)
+      } else {
+        localStorage.removeItem('fserp_report_station_id')
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const reportSiteScope = useMemo(
+    () =>
+      getReportSiteScopeDisplay(
+        selectedReport,
+        reportData,
+        reportStationList,
+        userHasHomeStation,
+        homeStationMeta.id,
+        homeStationMeta.name,
+        reportStationId
+      ),
+    [selectedReport, reportData, reportStationList, userHasHomeStation, homeStationMeta, reportStationId]
+  )
   
   // Filter reports based on user role and category
   const getFilteredReports = () => {
@@ -428,6 +626,7 @@ export default function ReportsPage() {
       roleFilteredReports = reports.filter(report => 
         report.id === 'fuel-sales' ||
         report.id === 'sales-by-nozzle' ||
+        report.id === 'sales-by-station' ||
         report.id === 'shift-summary' ||
         report.id === 'tank-inventory' ||
         report.id === 'tank-dip-register' ||
@@ -446,9 +645,11 @@ export default function ReportsPage() {
       'item-velocity-analysis',
       'item-purchase-velocity-analysis',
     ]
+    const canShowInventoryBlock = reportRbacHydrated
+      ? canViewInventorySkuReport(userRole)
+      : ['super_admin', 'admin', 'accountant', 'manager'].includes((userRole || '').toLowerCase())
     roleFilteredReports = roleFilteredReports.filter(
-      (report) =>
-        !inventoryExtraReports.includes(report.id) || canViewInventorySkuReport(userRole)
+      (report) => !inventoryExtraReports.includes(report.id) || canShowInventoryBlock
     )
     
     // Then filter by category
@@ -464,6 +665,19 @@ export default function ReportsPage() {
     setLoading(true)
     setReportData(null) // Clear previous data
 
+    if (reportId === 'analytics-kpi') {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+      if (!token) {
+        alert('Your session has expired. Please log in again.')
+        router.push('/login')
+        return
+      }
+      setSelectedReport('analytics-kpi')
+      setReportData({ _analytics: true as const })
+      setLoading(false)
+      return
+    }
+
     const params: Record<string, string> = {}
     if (REPORTS_WITH_PERIOD.has(reportId)) {
       params.start_date = dateRange.startDate
@@ -478,6 +692,21 @@ export default function ReportsPage() {
     ) {
       if (itemScopeCategory.trim()) params.category = itemScopeCategory.trim()
       if (itemScopeItemIds.length > 0) params.item_ids = itemScopeItemIds.join(',')
+    }
+
+    if (REPORTS_STATION_SCOPED.has(reportId)) {
+      let homeId: number | null = null
+      try {
+        const u = JSON.parse(localStorage.getItem('user') || '{}') as { home_station_id?: unknown }
+        if (u?.home_station_id != null && String(u.home_station_id).trim() !== '') {
+          homeId = Number(u.home_station_id)
+        }
+      } catch {
+        /* ignore */
+      }
+      if (homeId == null && reportStationId && /^\d+$/.test(reportStationId)) {
+        params.station_id = reportStationId
+      }
     }
 
     try {
@@ -542,7 +771,18 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
-  }, [dateRange, router, itemScopeCategory, itemScopeItemIds])
+  }, [dateRange, router, itemScopeCategory, itemScopeItemIds, reportStationId])
+
+  const onReportStationSelectChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const v = e.target.value
+      persistReportStation(v)
+      if (selectedReport && REPORTS_STATION_SCOPED.has(selectedReport)) {
+        void fetchReport(selectedReport)
+      }
+    },
+    [persistReportStation, selectedReport, fetchReport]
+  )
   
   // Debounced date change handler for all period-based reports
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -576,6 +816,15 @@ export default function ReportsPage() {
     if (!reportData || !selectedReport) return
 
     const reportTitle = reports.find(r => r.id === selectedReport)?.title || selectedReport
+    const siteScopeForPrint = getReportSiteScopeDisplay(
+      selectedReport,
+      reportData,
+      reportStationList,
+      userHasHomeStation,
+      homeStationMeta.id,
+      homeStationMeta.name,
+      reportStationId
+    )
     const companyName = resolveReportCompanyName()
     const branding: PrintBranding = reportPrintBranding
       ? { ...reportPrintBranding, companyName: companyName || reportPrintBranding.companyName }
@@ -666,6 +915,15 @@ export default function ReportsPage() {
       })
       const ns = reportData.summary || {}
       contentHTML += `<tfoot><tr><td colspan="3" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${ns.total_transactions ?? ''}</strong></td><td style="text-align:right"><strong>${Number(ns.total_liters ?? 0).toFixed(2)}L</strong></td><td style="text-align:right"><strong>${formatCurrency(ns.total_amount ?? 0)}</strong></td><td>—</td></tr></tfoot></tbody></table>`
+    } else if (selectedReport === 'sales-by-station' && reportData.rows) {
+      contentHTML += '<h2>Sales by station</h2><table><thead><tr><th>Station</th><th style="text-align:right">Invoices</th><th style="text-align:right">Total</th></tr></thead><tbody>'
+      const srows: any[] = reportData.rows || []
+      srows.forEach((r: any) => {
+        contentHTML += `<tr><td>${escapeHtml(String(r.station_name || ''))}</td><td style="text-align:right">${r.invoice_count ?? 0}</td><td style="text-align:right">${formatCurrency(r.total ?? 0)}</td></tr>`
+      })
+      const st = srows.reduce((s: number, r: any) => s + Number(r.total ?? 0), 0)
+      const ic = srows.reduce((s: number, r: any) => s + Number(r.invoice_count ?? 0), 0)
+      contentHTML += `<tfoot><tr><td style="text-align:right"><strong>Total</strong></td><td style="text-align:right"><strong>${ic}</strong></td><td style="text-align:right"><strong>${formatCurrency(st)}</strong></td></tr></tfoot></tbody></table>`
     } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
       contentHTML += '<h2>Tank Inventory</h2><table><thead><tr><th>Tank</th><th>Station</th><th>Product</th><th style="text-align:right">Capacity (L)</th><th style="text-align:right">Stock (L)</th><th style="text-align:right">Fill %</th><th>Needs Refill</th></tr></thead><tbody>'
       reportData.inventory.forEach((tank: any) => {
@@ -835,6 +1093,9 @@ export default function ReportsPage() {
       typeof reportData.period.end_date === 'string'
         ? `<strong>Period:</strong> ${escapeHtml(reportData.period.start_date)} to ${escapeHtml(reportData.period.end_date)}`
         : ''
+    const siteScopeLine = siteScopeForPrint
+      ? `${escapeHtml(siteScopeForPrint.headline)} — ${escapeHtml(siteScopeForPrint.detail)}`
+      : ''
 
     const ok = printDocument({
       title: reportTitle,
@@ -844,6 +1105,7 @@ export default function ReportsPage() {
           <div class="period">
             <strong>Generated:</strong> ${escapeHtml(formatDate(new Date(), true))}<br>
             ${periodLine}
+            ${siteScopeLine ? `<br><strong>Scope:</strong> ${siteScopeLine}` : ''}
           </div>
           ${contentHTML}
         `,
@@ -879,6 +1141,18 @@ export default function ReportsPage() {
       csvContent += `Generated: ${formatDate(new Date(), true)}\n`
       if (reportData.period) {
         csvContent += `Period: ${reportData.period.start_date} to ${reportData.period.end_date}\n`
+      }
+      const siteScopeCsv = getReportSiteScopeDisplay(
+        selectedReport,
+        reportData,
+        reportStationList,
+        userHasHomeStation,
+        homeStationMeta.id,
+        homeStationMeta.name,
+        reportStationId
+      )
+      if (siteScopeCsv) {
+        csvContent += `Site scope: ${siteScopeCsv.headline} — ${siteScopeCsv.detail}\n`
       }
       csvContent += '\n'
       
@@ -923,6 +1197,12 @@ export default function ReportsPage() {
         csvContent += 'Nozzle,Product,Station,Transactions,Liters,Amount,Avg Sale\n'
         reportData.nozzles.forEach((nozzle: any) => {
           csvContent += `${escapeCsv(nozzle.nozzle_name || nozzle.nozzle_number)},${escapeCsv(nozzle.product_name)},${escapeCsv(nozzle.station_name)},${nozzle.total_transactions || 0},${nozzle.total_liters || 0},${nozzle.total_amount || 0},${nozzle.average_sale_amount || 0}\n`
+        })
+      } else if (selectedReport === 'sales-by-station' && reportData.rows) {
+        csvContent += 'Station,Invoices,Total\n'
+        const srows: any[] = reportData.rows || []
+        srows.forEach((r: any) => {
+          csvContent += `${escapeCsv(r.station_name)},${r.invoice_count ?? 0},${r.total ?? 0}\n`
         })
       } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
         csvContent += 'Tank,Station,Product,Capacity (L),Current Stock (L),Fill %,Needs Refill\n'
@@ -1251,30 +1531,56 @@ export default function ReportsPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Report Cards */}
-            <div className="lg:col-span-1 space-y-3">
-              {userRole !== 'cashier' && filterCategory === 'analytical' && (
-                <Link
-                  href="/reports/analytics"
-                  className="block w-full rounded-lg border-2 border-fuchsia-300 bg-gradient-to-br from-fuchsia-50 to-violet-50 p-4 text-left shadow-sm transition-all hover:border-fuchsia-400 hover:shadow-md"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-lg bg-fuchsia-100 p-2">
-                      <TrendingUp className="h-5 w-5 text-fuchsia-700" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-gray-900">Analytics &amp; KPIs</h3>
-                      <p className="mt-1 text-sm text-gray-600">
-                        Charts and comparisons for sales, COGS, expenses, purchases, and net income — open the full analytics workspace.
+          {userRole != null &&
+            userRole !== 'operator' &&
+            reportStationList.length > 0 && (
+              <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-2 text-sm text-slate-600">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <div>
+                    <p className="font-medium text-slate-800">Site scope (operations, inventory, and GL)</p>
+                    {userHasHomeStation ? (
+                      <p className="text-slate-500">Your login is limited to your assigned site; totals match that location.</p>
+                    ) : (
+                      <p className="text-slate-500">
+                        <strong>All</strong> includes every station. Pick a site to filter shift, fuel, tank, inventory,
+                        trial balance, and P&amp;L (posted lines tagged to that site).
                       </p>
-                      <span className="mt-2 inline-block rounded-full bg-purple-100 px-2 py-1 text-xs text-purple-800">
-                        Analytical
-                      </span>
-                    </div>
+                    )}
                   </div>
-                </Link>
-              )}
+                </div>
+                {userHasHomeStation ? null : (
+                  <div className="flex flex-col gap-1 sm:items-end">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-slate-700" htmlFor="report-station-scope">
+                        Site
+                      </label>
+                      <select
+                        id="report-station-scope"
+                        aria-label="Filter reports by site or all sites"
+                        value={reportStationId}
+                        onChange={onReportStationSelectChange}
+                        className="min-w-[16rem] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      >
+                        <option value="">All</option>
+                        {reportStationList.map((s) => (
+                          <option key={s.id} value={String(s.id)}>
+                            {s.station_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="text-xs text-slate-500 sm:text-right">
+                      Applies when you run a site-scoped report (saved for this browser)
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+          <div className="flex min-h-0 w-full min-w-0 flex-col gap-6 lg:flex-row lg:items-start lg:gap-6 xl:gap-8">
+            {/* Report list: fixed max width; main pane uses flex-1 for full usable width (especially for Analytics) */}
+            <aside className="w-full min-w-0 shrink-0 space-y-3 lg:max-w-[20rem] xl:max-w-[22rem]">
               {filteredReports.map((report) => {
                 const Icon = report.icon
                 return (
@@ -1312,17 +1618,21 @@ export default function ReportsPage() {
                   </button>
                 )
               })}
-            </div>
+            </aside>
 
-            {/* Report Display */}
-            <div className="lg:col-span-2">
-              <div className="bg-white rounded-lg border border-gray-200 min-h-[600px]">
+            {/* Report Display — flex-1 so charts and tables use the full right-hand workspace */}
+            <div className="min-h-0 w-full min-w-0 flex-1">
+              <div className="min-h-[600px] w-full min-w-0 max-w-full rounded-lg border border-gray-200 bg-white">
                 {loading ? (
-                  <div className="flex items-center justify-center h-[600px]">
+                  <div className="flex h-[600px] items-center justify-center">
                     <div className="text-center">
-                      <RefreshCw className="h-12 w-12 text-blue-500 animate-spin mx-auto mb-4" />
+                      <RefreshCw className="mx-auto mb-4 h-12 w-12 animate-spin text-blue-500" />
                       <p className="text-gray-600">Loading report...</p>
                     </div>
+                  </div>
+                ) : selectedReport === 'analytics-kpi' && reportData && '_analytics' in reportData && reportData._analytics ? (
+                  <div className="w-full min-w-0 p-0">
+                    <FinancialAnalyticsPanel embedInReports reportStationKey={reportStationId} />
                   </div>
                 ) : selectedReport && reportData ? (
                   <div className="p-6">
@@ -1335,6 +1645,44 @@ export default function ReportsPage() {
                     <p className="text-sm text-gray-500 mt-1">
                       Generated on {formatDate(new Date())}
                     </p>
+                    {selectedReport && REPORTS_STATION_SCOPED.has(selectedReport) && reportStationList.length > 0 && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
+                        <MapPin className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+                        {userHasHomeStation ? (
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium text-gray-800">Site (fixed):</span>{' '}
+                            {homeStationMeta.name?.trim() ||
+                              reportStationList.find((s) => s.id === homeStationMeta.id)?.station_name ||
+                              (homeStationMeta.id != null ? `Station #${homeStationMeta.id}` : 'Your assigned site')}
+                          </p>
+                        ) : (
+                          <>
+                            <label className="text-sm font-medium text-gray-700" htmlFor="report-station-preview">
+                              Site
+                            </label>
+                            <select
+                              id="report-station-preview"
+                              aria-label="Filter this report by site or All"
+                              value={reportStationId}
+                              onChange={onReportStationSelectChange}
+                              className="min-w-[16rem] rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                            >
+                              <option value="">All</option>
+                              {reportStationList.map((s) => (
+                                <option key={s.id} value={String(s.id)}>
+                                  {s.station_name}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="text-xs text-gray-500">
+                              {selectedReport === 'trial-balance' || selectedReport === 'income-statement'
+                                ? 'All = every posted line; one site = only GL lines tagged to that location'
+                                : 'All = company-wide for this report type'}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center space-x-2">
                     <button
@@ -1363,6 +1711,16 @@ export default function ReportsPage() {
                     </button>
                   </div>
                     </div>
+
+                    {reportSiteScope && (
+                      <div className="mb-6 flex gap-3 rounded-lg border border-amber-200/90 bg-amber-50/95 px-4 py-3 text-sm text-amber-950 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/35 dark:text-amber-100">
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" />
+                        <div>
+                          <p className="font-semibold text-amber-950 dark:text-amber-50">{reportSiteScope.headline}</p>
+                          <p className="mt-0.5 text-amber-900/90 dark:text-amber-200/90">{reportSiteScope.detail}</p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Report Content */}
                     <div className="space-y-6">
@@ -3744,6 +4102,103 @@ function renderReportTable(
                     {formatCurrency(Number(summary.total_amount ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_amount ?? 0), 0)))}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">—</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  // Sales by station (invoice totals by selling station)
+  if (reportType === 'sales-by-station' && data) {
+    const summary = data.summary || {}
+    const rows = Array.isArray(data.rows) ? data.rows : []
+    const totalInv = rows.reduce((s: number, r: any) => s + Number(r.invoice_count ?? 0), 0)
+    const totalAmt = rows.reduce((s: number, r: any) => s + Number(r.total ?? 0), 0)
+
+    return (
+      <div className="space-y-6">
+        {hasPeriod && renderPeriodFilter(
+          period,
+          dateRange,
+          reportType,
+          handleReportDateChange,
+          'Invoice totals are included for invoice dates in this range (non-draft).'
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            { label: 'Stations with sales', value: summary.stations_with_sales ?? '—', icon: MapPin, color: 'teal' },
+            { label: 'Invoices in period', value: summary.total_invoices ?? totalInv, icon: FileText, color: 'blue' },
+            { label: 'Total amount', value: formatCurrency(totalAmt), icon: DollarSign, color: 'indigo' },
+          ].map((item) => {
+            const colorMap: Record<string, string> = {
+              teal: 'from-teal-50 to-teal-100 border-teal-200 text-teal-600 bg-teal-200',
+              blue: 'from-blue-50 to-blue-100 border-blue-200 text-blue-600 bg-blue-200',
+              indigo: 'from-indigo-50 to-indigo-100 border-indigo-200 text-indigo-600 bg-indigo-200',
+            }
+            const colors = colorMap[item.color] || colorMap.teal
+            const [gradient, border, text, bg] = colors.split(' ')
+            const Icon = item.icon
+            return (
+              <div key={item.label} className={`bg-gradient-to-br ${gradient} ${border} border rounded-lg p-4 shadow-sm`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
+                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.value}</p>
+                  </div>
+                  <div className={`${bg} rounded-full p-2 ml-2`}>
+                    <Icon className={`h-5 w-5 ${text}`} />
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Station</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Invoices</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {rows.length > 0 ? (
+                rows.map((r: any, idx: number) => (
+                  <tr
+                    key={r.station_id != null ? `st-${r.station_id}` : `st-row-${idx}-${String(r.station_name ?? '')}`}
+                    className="hover:bg-gray-50"
+                  >
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.station_name || '—'}</td>
+                    <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">{r.invoice_count ?? 0}</td>
+                    <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                      {formatCurrency(r.total ?? 0)}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={3} className="px-4 py-12 text-center text-gray-500">
+                    No invoices in this range with a station attached.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {rows.length > 0 && (
+              <tfoot className="bg-gray-50">
+                <tr>
+                  <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Totals</td>
+                  <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                    {totalInv}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
+                    {formatCurrency(totalAmt)}
+                  </td>
                 </tr>
               </tfoot>
             )}

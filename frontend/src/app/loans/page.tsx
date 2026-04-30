@@ -79,6 +79,20 @@ type LoanProductType =
   | 'islamic_facility'
   | 'islamic_deal'
 
+interface StationOption {
+  id: number
+  station_name: string
+  is_active?: boolean
+}
+
+/** Map form value to API: null clears optional FK. */
+function loanStationIdForApi(v: string | number | ''): number | null {
+  if (v === '' || v == null || v === 0 || v === '0') return null
+  const n = typeof v === 'number' ? v : parseInt(String(v), 10)
+  if (!Number.isFinite(n) || n < 1) return null
+  return n
+}
+
 interface LoanRow {
   id: number
   loan_no: string
@@ -112,6 +126,9 @@ interface LoanRow {
   interest_basis_label?: string
   /** From API: use profit/return wording when true */
   is_islamic_financing?: boolean
+  /** Optional GL segment: auto-posted loan journals tag this station when set */
+  station_id?: number | null
+  station_name?: string | null
 }
 
 function loanUsesIslamicTerminology(
@@ -146,6 +163,8 @@ type LoanFormState = {
   start_date: string
   annual_interest_rate: string
   term_months: string
+  /** Active site for GL tagging on disburse / repay / accrual; '' = none */
+  station_id: string | number
 }
 
 function emptyLoanForm(): LoanFormState {
@@ -157,6 +176,7 @@ function emptyLoanForm(): LoanFormState {
     parent_loan_id: 0,
     deal_reference: '',
     counterparty_id: 0,
+    station_id: '',
     title: '',
     sanction_amount: '',
     principal_account_id: 0,
@@ -558,6 +578,7 @@ export default function LoansPage() {
   const [loans, setLoans] = useState<LoanRow[]>([])
   const [counterpartiesAll, setCounterpartiesAll] = useState<Counterparty[]>([])
   const [coa, setCoa] = useState<CoaLine[]>([])
+  const [stations, setStations] = useState<StationOption[]>([])
   const [loading, setLoading] = useState(true)
   const [currencySymbol, setCurrencySymbol] = useState('৳')
   const [showCp, setShowCp] = useState(false)
@@ -663,16 +684,32 @@ export default function LoansPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [lr, cr, coaRes, comp] = await Promise.all([
+      const [lr, cr, coaRes, comp, stRes] = await Promise.all([
         api.get('/loans/'),
         api.get('/loans/counterparties/'),
         api.get('/chart-of-accounts/'),
         api.get('/companies/current').catch(() => null),
+        api.get<unknown[]>('/stations/', { timeout: 8000 }).catch(() => null),
       ])
       setLoans(Array.isArray(lr.data) ? lr.data : [])
       setCounterpartiesAll(Array.isArray(cr.data) ? cr.data : [])
       setCoa(Array.isArray(coaRes.data) ? coaRes.data.filter((a: CoaLine) => a.id) : [])
       if (comp?.data?.currency) setCurrencySymbol(getCurrencySymbol(comp.data.currency))
+      if (stRes?.data && Array.isArray(stRes.data)) {
+        const parsed: StationOption[] = []
+        for (const r of stRes.data) {
+          const o = r as { id?: number; station_name?: string; is_active?: boolean }
+          if (typeof o.id !== 'number') continue
+          parsed.push({
+            id: o.id,
+            station_name: o.station_name || `Site #${o.id}`,
+            is_active: o.is_active,
+          })
+        }
+        setStations(parsed)
+      } else {
+        setStations([])
+      }
     } catch (e: unknown) {
       const err = e as { response?: { status?: number; data?: { detail?: string } } }
       if (err.response?.status === 401) router.push('/login')
@@ -1029,6 +1066,8 @@ export default function LoansPage() {
         repayments?: unknown[]
         interest_accruals?: { journal_entry_id?: number | null }[]
         counterparty_role_type?: string
+        station_id?: number | null
+        station_name?: string | null
       }
       const hasActivity =
         (Array.isArray(d.disbursements) && d.disbursements.length > 0) ||
@@ -1069,6 +1108,8 @@ export default function LoansPage() {
           !isBankOrFinanceCompanyRole(role)
         ),
         term_months: d.term_months != null ? String(d.term_months) : '',
+        station_id:
+          d.station_id != null && d.station_id > 0 ? String(d.station_id) : '',
       })
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
@@ -1151,6 +1192,7 @@ export default function LoansPage() {
           notes: loanForm.notes,
           status: loanForm.status,
           maturity_date: loanForm.maturity_date.trim() || null,
+          station_id: loanStationIdForApi(loanForm.station_id),
         }
         const payload = restrictedEdit
           ? base
@@ -1228,6 +1270,7 @@ export default function LoansPage() {
       return
     }
     try {
+      const newStationId = loanStationIdForApi(loanForm.station_id)
       await api.post('/loans/', {
         direction: loanForm.direction,
         banking_model: loanForm.banking_model,
@@ -1250,6 +1293,7 @@ export default function LoansPage() {
         maturity_date: loanForm.maturity_date.trim() || null,
         annual_interest_rate: createStoredAnnual,
         term_months: termParsed,
+        ...(newStationId != null ? { station_id: newStationId } : {}),
       })
       toast.success('Loan created')
       closeLoanModal()
@@ -1928,6 +1972,17 @@ export default function LoansPage() {
     }
   }, [loans, counterpartiesAll])
 
+  const loanStationSelectOptions = useMemo(() => {
+    const act = stations.filter((s) => s.is_active !== false)
+    const raw = loanForm.station_id
+    const sid = raw === '' || raw == null ? null : Number(raw)
+    if (sid == null || Number.isNaN(sid)) return act
+    if (act.some((s) => s.id === sid)) return act
+    const cur = stations.find((s) => s.id === sid)
+    if (cur) return [{ ...cur }, ...act.filter((s) => s.id !== sid)]
+    return act
+  }, [stations, loanForm.station_id])
+
   const filteredLoans = useMemo(() => {
     const q = loanRegisterQuery.trim().toLowerCase()
     return loans.filter((row) => {
@@ -1947,6 +2002,7 @@ export default function LoansPage() {
         party,
         productTypeLabel(row.product_type),
         row.status,
+        row.station_name || '',
       ]
         .join(' ')
         .toLowerCase()
@@ -2402,6 +2458,7 @@ export default function LoansPage() {
                     <th className="px-3 py-3 font-semibold whitespace-nowrap">Product</th>
                     <th className="px-3 py-3 font-semibold whitespace-nowrap">Direction</th>
                     <th className="px-3 py-3 font-semibold">Party</th>
+                    <th className="px-3 py-3 font-semibold whitespace-nowrap">GL site</th>
                     <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Limit / sanction</th>
                     <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Outstanding</th>
                     <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Disbursed</th>
@@ -2457,6 +2514,13 @@ export default function LoansPage() {
                               </p>
                             )
                           })()}
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-700 max-w-[9rem] break-words">
+                          {row.station_name?.trim() ? (
+                            <span title="Optional segment for auto-posted loan journals">{row.station_name}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-3 text-right whitespace-nowrap tabular-nums">
                           {formatMoneyAmount(row.sanction_amount, currencySymbol)}
@@ -3142,9 +3206,10 @@ export default function LoansPage() {
                   {loanModalMode === 'edit' && loanModalHasActivity && (
                     <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
                       This loan has disbursements, repayments, or posted interest accruals. You can only update{' '}
-                      <strong>title</strong>, <strong>notes</strong>, <strong>maturity date</strong>, and{' '}
-                      <strong>status</strong> — not direction, product type, banking model, counterparty, or GL
-                      accounts (those would conflict with posted journals).
+                      <strong>title</strong>, <strong>notes</strong>, <strong>maturity date</strong>,{' '}
+                      <strong>status</strong>, and <strong>GL segment site</strong> — not direction, product type,
+                      banking model, counterparty, or GL accounts (those would conflict with posted journals). Changing
+                      site here affects <strong>new</strong> postings only; existing journals are unchanged.
                     </div>
                   )}
                   {loanModalMode === 'edit' && loanEditInitiallyClosed && (
@@ -3654,6 +3719,34 @@ export default function LoansPage() {
                     />
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      GL segment — site (optional)
+                    </label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2"
+                      value={loanForm.station_id === '' ? '' : String(loanForm.station_id)}
+                      onChange={(e) =>
+                        setLoanForm({
+                          ...loanForm,
+                          station_id: e.target.value === '' ? '' : e.target.value,
+                        })
+                      }
+                    >
+                      <option value="">Company-wide (no site tag on new loan journals)</option>
+                      {loanStationSelectOptions.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.station_name}
+                          {s.is_active === false ? ' (inactive)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      When set, <strong>new</strong> disbursements, repayments, and interest accruals tag journals with
+                      this station for site-scoped reports. Cash still settles through the settlement GL above. Changing
+                      this does not repost existing entries.
+                    </p>
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                     <textarea
                       className="w-full border rounded-lg px-3 py-2 min-h-[80px]"
@@ -3694,6 +3787,12 @@ export default function LoansPage() {
                   <h2 className="text-lg font-semibold">{actionLoan.loan_no}</h2>
                   <p className="text-xs text-gray-500">
                     {productTypeLabel(actionLoan.product_type)} · {actionLoan.direction}
+                    {actionLoan.station_name?.trim() ? (
+                      <>
+                        {' '}
+                        · <span className="text-slate-600">Site: {actionLoan.station_name}</span>
+                      </>
+                    ) : null}
                   </p>
                 </div>
                 <button

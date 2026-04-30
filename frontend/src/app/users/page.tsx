@@ -6,7 +6,7 @@ import Link from 'next/link'
 import PageLayout from '@/components/PageLayout'
 import PermissionMatrix, { type PermItem } from '@/components/users/PermissionMatrix'
 import { PosSaleScopeSelector } from '@/components/pos/PosSaleScopeSelector'
-import { Plus, Edit2, Trash2, Shield, User, X, Eye, EyeOff, Grid3x3, List, Ban, UserCheck, Sparkles, Search, ChevronRight, KeyRound, Users, Briefcase, Info } from 'lucide-react'
+import { Plus, Edit2, Trash2, Shield, User, X, Eye, EyeOff, Grid3x3, List, Ban, UserCheck, Sparkles, Search, ChevronRight, KeyRound, Users, Briefcase, Info, MapPin } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl } from '@/lib/api'
 import { formatDate } from '@/utils/date'
@@ -26,6 +26,8 @@ interface SystemUser {
   custom_role_name?: string | null
   /** General / fuel / both — applies to cashier and operator. */
   pos_sale_scope?: string
+  home_station_id?: number | null
+  home_station_name?: string | null
 }
 
 interface CompanyOption {
@@ -68,6 +70,7 @@ export default function UsersPage() {
   const [selectedProfilePerms, setSelectedProfilePerms] = useState<string[]>([])
   const [rolePermsDirty, setRolePermsDirty] = useState(false)
   const [roleSharedUserCount, setRoleSharedUserCount] = useState<number | null>(null)
+  const [stationOptions, setStationOptions] = useState<{ id: number; station_name: string }[]>([])
   const [showNewRoleModal, setShowNewRoleModal] = useState(false)
   const [newRoleName, setNewRoleName] = useState('')
   const [newRoleDescription, setNewRoleDescription] = useState('')
@@ -94,12 +97,34 @@ export default function UsersPage() {
     company_id: '' as string | number,
     custom_role_id: '' as string | number,
     pos_sale_scope: 'both' as string,
+    home_station_id: '' as string | number,
     password: '',
     confirmPassword: ''
   })
 
   const hasAccessContext =
     isCompanyOwner || (isSuperAdminSession && formData.company_id !== '' && formData.company_id != null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!isCompanyOwner && !isSuperAdminSession) return
+    const t = localStorage.getItem('access_token')?.trim()
+    if (!t) return
+    let cancelled = false
+    api
+      .get<{ id: number; station_name: string }[]>('/stations/')
+      .then((res) => {
+        if (cancelled) return
+        const rows = Array.isArray(res.data) ? res.data : []
+        setStationOptions(rows.map((s) => ({ id: s.id, station_name: s.station_name || `Station ${s.id}` })))
+      })
+      .catch(() => {
+        if (!cancelled) setStationOptions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isCompanyOwner, isSuperAdminSession, showModal, formData.company_id])
 
   const loadCompanyRolesList = useCallback(async () => {
     try {
@@ -367,6 +392,7 @@ export default function UsersPage() {
       company_id: '',
       custom_role_id: '',
       pos_sale_scope: 'both',
+      home_station_id: '',
       password: '',
       confirmPassword: '',
     })
@@ -425,6 +451,16 @@ export default function UsersPage() {
       if (formData.role === 'cashier' || formData.role === 'operator') {
         payload.pos_sale_scope = formData.pos_sale_scope || 'both'
       }
+      if (hasAccessContext) {
+        if (formData.home_station_id === '' || formData.home_station_id == null) {
+          payload.home_station_id = null
+        } else {
+          payload.home_station_id =
+            typeof formData.home_station_id === 'string'
+              ? parseInt(String(formData.home_station_id), 10)
+              : formData.home_station_id
+        }
+      }
       await api.post('/users/', payload)
       toast.success('User created successfully!')
       setShowModal(false)
@@ -452,6 +488,7 @@ export default function UsersPage() {
       company_id: user.company_id ?? '',
       custom_role_id: user.custom_role_id ?? '',
       pos_sale_scope: user.pos_sale_scope || 'both',
+      home_station_id: user.home_station_id != null && user.home_station_id > 0 ? user.home_station_id : '',
       password: '',
       confirmPassword: ''
     })
@@ -502,6 +539,16 @@ export default function UsersPage() {
         updateData.pos_sale_scope = formData.pos_sale_scope || 'both'
       } else {
         updateData.pos_sale_scope = 'both'
+      }
+      if (hasAccessContext) {
+        if (formData.home_station_id === '' || formData.home_station_id == null) {
+          updateData.home_station_id = null
+        } else {
+          updateData.home_station_id =
+            typeof formData.home_station_id === 'string'
+              ? parseInt(String(formData.home_station_id), 10)
+              : formData.home_station_id
+        }
       }
 
       await api.put(`/users/${editingId}/`, updateData)
@@ -1267,6 +1314,33 @@ export default function UsersPage() {
                               setFormData((fd) => ({ ...fd, pos_sale_scope: next }))
                             }
                           />
+                        </div>
+                      )}
+                      {hasAccessContext && stationOptions.length > 0 && (
+                        <div className="mt-4 max-w-xl">
+                          <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-700">
+                            <MapPin className="h-4 w-4 text-amber-600" />
+                            Home station (optional)
+                          </label>
+                          <select
+                            value={formData.home_station_id === '' || formData.home_station_id == null ? '' : String(formData.home_station_id)}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setFormData((fd) => ({ ...fd, home_station_id: v === '' ? '' : v }))
+                            }}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">All sites (not limited to one station)</option>
+                            {stationOptions.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.station_name}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1.5 text-xs text-gray-500">
+                            When set, this user can only use POS, stock, and report data for that site (typical for
+                            on-site cashiers; owners leave empty).
+                          </p>
                         </div>
                       )}
                     </div>

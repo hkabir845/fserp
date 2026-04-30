@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { Plus, Edit, Trash2, Search, Building2, AlertTriangle, RefreshCw, Phone, MapPin } from 'lucide-react'
@@ -40,6 +41,7 @@ export default function StationsPage() {
     phone: '',
     is_active: true
   })
+  const [stationMode, setStationMode] = useState<'single' | 'multi'>('single')
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -54,8 +56,15 @@ export default function StationsPage() {
     setLoading(true)
     setError(null)
     try {
-      const response = await api.get<Station[]>('/stations/')
-      setStations(response.data)
+      const [stationsRes, companyRes] = await Promise.all([
+        api.get<Station[]>('/stations/'),
+        api
+          .get<{ station_mode?: string }>('/companies/current/')
+          .catch(() => ({ data: {} as { station_mode?: string } })),
+      ])
+      setStations(stationsRes.data)
+      const sm = String(companyRes.data?.station_mode ?? 'single').toLowerCase()
+      setStationMode(sm === 'single' ? 'single' : 'multi')
     } catch (err: unknown) {
       const errorMessage = extractErrorMessage(err, 'Failed to load stations')
       const status = err && typeof err === 'object' && 'response' in err
@@ -91,7 +100,8 @@ export default function StationsPage() {
         city: formData.city,
         state: formData.state,
         phone: formData.phone || null,
-        postal_code: ''
+        postal_code: '',
+        is_active: formData.is_active
       })
       toast.success('Station created successfully!')
       setShowModal(false)
@@ -176,6 +186,12 @@ export default function StationsPage() {
       (station.station_number && station.station_number.toLowerCase().includes(searchTerm.toLowerCase()))
   )
 
+  const activeCount = stations.filter((s) => s.is_active).length
+  const inactiveCount = stations.filter((s) => !s.is_active).length
+  const atStationLimit = stationMode === 'single' && activeCount >= 1
+  const onlyActiveStationId =
+    activeCount === 1 ? stations.find((s) => s.is_active)?.id ?? null : null
+
   const formatAddress = (station: Station) => {
     const addr = station.address_line1?.trim()
     const city = station.city?.trim()
@@ -189,10 +205,87 @@ export default function StationsPage() {
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
         <div className="flex-1 overflow-auto app-scroll-pad">
-          <div className="mb-6">
+          <div className="mb-4">
             <h1 className="text-3xl font-bold text-gray-900">Stations</h1>
-            <p className="text-gray-600 mt-1">Manage your filling station locations</p>
+            <p className="text-gray-600 mt-1 max-w-3xl">
+              Manage your filling station locations, active vs inactive (closed) sites, and how they relate to your
+              company&apos;s site model.
+            </p>
+
+            <div
+              className="mt-4 flex flex-col gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+              data-testid="station-site-overview"
+            >
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <span
+                  className={
+                    stationMode === 'single'
+                      ? 'inline-flex shrink-0 items-center rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900'
+                      : 'inline-flex shrink-0 items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900'
+                  }
+                >
+                  {stationMode === 'single'
+                    ? 'Preference: single-site cap'
+                    : 'Preference: multi-site allowed'}
+                </span>
+                <span className="text-sm text-slate-400 hidden sm:inline" aria-hidden>
+                  |
+                </span>
+                <p className="text-sm text-slate-700">
+                  <span className="font-semibold tabular-nums text-slate-900">{activeCount}</span> active site
+                  {activeCount === 1 ? '' : 's'}
+                  {inactiveCount > 0 ? (
+                    <>
+                      {' '}
+                      · <span className="font-semibold tabular-nums text-slate-900">{inactiveCount}</span> inactive
+                      <span className="text-slate-500"> (kept for history)</span>
+                    </>
+                  ) : null}
+                </p>
+              </div>
+              <p className="text-sm text-slate-600 sm:max-w-md sm:text-right">
+                {stationMode === 'single' ? (
+                  <>
+                    Company preference caps you at <span className="font-medium">one</span> active site; transfers and
+                    auto-scoped flows still follow <span className="font-medium">how many are active</span> right now (
+                    {activeCount}). Need another operating location?{' '}
+                    <Link href="/company" className="font-medium text-blue-600 underline decoration-blue-600/30 hover:decoration-blue-600">
+                      Set multiple sites
+                    </Link>
+                    , then add a station.
+                  </>
+                ) : (
+                  <>
+                    You may have several <span className="font-medium">active</span> depots ({activeCount} now). To stop
+                    using a site without deleting it, open <span className="font-medium">Edit</span> and uncheck{' '}
+                    <span className="font-medium">Station active</span>
+                    . At least one must stay active. Site preference:{' '}
+                    <Link href="/company" className="font-medium text-blue-600 underline decoration-blue-600/30 hover:decoration-blue-600">
+                      Company profile
+                    </Link>
+                    .
+                  </>
+                )}
+              </p>
+            </div>
           </div>
+
+          {stationMode === 'single' && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <p className="font-medium">How single-site mode works</p>
+              <p className="mt-1 text-amber-900/90">
+                You can have <span className="font-semibold">one active</span> location. Sold or closed sites: edit the
+                station and turn off <span className="font-semibold">Station active</span> to keep the row for history, or
+                set{' '}
+                <Link href="/company" className="font-semibold text-amber-950 underline">
+                  Company profile
+                </Link>{' '}
+                to <span className="font-semibold">Multiple stations</span> to add more operating sites. You can still
+                add <span className="font-semibold">inactive</span> site rows while one active site already exists
+                (archived locations).
+              </p>
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
             <div className="relative flex-1 min-w-0 max-w-md">
@@ -210,7 +303,9 @@ export default function StationsPage() {
                 resetForm()
                 setShowModal(true)
               }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm shrink-0"
+              disabled={atStationLimit}
+              title={atStationLimit ? 'One active site: deactivate an existing station or set Multiple stations in Company profile to add more.' : undefined}
+              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm shrink-0 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:hover:bg-gray-300"
             >
               <Plus className="h-5 w-5" />
               <span>Add Station</span>
@@ -288,7 +383,8 @@ export default function StationsPage() {
               {stations.length === 0 && (
                 <button
                   onClick={() => setShowModal(true)}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                  disabled={atStationLimit}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
                   <Plus className="h-5 w-5" />
                   <span>Add Station</span>
@@ -445,11 +541,22 @@ export default function StationsPage() {
                     <input
                       type="checkbox"
                       checked={formData.is_active}
+                      disabled={Boolean(editingId && editingId === onlyActiveStationId && stations.find((x) => x.id === editingId)?.is_active)}
                       onChange={(e) => setFormData((prev) => ({ ...prev, is_active: e.target.checked }))}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      title={
+                        editingId && editingId === onlyActiveStationId
+                          ? 'At least one active station is required. Activate another site first, then you can deactivate this one.'
+                          : undefined
+                      }
                     />
                     <span className="text-sm font-medium text-gray-700">Station active</span>
                   </label>
+                  {editingId === onlyActiveStationId ? (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
+                      This is your only active location; the system blocks turning it off until another site is active.
+                    </p>
+                  ) : null}
                   <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                     <button
                       type="button"
@@ -485,9 +592,11 @@ export default function StationsPage() {
                 className="bg-white rounded-xl shadow-xl app-modal-pad max-w-md w-full"
                 onClick={(e) => e.stopPropagation()}
               >
-                <h2 className="text-xl font-bold text-red-600 mb-4">Delete Station</h2>
-                <p className="text-gray-700 mb-6">
-                  Are you sure you want to delete this station? This action cannot be undone.
+                <h2 className="text-xl font-bold text-red-600 mb-4">Delete station</h2>
+                <p className="text-gray-700 mb-6 text-sm leading-relaxed">
+                  Permanently remove this site record. If the system still has linked history (for example, inventory
+                  moves), deletion may be blocked—use <span className="font-medium">Edit</span> and uncheck Station
+                  active to stop using the location instead.
                 </p>
                 <div className="flex justify-end gap-3">
                   <button

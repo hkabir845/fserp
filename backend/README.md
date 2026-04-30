@@ -16,11 +16,11 @@ Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed. The web 
 
 ### CORS (production)
 
-Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATCH` with custom headers. The frontend sends **`X-Selected-Company-Id`** (tenant scope) for many API calls. The server must respond with **`Access-Control-Allow-Headers`** that includes `x-selected-company-id`.
+Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATCH` with custom headers. The frontend sends **`X-Selected-Company-Id`** (tenant scope) and **`X-Selected-Station-Id`** (optional report / multi-site filter from `localStorage`) on API calls. The server must respond with **`Access-Control-Allow-Headers`** that includes `x-selected-company-id` and `x-selected-station-id`.
 
-- **Django:** `fsms/settings.py` already extends `CORS_ALLOW_HEADERS` with that header (and `x-tenant-subdomain`, `x-request-id`). **Redeploy the backend** so production runs this code.
+- **Django:** `fsms/settings.py` already extends `CORS_ALLOW_HEADERS` with those headers (and `x-tenant-subdomain`, `x-request-id`). **Redeploy the backend** so production runs this code.
 - **CORS origin** is **`https://mahasoftcorporation.com`** in `fsms/settings.py` (do not add a second `Access-Control-Allow-Origin` in nginx).
-- **Nginx / cPanel / reverse proxy:** If the proxy handles `OPTIONS` or injects CORS headers, it must **not** use a narrow `Access-Control-Allow-Headers` list. **Prefer** forwarding `OPTIONS` to Django so `django-cors-headers` sets headers. If you must set CORS in nginx, include at least: `Authorization`, `Content-Type`, `X-CSRFToken`, `X-Selected-Company-Id`, `X-Tenant-Subdomain`, `X-Request-Id`.
+- **Nginx / cPanel / reverse proxy:** If the proxy handles `OPTIONS` or injects CORS headers, it must **not** use a narrow `Access-Control-Allow-Headers` list. **Prefer** forwarding `OPTIONS` to Django so `django-cors-headers` sets headers. If you must set CORS in nginx, include at least: `Authorization`, `Content-Type`, `X-CSRFToken`, `X-Selected-Company-Id`, `X-Selected-Station-Id`, `X-Tenant-Subdomain`, `X-Request-Id`.
 
 **Verify:** `python verify_backend.py` (includes a preflight check for `x-selected-company-id`). On the server, `curl -i -X OPTIONS "https://api.example.com/api/auth/login/" -H "Origin: https://localhost:3000 " -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: x-selected-company-id"` should show `access-control-allow-headers` containing `x-selected-company-id`.
 
@@ -103,5 +103,5 @@ python manage.py runserver 8000
 - **Models:** All domain models as Django models (same `db_table`), unmanaged.
 - **Auth:** JWT login/refresh/me/register (bcrypt).
 - **Companies & users:** List, get, create, update, delete with role-based access.
-- **Other resources:** List/create and retrieve/update/delete for customers, vendors, employees, items, chart of accounts, bank accounts, journal entries, fund transfers, invoices, bills, payments, taxes, stations, islands, tanks, dispensers, meters, nozzles, shifts, tank dips, payroll, subscriptions, contracts, broadcasts, audit logs. Dashboard, reports, backup, upload, cashier, admin, domains, subscription-ledger are stubbed (501 or []).
-- **WebSockets:** Not implemented; use Django Channels if needed.
+- **Other resources:** List/create and retrieve/update/delete for customers, vendors, employees, items, chart of accounts, bank accounts, journal entries, fund transfers, invoices, bills, payments, taxes, stations, islands, tanks, dispensers, meters, nozzles, shifts, tank dips, payroll, loans, inventory, subscriptions, contracts, broadcasts, audit logs. Dashboard, reports, backup/restore, cashier, admin, and subscription flows are implemented against the Django API; see `api/urls.py` for the live route list.
+- **WebSockets:** Not implemented; use Django Channels if you need server-push.

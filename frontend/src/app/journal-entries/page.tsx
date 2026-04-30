@@ -23,6 +23,8 @@ interface JournalEntryLine {
   credit_account_name?: string
   debit_account_code?: string
   credit_account_code?: string
+  station_id?: number | null
+  station_name?: string
 }
 
 interface JournalEntry {
@@ -31,6 +33,8 @@ interface JournalEntry {
   entry_date: string
   reference?: string
   description?: string
+  station_id?: number | null
+  station_name?: string
   total_debit: number | string
   total_credit: number | string
   is_posted: boolean
@@ -49,6 +53,18 @@ interface Account {
   is_active?: boolean
 }
 
+type StationRow = { id: number; station_name: string; is_active?: boolean }
+type LineForm = Omit<
+  JournalEntryLine,
+  | 'id'
+  | 'debit_account_name'
+  | 'credit_account_name'
+  | 'debit_account_code'
+  | 'credit_account_code'
+  | 'station_name'
+  | 'station_id'
+> & { station_id?: number | '' }
+
 export default function JournalEntriesPage() {
   const router = useRouter()
   const toast = useToast()
@@ -63,21 +79,29 @@ export default function JournalEntriesPage() {
   const [editingEntry, setEditingEntry] = useState<JournalEntry | null>(null)
   const [viewingEntry, setViewingEntry] = useState<JournalEntry | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
-  
+  const [stations, setStations] = useState<StationRow[]>([])
+
   // Filter states
   const [filterColumn, setFilterColumn] = useState<string>('all')
   const [filterValue, setFilterValue] = useState<string>('')
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [showFilters, setShowFilters] = useState(false)
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    entry_date: string
+    reference: string
+    description: string
+    station_id: number | ''
+    lines: LineForm[]
+  }>({
     entry_date: new Date().toISOString().split('T')[0],
     reference: '',
     description: '',
+    station_id: '',
     lines: [
-      { line_number: 1, description: '', debit_account_id: null, credit_account_id: null, amount: 0 },
-      { line_number: 2, description: '', debit_account_id: null, credit_account_id: null, amount: 0 }
-    ] as Omit<JournalEntryLine, 'id' | 'debit_account_name' | 'credit_account_name' | 'debit_account_code' | 'credit_account_code'>[]
+      { line_number: 1, description: '', debit_account_id: null, credit_account_id: null, amount: 0, station_id: '' },
+      { line_number: 2, description: '', debit_account_id: null, credit_account_id: null, amount: 0, station_id: '' },
+    ],
   })
 
   useEffect(() => {
@@ -126,9 +150,10 @@ export default function JournalEntriesPage() {
       const queryString = params.toString()
       const url = `/journal-entries${queryString ? `?${queryString}` : ''}`
 
-      const [entriesRes, accountsRes] = await Promise.allSettled([
+      const [entriesRes, accountsRes, stationsRes] = await Promise.allSettled([
         api.get(url),
-        api.get('/chart-of-accounts/')
+        api.get('/chart-of-accounts/'),
+        api.get<unknown[]>('/stations/', { timeout: 8000 }),
       ])
 
       if (entriesRes.status === 'fulfilled') {
@@ -148,6 +173,24 @@ export default function JournalEntriesPage() {
         setAccounts(accountsData.filter((acc: Account) => acc.is_active))
       } else {
         console.error('Failed to load chart of accounts:', accountsRes.reason)
+      }
+
+      if (stationsRes.status === 'fulfilled') {
+        const raw = stationsRes.value.data
+        const rows = Array.isArray(raw) ? raw : []
+        const parsed: StationRow[] = []
+        for (const r of rows) {
+          const o = r as { id?: number; station_name?: string; is_active?: boolean }
+          if (typeof o.id !== 'number') continue
+          parsed.push({
+            id: o.id,
+            station_name: o.station_name || `Site #${o.id}`,
+            is_active: o.is_active,
+          })
+        }
+        setStations(parsed)
+      } else {
+        setStations([])
       }
     } catch (error: any) {
       console.error('Error fetching data:', error)
@@ -296,9 +339,10 @@ export default function JournalEntriesPage() {
           description: '',
           debit_account_id: null,
           credit_account_id: null,
-          amount: 0
-        }
-      ]
+          amount: 0,
+          station_id: '',
+        },
+      ],
     })
   }
 
@@ -344,18 +388,28 @@ export default function JournalEntriesPage() {
     }
 
     try {
-      await api.post('/journal-entries/', {
+      const body: Record<string, unknown> = {
         entry_date: formData.entry_date,
         reference: formData.reference || null,
         description: formData.description || null,
-        lines: linesToSubmit.map((line) => ({
-          line_number: line.line_number,
-          description: line.description || null,
-          debit_account_id: line.debit_account_id || null,
-          credit_account_id: line.credit_account_id || null,
-          amount: Number(line.amount),
-        })),
-      })
+        lines: linesToSubmit.map((line) => {
+          const row: Record<string, unknown> = {
+            line_number: line.line_number,
+            description: line.description || null,
+            debit_account_id: line.debit_account_id || null,
+            credit_account_id: line.credit_account_id || null,
+            amount: Number(line.amount),
+          }
+          if (line.station_id !== '' && line.station_id != null) {
+            row.station_id = Number(line.station_id)
+          }
+          return row
+        }),
+      }
+      if (formData.station_id !== '') {
+        body.station_id = Number(formData.station_id)
+      }
+      await api.post('/journal-entries/', body)
       toast.success('Journal entry created successfully!')
       setShowModal(false)
       resetForm()
@@ -376,13 +430,16 @@ export default function JournalEntriesPage() {
       entry_date: entry.entry_date.split('T')[0],
       reference: entry.reference || '',
       description: entry.description || '',
-      lines: entry.lines.map(line => ({
+      station_id: entry.station_id != null && entry.station_id !== undefined ? Number(entry.station_id) : '',
+      lines: entry.lines.map((line) => ({
         line_number: line.line_number,
         description: line.description || '',
         debit_account_id: line.debit_account_id || null,
         credit_account_id: line.credit_account_id || null,
-        amount: Number(line.amount)
-      }))
+        amount: Number(line.amount),
+        station_id:
+          line.station_id != null && line.station_id !== undefined ? Number(line.station_id) : '',
+      })),
     })
     setShowModal(true)
   }
@@ -406,18 +463,26 @@ export default function JournalEntriesPage() {
     }
 
     try {
-      await api.put(`/journal-entries/${editingEntry.id}/`, {
+      const body: Record<string, unknown> = {
         entry_date: formData.entry_date,
         reference: formData.reference || null,
         description: formData.description || null,
-        lines: linesToSubmit.map((line) => ({
-          line_number: line.line_number,
-          description: line.description || null,
-          debit_account_id: line.debit_account_id || null,
-          credit_account_id: line.credit_account_id || null,
-          amount: Number(line.amount),
-        })),
-      })
+        lines: linesToSubmit.map((line) => {
+          const row: Record<string, unknown> = {
+            line_number: line.line_number,
+            description: line.description || null,
+            debit_account_id: line.debit_account_id || null,
+            credit_account_id: line.credit_account_id || null,
+            amount: Number(line.amount),
+          }
+          if (line.station_id !== '' && line.station_id != null) {
+            row.station_id = Number(line.station_id)
+          }
+          return row
+        }),
+      }
+      body.station_id = formData.station_id === '' ? null : Number(formData.station_id)
+      await api.put(`/journal-entries/${editingEntry.id}/`, body)
       toast.success('Journal entry updated successfully!')
       setShowModal(false)
       setEditingEntry(null)
@@ -479,10 +544,11 @@ export default function JournalEntriesPage() {
       entry_date: new Date().toISOString().split('T')[0],
       reference: '',
       description: '',
+      station_id: '',
       lines: [
-        { line_number: 1, description: '', debit_account_id: null, credit_account_id: null, amount: 0 },
-        { line_number: 2, description: '', debit_account_id: null, credit_account_id: null, amount: 0 }
-      ]
+        { line_number: 1, description: '', debit_account_id: null, credit_account_id: null, amount: 0, station_id: '' },
+        { line_number: 2, description: '', debit_account_id: null, credit_account_id: null, amount: 0, station_id: '' },
+      ],
     })
     setEditingEntry(null)
   }
@@ -699,6 +765,7 @@ export default function JournalEntriesPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
@@ -719,6 +786,9 @@ export default function JournalEntriesPage() {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {entry.description || '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {entry.station_name?.trim() ? entry.station_name : '—'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
                       {currencySymbol}{formatNumber(Number(entry.total_debit || 0))}
@@ -849,6 +919,12 @@ export default function JournalEntriesPage() {
                 <p className="text-gray-900">{viewingEntry.description || '-'}</p>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Default site</label>
+                <p className="text-gray-900">
+                  {viewingEntry.station_name?.trim() ? viewingEntry.station_name : '—'}
+                </p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                 <span className={`px-2 py-1 text-xs rounded-full ${
                   viewingEntry.is_posted 
@@ -868,6 +944,7 @@ export default function JournalEntriesPage() {
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Line</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
                   </tr>
@@ -885,6 +962,9 @@ export default function JournalEntriesPage() {
                         }
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-600">{line.description || '-'}</td>
+                      <td className="px-4 py-2 text-sm text-gray-600">
+                        {line.station_name?.trim() ? line.station_name : '—'}
+                      </td>
                       <td className="px-4 py-2 text-sm text-right font-medium text-gray-900">
                         {line.debit_account_id ? `${currencySymbol}${formatNumber(Number(line.amount))}` : '-'}
                       </td>
@@ -896,7 +976,7 @@ export default function JournalEntriesPage() {
                 </tbody>
                 <tfoot className="bg-gray-50">
                   <tr>
-                    <td colSpan={3} className="px-4 py-2 text-sm font-semibold text-gray-900 text-right">Total:</td>
+                    <td colSpan={4} className="px-4 py-2 text-sm font-semibold text-gray-900 text-right">Total:</td>
                     <td className="px-4 py-2 text-sm font-semibold text-gray-900 text-right">
                       {currencySymbol}{formatNumber(Number(viewingEntry.total_debit))}
                     </td>
@@ -965,6 +1045,34 @@ export default function JournalEntriesPage() {
                     placeholder="Optional description"
                   />
                 </div>
+                {stations.length > 0 ? (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Default site for lines (optional)
+                    </label>
+                    <select
+                      value={formData.station_id === '' ? '' : String(formData.station_id)}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          station_id: e.target.value === '' ? '' : Number(e.target.value),
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Company-wide / untagged</option>
+                      {stations.map((s) => (
+                        <option key={s.id} value={String(s.id)}>
+                          {s.station_name}
+                          {s.is_active === false ? ' (inactive)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Per-line site overrides the default when set below.
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               <div className="mb-6">
@@ -987,6 +1095,9 @@ export default function JournalEntriesPage() {
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                        {stations.length > 0 ? (
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
+                        ) : null}
                         <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
                         <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Action</th>
                       </tr>
@@ -1056,6 +1167,28 @@ export default function JournalEntriesPage() {
                               placeholder="Optional"
                             />
                           </td>
+                          {stations.length > 0 ? (
+                            <td className="px-3 py-2 min-w-[8rem]">
+                              <select
+                                value={line.station_id === '' || line.station_id === undefined ? '' : String(line.station_id)}
+                                onChange={(e) =>
+                                  updateLine(
+                                    index,
+                                    'station_id',
+                                    e.target.value === '' ? '' : Number(e.target.value)
+                                  )
+                                }
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">Use default</option>
+                                {stations.map((s) => (
+                                  <option key={s.id} value={String(s.id)}>
+                                    {s.station_name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          ) : null}
                           <td className="px-3 py-2 min-w-[10rem]">
                             <input
                               type="number"
@@ -1084,7 +1217,10 @@ export default function JournalEntriesPage() {
                     </tbody>
                     <tfoot className="bg-gray-50">
                       <tr>
-                        <td colSpan={4} className="px-3 py-2 text-sm font-semibold text-gray-900 text-right">
+                        <td
+                          colSpan={stations.length > 0 ? 5 : 4}
+                          className="px-3 py-2 text-sm font-semibold text-gray-900 text-right"
+                        >
                           Total:
                         </td>
                         <td colSpan={2} className="px-3 py-2">

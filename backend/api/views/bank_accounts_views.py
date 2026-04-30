@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, parse_optional_company_station_id, require_company_id
 from api.models import BankAccount, ChartOfAccount
 from api.services.journal_statement import (
     build_statement_transactions,
@@ -466,22 +466,37 @@ def bank_account_statement(request, account_id: int):
         return JsonResponse({"detail": "Bank account not found"}, status=404)
     start_date = _parse_date(request.GET.get("start_date"))
     end_date = _parse_date(request.GET.get("end_date"))
+    st_sid, st_err = parse_optional_company_station_id(request.GET, request.company_id)
+    if st_err:
+        return st_err
+    if st_sid is not None and not b.chart_account_id:
+        return JsonResponse(
+            {
+                "detail": "station_id applies only when the bank account is linked to a GL chart account.",
+            },
+            status=400,
+        )
     transactions: list = []
     running = b.current_balance or Decimal("0")
+    opening = b.current_balance or Decimal("0")
     if b.chart_account_id:
         coa = ChartOfAccount.objects.filter(
             id=b.chart_account_id, company_id=request.company_id
         ).first()
         if coa:
-            transactions, running = build_statement_transactions(
-                coa, start_date=start_date, end_date=end_date
+            transactions, running, opening = build_statement_transactions(
+                coa, start_date=start_date, end_date=end_date, station_id=st_sid
             )
     nets = journal_net_movement_map([b.chart_account_id]) if b.chart_account_id else {}
-    return JsonResponse({
+    payload = {
         "account": _bank_to_json(b, journal_net_by_chart=nets or None),
         "start_date": start_date.isoformat() if start_date else None,
         "end_date": end_date.isoformat() if end_date else None,
+        "opening_balance": str(opening),
         "transactions": transactions,
         "ending_balance": str(running),
         "source": "chart_journal_lines" if b.chart_account_id else "register_only",
-    })
+    }
+    if st_sid is not None:
+        payload["filter_station_id"] = st_sid
+    return JsonResponse(payload)

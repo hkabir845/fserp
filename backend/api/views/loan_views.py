@@ -48,6 +48,7 @@ from api.services.loan_counterparty_opening import (
 from api.services.loan_counterparty_ledger import build_counterparty_ledger
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
+from api.services.invoice_station import parse_valid_station_id
 
 
 def _ser_date(d):
@@ -325,6 +326,8 @@ def _loan_json(lo: Loan):
         "parent_loan_no": parent_no,
         "deal_reference": lo.deal_reference or "",
         "is_islamic_financing": loan_uses_islamic_terminology(lo),
+        "station_id": lo.station_id,
+        "station_name": (getattr(getattr(lo, "station", None), "station_name", None) or "") or "",
     }
     if lo.product_type == Loan.PRODUCT_ISLAMIC_FACILITY:
         used, committed, n_deals = _facility_child_metrics(lo)
@@ -734,7 +737,7 @@ def loans_list_or_create(request):
     if request.method == "GET":
         qs = (
             Loan.objects.filter(company_id=cid)
-            .select_related("counterparty", "parent_loan")
+            .select_related("counterparty", "parent_loan", "station")
             .prefetch_related("child_loans")
             .order_by("-created_at", "-id")
         )
@@ -811,6 +814,18 @@ def loans_list_or_create(request):
         elif body.get("parent_loan_id"):
             return JsonResponse({"detail": "parent_loan_id only allowed for Islamic deal"}, status=400)
 
+        stn_id = None
+        if "station_id" in body or "station" in body:
+            raw_s = body.get("station_id", body.get("station"))
+            if raw_s not in (None, "", 0, "0"):
+                pv = parse_valid_station_id(cid, raw_s)
+                if pv is None:
+                    return JsonResponse(
+                        {"detail": "Unknown, inactive, or invalid station_id for this company."},
+                        status=400,
+                    )
+                stn_id = pv
+
         # Stable unique placeholder, then permanent code from DB id (avoids count-based races/gaps).
         temp_no = f"TMP-{uuid.uuid4().hex}"[:64]
         with transaction.atomic():
@@ -820,6 +835,7 @@ def loans_list_or_create(request):
                 direction=direction,
                 status=(body.get("status") or "draft").strip()[:24] or "draft",
                 counterparty_id=cp_id,
+                station_id=stn_id,
                 title=(body.get("title") or "")[:200],
                 agreement_no=(body.get("agreement_no") or "")[:120],
                 principal_account_id=pa,
@@ -862,7 +878,7 @@ def loan_detail(request, loan_id: int):
     cid = request.company_id
     lo = (
         Loan.objects.filter(id=loan_id, company_id=cid)
-        .select_related("parent_loan")
+        .select_related("parent_loan", "station")
         .prefetch_related("child_loans")
         .first()
     )
@@ -914,7 +930,7 @@ def loan_detail(request, loan_id: int):
         if lo.status == "closed":
             # Closing a loan is only a status flag — no GL is posted. Allow reopening and
             # cosmetic updates without touching principal/interest structure.
-            allowed_keys = {"status", "title", "notes", "maturity_date"}
+            allowed_keys = {"status", "title", "notes", "maturity_date", "station_id", "station"}
             if not set(body.keys()) <= allowed_keys:
                 return JsonResponse(
                     {
@@ -936,6 +952,18 @@ def loan_detail(request, loan_id: int):
                 if new_st not in ("draft", "active", "closed"):
                     return JsonResponse({"detail": "status must be draft, active, or closed"}, status=400)
                 lo.status = new_st
+            if "station_id" in body or "station" in body:
+                raw_s = body.get("station_id", body.get("station"))
+                if raw_s in (None, "", 0, "0"):
+                    lo.station_id = None
+                else:
+                    pv = parse_valid_station_id(cid, raw_s)
+                    if pv is None:
+                        return JsonResponse(
+                            {"detail": "Unknown, inactive, or invalid station_id for this company."},
+                            status=400,
+                        )
+                    lo.station_id = pv
             lo.save()
             return JsonResponse(_loan_json(lo))
         has_activity = (
@@ -1126,6 +1154,18 @@ def loan_detail(request, loan_id: int):
                 {"detail": "Islamic facility cannot have a parent loan"},
                 status=400,
             )
+        if "station_id" in body or "station" in body:
+            raw_s = body.get("station_id", body.get("station"))
+            if raw_s in (None, "", 0, "0"):
+                lo.station_id = None
+            else:
+                pv = parse_valid_station_id(cid, raw_s)
+                if pv is None:
+                    return JsonResponse(
+                        {"detail": "Unknown, inactive, or invalid station_id for this company."},
+                        status=400,
+                    )
+                lo.station_id = pv
         lo.save()
         return JsonResponse(_loan_json(lo))
     if request.method == "DELETE":

@@ -50,6 +50,7 @@ def _nozzle_to_pos_json(n):
         "product_price": product_price,
         "product_unit": product_unit,
         "unit_price": product_price,
+        "station_id": station.id if station else None,
         "station_name": station.station_name if station else "",
         "station_number": getattr(station, "station_number", "") or (str(station.id) if station else ""),
         "island_name": island.island_name if island else "",

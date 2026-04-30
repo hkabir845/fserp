@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+from typing import Optional
 
 from django.db import transaction
 from django.utils import timezone
 
-from api.models import ChartOfAccount, Loan, LoanDisbursement, LoanInterestAccrual, LoanRepayment
+from api.models import ChartOfAccount, Loan, LoanDisbursement, LoanInterestAccrual, LoanRepayment, Station
 from api.services.loan_islamic import loan_uses_islamic_terminology
 from api.services.gl_posting import _create_posted_entry
 
@@ -27,6 +28,16 @@ def _coa_label(acc: ChartOfAccount | None) -> str:
     if code and name:
         return f"{code} — {name}"[:200]
     return (code or name)[:200]
+
+
+def _loan_gl_station_id(loan: Loan) -> Optional[int]:
+    """Active company station for optional segment tagging on auto-posted loan journals."""
+    sid = getattr(loan, "station_id", None)
+    if not sid:
+        return None
+    if Station.objects.filter(pk=sid, company_id=loan.company_id, is_active=True).exists():
+        return int(sid)
+    return None
 
 
 def post_loan_disbursement(company_id: int, d: LoanDisbursement) -> bool:
@@ -80,12 +91,14 @@ def post_loan_disbursement(company_id: int, d: LoanDisbursement) -> bool:
             (settlement, amt, Decimal("0"), memo_settle),
             (principal, Decimal("0"), amt, memo_prin),
         ]
+    gst = _loan_gl_station_id(loan)
     je = _create_posted_entry(
         company_id,
         d.disbursement_date,
         entry_number,
         je_desc,
         lines,
+        gl_station_id=gst,
     )
     if not je:
         return False
@@ -161,12 +174,14 @@ def post_loan_repayment(company_id: int, r: LoanRepayment) -> bool:
             lines.append((principal, Decimal("0"), p, memo_prin))
         if i > 0 and interest_acc:
             lines.append((interest_acc, Decimal("0"), i, memo_int))
+    gst = _loan_gl_station_id(loan)
     je = _create_posted_entry(
         company_id,
         r.repayment_date,
         entry_number,
         je_desc,
         lines,
+        gl_station_id=gst,
     )
     if not je:
         return False
@@ -233,12 +248,14 @@ def reverse_loan_repayment(company_id: int, r: LoanRepayment, reversal_date) -> 
         if i > 0 and interest_acc:
             lines.append((interest_acc, i, Decimal("0"), memo_int))
         lines.append((settlement, Decimal("0"), total, memo_settle))
+    gst = _loan_gl_station_id(loan)
     je = _create_posted_entry(
         company_id,
         reversal_date,
         entry_number,
         je_desc,
         lines,
+        gl_station_id=gst,
     )
     if not je:
         return False
@@ -290,6 +307,7 @@ def post_loan_interest_accrual(company_id: int, accrual: LoanInterestAccrual) ->
             (interest_acc, Decimal("0"), amt, memo),
         ]
     isl = loan_uses_islamic_terminology(loan)
+    gst = _loan_gl_station_id(loan)
     je = _create_posted_entry(
         company_id,
         accrual.accrual_date,
@@ -300,6 +318,7 @@ def post_loan_interest_accrual(company_id: int, accrual: LoanInterestAccrual) ->
             else f"Loan interest accrual {loan.loan_no}"
         ),
         lines,
+        gl_station_id=gst,
     )
     if not je:
         return False
@@ -335,6 +354,7 @@ def reverse_loan_interest_accrual(company_id: int, accrual: LoanInterestAccrual,
             (interest_acc, amt, Decimal("0"), memo),
         ]
     isl = loan_uses_islamic_terminology(loan)
+    gst = _loan_gl_station_id(loan)
     je = _create_posted_entry(
         company_id,
         reversal_date,
@@ -345,6 +365,7 @@ def reverse_loan_interest_accrual(company_id: int, accrual: LoanInterestAccrual,
             else f"Reverse loan interest accrual {loan.loan_no}"
         ),
         lines,
+        gl_station_id=gst,
     )
     if not je:
         return False

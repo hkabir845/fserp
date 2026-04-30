@@ -43,6 +43,11 @@ import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { formatDate, formatDateOnly } from '@/utils/date'
 import { AMOUNT_ADMIN_TEXT_CLASS } from '@/utils/amountFieldStyles'
 import { RESTORE_CONFIRM_PHRASE } from '@/utils/tenantBackup'
+import {
+  COMPANY_TIME_ZONE_OPTIONS,
+  DEFAULT_COMPANY_TIME_ZONE,
+  isKnownCompanyTimeZone,
+} from '@/utils/timeZones'
 
 interface PlatformStats {
   total_companies: number
@@ -119,6 +124,7 @@ interface Company {
   payment_start_date?: string
   payment_end_date?: string
   payment_amount?: string
+  time_zone?: string
   // Capacity data
   capacity_limits?: {
     stations?: number
@@ -217,7 +223,8 @@ function SuperAdminPageContent() {
     payment_type: '',
     payment_start_date: '',
     payment_end_date: '',
-    payment_amount: ''
+    payment_amount: '',
+    time_zone: DEFAULT_COMPANY_TIME_ZONE
   })
   const [userFormData, setUserFormData] = useState({
     username: '',
@@ -491,7 +498,8 @@ function SuperAdminPageContent() {
       payment_type: '',
       payment_start_date: '',
       payment_end_date: '',
-      payment_amount: ''
+      payment_amount: '',
+      time_zone: DEFAULT_COMPANY_TIME_ZONE
     })
     setShowCompanyModal(true)
   }
@@ -512,7 +520,8 @@ function SuperAdminPageContent() {
       payment_type: company.payment_type || '',
       payment_start_date: company.payment_start_date || '',
       payment_end_date: company.payment_end_date || '',
-      payment_amount: company.payment_amount?.toString() || ''
+      payment_amount: company.payment_amount?.toString() || '',
+      time_zone: company.time_zone || DEFAULT_COMPANY_TIME_ZONE
     })
     setShowCompanyModal(true)
   }
@@ -2363,6 +2372,29 @@ function SuperAdminPageContent() {
                       <p className="text-xs text-gray-500 mt-1">
                         {getCurrenciesByCountry().length} currencies available (sorted by country name A-Z)
                       </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Time zone</label>
+                      <select
+                        value={companyFormData.time_zone}
+                        onChange={(e) =>
+                          setCompanyFormData({ ...companyFormData, time_zone: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      >
+                        {COMPANY_TIME_ZONE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                        {companyFormData.time_zone && !isKnownCompanyTimeZone(companyFormData.time_zone) && (
+                          <option value={companyFormData.time_zone}>
+                            {companyFormData.time_zone} (current)
+                          </option>
+                        )}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">Default: Asia/Dhaka (Bangladesh).</p>
                     </div>
 
                     <div>

@@ -11,7 +11,8 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.exceptions import StockBusinessError
-from api.models import Bill, BillLine, PaymentBillAllocation, Tank, Vendor
+from api.models import Bill, BillLine, PaymentBillAllocation, Station, Tank, Vendor
+from api.services.station_stock import get_or_create_default_station
 from api.services.gl_posting import (
     bill_eligible_for_posting,
     cleanup_vendor_bill_posting_effects,
@@ -68,6 +69,12 @@ def _bill_to_json(b):
         "due_date": _serialize_date(b.due_date),
         "vendor_id": b.vendor_id,
         "vendor_name": b.vendor.company_name if b.vendor_id else "",
+        "receipt_station_id": getattr(b, "receipt_station_id", None),
+        "receipt_station_name": (
+            b.receipt_station.station_name
+            if getattr(b, "receipt_station_id", None) and getattr(b, "receipt_station", None)
+            else ""
+        ),
         "vendor_reference": getattr(b, "vendor_reference", "") or "",
         "memo": getattr(b, "memo", "") or "",
         "status": b.status,
@@ -200,7 +207,7 @@ def bills_list_or_create(request):
 def _bills_list(request):
     qs = (
         Bill.objects.filter(company_id=request.company_id)
-        .select_related("vendor")
+        .select_related("vendor", "receipt_station")
         .prefetch_related("lines__item", "lines__tank", "payment_allocations")
         .order_by("-bill_date", "-id")
     )
@@ -228,12 +235,46 @@ def bills_create(request):
     tax_total = _decimal(body.get("tax_amount", body.get("tax_total")))
     status = _normalize_bill_status(body.get("status"), "draft")
     ack_tank_overfill = _acknowledge_tank_overfill_from_body(body)
+    receipt_station_id = None
+    raw_rs = body.get("receipt_station_id") or body.get("station_id")
+    if raw_rs is not None and raw_rs != "":
+        try:
+            receipt_station_id = int(raw_rs)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "receipt_station_id must be an integer"}, status=400)
+        if not Station.objects.filter(
+            pk=receipt_station_id, company_id=request.company_id, is_active=True
+        ).exists():
+            return JsonResponse(
+                {"detail": "Unknown or inactive receipt_station_id for this company"},
+                status=400,
+            )
+    else:
+        vrow = (
+            Vendor.objects.filter(pk=vendor_id, company_id=request.company_id)
+            .only("default_station_id")
+            .first()
+        )
+        if (
+            vrow
+            and vrow.default_station_id
+            and Station.objects.filter(
+                pk=vrow.default_station_id,
+                company_id=request.company_id,
+                is_active=True,
+            ).exists()
+        ):
+            receipt_station_id = vrow.default_station_id
+        else:
+            # Single-site and multi-site: default receiving location so GL/stock and reports stay consistent.
+            receipt_station_id = get_or_create_default_station(request.company_id).id
 
     try:
         with transaction.atomic():
             b = Bill(
                 company_id=request.company_id,
                 vendor_id=vendor_id,
+                receipt_station_id=receipt_station_id,
                 bill_number=f"BILL-{count + 1}",
                 bill_date=bill_date,
                 due_date=due_date,
@@ -267,7 +308,7 @@ def bills_create(request):
             b.refresh_from_db()
             b = (
                 Bill.objects.filter(id=b.id)
-                .select_related("vendor")
+                .select_related("vendor", "receipt_station")
                 .prefetch_related("lines__item", "lines__tank", "payment_allocations")
                 .first()
             )
@@ -288,7 +329,7 @@ def bills_create(request):
 def bill_detail(request, bill_id: int):
     b = (
         Bill.objects.filter(id=bill_id, company_id=request.company_id)
-        .select_related("vendor")
+        .select_related("vendor", "receipt_station")
         .prefetch_related("lines__item", "lines__tank", "payment_allocations")
         .first()
     )
@@ -300,6 +341,27 @@ def bill_detail(request, bill_id: int):
         body, err = parse_json_body(request)
         if err:
             return err
+        if "receipt_station_id" in body or "station_id" in body:
+            raw_rs = (
+                body.get("receipt_station_id")
+                if "receipt_station_id" in body
+                else body.get("station_id")
+            )
+            if raw_rs is None or raw_rs == "":
+                b.receipt_station_id = None
+            else:
+                try:
+                    rid = int(raw_rs)
+                except (TypeError, ValueError):
+                    return JsonResponse({"detail": "receipt_station_id must be an integer"}, status=400)
+                if not Station.objects.filter(
+                    pk=rid, company_id=request.company_id, is_active=True
+                ).exists():
+                    return JsonResponse(
+                        {"detail": "Unknown or inactive receipt_station_id for this company"},
+                        status=400,
+                    )
+                b.receipt_station_id = rid
         parsed_lines = None
         if body.get("vendor_id"):
             vid = body.get("vendor_id")
@@ -362,7 +424,7 @@ def bill_detail(request, bill_id: int):
                 b.refresh_from_db()
                 b = (
                     Bill.objects.filter(id=b.id)
-                    .select_related("vendor")
+                    .select_related("vendor", "receipt_station")
                     .prefetch_related("lines__item", "lines__tank", "payment_allocations")
                     .first()
                 )

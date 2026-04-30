@@ -124,6 +124,7 @@ def admin_companies(request):
             "billing_plan_code": (getattr(c, "billing_plan_code", None) or "").strip().lower(),
             "date_format": getattr(c, "date_format", None) or "YYYY-MM-DD",
             "time_format": getattr(c, "time_format", None) or "HH:mm",
+            "time_zone": (getattr(c, "time_zone", None) or "Asia/Dhaka")[:64],
             "platform_release": current_release,
             "platform_target_release": target_release,
             "platform_release_applied_at": applied.isoformat() if applied else None,

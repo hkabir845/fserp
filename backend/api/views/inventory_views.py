@@ -1,6 +1,7 @@
 """Per-station stock availability and inter-station transfers (shop inventory)."""
 from __future__ import annotations
 
+from collections import defaultdict
 from decimal import Decimal
 
 from django.db import transaction
@@ -177,6 +178,24 @@ def inventory_transfers_list_or_create(request):
                 status=400,
             )
         parsed_lines.append((it, q))
+    need_by_item: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    items_by_id: dict[int, Item] = {}
+    for it, q in parsed_lines:
+        need_by_item[it.id] += q
+        items_by_id[it.id] = it
+    for iid, total_need in need_by_item.items():
+        it = items_by_id[iid]
+        have = get_station_stock(cid, fs, iid)
+        if total_need > have:
+            return JsonResponse(
+                {
+                    "detail": (
+                        f'Not enough stock of "{it.name}" at the source station to save this transfer: '
+                        f"need {_serialize_decimal(total_need)} in total but only {_serialize_decimal(have)} on hand."
+                    )
+                },
+                status=400,
+            )
     with transaction.atomic():
         tr = InventoryTransfer(
             company_id=cid,
@@ -227,18 +246,25 @@ def inventory_transfer_detail_or_post(request, transfer_id: int):
         lines = list(
             InventoryTransferLine.objects.filter(transfer_id=locked.id).select_related("item")
         )
+        need_by_item: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+        items_by_id: dict[int, Item] = {}
         for ln in lines:
             it = ln.item
             qty = ln.quantity or Decimal("0")
             if qty <= 0:
                 continue
-            have = get_station_stock(cid, locked.from_station_id, it.id)
-            if qty > have:
+            need_by_item[it.id] += qty
+            items_by_id[it.id] = it
+        for iid, total_need in need_by_item.items():
+            it = items_by_id[iid]
+            have = get_station_stock(cid, locked.from_station_id, iid)
+            if total_need > have:
                 return JsonResponse(
                     {
                         "detail": (
                             f'Not enough stock of "{it.name}" at source station: '
-                            f"need {qty} but only {have} on hand."
+                            f"need {_serialize_decimal(total_need)} in total across lines but only "
+                            f"{_serialize_decimal(have)} on hand."
                         )
                     },
                     status=400,

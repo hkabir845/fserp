@@ -1,11 +1,14 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import {
+  ArrowRight,
   ArrowRightLeft,
+  Info,
   Loader2,
   MapPin,
   Plus,
@@ -36,20 +39,6 @@ type PosItem = { id: number; name: string; item_number?: string; pos_category?: 
 
 type TransferLineRow = { item_id: number; quantity: string }
 
-type TransferRecord = {
-  id: number
-  transfer_number: string
-  transfer_date: string
-  status: string
-  memo?: string
-  from_station_id: number
-  to_station_id: number
-  from_station_name: string
-  to_station_name: string
-  posted_at?: string | null
-  lines: { id: number; item_id: number; item_name: string; quantity: string }[]
-}
-
 type AvailabilityResponse =
   | {
       item_id: number
@@ -66,6 +55,54 @@ type AvailabilityResponse =
       message?: string
       stations: unknown[]
     }
+
+type ItemAvailState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ok'; data: AvailabilityResponse }
+  | { status: 'error'; message: string }
+
+type TransferRecord = {
+  id: number
+  transfer_number: string
+  transfer_date: string
+  status: string
+  memo?: string
+  from_station_id: number
+  to_station_id: number
+  from_station_name: string
+  to_station_name: string
+  posted_at?: string | null
+  lines: { id: number; item_id: number; item_name: string; quantity: string }[]
+}
+
+function parseQtyInput(raw: string): number {
+  const n = parseFloat(String(raw).replace(/,/g, '').trim())
+  return Number.isFinite(n) ? n : NaN
+}
+
+function qtyAtSourceStation(
+  data: AvailabilityResponse,
+  fromStationId: number
+): { qtyNum: number; unit: string } {
+  if (!data.tracks_per_station) return { qtyNum: 0, unit: '' }
+  const row = data.stations.find(s => s.station_id === fromStationId)
+  const q = parseFloat(String(row?.quantity ?? '0').replace(/,/g, ''))
+  return {
+    qtyNum: Number.isFinite(q) ? q : 0,
+    unit: (data.unit || 'units').trim() || 'units',
+  }
+}
+
+function sumQtySameItemOtherLines(rows: TransferLineRow[], itemId: number, exceptIndex: number): number {
+  let sum = 0
+  rows.forEach((r, j) => {
+    if (j === exceptIndex || r.item_id !== itemId) return
+    const q = parseQtyInput(r.quantity)
+    if (q > 0) sum += q
+  })
+  return sum
+}
 
 function InventoryContent() {
   const router = useRouter()
@@ -93,6 +130,8 @@ function InventoryContent() {
   const [transferMemo, setTransferMemo] = useState('')
   const [lineRows, setLineRows] = useState<TransferLineRow[]>([{ item_id: 0, quantity: '1' }])
   const [saving, setSaving] = useState(false)
+  const [itemAvail, setItemAvail] = useState<Record<number, ItemAvailState>>({})
+  const [availFetchSeq, setAvailFetchSeq] = useState(0)
 
   // Stock lookup
   const [lookupItemId, setLookupItemId] = useState<number | ''>('')
@@ -252,19 +291,136 @@ function InventoryContent() {
     setLineRows(prev => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)))
   }
 
-  const submitTransferDraft = async () => {
+  const lineItemIdsKey = useMemo(
+    () =>
+      [...new Set(lineRows.map(r => r.item_id).filter(id => id > 0))]
+        .sort((a, b) => a - b)
+        .join(','),
+    [lineRows],
+  )
+
+  useEffect(() => {
+    const ids = lineItemIdsKey
+      ? lineItemIdsKey.split(',').map(s => parseInt(s, 10)).filter(n => Number.isFinite(n) && n > 0)
+      : []
+    if (!ids.length) return undefined
+    const ac = new AbortController()
+    for (const id of ids) {
+      setItemAvail(prev => ({ ...prev, [id]: { status: 'loading' } }))
+    }
+    void Promise.all(
+      ids.map(async id => {
+        try {
+          const r = await api.get('/inventory/availability/', {
+            params: { item_id: id },
+            signal: ac.signal,
+          })
+          if (ac.signal.aborted) return
+          setItemAvail(prev => ({ ...prev, [id]: { status: 'ok', data: r.data as AvailabilityResponse } }))
+        } catch (e: unknown) {
+          if (ac.signal.aborted) return
+          const err = e as { code?: string; name?: string }
+          if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return
+          setItemAvail(prev => ({
+            ...prev,
+            [id]: { status: 'error', message: extractErrorMessage(e, 'Could not load stock') },
+          }))
+        }
+      }),
+    )
+    return () => ac.abort()
+  }, [lineItemIdsKey, availFetchSeq])
+
+  const transferDraftIssues = useMemo(() => {
+    const issues: string[] = []
     if (!fromStationId || !toStationId) {
-      toast.error('Select both source and destination stations')
-      return
+      issues.push('Select both source and destination sites.')
+      return issues
     }
     if (fromStationId === toStationId) {
-      toast.error('Source and destination must differ')
+      issues.push('Source and destination must be different sites.')
+      return issues
+    }
+    const fs = fromStationId
+    const validLines = lineRows
+      .map((r, i) => ({ ...r, i, q: parseQtyInput(r.quantity) }))
+      .filter(x => x.item_id > 0)
+    if (!validLines.length) {
+      issues.push('Add at least one product with a quantity greater than zero (zero is not allowed).')
+    }
+    for (const row of validLines) {
+      if (!Number.isFinite(row.q) || row.q <= 0) {
+        issues.push(`Line ${row.i + 1}: enter a quantity greater than zero.`)
+        continue
+      }
+      const st = itemAvail[row.item_id]
+      if (!st || st.status === 'loading') {
+        issues.push(`Line ${row.i + 1}: loading stock for this product…`)
+        continue
+      }
+      if (st.status === 'error') {
+        issues.push(`Line ${row.i + 1}: ${st.message}`)
+        continue
+      }
+      const data = st.data
+      if (!data.tracks_per_station) {
+        issues.push(
+          `Line ${row.i + 1}: "${data.name}" cannot be moved here (fuel / not tracked in shop bins).`,
+        )
+        continue
+      }
+      const { qtyNum, unit } = qtyAtSourceStation(data, fs)
+      const others = sumQtySameItemOtherLines(lineRows, row.item_id, row.i)
+      const maxForLine = qtyNum - others
+      if (qtyNum <= 0 && row.q > 0) {
+        issues.push(
+          `Line ${row.i + 1}: no stock at source for this product — receive or adjust stock before transferring.`,
+        )
+      } else if (row.q > maxForLine + 1e-9) {
+        issues.push(
+          `Line ${row.i + 1}: quantity exceeds what you can send (${qtyNum.toLocaleString()} ${unit} at source` +
+            (others > 0
+              ? `; ${others.toLocaleString()} ${unit} already on other lines for this SKU`
+              : '') +
+            `; max for this line ${Math.max(0, maxForLine).toLocaleString()} ${unit}).`,
+        )
+      }
+    }
+    return issues
+  }, [fromStationId, toStationId, lineRows, itemAvail])
+
+  const applyMaxQty = useCallback(
+    (lineIndex: number) => {
+      setLineRows(prev => {
+        const row = prev[lineIndex]
+        if (!row || typeof fromStationId !== 'number' || row.item_id <= 0) return prev
+        const st = itemAvail[row.item_id]
+        if (!st || st.status !== 'ok' || !st.data.tracks_per_station) return prev
+        const { qtyNum } = qtyAtSourceStation(st.data, fromStationId)
+        const others = sumQtySameItemOtherLines(prev, row.item_id, lineIndex)
+        const max = Math.max(0, qtyNum - others)
+        const qtyStr = Number.isInteger(max) ? String(max) : String(Math.round(max * 1e6) / 1e6)
+        const next = [...prev]
+        next[lineIndex] = { ...next[lineIndex], quantity: qtyStr }
+        return next
+      })
+    },
+    [fromStationId, itemAvail],
+  )
+
+  const refreshLineAvailability = useCallback(() => {
+    setAvailFetchSeq(s => s + 1)
+  }, [])
+
+  const submitTransferDraft = async () => {
+    if (transferDraftIssues.length > 0) {
+      toast.error(transferDraftIssues[0] || 'Fix the form before saving.')
       return
     }
     const lines = lineRows
       .map(r => ({
         item_id: r.item_id,
-        q: parseFloat(String(r.quantity).replace(/,/g, '')),
+        q: parseQtyInput(r.quantity),
       }))
       .filter(r => r.item_id > 0 && Number.isFinite(r.q) && r.q > 0)
     if (!lines.length) {
@@ -283,6 +439,7 @@ function InventoryContent() {
       toast.success('Transfer draft created. Post it to move stock.')
       setLineRows([{ item_id: 0, quantity: '1' }])
       setTransferMemo('')
+      setItemAvail({})
       void loadCore()
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not create transfer'))
@@ -330,12 +487,12 @@ function InventoryContent() {
     <div className="page-with-sidebar flex h-screen min-h-0 w-full min-w-0 max-w-full bg-gray-100">
       <Sidebar />
       <div className="flex-1 min-h-0 min-w-0 overflow-auto app-scroll-pad p-4 sm:p-6 lg:p-8">
-        <div className="mx-auto w-full max-w-6xl space-y-6">
+        <div className="mx-auto w-full max-w-7xl space-y-6">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               Inter-station inventory
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
               <span className="font-medium text-foreground">Shop (general) products</span> use per-station bins
               when you have multiple active sites; with one site, stock stays at that location.{' '}
               <span className="font-medium text-foreground">Fuel</span> is tracked in tanks.{' '}
@@ -363,29 +520,37 @@ function InventoryContent() {
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2 border-b border-border pb-2">
+          <div
+            className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-muted/50 p-1 shadow-sm"
+            role="tablist"
+            aria-label="Inventory views"
+          >
             <button
               type="button"
+              role="tab"
+              aria-selected={tab === 'transfers'}
               onClick={() => setTabAndUrl('transfers')}
-              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                 tab === 'transfers'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted'
+                  ? 'bg-card text-foreground shadow-sm ring-1 ring-border/80'
+                  : 'text-muted-foreground hover:bg-background/80 hover:text-foreground'
               }`}
             >
-              <ArrowRightLeft className="h-4 w-4" />
+              <ArrowRightLeft className="h-4 w-4 shrink-0" />
               Transfers
             </button>
             <button
               type="button"
+              role="tab"
+              aria-selected={tab === 'lookup'}
               onClick={() => setTabAndUrl('lookup')}
-              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                 tab === 'lookup'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted'
+                  ? 'bg-card text-foreground shadow-sm ring-1 ring-border/80'
+                  : 'text-muted-foreground hover:bg-background/80 hover:text-foreground'
               }`}
             >
-              <Search className="h-4 w-4" />
+              <Search className="h-4 w-4 shrink-0" />
               Stock by station
             </button>
           </div>
@@ -396,8 +561,8 @@ function InventoryContent() {
               Loading…
             </div>
           ) : tab === 'lookup' ? (
-            <div className="space-y-6 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-6">
-              <h2 className="text-lg font-semibold">Availability by location</h2>
+            <div className="space-y-6 rounded-2xl border border-border bg-card p-5 shadow-md ring-1 ring-black/5 dark:ring-white/10 sm:p-7">
+              <h2 className="text-lg font-semibold tracking-tight">Availability by location</h2>
               {userHomeStation && (
                 <p className="text-sm text-muted-foreground">
                   Rows for <span className="font-medium text-foreground">{userHomeStation.name}</span> match
@@ -517,9 +682,9 @@ function InventoryContent() {
               )}
             </div>
           ) : (
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="flex w-full min-w-0 flex-col gap-5">
               {userHomeStation ? (
-                <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-muted/20 p-4 shadow-sm sm:p-6">
+                <div className="rounded-xl border border-dashed border-muted-foreground/35 bg-muted/25 p-4 shadow-sm sm:p-5">
                   <h2 className="text-lg font-semibold text-muted-foreground">New transfer (not available)</h2>
                   <p className="mt-2 text-sm text-muted-foreground">
                     Inter-station transfers are created with a user that is not limited to a single home
@@ -528,7 +693,7 @@ function InventoryContent() {
                   </p>
                 </div>
               ) : !canTransferBetweenSites ? (
-                <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-muted/20 p-4 shadow-sm sm:p-6">
+                <div className="rounded-xl border border-dashed border-muted-foreground/35 bg-muted/25 p-4 shadow-sm sm:p-5">
                   <h2 className="text-lg font-semibold text-muted-foreground">New transfer (not available)</h2>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {stationMode === 'single' ? (
@@ -547,138 +712,354 @@ function InventoryContent() {
                   </p>
                 </div>
               ) : (
-                <div className="rounded-xl border border-border bg-card p-4 shadow-sm sm:p-6">
-                  <h2 className="text-lg font-semibold">New transfer (draft)</h2>
-                  <p className="mb-4 text-sm text-muted-foreground">
-                    Save a draft, then post it to move stock and post matching GL to inventory.
-                  </p>
-                  <div className="space-y-3">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="text-sm font-medium">From station</label>
-                        <select
-                          className={selectClassName + ' mt-1'}
-                          value={fromStationId === '' ? '' : String(fromStationId)}
-                          onChange={e => setFromStationId(e.target.value ? parseInt(e.target.value, 10) : '')}
+                <div className="w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-black/5 dark:ring-white/10">
+                  <div className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
+                    <h2 className="text-lg font-semibold tracking-tight">New stock transfer</h2>
+                    <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
+                      Save a <span className="font-medium text-foreground">draft</span> first; posting moves bins and
+                      records the GL.
+                    </p>
+                  </div>
+
+                  <div className="space-y-5 p-4 sm:p-5">
+                    <section
+                      className="space-y-3 rounded-lg border border-border/60 bg-muted/10 p-3 sm:p-4"
+                      aria-labelledby="inv-route-heading"
+                    >
+                      <h3
+                        id="inv-route-heading"
+                        className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                      >
+                        <ArrowRightLeft className="h-3.5 w-3.5" aria-hidden />
+                        Route &amp; document
+                      </h3>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <label className="text-sm font-medium text-foreground" htmlFor="inv-from-st">
+                            Sending site
+                          </label>
+                          <select
+                            id="inv-from-st"
+                            className={selectClassName}
+                            value={fromStationId === '' ? '' : String(fromStationId)}
+                            onChange={e => setFromStationId(e.target.value ? parseInt(e.target.value, 10) : '')}
+                          >
+                            <option value="">From…</option>
+                            {stations.map(s => (
+                              <option key={s.id} value={s.id}>
+                                {s.station_name}
+                                {s.station_number ? ` (${s.station_number})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            Quantities below use this site&apos;s bin.
+                          </p>
+                        </div>
+                        <div
+                          className="hidden shrink-0 justify-center pb-2 text-muted-foreground sm:flex sm:w-8"
+                          aria-hidden
                         >
-                          <option value="">— Select —</option>
-                          {stations.map(s => (
-                            <option key={s.id} value={s.id}>
-                              {s.station_name}
-                            </option>
-                          ))}
-                        </select>
+                          <ArrowRight className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <label className="text-sm font-medium text-foreground" htmlFor="inv-to-st">
+                            Receiving site
+                          </label>
+                          <select
+                            id="inv-to-st"
+                            className={selectClassName}
+                            value={toStationId === '' ? '' : String(toStationId)}
+                            onChange={e => setToStationId(e.target.value ? parseInt(e.target.value, 10) : '')}
+                          >
+                            <option value="">To…</option>
+                            {stations.map(s => (
+                              <option key={s.id} value={s.id}>
+                                {s.station_name}
+                                {s.station_number ? ` (${s.station_number})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[11px] leading-snug text-muted-foreground">Stock increases here on post.</p>
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-sm font-medium">To station</label>
-                        <select
-                          className={selectClassName + ' mt-1'}
-                          value={toStationId === '' ? '' : String(toStationId)}
-                          onChange={e => setToStationId(e.target.value ? parseInt(e.target.value, 10) : '')}
-                        >
-                          <option value="">— Select —</option>
-                          {stations.map(s => (
-                            <option key={s.id} value={s.id}>
-                              {s.station_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Transfer date</label>
-                      <input
-                        type="date"
-                        className={inputClassName + ' mt-1'}
-                        value={transferDate}
-                        onChange={e => setTransferDate(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Memo (optional)</label>
-                      <input
-                        className={inputClassName + ' mt-1'}
-                        value={transferMemo}
-                        onChange={e => setTransferMemo(e.target.value)}
-                        placeholder="e.g. Replenish express lane"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">Lines</span>
-                        <button type="button" className={btnSecondary + ' !py-1.5 !text-xs'} onClick={addLineRow}>
-                          <Plus className="h-3.5 w-3.5" />
-                          Add line
-                        </button>
-                      </div>
-                      {lineRows.map((row, i) => (
-                        <div key={i} className="flex flex-wrap items-end gap-2">
-                          <div className="min-w-0 flex-1">
-                            {i === 0 && (
-                              <label className="text-xs text-muted-foreground" htmlFor={`tli-${i}`}>
-                                Item
-                              </label>
-                            )}
-                            <select
-                              id={`tli-${i}`}
-                              className={selectClassName + (i > 0 ? ' mt-1' : ' mt-1')}
-                              value={row.item_id || ''}
-                              onChange={e =>
-                                updateLine(i, 'item_id', e.target.value ? parseInt(e.target.value, 10) : 0)
-                              }
-                            >
-                              <option value={0}>— Product —</option>
-                              {posItems.map(p => (
-                                <option key={p.id} value={p.id}>
-                                  {p.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="w-28">
-                            {i === 0 && (
-                              <label className="text-xs text-muted-foreground" htmlFor={`tlq-${i}`}>
-                                Qty
-                              </label>
-                            )}
+                      <div className="border-t border-border/50 pt-3">
+                        <h3 id="inv-doc-heading" className="sr-only">
+                          Document details
+                        </h3>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <label className="text-sm font-medium" htmlFor="inv-transfer-date">
+                              Date
+                            </label>
                             <input
-                              id={`tlq-${i}`}
-                              className={inputClassName + (i > 0 ? ' mt-1' : ' mt-1')}
-                              inputMode="decimal"
-                              value={row.quantity}
-                              onChange={e => updateLine(i, 'quantity', e.target.value)}
+                              id="inv-transfer-date"
+                              type="date"
+                              className={inputClassName}
+                              value={transferDate}
+                              onChange={e => setTransferDate(e.target.value)}
                             />
                           </div>
-                          {lineRows.length > 1 && (
-                            <button
-                              type="button"
-                              aria-label="Remove line"
-                              className={btnDanger + ' self-end'}
-                              onClick={() => removeLine(i)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
+                          <div className="space-y-1 sm:col-span-2">
+                            <label className="text-sm font-medium" htmlFor="inv-transfer-memo">
+                              Memo <span className="font-normal text-muted-foreground">(optional)</span>
+                            </label>
+                            <textarea
+                              id="inv-transfer-memo"
+                              rows={2}
+                              className={inputClassName + ' min-h-[60px] resize-y py-2'}
+                              value={transferMemo}
+                              onChange={e => setTransferMemo(e.target.value)}
+                              placeholder="e.g. Weekly replenishment"
+                            />
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      className={btnPrimary + ' w-full sm:w-auto'}
-                      disabled={saving}
-                      onClick={() => void submitTransferDraft()}
-                    >
-                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Package className="h-4 w-4" />}
-                      Save draft
-                    </button>
+                      </div>
+                    </section>
+
+                    <section aria-labelledby="inv-lines-heading">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <h3
+                          id="inv-lines-heading"
+                          className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                        >
+                          <Package className="h-3.5 w-3.5" aria-hidden />
+                          Line items
+                        </h3>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className={btnSecondary + ' !py-1.5 !text-xs'}
+                            onClick={() => refreshLineAvailability()}
+                            disabled={!lineItemIdsKey}
+                          >
+                            Refresh quantities
+                          </button>
+                          <button type="button" className={btnSecondary + ' !py-1.5 !text-xs'} onClick={addLineRow}>
+                            <Plus className="h-3.5 w-3.5" />
+                            Add line
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto rounded-lg border border-border">
+                        <table className="w-full min-w-[600px] text-sm">
+                          <thead>
+                            <tr className="border-b bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                              <th className="w-10 px-3 py-2.5">#</th>
+                              <th className="min-w-[200px] px-3 py-2.5">Product</th>
+                              <th className="min-w-[100px] px-3 py-2.5">SKU</th>
+                              <th className="min-w-[140px] px-3 py-2.5 text-right">Available at source</th>
+                              <th className="min-w-[120px] px-3 py-2.5 text-right">Transfer qty</th>
+                              <th className="w-[120px] px-3 py-2.5 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {lineRows.map((row, i) => {
+                              const product = posItems.find(p => p.id === row.item_id)
+                              const st = row.item_id > 0 ? itemAvail[row.item_id] : undefined
+                              const qVal = parseQtyInput(row.quantity)
+                              let availMain: ReactNode = (
+                                <span className="text-muted-foreground">—</span>
+                              )
+                              let availSub: ReactNode = null
+                              let rowWarn = false
+
+                              if (row.item_id <= 0) {
+                                availMain = <span className="text-muted-foreground">Choose a product</span>
+                              } else if (!fromStationId) {
+                                availMain = (
+                                  <span className="text-xs text-muted-foreground">Select sending site first</span>
+                                )
+                              } else if (!st || st.status === 'loading') {
+                                availMain = (
+                                  <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    Loading…
+                                  </span>
+                                )
+                              } else if (st.status === 'error') {
+                                availMain = <span className="text-xs text-destructive">{st.message}</span>
+                                rowWarn = true
+                              } else if (!st.data.tracks_per_station) {
+                                availMain = (
+                                  <span className="text-xs text-amber-800 dark:text-amber-200">
+                                    Not movable here (fuel / not in shop bins)
+                                  </span>
+                                )
+                                rowWarn = true
+                              } else {
+                                const fs = fromStationId as number
+                                const { qtyNum, unit } = qtyAtSourceStation(st.data, fs)
+                                const others = sumQtySameItemOtherLines(lineRows, row.item_id, i)
+                                const maxLine = Math.max(0, qtyNum - others)
+                                availMain = (
+                                  <span className="tabular-nums">
+                                    <span className="font-semibold text-foreground">
+                                      {qtyNum.toLocaleString(undefined, {
+                                        maximumFractionDigits: 6,
+                                      })}
+                                    </span>{' '}
+                                    <span className="text-muted-foreground">{unit}</span>
+                                  </span>
+                                )
+                                if (qtyNum <= 0) {
+                                  availSub = (
+                                    <span className="mt-0.5 block text-xs text-amber-800 dark:text-amber-200">
+                                      No stock at this site — cannot transfer until receipt or adjustment.
+                                    </span>
+                                  )
+                                  rowWarn = true
+                                } else if (others > 0) {
+                                  availSub = (
+                                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                                      Max on this line after other lines:{' '}
+                                      <span className="font-medium text-foreground">
+                                        {maxLine.toLocaleString(undefined, { maximumFractionDigits: 6 })} {unit}
+                                      </span>
+                                    </span>
+                                  )
+                                }
+                                if (Number.isFinite(qVal) && qVal > maxLine + 1e-9) rowWarn = true
+                                if (Number.isFinite(qVal) && qVal <= 0 && row.item_id > 0) rowWarn = true
+                              }
+
+                              return (
+                                <tr
+                                  key={`inv-line-${i}`}
+                                  className={`border-t border-border ${rowWarn ? 'bg-amber-500/5 dark:bg-amber-500/10' : ''}`}
+                                >
+                                  <td className="px-3 py-2.5 align-top text-muted-foreground tabular-nums">{i + 1}</td>
+                                  <td className="px-3 py-2.5 align-top">
+                                    <label className="sr-only" htmlFor={`tli-${i}`}>
+                                      Product line {i + 1}
+                                    </label>
+                                    <select
+                                      id={`tli-${i}`}
+                                      className={selectClassName}
+                                      value={row.item_id || ''}
+                                      onChange={e =>
+                                        updateLine(
+                                          i,
+                                          'item_id',
+                                          e.target.value ? parseInt(e.target.value, 10) : 0,
+                                        )
+                                      }
+                                    >
+                                      <option value="">Select product…</option>
+                                      {posItems.map(p => (
+                                        <option key={p.id} value={p.id}>
+                                          {p.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="px-3 py-2.5 align-top text-muted-foreground tabular-nums">
+                                    {product?.item_number || '—'}
+                                  </td>
+                                  <td className="px-3 py-2.5 align-top text-right">
+                                    <div>{availMain}</div>
+                                    {availSub}
+                                  </td>
+                                  <td className="px-3 py-2.5 align-top text-right">
+                                    <label className="sr-only" htmlFor={`tlq-${i}`}>
+                                      Quantity line {i + 1}
+                                    </label>
+                                    <input
+                                      id={`tlq-${i}`}
+                                      className={inputClassName + ' text-right tabular-nums'}
+                                      inputMode="decimal"
+                                      autoComplete="off"
+                                      value={row.quantity}
+                                      onChange={e => updateLine(i, 'quantity', e.target.value)}
+                                      aria-invalid={rowWarn}
+                                    />
+                                    {typeof fromStationId === 'number' &&
+                                      row.item_id > 0 &&
+                                      st?.status === 'ok' &&
+                                      st.data.tracks_per_station && (
+                                        <button
+                                          type="button"
+                                          className="mt-1 text-xs font-medium text-primary hover:underline"
+                                          onClick={() => applyMaxQty(i)}
+                                        >
+                                          Use max for this line
+                                        </button>
+                                      )}
+                                  </td>
+                                  <td className="px-3 py-2.5 align-top text-right">
+                                    {lineRows.length > 1 ? (
+                                      <button
+                                        type="button"
+                                        aria-label={`Remove line ${i + 1}`}
+                                        className={btnDanger}
+                                        onClick={() => removeLine(i)}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {transferDraftIssues.length > 0 && (
+                        <div
+                          className="mt-4 rounded-lg border border-amber-200/90 bg-amber-50/90 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/25"
+                          role="status"
+                        >
+                          <div className="flex gap-2">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
+                            <ul className="list-inside list-disc space-y-1 text-sm text-amber-950 dark:text-amber-100">
+                              {transferDraftIssues.map((msg, idx) => (
+                                <li key={idx}>{msg}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="max-w-md text-[11px] leading-relaxed text-muted-foreground sm:min-w-0 sm:max-w-[min(28rem,100%)] sm:flex-1">
+                          <span className="inline-flex items-start gap-1.5">
+                            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                            <span>
+                              Quantities must be <strong className="font-medium text-foreground">greater than zero</strong>.
+                              You cannot transfer more than is available at the sending site; if the same product
+                              appears on multiple lines, limits apply to the combined total.
+                            </span>
+                          </span>
+                        </p>
+                        <button
+                          type="button"
+                          className={btnPrimary + ' w-full shrink-0 sm:w-auto'}
+                          disabled={saving || transferDraftIssues.length > 0}
+                          onClick={() => void submitTransferDraft()}
+                        >
+                          {saving ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Package className="h-4 w-4" />
+                          )}
+                          Save draft
+                        </button>
+                      </div>
+                    </section>
                   </div>
                 </div>
               )}
 
-              <div className="lg:col-span-2">
-                <h2 className="mb-3 text-lg font-semibold">Transfers</h2>
-                <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
-                  <table className="w-full min-w-[800px] text-sm">
+              <div className="w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-black/5 dark:ring-white/5">
+                <div className="border-b border-border bg-muted/30 px-4 py-2.5 sm:px-5">
+                  <h2 className="text-base font-semibold tracking-tight">Transfers</h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[580px] text-sm">
                     <thead className="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       <tr>
                         <th className="px-3 py-2">#</th>
@@ -698,7 +1079,7 @@ function InventoryContent() {
                         </tr>
                       ) : (
                         transfers.map(t => (
-                          <tr key={t.id} className="border-t">
+                          <tr key={t.id} className="border-t border-border/80 transition-colors hover:bg-muted/30">
                             <td className="px-3 py-2 font-mono text-xs">
                               {t.transfer_number || `TR-${t.id}`}
                             </td>

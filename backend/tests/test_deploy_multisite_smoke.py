@@ -92,3 +92,75 @@ def test_inventory_transfer_create_draft_two_active(api_client: Client, auth_adm
     data = json.loads(r.content)
     assert data.get("from_station_id") == stations[0].id
     assert data.get("to_station_id") == stations[1].id
+
+
+def test_inventory_transfer_create_rejected_when_insufficient_stock(
+    api_client: Client, auth_admin_headers, tenant_two_stations
+):
+    """Draft create is rejected when total quantity exceeds source bin (same as post rule)."""
+    from decimal import Decimal
+
+    from api.models import Item, Station
+    from api.services.station_stock import set_station_stock
+
+    cid = tenant_two_stations.id
+    stations = list(Station.objects.filter(company_id=cid, is_active=True).order_by("id")[:2])
+    assert len(stations) == 2
+    it = Item.objects.create(
+        company_id=cid,
+        name="Low QOH SKU",
+        item_type="inventory",
+        category="General",
+    )
+    set_station_stock(cid, stations[0].id, it.id, Decimal("2"))
+    r = api_client.post(
+        "/api/inventory/transfers/",
+        data=json.dumps(
+            {
+                "from_station_id": stations[0].id,
+                "to_station_id": stations[1].id,
+                "lines": [{"item_id": it.id, "quantity": "5"}],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 400
+    body = json.loads(r.content)
+    assert "Not enough stock" in (body.get("detail") or "")
+
+
+def test_inventory_transfer_create_rejected_duplicate_lines_exceed_stock(
+    api_client: Client, auth_admin_headers, tenant_two_stations
+):
+    """Two lines for the same SKU are validated against combined quantity at source."""
+    from decimal import Decimal
+
+    from api.models import Item, Station
+    from api.services.station_stock import set_station_stock
+
+    cid = tenant_two_stations.id
+    stations = list(Station.objects.filter(company_id=cid, is_active=True).order_by("id")[:2])
+    it = Item.objects.create(
+        company_id=cid,
+        name="Split lines SKU",
+        item_type="inventory",
+        category="General",
+    )
+    set_station_stock(cid, stations[0].id, it.id, Decimal("10"))
+    r = api_client.post(
+        "/api/inventory/transfers/",
+        data=json.dumps(
+            {
+                "from_station_id": stations[0].id,
+                "to_station_id": stations[1].id,
+                "lines": [
+                    {"item_id": it.id, "quantity": "6"},
+                    {"item_id": it.id, "quantity": "5"},
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 400

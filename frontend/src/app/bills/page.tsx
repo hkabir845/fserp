@@ -7,7 +7,7 @@ import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText } from 'lucid
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl } from '@/lib/api'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_LINE_COL_CLASS, AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -983,10 +983,10 @@ export default function BillsPage() {
                       {bill.due_date ? formatDateOnly(bill.due_date) : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {currencySymbol}{billTotal(bill).toFixed(2)}
+                      {currencySymbol}{formatNumber(billTotal(bill))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {currencySymbol}{billBalance(bill).toFixed(2)}
+                      {currencySymbol}{formatNumber(billBalance(bill))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.status)}`}>
@@ -1124,9 +1124,9 @@ export default function BillsPage() {
                                 ? tanks.find((t) => t.id === item.tank_id)?.tank_name || `Tank #${item.tank_id}`
                                 : '—')}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{Number(item.quantity).toFixed(2)}</td>
-                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{currencySymbol}{Number(item.unit_cost ?? item.unit_price ?? 0).toFixed(2)}</td>
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">{currencySymbol}{Number(item.amount || 0).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatNumber(Number(item.quantity))}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{currencySymbol}{formatNumber(Number(item.unit_cost ?? item.unit_price ?? 0))}</td>
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">{currencySymbol}{formatNumber(Number(item.amount || 0))}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1144,11 +1144,11 @@ export default function BillsPage() {
                       <p className="text-sm font-medium text-gray-800">Balance due:</p>
                     </div>
                     <div className="text-right min-w-[120px]">
-                      <p className="text-sm text-gray-900">{currencySymbol}{billSubtotal(viewingBill).toFixed(2)}</p>
-                      <p className="text-sm text-gray-900">{currencySymbol}{billTax(viewingBill).toFixed(2)}</p>
-                      <p className="text-lg font-semibold text-gray-900">{currencySymbol}{billTotal(viewingBill).toFixed(2)}</p>
-                      <p className="text-sm text-gray-900 mt-2">{currencySymbol}{billPaid(viewingBill).toFixed(2)}</p>
-                      <p className="text-sm font-medium text-gray-900">{currencySymbol}{billBalance(viewingBill).toFixed(2)}</p>
+                      <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(billSubtotal(viewingBill))}</p>
+                      <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(billTax(viewingBill))}</p>
+                      <p className="text-lg font-semibold text-gray-900">{currencySymbol}{formatNumber(billTotal(viewingBill))}</p>
+                      <p className="text-sm text-gray-900 mt-2">{currencySymbol}{formatNumber(billPaid(viewingBill))}</p>
+                      <p className="text-sm font-medium text-gray-900">{currencySymbol}{formatNumber(billBalance(viewingBill))}</p>
                     </div>
                   </div>
                 </div>
@@ -1443,9 +1443,9 @@ export default function BillsPage() {
                               <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
                               <input
                                 type="text"
-                                value={line.amount.toFixed(2)}
-                                readOnly
-                                title={`${currencySymbol}${line.amount.toFixed(2)}`}
+value={formatNumber(line.amount)}
+                            readOnly
+                            title={`${currencySymbol}${formatNumber(line.amount)}`}
                                 className={AMOUNT_READ_ONLY_INPUT_CLASS}
                               />
                             </div>
@@ -1485,9 +1485,9 @@ export default function BillsPage() {
                         <p className="text-lg font-semibold text-gray-900">Total:</p>
                       </div>
                       <div className="text-right min-w-[120px]">
-                        <p className="text-sm text-gray-900">{currencySymbol}{calculateTotals().subtotal.toFixed(2)}</p>
-                        <p className="text-sm text-gray-900">{currencySymbol}{calculateTotals().taxAmount.toFixed(2)}</p>
-                        <p className="text-lg font-semibold text-gray-900">{currencySymbol}{calculateTotals().total.toFixed(2)}</p>
+                        <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(calculateTotals().subtotal)}</p>
+                        <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(calculateTotals().taxAmount)}</p>
+                        <p className="text-lg font-semibold text-gray-900">{currencySymbol}{formatNumber(calculateTotals().total)}</p>
                       </div>
                     </div>
                   </div>
@@ -1570,17 +1570,17 @@ export default function BillsPage() {
                       <tr key={row.tankId} className="border-t border-gray-100">
                         <td className="px-3 py-2 text-gray-900">{row.tankName}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {row.currentStock.toFixed(2)} {row.unit}
+                          {formatNumber(row.currentStock)} {row.unit}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {row.capacity.toFixed(2)} {row.unit}
+                          {formatNumber(row.capacity)} {row.unit}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums text-emerald-800">
-                          {row.remainingUllage.toFixed(2)} {row.unit}
+                          {formatNumber(row.remainingUllage)} {row.unit}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums">{row.receiptQty.toFixed(2)} {row.unit}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatNumber(row.receiptQty)} {row.unit}</td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium text-amber-800">
-                          {row.overBy.toFixed(2)} {row.unit}
+                          {formatNumber(row.overBy)} {row.unit}
                         </td>
                       </tr>
                     ))}
@@ -1595,11 +1595,11 @@ export default function BillsPage() {
                       <li key={i}>
                         <span className="font-medium">{row.itemName}</span>
                         {' — '}
-                        bill qty {row.billQty.toFixed(2)} {row.unit}
+                        bill qty {formatNumber(row.billQty)} {row.unit}
                         {row.quantityOnHand !== null && (
                           <span className="text-gray-600">
                             {' '}
-                            · current stock (system) {row.quantityOnHand.toFixed(2)} {row.unit}
+                            · current stock (system) {formatNumber(row.quantityOnHand)} {row.unit}
                           </span>
                         )}
                       </li>
@@ -1772,7 +1772,7 @@ export default function BillsPage() {
                           : undefined
                       const tankTitle =
                         selectedTank != null
-                          ? `Current: ${(Number(selectedTank.current_stock) || 0).toFixed(2)}L / Capacity: ${(Number(selectedTank.capacity) || 0).toFixed(2)}L`
+                          ? `Current: ${formatNumber(Number(selectedTank.current_stock) || 0)}L / Capacity: ${formatNumber(Number(selectedTank.capacity) || 0)}L`
                           : undefined
 
                       return (
@@ -1906,8 +1906,8 @@ export default function BillsPage() {
                                 type="text"
                                 readOnly
                                 inputMode="decimal"
-                                value={(Number(line.amount) || 0).toFixed(2)}
-                                title={`${currencySymbol}${(Number(line.amount) || 0).toFixed(2)}`}
+                                value={formatNumber(Number(line.amount) || 0)}
+                                title={`${currencySymbol}${formatNumber(Number(line.amount) || 0)}`}
                                 className={AMOUNT_READ_ONLY_INPUT_CLASS}
                               />
                             </div>
@@ -1955,15 +1955,15 @@ export default function BillsPage() {
                     <div className="w-full sm:w-64 space-y-2 sm:text-right">
                       <div className="flex justify-between text-sm sm:flex sm:justify-between">
                         <span className="text-gray-600">Subtotal:</span>
-                        <span className="font-medium">{currencySymbol}{(Number(subtotal) || 0).toFixed(2)}</span>
+                        <span className="font-medium">{currencySymbol}{formatNumber(Number(subtotal) || 0)}</span>
                       </div>
                       <div className="flex justify-between text-sm sm:flex sm:justify-between">
                         <span className="text-gray-600">Tax:</span>
-                        <span className="font-medium">{currencySymbol}{(Number(taxAmount) || 0).toFixed(2)}</span>
+                        <span className="font-medium">{currencySymbol}{formatNumber(Number(taxAmount) || 0)}</span>
                       </div>
                       <div className="flex justify-between text-lg font-bold border-t pt-2 sm:flex sm:justify-between">
                         <span>Total:</span>
-                        <span>{currencySymbol}{(Number(total) || 0).toFixed(2)}</span>
+                        <span>{currencySymbol}{formatNumber(Number(total) || 0)}</span>
                       </div>
                     </div>
                   </div>

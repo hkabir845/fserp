@@ -16,6 +16,7 @@ from api.models import (
     Meter,
     Nozzle,
 )
+from api.services.station_capabilities import reconcile_station_fuel_flags_for_company
 
 
 def get_or_create_master():
@@ -81,6 +82,7 @@ def seed_full_sample(cid):
             "address_line1": "Mouchak-Fulbaria Road",
             "city": "Gazipur",
             "is_active": True,
+            "operates_fuel_retail": True,
         },
     )
     if not s1.station_number:
@@ -182,6 +184,7 @@ def seed_full_sample(cid):
             "address_line1": "Kaliakoir",
             "city": "Gazipur",
             "is_active": True,
+            "operates_fuel_retail": True,
         },
     )
     if not s2.station_number:
@@ -305,6 +308,13 @@ class Command(BaseCommand):
                     )
                 )
             )
+            reconciled = reconcile_station_fuel_flags_for_company(cid)
+            if reconciled:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"Reconciled operates_fuel_retail=True for {reconciled} station(s) that have tanks or islands."
+                    )
+                )
 
         master_stations = Station.objects.filter(company_id=cid).count()
         master_tanks = Tank.objects.filter(company_id=cid).count()
@@ -349,5 +359,13 @@ class Command(BaseCommand):
                         Meter.objects.filter(company_id=cid).count(),
                         Nozzle.objects.filter(company_id=cid).count(),
                     )
+                )
+            )
+
+        nfix = reconcile_station_fuel_flags_for_company(cid)
+        if nfix:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Final reconcile: operates_fuel_retail set True on {nfix} station(s) with tanks or islands."
                 )
             )

@@ -16,6 +16,8 @@ from api.utils.auth import (
 )
 from api.models import Company, Station, User
 from api.chart_templates.fuel_station import seed_fuel_station_if_empty
+from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
+from api.services.permission_service import normalize_role_key
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_tenant_company_data
 from api.services.company_code import resolved_company_code
 from api.services.station_policy import active_station_count, can_set_company_to_single
@@ -26,8 +28,16 @@ logger = logging.getLogger(__name__)
 
 def _company_station_api_context(request, company: Company) -> dict:
     user = getattr(request, "api_user", None) or get_user_from_request(request)
+    is_super = bool(user and user_is_super_admin(user))
+    is_admin = bool(user and normalize_role_key(getattr(user, "role", None)) == "admin")
+    licensed = bool(getattr(company, "aquaculture_licensed", False))
+    can_toggle_aquaculture = licensed and (is_super or is_admin)
     return {
-        "can_edit_station_mode": bool(user and user_is_super_admin(user)),
+        "can_edit_station_mode": is_super,
+        # Super Admin only: grant/revoke Aquaculture license (SaaS). Tenant uses Company settings for on/off.
+        "can_edit_aquaculture_module": is_super,
+        "aquaculture_licensed": licensed,
+        "can_edit_aquaculture_toggle": can_toggle_aquaculture,
         "active_station_count": active_station_count(company.id),
     }
 
@@ -262,6 +272,8 @@ def _company_to_json(c: Company) -> dict:
         "time_format": _coerce_time_format(getattr(c, "time_format", None)),
         "time_zone": (getattr(c, "time_zone", None) or "Asia/Dhaka")[:64],
         "station_mode": (getattr(c, "station_mode", None) or "single")[:16],
+        "aquaculture_licensed": bool(getattr(c, "aquaculture_licensed", False)),
+        "aquaculture_enabled": bool(getattr(c, "aquaculture_enabled", False)),
     }
 
 
@@ -275,19 +287,15 @@ def companies_current(request):
         return err
     company = Company.objects.filter(id=cid, is_deleted=False).first() if cid else None
     if not company:
-        return JsonResponse({
-            "id": 1,
-            "company_code": "",
-            "name": "Default Company",
-            "company_name": "Default Company",
-            "currency": "BDT",
-            "date_format": "YYYY-MM-DD",
-            "time_format": "HH:mm",
-            "time_zone": "Asia/Dhaka",
-            "station_mode": "single",
-            "can_edit_station_mode": False,
-            "active_station_count": 0,
-        })
+        return JsonResponse(
+            {
+                "detail": (
+                    "No company context. Use a tenant subdomain, select a company (super admin), "
+                    "or ask an administrator to assign your user to a company."
+                ),
+            },
+            status=403,
+        )
     payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
     return JsonResponse(payload)
 
@@ -350,6 +358,7 @@ def companies_list_or_create(request):
         return reclaim_err
 
     try:
+        aquaculture_chart_accounts_created = 0
         with transaction.atomic():
             c = Company(
                 name=name,
@@ -393,11 +402,18 @@ def companies_list_or_create(request):
                 return JsonResponse({"detail": tz_err}, status=400)
             c.time_zone = tz
             c.platform_release = get_target_release()[:64]
+            if "aquaculture_licensed" in body:
+                c.aquaculture_licensed = bool(body.get("aquaculture_licensed"))
+            if getattr(c, "aquaculture_licensed", False):
+                c.aquaculture_enabled = True
             c.save()
 
             chart_of_accounts_result = None
             if not skip_coa:
                 chart_of_accounts_result = seed_fuel_station_if_empty(c.id, profile=coa_profile)
+
+            if getattr(c, "aquaculture_enabled", False):
+                aquaculture_chart_accounts_created = ensure_aquaculture_chart_accounts(c.id)
 
             owner = User(
                 username=admin_email,
@@ -421,6 +437,8 @@ def companies_list_or_create(request):
             payload["reclaimed_stale_tenant"] = True
         if chart_of_accounts_result is not None:
             payload["chart_of_accounts"] = chart_of_accounts_result
+        if aquaculture_chart_accounts_created:
+            payload["aquaculture_chart_accounts_created"] = aquaculture_chart_accounts_created
         return JsonResponse(payload, status=201)
     except Exception as e:
         logger.exception("create company with admin failed")
@@ -463,6 +481,13 @@ def company_detail(request, company_id: int):
                 status=400,
             )
         try:
+            should_seed_aquaculture_coa = False
+            tenant_admin = (
+                not is_super
+                and normalize_role_key(getattr(user, "role", None)) == "admin"
+                and getattr(user, "company_id", None) is not None
+                and int(getattr(user, "company_id")) == int(company_id)
+            )
             if "company_name" in body:
                 company.name = (body["company_name"] or "").strip() or company.name
             if "name" in body:
@@ -576,8 +601,51 @@ def company_detail(request, company_id: int):
                             status=400,
                         )
                 company.station_mode = sm
+            if "aquaculture_licensed" in body:
+                if not is_super:
+                    return JsonResponse(
+                        {
+                            "detail": "Only a platform Super Admin may grant or revoke the Aquaculture license for a tenant.",
+                        },
+                        status=403,
+                    )
+                prev_lic = bool(getattr(company, "aquaculture_licensed", False))
+                new_lic = bool(body.get("aquaculture_licensed"))
+                company.aquaculture_licensed = new_lic
+                if not new_lic and prev_lic:
+                    company.aquaculture_enabled = False
+                elif new_lic and not prev_lic:
+                    # First-time license: turn module on so ERP menu/APIs match operator expectation.
+                    # Tenant Admin may still disable under Company settings.
+                    if not bool(getattr(company, "aquaculture_enabled", False)):
+                        company.aquaculture_enabled = True
+                        should_seed_aquaculture_coa = True
+            if "aquaculture_enabled" in body:
+                new_en = bool(body.get("aquaculture_enabled"))
+                if is_super:
+                    prev_aq = bool(company.aquaculture_enabled)
+                    company.aquaculture_enabled = new_en
+                    if new_en and not prev_aq:
+                        should_seed_aquaculture_coa = True
+                elif tenant_admin and bool(getattr(company, "aquaculture_licensed", False)):
+                    prev_aq = bool(company.aquaculture_enabled)
+                    company.aquaculture_enabled = new_en
+                    if new_en and not prev_aq:
+                        should_seed_aquaculture_coa = True
+                else:
+                    return JsonResponse(
+                        {
+                            "detail": (
+                                "Turn on Aquaculture in Company settings only after your organization is licensed "
+                                "for Aquaculture on the platform, or ask a Super Admin to update it."
+                            ),
+                        },
+                        status=403,
+                    )
             company.save()
             payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
+            if should_seed_aquaculture_coa:
+                payload["aquaculture_chart_accounts_created"] = ensure_aquaculture_chart_accounts(company.id)
             return JsonResponse(payload)
         except Exception as e:
             return JsonResponse(

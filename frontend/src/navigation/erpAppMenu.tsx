@@ -25,6 +25,8 @@ import {
   Database,
   Shield,
   ArrowRightLeft,
+  Layers,
+  Fish,
 } from 'lucide-react'
 
 /** Sidebar search hints (unchanged from Sidebar) */
@@ -39,6 +41,8 @@ export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
   hr: 'hr human resources employee payroll staff',
   management: 'management company settings subscription user roles access rbac tax admin backup restore',
   reports: 'reports analytics export print',
+  aquaculture:
+    'aquaculture dashboard pond cycle crop production fish farm biomass sampling pl profit lease feed fry pos customer cashier inventory nursing transfer grow-out mortality stock ledger snake bird predation pond economics site gl fuel shop',
   saas: 'saas platform admin tenant companies users contract subscription billing overview ledger backup restore export',
 }
 
@@ -52,6 +56,7 @@ export type ErpAppSection =
   | 'hr'
   | 'management'
   | 'reports'
+  | 'aquaculture'
   | 'saas'
 
 export interface ErpAppMenuItem {
@@ -107,6 +112,16 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   '/backup': ['app.backup'],
   '/reports': ['app.reports'],
   '/reports/analytics': ['app.reports'],
+  '/aquaculture': ['app.aquaculture'],
+  '/aquaculture/ponds': ['app.aquaculture'],
+  '/aquaculture/pond-economics': ['app.aquaculture'],
+  '/aquaculture/expenses': ['app.aquaculture'],
+  '/aquaculture/sales': ['app.aquaculture'],
+  '/aquaculture/sampling': ['app.aquaculture'],
+  '/aquaculture/report': ['app.aquaculture'],
+  '/aquaculture/cycles': ['app.aquaculture'],
+  '/aquaculture/transfers': ['app.aquaculture'],
+  '/aquaculture/stock': ['app.aquaculture'],
 }
 
 function menuItemAllowedByPermissions(href: string, perms: string[]): boolean {
@@ -185,6 +200,51 @@ export function getFsmsErpMenuItems(): ErpAppMenuItem[] {
     { href: '/backup', label: 'Backup & Restore', section: 'management', icon: Database, tileClass: tile('bg-neutral-100', 'text-neutral-600') },
 
     { href: '/reports', label: 'Reports', section: 'reports', icon: BarChart3, tileClass: tile('bg-violet-100', 'text-violet-600') },
+
+    {
+      href: '/aquaculture',
+      label: 'Dashboard',
+      section: 'aquaculture',
+      icon: LayoutDashboard,
+      tileClass: tile('bg-cyan-100', 'text-cyan-700'),
+    },
+    { href: '/aquaculture/ponds', label: 'Ponds', section: 'aquaculture', icon: MapPin, tileClass: tile('bg-sky-100', 'text-sky-700') },
+    {
+      href: '/aquaculture/cycles',
+      label: 'Production cycles',
+      section: 'aquaculture',
+      icon: Layers,
+      tileClass: tile('bg-sky-100', 'text-sky-800'),
+    },
+    {
+      href: '/aquaculture/transfers',
+      label: 'Fish pond transfers',
+      section: 'aquaculture',
+      icon: ArrowRightLeft,
+      tileClass: tile('bg-cyan-100', 'text-cyan-800'),
+    },
+    {
+      href: '/aquaculture/stock',
+      label: 'Fish stock & mortality',
+      section: 'aquaculture',
+      icon: Fish,
+      tileClass: tile('bg-teal-100', 'text-teal-800'),
+    },
+    {
+      href: '/aquaculture/pond-economics',
+      label: 'Pond economics',
+      section: 'aquaculture',
+      icon: Receipt,
+      tileClass: tile('bg-teal-100', 'text-teal-800'),
+    },
+    { href: '/aquaculture/sampling', label: 'Biomass sampling', section: 'aquaculture', icon: Gauge, tileClass: tile('bg-lime-100', 'text-lime-800') },
+    {
+      href: '/aquaculture/report',
+      label: 'P&L: fuel site & ponds',
+      section: 'aquaculture',
+      icon: BarChart3,
+      tileClass: tile('bg-indigo-100', 'text-indigo-700'),
+    },
   ]
 }
 
@@ -254,6 +314,66 @@ export function getFilteredMenuItems(
   return menuItems
 }
 
+/** Tenant Admin (built-in ``admin``) or platform super-admin — matches aquaculture API access. */
+export function isTenantAdminAquacultureUser(
+  userRole: string | null,
+  isSuperAdmin: boolean
+): boolean {
+  return isSuperAdmin || (userRole || '').toLowerCase() === 'admin'
+}
+
+/**
+ * Hide Aquaculture when the company flag is off, or when it is on but the signed-in user is not
+ * the tenant Admin (built-in ``admin`` role) or a platform super-admin.
+ */
+export function filterAquacultureMenuWhenDisabled(
+  items: ErpAppMenuItem[],
+  aquacultureEnabled: boolean,
+  userRole: string | null,
+  isSuperAdmin: boolean
+): ErpAppMenuItem[] {
+  if (!aquacultureEnabled) {
+    return items.filter((i) => !i.href.startsWith('/aquaculture'))
+  }
+  if (!isTenantAdminAquacultureUser(userRole, isSuperAdmin)) {
+    return items.filter((i) => !i.href.startsWith('/aquaculture'))
+  }
+  return items
+}
+
+/**
+ * True when the sidebar would show Aquaculture: module on (superuser), FSMS ERP mode, and the
+ * user is tenant Admin or platform super-admin. Matches aquaculture API authorization.
+ */
+export function isAquacultureNavUnlocked(
+  userRole: string | null,
+  isSuperAdmin: boolean,
+  mode: 'fsms_erp' | 'saas_dashboard',
+  userPermissions: string[] | null,
+  aquacultureEnabled: boolean
+): boolean {
+  if (!aquacultureEnabled || mode !== 'fsms_erp') return false
+  if (!isTenantAdminAquacultureUser(userRole, isSuperAdmin)) return false
+  const filtered = filterAquacultureMenuWhenDisabled(
+    filterTenantBackupMenuItem(
+      getFilteredMenuItems(
+        userRole,
+        isSuperAdmin,
+        mode,
+        getFsmsErpMenuItems(),
+        getSaasMenuItems(0, 0),
+        userPermissions
+      ),
+      userRole?.toLowerCase() || '',
+      userPermissions
+    ),
+    true,
+    userRole,
+    isSuperAdmin
+  )
+  return filtered.some((item) => item.href.startsWith('/aquaculture'))
+}
+
 export function filterTenantBackupMenuItem(
   items: ErpAppMenuItem[],
   role: string,
@@ -279,6 +399,7 @@ const FSMS_SECTIONS_ALL: { id: ErpAppSection; label: string }[] = [
   { id: 'hr', label: 'HR & Payroll' },
   { id: 'management', label: 'Management' },
   { id: 'reports', label: 'Reports & Analytics' },
+  { id: 'aquaculture', label: 'Aquaculture' },
 ]
 
 export function getSectionDefinitions(

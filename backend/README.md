@@ -2,7 +2,7 @@
 
 Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed. The web UI is a separate app: **Next.js 16** in [`../frontend/`](../frontend/) (this Python project does not embed Next.js).
 
-**Deploy / env:** Set **`DJANGO_SECRET_KEY`** (32+ chars) on the host. Optional: `DATABASE_URL`, SMTP vars — see [`env.example`](env.example). **`ALLOWED_HOSTS`, CORS, and `FRONTEND_BASE_URL` are fixed in `fsms/settings.py`** for `mahasoftcorporation.com` / `api.mahasoftcorporation.com`.
+**Deploy / env:** Set **`DJANGO_SECRET_KEY`** (32+ chars) on the host. Copy [`env.example`](env.example) to **`backend/.env`** (loaded on startup) or export the same variables in systemd. Use **`DATABASE_URL`** for PostgreSQL on a real VPS. For **your own domain**, set **`DJANGO_ALLOWED_HOSTS`**, **`FSERP_CORS_ALLOWED_ORIGINS`**, **`FSERP_CSRF_TRUSTED_ORIGINS`**, and **`FRONTEND_BASE_URL`** (see `env.example`). If those are unset, defaults match `mahasoftcorporation.com` / `api.mahasoftcorporation.com`.
 
 **Deploy metadata:** Set `FSERP_APP_VERSION` and optionally `GIT_COMMIT_SHA`; verify with `GET /api/version/`.
 
@@ -19,7 +19,7 @@ Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed. The web 
 Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATCH` with custom headers. The frontend sends **`X-Selected-Company-Id`** (tenant scope) and **`X-Selected-Station-Id`** (optional report / multi-site filter from `localStorage`) on API calls. The server must respond with **`Access-Control-Allow-Headers`** that includes `x-selected-company-id` and `x-selected-station-id`.
 
 - **Django:** `fsms/settings.py` already extends `CORS_ALLOW_HEADERS` with those headers (and `x-tenant-subdomain`, `x-request-id`). **Redeploy the backend** so production runs this code.
-- **CORS origin** is **`https://mahasoftcorporation.com`** in `fsms/settings.py` (do not add a second `Access-Control-Allow-Origin` in nginx).
+- **CORS origins** are configured in `fsms/settings.py` (`FSERP_CORS_ALLOWED_ORIGINS` when self-hosting, else MahaSoft defaults). Do not add a second `Access-Control-Allow-Origin` in nginx.
 - **Nginx / cPanel / reverse proxy:** If the proxy handles `OPTIONS` or injects CORS headers, it must **not** use a narrow `Access-Control-Allow-Headers` list. **Prefer** forwarding `OPTIONS` to Django so `django-cors-headers` sets headers. If you must set CORS in nginx, include at least: `Authorization`, `Content-Type`, `X-CSRFToken`, `X-Selected-Company-Id`, `X-Selected-Station-Id`, `X-Tenant-Subdomain`, `X-Request-Id`.
 
 **Verify:** `python verify_backend.py` (includes a preflight check for `x-selected-company-id`). On the server, `curl -i -X OPTIONS "https://api.example.com/api/auth/login/" -H "Origin: https://localhost:3000 " -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: x-selected-company-id"` should show `access-control-allow-headers` containing `x-selected-company-id`.
@@ -83,6 +83,8 @@ pip install -r requirements.txt
 ```
 
 Use **`DATABASE_URL`** for PostgreSQL (see `env.example`), or omit it to use the default SQLite file `backend/db.sqlite3`. Run `python manage.py migrate` to apply Django migrations.
+
+**Process manager (VPS):** After `pip install gunicorn`, run the API behind nginx or another reverse proxy, for example: `gunicorn fsms.wsgi:application --bind 127.0.0.1:8001 --workers 3`. Set **`DJANGO_SECRET_KEY`** and **`DATABASE_URL`** in the service environment (or `backend/.env`). Run **`python manage.py collectstatic`** if you serve `STATIC_ROOT` via nginx.
 
 ## Run
 

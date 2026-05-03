@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Edit, Trash2, Search, Zap } from 'lucide-react'
@@ -26,6 +26,8 @@ interface Island {
   island_code: string
   island_name: string
   station_name?: string
+  /** Mirrors parent station `operates_fuel_retail` from `/islands/` API. */
+  station_operates_fuel_retail?: boolean
 }
 
 export default function DispensersPage() {
@@ -49,6 +51,18 @@ export default function DispensersPage() {
     manufacturer: '',
     is_active: true
   })
+
+  /** Islands whose parent station operates fuel forecourt (`/islands/` exposes `station_operates_fuel_retail`). */
+  const fuelForecourtIslands = useMemo(
+    () => islands.filter((i) => i.station_operates_fuel_retail !== false),
+    [islands],
+  )
+
+  useEffect(() => {
+    if (!selectedIsland || !islands.length) return
+    const ok = fuelForecourtIslands.some((i) => String(i.id) === selectedIsland)
+    if (!ok) setSelectedIsland('')
+  }, [selectedIsland, islands, fuelForecourtIslands])
 
   const buildModelField = () => {
     const m = formData.model.trim()
@@ -221,7 +235,15 @@ export default function DispensersPage() {
       <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Dispensers</h1>
-          <p className="text-gray-600 mt-1">Manage fuel dispensers and pumps</p>
+          <p className="text-gray-600 mt-1 max-w-3xl">
+            Dispensers attach only to islands on fuel forecourt stations (see Stations).
+          </p>
+          {islands.length > 0 && fuelForecourtIslands.length === 0 ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              No fuel-forecourt islands — configure at least one fuel retail station with islands before adding
+              dispensers.
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-between mb-6">
@@ -242,8 +264,8 @@ export default function DispensersPage() {
               onChange={(e) => setSelectedIsland(e.target.value)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">All Islands</option>
-              {islands.map((island) => (
+              <option value="">All fuel islands</option>
+              {fuelForecourtIslands.map((island) => (
                 <option key={island.id} value={island.id}>
                   {island.island_name} ({island.station_name})
                 </option>
@@ -458,7 +480,7 @@ export default function DispensersPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value={0}>Select Island</option>
-                      {islands.map((island) => (
+                      {fuelForecourtIslands.map((island) => (
                         <option key={island.id} value={island.id}>
                           {island.island_name} - {island.station_name}
                         </option>

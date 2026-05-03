@@ -7,7 +7,7 @@ import Sidebar from '@/components/Sidebar'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
-import { formatCurrency } from '@/utils/currency'
+import { formatCurrency, formatAmountPlain } from '@/utils/currency'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
 import {
@@ -540,7 +540,7 @@ function SubscriptionBillingContent() {
       ...f,
       payment_type: cycle,
       billing_plan_code: plan.id,
-      payment_amount: amount.toFixed(2),
+      payment_amount: formatAmountPlain(amount),
     }))
     toast.success(`“${p.name}” suggested pricing applied — set period dates and save.`)
   }

@@ -7,7 +7,7 @@ import { Plus, Edit2, Trash2, X, CheckCircle, XCircle, AlertCircle, ArrowRightLe
 import { useToast } from '@/components/Toast'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import api from '@/lib/api'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_FUND_TRANSFER_INPUT_CLASS } from '@/utils/amountFieldStyles'
 
@@ -48,7 +48,7 @@ function renderTransferAccountOptions(accounts: BankAccount[], currencySymbol: s
   const row = (b: BankAccount) => (
     <option key={b.id} value={b.id}>
       {b.account_name} ({b.account_number}) · {b.bank_name} — {currencySymbol}
-      {Number(b.current_balance || 0).toFixed(2)}
+      {formatNumber(Number(b.current_balance || 0))}
     </option>
   )
   return (
@@ -340,7 +340,7 @@ export default function FundTransfersPage() {
                       {transfer.to_account_name || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900 text-right">
-                      {currencySymbol}{Number(transfer.amount).toFixed(2)}
+                      {currencySymbol}{formatNumber(Number(transfer.amount))}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
                       {transfer.memo || '-'}

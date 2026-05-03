@@ -33,7 +33,15 @@ const btnSecondary =
 const btnDanger =
   'inline-flex items-center justify-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/20'
 
-type Station = { id: number; station_name: string; station_number?: string }
+type Station = {
+  id: number
+  station_name: string
+  station_number?: string
+  is_active?: boolean
+  default_aquaculture_pond_id?: number | null
+  default_aquaculture_pond_name?: string
+  default_aquaculture_pond_sort_order?: number | null
+}
 
 type PosItem = { id: number; name: string; item_number?: string; pos_category?: string }
 
@@ -104,6 +112,41 @@ function sumQtySameItemOtherLines(rows: TransferLineRow[], itemId: number, excep
   return sum
 }
 
+function isStationActive(s: Station): boolean {
+  return s.is_active !== false
+}
+
+/** Label for transfer routes: pond name first when a site is the pond’s shop warehouse. */
+function formatStationTransferLabel(s: Station): string {
+  const pond = (s.default_aquaculture_pond_name || '').trim()
+  const nm = (s.station_name || '').trim() || 'Station'
+  const num = s.station_number ? ` (${s.station_number})` : ''
+  if (!pond) return `${nm}${num}`
+  const same = pond.localeCompare(nm, undefined, { sensitivity: 'accent' }) === 0
+  if (same) return `${pond}${num}`
+  return `${pond} — ${nm}${num}`
+}
+
+/** Receiving list: pond-linked warehouses first, in pond sort order, then other sites. */
+function compareReceivingStationsByPond(a: Station, b: Station): number {
+  const aLinked = (a.default_aquaculture_pond_id ?? 0) > 0
+  const bLinked = (b.default_aquaculture_pond_id ?? 0) > 0
+  if (aLinked && !bLinked) return -1
+  if (!aLinked && bLinked) return 1
+  if (aLinked && bLinked) {
+    const ao = a.default_aquaculture_pond_sort_order ?? 0
+    const bo = b.default_aquaculture_pond_sort_order ?? 0
+    if (ao !== bo) return ao - bo
+    const c = (a.default_aquaculture_pond_name || '').localeCompare(
+      b.default_aquaculture_pond_name || '',
+      undefined,
+      { sensitivity: 'base' },
+    )
+    if (c !== 0) return c
+  }
+  return a.id - b.id
+}
+
 function InventoryContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -158,11 +201,43 @@ function InventoryContent() {
         const raw = Array.isArray(stRes.value.data) ? stRes.value.data : []
         setStations(
           raw
-            .map((s: { id?: unknown; station_name?: string; station_number?: string }) => ({
-              id: typeof s.id === 'number' ? s.id : Number(s.id),
-              station_name: String(s.station_name || '').trim() || 'Station',
-              station_number: s.station_number != null ? String(s.station_number) : undefined,
-            }))
+            .map(
+              (s: {
+                id?: unknown
+                station_name?: string
+                station_number?: string
+                is_active?: boolean
+                default_aquaculture_pond_id?: unknown
+                default_aquaculture_pond_name?: string
+                default_aquaculture_pond_sort_order?: unknown
+              }) => {
+                const pidRaw = s.default_aquaculture_pond_id
+                const pid =
+                  pidRaw == null || pidRaw === ''
+                    ? null
+                    : typeof pidRaw === 'number'
+                      ? pidRaw
+                      : Number(pidRaw)
+                const sortRaw = s.default_aquaculture_pond_sort_order
+                const sortOrder =
+                  sortRaw == null || sortRaw === ''
+                    ? null
+                    : typeof sortRaw === 'number'
+                      ? sortRaw
+                      : Number(sortRaw)
+                return {
+                  id: typeof s.id === 'number' ? s.id : Number(s.id),
+                  station_name: String(s.station_name || '').trim() || 'Station',
+                  station_number: s.station_number != null ? String(s.station_number) : undefined,
+                  is_active: s.is_active !== false,
+                  default_aquaculture_pond_id:
+                    pid != null && Number.isFinite(pid) && pid > 0 ? pid : null,
+                  default_aquaculture_pond_name: String(s.default_aquaculture_pond_name || '').trim(),
+                  default_aquaculture_pond_sort_order:
+                    sortOrder != null && Number.isFinite(sortOrder) ? sortOrder : null,
+                }
+              },
+            )
             .filter(s => Number.isFinite(s.id))
         )
       }
@@ -173,8 +248,10 @@ function InventoryContent() {
           setPosItems(
             list
               .filter(
-                (p: PosItem & { pos_category?: string }) =>
-                  (p.pos_category || '').toLowerCase() !== 'fuel'
+                (p: PosItem & { pos_category?: string }) => {
+                  const pc = (p.pos_category || '').toLowerCase()
+                  return pc !== 'fuel' && pc !== 'non_pos'
+                },
               )
               .map((p: { id: unknown; name: string; item_number?: string; pos_category?: string }) => ({
                 id: typeof p.id === 'number' ? p.id : Number(p.id),
@@ -486,8 +563,17 @@ function InventoryContent() {
 
   const transferListBusy = transferPostingId !== null || transferDeletingId !== null
 
-  const activeStationCount = stations.length
+  const activeStations = useMemo(() => stations.filter(isStationActive), [stations])
+  const activeStationCount = activeStations.length
   const canTransferBetweenSites = activeStationCount >= 2
+  const receivingStationsOrdered = useMemo(
+    () => [...activeStations].sort(compareReceivingStationsByPond),
+    [activeStations],
+  )
+  const sendingStationsOrdered = useMemo(
+    () => [...activeStations].sort((a, b) => a.id - b.id),
+    [activeStations],
+  )
 
   const setTabAndUrl = (next: 'transfers' | 'lookup') => {
     setTab(next)
@@ -772,10 +858,9 @@ function InventoryContent() {
                             onChange={e => setFromStationId(e.target.value ? parseInt(e.target.value, 10) : '')}
                           >
                             <option value="">From…</option>
-                            {stations.map(s => (
+                            {sendingStationsOrdered.map(s => (
                               <option key={s.id} value={s.id}>
-                                {s.station_name}
-                                {s.station_number ? ` (${s.station_number})` : ''}
+                                {formatStationTransferLabel(s)}
                               </option>
                             ))}
                           </select>
@@ -800,14 +885,21 @@ function InventoryContent() {
                             onChange={e => setToStationId(e.target.value ? parseInt(e.target.value, 10) : '')}
                           >
                             <option value="">To…</option>
-                            {stations.map(s => (
+                            {receivingStationsOrdered.map(s => (
                               <option key={s.id} value={s.id}>
-                                {s.station_name}
-                                {s.station_number ? ` (${s.station_number})` : ''}
+                                {formatStationTransferLabel(s)}
                               </option>
                             ))}
                           </select>
-                          <p className="text-[11px] leading-snug text-muted-foreground">Stock increases here on post.</p>
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            Stock increases here on post. Each pond’s caretaker warehouse is a site with that pond set
+                            under{' '}
+                            <Link href="/stations" className="font-medium text-foreground underline-offset-2 hover:underline">
+                              Sites
+                            </Link>{' '}
+                            as <span className="font-medium text-foreground">Default aquaculture pond</span>; those
+                            ponds are listed here first by pond order.
+                          </p>
                         </div>
                       </div>
                       <div className="border-t border-border/50 pt-3">

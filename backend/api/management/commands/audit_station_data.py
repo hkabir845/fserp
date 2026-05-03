@@ -9,7 +9,7 @@ Usage:
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
-from api.models import Company, Invoice, Payment, ShiftSession, Station
+from api.models import Company, Invoice, Island, Payment, ShiftSession, Station, Tank
 
 
 class Command(BaseCommand):
@@ -63,3 +63,23 @@ class Command(BaseCommand):
                         f"  NOTE: {inv_null} invoice(s) lack station - review before station-scoped analytics."
                     )
                 )
+
+            fuel_mismatch = []
+            for s in Station.objects.filter(company_id=c.id, operates_fuel_retail=False).only(
+                "id", "station_name"
+            ):
+                nt = Tank.objects.filter(station_id=s.id, company_id=c.id).count()
+                ni = Island.objects.filter(station_id=s.id, company_id=c.id).count()
+                if nt or ni:
+                    fuel_mismatch.append((s.id, (s.station_name or "").strip() or f"#{s.id}", nt, ni))
+            if fuel_mismatch:
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"  ISSUE: {len(fuel_mismatch)} station(s) marked non-fuel but have tanks/islands "
+                        f"(run: python manage.py reconcile_station_fuel_flags --company-id {c.id})"
+                    )
+                )
+                for sid, sname, nt, ni in fuel_mismatch[:15]:
+                    self.stdout.write(f"      station {sid} {sname!r}: {nt} tank(s), {ni} island(s)")
+                if len(fuel_mismatch) > 15:
+                    self.stdout.write(f"      … and {len(fuel_mismatch) - 15} more")

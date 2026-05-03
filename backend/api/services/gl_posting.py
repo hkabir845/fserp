@@ -22,6 +22,11 @@ from django.db.models import F, Sum
 from django.utils import timezone
 
 from api.models import (
+    AquacultureExpense,
+    AquacultureFishSale,
+    AquacultureFishStockLedger,
+    AquaculturePond,
+    AquacultureProductionCycle,
     BankAccount,
     Bill,
     BillLine,
@@ -43,11 +48,92 @@ from api.models import (
     Vendor,
 )
 from api.exceptions import GlPostingError, StockBusinessError
+from api.services.aquaculture_constants import coa_account_code_for_aquaculture_income_type
+from api.services.aquaculture_cost_per_kg import (
+    aquaculture_expense_category_to_cost_bucket,
+    item_shop_issue_cost_bucket,
+)
 from api.services.item_catalog import item_tracks_physical_stock
 from api.utils.customer_display import customer_display_name
 from api.services.coa_constants import normalize_chart_account_type
 
 logger = logging.getLogger(__name__)
+
+
+def _default_open_cycle_id_for_pond(company_id: int, pond_id: int) -> int | None:
+    """Single active open cycle for a pond, else None (avoids guessing when several are open)."""
+    rows = list(
+        AquacultureProductionCycle.objects.filter(
+            company_id=company_id,
+            pond_id=pond_id,
+            is_active=True,
+            end_date__isnull=True,
+        ).order_by("-start_date", "-id")[:2]
+    )
+    if len(rows) == 1:
+        return int(rows[0].id)
+    return None
+
+
+def _invoice_aquaculture_pond_cycle(company_id: int, inv: Invoice) -> tuple[int | None, int | None]:
+    """
+    Pond (and optional cycle) for invoice GL tagging: linked fish sale, else customer = pond POS customer.
+    """
+    aq_sale = (
+        AquacultureFishSale.objects.filter(invoice_id=inv.id, company_id=company_id)
+        .only("pond_id", "production_cycle_id")
+        .first()
+    )
+    if aq_sale and aq_sale.pond_id:
+        pid = int(aq_sale.pond_id)
+        cid = int(aq_sale.production_cycle_id) if aq_sale.production_cycle_id else None
+        return pid, cid
+    if inv.customer_id:
+        pond = (
+            AquaculturePond.objects.filter(
+                company_id=company_id, pos_customer_id=inv.customer_id, is_active=True
+            )
+            .only("id")
+            .first()
+        )
+        if pond:
+            pid = int(pond.id)
+            return pid, _default_open_cycle_id_for_pond(company_id, pid)
+    return None, None
+
+
+def _aquaculture_revenue_cost_bucket(income_type: str) -> str:
+    """Journal line bucket for aquaculture-linked invoice revenue (distinct from operating cost buckets)."""
+    it = (income_type or "fish_harvest_sale").strip().replace(" ", "_").lower()[:28]
+    s = f"rev_{it}"
+    return s[:40]
+
+
+def _journal_line_aquaculture_kwargs(company_id: int, meta: dict | None) -> dict[str, Any]:
+    """Validated optional FK + bucket for aquaculture costing on journal lines."""
+    if not meta:
+        return {}
+    out: dict[str, Any] = {}
+    pid = meta.get("pond_id")
+    if pid is not None:
+        try:
+            pid_i = int(pid)
+        except (TypeError, ValueError):
+            pid_i = 0
+        if pid_i > 0 and AquaculturePond.objects.filter(pk=pid_i, company_id=company_id).exists():
+            out["aquaculture_pond_id"] = pid_i
+    cid = meta.get("production_cycle_id")
+    if cid is not None and cid != "":
+        try:
+            cid_i = int(cid)
+        except (TypeError, ValueError):
+            cid_i = 0
+        if cid_i > 0 and AquacultureProductionCycle.objects.filter(pk=cid_i, company_id=company_id).exists():
+            out["aquaculture_production_cycle_id"] = cid_i
+    bucket = str(meta.get("cost_bucket") or "").strip()[:40]
+    if bucket:
+        out["aquaculture_cost_bucket"] = bucket
+    return out
 
 
 def _unpack_gl_line(
@@ -434,7 +520,7 @@ def _revenue_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]
         cat = (item.category or "").lower()
         if _is_fuel_item(item):
             return _coa(company_id, CODE_FUEL_REV) or _coa(company_id, CODE_OTHER_REV)
-        if pos_cat in ("shop", "c-store", "convenience", "general"):
+        if pos_cat in ("shop", "c-store", "convenience", "general", "feed"):
             return _coa(company_id, CODE_SHOP_REV) or _coa(company_id, CODE_OTHER_REV)
     return _coa(company_id, CODE_SHOP_REV) or _coa(company_id, CODE_OTHER_REV) or _coa(
         company_id, CODE_FUEL_REV
@@ -443,6 +529,18 @@ def _revenue_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]
 
 def _build_revenue_splits(company_id: int, inv: Invoice) -> dict[int, Decimal]:
     amounts: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    aq_sale = AquacultureFishSale.objects.filter(invoice_id=inv.id).only("income_type").first()
+    if aq_sale is not None:
+        code = coa_account_code_for_aquaculture_income_type(aq_sale.income_type)
+        acc = _coa(company_id, code)
+        sub = inv.subtotal or Decimal("0")
+        if acc and sub > 0:
+            return {acc.id: sub}
+        logger.warning(
+            "aquaculture-linked invoice %s: missing revenue COA %s or zero subtotal; falling back to default splits",
+            inv.id,
+            code,
+        )
     lines = list(
         InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item")
     )
@@ -479,6 +577,7 @@ def _create_posted_entry(
     lines: list[tuple],
     *,
     gl_station_id: Optional[int] = None,
+    aquaculture_line_costing: Optional[list[Optional[dict]]] = None,
 ) -> Optional[JournalEntry]:
     total_debit = sum(_unpack_gl_line(x)[1] for x in lines)
     total_credit = sum(_unpack_gl_line(x)[2] for x in lines)
@@ -508,12 +607,15 @@ def _create_posted_entry(
         )
         je.save()
         hdr = _gl_station_id(company_id, gl_station_id)
-        for raw in lines:
+        meta_list = aquaculture_line_costing or []
+        for i, raw in enumerate(lines):
             acc, debit, credit, desc, st_opt, explicit = _unpack_gl_line(raw)
             if explicit:
                 line_st = _gl_station_id(company_id, st_opt) if st_opt is not None else None
             else:
                 line_st = hdr
+            aq_meta = meta_list[i] if i < len(meta_list) else None
+            aq_kw = _journal_line_aquaculture_kwargs(company_id, aq_meta)
             JournalEntryLine.objects.create(
                 journal_entry=je,
                 account=acc,
@@ -521,6 +623,7 @@ def _create_posted_entry(
                 debit=debit,
                 credit=credit,
                 description=desc[:300],
+                **aq_kw,
             )
         return je
 
@@ -540,7 +643,8 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
     ).exists():
         return True
 
-    buckets: dict[tuple[int, int], Decimal] = {}
+    # Split by COGS account, inventory account, and aquaculture cost bucket so mixed feed/medicine lines stay tagged.
+    buckets: dict[tuple[int, int, str], Decimal] = {}
     total_cogs = Decimal("0")
     for line in InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item"):
         it = line.item
@@ -559,15 +663,19 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
         cogs_acc = _cogs_account_for_item(company_id, it)
         if not inv_acc or not cogs_acc:
             continue
-        key = (cogs_acc.id, inv_acc.id)
+        bkt = item_shop_issue_cost_bucket(it)
+        key = (cogs_acc.id, inv_acc.id, bkt)
         buckets[key] = buckets.get(key, Decimal("0")) + amt
         total_cogs += amt
 
     if total_cogs <= 0:
         return False
 
+    pond_id, cycle_id = _invoice_aquaculture_pond_cycle(company_id, inv)
+
     lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = []
-    for (cogs_id, inv_id), amt in buckets.items():
+    aq_costing: list[Optional[dict]] = []
+    for (cogs_id, inv_id, bkt), amt in buckets.items():
         cogs = ChartOfAccount.objects.filter(
             id=cogs_id, company_id=company_id, is_active=True
         ).first()
@@ -576,12 +684,16 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
         ).first()
         if not cogs or not inv_a:
             continue
-        lines.append(
-            (cogs, amt, Decimal("0"), _gl_invoice_line_memo(inv, "COGS"))
-        )
-        lines.append(
-            (inv_a, Decimal("0"), amt, _gl_invoice_line_memo(inv, "COGS"))
-        )
+        memo = _gl_invoice_line_memo(inv, "COGS")
+        lines.append((cogs, amt, Decimal("0"), memo))
+        lines.append((inv_a, Decimal("0"), amt, memo))
+        aq_meta: Optional[dict] = None
+        if pond_id:
+            aq_meta = {"pond_id": pond_id, "cost_bucket": bkt}
+            if cycle_id:
+                aq_meta["production_cycle_id"] = cycle_id
+        aq_costing.append(aq_meta)
+        aq_costing.append(aq_meta)
 
     if not lines:
         return False
@@ -599,8 +711,164 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
             _gl_invoice_journal_description(inv, "COGS"),
             lines,
             gl_station_id=inv_st,
+            aquaculture_line_costing=aq_costing,
         )
         is not None
+    )
+
+
+def post_aquaculture_shop_stock_issue_journal(
+    company_id: int,
+    expense_id: int,
+    entry_date: date,
+    station_id: int | None,
+    line_rows: list[tuple[Item, Decimal]],
+) -> bool:
+    """
+    Dr COGS / Cr inventory at average cost for shop stock issued to pond operations (no POS invoice).
+
+    Idempotent: entry_number AUTO-AQ-SHOP-{expense_id}-COGS.
+    """
+    entry_number = f"AUTO-AQ-SHOP-{expense_id}-COGS"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
+        return True
+
+    buckets: dict[tuple[int, int], Decimal] = defaultdict(lambda: Decimal("0"))
+    for it, qty in line_rows:
+        if not item_tracks_physical_stock(it):
+            continue
+        uc = item_inventory_unit_cost(it)
+        if uc <= 0:
+            continue
+        q = qty if qty is not None else Decimal("0")
+        amt = (q * uc).quantize(Decimal("0.01"))
+        if amt <= 0:
+            continue
+        inv_acc = _inventory_account_for_item(company_id, it)
+        cogs_acc = _cogs_account_for_item(company_id, it)
+        if not inv_acc or not cogs_acc:
+            continue
+        key = (cogs_acc.id, inv_acc.id)
+        buckets[key] = buckets.get(key, Decimal("0")) + amt
+
+    if not buckets:
+        return False
+
+    lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = []
+    aq_costing: list[Optional[dict]] = []
+    exp_row = AquacultureExpense.objects.filter(pk=expense_id, company_id=company_id).first()
+    aq_meta: dict | None = None
+    if exp_row and exp_row.pond_id:
+        aq_meta = {
+            "pond_id": exp_row.pond_id,
+            "production_cycle_id": exp_row.production_cycle_id,
+            "cost_bucket": aquaculture_expense_category_to_cost_bucket(exp_row.expense_category),
+        }
+    for (cogs_id, inv_id), amt in buckets.items():
+        cogs = ChartOfAccount.objects.filter(
+            id=cogs_id, company_id=company_id, is_active=True
+        ).first()
+        inv_a = ChartOfAccount.objects.filter(
+            id=inv_id, company_id=company_id, is_active=True
+        ).first()
+        if not cogs or not inv_a:
+            continue
+        memo = f"Aquaculture shop issue (expense {expense_id})"[:300]
+        lines.append((cogs, amt, Decimal("0"), memo))
+        lines.append((inv_a, Decimal("0"), amt, memo))
+        aq_costing.append(aq_meta)
+        aq_costing.append(aq_meta)
+
+    if not lines:
+        return False
+    debit = sum(_unpack_gl_line(x)[1] for x in lines)
+    credit = sum(_unpack_gl_line(x)[2] for x in lines)
+    if debit != credit or debit <= 0:
+        return False
+
+    desc = f"Aquaculture — shop stock to pond (operating expense #{expense_id})"[:500]
+    inv_st = _gl_station_id(company_id, station_id)
+    return (
+        _create_posted_entry(
+            company_id,
+            entry_date,
+            entry_number,
+            desc,
+            lines,
+            gl_station_id=inv_st,
+            aquaculture_line_costing=aq_costing,
+        )
+        is not None
+    )
+
+
+def post_aquaculture_fish_stock_ledger_journal(
+    company_id: int,
+    ledger_id: int,
+    entry_date: date,
+    *,
+    is_write_down: bool,
+    book_value: Decimal,
+    pond_label: str,
+    line_memo: str,
+) -> JournalEntry | None:
+    """
+    Idempotent entry_number AUTO-AQ-BIOSTK-{ledger_id}.
+
+    Write-down (mortality / negative adjustment with value): Dr 6726 / Cr 1581.
+    Count gain (positive adjustment with value): Dr 1581 / Cr 4244.
+    """
+    entry_number = f"AUTO-AQ-BIOSTK-{ledger_id}"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
+        return JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).first()
+
+    amt = book_value.quantize(Decimal("0.01"))
+    if amt <= 0:
+        return None
+
+    bio = ChartOfAccount.objects.filter(company_id=company_id, account_code="1581", is_active=True).first()
+    exp = ChartOfAccount.objects.filter(company_id=company_id, account_code="6726", is_active=True).first()
+    gain = ChartOfAccount.objects.filter(company_id=company_id, account_code="4244", is_active=True).first()
+    if not bio or (is_write_down and not exp) or (not is_write_down and not gain):
+        logger.warning(
+            "skip aquaculture fish stock journal %s: missing COA (1581%s)",
+            entry_number,
+            ", 6726" if is_write_down else ", 4244",
+        )
+        return None
+
+    memo = (line_memo or f"Aquaculture fish stock #{ledger_id}")[:300]
+    led_row = AquacultureFishStockLedger.objects.filter(pk=ledger_id, company_id=company_id).first()
+    aq_meta: dict | None = None
+    if led_row and led_row.pond_id:
+        aq_meta = {
+            "pond_id": led_row.pond_id,
+            "production_cycle_id": led_row.production_cycle_id,
+            "cost_bucket": "biological_writeoff" if is_write_down else "biological_gain",
+        }
+    if is_write_down:
+        lines = [
+            (exp, amt, Decimal("0"), memo),
+            (bio, Decimal("0"), amt, memo),
+        ]
+        desc = f"Aquaculture — biological shrinkage ({pond_label})"[:500]
+    else:
+        lines = [
+            (bio, amt, Decimal("0"), memo),
+            (gain, Decimal("0"), amt, memo),
+        ]
+        desc = f"Aquaculture — biological count gain ({pond_label})"[:500]
+
+    aq_costing = [aq_meta, aq_meta] if aq_meta else [None, None]
+
+    return _create_posted_entry(
+        company_id,
+        entry_date,
+        entry_number,
+        desc,
+        lines,
+        gl_station_id=None,
+        aquaculture_line_costing=aq_costing,
     )
 
 
@@ -700,6 +968,29 @@ def post_invoice_sale_journal(
         )
         return False
 
+    pond_id, cycle_id = _invoice_aquaculture_pond_cycle(company_id, inv)
+    aq_sale = (
+        AquacultureFishSale.objects.filter(invoice_id=inv.id, company_id=company_id)
+        .only("income_type")
+        .first()
+    )
+    aq_line_meta: list[Optional[dict]] = []
+    if pond_id is not None:
+        base: dict[str, Any] = {"pond_id": pond_id}
+        if cycle_id:
+            base["production_cycle_id"] = cycle_id
+        for i, raw in enumerate(lines):
+            _, _debit, credit, _, _, _ = _unpack_gl_line(raw)
+            meta = dict(base)
+            if i > 0 and (credit or Decimal("0")) > 0:
+                if aq_sale is not None:
+                    meta["cost_bucket"] = _aquaculture_revenue_cost_bucket(aq_sale.income_type)
+                else:
+                    meta["cost_bucket"] = "rev_pos_sale"
+            aq_line_meta.append(meta)
+    else:
+        aq_line_meta = [None] * len(lines)
+
     inv_st = _gl_station_id(company_id, inv.station_id)
     je = _create_posted_entry(
         company_id,
@@ -708,6 +999,7 @@ def post_invoice_sale_journal(
         _gl_invoice_journal_description(inv, "Invoice"),
         lines,
         gl_station_id=inv_st,
+        aquaculture_line_costing=aq_line_meta,
     )
     if je:
         post_invoice_cogs_journal(company_id, inv)

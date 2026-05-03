@@ -1,13 +1,15 @@
 'use client'
 
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Eye, DollarSign, X, Calendar, FileText, CheckCircle, Clock, XCircle, Edit2, Trash2, BookOpen, RefreshCw, Landmark, ArrowRight, User } from 'lucide-react'
 import { useToast } from '@/components/Toast'
-import { getCurrencySymbol, formatNumber } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber, formatAmountPlain } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { getApiBaseUrl } from '@/lib/api'
+import { isTenantAdminAquacultureUser } from '@/navigation/erpAppMenu'
 
 interface PayrollRun {
   id: number
@@ -30,6 +32,7 @@ interface PayrollRun {
   message?: string
   created_at: string
   updated_at: string
+  pond_allocations?: { pond_id: number; pond_name?: string; amount: string }[]
 }
 
 function parseMoneyInput(s: string): number {
@@ -157,6 +160,44 @@ export default function PayrollPage() {
   )
   const [employees, setEmployees] = useState<EmployeeRow[]>([])
   const [oneEmployeeId, setOneEmployeeId] = useState<string>('')
+  const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
+  /** Matches backend: pond APIs and splits are tenant Admin (or platform super-admin) only. */
+  const [aquacultureOpsUnlocked, setAquacultureOpsUnlocked] = useState(false)
+  const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string; is_active?: boolean }[]>([])
+  const [pondAllocDraft, setPondAllocDraft] = useState<{ pond_id: string; amount: string }[]>([])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = localStorage.getItem('user')
+      if (!raw || raw === 'undefined' || raw === 'null') {
+        setAquacultureOpsUnlocked(false)
+        return
+      }
+      const u = JSON.parse(raw) as { role?: string }
+      const r = typeof u?.role === 'string' ? u.role.toLowerCase() : null
+      setAquacultureOpsUnlocked(isTenantAdminAquacultureUser(r, r === 'super_admin'))
+    } catch {
+      setAquacultureOpsUnlocked(false)
+    }
+  }, [])
+
+  const applyPayrollResponseToDetailState = useCallback((data: PayrollRun) => {
+    setSelectedPayroll(data)
+    setDetailAmounts(detailAmountsFromPayrollApi(data))
+    if (Array.isArray(data.pond_allocations) && data.pond_allocations.length > 0) {
+      setPondAllocDraft(
+        data.pond_allocations.map((x: { pond_id: number; amount: string | number }) => ({
+          pond_id: String(x.pond_id),
+          amount: String(x.amount ?? ''),
+        }))
+      )
+    } else if (aquaculturePonds.length > 0) {
+      setPondAllocDraft(aquaculturePonds.map((p) => ({ pond_id: String(p.id), amount: '' })))
+    } else {
+      setPondAllocDraft([])
+    }
+  }, [aquaculturePonds])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -169,6 +210,55 @@ export default function PayrollPage() {
     fetchBankAccounts()
     fetchGlPayAccounts()
   }, [router])
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+    const baseUrl = getApiBaseUrl()
+    void (async () => {
+      try {
+        const r = await fetch(`${baseUrl}/companies/current/`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+          mode: 'cors',
+          credentials: 'omit',
+        })
+        if (!r.ok) return
+        const cj = await r.json()
+        const en = Boolean(cj.aquaculture_enabled)
+        setAquacultureEnabled(en)
+        if (!en) {
+          setAquaculturePonds([])
+          return
+        }
+        if (!aquacultureOpsUnlocked) {
+          setAquaculturePonds([])
+          return
+        }
+        const pr = await fetch(`${baseUrl}/aquaculture/ponds/`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+          mode: 'cors',
+          credentials: 'omit',
+        })
+        if (!pr.ok) {
+          setAquaculturePonds([])
+          return
+        }
+        const pj = await pr.json()
+        setAquaculturePonds(
+          Array.isArray(pj)
+            ? pj.map((x: { id: number; name: string; is_active?: boolean }) => ({
+                id: x.id,
+                name: (x.name || `Pond ${x.id}`).trim() || `Pond ${x.id}`,
+                is_active: x.is_active,
+              }))
+            : []
+        )
+      } catch {
+        setAquacultureEnabled(false)
+        setAquaculturePonds([])
+      }
+    })()
+  }, [aquacultureOpsUnlocked])
 
   function defaultPayFromSelect(
     banks: BankAccountRow[],
@@ -537,6 +627,63 @@ export default function PayrollPage() {
         const data = await response.json()
         setSelectedPayroll(data)
         setDetailAmounts(detailAmountsFromPayrollApi(data))
+
+        const hdr = {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        }
+        let latestPonds: { id: number; name: string; is_active?: boolean }[] = []
+        try {
+          const cr = await fetch(`${baseUrl}/companies/current/`, {
+            headers: hdr,
+            mode: 'cors',
+            credentials: 'omit',
+          })
+          if (cr.ok) {
+            const cj = await cr.json()
+            const en = Boolean(cj.aquaculture_enabled)
+            setAquacultureEnabled(en)
+            if (en) {
+              if (aquacultureOpsUnlocked) {
+                const pr = await fetch(`${baseUrl}/aquaculture/ponds/`, {
+                  headers: hdr,
+                  mode: 'cors',
+                  credentials: 'omit',
+                })
+                if (pr.ok) {
+                  const pj = await pr.json()
+                  latestPonds = Array.isArray(pj)
+                    ? pj.map((x: { id: number; name: string; is_active?: boolean }) => ({
+                        id: x.id,
+                        name: (x.name || `Pond ${x.id}`).trim() || `Pond ${x.id}`,
+                        is_active: x.is_active,
+                      }))
+                    : []
+                }
+              } else {
+                latestPonds = []
+              }
+              setAquaculturePonds(latestPonds)
+            } else {
+              setAquaculturePonds([])
+            }
+          }
+        } catch {
+          latestPonds = aquaculturePonds
+        }
+
+        if (Array.isArray(data.pond_allocations) && data.pond_allocations.length > 0) {
+          setPondAllocDraft(
+            data.pond_allocations.map((x: { pond_id: number; amount: string | number }) => ({
+              pond_id: String(x.pond_id),
+              amount: String(x.amount ?? ''),
+            }))
+          )
+        } else if (latestPonds.length > 0) {
+          setPondAllocDraft(latestPonds.map((p) => ({ pond_id: String(p.id), amount: '' })))
+        } else {
+          setPondAllocDraft([])
+        }
         payFromTouched.current = false
         setShowDetailsModal(true)
       } else {
@@ -555,7 +702,7 @@ export default function PayrollPage() {
       const token = localStorage.getItem('access_token')
       const baseUrl = getApiBaseUrl()
       const nRaw = detailAmounts.n.trim()
-      const body: Record<string, number> = {
+      const body: Record<string, unknown> = {
         base_salary_total: parseMoneyInput(detailAmounts.base),
         overtime_amount: parseMoneyInput(detailAmounts.ot),
         bonus_amount: parseMoneyInput(detailAmounts.bonus),
@@ -563,6 +710,27 @@ export default function PayrollPage() {
         total_deductions: parseMoneyInput(detailAmounts.d),
       }
       if (nRaw !== '') body.total_net = Number(nRaw)
+      if (aquacultureEnabled && aquacultureOpsUnlocked && !selectedPayroll.is_salary_posted) {
+        const net =
+          nRaw !== ''
+            ? Number(nRaw)
+            : detailComputedGross - parseMoneyInput(detailAmounts.d)
+        const alloc = pondAllocDraft
+          .filter((row) => row.pond_id && String(row.amount).trim() !== '')
+          .map((row) => ({
+            pond_id: parseInt(row.pond_id, 10),
+            amount: String(parseMoneyInput(row.amount)),
+          }))
+        const sumAlloc = alloc.reduce((s, x) => s + parseMoneyInput(x.amount), 0)
+        if (Math.abs(sumAlloc - net) > 0.02) {
+          toast.error(
+            `Pond allocations must sum to total net (${formatNumber(net)}). Current sum: ${formatNumber(sumAlloc)}.`
+          )
+          setAmountSaving(false)
+          return
+        }
+        body.pond_allocations = alloc
+      }
       const response = await fetch(`${baseUrl}/payroll/${selectedPayroll.id}/`, {
         method: 'PUT',
         headers: {
@@ -575,9 +743,8 @@ export default function PayrollPage() {
         body: JSON.stringify(body),
       })
       if (response.ok) {
-        const data = await response.json()
-        setSelectedPayroll(data)
-        setDetailAmounts(detailAmountsFromPayrollApi(data))
+        const data = (await response.json()) as PayrollRun
+        applyPayrollResponseToDetailState(data)
         fetchPayrolls()
         toast.success('Amounts updated')
       } else {
@@ -611,9 +778,8 @@ export default function PayrollPage() {
         }
       )
       if (response.ok) {
-        const data = await response.json()
-        setSelectedPayroll(data)
-        setDetailAmounts(detailAmountsFromPayrollApi(data))
+        const data = (await response.json()) as PayrollRun
+        applyPayrollResponseToDetailState(data)
         fetchPayrolls()
         toast.success('Totals set from active employee salaries (same period sum)')
       } else {
@@ -651,9 +817,8 @@ export default function PayrollPage() {
         }
       )
       if (response.ok) {
-        const data = await response.json()
-        setSelectedPayroll(data)
-        setDetailAmounts(detailAmountsFromPayrollApi(data))
+        const data = (await response.json()) as PayrollRun
+        applyPayrollResponseToDetailState(data)
         fetchPayrolls()
         toast.success('Gross and net set from that employee. Add optional notes (name, period) before posting.')
       } else {
@@ -702,8 +867,8 @@ export default function PayrollPage() {
         }
       )
       if (response.ok) {
-        const data = await response.json()
-        setSelectedPayroll(data)
+        const data = (await response.json()) as PayrollRun & { message?: string }
+        applyPayrollResponseToDetailState(data)
         toast.success(data.message || 'Posted to general ledger')
         fetchPayrolls()
       } else {
@@ -1208,6 +1373,25 @@ export default function PayrollPage() {
                   </div>
                 </div>
 
+                {selectedPayroll.is_salary_posted &&
+                  Array.isArray(selectedPayroll.pond_allocations) &&
+                  selectedPayroll.pond_allocations.length > 0 && (
+                    <div className="mb-6 rounded-lg border border-teal-100 bg-teal-50/60 px-4 py-3">
+                      <h3 className="text-sm font-semibold text-teal-900">Net pay — pond split (recorded)</h3>
+                      <ul className="mt-2 space-y-1 text-sm text-teal-950">
+                        {selectedPayroll.pond_allocations.map((row) => (
+                          <li key={row.pond_id} className="flex justify-between gap-4 tabular-nums">
+                            <span>{row.pond_name || `Pond #${row.pond_id}`}</span>
+                            <span className="font-medium">
+                              {currencySymbol}
+                              {formatNumber(Number(row.amount))}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                 {/* Summary */}
                 <div className="border-b pb-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Summary</h3>
@@ -1373,6 +1557,115 @@ export default function PayrollPage() {
                           />
                         </div>
                       </div>
+                      {aquacultureEnabled && aquacultureOpsUnlocked && !selectedPayroll.is_salary_posted && (
+                        <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50/50 p-3">
+                          <p className="text-sm font-medium text-teal-900">Split net pay across ponds (Aquaculture)</p>
+                          <p className="mt-1 text-xs text-teal-900/80">
+                            Sum of amounts must equal total net pay (same as saved amounts). Saved together with{' '}
+                            <strong>Save amounts</strong>.
+                          </p>
+                          {aquaculturePonds.length === 0 && (
+                            <p className="mt-2 text-xs text-amber-900">
+                              No ponds yet — add them under{' '}
+                              <Link href="/aquaculture/ponds" className="font-medium underline">
+                                Aquaculture → Ponds
+                              </Link>
+                              , then reopen this payroll or refresh the page.
+                            </p>
+                          )}
+                          <div className="mt-2 space-y-2">
+                            {(pondAllocDraft.length > 0 ? pondAllocDraft : [{ pond_id: '', amount: '' }]).map(
+                              (row, idx) => (
+                                <div key={idx} className="flex flex-wrap items-center gap-2">
+                                  <select
+                                    className="min-w-[8rem] rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    value={row.pond_id}
+                                    onChange={(e) => {
+                                      const v = e.target.value
+                                      setPondAllocDraft((rows) => {
+                                        const base =
+                                          rows.length > 0 ? rows : [{ pond_id: '', amount: '' }]
+                                        return base.map((r, i) => (i === idx ? { ...r, pond_id: v } : r))
+                                      })
+                                    }}
+                                  >
+                                    <option value="">Pond…</option>
+                                    {aquaculturePonds.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.name}
+                                        {p.is_active === false ? ' (inactive)' : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className="w-32 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    placeholder="Amount"
+                                    value={row.amount}
+                                    onChange={(e) => {
+                                      setPondAllocDraft((rows) => {
+                                        const base =
+                                          rows.length > 0 ? rows : [{ pond_id: '', amount: '' }]
+                                        return base.map((r, i) =>
+                                          i === idx ? { ...r, amount: e.target.value } : r
+                                        )
+                                      })
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="text-xs text-red-600 hover:underline"
+                                    onClick={() =>
+                                      setPondAllocDraft((rows) => rows.filter((_, i) => i !== idx))
+                                    }
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              )
+                            )}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-teal-800 hover:underline"
+                              onClick={() =>
+                                setPondAllocDraft((rows) => [...(rows.length ? rows : []), { pond_id: '', amount: '' }])
+                              }
+                            >
+                              + Add pond line
+                            </button>
+                            {aquaculturePonds.length > 0 ? (
+                              <button
+                                type="button"
+                                className="text-xs font-medium text-teal-800 hover:underline"
+                                onClick={() => {
+                                  const nRaw = detailAmounts.n.trim()
+                                  const net =
+                                    nRaw !== ''
+                                      ? Number(nRaw)
+                                      : detailComputedGross - parseMoneyInput(detailAmounts.d)
+                                  if (!Number.isFinite(net) || net < 0) {
+                                    toast.error('Set a valid net pay first')
+                                    return
+                                  }
+                                  const each = net / aquaculturePonds.length
+                                  setPondAllocDraft(
+                                    aquaculturePonds.map((p) => ({
+                                      pond_id: String(p.id),
+                                      amount: formatAmountPlain(each),
+                                    }))
+                                  )
+                                }}
+                              >
+                                Distribute net equally
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      )}
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"

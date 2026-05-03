@@ -6,7 +6,7 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { ArrowLeft, AlertCircle, UserPlus } from 'lucide-react'
 import api from '@/lib/api'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_ALLOCATE_GREEN_CLASS, AMOUNT_EDITABLE_FULL_GREEN_CLASS } from '@/utils/amountFieldStyles'
 import { ContactArApBalances } from '@/components/ContactArApBalances'
@@ -557,7 +557,7 @@ function RecordPaymentReceivedInner() {
     const totalAllocated = validAllocations.reduce((sum, a) => sum + a.allocated_amount, 0)
     if (Math.abs(totalAllocated - totalPaymentAmount) > 0.01) {
       setError(
-        `Total allocation (${totalAllocated.toFixed(2)}) must equal payment amount (${totalPaymentAmount.toFixed(2)})`
+        `Total allocation (${formatNumber(totalAllocated)}) must equal payment amount (${formatNumber(totalPaymentAmount)})`
       )
       setSubmitting(false)
       return
@@ -922,7 +922,7 @@ function RecordPaymentReceivedInner() {
                                 </p>
                                 <p className="shrink-0 text-right text-xs text-gray-600 tabular-nums sm:text-sm">
                                   {currencySymbol}
-                                  {(Number(inv.balance_due) || 0).toFixed(2)}
+                                  {formatNumber(Number(inv.balance_due) || 0)}
                                 </p>
                               </label>
                             </li>
@@ -958,7 +958,7 @@ function RecordPaymentReceivedInner() {
                             </p>
                             <p className="shrink-0 text-right text-sm font-medium text-amber-900/90 tabular-nums">
                               {currencySymbol}
-                              {(Number(onAccountAdvanceRow.balance_due) || 0).toFixed(2)}
+                              {formatNumber(Number(onAccountAdvanceRow.balance_due) || 0)}
                             </p>
                           </label>
                         </div>
@@ -1048,7 +1048,7 @@ function RecordPaymentReceivedInner() {
                                 ) : (
                                   <>
                                     {currencySymbol}
-                                    {(Number(invoice.total_amount ?? invoice.total) || 0).toFixed(2)}
+                                    {formatNumber(Number(invoice.total_amount ?? invoice.total) || 0)}
                                   </>
                                 )}
                               </td>
@@ -1058,13 +1058,13 @@ function RecordPaymentReceivedInner() {
                                 ) : (
                                   <>
                                     {currencySymbol}
-                                    {(Number(invoice.amount_paid) || 0).toFixed(2)}
+                                    {formatNumber(Number(invoice.amount_paid) || 0)}
                                   </>
                                 )}
                               </td>
                               <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                                 {currencySymbol}
-                                {(Number(invoice.balance_due) || 0).toFixed(2)}
+                                {formatNumber(Number(invoice.balance_due) || 0)}
                               </td>
                               <td className="px-4 py-3 text-sm text-right">
                                 <input
@@ -1117,7 +1117,7 @@ function RecordPaymentReceivedInner() {
                                   <td className="px-4 py-3 text-right text-sm text-gray-500">—</td>
                                   <td className="px-4 py-3 text-right text-sm font-medium text-amber-950">
                                     {currencySymbol}
-                                    {(Number(invoice.balance_due) || 0).toFixed(2)}
+                                    {formatNumber(Number(invoice.balance_due) || 0)}
                                   </td>
                                   <td className="px-4 py-3 text-sm text-right">
                                     <input
@@ -1149,7 +1149,7 @@ function RecordPaymentReceivedInner() {
                     </span>
                     <span className="px-4 pb-3 text-sm font-bold text-gray-900 sm:py-2.5 sm:pl-0 sm:pr-0 sm:text-right tabular-nums">
                       {currencySymbol}
-                      {allocations.reduce((sum, a) => sum + a.allocated_amount, 0).toFixed(2)}
+                      {formatNumber(allocations.reduce((sum, a) => sum + a.allocated_amount, 0))}
                     </span>
                   </div>
                   </div>

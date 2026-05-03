@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Edit, Trash2, Search, MapPin } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { filterFuelForecourtStations } from '@/utils/stationCapabilities'
 
 interface Island {
   id: number
@@ -14,6 +15,7 @@ interface Island {
   island_name: string
   station_id: number
   station_name?: string
+  station_operates_fuel_retail?: boolean
   location_description: string
   dispenser_count?: number
   is_active: boolean
@@ -23,6 +25,7 @@ interface Station {
   id: number
   station_number?: string
   station_name: string
+  operates_fuel_retail?: boolean
 }
 
 export default function IslandsPage() {
@@ -43,6 +46,14 @@ export default function IslandsPage() {
     location_description: '',
     is_active: true
   })
+
+  const fuelForecourtStations = useMemo(() => filterFuelForecourtStations(stations), [stations])
+
+  useEffect(() => {
+    if (selectedStation && !fuelForecourtStations.some((s) => String(s.id) === selectedStation)) {
+      setSelectedStation('')
+    }
+  }, [selectedStation, fuelForecourtStations])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -187,7 +198,18 @@ export default function IslandsPage() {
       <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Islands</h1>
-          <p className="text-gray-600 mt-1">Manage pump islands and dispenser locations</p>
+          <p className="text-gray-600 mt-1 max-w-3xl">
+            Pump islands belong only on fuel forecourt stations. Configure site type under{' '}
+            <a href="/stations" className="font-medium text-blue-600 hover:underline">
+              Stations
+            </a>
+            .
+          </p>
+          {stations.length > 0 && fuelForecourtStations.length === 0 ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              No fuel-forecourt sites defined — islands attach only to stations with fuel retail enabled under Stations.
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-between mb-6">
@@ -208,8 +230,8 @@ export default function IslandsPage() {
               onChange={(e) => setSelectedStation(e.target.value)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">All Stations</option>
-              {stations.map((station) => (
+              <option value="">All fuel forecourt stations</option>
+              {fuelForecourtStations.map((station) => (
                 <option key={station.id} value={station.id}>
                   {station.station_name}
                 </option>
@@ -349,7 +371,7 @@ export default function IslandsPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value={0}>Select Station</option>
-                      {stations.map((station) => (
+                      {fuelForecourtStations.map((station) => (
                         <option key={station.id} value={station.id}>
                           {station.station_name}
                         </option>

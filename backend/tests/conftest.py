@@ -4,6 +4,10 @@ Django API test fixtures (FSMS). Replaces legacy FastAPI/SQLAlchemy conftest.
 from __future__ import annotations
 
 import json
+import os
+
+# Test client uses one REMOTE_ADDR; auth rate limits would otherwise fail long suites.
+os.environ.setdefault("FSERP_DISABLE_AUTH_RATELIMIT", "1")
 
 import pytest
 from django.test import Client

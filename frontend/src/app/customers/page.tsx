@@ -7,9 +7,10 @@ import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, Users, UserCheck, DollarSign, X, Mail, Phone, ArrowUpDown, ArrowUp, ArrowDown, Download, BookOpen, Building2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
-import api, { getApiBaseUrl, getApiDocsUrl, getBackendOrigin } from '@/lib/api'
+import api, { getApiDocsUrl, getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { isConnectionError } from '@/utils/connectionError'
+import { formatJsonApiError } from '@/utils/apiErrors'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 interface Customer {
@@ -223,51 +224,44 @@ export default function CustomersPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/customers/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          company_name: formData.company_name || null,
-          first_name: formData.contact_person || null,
-          display_name: formData.company_name || formData.contact_person || '',
-          email: formData.email || null,
-          phone: formData.phone || null,
-          billing_address_line1: formData.billing_address_line1 || null,
-          billing_city: formData.billing_city || null,
-          billing_state: formData.billing_state || null,
-          billing_country: formData.billing_country || null,
-          bank_account_number: formData.bank_account_number || null,
-          bank_name: formData.bank_name || null,
-          bank_branch: formData.bank_branch || null,
-          bank_routing_number: formData.bank_routing_number || null,
-          opening_balance: formData.opening_balance,
-          opening_balance_date: formData.opening_balance_date || null,
-          is_active: formData.is_active,
-          default_station_id:
-            formData.default_station_id !== '' && formData.default_station_id != null
-              ? parseInt(String(formData.default_station_id), 10)
-              : null,
-          ...(customerRefCode.trim() ? { customer_number: customerRefCode.trim() } : {}),
-        })
+      await api.post('/customers/', {
+        company_name: formData.company_name || null,
+        first_name: formData.contact_person || null,
+        display_name: formData.company_name || formData.contact_person || '',
+        email: formData.email || null,
+        phone: formData.phone || null,
+        billing_address_line1: formData.billing_address_line1 || null,
+        billing_city: formData.billing_city || null,
+        billing_state: formData.billing_state || null,
+        billing_country: formData.billing_country || null,
+        bank_account_number: formData.bank_account_number || null,
+        bank_name: formData.bank_name || null,
+        bank_branch: formData.bank_branch || null,
+        bank_routing_number: formData.bank_routing_number || null,
+        opening_balance: formData.opening_balance,
+        opening_balance_date: formData.opening_balance_date || null,
+        is_active: formData.is_active,
+        default_station_id:
+          formData.default_station_id !== '' && formData.default_station_id != null
+            ? parseInt(String(formData.default_station_id), 10)
+            : null,
+        ...(customerRefCode.trim() ? { customer_number: customerRefCode.trim() } : {}),
       })
-      if (response.ok) {
-        toast.success('Customer created successfully!')
-        setShowModal(false)
-        fetchCustomers()
-        resetForm()
-      } else {
-        const error = await response.json().catch(() => ({ detail: 'Failed to create customer' }))
-        console.error('Failed to create customer:', error)
-        toast.error(error.detail || 'Failed to create customer')
-      }
-    } catch (error) {
-      console.error('Error creating customer:', error)
-      toast.error('Error connecting to server')
+      toast.success('Customer created successfully!')
+      setShowModal(false)
+      fetchCustomers()
+      resetForm()
+    } catch (error: unknown) {
+      const ax = error as { response?: { data?: unknown; status?: number; statusText?: string } }
+      const message = formatJsonApiError(
+        ax.response?.data,
+        'Failed to create customer',
+        ax.response
+          ? { status: ax.response.status ?? 0, statusText: ax.response.statusText ?? '' }
+          : undefined
+      )
+      console.error('Failed to create customer:', message)
+      toast.error(message)
     }
   }
 
@@ -304,51 +298,44 @@ export default function CustomersPage() {
     if (!editingCustomer) return
 
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/customers/${editingCustomer.id}/`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          company_name: formData.company_name || null,
-          first_name: formData.contact_person || null,
-          display_name: formData.company_name || formData.contact_person || '',
-          email: formData.email || null,
-          phone: formData.phone || null,
-          billing_address_line1: formData.billing_address_line1 || null,
-          billing_city: formData.billing_city || null,
-          billing_state: formData.billing_state || null,
-          billing_country: formData.billing_country || null,
-          bank_account_number: formData.bank_account_number || null,
-          bank_name: formData.bank_name || null,
-          bank_branch: formData.bank_branch || null,
-          bank_routing_number: formData.bank_routing_number || null,
-          is_active: formData.is_active,
-          opening_balance: formData.opening_balance,
-          opening_balance_date: formData.opening_balance_date || null,
-          default_station_id:
-            formData.default_station_id !== '' && formData.default_station_id != null
-              ? parseInt(String(formData.default_station_id), 10)
-              : null,
-        })
+      await api.put(`/customers/${editingCustomer.id}/`, {
+        company_name: formData.company_name || null,
+        first_name: formData.contact_person || null,
+        display_name: formData.company_name || formData.contact_person || '',
+        email: formData.email || null,
+        phone: formData.phone || null,
+        billing_address_line1: formData.billing_address_line1 || null,
+        billing_city: formData.billing_city || null,
+        billing_state: formData.billing_state || null,
+        billing_country: formData.billing_country || null,
+        bank_account_number: formData.bank_account_number || null,
+        bank_name: formData.bank_name || null,
+        bank_branch: formData.bank_branch || null,
+        bank_routing_number: formData.bank_routing_number || null,
+        is_active: formData.is_active,
+        opening_balance: formData.opening_balance,
+        opening_balance_date: formData.opening_balance_date || null,
+        default_station_id:
+          formData.default_station_id !== '' && formData.default_station_id != null
+            ? parseInt(String(formData.default_station_id), 10)
+            : null,
       })
-      if (response.ok) {
-        toast.success('Customer updated successfully!')
-        setShowModal(false)
-        setEditingCustomer(null)
-        fetchCustomers()
-        resetForm()
-      } else {
-        const error = await response.json().catch(() => ({ detail: 'Failed to update customer' }))
-        console.error('Failed to update customer:', error)
-        toast.error(error.detail || 'Failed to update customer')
-      }
-    } catch (error) {
-      console.error('Error updating customer:', error)
-      toast.error('Error connecting to server')
+      toast.success('Customer updated successfully!')
+      setShowModal(false)
+      setEditingCustomer(null)
+      fetchCustomers()
+      resetForm()
+    } catch (error: unknown) {
+      const ax = error as { response?: { data?: unknown; status?: number; statusText?: string } }
+      const message = formatJsonApiError(
+        ax.response?.data,
+        'Failed to update customer',
+        ax.response
+          ? { status: ax.response.status ?? 0, statusText: ax.response.statusText ?? '' }
+          : undefined
+      )
+      console.error('Failed to update customer:', message)
+      toast.error(message)
     }
   }
 
@@ -375,26 +362,21 @@ export default function CustomersPage() {
 
   const handleDelete = async (customerId: number) => {
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/customers/${customerId}/`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      })
-      if (response.ok || response.status === 204) {
-        toast.success('Customer deleted successfully!')
-        setShowDeleteConfirm(null)
-        fetchCustomers()
-      } else {
-        const error = await response.json().catch(() => ({ detail: 'Failed to delete customer' }))
-        console.error('Failed to delete customer:', error)
-        toast.error(error.detail || 'Failed to delete customer')
-      }
-    } catch (error) {
-      console.error('Error deleting customer:', error)
-      toast.error('Error connecting to server')
+      await api.delete(`/customers/${customerId}/`)
+      toast.success('Customer deleted successfully!')
+      setShowDeleteConfirm(null)
+      fetchCustomers()
+    } catch (error: unknown) {
+      const ax = error as { response?: { data?: unknown; status?: number; statusText?: string } }
+      const message = formatJsonApiError(
+        ax.response?.data,
+        'Failed to delete customer',
+        ax.response
+          ? { status: ax.response.status ?? 0, statusText: ax.response.statusText ?? '' }
+          : undefined
+      )
+      console.error('Failed to delete customer:', message)
+      toast.error(message)
     }
   }
 

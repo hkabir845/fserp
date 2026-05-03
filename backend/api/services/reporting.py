@@ -22,6 +22,9 @@ from api.models import (
     InvoiceLine,
     Item,
     JournalEntryLine,
+    Loan,
+    LoanDisbursement,
+    LoanRepayment,
     Meter,
     Nozzle,
     Payment,
@@ -297,6 +300,28 @@ def _unknown_type_balance_sheet_bucket(
     return "equity"
 
 
+def _balance_sheet_bucket_for_coa(coa: ChartOfAccount) -> str | None:
+    """
+    Classify a chart row to a balance-sheet side. None means P&L (excluded).
+    """
+    t = normalize_chart_account_type(coa.account_type)
+    st = (coa.account_sub_type or "").strip().lower()
+    if t in ("income", "cost_of_goods_sold", "expense"):
+        return None
+    if t in ("asset", "bank_account") or (t == "loan" and st != "loan_payable"):
+        return "asset"
+    if t == "liability" or (t == "loan" and st == "loan_payable"):
+        return "liability"
+    if t == "equity":
+        return "equity"
+    ub = _unknown_type_balance_sheet_bucket(coa.account_type)
+    if ub == "asset":
+        return "asset"
+    if ub == "liability":
+        return "liability"
+    return "equity"
+
+
 def report_balance_sheet(
     company_id: int, start: date, end: date, station_id: int | None = None
 ) -> dict[str, Any]:
@@ -418,6 +443,307 @@ def report_balance_sheet(
     if station_id is not None:
         out_bs["filter_station_id"] = station_id
     return out_bs
+
+
+def report_liabilities_detail(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
+    """
+    All liability-bucket chart accounts with balance as of ``end`` (same basis as balance sheet).
+    Includes ``account_id`` for linking to the GL account statement.
+    """
+    _ = start
+    rows: list[dict[str, Any]] = []
+    total = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        if _balance_sheet_bucket_for_coa(coa) != "liability":
+            continue
+        if station_id is not None:
+            bal = _balance_sheet_balance_from_site_activity(coa, company_id, end, station_id)
+        else:
+            bal = _ending_balance(coa, company_id, end)
+        if bal == 0:
+            continue
+        total += bal
+        display_name = coa.account_name
+        if not coa.is_active:
+            display_name = f"{display_name} (inactive)"
+        rows.append(
+            {
+                "account_id": coa.id,
+                "account_code": coa.account_code,
+                "account_name": display_name,
+                "account_type": normalize_chart_account_type(coa.account_type),
+                "balance": _f(bal),
+            }
+        )
+    note = (
+        "Point-in-time liability balances as of the report end date (same classification as the balance sheet)."
+    )
+    if station_id is not None:
+        note += (
+            " Site filter: balances use only posted journal lines with this station_id "
+            "(chart opening balances are excluded)."
+        )
+    out: dict[str, Any] = {
+        "report_id": "liabilities-detail",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "accounts": rows,
+        "total_liabilities": _f(total),
+        "accounting_note": note,
+        "summary": {
+            "total_liabilities": _f(total),
+            "account_count": len(rows),
+        },
+    }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
+
+
+def report_loan_receivable_gl(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
+    """
+    Chart accounts classified as loans receivable (loan type, sub-type other than loan_payable).
+    """
+    _ = start
+    rows: list[dict[str, Any]] = []
+    total = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        if _balance_sheet_bucket_for_coa(coa) != "asset":
+            continue
+        t = normalize_chart_account_type(coa.account_type)
+        st = (coa.account_sub_type or "").strip().lower()
+        if not (t == "loan" and st != "loan_payable"):
+            continue
+        if station_id is not None:
+            bal = _balance_sheet_balance_from_site_activity(coa, company_id, end, station_id)
+        else:
+            bal = _ending_balance(coa, company_id, end)
+        if bal == 0:
+            continue
+        total += bal
+        display_name = coa.account_name
+        if not coa.is_active:
+            display_name = f"{display_name} (inactive)"
+        rows.append(
+            {
+                "account_id": coa.id,
+                "account_code": coa.account_code,
+                "account_name": display_name,
+                "account_sub_type": st or "",
+                "balance": _f(bal),
+            }
+        )
+    note = (
+        "Loans receivable — asset-side principal accounts (chart type loan, sub-type not loan payable). "
+        "Balance as of end date."
+    )
+    if station_id is not None:
+        note += (
+            " Site filter: balances use only posted journal lines with this station_id "
+            "(chart opening balances are excluded)."
+        )
+    out: dict[str, Any] = {
+        "report_id": "loan-receivable-gl",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "accounts": rows,
+        "total_loan_receivable_gl": _f(total),
+        "accounting_note": note,
+        "summary": {
+            "total_loan_receivable_gl": _f(total),
+            "account_count": len(rows),
+        },
+    }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
+
+
+def report_loan_payable_gl(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
+    """
+    Chart accounts classified as loans payable (loan type, sub-type loan_payable).
+    """
+    _ = start
+    rows: list[dict[str, Any]] = []
+    total = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        if _balance_sheet_bucket_for_coa(coa) != "liability":
+            continue
+        t = normalize_chart_account_type(coa.account_type)
+        st = (coa.account_sub_type or "").strip().lower()
+        if not (t == "loan" and st == "loan_payable"):
+            continue
+        if station_id is not None:
+            bal = _balance_sheet_balance_from_site_activity(coa, company_id, end, station_id)
+        else:
+            bal = _ending_balance(coa, company_id, end)
+        if bal == 0:
+            continue
+        total += bal
+        display_name = coa.account_name
+        if not coa.is_active:
+            display_name = f"{display_name} (inactive)"
+        rows.append(
+            {
+                "account_id": coa.id,
+                "account_code": coa.account_code,
+                "account_name": display_name,
+                "account_sub_type": st or "",
+                "balance": _f(bal),
+            }
+        )
+    note = (
+        "Loans payable — liability-side principal accounts (chart type loan, sub-type loan payable). "
+        "Balance as of end date."
+    )
+    if station_id is not None:
+        note += (
+            " Site filter: balances use only posted journal lines with this station_id "
+            "(chart opening balances are excluded)."
+        )
+    out: dict[str, Any] = {
+        "report_id": "loan-payable-gl",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "accounts": rows,
+        "total_loan_payable_gl": _f(total),
+        "accounting_note": note,
+        "summary": {
+            "total_loan_payable_gl": _f(total),
+            "account_count": len(rows),
+        },
+    }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
+
+
+def report_loans_borrow_and_lent(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
+    """
+    Operational loan facilities (borrowed vs lent) with GL keys for drill-down.
+    Period columns aggregate disbursements and repayments between start and end (inclusive).
+    """
+    qs = (
+        Loan.objects.filter(company_id=company_id)
+        .select_related(
+            "counterparty",
+            "principal_account",
+            "settlement_account",
+            "interest_account",
+            "interest_accrual_account",
+            "station",
+            "parent_loan",
+        )
+        .order_by("direction", "loan_no")
+    )
+    if station_id is not None:
+        qs = qs.filter(Q(station_id=station_id) | Q(station_id__isnull=True))
+
+    loan_ids = list(qs.values_list("id", flat=True))
+    disb_by_loan: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    rep_by_loan: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    if loan_ids:
+        for row in (
+            LoanDisbursement.objects.filter(
+                loan_id__in=loan_ids,
+                disbursement_date__gte=start,
+                disbursement_date__lte=end,
+            )
+            .values("loan_id")
+            .annotate(s=Coalesce(Sum("amount"), Decimal("0")))
+        ):
+            disb_by_loan[row["loan_id"]] = _d(row["s"])
+        for row in (
+            LoanRepayment.objects.filter(
+                loan_id__in=loan_ids,
+                repayment_date__gte=start,
+                repayment_date__lte=end,
+            )
+            .values("loan_id")
+            .annotate(s=Coalesce(Sum("amount"), Decimal("0")))
+        ):
+            rep_by_loan[row["loan_id"]] = _d(row["s"])
+
+    borrowed: list[dict[str, Any]] = []
+    lent: list[dict[str, Any]] = []
+    ob = ol = Decimal("0")
+    pd_tot = pr_tot = Decimal("0")
+
+    for ln in qs:
+        pd = disb_by_loan.get(ln.id, Decimal("0"))
+        pr = rep_by_loan.get(ln.id, Decimal("0"))
+        pd_tot += pd
+        pr_tot += pr
+        op = _d(ln.outstanding_principal)
+        cp = ln.counterparty
+        row = {
+            "id": ln.id,
+            "loan_no": ln.loan_no,
+            "direction": ln.direction,
+            "status": ln.status,
+            "title": (ln.title or "").strip(),
+            "counterparty_code": cp.code if cp else "",
+            "counterparty_name": cp.name if cp else "",
+            "banking_model": ln.banking_model,
+            "product_type": ln.product_type,
+            "sanction_amount": _f(_d(ln.sanction_amount)),
+            "outstanding_principal": _f(op),
+            "total_disbursed": _f(_d(ln.total_disbursed)),
+            "total_repaid_principal": _f(_d(ln.total_repaid_principal or 0)),
+            "annual_interest_rate": _f(_d(ln.annual_interest_rate)),
+            "start_date": ln.start_date.isoformat() if ln.start_date else None,
+            "maturity_date": ln.maturity_date.isoformat() if ln.maturity_date else None,
+            "term_months": ln.term_months,
+            "station_id": ln.station_id,
+            "station_name": (ln.station.station_name if getattr(ln, "station", None) else None),
+            "parent_loan_id": ln.parent_loan_id,
+            "parent_loan_no": (ln.parent_loan.loan_no if ln.parent_loan_id else None),
+            "deal_reference": (ln.deal_reference or "").strip(),
+            "period_disbursements": _f(pd),
+            "period_repayments": _f(pr),
+            "principal_account_id": ln.principal_account_id,
+            "settlement_account_id": ln.settlement_account_id,
+            "interest_account_id": ln.interest_account_id,
+            "interest_accrual_account_id": ln.interest_accrual_account_id,
+        }
+        if ln.direction == Loan.DIRECTION_BORROWED:
+            borrowed.append(row)
+            ob += op
+        else:
+            lent.append(row)
+            ol += op
+
+    note = (
+        "Facilities from the loan register. Outstanding principal is the stored facility balance; "
+        "period columns sum disbursements and repayments dated within the selected range."
+    )
+    if station_id is not None:
+        note += (
+            " Site filter: includes loans tagged to this station or with no station (company-wide)."
+        )
+    out = {
+        "report_id": "loans-borrow-and-lent",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "borrowed": borrowed,
+        "lent": lent,
+        "summary": {
+            "borrowed_count": len(borrowed),
+            "lent_count": len(lent),
+            "outstanding_borrowed_principal": _f(ob),
+            "outstanding_lent_principal": _f(ol),
+            "period_disbursements_total": _f(pd_tot),
+            "period_repayments_total": _f(pr_tot),
+        },
+        "accounting_note": note,
+    }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
 
 
 def _period_pl_amount(

@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Tank, Station, Item
+from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 
 
@@ -77,11 +78,16 @@ def tanks_list_or_create(request):
         product_id = body.get("product_id")
         if not station_id or not product_id:
             return JsonResponse({"detail": "station_id and product_id are required"}, status=400)
-        if not Station.objects.filter(id=station_id, company_id=request.company_id).exists():
-            return JsonResponse({"detail": "Station not found"}, status=400)
+        try:
+            sid = int(station_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "station_id must be an integer"}, status=400)
+        serr = require_fuel_forecourt_station(request.company_id, sid)
+        if serr:
+            return serr
         if not Item.objects.filter(id=product_id, company_id=request.company_id).exists():
             return JsonResponse({"detail": "Product (item) not found"}, status=400)
-        tnum, terr = user_supplied_code_or_auto(
+        tnum, cerr = user_supplied_code_or_auto(
             request.company_id,
             Tank,
             "tank_number",
@@ -89,11 +95,11 @@ def tanks_list_or_create(request):
             (body.get("tank_number") or "").strip() or None,
             None,
         )
-        if terr:
-            return JsonResponse({"detail": terr}, status=400)
+        if cerr:
+            return JsonResponse({"detail": cerr}, status=400)
         t = Tank(
             company_id=request.company_id,
-            station_id=station_id,
+            station_id=sid,
             product_id=product_id,
             tank_name=(body.get("tank_name") or "").strip() or "Tank",
             capacity=_decimal(body.get("capacity"), 10000),
@@ -138,8 +144,17 @@ def tank_detail(request, tank_id: int):
             return err
         if body.get("tank_name") is not None:
             t.tank_name = (body.get("tank_name") or "").strip() or t.tank_name
-        if body.get("station_id") and Station.objects.filter(id=body["station_id"], company_id=request.company_id).exists():
-            t.station_id = body["station_id"]
+        if body.get("station_id") is not None and body.get("station_id") != "":
+            try:
+                new_sid = int(body["station_id"])
+            except (TypeError, ValueError):
+                return JsonResponse({"detail": "station_id must be an integer"}, status=400)
+            if not Station.objects.filter(id=new_sid, company_id=request.company_id).exists():
+                return JsonResponse({"detail": "Station not found"}, status=400)
+            serr = require_fuel_forecourt_station(request.company_id, new_sid)
+            if serr:
+                return serr
+            t.station_id = new_sid
         if body.get("product_id") and Item.objects.filter(id=body["product_id"], company_id=request.company_id).exists():
             t.product_id = body["product_id"]
         if "capacity" in body:

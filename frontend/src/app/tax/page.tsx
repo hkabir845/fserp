@@ -19,6 +19,7 @@ import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin } from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { isConnectionError } from '@/utils/connectionError'
+import { formatNumber } from '@/utils/currency'
 
 /** Matches Django `tax_views._tax_to_json` */
 interface TaxRateRow {
@@ -462,7 +463,7 @@ export default function TaxPage() {
                                     className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm"
                                   >
                                     <span className="font-semibold tabular-nums text-blue-700">
-                                      {Number(r.rate).toFixed(2)}%
+                                      {formatNumber(Number(r.rate))}%
                                     </span>
                                     <span className="inline-flex items-center gap-1 text-slate-500">
                                       <CalendarRange className="h-3.5 w-3.5 shrink-0" />

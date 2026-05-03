@@ -18,7 +18,7 @@ import {
 import api from '@/lib/api'
 import EditPaymentModal from '../EditPaymentModal'
 import { confirmDeletePaymentDialog, deletePaymentRequest } from '../paymentMutations'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDate, formatDateOnly } from '@/utils/date'
 import { escapeHtml } from '@/utils/printDocument'
 import { printListView } from '@/utils/printListView'
@@ -254,7 +254,7 @@ export default function PaymentMadePage() {
             <td>${escapeHtml(formatDateOnly(p.payment_date))}</td>
             <td>${escapeHtml(vendorName)}</td>
             <td>${escapeHtml((p.payment_method ?? 'unspecified').replace(/_/g, ' '))}</td>
-            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml((Number(p.amount) || 0).toFixed(2))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(p.amount) || 0))}</td>
           </tr>`
         })
         .join('')
@@ -270,9 +270,9 @@ export default function PaymentMadePage() {
             <td>${escapeHtml(formatDateOnly(bill.bill_date))}</td>
             <td>${escapeHtml(bill.due_date ? formatDateOnly(bill.due_date) : '—')}</td>
             <td>${escapeHtml(vendorDisplayForBill(bill))}</td>
-            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml((Number(bill.total_amount) || 0).toFixed(2))}</td>
-            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml((Number(bill.amount_paid) || 0).toFixed(2))}</td>
-            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml((Number(bill.balance_due) || 0).toFixed(2))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(bill.total_amount) || 0))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(bill.amount_paid) || 0))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(bill.balance_due) || 0))}</td>
           </tr>`
         })
         .join('')
@@ -455,7 +455,7 @@ export default function PaymentMadePage() {
                   <p className="text-blue-100 text-sm">Total Payable</p>
                   <p className="text-3xl font-bold">
                     {currencySymbol}
-                    {totalPayable.toFixed(2)}
+                    {formatNumber(totalPayable)}
                   </p>
                 </div>
               </div>
@@ -536,7 +536,7 @@ export default function PaymentMadePage() {
                             </td>
                             <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                               {currencySymbol}
-                              {(Number(payment.amount) || 0).toFixed(2)}
+                              {formatNumber(Number(payment.amount) || 0)}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600 max-w-[12rem] truncate" title={payment.memo || ''}>
                               {payment.memo || '-'}
@@ -686,7 +686,7 @@ export default function PaymentMadePage() {
                             ) : (
                               <>
                                 {currencySymbol}
-                                {parseNum(bill.total_amount).toFixed(2)}
+                                {formatNumber(parseNum(bill.total_amount))}
                               </>
                             )}
                           </td>
@@ -696,13 +696,13 @@ export default function PaymentMadePage() {
                             ) : (
                               <>
                                 {currencySymbol}
-                                {parseNum(bill.amount_paid).toFixed(2)}
+                                {formatNumber(parseNum(bill.amount_paid))}
                               </>
                             )}
                           </td>
                           <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                             {currencySymbol}
-                            {parseNum(bill.balance_due).toFixed(2)}
+                            {formatNumber(parseNum(bill.balance_due))}
                           </td>
                         </tr>
                         )

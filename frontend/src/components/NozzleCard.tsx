@@ -3,7 +3,7 @@
 import { Droplet, Gauge } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import api from '@/lib/api'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 
 interface NozzleCardProps {
   nozzle: {
@@ -65,7 +65,7 @@ export default function NozzleCard({ nozzle, onClick }: NozzleCardProps) {
       <div className="space-y-3">
         <div className="flex justify-between items-center">
           <span className="text-gray-600 font-medium">{nozzle.product_name}</span>
-          <span className="text-lg font-bold text-blue-600">{currencySymbol}{nozzle.product_price.toFixed(2)}/L</span>
+          <span className="text-lg font-bold text-blue-600">{currencySymbol}{formatNumber(nozzle.product_price)}/L</span>
         </div>
 
         <div className="grid grid-cols-2 gap-4 text-sm">
@@ -94,7 +94,7 @@ export default function NozzleCard({ nozzle, onClick }: NozzleCardProps) {
               <span className="text-sm text-gray-600">Current Stock</span>
             </div>
             <span className={`text-lg font-bold ${stockColor}`}>
-              {nozzle.tank_stock.toFixed(2)} L
+              {formatNumber(nozzle.tank_stock)} L
             </span>
           </div>
           
@@ -104,7 +104,7 @@ export default function NozzleCard({ nozzle, onClick }: NozzleCardProps) {
               <span className="text-sm text-gray-600">Meter Reading</span>
             </div>
             <span className="text-lg font-bold text-blue-600">
-              {nozzle.meter_reading.toFixed(2)} R
+              {formatNumber(nozzle.meter_reading)} R
             </span>
           </div>
         </div>

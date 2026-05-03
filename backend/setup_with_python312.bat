@@ -64,7 +64,7 @@ if not exist ".env" (
     if exist "env.example" (
         copy env.example .env
     ) else (
-        python -c "import secrets; open('.env','w').write('DATABASE_URL=postgresql://postgres:password@localhost:5432/filling_station_erp\nSECRET_KEY='+secrets.token_urlsafe(32)+'\nDEBUG=True\nALLOWED_ORIGINS=http://localhost:3000\n')"
+        python -c "import secrets; open('.env','w').write('DATABASE_URL=postgresql://postgres:password@localhost:5432/fserp_dev\nSECRET_KEY='+secrets.token_urlsafe(32)+'\nDEBUG=True\nALLOWED_ORIGINS=http://localhost:3000\n')"
     )
 )
 

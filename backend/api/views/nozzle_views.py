@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Nozzle, Meter, Tank, Item
+from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 
 
@@ -73,16 +74,27 @@ def _nozzle_to_list_json(n):
     return _nozzle_to_pos_json(n)
 
 
+def _nozzles_forecourt_qs(company_id: int):
+    """Exclude nozzles whose hierarchy resolves to a non-fuel station (e.g. legacy misconfiguration).
+
+    Internal helper only: takes ``company_id``, not a request. Do not wrap with view decorators.
+    """
+    return (
+        Nozzle.objects.filter(company_id=company_id)
+        .exclude(meter__dispenser__island__station__operates_fuel_retail=False)
+        .select_related("meter", "tank", "product", "meter__dispenser__island__station")
+    )
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
 @csrf_exempt
 @auth_required
 @require_company_id
 def nozzles_list_or_create(request):
     if request.method == "GET":
-        qs = (
-            Nozzle.objects.filter(company_id=request.company_id)
-            .select_related("meter", "tank", "product", "meter__dispenser__island__station")
-            .order_by("id")
-        )
+        qs = _nozzles_forecourt_qs(request.company_id).order_by("id")
         return JsonResponse([_nozzle_to_list_json(n) for n in qs], safe=False)
     if request.method == "POST":
         return nozzles_list_post(request)
@@ -95,16 +107,13 @@ def nozzles_list_or_create(request):
 def nozzles_details(request):
     """GET /api/nozzles/details/ - enriched list for POS (product, meter, tank, station)."""
     qs = (
-        Nozzle.objects.filter(company_id=request.company_id, is_active=True, is_operational=True)
-        .select_related("meter", "tank", "product", "meter__dispenser__island__station")
+        _nozzles_forecourt_qs(request.company_id)
+        .filter(is_active=True, is_operational=True)
         .order_by("id")
     )
     return JsonResponse([_nozzle_to_pos_json(n) for n in qs], safe=False)
 
 
-@csrf_exempt
-@auth_required
-@require_company_id
 def nozzles_list_post(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -115,18 +124,36 @@ def nozzles_list_post(request):
     tank_id = body.get("tank_id")
     if not meter_id or not tank_id:
         return JsonResponse({"detail": "meter_id and tank_id are required"}, status=400)
-    if not Meter.objects.filter(id=meter_id, company_id=request.company_id).exists():
+    meter = (
+        Meter.objects.filter(id=meter_id, company_id=request.company_id)
+        .select_related("dispenser__island__station")
+        .first()
+    )
+    if not meter:
         return JsonResponse({"detail": "Meter not found"}, status=400)
-    if not Tank.objects.filter(id=tank_id, company_id=request.company_id).exists():
+    tank = Tank.objects.filter(id=tank_id, company_id=request.company_id).select_related("station").first()
+    if not tank:
         return JsonResponse({"detail": "Tank not found"}, status=400)
-    tank = Tank.objects.get(id=tank_id)
+    serr = require_fuel_forecourt_station(request.company_id, tank.station_id)
+    if serr:
+        return serr
+    ms_id = None
+    if meter.dispenser_id and getattr(meter.dispenser, "island_id", None):
+        isl = getattr(meter.dispenser, "island", None)
+        if isl:
+            ms_id = isl.station_id
+    if ms_id is None or ms_id != tank.station_id:
+        return JsonResponse(
+            {"detail": "Meter and tank must belong to the same fuel forecourt station."},
+            status=400,
+        )
     name = (body.get("nozzle_name") or "").strip() or f"Nozzle-{meter_id}-{tank_id}"
     num_in = (body.get("nozzle_number") or "").strip()
-    code, err = user_supplied_code_or_auto(
+    code, c_err = user_supplied_code_or_auto(
         request.company_id, Nozzle, "nozzle_number", "NZL", num_in or None, None
     )
-    if err:
-        return JsonResponse({"detail": err}, status=400)
+    if c_err:
+        return JsonResponse({"detail": c_err}, status=400)
     is_op = (
         body.get("is_operational", True)
         if isinstance(body.get("is_operational"), bool)
@@ -166,7 +193,11 @@ def nozzles_list_post(request):
 @auth_required
 @require_company_id
 def nozzle_detail(request, nozzle_id: int):
-    n = Nozzle.objects.filter(id=nozzle_id, company_id=request.company_id).select_related("meter", "tank", "product").first()
+    n = (
+        Nozzle.objects.filter(id=nozzle_id, company_id=request.company_id)
+        .select_related("meter", "meter__dispenser__island", "tank", "tank__station", "product")
+        .first()
+    )
     if not n:
         return JsonResponse({"detail": "Nozzle not found"}, status=404)
 
@@ -179,11 +210,46 @@ def nozzle_detail(request, nozzle_id: int):
             return err
         if body.get("nozzle_name") is not None:
             n.nozzle_name = (body.get("nozzle_name") or "").strip() or n.nozzle_name
-        if body.get("meter_id") and Meter.objects.filter(id=body["meter_id"], company_id=request.company_id).exists():
-            n.meter_id = body["meter_id"]
-        if body.get("tank_id") and Tank.objects.filter(id=body["tank_id"], company_id=request.company_id).exists():
-            tank = Tank.objects.get(id=body["tank_id"])
-            n.tank_id = tank.id
+        new_mid = n.meter_id
+        if body.get("meter_id") is not None and body.get("meter_id") != "":
+            try:
+                new_mid = int(body["meter_id"])
+            except (TypeError, ValueError):
+                return JsonResponse({"detail": "meter_id must be an integer"}, status=400)
+        new_tid = n.tank_id
+        if body.get("tank_id") is not None and body.get("tank_id") != "":
+            try:
+                new_tid = int(body["tank_id"])
+            except (TypeError, ValueError):
+                return JsonResponse({"detail": "tank_id must be an integer"}, status=400)
+        if (body.get("meter_id") is not None and body.get("meter_id") != "") or (
+            body.get("tank_id") is not None and body.get("tank_id") != ""
+        ):
+            meter = (
+                Meter.objects.filter(id=new_mid, company_id=request.company_id)
+                .select_related("dispenser__island")
+                .first()
+            )
+            if not meter:
+                return JsonResponse({"detail": "Meter not found"}, status=400)
+            tank = Tank.objects.filter(id=new_tid, company_id=request.company_id).select_related("station").first()
+            if not tank:
+                return JsonResponse({"detail": "Tank not found"}, status=400)
+            serr = require_fuel_forecourt_station(request.company_id, tank.station_id)
+            if serr:
+                return serr
+            ms_id = None
+            if meter.dispenser_id and getattr(meter.dispenser, "island_id", None):
+                isl = getattr(meter.dispenser, "island", None)
+                if isl:
+                    ms_id = isl.station_id
+            if ms_id is None or ms_id != tank.station_id:
+                return JsonResponse(
+                    {"detail": "Meter and tank must belong to the same fuel forecourt station."},
+                    status=400,
+                )
+            n.meter_id = new_mid
+            n.tank_id = new_tid
             n.product_id = tank.product_id
         if "color_code" in body:
             n.color_code = (body.get("color_code") or "#3B82F6")[:20]

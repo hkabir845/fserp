@@ -25,7 +25,7 @@ import {
   Users,
   Filter,
 } from 'lucide-react'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber, formatAmountPlain } from '@/utils/currency'
 import { printCurrentWindow, printDocument, escapeHtml } from '@/utils/printDocument'
 import type { PrintBranding } from '@/utils/printBranding'
 import { loadPrintBranding } from '@/utils/printBranding'
@@ -247,7 +247,7 @@ function counterpartyPositionSummary(
     if (l.direction === 'lent') recv += o
     else pay += o
   }
-  return { recv: recv.toFixed(2), pay: pay.toFixed(2) }
+  return { recv: formatNumber(recv), pay: formatNumber(pay) }
 }
 
 function todayISODateLocal(): string {
@@ -535,7 +535,7 @@ function statementKindLabel(kind: string, islamic = false): string {
 
 /** Two-decimal string for repayment math (matches GL tolerance in doRepay). */
 function roundMoney2(n: number): string {
-  return (Math.round(n * 100) / 100).toFixed(2)
+  return formatAmountPlain(n)
 }
 
 function csvEscapeCell(v: string): string {

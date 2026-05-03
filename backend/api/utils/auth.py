@@ -80,7 +80,13 @@ def auth_required(view_func):
             request.api_user = user
             return view_func(request, *args, **kwargs)
         except Exception as e:
-            return JsonResponse({"detail": "Authentication or request failed", "error": str(e)}, status=500)
+            logger.exception("auth_required wrapper failed")
+            if getattr(settings, "DEBUG", False):
+                return JsonResponse(
+                    {"detail": "Authentication or request failed", "error": str(e)},
+                    status=500,
+                )
+            return JsonResponse({"detail": "Authentication or request failed"}, status=500)
     return wrapped
 
 
@@ -99,7 +105,8 @@ def tenant_company_allows_access(user) -> bool:
         return True
     cid = getattr(user, "company_id", None)
     if cid is None:
-        return True
+        # Non-super users must be assigned to a company; do not allow tenant-wide access.
+        return False
     return Company.objects.filter(id=cid, is_deleted=False, is_active=True).exists()
 
 
@@ -139,7 +146,9 @@ def get_company_id(request):
     - Super admin: ``X-Selected-Company-Id`` still wins if valid; otherwise use the subdomain company.
     - Other users: must belong to that company (``user.company_id`` matches).
 
-    When the header is absent, behavior is unchanged (user's company, super-admin switcher, fallbacks).
+    When the header is absent: use the user's ``company_id``, or super-admin ``X-Selected-Company-Id`` /
+    first existing company / auto-created master template — never assign an arbitrary tenant to
+    a normal user without ``company_id``.
 
     Sets ``request.tenant_subdomain_invalid`` or ``request.tenant_subdomain_forbidden`` on hard failures.
     """
@@ -188,10 +197,11 @@ def get_company_id(request):
     if getattr(user, "company_id", None):
         if Company.objects.filter(id=user.company_id, is_deleted=False).exists():
             return user.company_id
-    first = Company.objects.filter(is_deleted=False).order_by("id").first()
-    if first:
-        return first.id
+
     if user_is_super_admin(user):
+        first = Company.objects.filter(is_deleted=False).order_by("id").first()
+        if first:
+            return first.id
         default_company = Company.objects.create(
             name="Master Filling Station",
             legal_name="Master Filling Station (Development)",
@@ -210,4 +220,5 @@ def get_company_id(request):
                 exc,
             )
         return default_company.id
+
     return None

@@ -21,6 +21,10 @@ from api.services.reporting import (
     report_item_sales_custom,
     report_item_stock_movement,
     report_item_velocity_analysis,
+    report_liabilities_detail,
+    report_loan_receivable_gl,
+    report_loan_payable_gl,
+    report_loans_borrow_and_lent,
     report_meter_readings,
     report_sales_by_nozzle,
     report_sales_by_station,
@@ -39,6 +43,10 @@ _REPORT_HANDLERS = {
     "trial-balance": report_trial_balance,
     "balance-sheet": report_balance_sheet,
     "income-statement": report_income_statement,
+    "liabilities-detail": report_liabilities_detail,
+    "loan-receivable-gl": report_loan_receivable_gl,
+    "loan-payable-gl": report_loan_payable_gl,
+    "loans-borrow-and-lent": report_loans_borrow_and_lent,
     "customer-balances": report_customer_balances,
     "vendor-balances": report_vendor_balances,
     "fuel-sales": report_fuel_sales,
@@ -110,8 +118,24 @@ GL_STATION_AWARE_REPORTS = frozenset(
         "balance-sheet",
         "income-statement",
         "financial-analytics",
+        "liabilities-detail",
+        "loan-receivable-gl",
+        "loan-payable-gl",
+        "loans-borrow-and-lent",
     }
 )
+
+AQUACULTURE_REPORT_IDS = frozenset(
+    {
+        "aquaculture-pond-pl",
+        "aquaculture-fish-sales",
+        "aquaculture-expenses",
+        "aquaculture-sampling",
+        "aquaculture-production-cycles",
+        "aquaculture-profit-transfers",
+    }
+)
+
 
 STATION_SCOPED_REPORTS = frozenset(
     {
@@ -187,6 +211,14 @@ def report_by_id(request, report_id: str):
                 report_item_purchase_velocity_analysis(cid, start, end, category, item_ids, st_id)
             )
         return JsonResponse(report_item_velocity_analysis(cid, start, end, category, item_ids, st_id))
+
+    if report_id in AQUACULTURE_REPORT_IDS:
+        from api.services.aquaculture_reports_registry import build_aquaculture_report
+
+        out = build_aquaculture_report(report_id, cid, start, end, request)
+        if isinstance(out, JsonResponse):
+            return out
+        return JsonResponse(out)
 
     handler = _REPORT_HANDLERS.get(report_id)
     if not handler:

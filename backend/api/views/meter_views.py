@@ -7,6 +7,7 @@ from django.utils import timezone
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id, _serialize_datetime
 from api.models import Meter, Dispenser
+from api.services.station_capabilities import require_island_on_fuel_forecourt
 
 
 def _meter_to_json(m):
@@ -51,12 +52,20 @@ def meters_list_or_create(request):
         dispenser_id = body.get("dispenser_id")
         if not dispenser_id:
             return JsonResponse({"detail": "dispenser_id is required"}, status=400)
-        if not Dispenser.objects.filter(id=dispenser_id, company_id=request.company_id).exists():
+        try:
+            did = int(dispenser_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "dispenser_id must be an integer"}, status=400)
+        d = Dispenser.objects.filter(id=did, company_id=request.company_id).select_related("island").first()
+        if not d:
             return JsonResponse({"detail": "Dispenser not found"}, status=400)
+        serr = require_island_on_fuel_forecourt(request.company_id, d.island_id)
+        if serr:
+            return serr
         name = (body.get("meter_name") or "").strip() or "Meter"
         m = Meter(
             company_id=request.company_id,
-            dispenser_id=dispenser_id,
+            dispenser_id=did,
             meter_name=name,
             meter_code=body.get("meter_code") or "",
             meter_number=body.get("meter_number") or "",
@@ -90,8 +99,18 @@ def meter_detail(request, meter_id: int):
             return err
         if body.get("meter_name") is not None:
             m.meter_name = (body.get("meter_name") or "").strip() or m.meter_name
-        if body.get("dispenser_id") and Dispenser.objects.filter(id=body["dispenser_id"], company_id=request.company_id).exists():
-            m.dispenser_id = body["dispenser_id"]
+        if body.get("dispenser_id") is not None and body.get("dispenser_id") != "":
+            try:
+                new_did = int(body["dispenser_id"])
+            except (TypeError, ValueError):
+                return JsonResponse({"detail": "dispenser_id must be an integer"}, status=400)
+            d = Dispenser.objects.filter(id=new_did, company_id=request.company_id).select_related("island").first()
+            if not d:
+                return JsonResponse({"detail": "Dispenser not found"}, status=400)
+            serr = require_island_on_fuel_forecourt(request.company_id, d.island_id)
+            if serr:
+                return serr
+            m.dispenser_id = new_did
         if "current_reading" in body:
             m.current_reading = _decimal(body.get("current_reading"), m.current_reading)
         if "is_active" in body:

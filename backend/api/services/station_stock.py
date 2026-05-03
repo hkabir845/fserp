@@ -23,10 +23,18 @@ def tanks_exist_for_item(company_id: int, item_id: int) -> bool:
 def item_uses_station_bins(company_id: int, item: Item) -> bool:
     """
     True when this SKU's physical stock is tracked per station (ItemStationStock), not in tanks.
+
+    POS category ``non_pos`` is for aquaculture hatchery / internal stock (e.g. fish fry moved to
+    ponds) — not shop or warehouse bins.
     """
     if not item_tracks_physical_stock(item):
         return False
-    return not tanks_exist_for_item(company_id, item.id)
+    if tanks_exist_for_item(company_id, item.id):
+        return False
+    pos_cat = (getattr(item, "pos_category", None) or "").strip().lower()
+    if pos_cat == "non_pos":
+        return False
+    return True
 
 
 def get_or_create_default_station(company_id: int) -> Station:
@@ -45,9 +53,31 @@ def get_or_create_default_station(company_id: int) -> Station:
     return Station.objects.create(company_id=company_id, station_name="Default", is_active=True)
 
 
+def receipt_station_id_for_vendor(company_id: int, vendor) -> int:
+    """
+    Default receiving station for new vendor bills / payment register when not overridden.
+    Prefer vendor.default_station; else a shop whose default_aquaculture_pond matches vendor.default_aquaculture_pond;
+    else first active station.
+    """
+    if vendor is not None:
+        ds = getattr(vendor, "default_station_id", None)
+        if ds and Station.objects.filter(pk=ds, company_id=company_id, is_active=True).exists():
+            return int(ds)
+        pid = getattr(vendor, "default_aquaculture_pond_id", None)
+        if pid:
+            st = Station.objects.filter(
+                company_id=company_id,
+                is_active=True,
+                default_aquaculture_pond_id=int(pid),
+            ).first()
+            if st:
+                return int(st.id)
+    return int(get_or_create_default_station(company_id).id)
+
+
 def refresh_item_quantity_on_hand(company_id: int, item_id: int) -> None:
     """Recompute Item.quantity_on_hand from tanks (if any) or sum of station bins."""
-    it = Item.objects.filter(pk=item_id, company_id=company_id).only("id", "item_type").first()
+    it = Item.objects.filter(pk=item_id, company_id=company_id).only("id", "item_type", "pos_category").first()
     if not it:
         return
     if tanks_exist_for_item(company_id, item_id):
@@ -64,6 +94,8 @@ def refresh_item_quantity_on_hand(company_id: int, item_id: int) -> None:
         Item.objects.filter(pk=item_id, company_id=company_id).update(quantity_on_hand=total)
         return
     if not item_tracks_physical_stock(it):
+        return
+    if not item_uses_station_bins(company_id, it):
         return
     agg = ItemStationStock.objects.filter(company_id=company_id, item_id=item_id).aggregate(
         s=DjSum("quantity")

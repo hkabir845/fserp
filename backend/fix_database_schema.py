@@ -14,7 +14,7 @@ def fix_database():
     print("FIXING DATABASE SCHEMA")
     print("="*80 + "\n")
     
-    db_path = "filling_station_erp.db"
+    db_path = "db.sqlite3"
     
     # Check if database exists
     if os.path.exists(db_path):

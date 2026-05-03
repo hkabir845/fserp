@@ -1,18 +1,20 @@
 'use client'
 
 import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useCompany } from '@/contexts/CompanyContext'
 import { 
   FileText, TrendingUp, DollarSign, Users, Package, 
   BarChart3, Calendar, Download, Filter, RefreshCw, Printer,
-  Gauge, Droplet,   ClipboardList, Layers, ShoppingCart, MapPin
+  Gauge, Droplet,   ClipboardList, Layers, ShoppingCart, MapPin, Fish,
+  Scale, Landmark, Banknote, BookOpen, CreditCard,
 } from 'lucide-react'
 import { canViewInventorySkuReport } from '@/utils/rbac'
 import api from '@/lib/api'
 import { formatDate, formatDateOnly, formatDateRange, localDateISO, toDateInputValue } from '@/utils/date'
-import { formatCurrency, formatNumber } from '@/utils/formatting'
+import { formatAmountPlain, formatCurrency, formatNumber } from '@/utils/formatting'
 import { escapeHtml, printDocument } from '@/utils/printDocument'
 import type { PrintBranding } from '@/utils/printBranding'
 import { loadPrintBranding } from '@/utils/printBranding'
@@ -38,6 +40,10 @@ type ReportType =
   | 'income-statement'
   | 'customer-balances'
   | 'vendor-balances'
+  | 'liabilities-detail'
+  | 'loan-receivable-gl'
+  | 'loan-payable-gl'
+  | 'loans-borrow-and-lent'
   | 'fuel-sales'
   | 'tank-inventory'
   | 'shift-summary'
@@ -57,6 +63,12 @@ type ReportType =
   | 'item-velocity-analysis'
   | 'item-purchase-velocity-analysis'
   | 'analytics-kpi'
+  | 'aquaculture-pond-pl'
+  | 'aquaculture-fish-sales'
+  | 'aquaculture-expenses'
+  | 'aquaculture-sampling'
+  | 'aquaculture-production-cycles'
+  | 'aquaculture-profit-transfers'
 
 const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [
   'item-sales-custom',
@@ -71,7 +83,7 @@ interface ReportCard {
   title: string
   description: string
   icon: React.ElementType
-  category: 'financial' | 'operational' | 'analytical' | 'inventory'
+  category: 'financial' | 'operational' | 'analytical' | 'inventory' | 'aquaculture'
 }
 
 const reports: ReportCard[] = [
@@ -110,6 +122,34 @@ const reports: ReportCard[] = [
     description: 'Accounts Payable summary',
     icon: Users,
     category: 'financial'
+  },
+  {
+    id: 'liabilities-detail',
+    title: 'Liabilities (GL detail)',
+    description: 'Every liability account on the chart with balance as of period end — open the GL ledger per line',
+    icon: Scale,
+    category: 'financial',
+  },
+  {
+    id: 'loan-receivable-gl',
+    title: 'Loan receivable (GL)',
+    description: 'Loans receivable principal accounts (asset-side loan GL) with balances and ledger links',
+    icon: Landmark,
+    category: 'financial',
+  },
+  {
+    id: 'loan-payable-gl',
+    title: 'Loan payable (GL)',
+    description: 'Loans payable principal accounts (liability-side loan GL) with balances and ledger links',
+    icon: CreditCard,
+    category: 'financial',
+  },
+  {
+    id: 'loans-borrow-and-lent',
+    title: 'Loans — borrowed & lent',
+    description: 'Loan facilities: outstanding principal, period cash flows, and GL accounts (principal, bank, interest, accrual)',
+    icon: Banknote,
+    category: 'financial',
   },
 
   {
@@ -249,7 +289,51 @@ const reports: ReportCard[] = [
     description: 'Meter activity and dispensing stats',
     icon: BarChart3,
     category: 'analytical'
-  }
+  },
+
+  // Aquaculture (BDT; pond sub-totals and company totals on each report)
+  {
+    id: 'aquaculture-pond-pl',
+    title: 'Aquaculture — Pond P&L',
+    description: 'Pond-wise revenue, operating costs, payroll allocation, and net profit for the period',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-fish-sales',
+    title: 'Aquaculture — Pond sales register',
+    description: 'Fish harvest plus sacks, scrap, and other pond income lines by pond with sub-totals (BDT)',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-expenses',
+    title: 'Aquaculture — Expense register',
+    description: 'Operating expenses by pond and shared allocations with sub-totals (BDT)',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-sampling',
+    title: 'Aquaculture — Biomass sampling',
+    description: 'Sample history by pond with sub-totals for the period',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-production-cycles',
+    title: 'Aquaculture — Production cycles',
+    description: 'Production batches overlapping the period, grouped by pond with sub-totals',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-profit-transfers',
+    title: 'Aquaculture — Pond profit transfers',
+    description: 'GL transfers by pond with sub-totals and period total (BDT)',
+    icon: Fish,
+    category: 'aquaculture',
+  },
 ]
 
 const SUMMARY_EXCLUDED_REPORTS: ReportType[] = [
@@ -260,12 +344,27 @@ const SUMMARY_EXCLUDED_REPORTS: ReportType[] = [
   'tank-dip-register',
   'meter-readings',
   'inventory-sku-valuation',
+  'loans-borrow-and-lent',
 ]
+
+/** Mix — Fuel & Aquaculture tab: fixed shortlist (same order as sidebar). */
+const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
+  'trial-balance',
+  'balance-sheet',
+  'income-statement',
+  'customer-balances',
+  'vendor-balances',
+  'daily-summary',
+] as const
 
 /** Reports that accept optional `station_id` (all sites when empty; home-station users are always scoped in API). */
 const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'trial-balance',
   'income-statement',
+  'liabilities-detail',
+  'loan-receivable-gl',
+  'loan-payable-gl',
+  'loans-borrow-and-lent',
   'fuel-sales',
   'tank-inventory',
   'shift-summary',
@@ -287,13 +386,24 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
 ])
 
 /** Subset of station-scoped reports where amounts come from posted GL lines (not invoice subledgers). */
-const REPORTS_GL_STATION_SCOPED = new Set<ReportType>(['trial-balance', 'income-statement'])
+const REPORTS_GL_STATION_SCOPED = new Set<ReportType>([
+  'trial-balance',
+  'income-statement',
+  'liabilities-detail',
+  'loan-receivable-gl',
+  'loan-payable-gl',
+  'loans-borrow-and-lent',
+])
 
 /** Single source of truth: APIs that accept `start_date` / `end_date` (used for fetch + period UI). */
 const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'trial-balance',
   'balance-sheet',
   'income-statement',
+  'liabilities-detail',
+  'loan-receivable-gl',
+  'loan-payable-gl',
+  'loans-borrow-and-lent',
   'customer-balances',
   'vendor-balances',
   'daily-summary',
@@ -314,6 +424,12 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'item-stock-movement',
   'item-velocity-analysis',
   'item-purchase-velocity-analysis',
+  'aquaculture-pond-pl',
+  'aquaculture-fish-sales',
+  'aquaculture-expenses',
+  'aquaculture-sampling',
+  'aquaculture-production-cycles',
+  'aquaculture-profit-transfers',
 ])
 
 /** In-report + export label for which site(s) a station-scoped report covers. */
@@ -388,8 +504,14 @@ export default function ReportsPage() {
     endDate: localDateISO(),
   })
   const [filterCategory, setFilterCategory] = useState<
-    'all' | 'financial' | 'operational' | 'analytical' | 'inventory'
+    'all' | 'mix' | 'financial' | 'operational' | 'analytical' | 'inventory' | 'aquaculture'
   >('all')
+
+  const [aquaculturePondId, setAquaculturePondId] = useState('')
+  const [aquacultureCycleId, setAquacultureCycleId] = useState('')
+  const [aquacultureIncludeCycleBreakdown, setAquacultureIncludeCycleBreakdown] = useState(false)
+  const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string }[]>([])
+  const [aquacultureCycles, setAquacultureCycles] = useState<{ id: number; name: string }[]>([])
 
   /** Shared filters for item-scoped reports (category + multi-select products). */
   const [itemScopeCategory, setItemScopeCategory] = useState('')
@@ -589,6 +711,44 @@ export default function ReportsPage() {
     else setReportStationId('')
   }, [selectedCompany?.id])
 
+  useEffect(() => {
+    let cancelled = false
+    api
+      .get<{ id: number; name: string }[]>('/aquaculture/ponds/')
+      .then((res) => {
+        if (cancelled) return
+        setAquaculturePonds(Array.isArray(res.data) ? res.data : [])
+      })
+      .catch(() => {
+        if (!cancelled) setAquaculturePonds([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCompany?.id])
+
+  useEffect(() => {
+    if (!aquaculturePondId || selectedReport !== 'aquaculture-pond-pl') {
+      setAquacultureCycles([])
+      return
+    }
+    let cancelled = false
+    api
+      .get<{ id: number; name: string }[]>('/aquaculture/production-cycles/', {
+        params: { pond_id: aquaculturePondId },
+      })
+      .then((res) => {
+        if (cancelled) return
+        setAquacultureCycles(Array.isArray(res.data) ? res.data : [])
+      })
+      .catch(() => {
+        if (!cancelled) setAquacultureCycles([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [aquaculturePondId, selectedReport])
+
   const persistReportStation = useCallback((id: string) => {
     setReportStationId(id)
     try {
@@ -656,7 +816,14 @@ export default function ReportsPage() {
     if (filterCategory === 'all') {
       return roleFilteredReports
     }
-    return roleFilteredReports.filter(r => r.category === filterCategory)
+    if (filterCategory === 'mix') {
+      const mixSet = new Set<ReportType>(MIX_FUEL_AQUACULTURE_REPORT_IDS)
+      const order = MIX_FUEL_AQUACULTURE_REPORT_IDS
+      return roleFilteredReports
+        .filter((r) => mixSet.has(r.id))
+        .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+    }
+    return roleFilteredReports.filter((r) => r.category === filterCategory)
   }
   
   const filteredReports = getFilteredReports()
@@ -692,6 +859,20 @@ export default function ReportsPage() {
     ) {
       if (itemScopeCategory.trim()) params.category = itemScopeCategory.trim()
       if (itemScopeItemIds.length > 0) params.item_ids = itemScopeItemIds.join(',')
+    }
+
+    if (String(reportId).startsWith('aquaculture-')) {
+      if (aquaculturePondId && /^\d+$/.test(aquaculturePondId)) {
+        params.pond_id = aquaculturePondId
+      }
+      if (reportId === 'aquaculture-pond-pl') {
+        if (aquacultureCycleId && /^\d+$/.test(aquacultureCycleId)) {
+          params.cycle_id = aquacultureCycleId
+        }
+        if (aquacultureIncludeCycleBreakdown) {
+          params.include_cycle_breakdown = 'true'
+        }
+      }
     }
 
     if (REPORTS_STATION_SCOPED.has(reportId)) {
@@ -771,7 +952,16 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
-  }, [dateRange, router, itemScopeCategory, itemScopeItemIds, reportStationId])
+  }, [
+    dateRange,
+    router,
+    itemScopeCategory,
+    itemScopeItemIds,
+    reportStationId,
+    aquaculturePondId,
+    aquacultureCycleId,
+    aquacultureIncludeCycleBreakdown,
+  ])
 
   const onReportStationSelectChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -884,6 +1074,43 @@ export default function ReportsPage() {
         }
       })
       contentHTML += `<div class="summary"><h2>Summary</h2><p><strong>Gross Profit:</strong> ${formatCurrency(reportData.gross_profit || 0)}</p><p><strong>Net Income:</strong> ${formatCurrency(reportData.net_income || 0)}</p></div>`
+    } else if (selectedReport === 'liabilities-detail' && reportData.accounts) {
+      contentHTML +=
+        '<h2>Liabilities (GL)</h2><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th style="text-align:right">Balance</th><th>Account id</th></tr></thead><tbody>'
+      reportData.accounts.forEach((acc: any) => {
+        contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td>${acc.account_type || ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td><td>${acc.account_id ?? ''}</td></tr>`
+      })
+      contentHTML += `</tbody><tfoot><tr><td colspan="3"><strong>Total</strong></td><td style="text-align:right"><strong>${formatCurrency(reportData.total_liabilities || 0)}</strong></td><td></td></tr></tfoot></table>`
+    } else if (selectedReport === 'loan-receivable-gl' && reportData.accounts) {
+      contentHTML +=
+        '<h2>Loan receivable (GL)</h2><table><thead><tr><th>Code</th><th>Account</th><th>Sub-type</th><th style="text-align:right">Balance</th><th>Account id</th></tr></thead><tbody>'
+      reportData.accounts.forEach((acc: any) => {
+        contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td>${acc.account_sub_type || ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td><td>${acc.account_id ?? ''}</td></tr>`
+      })
+      contentHTML += `</tbody><tfoot><tr><td colspan="3"><strong>Total</strong></td><td style="text-align:right"><strong>${formatCurrency(reportData.total_loan_receivable_gl || 0)}</strong></td><td></td></tr></tfoot></table>`
+    } else if (selectedReport === 'loan-payable-gl' && reportData.accounts) {
+      contentHTML +=
+        '<h2>Loan payable (GL)</h2><table><thead><tr><th>Code</th><th>Account</th><th>Sub-type</th><th style="text-align:right">Balance</th><th>Account id</th></tr></thead><tbody>'
+      reportData.accounts.forEach((acc: any) => {
+        contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td>${acc.account_sub_type || ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td><td>${acc.account_id ?? ''}</td></tr>`
+      })
+      contentHTML += `</tbody><tfoot><tr><td colspan="3"><strong>Total</strong></td><td style="text-align:right"><strong>${formatCurrency(reportData.total_loan_payable_gl || 0)}</strong></td><td></td></tr></tfoot></table>`
+    } else if (selectedReport === 'loans-borrow-and-lent') {
+      const sm = reportData.summary || {}
+      contentHTML += `<h2>Summary</h2><p>Outstanding borrowed: ${formatCurrency(sm.outstanding_borrowed_principal ?? 0)} (${sm.borrowed_count ?? 0} facilities)</p>`
+      contentHTML += `<p>Outstanding lent: ${formatCurrency(sm.outstanding_lent_principal ?? 0)} (${sm.lent_count ?? 0} facilities)</p>`
+      contentHTML += `<p>Period disbursements: ${formatCurrency(sm.period_disbursements_total ?? 0)}</p>`
+      contentHTML += `<p>Period repayments: ${formatCurrency(sm.period_repayments_total ?? 0)}</p>`
+      const mkTable = (title: string, rows: any[]) => {
+        let h = `<h3>${title}</h3><table><thead><tr><th>Loan</th><th>Party</th><th>Status</th><th style="text-align:right">Outstanding</th><th style="text-align:right">Period disb.</th><th style="text-align:right">Period pmt</th></tr></thead><tbody>`
+        rows.forEach((row: any) => {
+          h += `<tr><td>${row.loan_no || ''}</td><td>${row.counterparty_name || ''}</td><td>${row.status || ''}</td><td style="text-align:right">${formatCurrency(row.outstanding_principal ?? 0)}</td><td style="text-align:right">${formatCurrency(row.period_disbursements ?? 0)}</td><td style="text-align:right">${formatCurrency(row.period_repayments ?? 0)}</td></tr>`
+        })
+        h += '</tbody></table>'
+        return h
+      }
+      contentHTML += mkTable('Borrowed', reportData.borrowed || [])
+      contentHTML += mkTable('Lent', reportData.lent || [])
     } else if (
       (selectedReport === 'customer-balances' && reportData.customers) ||
       (selectedReport === 'vendor-balances' && reportData.vendors)
@@ -904,17 +1131,17 @@ export default function ReportsPage() {
     } else if (selectedReport === 'meter-readings' && reportData.meters) {
       contentHTML += '<h2>Meter Details</h2><table><thead><tr><th>Meter Number</th><th>Meter Name</th><th style="text-align:right">Opening</th><th style="text-align:right">Closing</th><th style="text-align:right">Dispensed</th><th style="text-align:right">Sales</th><th style="text-align:right">Liters</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
       reportData.meters.forEach((meter: any) => {
-        contentHTML += `<tr><td>${meter.meter_number || ''}</td><td>${meter.meter_name || ''}</td><td style="text-align:right">${Number(meter.opening_reading || 0).toFixed(2)}L</td><td style="text-align:right">${Number(meter.closing_reading || 0).toFixed(2)}L</td><td style="text-align:right">${Number(meter.period_dispensed || 0).toFixed(2)}L</td><td style="text-align:right">${meter.total_sales || 0}</td><td style="text-align:right">${Number(meter.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">${formatCurrency(meter.total_amount || 0)}</td></tr>`
+        contentHTML += `<tr><td>${meter.meter_number || ''}</td><td>${meter.meter_name || ''}</td><td style="text-align:right">${formatNumber(Number(meter.opening_reading || 0))}L</td><td style="text-align:right">${formatNumber(Number(meter.closing_reading || 0))}L</td><td style="text-align:right">${formatNumber(Number(meter.period_dispensed || 0))}L</td><td style="text-align:right">${meter.total_sales || 0}</td><td style="text-align:right">${formatNumber(Number(meter.total_liters || 0))}L</td><td style="text-align:right">${formatCurrency(meter.total_amount || 0)}</td></tr>`
       })
       const ms = reportData.summary || {}
-      contentHTML += `<tfoot><tr><td colspan="5" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${ms.total_sales ?? ''}</strong></td><td style="text-align:right"><strong>${Number(ms.total_liters_dispensed ?? 0).toFixed(2)}L</strong></td><td style="text-align:right"><strong>${formatCurrency(ms.total_amount ?? 0)}</strong></td></tr></tfoot></tbody></table>`
+      contentHTML += `<tfoot><tr><td colspan="5" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${ms.total_sales ?? ''}</strong></td><td style="text-align:right"><strong>${formatNumber(Number(ms.total_liters_dispensed ?? 0))}L</strong></td><td style="text-align:right"><strong>${formatCurrency(ms.total_amount ?? 0)}</strong></td></tr></tfoot></tbody></table>`
     } else if (selectedReport === 'sales-by-nozzle' && reportData.nozzles) {
       contentHTML += '<h2>Sales by Nozzle</h2><table><thead><tr><th>Nozzle</th><th>Product</th><th>Station</th><th style="text-align:right">Transactions</th><th style="text-align:right">Liters</th><th style="text-align:right">Amount</th><th style="text-align:right">Avg Sale</th></tr></thead><tbody>'
       reportData.nozzles.forEach((nozzle: any) => {
-        contentHTML += `<tr><td>${nozzle.nozzle_name || nozzle.nozzle_number || ''}</td><td>${nozzle.product_name || ''}</td><td>${nozzle.station_name || ''}</td><td style="text-align:right">${nozzle.total_transactions || 0}</td><td style="text-align:right">${Number(nozzle.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">${formatCurrency(nozzle.total_amount || 0)}</td><td style="text-align:right">${formatCurrency(nozzle.average_sale_amount || 0)}</td></tr>`
+        contentHTML += `<tr><td>${nozzle.nozzle_name || nozzle.nozzle_number || ''}</td><td>${nozzle.product_name || ''}</td><td>${nozzle.station_name || ''}</td><td style="text-align:right">${nozzle.total_transactions || 0}</td><td style="text-align:right">${formatNumber(Number(nozzle.total_liters || 0))}L</td><td style="text-align:right">${formatCurrency(nozzle.total_amount || 0)}</td><td style="text-align:right">${formatCurrency(nozzle.average_sale_amount || 0)}</td></tr>`
       })
       const ns = reportData.summary || {}
-      contentHTML += `<tfoot><tr><td colspan="3" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${ns.total_transactions ?? ''}</strong></td><td style="text-align:right"><strong>${Number(ns.total_liters ?? 0).toFixed(2)}L</strong></td><td style="text-align:right"><strong>${formatCurrency(ns.total_amount ?? 0)}</strong></td><td>—</td></tr></tfoot></tbody></table>`
+      contentHTML += `<tfoot><tr><td colspan="3" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${ns.total_transactions ?? ''}</strong></td><td style="text-align:right"><strong>${formatNumber(Number(ns.total_liters ?? 0))}L</strong></td><td style="text-align:right"><strong>${formatCurrency(ns.total_amount ?? 0)}</strong></td><td>—</td></tr></tfoot></tbody></table>`
     } else if (selectedReport === 'sales-by-station' && reportData.rows) {
       contentHTML += '<h2>Sales by station</h2><table><thead><tr><th>Station</th><th style="text-align:right">Invoices</th><th style="text-align:right">Total</th></tr></thead><tbody>'
       const srows: any[] = reportData.rows || []
@@ -927,7 +1154,7 @@ export default function ReportsPage() {
     } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
       contentHTML += '<h2>Tank Inventory</h2><table><thead><tr><th>Tank</th><th>Station</th><th>Product</th><th style="text-align:right">Capacity (L)</th><th style="text-align:right">Stock (L)</th><th style="text-align:right">Fill %</th><th>Needs Refill</th></tr></thead><tbody>'
       reportData.inventory.forEach((tank: any) => {
-        contentHTML += `<tr><td>${tank.tank_name || ''}</td><td>${tank.station_name || ''}</td><td>${tank.product_name || ''}</td><td style="text-align:right">${Number(tank.capacity || 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.current_stock || 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.fill_percentage || 0).toFixed(1)}%</td><td>${tank.needs_refill ? 'Yes' : 'No'}</td></tr>`
+        contentHTML += `<tr><td>${tank.tank_name || ''}</td><td>${tank.station_name || ''}</td><td>${tank.product_name || ''}</td><td style="text-align:right">${Number(tank.capacity || 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.current_stock || 0).toLocaleString()}</td><td style="text-align:right">${formatNumber(Number(tank.fill_percentage || 0))}%</td><td>${tank.needs_refill ? 'Yes' : 'No'}</td></tr>`
       })
       const inv = reportData.inventory || []
       const tc = inv.reduce((s: number, t: any) => s + Number(t.capacity || 0), 0)
@@ -938,7 +1165,7 @@ export default function ReportsPage() {
       contentHTML += '<h2>SKU details</h2><table><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th>Unit</th><th style="text-align:right">On hand</th><th style="text-align:right">Cost value</th><th style="text-align:right">List value</th><th style="text-align:right">Period qty</th><th style="text-align:right">Period rev</th><th style="text-align:right">Units/day</th><th style="text-align:right">Days cover</th><th>Status</th></tr></thead><tbody>'
       rows.forEach((r: any) => {
         const dc = r.days_of_cover == null ? '—' : String(r.days_of_cover)
-        contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.reporting_category || ''))}</td><td>${escapeHtml(String(r.unit || ''))}</td><td style="text-align:right">${r.quantity_on_hand != null ? Number(r.quantity_on_hand).toFixed(2) : ''}</td><td style="text-align:right">${formatCurrency(r.extended_cost_value)}</td><td style="text-align:right">${formatCurrency(r.extended_list_value)}</td><td style="text-align:right">${r.period_quantity_sold != null ? Number(r.period_quantity_sold).toFixed(2) : ''}</td><td style="text-align:right">${formatCurrency(r.period_revenue)}</td><td style="text-align:right">${r.velocity_per_day != null ? Number(r.velocity_per_day).toFixed(3) : ''}</td><td style="text-align:right">${escapeHtml(dc)}</td><td>${escapeHtml(String(r.stock_status || ''))}</td></tr>`
+        contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.reporting_category || ''))}</td><td>${escapeHtml(String(r.unit || ''))}</td><td style="text-align:right">${r.quantity_on_hand != null ? formatNumber(Number(r.quantity_on_hand)) : ''}</td><td style="text-align:right">${formatCurrency(r.extended_cost_value)}</td><td style="text-align:right">${formatCurrency(r.extended_list_value)}</td><td style="text-align:right">${r.period_quantity_sold != null ? formatNumber(Number(r.period_quantity_sold)) : ''}</td><td style="text-align:right">${formatCurrency(r.period_revenue)}</td><td style="text-align:right">${r.velocity_per_day != null ? formatNumber(Number(r.velocity_per_day), 2) : ''}</td><td style="text-align:right">${escapeHtml(dc)}</td><td>${escapeHtml(String(r.stock_status || ''))}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'item-master-by-category' && (reportData.by_category || reportData.rows)) {
@@ -999,7 +1226,7 @@ export default function ReportsPage() {
       contentHTML +=
         '<h2>Fast & slow movers (sales)</h2><table><thead><tr><th>Tier</th><th>SKU</th><th>Item</th><th>On hand</th><th>Sold qty</th><th>Vel/day</th><th>Rank</th></tr></thead><tbody>'
       cr.forEach((r: any) => {
-        contentHTML += `<tr><td>${escapeHtml(String(r.movement_tier || ''))}</td><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td style="text-align:right">${formatNumber(r.quantity_on_hand, 2)}</td><td style="text-align:right">${formatNumber(r.period_quantity_sold, 2)}</td><td style="text-align:right">${formatNumber(r.velocity_per_day, 4)}</td><td style="text-align:right">${r.velocity_rank ?? '—'}</td></tr>`
+        contentHTML += `<tr><td>${escapeHtml(String(r.movement_tier || ''))}</td><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td style="text-align:right">${formatNumber(r.quantity_on_hand, 2)}</td><td style="text-align:right">${formatNumber(r.period_quantity_sold, 2)}</td><td style="text-align:right">${formatNumber(r.velocity_per_day, 2)}</td><td style="text-align:right">${r.velocity_rank ?? '—'}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'item-purchase-velocity-analysis' && reportData.rows) {
@@ -1007,7 +1234,7 @@ export default function ReportsPage() {
       contentHTML +=
         '<h2>Fast & slow purchases</h2><table><thead><tr><th>Tier</th><th>SKU</th><th>Item</th><th>On hand</th><th>Purch qty</th><th>Purch / day</th><th>Rank</th></tr></thead><tbody>'
       cr.forEach((r: any) => {
-        contentHTML += `<tr><td>${escapeHtml(String(r.movement_tier || ''))}</td><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td style="text-align:right">${formatNumber(r.quantity_on_hand, 2)}</td><td style="text-align:right">${formatNumber(r.period_quantity_purchased, 2)}</td><td style="text-align:right">${formatNumber(r.purchase_velocity_per_day, 4)}</td><td style="text-align:right">${r.velocity_rank ?? '—'}</td></tr>`
+        contentHTML += `<tr><td>${escapeHtml(String(r.movement_tier || ''))}</td><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td style="text-align:right">${formatNumber(r.quantity_on_hand, 2)}</td><td style="text-align:right">${formatNumber(r.period_quantity_purchased, 2)}</td><td style="text-align:right">${formatNumber(r.purchase_velocity_per_day, 2)}</td><td style="text-align:right">${r.velocity_rank ?? '—'}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'shift-summary' && reportData.sessions) {
@@ -1015,18 +1242,18 @@ export default function ReportsPage() {
       reportData.sessions.forEach((session: any) => {
         const openedDate = formatDate(session.opened_at, true)
         const closedDate = session.closed_at ? formatDate(session.closed_at, true) : '—'
-        contentHTML += `<tr><td>${session.cashier_name || ''}</td><td>${session.station_name || ''}</td><td>${openedDate}</td><td>${closedDate}</td><td style="text-align:right">${session.transaction_count || 0}</td><td style="text-align:right">${formatCurrency(session.total_sales || 0)}</td><td style="text-align:right">${Number(session.total_liters || 0).toFixed(2)}L</td><td style="text-align:right">${formatCurrency(session.cash_expected || 0)}</td><td style="text-align:right">${formatCurrency(session.cash_counted || 0)}</td><td style="text-align:right">${formatCurrency(session.variance || 0)}</td><td>${session.status || ''}</td></tr>`
+        contentHTML += `<tr><td>${session.cashier_name || ''}</td><td>${session.station_name || ''}</td><td>${openedDate}</td><td>${closedDate}</td><td style="text-align:right">${session.transaction_count || 0}</td><td style="text-align:right">${formatCurrency(session.total_sales || 0)}</td><td style="text-align:right">${formatNumber(Number(session.total_liters || 0))}L</td><td style="text-align:right">${formatCurrency(session.cash_expected || 0)}</td><td style="text-align:right">${formatCurrency(session.cash_counted || 0)}</td><td style="text-align:right">${formatCurrency(session.variance || 0)}</td><td>${session.status || ''}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'tank-dip-register' && reportData.entries) {
       contentHTML += '<h2>Tank Dip Register</h2><table><thead><tr><th>#</th><th>Date</th><th>Station</th><th>Tank</th><th>Product</th><th style="text-align:right">Book (L)</th><th style="text-align:right">Stick (L)</th><th style="text-align:right">Variance (L)</th><th style="text-align:right">% Cap</th><th style="text-align:right">Est. value</th><th>Notes</th></tr></thead><tbody>'
       ;(reportData.entries as any[]).forEach((row: any, idx: number) => {
         const d = row.dip_date ? formatDate(row.dip_date) : ''
-        const book = row.book_before_liters != null ? Number(row.book_before_liters).toFixed(2) : '—'
-        const varL = row.variance_liters != null ? Number(row.variance_liters).toFixed(2) : '—'
-        const pct = row.variance_pct_of_capacity != null ? `${Number(row.variance_pct_of_capacity).toFixed(2)}%` : '—'
+        const book = row.book_before_liters != null ? formatNumber(Number(row.book_before_liters)) : '—'
+        const varL = row.variance_liters != null ? formatNumber(Number(row.variance_liters)) : '—'
+        const pct = row.variance_pct_of_capacity != null ? `${formatNumber(Number(row.variance_pct_of_capacity))}%` : '—'
         const val = row.variance_value_estimate != null ? formatCurrency(row.variance_value_estimate) : '—'
-        contentHTML += `<tr><td>${idx + 1}</td><td>${d}</td><td>${row.station_name || ''}</td><td>${row.tank_name || ''}</td><td>${row.product_name || ''}</td><td style="text-align:right">${book}</td><td style="text-align:right">${Number(row.measured_liters || 0).toFixed(2)}</td><td style="text-align:right">${varL}</td><td style="text-align:right">${pct}</td><td style="text-align:right">${val}</td><td>${(row.notes || '').replace(/</g, '')}</td></tr>`
+        contentHTML += `<tr><td>${idx + 1}</td><td>${d}</td><td>${row.station_name || ''}</td><td>${row.tank_name || ''}</td><td>${row.product_name || ''}</td><td style="text-align:right">${book}</td><td style="text-align:right">${formatNumber(Number(row.measured_liters || 0))}</td><td style="text-align:right">${varL}</td><td style="text-align:right">${pct}</td><td style="text-align:right">${val}</td><td>${(row.notes || '').replace(/</g, '')}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'tank-dip-variance' && reportData.dips) {
@@ -1038,7 +1265,7 @@ export default function ReportsPage() {
         const meas = Number(dip.measured_quantity ?? dip.dip_volume ?? 0)
         const vq = Number(dip.variance_quantity ?? dip.variance ?? 0)
         const vt = dip.variance_type || (vq > 0 ? 'GAIN' : vq < 0 ? 'LOSS' : 'EVEN')
-        contentHTML += `<tr><td>${date}</td><td>${dip.tank_name || ''}</td><td>${dip.product_name || ''}</td><td style="text-align:right">${sys.toFixed(2)}</td><td style="text-align:right">${meas.toFixed(2)}</td><td style="text-align:right">${vt === 'GAIN' ? '+' : ''}${vq.toFixed(2)}</td><td style="text-align:right">${formatCurrency(dip.variance_value)}</td><td>${vt}</td><td>${dip.recorded_by || '—'}</td></tr>`
+        contentHTML += `<tr><td>${date}</td><td>${dip.tank_name || ''}</td><td>${dip.product_name || ''}</td><td style="text-align:right">${formatNumber(sys)}</td><td style="text-align:right">${formatNumber(meas)}</td><td style="text-align:right">${vt === 'GAIN' ? '+' : ''}${formatNumber(vq)}</td><td style="text-align:right">${formatCurrency(dip.variance_value)}</td><td>${vt}</td><td>${dip.recorded_by || '—'}</td></tr>`
       })
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'daily-summary' && reportData.sales) {
@@ -1047,13 +1274,13 @@ export default function ReportsPage() {
       const dp = reportData.dips || {}
       contentHTML += '<h2>Summary</h2><table><tbody>'
       contentHTML += `<tr><td><strong>Total transactions</strong></td><td>${s.total_transactions ?? 0}</td></tr>`
-      contentHTML += `<tr><td><strong>Total liters</strong></td><td>${Number(s.total_liters ?? 0).toFixed(2)}</td></tr>`
+      contentHTML += `<tr><td><strong>Total liters</strong></td><td>${formatNumber(Number(s.total_liters ?? 0))}</td></tr>`
       contentHTML += `<tr><td><strong>Total amount</strong></td><td>${formatCurrency(s.total_amount)}</td></tr>`
       contentHTML += `<tr><td><strong>Average sale</strong></td><td>${formatCurrency(s.average_sale)}</td></tr>`
       contentHTML += `<tr><td><strong>Total shifts</strong></td><td>${sh.total_shifts ?? 0}</td></tr>`
       contentHTML += `<tr><td><strong>Total cash variance</strong></td><td>${formatCurrency(sh.total_cash_variance)}</td></tr>`
       contentHTML += `<tr><td><strong>Dip readings</strong></td><td>${dp.total_readings ?? 0}</td></tr>`
-      contentHTML += `<tr><td><strong>Net dip variance (L)</strong></td><td>${Number(dp.net_variance ?? 0).toFixed(2)}</td></tr>`
+      contentHTML += `<tr><td><strong>Net dip variance (L)</strong></td><td>${formatNumber(Number(dp.net_variance ?? 0))}</td></tr>`
       contentHTML += '</tbody></table>'
       const bp = s.by_product || {}
       const keys = Object.keys(bp)
@@ -1062,7 +1289,7 @@ export default function ReportsPage() {
           '<h2>Sales by product</h2><table><thead><tr><th>Product</th><th style="text-align:right">Lines</th><th style="text-align:right">Liters</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
         keys.forEach((k) => {
           const m = bp[k] as { line_count?: number; liters?: number; amount?: number }
-          contentHTML += `<tr><td>${escapeHtml(k)}</td><td style="text-align:right">${m.line_count ?? 0}</td><td style="text-align:right">${Number(m.liters ?? 0).toFixed(2)}</td><td style="text-align:right">${formatCurrency(m.amount ?? 0)}</td></tr>`
+          contentHTML += `<tr><td>${escapeHtml(k)}</td><td style="text-align:right">${m.line_count ?? 0}</td><td style="text-align:right">${formatNumber(Number(m.liters ?? 0))}</td><td style="text-align:right">${formatCurrency(m.amount ?? 0)}</td></tr>`
         })
         contentHTML += '</tbody></table>'
       }
@@ -1071,7 +1298,7 @@ export default function ReportsPage() {
         contentHTML +=
           '<h2>Tank status</h2><table><thead><tr><th>Tank</th><th>Product</th><th style="text-align:right">Capacity</th><th style="text-align:right">Stock</th><th style="text-align:right">Fill %</th></tr></thead><tbody>'
         tanks.forEach((tank: any) => {
-          contentHTML += `<tr><td>${escapeHtml(String(tank.tank_name ?? ''))}</td><td>${escapeHtml(String(tank.product ?? ''))}</td><td style="text-align:right">${Number(tank.capacity ?? 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.current_stock ?? 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.fill_percentage ?? 0).toFixed(1)}%</td></tr>`
+          contentHTML += `<tr><td>${escapeHtml(String(tank.tank_name ?? ''))}</td><td>${escapeHtml(String(tank.product ?? ''))}</td><td style="text-align:right">${Number(tank.capacity ?? 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.current_stock ?? 0).toLocaleString()}</td><td style="text-align:right">${formatNumber(Number(tank.fill_percentage ?? 0))}%</td></tr>`
         })
         contentHTML += '</tbody></table>'
       }
@@ -1079,7 +1306,7 @@ export default function ReportsPage() {
       contentHTML += '<h2>Fuel sales (invoice fuel lines)</h2><table><tbody>'
       contentHTML += `<tr><td><strong>Fuel line count</strong></td><td>${reportData.total_sales ?? 0}</td></tr>`
       contentHTML += `<tr><td><strong>Invoices with fuel</strong></td><td>${reportData.invoice_count ?? 0}</td></tr>`
-      contentHTML += `<tr><td><strong>Total liters</strong></td><td>${Number(reportData.total_quantity_liters ?? 0).toFixed(2)}</td></tr>`
+      contentHTML += `<tr><td><strong>Total liters</strong></td><td>${formatNumber(Number(reportData.total_quantity_liters ?? 0))}</td></tr>`
       contentHTML += `<tr><td><strong>Total amount</strong></td><td>${formatCurrency(reportData.total_amount)}</td></tr>`
       contentHTML += `<tr><td><strong>Average per fuel line</strong></td><td>${formatCurrency(reportData.average_sale_amount)}</td></tr>`
       contentHTML += '</tbody></table>'
@@ -1207,7 +1434,7 @@ export default function ReportsPage() {
       } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
         csvContent += 'Tank,Station,Product,Capacity (L),Current Stock (L),Fill %,Needs Refill\n'
         reportData.inventory.forEach((tank: any) => {
-          csvContent += `${escapeCsv(tank.tank_name)},${escapeCsv(tank.station_name)},${escapeCsv(tank.product_name)},${tank.capacity || 0},${tank.current_stock || 0},${Number(tank.fill_percentage || 0).toFixed(1)},${tank.needs_refill ? 'Yes' : 'No'}\n`
+          csvContent += `${escapeCsv(tank.tank_name)},${escapeCsv(tank.station_name)},${escapeCsv(tank.product_name)},${tank.capacity || 0},${tank.current_stock || 0},${formatAmountPlain(Number(tank.fill_percentage || 0), 2)},${tank.needs_refill ? 'Yes' : 'No'}\n`
         })
       } else if (selectedReport === 'inventory-sku-valuation' && reportData.rows) {
         csvContent +=
@@ -1417,6 +1644,46 @@ export default function ReportsPage() {
         }
         csvContent += `\nGross Profit,${reportData.gross_profit || 0}\n`
         csvContent += `Net Income,${reportData.net_income || 0}\n`
+      } else if (selectedReport === 'liabilities-detail' && reportData.accounts) {
+        csvContent += 'Account id,Code,Name,Type,Balance\n'
+        reportData.accounts.forEach((acc: any) => {
+          csvContent += `${acc.account_id ?? ''},${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${escapeCsv(acc.account_type)},${acc.balance ?? 0}\n`
+        })
+        csvContent += `Total,,,,${reportData.total_liabilities ?? 0}\n`
+      } else if (selectedReport === 'loan-receivable-gl' && reportData.accounts) {
+        csvContent += 'Account id,Code,Name,Sub-type,Balance\n'
+        reportData.accounts.forEach((acc: any) => {
+          csvContent += `${acc.account_id ?? ''},${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${escapeCsv(acc.account_sub_type)},${acc.balance ?? 0}\n`
+        })
+        csvContent += `Total,,,,${reportData.total_loan_receivable_gl ?? 0}\n`
+      } else if (selectedReport === 'loan-payable-gl' && reportData.accounts) {
+        csvContent += 'Account id,Code,Name,Sub-type,Balance\n'
+        reportData.accounts.forEach((acc: any) => {
+          csvContent += `${acc.account_id ?? ''},${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${escapeCsv(acc.account_sub_type)},${acc.balance ?? 0}\n`
+        })
+        csvContent += `Total,,,,${reportData.total_loan_payable_gl ?? 0}\n`
+      } else if (selectedReport === 'loans-borrow-and-lent') {
+        csvContent += 'Direction,Loan no,Party,Status,Outstanding,Period disb,Period pmt,Principal GL,Settlement GL,Interest GL,Accrual GL\n'
+        const dump = (dir: string, rows: any[]) => {
+          rows.forEach((row: any) => {
+            csvContent += [
+              dir,
+              escapeCsv(row.loan_no),
+              escapeCsv(row.counterparty_name),
+              escapeCsv(row.status),
+              row.outstanding_principal ?? 0,
+              row.period_disbursements ?? 0,
+              row.period_repayments ?? 0,
+              row.principal_account_id ?? '',
+              row.settlement_account_id ?? '',
+              row.interest_account_id ?? '',
+              row.interest_accrual_account_id ?? '',
+            ].join(',')
+            csvContent += '\n'
+          })
+        }
+        dump('borrowed', reportData.borrowed || [])
+        dump('lent', reportData.lent || [])
       } else if (selectedReport === 'daily-summary') {
         csvContent += 'Metric,Value\n'
         if (reportData.sales) {
@@ -1440,6 +1707,39 @@ export default function ReportsPage() {
         csvContent += `Total liters,${reportData.total_quantity_liters ?? 0}\n`
         csvContent += `Total amount,${reportData.total_amount ?? 0}\n`
         csvContent += `Average per fuel line,${reportData.average_sale_amount ?? 0}\n`
+      } else if (String(selectedReport).startsWith('aquaculture-')) {
+        csvContent += 'Aquaculture report (BDT). See JSON export for full nested structure.\n'
+        if (reportData.summary && typeof reportData.summary === 'object') {
+          Object.entries(reportData.summary as Record<string, unknown>).forEach(([k, v]) => {
+            csvContent += `${k},${v}\n`
+          })
+        }
+        if (selectedReport === 'aquaculture-pond-pl' && Array.isArray(reportData.ponds)) {
+          csvContent += '\nPond,Revenue,Direct exp,Shared exp,Payroll,Total costs,Profit\n'
+          ;(reportData.ponds as any[]).forEach((p: any) => {
+            csvContent += [
+              escapeCsv(p.pond_name),
+              p.revenue,
+              p.direct_operating_expenses,
+              p.shared_operating_expenses,
+              p.payroll_allocated,
+              p.total_costs,
+              p.profit,
+            ].join(',')
+            csvContent += '\n'
+          })
+          const tt = reportData.totals || {}
+          csvContent += `Total,,,,,${tt.total_costs ?? ''},${tt.profit ?? ''}\n`
+        }
+        if (Array.isArray(reportData.groups)) {
+          csvContent += '\nPond group,Field,Value\n'
+          ;(reportData.groups as any[]).forEach((g: any) => {
+            csvContent += `${escapeCsv(g.pond_name)},subtotal_amount,${g.subtotal_amount ?? g.subtotal_samples ?? ''}\n`
+            ;(g.lines || []).forEach((ln: any) => {
+              csvContent += `${escapeCsv(g.pond_name)},line,${JSON.stringify(ln)}\n`
+            })
+          })
+        }
       } else {
         // Fallback to JSON if CSV not supported
         const dataStr = JSON.stringify(reportData, null, 2)
@@ -1481,12 +1781,22 @@ export default function ReportsPage() {
               <button
                 onClick={() => setFilterCategory('all')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  filterCategory === 'all' 
-                    ? 'bg-white text-blue-600 shadow-sm' 
+                  filterCategory === 'all'
+                    ? 'bg-white text-blue-600 shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
                 All Reports
+              </button>
+              <button
+                onClick={() => setFilterCategory('mix')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  filterCategory === 'mix'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Mix — Fuel & Aquaculture
               </button>
               <button
                 onClick={() => setFilterCategory('financial')}
@@ -1527,6 +1837,16 @@ export default function ReportsPage() {
                 }`}
               >
                 Analytical
+              </button>
+              <button
+                onClick={() => setFilterCategory('aquaculture')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  filterCategory === 'aquaculture'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Aquaculture
               </button>
             </div>
           )}
@@ -1609,6 +1929,7 @@ export default function ReportsPage() {
                           report.category === 'financial' ? 'bg-green-100 text-green-700' :
                           report.category === 'operational' ? 'bg-blue-100 text-blue-700' :
                           report.category === 'inventory' ? 'bg-amber-100 text-amber-800' :
+                          report.category === 'aquaculture' ? 'bg-cyan-100 text-cyan-800' :
                           'bg-purple-100 text-purple-700'
                         }`}>
                           {report.category.charAt(0).toUpperCase() + report.category.slice(1)}
@@ -1722,6 +2043,81 @@ export default function ReportsPage() {
                       </div>
                     )}
 
+                    {selectedReport &&
+                      String(selectedReport).startsWith('aquaculture-') &&
+                      userRole !== 'cashier' && (
+                        <div className="mb-6 rounded-lg border border-cyan-200 bg-cyan-50/90 px-4 py-3 text-sm text-cyan-950 shadow-sm">
+                          <p className="font-semibold text-cyan-900">Aquaculture filters</p>
+                          <p className="mt-1 text-cyan-800/90">
+                            All amounts in this section are shown in <strong>BDT</strong>. Use Refresh after changing
+                            filters.
+                          </p>
+                          <div className="mt-3 flex flex-wrap items-end gap-3">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-pond">
+                                Pond (optional)
+                              </label>
+                              <select
+                                id="aq-report-pond"
+                                value={aquaculturePondId}
+                                onChange={(e) => {
+                                  const v = e.target.value
+                                  setAquaculturePondId(v)
+                                  setAquacultureCycleId('')
+                                }}
+                                className="min-w-[12rem] rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm"
+                              >
+                                <option value="">All ponds</option>
+                                {aquaculturePonds.map((p) => (
+                                  <option key={p.id} value={String(p.id)}>
+                                    {p.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {selectedReport === 'aquaculture-pond-pl' && (
+                              <>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-cycle">
+                                    Production cycle (optional)
+                                  </label>
+                                  <select
+                                    id="aq-report-cycle"
+                                    value={aquacultureCycleId}
+                                    onChange={(e) => setAquacultureCycleId(e.target.value)}
+                                    disabled={!aquaculturePondId}
+                                    className="min-w-[12rem] rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                                  >
+                                    <option value="">All cycles (pond scope)</option>
+                                    {aquacultureCycles.map((c) => (
+                                      <option key={c.id} value={String(c.id)}>
+                                        {c.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <label className="flex items-center gap-2 text-xs font-medium text-cyan-900">
+                                  <input
+                                    type="checkbox"
+                                    checked={aquacultureIncludeCycleBreakdown}
+                                    onChange={(e) => setAquacultureIncludeCycleBreakdown(e.target.checked)}
+                                    className="rounded border-cyan-400"
+                                  />
+                                  Include cycle breakdown (when not filtering by one cycle)
+                                </label>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => selectedReport && void fetchReport(selectedReport)}
+                              className="rounded-md bg-cyan-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-cyan-800"
+                            >
+                              Refresh report
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                     {/* Report Content */}
                     <div className="space-y-6">
                       {/* Summary Section */}
@@ -1760,7 +2156,7 @@ export default function ReportsPage() {
                                 </p>
                                       <p className={`text-xl font-bold mt-1 ${colorClass.split(' ')[2].replace('600', '900')}`}>
                                   {typeof value === 'number' ? (
-                                    key.includes('percentage') ? `${Number(value).toFixed(2)}%` :
+                                    key.includes('percentage') ? `${formatNumber(Number(value))}%` :
                                     key.includes('amount') || key.includes('value') || key.includes('sales') || key.includes('expected') || key.includes('counted') ? 
                                             formatCurrency(value) :
                                           formatNumber(value, 0)
@@ -1812,7 +2208,7 @@ export default function ReportsPage() {
                           <ul className="space-y-1">
                             {reportData.alerts.low_stock_tanks.map((tank: any, idx: number) => (
                               <li key={idx} className="text-sm text-red-700">
-                                {tank.tank_name} ({tank.product}): {Number(tank.fill_percentage).toFixed(1)}% full
+                                {tank.tank_name} ({tank.product}): {formatNumber(Number(tank.fill_percentage))}% full
                               </li>
                             ))}
                           </ul>
@@ -1941,6 +2337,120 @@ function renderDateFilter(
   )
 }
 
+/** Opens Chart of Accounts with the account statement for this GL id (`?ledger=`). */
+function GlLedgerIconLink({
+  accountId,
+  label,
+}: {
+  accountId: number | null | undefined
+  label: string
+}) {
+  if (accountId == null || !Number.isFinite(Number(accountId)) || Number(accountId) < 1) {
+    return <span className="text-xs text-gray-300">—</span>
+  }
+  return (
+    <Link
+      href={`/chart-of-accounts?ledger=${accountId}`}
+      className="inline-flex rounded-md p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-blue-600"
+      title={`${label} — GL ledger`}
+      aria-label={`${label} — open general ledger`}
+    >
+      <BookOpen className="h-4 w-4 shrink-0" />
+    </Link>
+  )
+}
+
+function LoanFacilitiesTable({ rows, tone }: { rows: any[]; tone: 'borrowed' | 'lent' }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Loan</th>
+            <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Party</th>
+            <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Outstanding</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Period disb.</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Period pmt</th>
+            <th className="px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500" colSpan={4}>
+              GL ledgers
+            </th>
+          </tr>
+          <tr className="border-t border-gray-100 bg-gray-50/80">
+            <th colSpan={6} />
+            <th className="px-1 py-2 text-center text-[10px] font-normal text-gray-500">Principal</th>
+            <th className="px-1 py-2 text-center text-[10px] font-normal text-gray-500">Settlement</th>
+            <th className="px-1 py-2 text-center text-[10px] font-normal text-gray-500">Interest</th>
+            <th className="px-1 py-2 text-center text-[10px] font-normal text-gray-500">Accrual</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-200 bg-white">
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">
+                No {tone === 'borrowed' ? 'borrowed' : 'lent'} facilities in this scope.
+              </td>
+            </tr>
+          ) : (
+            rows.map((row: any) => (
+              <tr key={row.id} className="hover:bg-gray-50">
+                <td className="max-w-[14rem] px-3 py-3 align-top">
+                  <div className="flex items-start gap-2">
+                    <Link
+                      href="/loans"
+                      className="mt-0.5 shrink-0 text-slate-400 hover:text-blue-600"
+                      title="Open loans workspace"
+                      aria-label="Open loans"
+                    >
+                      <Landmark className="h-4 w-4" />
+                    </Link>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{row.loan_no}</p>
+                      {row.title ? <p className="truncate text-xs text-gray-500">{row.title}</p> : null}
+                      {row.deal_reference ? <p className="text-xs text-gray-400">Ref: {row.deal_reference}</p> : null}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-3 py-3 align-top text-sm text-gray-800">
+                  <span className="font-medium">{row.counterparty_name || '—'}</span>
+                  {row.counterparty_code ? (
+                    <span className="ml-1 font-mono text-xs text-gray-500">({row.counterparty_code})</span>
+                  ) : null}
+                  <p className="text-xs text-gray-500">
+                    {row.product_type} · {row.banking_model}
+                  </p>
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 align-top text-sm capitalize text-gray-700">{row.status}</td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                  {formatCurrency(row.outstanding_principal)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm tabular-nums text-gray-800">
+                  {formatCurrency(row.period_disbursements)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm tabular-nums text-gray-800">
+                  {formatCurrency(row.period_repayments)}
+                </td>
+                <td className="px-1 py-2 text-center align-middle">
+                  <GlLedgerIconLink accountId={row.principal_account_id} label="Principal" />
+                </td>
+                <td className="px-1 py-2 text-center align-middle">
+                  <GlLedgerIconLink accountId={row.settlement_account_id} label="Settlement (bank/cash)" />
+                </td>
+                <td className="px-1 py-2 text-center align-middle">
+                  <GlLedgerIconLink accountId={row.interest_account_id} label="Interest income/expense" />
+                </td>
+                <td className="px-1 py-2 text-center align-middle">
+                  <GlLedgerIconLink accountId={row.interest_accrual_account_id} label="Accrued interest" />
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function renderReportTable(
   reportType: ReportType,
   data: any,
@@ -2002,7 +2512,7 @@ function renderReportTable(
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-blue-600 uppercase tracking-wide font-medium">Total Liters Dispensed</p>
-                    <p className="text-xl font-bold text-blue-900 mt-1">{Number(summary.total_liters_dispensed || 0).toFixed(2)}L</p>
+                    <p className="text-xl font-bold text-blue-900 mt-1">{formatNumber(Number(summary.total_liters_dispensed || 0))}L</p>
                   </div>
                   <div className="bg-blue-200 rounded-full p-2 ml-2">
                     <Droplet className="h-4 w-4 text-blue-600" />
@@ -2070,7 +2580,7 @@ function renderReportTable(
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{meter.meter_number || 'N/A'}</td>
                         <td className="px-4 py-3 text-sm text-gray-900">{meter.meter_name || 'N/A'}</td>
                         <td className="px-4 py-3 text-sm text-right text-gray-600">
-                          {openingReading.toFixed(2)}L
+                          {formatNumber(openingReading)}L
                           {meter.opening_reading_date && (
                             <span className="block text-xs text-gray-400 mt-1">
                               {formatDate(meter.opening_reading_date)}
@@ -2078,7 +2588,7 @@ function renderReportTable(
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                          {closingReading.toFixed(2)}L
+                          {formatNumber(closingReading)}L
                           {meter.closing_reading_date && (
                             <span className="block text-xs text-gray-400 mt-1">
                               {formatDateOnly(meter.closing_reading_date)}
@@ -2086,13 +2596,13 @@ function renderReportTable(
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm text-right text-blue-600 font-medium">
-                          {periodDispensed.toFixed(2)}L
+                          {formatNumber(periodDispensed)}L
                         </td>
                         <td className="px-4 py-3 text-sm text-right text-gray-600">
                           {meter.total_sales || 0}
                         </td>
                         <td className="px-4 py-3 text-sm text-right text-gray-600">
-                          {Number(meter.total_liters || 0).toFixed(2)}L
+                          {formatNumber(Number(meter.total_liters || 0))}L
                         </td>
                         <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                           {formatCurrency(meter.total_amount)}
@@ -2118,7 +2628,7 @@ function renderReportTable(
                         {summary.total_sales ?? meters.reduce((s: number, m: any) => s + Number(m.total_sales ?? 0), 0)}
                       </td>
                       <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                        {Number(summary.total_liters_dispensed ?? meters.reduce((s: number, m: any) => s + Number(m.total_liters ?? 0), 0)).toFixed(2)}{' '}
+                        {formatNumber(Number(summary.total_liters_dispensed ?? meters.reduce((s: number, m: any) => s + Number(m.total_liters ?? 0), 0)))}{' '}
                         L
                       </td>
                       <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
@@ -2171,7 +2681,7 @@ function renderReportTable(
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
               { label: 'Total Transactions', value: summary.total_transactions ?? 0, icon: BarChart3, color: 'blue' },
-              { label: 'Total Liters', value: `${Number(summary.total_liters ?? 0).toFixed(2)} L`, icon: Droplet, color: 'blue' },
+              { label: 'Total Liters', value: `${formatNumber(Number(summary.total_liters ?? 0))} L`, icon: Droplet, color: 'blue' },
               { label: 'Total Amount', value: formatCurrency(summary.total_amount), icon: DollarSign, color: 'green' },
               { label: 'Average Sale', value: formatCurrency(summary.average_sale), icon: TrendingUp, color: 'purple' },
               { label: 'Total Shifts', value: shifts.total_shifts ?? 0, icon: Users, color: 'indigo' },
@@ -2232,7 +2742,7 @@ function renderReportTable(
                         {metrics.line_count ?? metrics.transactions ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-600">
-                        {Number(metrics.liters ?? 0).toFixed(2)} L
+                        {formatNumber(Number(metrics.liters ?? 0))} L
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-900">
                         {formatCurrency(metrics.amount ?? 0)}
@@ -2247,7 +2757,7 @@ function renderReportTable(
                       {Object.values(byProduct as Record<string, { line_count?: number }>).reduce((s, m) => s + Number(m.line_count ?? 0), 0)}
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                      {Number(summary.total_liters ?? 0).toFixed(2)} L
+                      {formatNumber(Number(summary.total_liters ?? 0))} L
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
                       {formatCurrency(Number(summary.total_amount ?? 0))}
@@ -2285,7 +2795,7 @@ function renderReportTable(
                         {Number(tank.current_stock ?? 0).toLocaleString()} L
                       </td>
                       <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
-                        {Number(tank.fill_percentage ?? 0).toFixed(1)}%
+                        {formatNumber(Number(tank.fill_percentage ?? 0))}%
                       </td>
                     </tr>
                   ))}
@@ -2693,6 +3203,278 @@ function renderReportTable(
     )
   }
 
+  // Liabilities (GL detail)
+  if (reportType === 'liabilities-detail' && data) {
+    const accounts: any[] = data.accounts || []
+    const period = data?.period || {}
+    return (
+      <div className="space-y-6">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Liability balances are as of the report end date (same basis as the balance sheet liabilities section).'
+          )}
+        {data.accounting_note && (
+          <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
+        )}
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Code</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Account</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Balance</th>
+                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 w-24">
+                  Ledger
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {accounts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">
+                    No liability accounts with a non-zero balance for this scope.
+                  </td>
+                </tr>
+              ) : (
+                accounts.map((acc: any, idx: number) => (
+                  <tr key={`${acc.account_id}-${idx}`} className="hover:bg-gray-50">
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-gray-900">{acc.account_code}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{acc.account_name}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{acc.account_type}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {formatCurrency(acc.balance)}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      <GlLedgerIconLink accountId={acc.account_id} label={acc.account_name || acc.account_code} />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {accounts.length > 0 && (
+              <tfoot className="bg-gray-50">
+                <tr>
+                  <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                    Total liabilities
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">
+                    {formatCurrency(data.total_liabilities ?? 0)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  // Loan receivable (GL)
+  if (reportType === 'loan-receivable-gl' && data) {
+    const accounts: any[] = data.accounts || []
+    const period = data?.period || {}
+    return (
+      <div className="space-y-6">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Balances are as of the report end date for chart lines classified as loans receivable (principal).'
+          )}
+        {data.accounting_note && (
+          <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
+        )}
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Code</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Account</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Sub-type</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Balance</th>
+                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 w-24">
+                  Ledger
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {accounts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">
+                    No loans-receivable GL accounts with a balance. Create a lent loan or chart lines with type loan (not
+                    loan payable).
+                  </td>
+                </tr>
+              ) : (
+                accounts.map((acc: any, idx: number) => (
+                  <tr key={`${acc.account_id}-${idx}`} className="hover:bg-gray-50">
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-gray-900">{acc.account_code}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{acc.account_name}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{acc.account_sub_type || '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {formatCurrency(acc.balance)}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      <GlLedgerIconLink accountId={acc.account_id} label={acc.account_name || acc.account_code} />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {accounts.length > 0 && (
+              <tfoot className="bg-gray-50">
+                <tr>
+                  <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                    Total loan receivable (GL)
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">
+                    {formatCurrency(data.total_loan_receivable_gl ?? 0)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  // Loan payable (GL)
+  if (reportType === 'loan-payable-gl' && data) {
+    const accounts: any[] = data.accounts || []
+    const period = data?.period || {}
+    return (
+      <div className="space-y-6">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Balances are as of the report end date for chart lines classified as loans payable (principal).'
+          )}
+        {data.accounting_note && (
+          <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
+        )}
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Code</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Account</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Sub-type</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Balance</th>
+                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 w-24">
+                  Ledger
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {accounts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">
+                    No loans-payable GL accounts with a balance. Create a borrowed loan or chart lines with type loan and
+                    sub-type loan payable.
+                  </td>
+                </tr>
+              ) : (
+                accounts.map((acc: any, idx: number) => (
+                  <tr key={`${acc.account_id}-${idx}`} className="hover:bg-gray-50">
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-gray-900">{acc.account_code}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{acc.account_name}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{acc.account_sub_type || '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {formatCurrency(acc.balance)}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      <GlLedgerIconLink accountId={acc.account_id} label={acc.account_name || acc.account_code} />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {accounts.length > 0 && (
+              <tfoot className="bg-gray-50">
+                <tr>
+                  <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                    Total loan payable (GL)
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">
+                    {formatCurrency(data.total_loan_payable_gl ?? 0)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  // Loans — borrowed & lent
+  if (reportType === 'loans-borrow-and-lent' && data) {
+    const borrowed: any[] = data.borrowed || []
+    const lent: any[] = data.lent || []
+    const period = data?.period || {}
+    const sm = data.summary || {}
+
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Outstanding principal is current facility balance; disbursement and repayment columns are dated within the selected range.'
+          )}
+        {data.accounting_note && (
+          <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
+        )}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-lg border border-rose-100 bg-rose-50/80 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-rose-800">Outstanding borrowed</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-rose-950">{formatCurrency(sm.outstanding_borrowed_principal ?? 0)}</p>
+            <p className="mt-1 text-xs text-rose-800/80">{sm.borrowed_count ?? 0} facilities</p>
+          </div>
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50/80 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Outstanding lent</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-emerald-950">{formatCurrency(sm.outstanding_lent_principal ?? 0)}</p>
+            <p className="mt-1 text-xs text-emerald-800/80">{sm.lent_count ?? 0} facilities</p>
+          </div>
+          <div className="rounded-lg border border-blue-100 bg-blue-50/80 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">Period disbursements</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-blue-950">{formatCurrency(sm.period_disbursements_total ?? 0)}</p>
+          </div>
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50/80 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Period repayments</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-indigo-950">{formatCurrency(sm.period_repayments_total ?? 0)}</p>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="mb-3 text-lg font-semibold text-gray-900">Borrowed (you owe principal)</h3>
+          <LoanFacilitiesTable rows={borrowed} tone="borrowed" />
+        </div>
+        <div>
+          <h3 className="mb-3 text-lg font-semibold text-gray-900">Lent (principal receivable)</h3>
+          <LoanFacilitiesTable rows={lent} tone="lent" />
+        </div>
+      </div>
+    )
+  }
+
   // Fuel Sales
   if (reportType === 'fuel-sales' && data) {
     return (
@@ -2730,7 +3512,7 @@ function renderReportTable(
                     <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
                     <p className={`text-2xl font-bold mt-2 ${text.replace('600', '900')}`}>
                       {item.format === 'currency' ? formatCurrency(item.value) :
-                 item.format === 'liters' ? `${item.value.toFixed(2)} L` :
+                 item.format === 'liters' ? `${formatNumber(item.value)} L` :
                        formatNumber(item.value, 0)}
               </p>
             </div>
@@ -2817,7 +3599,7 @@ function renderReportTable(
                       {Number(tank.current_stock ?? 0).toLocaleString()} L
                     </td>
                     <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
-                      {Number(tank.fill_percentage ?? 0).toFixed(1)}%
+                      {formatNumber(Number(tank.fill_percentage ?? 0))}%
                     </td>
                         <td className="px-4 py-3 text-sm text-right">
                       {tank.needs_refill ? (
@@ -2980,7 +3762,7 @@ function renderReportTable(
                       {formatCurrency(r.period_revenue)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
-                      {formatNumber(r.velocity_per_day, 3)}
+                      {formatNumber(r.velocity_per_day, 2)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">
                       {r.days_of_cover == null ? '—' : `${r.days_of_cover} d`}
@@ -3789,7 +4571,7 @@ function renderReportTable(
                               <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
                               <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.period_quantity_sold, 2)}</td>
                               <td className="px-3 py-2 text-right text-slate-800">{formatCurrency(r.period_revenue)}</td>
-                              <td className="px-3 py-2 text-right text-slate-800">{formatNumber(r.velocity_per_day, 4)}</td>
+                              <td className="px-3 py-2 text-right text-slate-800">{formatNumber(r.velocity_per_day, 2)}</td>
                               <td className="px-3 py-2 text-right text-slate-600">{r.velocity_rank || '—'}</td>
                             </tr>
                           ))}
@@ -3934,7 +4716,7 @@ function renderReportTable(
                                     {formatCurrency(r.period_purchase_amount)}
                                   </td>
                                   <td className="px-3 py-2 text-right text-slate-800">
-                                    {formatNumber(r.purchase_velocity_per_day, 4)}
+                                    {formatNumber(r.purchase_velocity_per_day, 2)}
                                   </td>
                                   <td className="px-3 py-2 text-right text-slate-600">{r.velocity_rank || '—'}</td>
                                 </tr>
@@ -4008,7 +4790,7 @@ function renderReportTable(
           {[
             { label: 'Total Nozzles', value: summary.total_nozzles ?? 0, icon: Package, color: 'blue' },
             { label: 'Total Transactions', value: summary.total_transactions ?? 0, icon: BarChart3, color: 'green' },
-            { label: 'Total Liters', value: `${Number(summary.total_liters ?? 0).toFixed(2)} L`, icon: Droplet, color: 'purple' },
+            { label: 'Total Liters', value: `${formatNumber(Number(summary.total_liters ?? 0))} L`, icon: Droplet, color: 'purple' },
             { label: 'Total Amount', value: formatCurrency(summary.total_amount), icon: DollarSign, color: 'indigo' },
             { label: 'Average Sale', value: formatCurrency(summary.average_sale_amount), icon: TrendingUp, color: 'pink' },
           ].map((item) => {
@@ -4064,7 +4846,7 @@ function renderReportTable(
                     <td className="px-4 py-3 text-sm text-gray-600">{nozzle.station_name || 'Unknown'}</td>
                     <td className="px-4 py-3 text-sm text-right text-gray-600">{nozzle.total_transactions || 0}</td>
                     <td className="px-4 py-3 text-sm text-right text-gray-600">
-                      {Number(nozzle.total_liters ?? 0).toFixed(2)} L
+                      {formatNumber(Number(nozzle.total_liters ?? 0))} L
                     </td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                       {formatCurrency(nozzle.total_amount)}
@@ -4096,7 +4878,7 @@ function renderReportTable(
                     {summary.total_transactions ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_transactions ?? 0), 0)}
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                    {Number(summary.total_liters ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_liters ?? 0), 0)).toFixed(2)} L
+                    {formatNumber(Number(summary.total_liters ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_liters ?? 0), 0)))} L
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
                     {formatCurrency(Number(summary.total_amount ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_amount ?? 0), 0)))}
@@ -4395,7 +5177,7 @@ function renderReportTable(
                       {formatCurrency(summary.total_sales)}
                     </p>
                     <p className="text-xs text-green-600 mt-1">
-                      {Number(summary.total_liters || 0).toFixed(2)} Liters
+                      {formatNumber(Number(summary.total_liters || 0))} Liters
                     </p>
                   </div>
                   <div className="bg-green-200 rounded-full p-3">
@@ -4441,7 +5223,7 @@ function renderReportTable(
                     <p className={`text-xs mt-1 ${
                       (summary.total_variance || 0) >= 0 ? 'text-green-600' : 'text-red-600'
                     }`}>
-                      {Number(summary.variance_percentage || 0).toFixed(2)}% of expected
+                      {formatNumber(Number(summary.variance_percentage || 0))}% of expected
                     </p>
                   </div>
                   <div className={`rounded-full p-3 ${
@@ -4482,7 +5264,7 @@ function renderReportTable(
                     <div className="flex justify-between items-center pb-2 border-b border-gray-100">
                       <span className="text-sm text-gray-600">Volume</span>
                       <span className="text-base font-semibold text-gray-900">
-                        {Number(stats.total_liters || 0).toFixed(2)} L
+                        {formatNumber(Number(stats.total_liters || 0))} L
                       </span>
                     </div>
                     
@@ -4527,7 +5309,7 @@ function renderReportTable(
                       )}
                       {stats.variance_percentage !== undefined && (
                         <p className="text-xs text-gray-500 mt-1">
-                          {Number(stats.variance_percentage || 0).toFixed(2)}% variance rate
+                          {formatNumber(Number(stats.variance_percentage || 0))}% variance rate
                         </p>
                       )}
                     </div>
@@ -4610,7 +5392,7 @@ function renderReportTable(
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <span className="text-sm text-gray-600">
-                          {Number(session.total_liters || 0).toFixed(2)} L
+                          {formatNumber(Number(session.total_liters || 0))} L
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -4653,7 +5435,7 @@ function renderReportTable(
                       <td className="px-6 py-3 text-right text-sm font-bold tabular-nums text-gray-900">{sessTotals.tx}</td>
                       <td className="px-6 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(sessTotals.sales)}</td>
                       <td className="px-6 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                        {sessTotals.L.toFixed(2)} L
+                        {formatNumber(sessTotals.L)} L
                       </td>
                       <td className="px-6 py-3 text-right text-sm font-semibold text-gray-900">{formatCurrency(sessTotals.exp)}</td>
                       <td className="px-6 py-3 text-right text-sm font-semibold text-gray-900">{formatCurrency(sessTotals.cnt)}</td>
@@ -4755,7 +5537,7 @@ function renderReportTable(
                   }`}
                 >
                   {netV >= 0 ? '+' : ''}
-                  {netV.toFixed(2)} L
+                  {formatNumber(netV)} L
                 </p>
               </div>
             </div>
@@ -4785,7 +5567,7 @@ function renderReportTable(
                         }`}
                       >
                         {Number(row.net_variance_liters ?? 0) >= 0 ? '+' : ''}
-                        {Number(row.net_variance_liters ?? 0).toFixed(2)}
+                        {formatNumber(Number(row.net_variance_liters ?? 0))}
                       </td>
                     </tr>
                   ))}
@@ -4802,7 +5584,7 @@ function renderReportTable(
                       }`}
                     >
                       {netV >= 0 ? '+' : ''}
-                      {netV.toFixed(2)}
+                      {formatNumber(netV)}
                     </td>
                   </tr>
                 </tfoot>
@@ -4847,21 +5629,21 @@ function renderReportTable(
                         <td className="px-3 py-2.5 font-medium text-gray-900">{row.tank_name || '—'}</td>
                         <td className="px-3 py-2.5 text-gray-600">{row.product_name || '—'}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-gray-800">
-                          {row.book_before_liters != null ? Number(row.book_before_liters).toFixed(2) : '—'}
+                          {row.book_before_liters != null ? formatNumber(Number(row.book_before_liters)) : '—'}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-gray-800">
-                          {Number(row.measured_liters ?? 0).toFixed(2)}
+                          {formatNumber(Number(row.measured_liters ?? 0))}
                         </td>
                         <td
                           className={`px-3 py-2.5 text-right font-medium tabular-nums ${
                             vn == null ? 'text-gray-500' : vn > 0 ? 'text-emerald-700' : vn < 0 ? 'text-red-700' : 'text-gray-800'
                           }`}
                         >
-                          {vn == null ? '—' : `${vn > 0 ? '+' : ''}${vn.toFixed(2)}`}
+                          {vn == null ? '—' : `${vn > 0 ? '+' : ''}${formatNumber(vn)}`}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
                           {row.variance_pct_of_capacity != null && row.variance_pct_of_capacity !== ''
-                            ? `${Number(row.variance_pct_of_capacity).toFixed(2)}%`
+                            ? `${formatNumber(Number(row.variance_pct_of_capacity))}%`
                             : '—'}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-gray-800">
@@ -4870,7 +5652,7 @@ function renderReportTable(
                             : '—'}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
-                          {row.water_level_liters != null ? Number(row.water_level_liters).toFixed(2) : '—'}
+                          {row.water_level_liters != null ? formatNumber(Number(row.water_level_liters)) : '—'}
                         </td>
                         <td className="px-3 py-2.5 text-gray-600 max-w-xs truncate" title={row.notes || ''}>
                           {row.notes || '—'}
@@ -4890,7 +5672,7 @@ function renderReportTable(
                       }`}
                     >
                       {entryVarSum >= 0 ? '+' : ''}
-                      {entryVarSum.toFixed(2)}
+                      {formatNumber(entryVarSum)}
                     </td>
                     <td className="px-3 py-2.5 text-sm text-slate-500">—</td>
                     <td className="px-3 py-2.5 text-right text-xs font-bold text-slate-900">{formatCurrency(entryValSum)}</td>
@@ -4966,7 +5748,7 @@ function renderReportTable(
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-green-600 uppercase tracking-wide font-medium">Total Gain (Liters)</p>
-                    <p className="text-xl font-bold text-green-900 mt-1">{Number(summary.total_gain_quantity_liters || 0).toFixed(2)}L</p>
+                    <p className="text-xl font-bold text-green-900 mt-1">{formatNumber(Number(summary.total_gain_quantity_liters || 0))}L</p>
               </div>
                   <div className="bg-green-200 rounded-full p-2 ml-2">
                     <TrendingUp className="h-4 w-4 text-green-600" />
@@ -4977,7 +5759,7 @@ function renderReportTable(
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-red-600 uppercase tracking-wide font-medium">Total Loss (Liters)</p>
-                    <p className="text-xl font-bold text-red-900 mt-1">{Number(summary.total_loss_quantity_liters || 0).toFixed(2)}L</p>
+                    <p className="text-xl font-bold text-red-900 mt-1">{formatNumber(Number(summary.total_loss_quantity_liters || 0))}L</p>
                   </div>
                   <div className="bg-red-200 rounded-full p-2 ml-2">
                     <TrendingUp className="h-4 w-4 text-red-600 rotate-180" />
@@ -5013,7 +5795,7 @@ function renderReportTable(
                   Net Variance
                 </p>
                     <p className={`text-xl font-bold mt-1 ${(summary.net_variance_quantity || 0) >= 0 ? 'text-green-900' : 'text-red-900'}`}>
-                      {Number(summary.net_variance_quantity || 0).toFixed(2)}L ({formatCurrency(summary.net_variance_value)})
+                      {formatNumber(Number(summary.net_variance_quantity || 0))}L ({formatCurrency(summary.net_variance_value)})
                 </p>
                   </div>
                   <div className={`${(summary.net_variance_quantity || 0) >= 0 ? 'bg-green-200' : 'bg-red-200'} rounded-full p-2 ml-2`}>
@@ -5035,10 +5817,10 @@ function renderReportTable(
                   <h5 className="font-medium text-gray-900">{tank}</h5>
                   <p className="text-sm text-gray-500">{stats.product}</p>
                   <div className="mt-2 space-y-1 text-sm">
-                    <p className="text-green-600">Gain: {Number(stats.total_gain_qty || 0).toFixed(2)}L ({formatCurrency(stats.total_gain_value || 0)})</p>
-                    <p className="text-red-600">Loss: {Number(stats.total_loss_qty || 0).toFixed(2)}L ({formatCurrency(stats.total_loss_value || 0)})</p>
+                    <p className="text-green-600">Gain: {formatNumber(Number(stats.total_gain_qty || 0))}L ({formatCurrency(stats.total_gain_value || 0)})</p>
+                    <p className="text-red-600">Loss: {formatNumber(Number(stats.total_loss_qty || 0))}L ({formatCurrency(stats.total_loss_value || 0)})</p>
                     <p className={`font-medium ${(stats.net_variance_qty || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      Net: {Number(stats.net_variance_qty || 0).toFixed(2)}L ({formatCurrency(stats.net_variance_value || 0)})
+                      Net: {formatNumber(Number(stats.net_variance_qty || 0))}L ({formatCurrency(stats.net_variance_value || 0)})
                     </p>
                   </div>
                 </div>
@@ -5085,15 +5867,15 @@ function renderReportTable(
                       <td className="px-4 py-3 text-sm text-gray-900">{dip.tank_name}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{dip.product_name}</td>
                       <td className="px-4 py-3 text-sm text-right text-gray-600 tabular-nums">
-                        {sys.toFixed(2)}L
+                        {formatNumber(sys)}L
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-600 tabular-nums">
-                        {meas.toFixed(2)}L
+                        {formatNumber(meas)}L
                       </td>
                       <td className={`px-4 py-3 text-sm text-right font-medium tabular-nums ${
                         vType === 'GAIN' ? 'text-green-600' : vType === 'LOSS' ? 'text-red-600' : 'text-gray-600'
                       }`}>
-                        {vType === 'GAIN' ? '+' : ''}{vq.toFixed(2)}L
+                        {vType === 'GAIN' ? '+' : ''}{formatNumber(vq)}L
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-600 tabular-nums">
                         {formatCurrency(dip.variance_value)}
@@ -5122,7 +5904,7 @@ function renderReportTable(
                       Sub-total — gains (summary)
                     </td>
                     <td className="px-4 py-2 text-right text-xs font-medium tabular-nums text-emerald-800">
-                      +{Number(summary.total_gain_quantity_liters ?? 0).toFixed(2)} L
+                      +{formatNumber(Number(summary.total_gain_quantity_liters ?? 0))} L
                     </td>
                     <td className="px-4 py-2 text-right text-xs font-medium text-emerald-800">
                       {formatCurrency(Number(summary.total_gain_value ?? 0))}
@@ -5134,7 +5916,7 @@ function renderReportTable(
                       Sub-total — losses (summary)
                     </td>
                     <td className="px-4 py-2 text-right text-xs font-medium tabular-nums text-red-800">
-                      −{Number(summary.total_loss_quantity_liters ?? 0).toFixed(2)} L
+                      −{formatNumber(Number(summary.total_loss_quantity_liters ?? 0))} L
                     </td>
                     <td className="px-4 py-2 text-right text-xs font-medium text-red-800">
                       {formatCurrency(Number(summary.total_loss_value ?? 0))}
@@ -5151,7 +5933,7 @@ function renderReportTable(
                       }`}
                     >
                       {dipVq >= 0 ? '+' : ''}
-                      {dipVq.toFixed(2)} L
+                      {formatNumber(dipVq)} L
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(dipVval)}</td>
                     <td colSpan={2} />
@@ -5170,6 +5952,399 @@ function renderReportTable(
               </div>
             </div>
           )}
+        </div>
+      </div>
+    )
+  }
+
+  const aqBdt = (n: number | string | undefined | null) => formatCurrency(Number(n ?? 0), 'BDT')
+
+  if (reportType === 'aquaculture-pond-pl' && data) {
+    const ponds: any[] = Array.isArray(data.ponds) ? data.ponds : []
+    const byCat: any[] = Array.isArray(data.expenses_by_category) ? data.expenses_by_category : []
+    const segments: any[] = Array.isArray(data.pond_cycle_segments) ? data.pond_cycle_segments : []
+    const t = data.totals || {}
+    const period = data.period || {}
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Aquaculture pond P&L uses fish sales dates, expense dates, and payroll payment dates in this range.'
+          )}
+        <p className="text-sm font-medium text-slate-700">
+          All amounts in <strong>BDT</strong>.
+        </p>
+        {data.cycle_scope_note ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            {String(data.cycle_scope_note)}
+          </div>
+        ) : null}
+        <div>
+          <h4 className="font-semibold text-gray-900 mb-2">Pond P&amp;L</h4>
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium text-gray-600">Pond</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600">Revenue</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600">Direct exp.</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600">Shared exp.</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600">Payroll</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600">Total costs</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600">Net profit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {ponds.map((p: any) => (
+                  <tr key={p.pond_id}>
+                    <td className="px-3 py-2 font-medium text-gray-900">{p.pond_name}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{aqBdt(p.revenue)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{aqBdt(p.direct_operating_expenses)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{aqBdt(p.shared_operating_expenses)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{aqBdt(p.payroll_allocated)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{aqBdt(p.total_costs)}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{aqBdt(p.profit)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-slate-100">
+                <tr>
+                  <td className="px-3 py-2 font-bold text-slate-900">Total — all ponds</td>
+                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{aqBdt(t.revenue)}</td>
+                  <td className="px-3 py-2 text-right text-slate-500">—</td>
+                  <td className="px-3 py-2 text-right text-slate-500">—</td>
+                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{aqBdt(t.payroll_allocated)}</td>
+                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{aqBdt(t.total_costs)}</td>
+                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{aqBdt(t.profit)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+        {byCat.length > 0 ? (
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2">Expenses by category (company scope)</h4>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Category</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Amount (BDT)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {byCat.map((r: any) => (
+                    <tr key={r.category}>
+                      <td className="px-3 py-2">{r.label}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{aqBdt(r.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-100">
+                  <tr>
+                    <td className="px-3 py-2 font-bold text-slate-900">Sub-total — categories shown</td>
+                    <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">
+                      {aqBdt(byCat.reduce((s: number, r: any) => s + Number(r.amount || 0), 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        ) : null}
+        {segments.length > 0 ? (
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2">Cycle segments (revenue &amp; direct costs)</h4>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Pond</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Cycle</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Revenue</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Direct exp.</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Margin</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {segments.map((s: any, i: number) => (
+                    <tr key={`${s.pond_id}-${s.production_cycle_id ?? 'u'}-${i}`}>
+                      <td className="px-3 py-2">{s.pond_name}</td>
+                      <td className="px-3 py-2">{s.production_cycle_name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{aqBdt(s.revenue)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{aqBdt(s.direct_operating_expenses)}</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{aqBdt(s.segment_margin)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-100">
+                  <tr>
+                    <td colSpan={2} className="px-3 py-2 font-bold text-slate-900">
+                      Total — all segments
+                    </td>
+                    <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">
+                      {aqBdt(segments.reduce((s: number, x: any) => s + Number(x.revenue || 0), 0))}
+                    </td>
+                    <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">
+                      {aqBdt(segments.reduce((s: number, x: any) => s + Number(x.direct_operating_expenses || 0), 0))}
+                    </td>
+                    <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">
+                      {aqBdt(segments.reduce((s: number, x: any) => s + Number(x.segment_margin || 0), 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  if (
+    (reportType === 'aquaculture-fish-sales' ||
+      reportType === 'aquaculture-expenses' ||
+      reportType === 'aquaculture-sampling' ||
+      reportType === 'aquaculture-profit-transfers') &&
+    data &&
+    Array.isArray(data.groups)
+  ) {
+    const period = data.period || {}
+    const groups: any[] = data.groups
+    const totals = data.totals || {}
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Rows are filtered by transaction date within this range.'
+          )}
+        <p className="text-sm font-medium text-slate-700">
+          All amounts in <strong>BDT</strong> where applicable.
+        </p>
+        {groups.map((g: any) => (
+          <div key={`${reportType}-g-${g.pond_id ?? 's'}`} className="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-100 bg-cyan-50/80 px-4 py-2">
+              <h4 className="font-semibold text-cyan-950">{g.pond_name}</h4>
+            </div>
+            <div className="overflow-x-auto p-2">
+              <table className="min-w-full text-sm">
+                {reportType === 'aquaculture-fish-sales' ? (
+                  <thead>
+                    <tr className="border-b text-left text-xs text-gray-500">
+                      <th className="px-2 py-1">Date</th>
+                      <th className="px-2 py-1">Income type</th>
+                      <th className="px-2 py-1">Species</th>
+                      <th className="px-2 py-1 text-right">Weight (kg)</th>
+                      <th className="px-2 py-1 text-right">Amount (BDT)</th>
+                      <th className="px-2 py-1">Buyer</th>
+                    </tr>
+                  </thead>
+                ) : null}
+                {reportType === 'aquaculture-expenses' ? (
+                  <thead>
+                    <tr className="border-b text-left text-xs text-gray-500">
+                      <th className="px-2 py-1">Date</th>
+                      <th className="px-2 py-1">Category</th>
+                      <th className="px-2 py-1 text-right">Amount (BDT)</th>
+                      <th className="px-2 py-1">Vendor</th>
+                    </tr>
+                  </thead>
+                ) : null}
+                {reportType === 'aquaculture-sampling' ? (
+                  <thead>
+                    <tr className="border-b text-left text-xs text-gray-500">
+                      <th className="px-2 py-1">Date</th>
+                      <th className="px-2 py-1">Species</th>
+                      <th className="px-2 py-1">Est. count</th>
+                      <th className="px-2 py-1 text-right">Est. weight (kg)</th>
+                      <th className="px-2 py-1">Notes</th>
+                    </tr>
+                  </thead>
+                ) : null}
+                {reportType === 'aquaculture-profit-transfers' ? (
+                  <thead>
+                    <tr className="border-b text-left text-xs text-gray-500">
+                      <th className="px-2 py-1">Date</th>
+                      <th className="px-2 py-1 text-right">Amount (BDT)</th>
+                      <th className="px-2 py-1">Debit → Credit</th>
+                      <th className="px-2 py-1">Memo</th>
+                    </tr>
+                  </thead>
+                ) : null}
+                <tbody className="divide-y divide-gray-100">
+                  {(g.lines || []).map((ln: any) => (
+                    <tr key={ln.id}>
+                      {reportType === 'aquaculture-fish-sales' ? (
+                        <>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{ln.sale_date}</td>
+                          <td className="px-2 py-1.5">{ln.income_type_label}</td>
+                          <td className="px-2 py-1.5">{ln.fish_species_label || '—'}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{Number(ln.weight_kg).toLocaleString()}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.total_amount)}</td>
+                          <td className="px-2 py-1.5 text-gray-600">{ln.buyer_name || '—'}</td>
+                        </>
+                      ) : null}
+                      {reportType === 'aquaculture-expenses' ? (
+                        <>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{ln.expense_date}</td>
+                          <td className="px-2 py-1.5">{ln.expense_category_label}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.amount)}</td>
+                          <td className="px-2 py-1.5 text-gray-600">{ln.vendor_name || '—'}</td>
+                        </>
+                      ) : null}
+                      {reportType === 'aquaculture-sampling' ? (
+                        <>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{ln.sample_date}</td>
+                          <td className="px-2 py-1.5">{ln.fish_species_label || '—'}</td>
+                          <td className="px-2 py-1.5">{ln.estimated_fish_count ?? '—'}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{ln.estimated_total_weight_kg || '—'}</td>
+                          <td className="px-2 py-1.5 text-gray-600">{(ln.notes || '').slice(0, 80)}</td>
+                        </>
+                      ) : null}
+                      {reportType === 'aquaculture-profit-transfers' ? (
+                        <>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{ln.transfer_date}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.amount)}</td>
+                          <td className="px-2 py-1.5 text-gray-600">
+                            {ln.debit_account_code} → {ln.credit_account_code}
+                          </td>
+                          <td className="px-2 py-1.5 text-gray-600">{ln.memo || '—'}</td>
+                        </>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50">
+                  {reportType === 'aquaculture-fish-sales' ? (
+                    <tr>
+                      <td colSpan={4} className="px-2 py-2 text-right text-xs font-semibold text-slate-800">
+                        Sub-total — {g.pond_name}
+                      </td>
+                      <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
+                        {aqBdt(g.subtotal_amount)}
+                      </td>
+                      <td />
+                    </tr>
+                  ) : null}
+                  {reportType === 'aquaculture-expenses' ? (
+                    <tr>
+                      <td colSpan={2} className="px-2 py-2 text-right text-xs font-semibold text-slate-800">
+                        Sub-total — {g.pond_name}
+                      </td>
+                      <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
+                        {aqBdt(g.subtotal_amount)}
+                      </td>
+                      <td />
+                    </tr>
+                  ) : null}
+                  {reportType === 'aquaculture-sampling' ? (
+                    <tr>
+                      <td colSpan={4} className="px-2 py-2 text-right text-xs font-semibold text-slate-800">
+                        Sub-total — {g.pond_name}
+                      </td>
+                      <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
+                        {g.subtotal_samples} sample(s)
+                      </td>
+                    </tr>
+                  ) : null}
+                  {reportType === 'aquaculture-profit-transfers' ? (
+                    <tr>
+                      <td className="px-2 py-2 text-right text-xs font-semibold text-slate-800">
+                        Sub-total — {g.pond_name}
+                      </td>
+                      <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
+                        {aqBdt(g.subtotal_amount)}
+                      </td>
+                      <td colSpan={2} />
+                    </tr>
+                  ) : null}
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        ))}
+        <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap justify-between gap-2 text-sm font-bold text-slate-900">
+            <span>Total — all ponds</span>
+            <span className="tabular-nums">
+              {reportType === 'aquaculture-fish-sales'
+                ? aqBdt(totals.total_amount)
+                : reportType === 'aquaculture-expenses'
+                  ? aqBdt(totals.total_amount)
+                  : reportType === 'aquaculture-profit-transfers'
+                    ? aqBdt(totals.total_amount)
+                    : `Samples: ${totals.sample_count ?? 0}`}
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'aquaculture-production-cycles' && data) {
+    const period = data.period || {}
+    const groups: any[] = Array.isArray(data.groups) ? data.groups : []
+    const totals = data.totals || {}
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Cycles that overlap the selected date range (by start / end dates).'
+          )}
+        <p className="text-sm font-medium text-slate-700">
+          Production batches — amounts are informational; money columns are <strong>BDT</strong> elsewhere.
+        </p>
+        {groups.map((g: any) => (
+          <div key={`cyc-${g.pond_id}`} className="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-100 bg-cyan-50/80 px-4 py-2">
+              <h4 className="font-semibold text-cyan-950">{g.pond_name}</h4>
+            </div>
+            <div className="overflow-x-auto p-2">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-gray-500">
+                    <th className="px-2 py-1">Name</th>
+                    <th className="px-2 py-1">Start</th>
+                    <th className="px-2 py-1">End</th>
+                    <th className="px-2 py-1">Active</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(g.lines || []).map((ln: any) => (
+                    <tr key={ln.id}>
+                      <td className="px-2 py-1.5 font-medium">{ln.name}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{ln.start_date}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{ln.end_date || '—'}</td>
+                      <td className="px-2 py-1.5">{ln.is_active ? 'Yes' : 'No'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50">
+                  <tr>
+                    <td colSpan={3} className="px-2 py-2 text-right text-xs font-semibold text-slate-800">
+                      Sub-total — cycles in this pond
+                    </td>
+                    <td className="px-2 py-2 text-xs font-bold text-slate-900">{g.subtotal_cycles}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        ))}
+        <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
+          Total — cycles listed: {totals.cycle_count ?? 0}
         </div>
       </div>
     )

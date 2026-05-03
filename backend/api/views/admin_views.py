@@ -131,6 +131,8 @@ def admin_companies(request):
             "platform_release_previous": getattr(c, "platform_release_previous", None),
             "release_behind": release_behind,
             "release_can_rollback": getattr(c, "platform_release_previous", None) is not None,
+            "aquaculture_licensed": bool(getattr(c, "aquaculture_licensed", False)),
+            "aquaculture_enabled": bool(getattr(c, "aquaculture_enabled", False)),
         })
     return JsonResponse(result, safe=False)
 
@@ -622,6 +624,7 @@ def admin_company_stations(request, company_id: int):
                 "station_number": getattr(s, "station_number", "") or "",
                 "station_name": s.station_name or "",
                 "is_active": bool(getattr(s, "is_active", True)),
+                "operates_fuel_retail": bool(getattr(s, "operates_fuel_retail", True)),
             }
         )
     return JsonResponse(

@@ -898,7 +898,7 @@ export function FinancialAnalyticsPanel({
                             paddingAngle={2}
                             labelLine={mixChartData.length <= 4}
                             label={({ name, percent }) =>
-                              `${String(name).slice(0, 14)}${String(name).length > 14 ? '…' : ''}: ${((percent ?? 0) * 100).toFixed(0)}%`
+                              `${String(name).slice(0, 14)}${String(name).length > 14 ? '…' : ''}: ${((percent ?? 0) * 100).toFixed(2)}%`
                             }
                           >
                             {mixChartData.map((_, i) => (
@@ -922,7 +922,7 @@ export function FinancialAnalyticsPanel({
                           endAngle={-270}
                         >
                           <RadialBar dataKey="pct_of_revenue" cornerRadius={6} />
-                          <Tooltip formatter={(v: number) => `${Number(v).toFixed(1)}%`} />
+                          <Tooltip formatter={(v: number) => `${Number(v).toFixed(2)}%`} />
                           <Legend
                             layout="horizontal"
                             verticalAlign="bottom"
@@ -1186,7 +1186,7 @@ export function FinancialAnalyticsPanel({
                               label={({ name, percent }) => {
                                 const n = String(name)
                                 const short = n.length > 12 ? `${n.slice(0, 11)}…` : n
-                                return `${short} ${((percent ?? 0) * 100).toFixed(0)}%`
+                                return `${short} ${((percent ?? 0) * 100).toFixed(2)}%`
                               }}
                             >
                               {fiveWayPieSlices.map((row) => (
@@ -1238,7 +1238,7 @@ export function FinancialAnalyticsPanel({
                             <Tooltip
                               formatter={(val: number, _n, props) => {
                                 const p = props?.payload as { signed?: number } | undefined
-                                return p?.signed !== undefined ? fmt(p.signed) : `${Number(val).toFixed(0)}% scale`
+                                return p?.signed !== undefined ? fmt(p.signed) : `${Number(val).toFixed(2)}% scale`
                               }}
                             />
                             <Legend
@@ -1272,7 +1272,7 @@ export function FinancialAnalyticsPanel({
                             <Tooltip
                               formatter={(val: number, _n, props) => {
                                 const p = props?.payload as { actual?: number } | undefined
-                                return p?.actual !== undefined ? fmt(p.actual) : `${Number(val).toFixed(0)}%`
+                                return p?.actual !== undefined ? fmt(p.actual) : `${Number(val).toFixed(2)}%`
                               }}
                             />
                             <Legend

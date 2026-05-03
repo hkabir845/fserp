@@ -12,6 +12,7 @@ import {
   getFsmsErpMenuItems,
   getSaasMenuItems,
   getFilteredMenuItems,
+  filterAquacultureMenuWhenDisabled,
   filterTenantBackupMenuItem,
   getSectionDefinitions,
   type ErpAppSection,
@@ -28,6 +29,7 @@ export default function AppsPage() {
   const [userPermissions, setUserPermissions] = useState<string[] | null>(null)
   const [companiesCount, setCompaniesCount] = useState(0)
   const [usersCount, setUsersCount] = useState(0)
+  const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
   const backendUnreachableRef = useRef(false)
 
   const isSuperAdmin = userRole === 'super_admin'
@@ -52,6 +54,36 @@ export default function AppsPage() {
       }
     }
   }, [router])
+
+  useEffect(() => {
+    const fetchAq = async () => {
+      if (mode !== 'fsms_erp') {
+        setAquacultureEnabled(false)
+        return
+      }
+      const token = localStorage.getItem('access_token')
+      if (!token) {
+        setAquacultureEnabled(false)
+        return
+      }
+      try {
+        const { data } = await api.get<Record<string, unknown>>('/companies/current/')
+        setAquacultureEnabled(Boolean(data?.aquaculture_enabled))
+      } catch {
+        setAquacultureEnabled(false)
+      }
+    }
+    void fetchAq()
+    const onSaved = () => void fetchAq()
+    if (typeof window !== 'undefined') {
+      window.addEventListener('fserp-company-settings-saved', onSaved)
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('fserp-company-settings-saved', onSaved)
+      }
+    }
+  }, [mode])
 
   useEffect(() => {
     if (mode === 'saas_dashboard' && userRole === 'super_admin') {
@@ -104,19 +136,24 @@ export default function AppsPage() {
   )
 
   const visibleApps = useMemo(() => {
-    return filterTenantBackupMenuItem(
-      getFilteredMenuItems(
-        userRole,
-        isSuperAdmin,
-        mode,
-        fsmsErpMenuItems,
-        saasMenuItems,
+    return filterAquacultureMenuWhenDisabled(
+      filterTenantBackupMenuItem(
+        getFilteredMenuItems(
+          userRole,
+          isSuperAdmin,
+          mode,
+          fsmsErpMenuItems,
+          saasMenuItems,
+          userPermissions
+        ).filter((item) => item.href !== '/apps'),
+        userRole?.toLowerCase() || '',
         userPermissions
-      ).filter((item) => item.href !== '/apps'),
-      userRole?.toLowerCase() || '',
-      userPermissions
+      ),
+      aquacultureEnabled,
+      userRole,
+      isSuperAdmin
     )
-  }, [userRole, userPermissions, isSuperAdmin, mode, fsmsErpMenuItems, saasMenuItems])
+  }, [userRole, userPermissions, isSuperAdmin, mode, fsmsErpMenuItems, saasMenuItems, aquacultureEnabled])
 
   const sections = useMemo(() => {
     const vis = new Set<ErpAppSection>(visibleApps.map((i) => i.section))

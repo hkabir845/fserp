@@ -63,6 +63,14 @@ class Company(models.Model):
         default="single",
         help_text="single = at most one active station (inactive rows allowed), default for new tenants; multi = multiple active stations.",
     )
+    aquaculture_licensed = models.BooleanField(
+        default=False,
+        help_text="SaaS: new license grants enable Aquaculture in ERP; tenant Admin may turn aquaculture_enabled off in Company settings.",
+    )
+    aquaculture_enabled = models.BooleanField(
+        default=False,
+        help_text="When true (and typically aquaculture_licensed), tenant Admin may use Aquaculture in ERP (menu, APIs).",
+    )
 
     class Meta:
         db_table = "company"
@@ -264,6 +272,18 @@ class Station(models.Model):
     phone = models.CharField(max_length=30, blank=True)
     postal_code = models.CharField(max_length=20, blank=True)
     is_active = models.BooleanField(default=True)
+    operates_fuel_retail = models.BooleanField(
+        default=True,
+        help_text="Fuel forecourt site (tanks, islands, nozzles). False for aquaculture/shop-only hubs without underground fuel.",
+    )
+    default_aquaculture_pond = models.ForeignKey(
+        "AquaculturePond",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="stations_default_shop_outlet",
+        help_text="Optional default pond for aquaculture shop stock issues and expense defaults at this location.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -299,6 +319,16 @@ class Item(models.Model):
     quantity_on_hand = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     unit = models.CharField(max_length=20, default="piece")
     pos_category = models.CharField(max_length=64, default="general")
+    content_weight_kg = models.DecimalField(
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text=(
+            "Labeled kg per selling unit for sack-packed feed (e.g. 25). "
+            "Inventory and POS quantities use `unit` (typically sack); this is for weight hints and reporting."
+        ),
+    )
     category = models.CharField(
         max_length=100,
         default="General",
@@ -466,6 +496,14 @@ class Vendor(models.Model):
         on_delete=models.SET_NULL,
         related_name="vendors_preferred_site",
         help_text="Default receiving site for new bills and vendor payment routing when not bill-specific.",
+    )
+    default_aquaculture_pond = models.ForeignKey(
+        "AquaculturePond",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="vendors_preferred_delivery_pond",
+        help_text="Optional default pond for fish/fry deliveries; new bills use linked shop site stock when configured.",
     )
     vendor_number = models.CharField(max_length=64, blank=True)
     company_name = models.CharField(max_length=200)
@@ -693,6 +731,28 @@ class JournalEntryLine(models.Model):
     debit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     credit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     description = models.CharField(max_length=300, blank=True)
+    aquaculture_pond = models.ForeignKey(
+        "AquaculturePond",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="journal_lines",
+        help_text="Optional pond dimension for aquaculture auto-journals (costing / traceability).",
+    )
+    aquaculture_production_cycle = models.ForeignKey(
+        "AquacultureProductionCycle",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="journal_lines",
+        help_text="Optional production cycle when the aquaculture line is cycle-scoped.",
+    )
+    aquaculture_cost_bucket = models.CharField(
+        max_length=40,
+        blank=True,
+        db_index=True,
+        help_text="Stable cost bucket code (e.g. feed, labor, biological_loss) for reporting joins.",
+    )
 
     class Meta:
         db_table = "journal_entry_line"
@@ -1319,3 +1379,457 @@ class LoanInterestAccrual(models.Model):
     class Meta:
         db_table = "loan_interest_accrual"
         ordering = ["-accrual_date", "-id"]
+
+
+# ---------------------------------------------------------------------------
+# Aquaculture (optional module per company)
+# ---------------------------------------------------------------------------
+
+
+class AquaculturePond(models.Model):
+    """Fish pond / profit center within a company."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_ponds")
+    name = models.CharField(max_length=200)
+    code = models.CharField(max_length=64, blank=True, help_text="Short code for reports (optional).")
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True)
+    pond_size_decimal = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Pond area in decimal units (land measure).",
+    )
+    lease_contract_start = models.DateField(null=True, blank=True)
+    lease_contract_end = models.DateField(null=True, blank=True)
+    lease_price_per_decimal_per_year = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    lease_paid_to_landlord = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        default=0,
+        help_text="Cumulative cash/rent paid to the landlord for this pond lease.",
+    )
+    pos_customer = models.ForeignKey(
+        "Customer",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_ponds_pos",
+        help_text="Optional AR customer for General POS: sell feed and supplies on account to this pond.",
+    )
+    auto_pos_customer = models.BooleanField(
+        default=False,
+        help_text="When true, pos_customer was created for this pond; display name and active flag sync from pond.",
+    )
+    pond_role = models.CharField(
+        max_length=32,
+        default="grow_out",
+        db_index=True,
+        help_text="grow_out | nursing | broodstock | other — for filters and transfer workflows (management only).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_pond"
+        ordering = ["sort_order", "id"]
+        indexes = [
+            models.Index(fields=["company", "is_active"]),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class AquacultureProductionCycle(models.Model):
+    """Optional production batch / crop window under a pond (profit-center tag for income and direct costs)."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_production_cycles")
+    pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="production_cycles")
+    name = models.CharField(max_length=200)
+    code = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Optional short code for filters and exports.",
+    )
+    start_date = models.DateField(db_index=True)
+    end_date = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Null means the cycle is still open.",
+    )
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_production_cycle"
+        ordering = ["pond_id", "sort_order", "-start_date", "id"]
+        indexes = [
+            models.Index(fields=["company", "pond", "is_active"]),
+        ]
+
+    def __str__(self):
+        return f"{self.pond_id}:{self.name}"
+
+
+class AquacultureExpense(models.Model):
+    """
+    Categorized operating expense: either direct to one pond, or shared (pond null) with explicit per-pond splits.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_expenses")
+    pond = models.ForeignKey(
+        AquaculturePond,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="expenses",
+    )
+    production_cycle = models.ForeignKey(
+        AquacultureProductionCycle,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="expenses",
+    )
+    expense_category = models.CharField(max_length=64, db_index=True)
+    expense_date = models.DateField(db_index=True)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    memo = models.TextField(blank=True)
+    vendor_name = models.CharField(max_length=200, blank=True)
+    source_station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_expenses_from_shop",
+        help_text="When set, this pond cost was created from a shop stock issue at this station.",
+    )
+    feed_sack_count = models.DecimalField(
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Optional number of feed sacks for this line (feed purchase / shop issue).",
+    )
+    feed_weight_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Optional total feed weight in kg (equivalent) for reporting.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_expense"
+        ordering = ["-expense_date", "-id"]
+        indexes = [
+            models.Index(fields=["company", "pond", "expense_date"]),
+            models.Index(fields=["company", "expense_date"]),
+        ]
+
+
+class AquacultureExpensePondShare(models.Model):
+    """Allocated slice of a shared aquaculture expense (parent expense.pond is null)."""
+
+    expense = models.ForeignKey(AquacultureExpense, on_delete=models.CASCADE, related_name="pond_shares")
+    pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="aquaculture_expense_shares")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        db_table = "aquaculture_expense_pond_share"
+        constraints = [
+            models.UniqueConstraint(fields=["expense", "pond"], name="aquaculture_exp_share_exp_pond_uniq"),
+        ]
+
+
+class AquacultureFishSale(models.Model):
+    """Fish harvest sale: revenue with kg (primary) and optional piece count."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_fish_sales")
+    pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="fish_sales")
+    production_cycle = models.ForeignKey(
+        AquacultureProductionCycle,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fish_sales",
+    )
+    income_type = models.CharField(
+        max_length=64,
+        db_index=True,
+        default="fish_harvest_sale",
+        help_text="Stable income line code for management P&L.",
+    )
+    fish_species = models.CharField(
+        max_length=64,
+        db_index=True,
+        default="tilapia",
+        help_text="Species sold on this line (polyculture); feed remains pond-level.",
+    )
+    fish_species_other = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="When fish_species is 'other', optional name (e.g. local variety).",
+    )
+    sale_date = models.DateField(db_index=True)
+    weight_kg = models.DecimalField(max_digits=14, decimal_places=4)
+    fish_count = models.IntegerField(null=True, blank=True)
+    total_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    buyer_name = models.CharField(max_length=200, blank=True)
+    memo = models.TextField(blank=True)
+    invoice = models.OneToOneField(
+        "Invoice",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_fish_sale",
+        help_text="When set, this harvest line is booked through AR / cash sale GL (AUTO-INV-* journals).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_fish_sale"
+        ordering = ["-sale_date", "-id"]
+        indexes = [
+            models.Index(fields=["company", "pond", "sale_date"]),
+            models.Index(fields=["company", "pond", "income_type", "sale_date"]),
+        ]
+
+
+class AquaculturePondProfitTransfer(models.Model):
+    """
+    Moves value from aquaculture pond economics into the GL: debit one account, credit another
+    (e.g. Dr Bank / Cr retained earnings). Creates a journal entry for the same company.
+    """
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="aquaculture_pond_profit_transfers"
+    )
+    pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="profit_transfers")
+    production_cycle = models.ForeignKey(
+        AquacultureProductionCycle,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="profit_transfers",
+    )
+    transfer_date = models.DateField(db_index=True)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    debit_account = models.ForeignKey(
+        ChartOfAccount,
+        on_delete=models.PROTECT,
+        related_name="aquaculture_profit_transfer_debits",
+    )
+    credit_account = models.ForeignKey(
+        ChartOfAccount,
+        on_delete=models.PROTECT,
+        related_name="aquaculture_profit_transfer_credits",
+    )
+    memo = models.TextField(blank=True)
+    journal_entry = models.ForeignKey(
+        JournalEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_pond_profit_transfers",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "aquaculture_pond_profit_transfer"
+        ordering = ["-transfer_date", "-id"]
+        indexes = [
+            models.Index(fields=["company", "pond", "transfer_date"]),
+        ]
+
+
+class AquacultureFishPondTransfer(models.Model):
+    """
+    Move fish (by weight) from a source pond to one or more destination ponds — e.g. nursing to grow-out.
+    Line-level cost_amount supports per-pond P&L: source pond is credited, destinations debited (management layer).
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_fish_pond_transfers")
+    from_pond = models.ForeignKey(
+        AquaculturePond, on_delete=models.CASCADE, related_name="fish_transfers_out"
+    )
+    from_production_cycle = models.ForeignKey(
+        AquacultureProductionCycle,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fish_transfers_out",
+    )
+    transfer_date = models.DateField(db_index=True)
+    fish_species = models.CharField(max_length=64, default="tilapia", db_index=True)
+    fish_species_other = models.CharField(max_length=120, blank=True)
+    memo = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "aquaculture_fish_pond_transfer"
+        ordering = ["-transfer_date", "-id"]
+        indexes = [
+            models.Index(fields=["company", "from_pond", "transfer_date"]),
+        ]
+
+
+class AquacultureFishPondTransferLine(models.Model):
+    """One destination slice of a fish pond transfer."""
+
+    transfer = models.ForeignKey(
+        AquacultureFishPondTransfer, on_delete=models.CASCADE, related_name="lines"
+    )
+    to_pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="fish_transfers_in")
+    to_production_cycle = models.ForeignKey(
+        AquacultureProductionCycle,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fish_transfers_in",
+    )
+    weight_kg = models.DecimalField(max_digits=14, decimal_places=4)
+    fish_count = models.IntegerField(null=True, blank=True)
+    pcs_per_kg = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+    cost_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="BDT (or company currency) biological cost moved with this line; drives inter-pond P&L allocation.",
+    )
+
+    class Meta:
+        db_table = "aquaculture_fish_pond_transfer_line"
+        ordering = ["id"]
+        indexes = [
+            models.Index(fields=["to_pond"]),
+        ]
+
+
+class AquacultureBiomassSample(models.Model):
+    """Estimated biomass / fish count from sampling (management; not GL inventory)."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_biomass_samples")
+    pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="biomass_samples")
+    production_cycle = models.ForeignKey(
+        AquacultureProductionCycle,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="biomass_samples",
+    )
+    sample_date = models.DateField(db_index=True)
+    estimated_fish_count = models.IntegerField(null=True, blank=True)
+    estimated_total_weight_kg = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+    avg_weight_kg = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
+    fish_species = models.CharField(
+        max_length=64,
+        db_index=True,
+        default="tilapia",
+        help_text="Species this biomass estimate refers to (polyculture).",
+    )
+    fish_species_other = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="When fish_species is 'other', optional name (e.g. local variety).",
+    )
+    notes = models.TextField(blank=True)
+    source_fish_sale = models.OneToOneField(
+        "AquacultureFishSale",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="biomass_sample_from_sale",
+        help_text="When set, this row was auto-created from that harvest sale (head count + kg).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_biomass_sample"
+        ordering = ["-sample_date", "-id"]
+        indexes = [
+            models.Index(fields=["company", "pond", "sample_date"]),
+        ]
+
+
+class AquacultureFishStockLedger(models.Model):
+    """
+    Record changes to estimated fish-on-hand: mortality and losses (predators, birds, theft, etc.)
+    plus manual count/weight adjustments. Optional GL pairs biological asset (1581) with expense or income.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_fish_stock_ledger")
+    pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="fish_stock_ledger_entries")
+    production_cycle = models.ForeignKey(
+        AquacultureProductionCycle,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fish_stock_ledger_entries",
+    )
+    entry_date = models.DateField(db_index=True)
+    entry_kind = models.CharField(
+        max_length=20,
+        db_index=True,
+        help_text="loss | adjustment — loss reasons are required for loss; adjustment allows signed count/weight.",
+    )
+    loss_reason = models.CharField(max_length=32, blank=True, db_index=True)
+    fish_species = models.CharField(max_length=64, default="tilapia", db_index=True)
+    fish_species_other = models.CharField(max_length=120, blank=True)
+    fish_count_delta = models.IntegerField(default=0)
+    weight_kg_delta = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    book_value = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Optional currency amount for GL posting (positive).",
+    )
+    post_to_books = models.BooleanField(default=False)
+    journal_entry = models.ForeignKey(
+        JournalEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_fish_stock_ledger",
+    )
+    memo = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_fish_stock_ledger"
+        ordering = ["-entry_date", "-id"]
+        indexes = [
+            models.Index(fields=["company", "pond", "entry_date"]),
+        ]
+
+
+class PayrollRunPondAllocation(models.Model):
+    """
+    Split company payroll net pay across ponds (salary expense attribution).
+    Sum of amounts for a payroll run should match PayrollRun.total_net (enforced in API).
+    """
+
+    payroll_run = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name="pond_allocations")
+    pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="payroll_allocations")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        db_table = "payroll_run_pond_allocation"
+        unique_together = [["payroll_run", "pond"]]
+        indexes = [
+            models.Index(fields=["pond"]),
+        ]

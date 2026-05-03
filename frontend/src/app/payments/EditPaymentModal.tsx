@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import api from '@/lib/api'
 import { AMOUNT_SLATE_EDITABLE_CLASS } from '@/utils/amountFieldStyles'
 import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatAmountPlain } from '@/utils/currency'
 import { AlertCircle, Loader2, X } from 'lucide-react'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_ALLOCATE_GREEN_CLASS } from '@/utils/amountFieldStyles'
@@ -60,7 +60,7 @@ function normalizeMoneyString(v: unknown): string {
   if (v === null || v === undefined || v === '') return '0.00'
   const n = typeof v === 'number' ? v : Number(String(v).replace(/,/g, ''))
   if (!Number.isFinite(n)) return '0.00'
-  return n.toFixed(2)
+  return formatAmountPlain(n)
 }
 
 function parseMoneyNumber(v: unknown): number {

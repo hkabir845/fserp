@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Edit, Trash2, Search, Gauge, RotateCcw, Settings } from 'lucide-react'
@@ -29,6 +29,7 @@ interface Dispenser {
   dispenser_code: string
   dispenser_name: string
   island_name?: string
+  station_operates_fuel_retail?: boolean
 }
 
 export default function MetersPage() {
@@ -55,6 +56,17 @@ export default function MetersPage() {
   const [resetData, setResetData] = useState({
     reason: ''
   })
+
+  const fuelForecourtDispensers = useMemo(
+    () => dispensers.filter((d) => d.station_operates_fuel_retail !== false),
+    [dispensers],
+  )
+
+  useEffect(() => {
+    if (!selectedDispenser || !dispensers.length) return
+    const ok = fuelForecourtDispensers.some((d) => String(d.id) === selectedDispenser)
+    if (!ok) setSelectedDispenser('')
+  }, [selectedDispenser, dispensers, fuelForecourtDispensers])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -229,7 +241,14 @@ export default function MetersPage() {
       <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Meters</h1>
-          <p className="text-gray-600 mt-1">Manage fuel meters and readings</p>
+          <p className="text-gray-600 mt-1 max-w-3xl">
+            Meters attach to dispensers on fuel forecourt islands only.
+          </p>
+          {dispensers.length > 0 && fuelForecourtDispensers.length === 0 ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              No dispensers on fuel sites — add islands &amp; dispensers under a fuel forecourt station first.
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-between mb-6">
@@ -250,8 +269,8 @@ export default function MetersPage() {
               onChange={(e) => setSelectedDispenser(e.target.value)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">All Dispensers</option>
-              {dispensers.map((dispenser) => (
+              <option value="">All fuel dispensers</option>
+              {fuelForecourtDispensers.map((dispenser) => (
                 <option key={dispenser.id} value={dispenser.id}>
                   {dispenser.dispenser_name}
                 </option>
@@ -482,7 +501,7 @@ export default function MetersPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value={0}>Select Dispenser</option>
-                      {dispensers.map((dispenser) => (
+                      {fuelForecourtDispensers.map((dispenser) => (
                         <option key={dispenser.id} value={dispenser.id}>
                           {dispenser.dispenser_name} ({dispenser.island_name})
                         </option>

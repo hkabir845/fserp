@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
@@ -8,7 +8,9 @@ import { Plus, Edit, Trash2, Search, Droplet, AlertTriangle, RefreshCw } from 'l
 import { useToast } from '@/components/Toast'
 import api, { getApiDocsUrl, getBackendOrigin } from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { formatNumber } from '@/utils/currency'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
+import { filterFuelForecourtStations } from '@/utils/stationCapabilities'
 
 interface Tank {
   id: number
@@ -29,6 +31,7 @@ interface Station {
   id: number
   station_number?: string
   station_name: string
+  operates_fuel_retail?: boolean
 }
 
 interface Product {
@@ -65,6 +68,15 @@ export default function TanksPage() {
     min_stock_level: 2000,
     is_active: true
   })
+
+  const fuelForecourtStations = useMemo(() => filterFuelForecourtStations(stations), [stations])
+
+  useEffect(() => {
+    if (!stations.length) return
+    if (selectedStation && !fuelForecourtStations.some((s) => String(s.id) === selectedStation)) {
+      setSelectedStation('')
+    }
+  }, [stations, selectedStation, fuelForecourtStations])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -264,7 +276,20 @@ export default function TanksPage() {
         <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Tanks</h1>
-          <p className="text-gray-600 mt-1">Manage fuel storage tanks and inventory</p>
+          <p className="text-gray-600 mt-1 max-w-3xl">
+            Underground fuel storage and book stock—only for stations marked as fuel forecourts. Aquaculture or shop-only
+            hubs are configured under{' '}
+            <a href="/stations" className="font-medium text-blue-600 hover:underline">
+              Stations
+            </a>
+            .
+          </p>
+          {stations.length > 0 && fuelForecourtStations.length === 0 ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              No fuel-forecourt sites are defined. Edit a station and enable &quot;Fuel forecourt&quot; (shown when
+              Aquaculture is licensed), or add a traditional filling-station location before creating tanks.
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-between mb-6">
@@ -285,8 +310,8 @@ export default function TanksPage() {
               onChange={(e) => setSelectedStation(e.target.value)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">All Stations</option>
-              {stations.map((station) => (
+              <option value="">All fuel forecourt stations</option>
+              {fuelForecourtStations.map((station) => (
                 <option key={station.id} value={station.id}>
                   {station.station_name}
                 </option>
@@ -540,7 +565,7 @@ export default function TanksPage() {
                       <div className="flex justify-between items-center mb-2">
                         <span className={`${fontSize.label} text-gray-500`}>Current Stock</span>
                         <span className={`${fontSize.value} font-bold text-gray-900`}>
-                          {Number(tank.current_stock || 0).toFixed(2)} L
+                          {formatNumber(Number(tank.current_stock || 0))} L
                         </span>
                       </div>
                       
@@ -553,7 +578,7 @@ export default function TanksPage() {
                       </div>
                       
                       <div className={`flex justify-between ${fontSize.label} text-gray-500`}>
-                        <span>{fillPercentage.toFixed(1)}% Full</span>
+                        <span>{formatNumber(fillPercentage, 2)}% Full</span>
                         <span>Capacity: {Number(tank.capacity || 0).toLocaleString()} L</span>
                       </div>
                     </div>
@@ -656,7 +681,7 @@ export default function TanksPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value={0}>Select Station</option>
-                      {stations.map((station) => (
+                      {fuelForecourtStations.map((station) => (
                         <option key={station.id} value={station.id}>
                           {station.station_name}
                         </option>

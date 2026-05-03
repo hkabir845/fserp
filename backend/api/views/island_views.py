@@ -5,15 +5,18 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Island, Station
+from api.services.station_capabilities import require_fuel_forecourt_station
 
 
 def _island_to_json(i):
+    st = getattr(i, "station", None)
     return {
         "id": i.id,
         "island_code": i.island_code or "",
         "island_name": i.island_name,
         "station_id": i.station_id,
-        "station_name": i.station.station_name if i.station_id else "",
+        "station_name": st.station_name if st else "",
+        "station_operates_fuel_retail": bool(getattr(st, "operates_fuel_retail", True)) if st else True,
         "location_description": i.location_description or "",
         "dispenser_count": i.dispensers.count() if hasattr(i, "dispensers") else 0,
         "is_active": i.is_active,
@@ -35,12 +38,17 @@ def islands_list_or_create(request):
         station_id = body.get("station_id")
         if not station_id:
             return JsonResponse({"detail": "station_id is required"}, status=400)
-        if not Station.objects.filter(id=station_id, company_id=request.company_id).exists():
-            return JsonResponse({"detail": "Station not found"}, status=400)
+        try:
+            sid = int(station_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "station_id must be an integer"}, status=400)
+        serr = require_fuel_forecourt_station(request.company_id, sid)
+        if serr:
+            return serr
         name = (body.get("island_name") or "").strip() or "Island"
         i = Island(
             company_id=request.company_id,
-            station_id=station_id,
+            station_id=sid,
             island_name=name,
             location_description=body.get("location_description") or "",
             is_active=body.get("is_active", True),
@@ -73,8 +81,17 @@ def island_detail(request, island_id: int):
             return err
         if body.get("island_name") is not None:
             i.island_name = (body.get("island_name") or "").strip() or i.island_name
-        if body.get("station_id") and Station.objects.filter(id=body["station_id"], company_id=request.company_id).exists():
-            i.station_id = body["station_id"]
+        if body.get("station_id") is not None and body.get("station_id") != "":
+            try:
+                new_sid = int(body["station_id"])
+            except (TypeError, ValueError):
+                return JsonResponse({"detail": "station_id must be an integer"}, status=400)
+            if not Station.objects.filter(id=new_sid, company_id=request.company_id).exists():
+                return JsonResponse({"detail": "Station not found"}, status=400)
+            serr = require_fuel_forecourt_station(request.company_id, new_sid)
+            if serr:
+                return serr
+            i.station_id = new_sid
         if "location_description" in body:
             i.location_description = body.get("location_description") or ""
         if "is_active" in body:

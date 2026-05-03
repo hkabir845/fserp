@@ -193,8 +193,56 @@ export function getCurrencyName(currencyCode: string = "BDT"): string {
   return CURRENCY_NAMES[code] || code
 }
 
+/** ECMAScript / Intl: fraction digits must be integers in 0..20 */
+function normalizeFractionDigits(decimals: unknown, fallback: number = 2): number {
+  const raw = typeof decimals === "number" ? decimals : Number(decimals)
+  if (!Number.isFinite(raw)) return fallback
+  return Math.max(0, Math.min(20, Math.trunc(raw)))
+}
+
+function parseAmountToNumber(amount: number | string | null | undefined): number {
+  if (amount === null || amount === undefined || amount === "") return NaN
+  if (typeof amount === "number") return amount
+  const cleaned = String(amount).trim().replace(/,/g, "")
+  return parseFloat(cleaned)
+}
+
 /**
- * Format number with thousand separators (commas)
+ * Round to a fixed number of decimal places (half-up via `toFixed`).
+ */
+export function roundToDecimals(
+  amount: number | string | null | undefined,
+  decimals: number = 2
+): number {
+  const d = normalizeFractionDigits(decimals, 2)
+  const numAmount = parseAmountToNumber(amount)
+  if (!Number.isFinite(numAmount)) return 0
+  return Number(numAmount.toFixed(d))
+}
+
+/**
+ * Two decimal places, no thousands separators — for API payloads and parsers that expect plain decimals.
+ */
+export function formatAmountPlain(
+  amount: number | string | null | undefined,
+  decimals: number = 2
+): string {
+  const d = normalizeFractionDigits(decimals, 2)
+  const rounded = roundToDecimals(amount, d)
+  return rounded.toFixed(d)
+}
+
+/** Money and quantity display: thousands separators + fraction digits (default 2). */
+export function formatAmount(
+  amount: number | string | null | undefined,
+  decimals: number = 2
+): string {
+  return formatNumber(amount, decimals)
+}
+
+/**
+ * Format number with thousand separators (commas).
+ * App standard for fractional quantities and money is two fraction digits (`decimals` default 2).
  * @param amount Amount to format
  * @param decimals Number of decimal places (default: 2)
  * @returns Formatted number string (e.g., "1,000.00" or "1,000,000.50")
@@ -203,22 +251,22 @@ export function formatNumber(
   amount: number | string | null | undefined,
   decimals: number = 2
 ): string {
+  const d = normalizeFractionDigits(decimals, 2)
   if (amount === null || amount === undefined || amount === "") {
-    return "0" + (decimals > 0 ? "." + "0".repeat(decimals) : "")
+    return "0" + (d > 0 ? "." + "0".repeat(d) : "")
   }
-  
-  // Convert to number if string
-  const numAmount = typeof amount === "string" ? parseFloat(amount) : amount
-  
-  // Handle invalid numbers
-  if (isNaN(numAmount)) {
-    return "0" + (decimals > 0 ? "." + "0".repeat(decimals) : "")
+
+  const numAmount = parseAmountToNumber(amount)
+
+  if (isNaN(numAmount) || !Number.isFinite(numAmount)) {
+    return "0" + (d > 0 ? "." + "0".repeat(d) : "")
   }
-  
-  // Format number with thousand separators
-  return numAmount.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+
+  const rounded = Number(numAmount.toFixed(d))
+
+  return rounded.toLocaleString("en-US", {
+    minimumFractionDigits: d,
+    maximumFractionDigits: d,
   })
 }
 

@@ -6,6 +6,7 @@ from django.urls import path
 from fsms.release_info import health_payload, version_payload
 
 from api.views import (
+    aquaculture_views,
     system_views,
     auth_views,
     password_views,
@@ -70,6 +71,10 @@ def api_docs(request):
             "/api/fund-transfers/", "/api/payments/received/", "/api/payments/made/",
             "/api/loans/", "/api/loans/counterparties/", "/api/loans/schedule-preview/",
             "/api/payroll/",
+            "/api/aquaculture/ponds/", "/api/aquaculture/expenses/", "/api/aquaculture/sales/",
+            "/api/aquaculture/samples/", "/api/aquaculture/pl-summary/", "/api/aquaculture/expense-categories/",
+            "/api/aquaculture/income-types/", "/api/aquaculture/fish-species/", "/api/aquaculture/production-cycles/",
+            "/api/aquaculture/pond-profit-transfers/",
             "/api/shifts/", "/api/tank-dips", "/api/taxes/",             "/api/reports/<id>",
             "/api/company/backup/", "/api/company/restore/",
             "/api/admin/companies/<id>/backup/", "/api/admin/companies/<id>/restore/",
@@ -373,4 +378,44 @@ urlpatterns = [
     path("payroll/<int:payroll_id>/from-one-employee/", hr_views.payroll_from_one_employee),
     path("payroll/<int:payroll_id>/post-to-books/", hr_views.payroll_post_to_books),
     path("payroll/<int:payroll_id>/", hr_views.payroll_detail),
+    # Aquaculture (ponds, expenses, sales, sampling, P&L — requires company.aquaculture_enabled)
+    path("aquaculture/expense-categories/", aquaculture_views.aquaculture_expense_categories),
+    path("aquaculture/income-types/", aquaculture_views.aquaculture_income_types),
+    path("aquaculture/fish-species/", aquaculture_views.aquaculture_fish_species),
+    path("aquaculture/production-cycles/", aquaculture_views.aquaculture_production_cycles_list_or_create),
+    path(
+        "aquaculture/production-cycles/<int:cycle_id>/",
+        aquaculture_views.aquaculture_production_cycle_detail,
+    ),
+    path("aquaculture/ponds/", aquaculture_views.aquaculture_ponds_list_or_create),
+    path("aquaculture/ponds/<int:pond_id>/", aquaculture_views.aquaculture_pond_detail),
+    path("aquaculture/expenses/", aquaculture_views.aquaculture_expenses_list_or_create),
+    path("aquaculture/shop-stock-issue/", aquaculture_views.aquaculture_shop_stock_issue),
+    path("aquaculture/expenses/<int:expense_id>/", aquaculture_views.aquaculture_expense_detail),
+    path("aquaculture/sales/", aquaculture_views.aquaculture_sales_list_or_create),
+    path(
+        "aquaculture/sales/<int:sale_id>/finalize/",
+        aquaculture_views.aquaculture_sale_finalize,
+    ),
+    path("aquaculture/sales/<int:sale_id>/", aquaculture_views.aquaculture_sale_detail),
+    path("aquaculture/samples/", aquaculture_views.aquaculture_samples_list_or_create),
+    path("aquaculture/samples/<int:sample_id>/", aquaculture_views.aquaculture_sample_detail),
+    path("aquaculture/pl-summary/", aquaculture_views.aquaculture_pl_summary),
+    path(
+        "aquaculture/pond-profit-transfers/",
+        aquaculture_views.aquaculture_pond_profit_transfers,
+    ),
+    path("aquaculture/pond-roles/", aquaculture_views.aquaculture_pond_roles_reference),
+    path("aquaculture/fish-pond-transfers/", aquaculture_views.aquaculture_fish_pond_transfers),
+    path(
+        "aquaculture/fish-pond-transfers/<int:transfer_id>/",
+        aquaculture_views.aquaculture_fish_pond_transfer_detail,
+    ),
+    path("aquaculture/stock-ledger/reference/", aquaculture_views.aquaculture_stock_ledger_reference),
+    path("aquaculture/fish-stock-position/", aquaculture_views.aquaculture_fish_stock_position),
+    path("aquaculture/fish-stock-ledger/", aquaculture_views.aquaculture_fish_stock_ledger_list_or_create),
+    path(
+        "aquaculture/fish-stock-ledger/<int:ledger_id>/",
+        aquaculture_views.aquaculture_fish_stock_ledger_detail,
+    ),
 ]

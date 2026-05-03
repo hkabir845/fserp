@@ -42,6 +42,11 @@ PERMISSION_CATALOG: list[dict[str, str]] = [
     {"id": "app.backup", "label": "Backup & restore", "group": "Settings"},
     {"id": "app.reports", "label": "Reports hub (general)", "group": "Reports"},
     {
+        "id": "app.aquaculture",
+        "label": "Aquaculture (tenant Admin only; ponds, expenses, sales, sampling, P&L, payroll pond splits)",
+        "group": "Operations",
+    },
+    {
         "id": "report.inventory_sku",
         "label": "Inventory & item reports (valuation, catalog, sales by category, custom filters)",
         "group": "Reports",
@@ -60,6 +65,13 @@ REPORT_ID_EXTRA_PERMISSION: dict[str, str] = {
     "item-purchase-velocity-analysis": "report.inventory_sku",
     "financial-analytics": "app.reports",
     "sales-by-station": "app.reports",
+    "aquaculture-pond-pl": "app.aquaculture",
+    "aquaculture-fish-sales": "app.aquaculture",
+    "aquaculture-expenses": "app.aquaculture",
+    "aquaculture-sampling": "app.aquaculture",
+    "aquaculture-production-cycles": "app.aquaculture",
+    "aquaculture-profit-transfers": "app.aquaculture",
+    "aquaculture-fish-transfers": "app.aquaculture",
 }
 
 # Only catalog keys are stored for tenant custom roles (unknown keys are dropped).
@@ -95,7 +107,11 @@ _DEFAULT_ROLE_PERMS: dict[str, list[str]] = {
         "app.reports",
         "report.inventory_sku",
     ],
-    "manager": [p["id"] for p in PERMISSION_CATALOG if p["id"] != "app.users"],
+    "manager": [
+        p["id"]
+        for p in PERMISSION_CATALOG
+        if p["id"] not in ("app.users", "app.aquaculture")
+    ],
     "cashier": [
         "app.launcher",
         "app.pos",
@@ -110,6 +126,19 @@ def normalize_role_key(role: str | None) -> str:
     if not role:
         return ""
     return str(role).strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def user_may_access_aquaculture_api(user) -> bool:
+    """
+    Aquaculture is for fuel-station tenants only when a superuser enables the module; only that
+    tenant's built-in Admin (role ``admin``) may call aquaculture APIs. Platform super-admins
+    retain access for support.
+    """
+    if not user:
+        return False
+    if user_is_super_admin(user):
+        return True
+    return normalize_role_key(getattr(user, "role", None)) == "admin"
 
 
 def default_permissions_for_role(role: str | None) -> list[str]:

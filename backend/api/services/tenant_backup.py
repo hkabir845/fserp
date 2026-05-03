@@ -22,6 +22,14 @@ from django.utils.functional import Promise
 logger = logging.getLogger(__name__)
 
 from api.models import (
+    AquacultureBiomassSample,
+    AquacultureExpense,
+    AquacultureFishPondTransfer,
+    AquacultureFishSale,
+    AquacultureFishStockLedger,
+    AquaculturePond,
+    AquaculturePondProfitTransfer,
+    AquacultureProductionCycle,
     Broadcast,
     BroadcastRead,
     BankAccount,
@@ -53,6 +61,7 @@ from api.models import (
     PaymentBillAllocation,
     PaymentInvoiceAllocation,
     PayrollRun,
+    PayrollRunPondAllocation,
     ShiftSession,
     ShiftTemplate,
     Station,
@@ -163,10 +172,19 @@ def delete_tenant_company_data(company_id: int) -> None:
     SubscriptionLedgerInvoice.objects.filter(company_id=cid).delete()
     BankAccount.objects.filter(company_id=cid).delete()
     LoanCounterparty.objects.filter(company_id=cid).delete()
+    PayrollRunPondAllocation.objects.filter(payroll_run__company_id=cid).delete()
     PayrollRun.objects.filter(company_id=cid).delete()
     ShiftTemplate.objects.filter(company_id=cid).delete()
     Tax.objects.filter(company_id=cid).delete()
     Employee.objects.filter(company_id=cid).delete()
+    AquaculturePondProfitTransfer.objects.filter(company_id=cid).delete()
+    AquacultureExpense.objects.filter(company_id=cid).delete()
+    AquacultureBiomassSample.objects.filter(company_id=cid).delete()
+    AquacultureFishSale.objects.filter(company_id=cid).delete()
+    AquacultureFishPondTransfer.objects.filter(company_id=cid).delete()
+    AquacultureFishStockLedger.objects.filter(company_id=cid).delete()
+    AquacultureProductionCycle.objects.filter(company_id=cid).delete()
+    AquaculturePond.objects.filter(company_id=cid).delete()
     Vendor.objects.filter(company_id=cid).delete()
     Customer.objects.filter(company_id=cid).delete()
     Station.objects.filter(company_id=cid).delete()

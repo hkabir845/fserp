@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Filling Station ERP</title>
+  <rect x="10" y="16" width="28" height="36" rx="4" ry="4" fill="#1d4ed8"/>
+  <rect x="18" y="24" width="12" height="20" rx="2" ry="2" fill="#bfdbfe"/>
+  <path d="M38 20h10a6 6 0 0 1 6 6v16a6 6 0 0 1-6 6h-2" fill="none" stroke="#1f2937" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="44" cy="26" r="4" fill="#f97316"/>
+  <rect x="24" y="12" width="8" height="8" rx="2" ry="2" fill="#f97316"/>
+</svg>
+

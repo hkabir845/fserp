@@ -1,0 +1,12 @@
+# Django API server — install: pip install -r requirements.txt
+# Python 3.10+ recommended (3.12/3.13 well tested with Django 5.1+)
+
+Django>=5.1,<6
+dj-database-url>=2.1.0
+djangorestframework>=3.15.0
+django-cors-headers>=4.6.0
+psycopg[binary]>=3.1.0
+PyJWT>=2.10.0
+bcrypt>=4.0.1
+python-dotenv>=1.0.1
+redis>=5.0.0,<6

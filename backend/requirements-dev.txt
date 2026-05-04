@@ -1,0 +1,9 @@
+# Optional: utility scripts, HTTP checks, image tooling, legacy Alembic/SQLAlchemy scripts
+-r requirements.txt
+
+pytest>=8.0.0
+pytest-django>=4.8.0
+requests>=2.31.0
+Pillow>=10.0.0
+SQLAlchemy>=2.0.0
+alembic>=1.13.0

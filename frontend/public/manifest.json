@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Fuel Station ERP",
+  "short_name": "FS ERP",
+  "description": "Complete ERP solution for filling stations — quick access from your home screen.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#1d4ed8",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

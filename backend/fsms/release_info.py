@@ -45,6 +45,7 @@ def version_payload() -> dict:
         "commit": GIT_COMMIT,
         "time_utc": timezone.now().isoformat(),
         "debug": bool(getattr(settings, "DEBUG", True)),
-        "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
     }
+    if bool(getattr(settings, "DEBUG", False)):
+        payload["python"] = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     return payload

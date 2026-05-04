@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Edit, Trash2, Search, Package, Box, Wrench, Camera, X, Grid3x3, List, ArrowRightLeft } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
@@ -27,12 +27,82 @@ function parseInventoryQty(raw: unknown): number {
 function itemHasPerStationShopStock(item: Item): boolean {
   const t = String(item.item_type).toLowerCase()
   if (t !== 'inventory') return false
-  return (item.pos_category || '').toLowerCase() !== 'fuel'
+  const pc = (item.pos_category || '').toLowerCase()
+  if (pc === 'fuel' || pc === 'non_pos') return false
+  return true
+}
+
+/** Stock is in selling units (e.g. sacks); optional labeled kg per unit for feed. */
+function feedApproxTotalKg(item: Item): number | null {
+  if ((item.pos_category || '').toLowerCase() !== 'feed') return null
+  const raw = (item as Item & { content_weight_kg?: unknown }).content_weight_kg
+  const kgPer = raw != null && raw !== '' ? Number(raw) : NaN
+  if (!Number.isFinite(kgPer) || kgPer <= 0) return null
+  const sacks = parseInventoryQty(item.quantity_on_hand)
+  const t = Number(sacks * kgPer)
+  return Number.isFinite(t) ? t : null
+}
+
+/** Labels for feed: price/cost are BDT per sack; kg is defined by content_weight_kg. */
+function feedSackPriceLabelSuffix(contentWeightKg: number | string | ''): string {
+  const n = typeof contentWeightKg === 'number' ? contentWeightKg : parseFloat(String(contentWeightKg))
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return `, one sack = ${n} kg feed`
+}
+
+function formatFeedSackQuantityLabel(qty: number): string {
+  const q = Number.isFinite(qty) ? qty : 0
+  return `${formatNumber(q)} ${q === 1 ? 'sack' : 'sacks'}`
 }
 
 interface ProductTankRow {
   id: number
   tank_name: string
+}
+
+/** Per-station shop bin quantities when the company tracks inventory by location. */
+interface ShopStationRow {
+  station_id: number
+  station_name: string
+  quantity: number
+}
+
+function useNonPassiveWheelPreventRef() {
+  return useCallback((node: HTMLInputElement | null) => {
+    if (!node) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+    }
+    node.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      node.removeEventListener('wheel', onWheel)
+    }
+  }, [])
+}
+
+/** Money fields use plain text + parse at save so large BDT values (e.g. 1900) edit reliably (controlled type="number" often fights paste/step). */
+function parseMoneyField(s: string): number {
+  const t = String(s ?? '')
+    .replace(/,/g, '')
+    .trim()
+  if (t === '') return NaN
+  const n = parseFloat(t)
+  return Number.isFinite(n) ? n : NaN
+}
+
+/** Strip to digits, optional comma, one dot (for typing / IME quirks). */
+function normalizeMoneyTyping(raw: string): string {
+  let out = ''
+  let dotSeen = false
+  for (const ch of raw.replace(/,/g, '')) {
+    if (ch >= '0' && ch <= '9') {
+      out += ch
+    } else if (ch === '.' && !dotSeen) {
+      out += ch
+      dotSeen = true
+    }
+  }
+  return out
 }
 
 interface Item {
@@ -52,6 +122,54 @@ interface Item {
   barcode?: string
   category?: string
   image_url?: string
+  /** Labeled kg per selling unit (e.g. kg per sack) when POS category is feed */
+  content_weight_kg?: number | string | null
+}
+
+/** Feed: catch sack weight (e.g. 25 kg) saved as BDT unit_price while cost is per-sack in hundreds/thousands. */
+function feedSellingPriceSuspiciousMessage(
+  unitPrice: number,
+  cost: number,
+  kgPerSack: number
+): string | null {
+  if (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(cost) || cost <= 0) {
+    return null
+  }
+  if (
+    Number.isFinite(kgPerSack) &&
+    kgPerSack > 0 &&
+    Math.abs(unitPrice - kgPerSack) < 1e-6 &&
+    kgPerSack >= 0.5 &&
+    kgPerSack <= 500
+  ) {
+    return (
+      'Selling price matches kg per sack — weight belongs in “Kg per sack”, not here. Clear this field and type the full BDT per sack (e.g. 1900); this notice goes away when they differ.'
+    )
+  }
+  if (cost >= 1200 && unitPrice <= 200 && unitPrice < cost * 0.02) {
+    return (
+      'Selling price is far below cost (often sack weight was typed as price, e.g. 25 instead of 1900 BDT per sack). Fix BDT per sack.'
+    )
+  }
+  return null
+}
+
+type ItemFormData = {
+  name: string
+  description: string
+  item_type: 'inventory' | 'non_inventory' | 'service'
+  unit_price: string
+  cost: string
+  quantity_on_hand: number
+  unit: string
+  pos_category: string
+  is_pos_available: boolean
+  is_taxable: boolean
+  is_active: boolean
+  barcode: string
+  category: string
+  image_url: string
+  content_weight_kg: number | string
 }
 
 export default function ItemsPage() {
@@ -67,12 +185,12 @@ export default function ItemsPage() {
   const [itemRefCode, setItemRefCode] = useState('')
   const [createItemCodeNonce, setCreateItemCodeNonce] = useState(0)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<ItemFormData>({
     name: '',
     description: '',
-    item_type: 'inventory' as 'inventory' | 'non_inventory' | 'service',
-    unit_price: 0,
-    cost: 0,
+    item_type: 'inventory',
+    unit_price: '0',
+    cost: '0',
     quantity_on_hand: 0,
     unit: 'piece',
     pos_category: 'general',
@@ -81,10 +199,19 @@ export default function ItemsPage() {
     is_active: true,
     barcode: '',
     category: 'General',
-    image_url: ''
+    image_url: '',
+    content_weight_kg: '',
   })
   const [fuelTanksForProduct, setFuelTanksForProduct] = useState<ProductTankRow[]>([])
   const [selectedFuelTankId, setSelectedFuelTankId] = useState<number | null>(null)
+  const [fuelTanksLoading, setFuelTanksLoading] = useState(false)
+  const [shopStationRows, setShopStationRows] = useState<ShopStationRow[]>([])
+  const [selectedShopStationId, setSelectedShopStationId] = useState<number | null>(null)
+  const [shopStockLoading, setShopStockLoading] = useState(false)
+
+  /** React's onWheel is passive; non-passive listeners stop number inputs changing on scroll. */
+  const contentWeightWheelRef = useNonPassiveWheelPreventRef()
+  const qtyOnHandWheelRef = useNonPassiveWheelPreventRef()
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [showCamera, setShowCamera] = useState(false)
@@ -93,16 +220,27 @@ export default function ItemsPage() {
   const [categoryPresets, setCategoryPresets] = useState<string[]>([])
   const [categoryCustomInUse, setCategoryCustomInUse] = useState<string[]>([])
 
-  const [viewMode, setViewMode] = useState<'card' | 'list'>(() => {
-    // Load view mode from localStorage if available
-    if (typeof window !== 'undefined') {
-      const savedViewMode = localStorage.getItem('items_view_mode')
-      if (savedViewMode === 'card' || savedViewMode === 'list') {
-        return savedViewMode as 'card' | 'list'
+  /**
+   * Opening /items?edit=123 or ?new=1 must hydrate the modal once. The effect also depends on `items`,
+   * which refreshes after saves and other updates — re-calling populateEditorFromItem/resetForm would
+   * wipe every in-progress field change (felt like "the form never updates").
+   */
+  const urlEditHydratedIdRef = useRef<number | null>(null)
+  const urlNewHydratedRef = useRef(false)
+
+  /** Default must match SSR; hydrate from localStorage after mount to avoid hydration mismatch. */
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('items_view_mode')
+      if (saved === 'card' || saved === 'list') {
+        setViewMode(saved)
       }
+    } catch {
+      /* private mode / no storage */
     }
-    return 'card'
-  })
+  }, [])
 
   const loadCategoryOptions = useCallback(async () => {
     try {
@@ -134,9 +272,11 @@ export default function ItemsPage() {
     if (!showModal || !editingId) {
       setFuelTanksForProduct([])
       setSelectedFuelTankId(null)
+      setFuelTanksLoading(false)
       return
     }
     let cancel = false
+    setFuelTanksLoading(true)
     ;(async () => {
       try {
         const r = await api.get('/tanks/')
@@ -158,12 +298,96 @@ export default function ItemsPage() {
           setFuelTanksForProduct([])
           setSelectedFuelTankId(null)
         }
+      } finally {
+        if (!cancel) setFuelTanksLoading(false)
       }
     })()
     return () => {
       cancel = true
     }
   }, [showModal, editingId])
+
+  /** Hydrate per-station shop bins so PUT sends station_id when the company has multiple active sites. */
+  useEffect(() => {
+    if (!showModal || !editingId) {
+      setShopStationRows([])
+      setSelectedShopStationId(null)
+      setShopStockLoading(false)
+      return
+    }
+    const pc = (formData.pos_category || '').toLowerCase()
+    if (pc === 'non_pos' || pc === 'fuel') {
+      setShopStationRows([])
+      setSelectedShopStationId(null)
+      setShopStockLoading(false)
+      return
+    }
+    let cancel = false
+    setShopStockLoading(true)
+    ;(async () => {
+      try {
+        const token = localStorage.getItem('access_token')
+        if (!token) {
+          if (!cancel) {
+            setShopStationRows([])
+            setSelectedShopStationId(null)
+          }
+          return
+        }
+        const r = await api.get(`/items/${editingId}/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (cancel) return
+        const data = r.data as { location_stocks?: unknown }
+        if (!data || !('location_stocks' in data) || !Array.isArray(data.location_stocks)) {
+          setShopStationRows([])
+          setSelectedShopStationId(null)
+          return
+        }
+        const loc = data.location_stocks as { station_id?: number; station_name?: string; quantity?: string }[]
+        const stRes = await api.get('/stations/', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (cancel) return
+        const stations = Array.isArray(stRes.data) ? stRes.data : []
+        const active = stations.filter((s: { is_active?: boolean }) => s.is_active !== false)
+        if (active.length <= 1) {
+          setShopStationRows([])
+          setSelectedShopStationId(null)
+          return
+        }
+        const qtyByStation = new Map<number, number>()
+        for (const row of loc) {
+          const sid = row.station_id
+          if (sid == null) continue
+          const q = parseFloat(String(row.quantity ?? '0').replace(/,/g, ''))
+          qtyByStation.set(sid, Number.isFinite(q) ? q : 0)
+        }
+        const merged: ShopStationRow[] = active.map((s: { id: number; station_name?: string }) => ({
+          station_id: s.id,
+          station_name: (s.station_name || `Station #${s.id}`).trim(),
+          quantity: qtyByStation.get(s.id) ?? 0,
+        }))
+        setShopStationRows(merged)
+        const firstId = merged[0]?.station_id ?? null
+        setSelectedShopStationId(firstId)
+        const firstQty = merged[0]?.quantity ?? 0
+        if (firstId != null) {
+          setFormData((prev) => ({ ...prev, quantity_on_hand: firstQty }))
+        }
+      } catch {
+        if (!cancel) {
+          setShopStationRows([])
+          setSelectedShopStationId(null)
+        }
+      } finally {
+        if (!cancel) setShopStockLoading(false)
+      }
+    })()
+    return () => {
+      cancel = true
+    }
+  }, [showModal, editingId, formData.pos_category])
 
   // Set video stream when camera is available
   useEffect(() => {
@@ -212,18 +436,23 @@ export default function ItemsPage() {
     e.preventDefault()
 
     try {
+      const upRaw = formData.unit_price
+      const coRaw = formData.cost
+
       // Validate required fields
       if (!formData.name || formData.name.trim() === '') {
         toast.error('Item name is required')
         return
       }
       
-      if (formData.unit_price === null || formData.unit_price === undefined || isNaN(formData.unit_price) || formData.unit_price < 0) {
+      const unitPriceNum = parseMoneyField(upRaw)
+      if (!Number.isFinite(unitPriceNum) || unitPriceNum < 0) {
         toast.error('Unit price must be a valid number greater than or equal to 0')
         return
       }
-      
-      if (formData.cost === null || formData.cost === undefined || isNaN(formData.cost) || formData.cost < 0) {
+
+      const costNum = parseMoneyField(coRaw)
+      if (!Number.isFinite(costNum) || costNum < 0) {
         toast.error('Cost must be a valid number greater than or equal to 0')
         return
       }
@@ -250,7 +479,68 @@ export default function ItemsPage() {
           return
         }
       }
-      
+
+      const isInventory = formData.item_type.toLowerCase() === 'inventory'
+      const isFuelPos = (formData.pos_category || '').toLowerCase() === 'fuel'
+
+      if (editingId && isInventory && isFuelPos && fuelTanksLoading) {
+        toast.error('Loading fuel tank information… please wait a moment, then save again.')
+        return
+      }
+      if (
+        editingId &&
+        isInventory &&
+        isFuelPos &&
+        fuelTanksForProduct.length > 1 &&
+        selectedFuelTankId == null
+      ) {
+        toast.error('Select a fuel tank before saving stock for this product.')
+        return
+      }
+      if (editingId && isInventory && shopStockLoading) {
+        toast.error('Loading location stock… please wait a moment, then save again.')
+        return
+      }
+      if (
+        editingId &&
+        isInventory &&
+        shopStationRows.length > 1 &&
+        selectedShopStationId == null
+      ) {
+        toast.error('Select which shop location to update before saving quantity.')
+        return
+      }
+
+      const isFeed = (formData.pos_category || '').toLowerCase() === 'feed'
+      if (isFeed) {
+        const kgRaw =
+          formData.content_weight_kg === '' || formData.content_weight_kg == null
+            ? NaN
+            : Number(formData.content_weight_kg)
+        if (!Number.isFinite(kgRaw) || kgRaw <= 0) {
+          toast.error('Enter kg per sack (the weight printed on each sack) for feed items.')
+          return
+        }
+        if (kgRaw > 2000) {
+          toast.error(
+            'Kg per sack cannot exceed 2000. That field is weight in kg (e.g. 25), not the price in BDT.'
+          )
+          return
+        }
+        if (
+          unitPriceNum > 0 &&
+          kgRaw > 100 &&
+          kgRaw > unitPriceNum * 15
+        ) {
+          toast.error(
+            'Kg per sack looks larger than your sack price — fields may be reversed. ' +
+              'Unit price = BDT per sack (e.g. 1900). Kg per sack = weight on the bag (e.g. 25).'
+          )
+          return
+        }
+        // Suspicion is shown inline only; do not block save (false positives blocked legitimate edits).
+      }
+
       const token = localStorage.getItem('access_token')
       const url = editingId ? `/items/${editingId}/` : '/items/'
 
@@ -260,13 +550,11 @@ export default function ItemsPage() {
             ? Number(formData.quantity_on_hand) || 0
             : 0
       }
-      if (
-        editingId &&
-        formData.item_type.toLowerCase() === 'inventory' &&
-        fuelTanksForProduct.length > 1 &&
-        selectedFuelTankId != null
-      ) {
+      if (editingId && isInventory && fuelTanksForProduct.length > 1) {
         qtyPayload.tank_id = selectedFuelTankId
+      }
+      if (editingId && isInventory && shopStationRows.length > 1 && selectedShopStationId != null) {
+        qtyPayload.station_id = selectedShopStationId
       }
 
       const response = await api({
@@ -276,17 +564,29 @@ export default function ItemsPage() {
           name: formData.name.trim(),
           description: formData.description?.trim() || null,
           item_type: formData.item_type,
-          unit_price: Number(formData.unit_price),
-          cost: Number(formData.cost),
+          unit_price: unitPriceNum,
+          cost: costNum,
           ...qtyPayload,
           unit: formData.unit,
           pos_category: formData.pos_category || 'general',
           category: categoryTrim,
           barcode: formData.barcode?.trim() || null,
           is_taxable: formData.is_taxable !== undefined ? formData.is_taxable : true,
-          is_pos_available: formData.is_pos_available !== undefined ? formData.is_pos_available : true,
+          is_pos_available:
+            (formData.pos_category || '').toLowerCase() === 'non_pos'
+              ? false
+              : formData.is_pos_available !== undefined
+                ? formData.is_pos_available
+                : true,
           is_active: formData.is_active !== undefined ? formData.is_active : true,
           image_url: formData.image_url?.trim() || null,
+          content_weight_kg: isFeed
+            ? Number(
+                formData.content_weight_kg === '' || formData.content_weight_kg == null
+                  ? NaN
+                  : formData.content_weight_kg
+              )
+            : null,
           ...(!editingId && itemRefCode.trim() ? { item_number: itemRefCode.trim() } : {}),
         },
         headers: {
@@ -306,18 +606,37 @@ export default function ItemsPage() {
     } catch (error: any) {
       console.error(`Error ${editingId ? 'updating' : 'creating'} item:`, error)
       const errorMessage = extractErrorMessage(error, `Failed to ${editingId ? 'update' : 'create'} item`)
-      toast.error(errorMessage)
+      const status = error?.response?.status as number | undefined
+      const qtyRuleHint =
+        status === 400 &&
+        editingId &&
+        (errorMessage.includes('multiple stations') ||
+          errorMessage.includes('multiple active fuel tanks') ||
+          errorMessage.includes('Send station_id') ||
+          errorMessage.includes('Send tank_id'))
+      if (qtyRuleHint) {
+        toast.error(
+          `${errorMessage} If you only changed price or cost, those values may already be saved — check the list after fixing quantity/station settings.`
+        )
+        void fetchItems()
+      } else {
+        toast.error(errorMessage)
+      }
     }
   }
 
   const populateEditorFromItem = useCallback((item: Item) => {
     setEditingId(item.id)
+    const up = Number(item.unit_price)
+    const co = Number(item.cost)
+    const uStr = Number.isFinite(up) ? String(up) : '0'
+    const cStr = Number.isFinite(co) ? String(co) : '0'
     setFormData({
       name: item.name,
       description: item.description || '',
       item_type: item.item_type.toLowerCase() as 'inventory' | 'non_inventory' | 'service',
-      unit_price: item.unit_price,
-      cost: item.cost,
+      unit_price: uStr,
+      cost: cStr,
       quantity_on_hand: parseInventoryQty(item.quantity_on_hand),
       unit: item.unit || 'piece',
       pos_category: (item as any).pos_category || 'general',
@@ -328,6 +647,12 @@ export default function ItemsPage() {
       barcode: (item as any).barcode || '',
       category: (item as any).category?.trim() || 'General',
       image_url: (item as any).image_url || '',
+      content_weight_kg: (() => {
+        const raw = (item as Item & { content_weight_kg?: unknown }).content_weight_kg
+        if (raw == null || raw === '') return '' as const
+        const n = Number(raw)
+        return Number.isFinite(n) ? n : ('' as const)
+      })(),
     })
     const itemImageUrl = (item as any).image_url
     if (itemImageUrl) {
@@ -375,8 +700,8 @@ export default function ItemsPage() {
       name: '',
       description: '',
       item_type: 'inventory',
-      unit_price: 0,
-      cost: 0,
+      unit_price: '0',
+      cost: '0',
       quantity_on_hand: 0,
       unit: 'piece',
       pos_category: 'general',
@@ -386,6 +711,7 @@ export default function ItemsPage() {
       barcode: '',
       category: 'General',
       image_url: '',
+      content_weight_kg: '',
     })
     setImagePreview(null)
     setItemRefCode('')
@@ -400,27 +726,42 @@ export default function ItemsPage() {
     if (editRaw) {
       const id = parseInt(editRaw, 10)
       if (Number.isNaN(id)) {
+        urlEditHydratedIdRef.current = null
         router.replace('/items', { scroll: false })
         return
       }
       const item = items.find((i) => i.id === id)
       if (!item) {
-        toast.error('Item not found.')
-        router.replace('/items', { scroll: false })
+        if (items.length > 0) {
+          toast.error('Item not found.')
+          urlEditHydratedIdRef.current = null
+          router.replace('/items', { scroll: false })
+        }
         return
       }
-      populateEditorFromItem(item)
-      setShowModal(true)
+      if (urlEditHydratedIdRef.current !== id) {
+        urlEditHydratedIdRef.current = id
+        populateEditorFromItem(item)
+        setShowModal(true)
+      }
       router.replace('/items', { scroll: false })
       return
     }
 
+    urlEditHydratedIdRef.current = null
+
     if (wantNew) {
-      resetForm()
-      setCreateItemCodeNonce((n) => n + 1)
-      setShowModal(true)
+      if (!urlNewHydratedRef.current) {
+        urlNewHydratedRef.current = true
+        resetForm()
+        setCreateItemCodeNonce((n) => n + 1)
+        setShowModal(true)
+      }
       router.replace('/items', { scroll: false })
+      return
     }
+
+    urlNewHydratedRef.current = false
   }, [loading, items, searchParams, router, toast, populateEditorFromItem, resetForm])
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -635,6 +976,20 @@ export default function ItemsPage() {
     SERVICE: items.filter(i => i.item_type.toLowerCase() === 'service').length,
   }
 
+  const isFeedItemForm = (formData.pos_category || '').toLowerCase() === 'feed'
+  const isNonPosForm = (formData.pos_category || '').toLowerCase() === 'non_pos'
+
+  const feedSellingPriceSuspicion = useMemo(() => {
+    if (!isFeedItemForm) return null
+    const up = parseMoneyField(formData.unit_price)
+    const co = parseMoneyField(formData.cost)
+    const kg =
+      formData.content_weight_kg === '' || formData.content_weight_kg == null
+        ? NaN
+        : Number(formData.content_weight_kg)
+    return feedSellingPriceSuspiciousMessage(up, co, kg)
+  }, [isFeedItemForm, formData.unit_price, formData.cost, formData.content_weight_kg])
+
   return (
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
@@ -709,6 +1064,7 @@ export default function ItemsPage() {
             <button
               type="button"
               onClick={() => {
+                router.replace('/items', { scroll: false })
                 resetForm()
                 setCreateItemCodeNonce((n) => n + 1)
                 setShowModal(true)
@@ -733,6 +1089,7 @@ export default function ItemsPage() {
             <button
               type="button"
               onClick={() => {
+                router.replace('/items', { scroll: false })
                 resetForm()
                 setCreateItemCodeNonce((n) => n + 1)
                 setShowModal(true)
@@ -802,18 +1159,45 @@ export default function ItemsPage() {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Unit Price:</span>
-                    <span className="font-medium text-green-600">{currencySymbol}{Number(item.unit_price || 0).toFixed(2)}</span>
+                    <span className="text-gray-500">
+                      {(item.pos_category || '').toLowerCase() === 'feed'
+                        ? 'Selling price (BDT per sack):'
+                        : `Selling price (${item.unit || 'unit'}):`}
+                    </span>
+                    <span className="font-medium text-green-600">{currencySymbol}{formatNumber(Number(item.unit_price || 0))}</span>
                   </div>
+                  {(item.pos_category || '').toLowerCase() === 'feed' &&
+                    item.content_weight_kg != null &&
+                    item.content_weight_kg !== '' &&
+                    Number(item.content_weight_kg) > 0 && (
+                      <div className="flex justify-between text-xs text-teal-800">
+                        <span>Kg per sack (weight):</span>
+                        <span className="font-medium tabular-nums">{Number(item.content_weight_kg)} kg</span>
+                      </div>
+                    )}
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Cost:</span>
-                    <span className="font-medium text-gray-900">{currencySymbol}{Number(item.cost || 0).toFixed(2)}</span>
+                    <span className="text-gray-500">
+                      {(item.pos_category || '').toLowerCase() === 'feed'
+                        ? 'Cost (BDT per sack):'
+                        : 'Cost:'}
+                    </span>
+                    <span className="font-medium text-gray-900">{currencySymbol}{formatNumber(Number(item.cost || 0))}</span>
                   </div>
                   {(item.item_type.toUpperCase() === 'INVENTORY' || item.item_type.toLowerCase() === 'inventory') && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">On Hand:</span>
-                      <span className="font-medium text-gray-900">
-                        {parseInventoryQty(item.quantity_on_hand).toFixed(2)} {item.unit}
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="text-gray-500 shrink-0">
+                        {(item.pos_category || '').toLowerCase() === 'feed' ? 'Sacks on hand:' : 'On Hand:'}
+                      </span>
+                      <span className="font-medium text-gray-900 text-right">
+                        {(item.pos_category || '').toLowerCase() === 'feed'
+                          ? formatFeedSackQuantityLabel(parseInventoryQty(item.quantity_on_hand))
+                          : `${formatNumber(parseInventoryQty(item.quantity_on_hand))} ${item.unit}`}
+                        {feedApproxTotalKg(item) != null && (
+                          <span className="block text-xs font-normal text-teal-700 mt-0.5">
+                            ≈ {feedApproxTotalKg(item)!.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                            total
+                          </span>
+                        )}
                       </span>
                     </div>
                   )}
@@ -866,7 +1250,7 @@ export default function ItemsPage() {
                     Type
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Unit Price
+                    Selling price
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Cost
@@ -926,15 +1310,30 @@ export default function ItemsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600">
-                      {currencySymbol}{Number(item.unit_price || 0).toFixed(2)}
+                      <span className="block">{currencySymbol}{formatNumber(Number(item.unit_price || 0))}</span>
+                      {(item.pos_category || '').toLowerCase() === 'feed' &&
+                        item.content_weight_kg != null &&
+                        item.content_weight_kg !== '' &&
+                        Number(item.content_weight_kg) > 0 && (
+                          <span className="block text-xs font-normal text-teal-800">
+                            {Number(item.content_weight_kg)} kg per {item.unit || 'sack'}
+                          </span>
+                        )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {currencySymbol}{Number(item.cost || 0).toFixed(2)}
+                      {currencySymbol}{formatNumber(Number(item.cost || 0))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {(item.item_type.toUpperCase() === 'INVENTORY' || item.item_type.toLowerCase() === 'inventory') ? (
                         <span>
-                          {parseInventoryQty(item.quantity_on_hand).toFixed(2)} {item.unit}
+                          {(item.pos_category || '').toLowerCase() === 'feed'
+                            ? formatFeedSackQuantityLabel(parseInventoryQty(item.quantity_on_hand))
+                            : `${formatNumber(parseInventoryQty(item.quantity_on_hand))} ${item.unit}`}
+                          {feedApproxTotalKg(item) != null && (
+                            <span className="block text-xs text-teal-700 mt-0.5">
+                              ≈ {feedApproxTotalKg(item)!.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                            </span>
+                          )}
                         </span>
                       ) : (
                         <span className="text-gray-400">-</span>
@@ -983,12 +1382,12 @@ export default function ItemsPage() {
 
         {/* Create/Edit Modal */}
         {showModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
             <div className="bg-white rounded-lg app-modal-pad max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-2xl font-bold mb-6">
                 {editingId ? 'Edit Item' : 'Add New Item'}
               </h2>
-              <form onSubmit={handleSubmit}>
+              <form noValidate onSubmit={handleSubmit}>
                 {editingId ? (
                   <ReferenceCodePicker
                     kind="item"
@@ -1019,7 +1418,7 @@ export default function ItemsPage() {
                       type="text"
                       required
                       value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="e.g., Premium Diesel"
                     />
@@ -1031,7 +1430,7 @@ export default function ItemsPage() {
                     </label>
                     <textarea
                       value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Optional description"
                       rows={3}
@@ -1120,7 +1519,7 @@ export default function ItemsPage() {
                     <select
                       required
                       value={formData.item_type}
-                      onChange={(e) => setFormData({ ...formData, item_type: e.target.value as any })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, item_type: e.target.value as any }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="inventory">Inventory</option>
@@ -1136,7 +1535,7 @@ export default function ItemsPage() {
                     <select
                       required
                       value={formData.unit}
-                      onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, unit: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="piece">Piece</option>
@@ -1148,6 +1547,7 @@ export default function ItemsPage() {
                       <option value="each">Each</option>
                       <option value="box">Box</option>
                       <option value="pack">Pack</option>
+                      <option value="sack">Sack (25 kg, 20 kg, 10 kg… — set kg when POS = Feed)</option>
                       <option value="bottle">Bottle</option>
                       <option value="can">Can</option>
                       <option value="bag">Bag</option>
@@ -1159,48 +1559,230 @@ export default function ItemsPage() {
                       <option value="service">Service</option>
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      Select the unit of measure for this item
+                      {isFeedItemForm
+                        ? 'For sack-packed feed, choose Sack — stock and POS quantity are counted in sacks.'
+                        : 'Select the unit of measure for this item'}
                     </p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Unit Price *
+                      POS Category
+                    </label>
+                    <select
+                      value={formData.pos_category}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setFormData((prev) => ({
+                          ...prev,
+                          pos_category: v,
+                          ...(v === 'feed' && prev.unit === 'piece' ? { unit: 'sack' } : {}),
+                          ...(v !== 'feed' ? { content_weight_kg: '' } : {}),
+                          ...(v === 'non_pos' ? { is_pos_available: false } : {}),
+                        }))
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="general">General (For POS General Items Tab)</option>
+                      <option value="feed">Feed (sack sales — General POS tab)</option>
+                      <option value="fuel">Fuel (For POS Fuel Tab - Linked to Tanks)</option>
+                      <option value="service">Service</option>
+                      <option value="other">Other</option>
+                      <option value="non_pos">
+                        Non-POS (aquaculture hatchery / pond stock — not shop or Cashier)
+                      </option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      General and feed items appear in the Cashier retail catalog. Fuel items use the Fuel tab and tanks.
+                      Non-POS items are excluded from Cashier and per-station shop stock; use Aquaculture flows to move
+                      stock (e.g. fish fry) into ponds.
+                    </p>
+                  </div>
+
+                  {isFeedItemForm && (
+                    <div className="col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
+                      <h3 className="text-sm font-semibold text-emerald-900">Feed sack details</h3>
+                      <p className="text-xs text-emerald-900/80">
+                        You sell and count inventory in <strong>sacks</strong>. Each sack is labeled with how many kg it
+                        contains (e.g. 25 kg, 10 kg). Enter that weight so stock can be read as sacks and as approximate
+                        total kg. Use a <strong>separate item</strong> per sack size (e.g. one SKU for 25 kg sacks, another
+                        for 10 kg) so price and stock stay correct.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="text-xs text-emerald-950 self-center mr-1">Quick set kg/sack:</span>
+                        {[10, 20, 25, 50].map((kg) => (
+                          <button
+                            key={kg}
+                            type="button"
+                            className="rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs font-medium text-emerald-900 hover:bg-emerald-100/80"
+                            onClick={() =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                content_weight_kg: kg,
+                                unit: prev.unit === 'piece' ? 'sack' : prev.unit,
+                              }))
+                            }
+                          >
+                            {kg} kg
+                          </button>
+                        ))}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-emerald-950 mb-1">
+                          Kg per sack (weight on label — not BDT) <span className="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          required={isFeedItemForm}
+                          min="0.001"
+                          step="0.001"
+                          autoComplete="off"
+                          value={formData.content_weight_kg === '' ? '' : formData.content_weight_kg}
+                          ref={contentWeightWheelRef}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            if (raw === '') {
+                              setFormData((f) => ({ ...f, content_weight_kg: '' }))
+                              return
+                            }
+                            const n = parseFloat(raw)
+                            setFormData((f) => ({
+                              ...f,
+                              content_weight_kg: Number.isFinite(n) ? n : '',
+                            }))
+                          }}
+                          className="w-full max-w-xs px-3 py-2 border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                          placeholder="e.g. 25"
+                        />
+                        <p className="mt-1 text-xs text-emerald-900/75">
+                          Enter weight in kg (e.g. 25 or 20 for kg per sack). For very small packs (e.g. 10 g),
+                          enter 0.01 (grams as kg).
+                        </p>
+                      </div>
+                      {formData.item_type === 'inventory' &&
+                        formData.content_weight_kg !== '' &&
+                        Number(formData.content_weight_kg) > 0 && (
+                          <p className="text-xs font-medium text-emerald-900">
+                            At {formatFeedSackQuantityLabel(Number(formData.quantity_on_hand || 0))}, approx.{' '}
+                            {(
+                              Number(formData.quantity_on_hand || 0) * Number(formData.content_weight_kg)
+                            ).toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+                            kg on hand.
+                          </p>
+                        )}
+                    </div>
+                  )}
+
+                  <div>
+                    <label
+                      htmlFor="item-unit-price"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      {isFeedItemForm ? (
+                        <>Selling price (BDT per sack{feedSackPriceLabelSuffix(formData.content_weight_kg)}) *</>
+                      ) : (
+                        <>Selling price (BDT per {formData.unit || 'unit'}) *</>
+                      )}
                     </label>
                     <input
-                      type="number"
-                      required
-                      min="0"
-                      step="0.01"
+                      key={`item-unit-price-${editingId ?? 'new'}`}
+                      id="item-unit-price"
+                      name="unit_price"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
                       value={formData.unit_price}
                       onChange={(e) => {
-                        const value = e.target.value === '' ? 0 : parseFloat(e.target.value)
-                        setFormData({ ...formData, unit_price: isNaN(value) ? 0 : value })
+                        const v = normalizeMoneyTyping(e.target.value)
+                        setFormData((prev) => ({ ...prev, unit_price: v }))
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
+                    {isFeedItemForm && (
+                      <p className="mt-1 text-xs text-amber-800/90">
+                        Enter the full sack price in BDT here (e.g. 1900). Sack weight in kg belongs only in the green
+                        &quot;Kg per sack&quot; section above — not in this field.
+                      </p>
+                    )}
+                    {feedSellingPriceSuspicion && (
+                      <p
+                        className="mt-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900"
+                        role="alert"
+                      >
+                        {feedSellingPriceSuspicion}
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Cost *
+                    <label htmlFor="item-cost" className="block text-sm font-medium text-gray-700 mb-2">
+                      {isFeedItemForm ? (
+                        <>Cost (BDT per sack{feedSackPriceLabelSuffix(formData.content_weight_kg)}) *</>
+                      ) : (
+                        <>Cost (BDT per {formData.unit || 'unit'}) *</>
+                      )}
                     </label>
                     <input
-                      type="number"
-                      required
-                      min="0"
-                      step="0.01"
+                      key={`item-cost-${editingId ?? 'new'}`}
+                      id="item-cost"
+                      name="cost"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
                       value={formData.cost}
                       onChange={(e) => {
-                        const value = e.target.value === '' ? 0 : parseFloat(e.target.value)
-                        setFormData({ ...formData, cost: isNaN(value) ? 0 : value })
+                        const v = normalizeMoneyTyping(e.target.value)
+                        setFormData((prev) => ({ ...prev, cost: v }))
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
+                    {isFeedItemForm && (
+                      <p className="mt-1 text-xs text-amber-800/90">
+                        Enter BDT for one full sack of feed (same sack size as &quot;Kg per sack&quot; above).
+                      </p>
+                    )}
                   </div>
 
                   {formData.item_type === 'inventory' && (
                     <div className="space-y-2">
+                      {shopStationRows.length > 1 && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {isFeedItemForm
+                              ? 'Shop location (sack count applies here)'
+                              : 'Shop location (quantity applies here)'}
+                          </label>
+                          <select
+                            value={selectedShopStationId ?? ''}
+                            onChange={(e) => {
+                              const sid = e.target.value ? parseInt(e.target.value, 10) : null
+                              setSelectedShopStationId(sid)
+                              const row = shopStationRows.find((r) => r.station_id === sid)
+                              if (row) {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  quantity_on_hand: row.quantity,
+                                }))
+                              }
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          >
+                            {shopStationRows.map((s) => (
+                              <option key={s.station_id} value={s.station_id}>
+                                {s.station_name} (on hand:{' '}
+                                {isFeedItemForm
+                                  ? formatFeedSackQuantityLabel(s.quantity)
+                                  : s.quantity}
+                                )
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1 text-xs text-gray-500">
+                            This company has multiple active stations. Stock is saved for the location you select; total
+                            on the item card is the sum across locations.
+                          </p>
+                        </div>
+                      )}
                       {fuelTanksForProduct.length > 1 && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1225,16 +1807,21 @@ export default function ItemsPage() {
                       )}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Quantity on Hand
+                          {isFeedItemForm ? 'Sacks on hand' : 'Quantity on Hand'}
                         </label>
                         <input
                           type="number"
                           min="0"
                           step="0.01"
+                          autoComplete="off"
                           value={formData.quantity_on_hand}
+                          ref={qtyOnHandWheelRef}
                           onChange={(e) => {
                             const value = e.target.value === '' ? 0 : parseFloat(e.target.value)
-                            setFormData({ ...formData, quantity_on_hand: isNaN(value) ? 0 : value })
+                            setFormData((prev) => ({
+                              ...prev,
+                              quantity_on_hand: Number.isFinite(value) ? value : prev.quantity_on_hand,
+                            }))
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
@@ -1245,30 +1832,17 @@ export default function ItemsPage() {
                                   ? 'This value updates that tank.'
                                   : 'With multiple tanks, pick which tank to set above.'
                               }`
-                            : `Current quantity in ${formData.unit}`}
+                            : shopStationRows.length > 1
+                              ? `Quantity is for the shop location selected above (not the company-wide total).`
+                              : isNonPosForm
+                                ? `Company-level quantity for this SKU (not split across shop locations). Record pond movements in Aquaculture.`
+                                : isFeedItemForm
+                                  ? `Number of physical sacks at this location (10 kg, 25 kg, etc. depends on this item’s kg per sack). Total kg ≈ sacks × kg per sack.`
+                                  : `Current quantity in ${formData.unit}`}
                         </p>
                       </div>
                     </div>
                   )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      POS Category
-                    </label>
-                    <select
-                      value={formData.pos_category}
-                      onChange={(e) => setFormData({ ...formData, pos_category: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="general">General (For POS General Items Tab)</option>
-                      <option value="fuel">Fuel (For POS Fuel Tab - Linked to Tanks)</option>
-                      <option value="service">Service</option>
-                      <option value="other">Other</option>
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500">
-                      General items appear in POS General Products tab. Fuel items are linked to tanks and appear in Fuel Sale tab.
-                    </p>
-                  </div>
 
                   <div className="col-span-2 space-y-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1276,6 +1850,7 @@ export default function ItemsPage() {
                     </label>
                     <p className="text-xs text-gray-500 mb-2">
                       Used for business reports (by category and by item). This is separate from the POS tab (Fuel / General) above.
+                      For hatchery fish fry and pond stock, use <strong className="font-medium">Aquaculture</strong> (or Fish buying and selling when appropriate).
                     </p>
                     <select
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
@@ -1296,7 +1871,7 @@ export default function ItemsPage() {
                       type="text"
                       required
                       value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="e.g. Poultry feed, General, Medicine — or pick from the list above"
                       list="item-reporting-categories"
@@ -1324,7 +1899,7 @@ export default function ItemsPage() {
                     <input
                       type="text"
                       value={formData.barcode}
-                      onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, barcode: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Scan or enter barcode"
                     />
@@ -1332,20 +1907,26 @@ export default function ItemsPage() {
 
                   <div className="col-span-2">
                     <div className="flex items-center space-x-6">
-                      <label className="flex items-center space-x-2">
+                      <label className={`flex items-center space-x-2 ${isNonPosForm ? 'opacity-60' : ''}`}>
                         <input
                           type="checkbox"
-                          checked={formData.is_pos_available}
-                          onChange={(e) => setFormData({ ...formData, is_pos_available: e.target.checked })}
+                          checked={isNonPosForm ? false : formData.is_pos_available}
+                          disabled={isNonPosForm}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, is_pos_available: e.target.checked }))}
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                         <span className="text-sm font-medium text-gray-700">Available in POS</span>
                       </label>
+                      {isNonPosForm && (
+                        <span className="text-xs text-gray-500">
+                          Off for Non-POS (Cashier cannot sell this SKU).
+                        </span>
+                      )}
                       <label className="flex items-center space-x-2">
                         <input
                           type="checkbox"
                           checked={formData.is_taxable}
-                          onChange={(e) => setFormData({ ...formData, is_taxable: e.target.checked })}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, is_taxable: e.target.checked }))}
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                         <span className="text-sm font-medium text-gray-700">Taxable</span>
@@ -1354,7 +1935,7 @@ export default function ItemsPage() {
                         <input
                           type="checkbox"
                           checked={formData.is_active}
-                          onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, is_active: e.target.checked }))}
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                         <span className="text-sm font-medium text-gray-700">Active</span>

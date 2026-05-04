@@ -13,6 +13,7 @@ import {
   getFsmsErpMenuItems,
   getSaasMenuItems,
   getFilteredMenuItems,
+  filterAquacultureMenuWhenDisabled,
   filterTenantBackupMenuItem,
   getSectionDefinitions,
   type ErpAppSection,
@@ -37,6 +38,7 @@ export default function Sidebar() {
   const [isDesktopLayout, setIsDesktopLayout] = useState(false)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const [navSearchQuery, setNavSearchQuery] = useState('')
+  const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
   const resizeDragRef = useRef<{
     startX: number
     startWidth: number
@@ -399,6 +401,36 @@ export default function Sidebar() {
     }
   }
 
+  useEffect(() => {
+    const fetchAq = async () => {
+      if (mode !== 'fsms_erp') {
+        setAquacultureEnabled(false)
+        return
+      }
+      const token = localStorage.getItem('access_token')
+      if (!token) {
+        setAquacultureEnabled(false)
+        return
+      }
+      try {
+        const { data } = await api.get<Record<string, unknown>>('/companies/current/')
+        setAquacultureEnabled(Boolean(data?.aquaculture_enabled))
+      } catch {
+        setAquacultureEnabled(false)
+      }
+    }
+    void fetchAq()
+    const onSaved = () => void fetchAq()
+    if (typeof window !== 'undefined') {
+      window.addEventListener('fserp-company-settings-saved', onSaved)
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('fserp-company-settings-saved', onSaved)
+      }
+    }
+  }, [mode, selectedCompany?.id, pathname])
+
   const fsmsErpMenuItems = useMemo(() => getFsmsErpMenuItems(), [])
 
   const saasMenuItems = useMemo(
@@ -408,19 +440,24 @@ export default function Sidebar() {
 
   const filteredMenuItems = useMemo(
     () =>
-      filterTenantBackupMenuItem(
-        getFilteredMenuItems(
-          userRole,
-          isSuperAdmin,
-          mode,
-          fsmsErpMenuItems,
-          saasMenuItems,
+      filterAquacultureMenuWhenDisabled(
+        filterTenantBackupMenuItem(
+          getFilteredMenuItems(
+            userRole,
+            isSuperAdmin,
+            mode,
+            fsmsErpMenuItems,
+            saasMenuItems,
+            userPermissions
+          ),
+          userRole?.toLowerCase() || '',
           userPermissions
         ),
-        userRole?.toLowerCase() || '',
-        userPermissions
+        aquacultureEnabled,
+        userRole,
+        isSuperAdmin
       ),
-    [userRole, userPermissions, isSuperAdmin, mode, fsmsErpMenuItems, saasMenuItems]
+    [userRole, userPermissions, isSuperAdmin, mode, fsmsErpMenuItems, saasMenuItems, aquacultureEnabled]
   )
 
   const menuItemsForNav = useMemo(() => {
@@ -684,8 +721,14 @@ export default function Sidebar() {
                 <div className="space-y-0.5 pl-1">
                   {sectionItems.map((item) => {
                     const Icon = item.icon
-                    // Check if the current pathname matches the item href
-                    const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+                    const matches = sectionItems.filter(
+                      (other) => pathname === other.href || pathname.startsWith(other.href + '/')
+                    )
+                    const best =
+                      matches.length === 0
+                        ? null
+                        : matches.reduce((a, b) => (a.href.length >= b.href.length ? a : b))
+                    const isActive = best !== null && item.href === best.href
 
                     return (
                       <Link

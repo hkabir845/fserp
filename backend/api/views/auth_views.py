@@ -1,11 +1,14 @@
 """Auth: login and refresh."""
 import json
+
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+
 from api.models import User
 from api.services.permission_service import user_client_dict
 from api.utils.auth import create_tokens, get_user_from_request, tenant_company_allows_access
+from api.utils.rate_limit import auth_rate_limits_enabled, client_ip, rate_limit_exceeded
 
 
 def _parse_login_body(request):
@@ -42,6 +45,14 @@ def _user_to_json(user):
 @require_http_methods(["POST"])
 def login(request):
     """Accept form, json, or x-www-form-urlencoded. Return access_token, refresh_token, user."""
+    ip = client_ip(request)
+    if auth_rate_limits_enabled() and rate_limit_exceeded(
+        key=f"rl:login_ip:v1:{ip}", limit=40, period_seconds=300
+    ):
+        return JsonResponse(
+            {"detail": "Too many login attempts. Please try again later."},
+            status=429,
+        )
     username, password = _parse_login_body(request)
     if not username or not password:
         return JsonResponse({"detail": "username and password required"}, status=400)
@@ -49,6 +60,13 @@ def login(request):
         "custom_role", "home_station"
     ).first()
     if not user or not user.check_password(password):
+        if auth_rate_limits_enabled() and rate_limit_exceeded(
+            key=f"rl:loginfail_ip:v1:{ip}", limit=35, period_seconds=900
+        ):
+            return JsonResponse(
+                {"detail": "Too many login attempts. Please try again later."},
+                status=429,
+            )
         return JsonResponse({"detail": "Invalid credentials"}, status=401)
     if not tenant_company_allows_access(user):
         return JsonResponse(
@@ -68,6 +86,14 @@ def login(request):
 @require_http_methods(["POST"])
 def refresh(request):
     """Expect JSON { refresh_token: "..." }. Return { access_token: "..." }."""
+    ip = client_ip(request)
+    if auth_rate_limits_enabled() and rate_limit_exceeded(
+        key=f"rl:refresh_ip:v1:{ip}", limit=120, period_seconds=300
+    ):
+        return JsonResponse(
+            {"detail": "Too many requests. Please try again later."},
+            status=429,
+        )
     try:
         body = request.body
         if not body or (hasattr(body, "strip") and not body.strip()):

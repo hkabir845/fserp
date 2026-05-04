@@ -18,7 +18,7 @@ import {
 import api from '@/lib/api'
 import EditPaymentModal from '../EditPaymentModal'
 import { confirmDeletePaymentDialog, deletePaymentRequest } from '../paymentMutations'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDate, formatDateOnly } from '@/utils/date'
 import { escapeHtml } from '@/utils/printDocument'
 import { printListView } from '@/utils/printListView'
@@ -196,7 +196,7 @@ export default function PaymentReceivedPage() {
             <td>${escapeHtml(formatDateOnly(p.payment_date))}</td>
             <td>${escapeHtml(customerName)}</td>
             <td>${escapeHtml((p.payment_method ?? 'unspecified').replace(/_/g, ' '))}</td>
-            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml((Number(p.amount) || 0).toFixed(2))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(p.amount) || 0))}</td>
           </tr>`
         })
         .join('')
@@ -215,9 +215,9 @@ export default function PaymentReceivedPage() {
             <td>${escapeHtml(formatDateOnly(inv.invoice_date))}</td>
             <td>${escapeHtml(inv.due_date ? formatDateOnly(inv.due_date) : '—')}</td>
             <td>${escapeHtml(inv.customer_name || '—')}</td>
-            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(total.toFixed(2))}</td>
-            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(paid.toFixed(2))}</td>
-            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(bal.toFixed(2))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(total))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(paid))}</td>
+            <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(bal))}</td>
           </tr>`
         })
         .join('')
@@ -392,7 +392,7 @@ export default function PaymentReceivedPage() {
                   <p className="text-green-100 text-sm">Total Receivable</p>
                   <p className="text-3xl font-bold">
                     {currencySymbol}
-                    {totalReceivable.toFixed(2)}
+                    {formatNumber(totalReceivable)}
                   </p>
                 </div>
               </div>
@@ -485,7 +485,7 @@ export default function PaymentReceivedPage() {
                             </td>
                             <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                               {currencySymbol}
-                              {(Number(payment.amount) || 0).toFixed(2)}
+                              {formatNumber(Number(payment.amount) || 0)}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600 max-w-[12rem] truncate" title={payment.memo || ''}>
                               {payment.memo || '-'}
@@ -633,7 +633,7 @@ export default function PaymentReceivedPage() {
                               ) : (
                                 <>
                                   {currencySymbol}
-                                  {(Number(invoice.total_amount ?? invoice.total) || 0).toFixed(2)}
+                                  {formatNumber(Number(invoice.total_amount ?? invoice.total) || 0)}
                                 </>
                               )}
                             </td>
@@ -643,13 +643,13 @@ export default function PaymentReceivedPage() {
                               ) : (
                                 <>
                                   {currencySymbol}
-                                  {(Number(invoice.amount_paid) || 0).toFixed(2)}
+                                  {formatNumber(Number(invoice.amount_paid) || 0)}
                                 </>
                               )}
                             </td>
                             <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                               {currencySymbol}
-                              {(Number(invoice.balance_due) || 0).toFixed(2)}
+                              {formatNumber(Number(invoice.balance_due) || 0)}
                             </td>
                           </tr>
                           )

@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server'
 /**
  * Security headers for HTML/app routes only. Must not run for `/_next/static/*` or assets
  * break with 404 / wrong MIME (see next.config.mjs comment).
- * Next.js 16+: use `proxy` (replaces `middleware`).
+ * Next.js 16+: use `src/proxy.ts` with a `proxy` export (replaces deprecated middleware).
  */
 export function proxy(_request: NextRequest) {
   const res = NextResponse.next()

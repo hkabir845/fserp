@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
-import { Plus, Edit, Trash2, Search, Building2, AlertTriangle, RefreshCw, Phone, MapPin } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, Building2, AlertTriangle, RefreshCw, Phone, MapPin, Fuel, Sprout } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiDocsUrl } from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { stationHasFuelForecourt } from '@/utils/stationCapabilities'
 
 interface Station {
   id: number
@@ -19,6 +20,8 @@ interface Station {
   state: string
   is_active: boolean
   phone?: string
+  operates_fuel_retail?: boolean
+  default_aquaculture_pond_id?: number | null
 }
 
 export default function StationsPage() {
@@ -39,9 +42,14 @@ export default function StationsPage() {
     city: '',
     state: '',
     phone: '',
-    is_active: true
+    is_active: true,
+    operates_fuel_retail: true,
+    default_aquaculture_pond_id: '',
   })
+  const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string }[]>([])
   const [stationMode, setStationMode] = useState<'single' | 'multi'>('single')
+  /** Show fuel vs hub toggle when tenant is licensed for Aquaculture (platform feature). */
+  const [aquacultureLicensed, setAquacultureLicensed] = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -52,6 +60,18 @@ export default function StationsPage() {
     fetchStations()
   }, [router])
 
+  useEffect(() => {
+    if (!showModal) return
+    void (async () => {
+      try {
+        const { data } = await api.get<{ id: number; name: string }[]>('/aquaculture/ponds/')
+        setAquaculturePonds(Array.isArray(data) ? data : [])
+      } catch {
+        setAquaculturePonds([])
+      }
+    })()
+  }, [showModal])
+
   const fetchStations = async () => {
     setLoading(true)
     setError(null)
@@ -59,12 +79,13 @@ export default function StationsPage() {
       const [stationsRes, companyRes] = await Promise.all([
         api.get<Station[]>('/stations/'),
         api
-          .get<{ station_mode?: string }>('/companies/current/')
-          .catch(() => ({ data: {} as { station_mode?: string } })),
+          .get<{ station_mode?: string; aquaculture_licensed?: boolean }>('/companies/current/')
+          .catch(() => ({ data: {} as { station_mode?: string; aquaculture_licensed?: boolean } })),
       ])
       setStations(stationsRes.data)
       const sm = String(companyRes.data?.station_mode ?? 'single').toLowerCase()
       setStationMode(sm === 'single' ? 'single' : 'multi')
+      setAquacultureLicensed(Boolean(companyRes.data?.aquaculture_licensed))
     } catch (err: unknown) {
       const errorMessage = extractErrorMessage(err, 'Failed to load stations')
       const status = err && typeof err === 'object' && 'response' in err
@@ -94,15 +115,22 @@ export default function StationsPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await api.post('/stations/', {
+      const createBody: Record<string, unknown> = {
         station_name: formData.station_name,
         address_line1: formData.address,
         city: formData.city,
         state: formData.state,
         phone: formData.phone || null,
         postal_code: '',
-        is_active: formData.is_active
-      })
+        is_active: formData.is_active,
+      }
+      if (formData.default_aquaculture_pond_id) {
+        createBody.default_aquaculture_pond_id = parseInt(formData.default_aquaculture_pond_id, 10)
+      }
+      if (aquacultureLicensed) {
+        createBody.operates_fuel_retail = formData.operates_fuel_retail
+      }
+      await api.post('/stations/', createBody)
       toast.success('Station created successfully!')
       setShowModal(false)
       resetForm()
@@ -121,7 +149,10 @@ export default function StationsPage() {
       city: station.city || '',
       state: station.state || '',
       phone: station.phone || '',
-      is_active: station.is_active
+      is_active: station.is_active,
+      default_aquaculture_pond_id:
+        station.default_aquaculture_pond_id != null ? String(station.default_aquaculture_pond_id) : '',
+      operates_fuel_retail: stationHasFuelForecourt(station),
     })
     setShowModal(true)
   }
@@ -130,15 +161,22 @@ export default function StationsPage() {
     e.preventDefault()
     if (!editingId) return
     try {
-      await api.put(`/stations/${editingId}/`, {
+      const updateBody: Record<string, unknown> = {
         station_name: formData.station_name,
         address_line1: formData.address,
         city: formData.city,
         state: formData.state,
         phone: formData.phone || null,
         postal_code: '',
-        is_active: formData.is_active
-      })
+        is_active: formData.is_active,
+        default_aquaculture_pond_id: formData.default_aquaculture_pond_id
+          ? parseInt(formData.default_aquaculture_pond_id, 10)
+          : null,
+      }
+      if (aquacultureLicensed) {
+        updateBody.operates_fuel_retail = formData.operates_fuel_retail
+      }
+      await api.put(`/stations/${editingId}/`, updateBody)
       toast.success('Station updated successfully!')
       setShowModal(false)
       resetForm()
@@ -170,7 +208,9 @@ export default function StationsPage() {
       city: '',
       state: '',
       phone: '',
-      is_active: true
+      is_active: true,
+      operates_fuel_retail: true,
+      default_aquaculture_pond_id: '',
     })
     setEditingId(null)
   }
@@ -208,8 +248,8 @@ export default function StationsPage() {
           <div className="mb-4">
             <h1 className="text-3xl font-bold text-gray-900">Stations</h1>
             <p className="text-gray-600 mt-1 max-w-3xl">
-              Manage your filling station locations, active vs inactive (closed) sites, and how they relate to your
-              company&apos;s site model.
+              Manage operating locations: fuel forecourts, retail shops, and—when Aquaculture is licensed—dedicated farm or
+              hub sites without underground fuel. Each site can be linked to a default pond for stock issues and POS.
             </p>
 
             <div
@@ -412,13 +452,26 @@ export default function StationsPage() {
                         </p>
                       </div>
                     </div>
-                    <span
-                      className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                        station.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      {station.is_active ? 'Active' : 'Inactive'}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                          station.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}
+                      >
+                        {station.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                      {stationHasFuelForecourt(station) ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+                          <Fuel className="h-3 w-3" aria-hidden />
+                          Fuel forecourt
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-900">
+                          <Sprout className="h-3 w-3" aria-hidden />
+                          Shop / aquaculture hub
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2 mb-4 flex-1">
@@ -435,13 +488,27 @@ export default function StationsPage() {
                   </div>
 
                   <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/tanks?station=${station.id}`)}
-                      className="text-sm text-blue-600 hover:text-blue-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded"
-                    >
-                      View Tanks →
-                    </button>
+                    {stationHasFuelForecourt(station) ? (
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/tanks?station=${station.id}`)}
+                        className="text-sm text-blue-600 hover:text-blue-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded"
+                      >
+                        Fuel tanks →
+                      </button>
+                    ) : (
+                      <div className="min-w-0 text-xs leading-snug text-slate-600">
+                        No fuel forecourt — use{' '}
+                        <Link href="/cashier" className="font-medium text-blue-600 hover:underline">
+                          Cashier
+                        </Link>{' '}
+                        for retail stock and{' '}
+                        <Link href="/aquaculture" className="font-medium text-teal-700 hover:underline">
+                          Aquaculture
+                        </Link>{' '}
+                        for pond economics.
+                      </div>
+                    )}
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
@@ -537,6 +604,67 @@ export default function StationsPage() {
                       placeholder="Optional"
                     />
                   </div>
+                  {aquacultureLicensed ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="rounded-lg bg-white p-2 shadow-sm ring-1 ring-slate-200">
+                          <Fuel className="h-5 w-5 text-amber-700" aria-hidden />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-slate-900">Fuel forecourt at this site</p>
+                          <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                            Turn <span className="font-medium">on</span> for locations with underground storage, tank dips,
+                            islands, and dispensers. Turn <span className="font-medium">off</span> for aquaculture offices,
+                            farm shops, or hubs with POS but no pump fuel—this keeps tank and nozzle setup lists clean.
+                          </p>
+                          <label className="mt-3 flex cursor-pointer items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={formData.operates_fuel_retail}
+                              onChange={(e) =>
+                                setFormData((prev) => ({ ...prev, operates_fuel_retail: e.target.checked }))
+                              }
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm font-medium text-slate-800">
+                              This station operates fuel retail (forecourt)
+                            </span>
+                          </label>
+                          {!formData.operates_fuel_retail ? (
+                            <p className="mt-2 text-xs text-amber-900/90">
+                              You cannot attach fuel tanks or islands until this is enabled again—and only after any
+                              existing forecourt equipment is removed from this station record in the database.
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                  {aquaculturePonds.length > 0 ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Default aquaculture pond (internal issue prefill)
+                      </label>
+                      <select
+                        value={formData.default_aquaculture_pond_id}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, default_aquaculture_pond_id: e.target.value }))
+                        }
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      >
+                        <option value="">None</option>
+                        {aquaculturePonds.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Pre-fills pond only for the optional “internal stock issue at cost” flow on Aquaculture
+                        expenses. POS sales to ponds use the customer linked on each pond, not this field.
+                      </p>
+                    </div>
+                  ) : null}
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"

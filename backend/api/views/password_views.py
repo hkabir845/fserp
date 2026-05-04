@@ -18,6 +18,7 @@ from django.views.decorators.http import require_http_methods
 
 from api.models import PasswordResetToken, User
 from api.utils.auth import auth_required
+from api.utils.rate_limit import auth_rate_limits_enabled, client_ip, rate_limit_exceeded
 from api.utils.recovery_email import username_looks_like_email
 
 logger = logging.getLogger(__name__)
@@ -263,6 +264,12 @@ def forgot_password(request):
     email = (body.get("email") or "").strip()
     if not email:
         return JsonResponse({"detail": "Email is required."}, status=400)
+
+    ip = client_ip(request)
+    if auth_rate_limits_enabled() and rate_limit_exceeded(
+        key=f"rl:pwreset_ip_v1:{ip}", limit=25, period_seconds=3600
+    ):
+        return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
 
     method = (body.get("method") or "link").strip().lower()
     if method not in ("link", "otp"):

@@ -1,7 +1,7 @@
 """Optional FK to Station for customer/vendor/employee/payroll (company-scoped)."""
 from __future__ import annotations
 
-from api.models import Station
+from api.models import AquaculturePond, Station
 
 
 def parse_optional_station_fk(company_id: int, raw) -> tuple[int | None, str | None]:
@@ -18,3 +18,16 @@ def parse_optional_station_fk(company_id: int, raw) -> tuple[int | None, str | N
     if not Station.objects.filter(pk=sid, company_id=company_id, is_active=True).exists():
         return None, "Unknown or inactive station for this company."
     return sid, None
+
+
+def parse_optional_pond_fk(company_id: int, raw) -> tuple[int | None, str | None]:
+    """Active AquaculturePond in company, or clear when raw is null/empty."""
+    if raw is None or raw == "":
+        return None, None
+    try:
+        pid = int(raw)
+    except (TypeError, ValueError):
+        return None, "Pond id must be a number or null."
+    if not AquaculturePond.objects.filter(pk=pid, company_id=company_id, is_active=True).exists():
+        return None, "Unknown or inactive aquaculture pond for this company."
+    return pid, None

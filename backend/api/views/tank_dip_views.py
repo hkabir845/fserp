@@ -12,6 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import TankDip, Tank
+from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.gl_posting import (
     bulk_sync_tank_dip_variance_journals,
     delete_tank_dip_variance_journal,
@@ -183,9 +184,12 @@ def tank_dips_list_or_create(request):
         if err:
             return err
         tank_id = body.get("tank_id")
-        tank = Tank.objects.filter(id=tank_id, company_id=request.company_id).first()
+        tank = Tank.objects.filter(id=tank_id, company_id=request.company_id).select_related("station").first()
         if not tank_id or not tank:
             return JsonResponse({"detail": "Valid tank_id required"}, status=400)
+        serr = require_fuel_forecourt_station(request.company_id, tank.station_id)
+        if serr:
+            return serr
         book_before = tank.current_stock if tank.current_stock is not None else Decimal("0")
         d = TankDip(
             company_id=request.company_id,

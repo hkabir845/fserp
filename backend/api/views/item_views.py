@@ -45,6 +45,33 @@ def _parse_decimal(val, default="0"):
         return None
 
 
+# Sack/bag feed labels are almost always under this; larger values are usually BDT typed by mistake.
+_MAX_CONTENT_WEIGHT_KG = Decimal("2000")
+
+
+def _parse_optional_content_weight_kg(val):
+    """
+    Optional positive kg per selling unit (e.g. sack). None or blank string -> None.
+    Returns (Decimal | None, error_detail | None).
+    """
+    if val is None:
+        return None, None
+    if isinstance(val, str) and not val.strip():
+        return None, None
+    d = _parse_decimal(val, "0")
+    if d is None:
+        return None, "Invalid content_weight_kg"
+    if d <= 0:
+        return None, "content_weight_kg must be greater than zero when provided"
+    if d > _MAX_CONTENT_WEIGHT_KG:
+        return (
+            None,
+            "Kg per sack is unrealistically large. This field must be the weight on the label (e.g. 25), "
+            "not the selling price in BDT.",
+        )
+    return d, None
+
+
 def _truncate(val, max_len):
     if val is None:
         return ""
@@ -201,6 +228,11 @@ def _item_to_json(i, *, company_id: int | None = None, include_location_stocks: 
         "quantity_on_hand": _serialize_decimal(_effective_quantity_on_hand(i)),
         "unit": i.unit or "piece",
         "pos_category": i.pos_category or "general",
+        "content_weight_kg": (
+            _serialize_decimal(i.content_weight_kg)
+            if getattr(i, "content_weight_kg", None) is not None
+            else None
+        ),
         "category": i.category or "",
         "barcode": i.barcode or "",
         "is_taxable": i.is_taxable,
@@ -284,13 +316,18 @@ def items_list_or_create(request):
         )
         if ierr:
             return JsonResponse({"detail": ierr}, status=400)
+        content_weight_kg = None
+        if "content_weight_kg" in body:
+            content_weight_kg, cw_err = _parse_optional_content_weight_kg(body.get("content_weight_kg"))
+            if cw_err:
+                return JsonResponse({"detail": cw_err}, status=400)
         cat = normalize_item_reporting_category(body.get("category"))
         if not cat:
             return JsonResponse(
                 {
                     "detail": (
                         "Item category is required. Pick a reporting category (e.g. General, Fuel, "
-                        "Fish feed, Poultry feed) so item and category reports stay accurate."
+                        "Fish feed, Aquaculture, Poultry feed) so item and category reports stay accurate."
                     )
                 },
                 status=400,
@@ -305,6 +342,7 @@ def items_list_or_create(request):
             quantity_on_hand=qty,
             unit=_truncate(body.get("unit") or "piece", 20) or "piece",
             pos_category=_truncate(body.get("pos_category") or "general", 64) or "general",
+            content_weight_kg=content_weight_kg,
             category=cat,
             barcode=bc,
             is_taxable=body.get("is_taxable", True),
@@ -313,6 +351,8 @@ def items_list_or_create(request):
             image_url=_truncate(body.get("image_url"), 500),
             item_number=inum or "",
         )
+        if (i.pos_category or "").strip().lower() == "non_pos":
+            i.is_pos_available = False
         try:
             i.save()
         except ValidationError as e:
@@ -393,6 +433,64 @@ def item_detail(request, item_id: int):
             if c < 0:
                 return JsonResponse({"detail": "cost cannot be negative"}, status=400)
             i.cost = c
+        # Catalog / pricing fields must persist even when quantity rules fail below (e.g. missing
+        # station_id for multi-site shop stock, or tank_id for multi-tank fuel). Previously quantity
+        # validation returned 400 before any save(), so unit_price/cost updates were silently dropped.
+        if "unit" in body:
+            i.unit = _truncate(body.get("unit") or i.unit, 20) or i.unit
+        if "pos_category" in body:
+            i.pos_category = _truncate(body.get("pos_category") or "general", 64) or "general"
+        if "content_weight_kg" in body:
+            raw_cw = body.get("content_weight_kg")
+            if raw_cw is None or (isinstance(raw_cw, str) and not str(raw_cw).strip()):
+                i.content_weight_kg = None
+            else:
+                cw_dec, cw_err = _parse_optional_content_weight_kg(raw_cw)
+                if cw_err:
+                    return JsonResponse({"detail": cw_err}, status=400)
+                i.content_weight_kg = cw_dec
+        if "category" in body:
+            cat = normalize_item_reporting_category(body.get("category"))
+            if not cat:
+                return JsonResponse(
+                    {
+                        "detail": (
+                            "Item category cannot be empty. Set a reporting category for this product."
+                        )
+                    },
+                    status=400,
+                )
+            i.category = cat
+        if "barcode" in body:
+            bc = _truncate(body.get("barcode"), 64).strip()
+            if bc and Item.objects.filter(company_id=request.company_id, barcode__iexact=bc).exclude(
+                pk=i.pk
+            ).exists():
+                return JsonResponse(
+                    {"detail": f"Another item already uses barcode '{bc}' in this company."},
+                    status=409,
+                )
+            i.barcode = bc
+        if "is_taxable" in body:
+            i.is_taxable = bool(body["is_taxable"])
+        if "is_pos_available" in body:
+            i.is_pos_available = bool(body["is_pos_available"])
+        if (i.pos_category or "").strip().lower() == "non_pos":
+            i.is_pos_available = False
+        if "is_active" in body:
+            i.is_active = bool(body["is_active"])
+        if "image_url" in body:
+            i.image_url = _truncate(body.get("image_url"), 500)
+        try:
+            i.save()
+        except ValidationError as e:
+            return JsonResponse(
+                {
+                    "detail": "Validation failed",
+                    "errors": e.message_dict if hasattr(e, "message_dict") else str(e),
+                },
+                status=400,
+            )
         if "quantity_on_hand" in body and body["quantity_on_hand"] is not None:
             q = _parse_decimal(body["quantity_on_hand"])
             if q is None:
@@ -475,44 +573,16 @@ def item_detail(request, item_id: int):
                     or Decimal("0")
                 )
                 i.quantity_on_hand = total
-        if "unit" in body:
-            i.unit = _truncate(body.get("unit") or i.unit, 20) or i.unit
-        if "pos_category" in body:
-            i.pos_category = _truncate(body.get("pos_category") or "general", 64) or "general"
-        if "category" in body:
-            cat = normalize_item_reporting_category(body.get("category"))
-            if not cat:
-                return JsonResponse(
-                    {
-                        "detail": (
-                            "Item category cannot be empty. Set a reporting category for this product."
-                        )
-                    },
-                    status=400,
-                )
-            i.category = cat
-        if "barcode" in body:
-            bc = _truncate(body.get("barcode"), 64).strip()
-            if bc and Item.objects.filter(company_id=request.company_id, barcode__iexact=bc).exclude(
-                pk=i.pk
-            ).exists():
-                return JsonResponse(
-                    {"detail": f"Another item already uses barcode '{bc}' in this company."},
-                    status=409,
-                )
-            i.barcode = bc
-        if "is_taxable" in body:
-            i.is_taxable = bool(body["is_taxable"])
-        if "is_pos_available" in body:
-            i.is_pos_available = bool(body["is_pos_available"])
-        if "is_active" in body:
-            i.is_active = bool(body["is_active"])
-        if "image_url" in body:
-            i.image_url = _truncate(body.get("image_url"), 500)
         try:
             i.save()
         except ValidationError as e:
-            return JsonResponse({"detail": "Validation failed", "errors": e.message_dict if hasattr(e, "message_dict") else str(e)}, status=400)
+            return JsonResponse(
+                {
+                    "detail": "Validation failed",
+                    "errors": e.message_dict if hasattr(e, "message_dict") else str(e),
+                },
+                status=400,
+            )
         i2 = _items_queryset_with_tank_annotations(Item.objects.filter(pk=i.pk)).first()
         return JsonResponse(
             _item_to_json(

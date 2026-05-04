@@ -12,7 +12,8 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.exceptions import StockBusinessError
 from api.models import Bill, BillLine, PaymentBillAllocation, Station, Tank, Vendor
-from api.services.station_stock import get_or_create_default_station
+from api.services.station_capabilities import require_fuel_forecourt_station
+from api.services.station_stock import get_or_create_default_station, receipt_station_id_for_vendor
 from api.services.gl_posting import (
     bill_eligible_for_posting,
     cleanup_vendor_bill_posting_effects,
@@ -181,11 +182,14 @@ def _coerce_line_tank_id(company_id: int, row: dict, item_id: Optional[int]):
         return None, JsonResponse(
             {"detail": "tank_id requires item_id on the line"}, status=400
         )
-    tank = Tank.objects.filter(id=tid, company_id=company_id, is_active=True).first()
+    tank = Tank.objects.filter(id=tid, company_id=company_id, is_active=True).select_related("station").first()
     if not tank:
         return None, JsonResponse(
             {"detail": "Unknown or inactive tank for this company"}, status=400
         )
+    fuel_err = require_fuel_forecourt_station(company_id, tank.station_id)
+    if fuel_err:
+        return None, fuel_err
     if tank.product_id != item_id:
         return None, JsonResponse(
             {"detail": "Tank does not match the line item"}, status=400
@@ -252,22 +256,11 @@ def bills_create(request):
     else:
         vrow = (
             Vendor.objects.filter(pk=vendor_id, company_id=request.company_id)
-            .only("default_station_id")
+            .only("default_station_id", "default_aquaculture_pond_id")
             .first()
         )
-        if (
-            vrow
-            and vrow.default_station_id
-            and Station.objects.filter(
-                pk=vrow.default_station_id,
-                company_id=request.company_id,
-                is_active=True,
-            ).exists()
-        ):
-            receipt_station_id = vrow.default_station_id
-        else:
-            # Single-site and multi-site: default receiving location so GL/stock and reports stay consistent.
-            receipt_station_id = get_or_create_default_station(request.company_id).id
+        # Vendor default site and/or default pond (pond → shop linked on Station when set).
+        receipt_station_id = receipt_station_id_for_vendor(request.company_id, vrow)
 
     try:
         with transaction.atomic():

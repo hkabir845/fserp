@@ -24,7 +24,7 @@ REM Create .env file if it doesn't exist
 if not exist ".env" (
     echo Creating .env file...
     python -c "import secrets; key = secrets.token_urlsafe(32)" > .env
-    echo DATABASE_URL=postgresql://postgres:password@localhost:5432/filling_station_erp >> .env
+    echo DATABASE_URL=postgresql://postgres:password@localhost:5432/fserp_dev >> .env
     echo SECRET_KEY=%key% >> .env
     echo DEBUG=True >> .env
     echo ALLOWED_ORIGINS=http://localhost:3000 >> .env

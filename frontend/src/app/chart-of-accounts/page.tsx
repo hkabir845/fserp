@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Edit2, Trash2, X, FileText, Filter, AlertTriangle, RefreshCw, LayoutTemplate, Loader2, Printer } from 'lucide-react'
@@ -815,6 +815,24 @@ export default function ChartOfAccountsPage() {
       setStatementLoading(false)
     }
   }
+
+  const fetchStatementRef = useRef(fetchStatement)
+  fetchStatementRef.current = fetchStatement
+  const ledgerDeepLinkConsumed = useRef(false)
+
+  /** Deep-link from Reports (and elsewhere): `/chart-of-accounts?ledger=<account_id>` opens the GL statement. */
+  useEffect(() => {
+    if (ledgerDeepLinkConsumed.current || loading || accounts.length === 0) return
+    if (typeof window === 'undefined') return
+    const raw = new URLSearchParams(window.location.search).get('ledger')
+    if (!raw || !/^\d+$/.test(raw)) return
+    const id = parseInt(raw, 10)
+    if (!Number.isFinite(id) || id < 1) return
+    if (!accounts.some((a) => a.id === id)) return
+    ledgerDeepLinkConsumed.current = true
+    void fetchStatementRef.current(id)
+    window.history.replaceState({}, '', '/chart-of-accounts')
+  }, [loading, accounts])
   
   const handleStatementDateChange = async () => {
     if (statementAccountId) {

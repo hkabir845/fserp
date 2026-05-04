@@ -1,7 +1,69 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+const _PROD_PUBLIC_API_KEYS = ['NEXT_PUBLIC_API_BASE_URL', 'NEXT_PUBLIC_API_URL', 'NEXT_PUBLIC_WS_URL']
+
+/** Minimal KEY=VALUE parser for committed env files (no multiline values). */
+function parseDotEnvFile(filePath) {
+  let text = ''
+  try {
+    text = fs.readFileSync(filePath, 'utf8')
+  } catch {
+    return {}
+  }
+  const out = {}
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim()
+    if (!t || t.startsWith('#')) continue
+    const eq = t.indexOf('=')
+    if (eq === -1) continue
+    const k = t.slice(0, eq).trim()
+    let v = t.slice(eq + 1).trim()
+    if (
+      (v.startsWith('"') && v.endsWith('"')) ||
+      (v.startsWith("'") && v.endsWith("'"))
+    ) {
+      v = v.slice(1, -1)
+    }
+    out[k] = v
+  }
+  return out
+}
+
+function _isLoopbackUrlString(v) {
+  const s = String(v).toLowerCase()
+  return (
+    s.includes('localhost') ||
+    s.includes('127.0.0.1') ||
+    s.includes('[::1]') ||
+    s.includes('://0.0.0.0')
+  )
+}
+
+/**
+ * Next merges `.env.local` over `.env.production` for `next build`, so a dev-only localhost
+ * API URL in `.env.local` can incorrectly ship in production. For `next build` only, re-apply
+ * non-loopback values from `.env.production` / `.env.production.local` so committed prod URLs win.
+ */
+function reapplyProductionPublicApiUrlsFromCommittedEnvFiles() {
+  if (process.env.NODE_ENV !== 'production') return
+  if (!process.argv.includes('build')) return
+  const merged = {
+    ...parseDotEnvFile(path.join(__dirname, '.env.production')),
+    ...parseDotEnvFile(path.join(__dirname, '.env.production.local')),
+  }
+  for (const key of _PROD_PUBLIC_API_KEYS) {
+    const v = merged[key]
+    if (v == null || !String(v).trim()) continue
+    if (!_isLoopbackUrlString(v)) {
+      process.env[key] = String(v).trim()
+    }
+  }
+}
+reapplyProductionPublicApiUrlsFromCommittedEnvFiles()
 
 /**
  * Fail `next build` if public URLs still point at loopback — avoids shipping a bundle that
@@ -13,16 +75,11 @@ function assertProductionBuildUsesNonLoopbackPublicUrls() {
   const check = (key) => {
     const v = process.env[key]
     if (v == null || !String(v).trim()) return
-    const s = String(v).toLowerCase()
-    if (
-      s.includes('localhost') ||
-      s.includes('127.0.0.1') ||
-      s.includes('[::1]') ||
-      s.includes('://0.0.0.0')
-    ) {
+    if (_isLoopbackUrlString(v)) {
       throw new Error(
         `[next.config] ${key}=${v} must not use localhost/loopback in a production build. ` +
-          'Use your public API host (see frontend/.env). For local Django, use `next dev` with frontend/.env.development only.',
+          'Use your public API host in `.env.production` (or `.env.production.local`). ' +
+          'For local Django, use `next dev` with `frontend/.env.development` only — not loopback in `.env.local` for production builds.',
       )
     }
   }

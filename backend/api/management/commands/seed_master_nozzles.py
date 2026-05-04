@@ -14,6 +14,7 @@ from api.models import (
     Meter,
     Nozzle,
 )
+from api.services.station_capabilities import reconcile_station_fuel_flags_for_company
 
 
 class Command(BaseCommand):
@@ -98,6 +99,7 @@ class Command(BaseCommand):
                 "address_line1": "Mouchak-Fulbaria Road",
                 "city": "Gazipur",
                 "is_active": True,
+                "operates_fuel_retail": True,
             },
         )
         if not station.station_number:
@@ -203,6 +205,9 @@ class Command(BaseCommand):
             },
         )
         created_nozzles = sum([c1, c2])
+        fixed = reconcile_station_fuel_flags_for_company(cid)
+        if fixed:
+            self.stdout.write(self.style.WARNING(f"  Reconciled operates_fuel_retail for {fixed} station(s) with forecourt assets."))
         self.stdout.write(self.style.SUCCESS(
             f"Done. Nozzles for Master Filling Station: {Nozzle.objects.filter(company_id=cid).count()} total ({created_nozzles} created this run)."
         ))

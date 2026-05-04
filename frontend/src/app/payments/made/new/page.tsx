@@ -6,7 +6,7 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { ArrowLeft, AlertCircle } from 'lucide-react'
 import api from '@/lib/api'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly, localDateISO } from '@/utils/date'
 import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_EDITABLE_FULL_BLUE_CLASS } from '@/utils/amountFieldStyles'
 import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
@@ -247,7 +247,7 @@ function RecordPaymentMadeInner() {
         : balance !== null && balance !== undefined && balance !== ''
           ? Number(balance)
           : 0
-    return Number.isFinite(numericValue) ? numericValue.toFixed(2) : '0.00'
+    return formatNumber(Number.isFinite(numericValue) ? numericValue : 0)
   }
 
   const [loading, setLoading] = useState(true)
@@ -582,7 +582,7 @@ function RecordPaymentMadeInner() {
     if (selectedBankAccount) {
       const balance = Number(selectedBankAccount.current_balance) || 0
       if (balance < totalPaymentAmount) {
-        setError(`Insufficient balance. Available: ${currencySymbol}${balance.toFixed(2)}`)
+        setError(`Insufficient balance. Available: ${currencySymbol}${formatNumber(balance)}`)
         setSubmitting(false)
         return
       }
@@ -596,7 +596,7 @@ function RecordPaymentMadeInner() {
     const totalAllocated = validAllocations.reduce((sum, a) => sum + a.allocated_amount, 0)
     if (Math.abs(totalAllocated - totalPaymentAmount) > 0.01) {
       setError(
-        `Total allocation (${totalAllocated.toFixed(2)}) must equal payment amount (${totalPaymentAmount.toFixed(2)})`
+        `Total allocation (${formatNumber(totalAllocated)}) must equal payment amount (${formatNumber(totalPaymentAmount)})`
       )
       setSubmitting(false)
       return
@@ -992,7 +992,7 @@ function RecordPaymentMadeInner() {
                                 ) : (
                                   <>
                                     {currencySymbol}
-                                    {parseNum(bill.total_amount).toFixed(2)}
+                                    {formatNumber(parseNum(bill.total_amount))}
                                   </>
                                 )}
                               </td>
@@ -1002,13 +1002,13 @@ function RecordPaymentMadeInner() {
                                 ) : (
                                   <>
                                     {currencySymbol}
-                                    {parseNum(bill.amount_paid).toFixed(2)}
+                                    {formatNumber(parseNum(bill.amount_paid))}
                                   </>
                                 )}
                               </td>
                               <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                                 {currencySymbol}
-                                {parseNum(bill.balance_due).toFixed(2)}
+                                {formatNumber(parseNum(bill.balance_due))}
                               </td>
                               <td className="px-4 py-3 text-sm text-right">
                                 <input
@@ -1047,7 +1047,7 @@ function RecordPaymentMadeInner() {
                           </td>
                           <td className="px-4 py-3 text-sm font-bold text-right text-gray-900">
                             {currencySymbol}
-                            {allocations.reduce((sum, a) => sum + a.allocated_amount, 0).toFixed(2)}
+                            {formatNumber(allocations.reduce((sum, a) => sum + a.allocated_amount, 0))}
                           </td>
                         </tr>
                       </tfoot>

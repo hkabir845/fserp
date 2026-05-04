@@ -8,7 +8,7 @@ from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Vendor
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
-from api.services.station_defaults import parse_optional_station_fk
+from api.services.station_defaults import parse_optional_pond_fk, parse_optional_station_fk
 from api.services.contact_ledgers import build_vendor_ledger, ledger_query_dates
 
 
@@ -42,6 +42,12 @@ def _vendor_to_json(v):
             if getattr(v, "default_station_id", None) and getattr(v, "default_station", None)
             else ""
         ),
+        "default_aquaculture_pond_id": v.default_aquaculture_pond_id,
+        "default_aquaculture_pond_name": (
+            (v.default_aquaculture_pond.name or "").strip()
+            if getattr(v, "default_aquaculture_pond_id", None) and getattr(v, "default_aquaculture_pond", None)
+            else ""
+        ),
     }
 
 
@@ -71,7 +77,7 @@ def vendors_list_or_create(request):
     if request.method == "GET":
         qs = (
             Vendor.objects.filter(company_id=request.company_id)
-            .select_related("default_station")
+            .select_related("default_station", "default_aquaculture_pond")
             .order_by("id")
         )
         return JsonResponse([_vendor_to_json(v) for v in qs], safe=False)
@@ -98,9 +104,15 @@ def vendors_list_or_create(request):
             vst_id, verr2 = parse_optional_station_fk(request.company_id, body.get("default_station_id"))
             if verr2:
                 return JsonResponse({"detail": verr2}, status=400)
+        pond_id = None
+        if "default_aquaculture_pond_id" in body:
+            pond_id, perr = parse_optional_pond_fk(request.company_id, body.get("default_aquaculture_pond_id"))
+            if perr:
+                return JsonResponse({"detail": perr}, status=400)
         v = Vendor(
             company_id=request.company_id,
             default_station_id=vst_id,
+            default_aquaculture_pond_id=pond_id,
             company_name=company_name,
             display_name=body.get("display_name") or company_name,
             contact_person=body.get("contact_person") or "",
@@ -129,7 +141,7 @@ def vendors_list_or_create(request):
             v.save(update_fields=["vendor_number"])
         v2 = (
             Vendor.objects.filter(pk=v.pk, company_id=request.company_id)
-            .select_related("default_station")
+            .select_related("default_station", "default_aquaculture_pond")
             .first()
         )
         return JsonResponse(_vendor_to_json(v2), status=201)
@@ -143,7 +155,7 @@ def vendors_list_or_create(request):
 def vendor_detail(request, vendor_id: int):
     v = (
         Vendor.objects.filter(id=vendor_id, company_id=request.company_id)
-        .select_related("default_station")
+        .select_related("default_station", "default_aquaculture_pond")
         .first()
     )
     if not v:
@@ -193,10 +205,15 @@ def vendor_detail(request, vendor_id: int):
             if verr2:
                 return JsonResponse({"detail": verr2}, status=400)
             v.default_station_id = vst_id
+        if "default_aquaculture_pond_id" in body:
+            pond_id, perr = parse_optional_pond_fk(request.company_id, body.get("default_aquaculture_pond_id"))
+            if perr:
+                return JsonResponse({"detail": perr}, status=400)
+            v.default_aquaculture_pond_id = pond_id
         v.save()
         v = (
             Vendor.objects.filter(pk=v.pk, company_id=request.company_id)
-            .select_related("default_station")
+            .select_related("default_station", "default_aquaculture_pond")
             .first()
         )
         return JsonResponse(_vendor_to_json(v))

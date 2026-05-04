@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { Plus, Eye, Search, X, PlusCircle, Trash2, Send, CheckCircle, Edit2, FileText, Printer } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDate, formatDateOnly } from '@/utils/date'
 import { escapeHtml, printDocument } from '@/utils/printDocument'
 import type { PrintBranding } from '@/utils/printBranding'
@@ -408,7 +408,8 @@ export default function InvoicesPage() {
         (invoice.source === 'pos_fuel' ||
           invoice.source === 'pos_general' ||
           invoice.source === 'pos_mixed')) ||
-      (sourceFilter === 'manual' && invoice.source === 'manual')
+      (sourceFilter === 'manual' &&
+        (invoice.source === 'manual' || invoice.source === 'aquaculture_pond_sale'))
     return matchesSearch && matchesSource
   })
 
@@ -434,7 +435,8 @@ export default function InvoicesPage() {
       'pos_fuel': { label: 'POS Fuel', color: 'bg-blue-100 text-blue-800' },
       'pos_general': { label: 'POS General', color: 'bg-purple-100 text-purple-800' },
       'pos_mixed': { label: 'POS Mixed', color: 'bg-indigo-100 text-indigo-800' },
-      'manual': { label: 'Manual', color: 'bg-gray-100 text-gray-800' }
+      'manual': { label: 'Manual', color: 'bg-gray-100 text-gray-800' },
+      'aquaculture_pond_sale': { label: 'Aquaculture', color: 'bg-teal-100 text-teal-900' },
     }
     const sourceInfo = sourceMap[source] || { label: source, color: 'bg-gray-100 text-gray-800' }
     return (
@@ -829,7 +831,7 @@ export default function InvoicesPage() {
         <td>${escapeHtml(formatDateOnly(inv.invoice_date))}</td>
         <td>${escapeHtml(inv.due_date ? formatDateOnly(inv.due_date) : '—')}</td>
         <td>${escapeHtml(resolveInvoiceCustomerLabel(inv))}</td>
-        <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(Number(inv.total_amount || 0).toFixed(2))}</td>
+        <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(inv.total_amount || 0)))}</td>
         <td>${escapeHtml(inv.status)}</td>
       </tr>`
       )
@@ -863,24 +865,24 @@ export default function InvoicesPage() {
         return `<tr>
           <td>${escapeHtml(String(itemLabel))}</td>
           <td>${escapeHtml(item.description || '—')}</td>
-          <td class="right">${escapeHtml(Number(item.quantity).toFixed(2))}</td>
-          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(Number(item.unit_price || 0).toFixed(2))}</td>
-          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(Number(item.amount || 0).toFixed(2))}</td>
+          <td class="right">${escapeHtml(formatNumber(Number(item.quantity)))}</td>
+          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(item.unit_price || 0)))}</td>
+          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(item.amount || 0)))}</td>
         </tr>`
       })
       .join('')
     const disc =
       inv.discount_amount && inv.discount_amount > 0
         ? `<tr><td colspan="4" class="right">Discount</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-            Number(inv.discount_amount).toFixed(2)
+            formatNumber(Number(inv.discount_amount))
           )}</td></tr>`
         : ''
     const paidBlock =
       inv.amount_paid != null && Number(inv.amount_paid) > 0
         ? `<p><strong>Amount paid:</strong> ${escapeHtml(currencySymbol)}${escapeHtml(
-            Number(inv.amount_paid).toFixed(2)
+            formatNumber(Number(inv.amount_paid))
           )} &nbsp;|&nbsp; <strong>Balance due:</strong> ${escapeHtml(currencySymbol)}${escapeHtml(
-            Number(inv.balance_due || 0).toFixed(2)
+            formatNumber(Number(inv.balance_due || 0))
           )}</p>`
         : ''
     const bodyHtml = `
@@ -903,15 +905,15 @@ export default function InvoicesPage() {
         </tbody>
         <tfoot>
           <tr><td colspan="4" class="right">Subtotal</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-      Number(inv.subtotal || 0).toFixed(2)
+      formatNumber(Number(inv.subtotal || 0))
     )}</td></tr>
           <tr><td colspan="4" class="right">Tax</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-      Number(inv.tax_amount || 0).toFixed(2)
+      formatNumber(Number(inv.tax_amount || 0))
     )}</td></tr>
           ${disc}
           <tr class="row-total"><td colspan="4" class="right">Total</td><td class="right">${escapeHtml(
             currencySymbol
-          )}${escapeHtml(Number(inv.total_amount || 0).toFixed(2))}</td></tr>
+          )}${escapeHtml(formatNumber(Number(inv.total_amount || 0)))}</td></tr>
         </tfoot>
       </table>
       ${paidBlock}
@@ -1389,9 +1391,9 @@ export default function InvoicesPage() {
                           <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
                           <input
                             type="text"
-                            value={line.amount.toFixed(2)}
+                            value={formatNumber(line.amount)}
                             readOnly
-                            title={`${currencySymbol}${line.amount.toFixed(2)}`}
+                            title={`${currencySymbol}${formatNumber(line.amount)}`}
                             className={AMOUNT_READ_ONLY_INPUT_CLASS}
                           />
                         </div>
@@ -1423,9 +1425,9 @@ export default function InvoicesPage() {
                         <p className="text-lg font-semibold text-gray-900">Total:</p>
                       </div>
                       <div className="text-right min-w-[9rem] tabular-nums">
-                        <p className="text-sm text-gray-900">{currencySymbol}{calculateTotals().subtotal.toFixed(2)}</p>
-                        <p className="text-sm text-gray-900">{currencySymbol}{calculateTotals().taxAmount.toFixed(2)}</p>
-                        <p className="text-lg font-semibold text-gray-900">{currencySymbol}{calculateTotals().total.toFixed(2)}</p>
+                        <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(calculateTotals().subtotal)}</p>
+                        <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(calculateTotals().taxAmount)}</p>
+                        <p className="text-lg font-semibold text-gray-900">{currencySymbol}{formatNumber(calculateTotals().total)}</p>
                       </div>
                     </div>
                   </div>
@@ -1561,15 +1563,15 @@ export default function InvoicesPage() {
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600">{item.description || '—'}</td>
                             <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
-                              {Number(item.quantity).toFixed(2)}
+                              {formatNumber(Number(item.quantity))}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
                               {currencySymbol}
-                              {Number(item.unit_price || 0).toFixed(2)}
+                              {formatNumber(Number(item.unit_price || 0))}
                             </td>
                             <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">
                               {currencySymbol}
-                              {Number(item.amount || 0).toFixed(2)}
+                              {formatNumber(Number(item.amount || 0))}
                             </td>
                           </tr>
                         ))
@@ -1596,16 +1598,16 @@ export default function InvoicesPage() {
                       )}
                     </div>
                     <div className="text-right min-w-[120px]">
-                      <p className="text-sm text-gray-900">{currencySymbol}{Number(viewingInvoice.subtotal || 0).toFixed(2)}</p>
-                      <p className="text-sm text-gray-900">{currencySymbol}{Number(viewingInvoice.tax_amount || 0).toFixed(2)}</p>
+                      <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(Number(viewingInvoice.subtotal || 0))}</p>
+                      <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(Number(viewingInvoice.tax_amount || 0))}</p>
                       {viewingInvoice.discount_amount && viewingInvoice.discount_amount > 0 && (
-                        <p className="text-sm text-gray-900">{currencySymbol}{Number(viewingInvoice.discount_amount).toFixed(2)}</p>
+                        <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(Number(viewingInvoice.discount_amount))}</p>
                       )}
-                      <p className="text-lg font-semibold text-gray-900">{currencySymbol}{Number(viewingInvoice.total_amount || 0).toFixed(2)}</p>
+                      <p className="text-lg font-semibold text-gray-900">{currencySymbol}{formatNumber(Number(viewingInvoice.total_amount || 0))}</p>
                       {viewingInvoice.amount_paid && viewingInvoice.amount_paid > 0 && (
                         <>
-                          <p className="text-sm text-gray-900 mt-2">{currencySymbol}{Number(viewingInvoice.amount_paid).toFixed(2)}</p>
-                          <p className="text-sm font-medium text-gray-900">{currencySymbol}{Number(viewingInvoice.balance_due || 0).toFixed(2)}</p>
+                          <p className="text-sm text-gray-900 mt-2">{currencySymbol}{formatNumber(Number(viewingInvoice.amount_paid))}</p>
+                          <p className="text-sm font-medium text-gray-900">{currencySymbol}{formatNumber(Number(viewingInvoice.balance_due || 0))}</p>
                         </>
                       )}
                     </div>
@@ -1820,9 +1822,9 @@ export default function InvoicesPage() {
                           <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
                           <input
                             type="text"
-                            value={line.amount.toFixed(2)}
+                            value={formatNumber(line.amount)}
                             readOnly
-                            title={`${currencySymbol}${line.amount.toFixed(2)}`}
+                            title={`${currencySymbol}${formatNumber(line.amount)}`}
                             className={AMOUNT_READ_ONLY_INPUT_CLASS}
                           />
                         </div>
@@ -1854,9 +1856,9 @@ export default function InvoicesPage() {
                         <p className="text-lg font-semibold text-gray-900">Total:</p>
                       </div>
                       <div className="text-right min-w-[9rem] tabular-nums">
-                        <p className="text-sm text-gray-900">{currencySymbol}{calculateTotals().subtotal.toFixed(2)}</p>
-                        <p className="text-sm text-gray-900">{currencySymbol}{calculateTotals().taxAmount.toFixed(2)}</p>
-                        <p className="text-lg font-semibold text-gray-900">{currencySymbol}{calculateTotals().total.toFixed(2)}</p>
+                        <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(calculateTotals().subtotal)}</p>
+                        <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(calculateTotals().taxAmount)}</p>
+                        <p className="text-lg font-semibold text-gray-900">{currencySymbol}{formatNumber(calculateTotals().total)}</p>
                       </div>
                     </div>
                   </div>

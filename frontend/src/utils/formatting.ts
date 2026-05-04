@@ -5,12 +5,15 @@
 
 // Re-export currency utilities
 export {
+  formatAmount,
+  formatAmountPlain,
   formatCurrency,
   formatNumber,
   getCurrencySymbol,
   getCurrencyName,
   getAllCurrencies,
-  getCurrencyOptions
+  getCurrencyOptions,
+  roundToDecimals,
 } from './currency'
 
 // Re-export date utilities

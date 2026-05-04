@@ -14,6 +14,7 @@ SUGGESTED_ITEM_REPORTING_CATEGORIES: tuple[str, ...] = (
     "Poultry feed",
     "Medicine",
     "Pond care",
+    "Aquaculture",
     "Fish buying and selling",
     "Equipment & tools",
     "Packaging & supplies",

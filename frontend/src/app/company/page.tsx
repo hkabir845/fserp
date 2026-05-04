@@ -90,6 +90,9 @@ export default function CompanyPage() {
   const [saving, setSaving] = useState(false)
   const [canEditStationMode, setCanEditStationMode] = useState(false)
   const [activeStationCount, setActiveStationCount] = useState<number | null>(null)
+  const [aquacultureLicensed, setAquacultureLicensed] = useState(false)
+  const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
+  const [canEditAquacultureToggle, setCanEditAquacultureToggle] = useState(false)
 
   const currencies = useMemo(() => getUniqueCurrencies(), [])
 
@@ -107,11 +110,17 @@ export default function CompanyPage() {
       const ext = data as {
         can_edit_station_mode?: boolean
         active_station_count?: number
+        aquaculture_licensed?: boolean
+        aquaculture_enabled?: boolean
+        can_edit_aquaculture_toggle?: boolean
       }
       setCanEditStationMode(Boolean(ext.can_edit_station_mode))
       setActiveStationCount(
         typeof ext.active_station_count === 'number' ? ext.active_station_count : null
       )
+      setAquacultureLicensed(Boolean(ext.aquaculture_licensed))
+      setAquacultureEnabled(Boolean(ext.aquaculture_enabled))
+      setCanEditAquacultureToggle(Boolean(ext.can_edit_aquaculture_toggle))
       setFormData({
         company_name: String(data.company_name || data.name || ''),
         legal_name: String(data.legal_name ?? ''),
@@ -197,11 +206,19 @@ export default function CompanyPage() {
       if (canEditStationMode) {
         payload.station_mode = formData.station_mode
       }
+      if (aquacultureLicensed && canEditAquacultureToggle) {
+        payload.aquaculture_enabled = aquacultureEnabled
+      }
 
       const { data } = await api.put<Record<string, unknown>>(`/companies/${companyId}/`, payload)
       if (data) {
         setDisplayName(String(data.company_name || data.name || name))
-        showSuccess('Company settings saved')
+        let msg = 'Company settings saved'
+        const aqCoa = data.aquaculture_chart_accounts_created
+        if (typeof aqCoa === 'number' && aqCoa > 0) {
+          msg = `${msg} Aquaculture: ${aqCoa} new chart of account line(s) were added.`
+        }
+        showSuccess(msg)
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('fserp-company-settings-saved'))
         }
@@ -513,6 +530,54 @@ export default function CompanyPage() {
                     </label>
                   </fieldset>
                 </section>
+
+                {aquacultureLicensed ? (
+                  <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-lg bg-teal-50 p-2 text-teal-800">
+                        <Layers className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-lg font-semibold text-slate-900">Aquaculture</h3>
+                        <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                          Your organization is licensed for Aquaculture. Turn it on here to show Aquaculture in the app
+                          menu and use ponds, sales, sampling, and pond P&amp;L.                           New ponds receive a POS customer automatically for Cashier on-account sales; inventoried
+                          supplies to ponds should flow through POS. Fuel-only sites can leave this off.
+                        </p>
+                        {!canEditAquacultureToggle ? (
+                          <p className="mt-3 text-sm text-amber-900/90 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                            Only the company <span className="font-medium">Admin</span> can enable or disable
+                            Aquaculture in these settings.
+                          </p>
+                        ) : null}
+                        {canEditAquacultureToggle ? (
+                          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 hover:bg-slate-50">
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              checked={aquacultureEnabled}
+                              onChange={(e) => setAquacultureEnabled(e.target.checked)}
+                            />
+                            <div>
+                              <p className="font-medium text-slate-900">Use Aquaculture in this company</p>
+                              <p className="text-sm leading-relaxed text-slate-600">
+                                When checked, Aquaculture appears for the Admin in the sidebar and apps. Other roles
+                                continue with fuel station and retail only.
+                              </p>
+                            </div>
+                          </label>
+                        ) : (
+                          <p className="mt-4 text-sm font-medium text-slate-700">
+                            Status:{' '}
+                            <span className={aquacultureEnabled ? 'text-teal-800' : 'text-slate-600'}>
+                              {aquacultureEnabled ? 'On' : 'Off'}
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
 
                 <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <h3 className="text-lg font-semibold text-slate-900">Address</h3>

@@ -179,7 +179,7 @@ export function CashierPayBills({ vendors, currencySymbol, bankAccounts, onRecor
       const bal = Number(bank.current_balance) || 0
       if (Number.isFinite(bal) && bal < totalAllocated - 0.005) {
         toast.error(
-          `Insufficient funds in that register. Available: ${currencySymbol}${bal.toFixed(2)}`
+          `Insufficient funds in that register. Available: ${currencySymbol}${formatNumber(bal)}`
         )
         return
       }

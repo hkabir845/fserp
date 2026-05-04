@@ -8,7 +8,16 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from api.models import Employee, EmployeeLedgerEntry, JournalEntry, PayrollRun
+from api.models import (
+    AquaculturePond,
+    Company,
+    Employee,
+    EmployeeLedgerEntry,
+    JournalEntry,
+    PayrollRun,
+    PayrollRunPondAllocation,
+)
+from api.services.permission_service import user_may_access_aquaculture_api
 from api.services.reference_code import (
     assign_string_code_if_empty,
     first_free_suffix,
@@ -380,7 +389,23 @@ def employee_ledger_entries(request, employee_id: int):
     )
 
 
-def _payroll_run_to_json(p: PayrollRun) -> dict:
+def _pond_allocations_for_payroll(payroll_id: int) -> list[dict]:
+    rows = (
+        PayrollRunPondAllocation.objects.filter(payroll_run_id=payroll_id)
+        .select_related("pond")
+        .order_by("pond_id")
+    )
+    return [
+        {
+            "pond_id": r.pond_id,
+            "pond_name": (r.pond.name or "").strip() if r.pond_id else "",
+            "amount": str((r.amount or Decimal("0")).quantize(Decimal("0.01"))),
+        }
+        for r in rows
+    ]
+
+
+def _payroll_run_to_json(p: PayrollRun, *, include_allocations: bool = True) -> dict:
     jn = ""
     if p.salary_journal_id:
         sj = getattr(p, "salary_journal", None)
@@ -392,7 +417,7 @@ def _payroll_run_to_json(p: PayrollRun) -> dict:
     ot = float(getattr(p, "overtime_amount", None) or Decimal("0"))
     bon = float(getattr(p, "bonus_amount", None) or Decimal("0"))
     oth = float(getattr(p, "other_earnings_amount", None) or Decimal("0"))
-    return {
+    out = {
         "id": p.id,
         "payroll_number": p.payroll_number or "",
         "pay_period_start": _serialize_date(p.pay_period_start),
@@ -419,6 +444,8 @@ def _payroll_run_to_json(p: PayrollRun) -> dict:
             else ""
         ),
     }
+    out["pond_allocations"] = _pond_allocations_for_payroll(p.id) if include_allocations else []
+    return out
 
 
 def _validate_payroll_period(start: date | None, end: date | None, pay: date | None):
@@ -428,6 +455,55 @@ def _validate_payroll_period(start: date | None, end: date | None, pay: date | N
         return "pay_period_start must be on or before pay_period_end"
     if pay < end:
         return "payment_date must be on or after pay_period_end"
+    return None
+
+
+def _sync_payroll_pond_allocations(company_id: int, p: PayrollRun, body: dict) -> JsonResponse | None:
+    """
+    Replace pond allocations for this payroll run. Sum of amounts must equal total_net (within 0.02).
+    """
+    if "pond_allocations" not in body:
+        return None
+    alloc = body.get("pond_allocations")
+    if not isinstance(alloc, list):
+        return JsonResponse({"detail": "pond_allocations must be a list"}, status=400)
+    entries: list[tuple[int, Decimal]] = []
+    seen: set[int] = set()
+    total = Decimal("0")
+    for row in alloc:
+        if not isinstance(row, dict):
+            return JsonResponse({"detail": "Each pond_allocation must be an object"}, status=400)
+        pid = row.get("pond_id")
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "pond_id must be an integer in each pond_allocation"}, status=400)
+        if pid in seen:
+            return JsonResponse({"detail": f"Duplicate pond_id {pid} in pond_allocations"}, status=400)
+        seen.add(pid)
+        if not AquaculturePond.objects.filter(pk=pid, company_id=company_id).exists():
+            return JsonResponse({"detail": f"Pond {pid} not found for this company"}, status=404)
+        amt = _decimal(row.get("amount"), Decimal("0"))
+        if amt < 0:
+            return JsonResponse({"detail": "Allocation amount cannot be negative"}, status=400)
+        entries.append((pid, _q_money(amt)))
+        total += _q_money(amt)
+    net = _q_money(p.total_net or Decimal("0"))
+    if abs(total - net) > Decimal("0.02"):
+        return JsonResponse(
+            {
+                "detail": (
+                    f"pond_allocations must sum to total_net ({net}); "
+                    f"sum of submitted amounts is {total}."
+                )
+            },
+            status=400,
+        )
+    PayrollRunPondAllocation.objects.filter(payroll_run_id=p.id).delete()
+    for pid, amt in entries:
+        if amt == 0:
+            continue
+        PayrollRunPondAllocation.objects.create(payroll_run=p, pond_id=pid, amount=amt)
     return None
 
 
@@ -450,7 +526,10 @@ def payroll_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
         qs = PayrollRun.objects.filter(company_id=cid).select_related("salary_journal", "station")
-        return JsonResponse([_payroll_run_to_json(p) for p in qs], safe=False)
+        return JsonResponse(
+            [_payroll_run_to_json(p, include_allocations=False) for p in qs],
+            safe=False,
+        )
 
     body, err = parse_json_body(request)
     if err:
@@ -617,6 +696,33 @@ def payroll_detail(request, payroll_id: int):
                 return JsonResponse({"detail": pr_err}, status=400)
             p.station_id = pr_sid
         p.save()
+        if "pond_allocations" in body:
+            if p.salary_journal_id:
+                return JsonResponse(
+                    {
+                        "detail": "Cannot change pond allocations after salary is posted to the general ledger.",
+                    },
+                    status=400,
+                )
+            co_aq = Company.objects.filter(pk=cid).only("aquaculture_enabled").first()
+            if not co_aq or not getattr(co_aq, "aquaculture_enabled", False):
+                return JsonResponse(
+                    {
+                        "detail": "Aquaculture is not enabled for this company; pond_allocations cannot be set.",
+                    },
+                    status=400,
+                )
+            user_aq = getattr(request, "api_user", None)
+            if not user_may_access_aquaculture_api(user_aq):
+                return JsonResponse(
+                    {
+                        "detail": "Pond payroll splits are only available to the company Admin when Aquaculture is enabled.",
+                    },
+                    status=403,
+                )
+            sync_err = _sync_payroll_pond_allocations(cid, p, body)
+            if sync_err:
+                return sync_err
         p2 = (
             PayrollRun.objects.filter(pk=p.pk, company_id=cid)
             .select_related("salary_journal", "station")

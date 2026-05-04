@@ -16,7 +16,7 @@ import Sidebar from '@/components/Sidebar'
 import api from '@/lib/api'
 import { useCompany } from '@/contexts/CompanyContext'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
-import { formatCurrency } from '@/utils/currency'
+import { formatCurrency, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 
 /** Variance BDT uses item cost (৳/L) when set, else unit_price. */
@@ -261,8 +261,8 @@ export default function TankDipsPage() {
   const getFillPercentage = (tank: Tank) => {
     const stock = Number(tank.current_stock ?? 0)
     const cap = Number(tank.capacity ?? 0)
-    if (!cap || cap <= 0) return '0.0'
-    return ((stock / cap) * 100).toFixed(1)
+    if (!cap || cap <= 0) return formatNumber(0, 2)
+    return formatNumber((stock / cap) * 100, 2)
   }
 
   const handleEdit = (dip: TankDip) => {
@@ -554,7 +554,7 @@ export default function TankDipsPage() {
                       </span>
                     </div>
                     <div className="tabular-nums font-medium text-indigo-800">
-                      {dipMeasuredVolume(dip).toFixed(2)} L measured
+                      {formatNumber(dipMeasuredVolume(dip))} L measured
                     </div>
                   </li>
                 )
@@ -600,7 +600,7 @@ export default function TankDipsPage() {
                       {tank.tank_name}
                       {tank.is_active === false ? ' (inactive)' : ''}
                       {tank.station_name ? ` · ${tank.station_name}` : ''} — book{' '}
-                      {Number(tank.current_stock ?? 0).toFixed(2)} L ({getProductName(tank.product_id, tank)})
+                      {formatNumber(Number(tank.current_stock ?? 0))} L ({getProductName(tank.product_id, tank)})
                     </option>
                   ))}
                 </select>
@@ -647,13 +647,13 @@ export default function TankDipsPage() {
                       <div>
                         <div className="text-sm text-gray-600">System Stock</div>
                         <div className="text-xl font-bold text-gray-900">
-                          {Number(systemQty || 0).toFixed(2)} L
+                          {formatNumber(Number(systemQty || 0))} L
                         </div>
                       </div>
                       <div>
                         <div className="text-sm text-gray-600">Measured Stock</div>
                         <div className="text-xl font-bold text-blue-600">
-                          {Number(measured || 0).toFixed(2)} L
+                          {formatNumber(Number(measured || 0))} L
                         </div>
                       </div>
                       <div>
@@ -662,7 +662,7 @@ export default function TankDipsPage() {
                           variance >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
                           {variance >= 0 ? <TrendingUp className="h-5 w-5 mr-1" /> : <TrendingDown className="h-5 w-5 mr-1" />}
-                          {Math.abs(Number(variance || 0)).toFixed(2)} L
+                          {formatNumber(Math.abs(Number(variance || 0)))} L
                         </div>
                         <div className={`text-sm ${variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {formatCurrency(Math.abs(Number(varianceValue || 0)), VARIANCE_CURRENCY)}{' '}
@@ -802,11 +802,11 @@ export default function TankDipsPage() {
               <div className="text-sm space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Book stock</span>
-                  <span className="font-semibold text-gray-900 tabular-nums">{book.toFixed(2)} L</span>
+                  <span className="font-semibold text-gray-900 tabular-nums">{formatNumber(book)} L</span>
                 </div>
                 <div className="flex justify-between text-xs text-gray-500">
                   <span>Capacity</span>
-                  <span className="tabular-nums">{Number(tank.capacity ?? 0).toFixed(2)} L</span>
+                  <span className="tabular-nums">{formatNumber(Number(tank.capacity ?? 0))} L</span>
                 </div>
                 {latest ? (
                   <div
@@ -815,7 +815,7 @@ export default function TankDipsPage() {
                     }`}
                   >
                     <span className="font-medium">Latest dip</span>{' '}
-                    <span className="tabular-nums">{latestVol!.toFixed(2)} L</span>
+                    <span className="tabular-nums">{formatNumber(latestVol!)} L</span>
                     {dipDateKey(latest) && (
                       <>
                         {' '}
@@ -906,13 +906,13 @@ export default function TankDipsPage() {
                       <div>
                         <div className="text-sm text-gray-600">System Stock</div>
                         <div className="text-xl font-bold text-gray-900">
-                          {Number(systemQty || 0).toFixed(2)} L
+                          {formatNumber(Number(systemQty || 0))} L
                         </div>
                       </div>
                       <div>
                         <div className="text-sm text-gray-600">Measured Stock</div>
                         <div className="text-xl font-bold text-blue-600">
-                          {Number(measured || 0).toFixed(2)} L
+                          {formatNumber(Number(measured || 0))} L
                         </div>
                       </div>
                       <div>
@@ -921,7 +921,7 @@ export default function TankDipsPage() {
                           variance >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
                           {variance >= 0 ? <TrendingUp className="h-5 w-5 mr-1" /> : <TrendingDown className="h-5 w-5 mr-1" />}
-                          {Math.abs(Number(variance || 0)).toFixed(2)} L
+                          {formatNumber(Math.abs(Number(variance || 0)))} L
                         </div>
                         <div className={`text-sm ${variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {formatCurrency(Math.abs(Number(varianceValue || 0)), VARIANCE_CURRENCY)}{' '}
@@ -1046,10 +1046,10 @@ export default function TankDipsPage() {
                         {dip.tank_name || tank?.tank_name || 'Unknown'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">
-                        {systemAtDip.toFixed(2)} L
+                        {formatNumber(systemAtDip)} L
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-blue-600">
-                        {measured.toFixed(2)} L
+                        {formatNumber(measured)} L
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
                         <span
@@ -1062,7 +1062,7 @@ export default function TankDipsPage() {
                           ) : (
                             <TrendingDown className="h-4 w-4 mr-1" />
                           )}
-                          {Math.abs(variance).toFixed(2)} L
+                          {formatNumber(Math.abs(variance))} L
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right">

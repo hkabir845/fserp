@@ -1,14 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Edit, Trash2, Search, Fuel, Building2, MapPin, Zap, Gauge, Droplet, ArrowRight, X } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
+import { filterFuelForecourtStations } from '@/utils/stationCapabilities'
 
 interface Nozzle {
   id: number
@@ -39,6 +40,7 @@ interface Station {
   id: number
   station_number: string
   station_name: string
+  operates_fuel_retail?: boolean
 }
 
 interface Island {
@@ -118,6 +120,19 @@ export default function NozzlesPage() {
   const [selectedTank, setSelectedTank] = useState<number | null>(null)
   const [nozzleRefCode, setNozzleRefCode] = useState('')
   const [createCodeNonce, setCreateCodeNonce] = useState(0)
+
+  const fuelForecourtStations = useMemo(() => filterFuelForecourtStations(stations), [stations])
+
+  useEffect(() => {
+    if (selectedStation == null) return
+    if (!fuelForecourtStations.some((s) => s.id === selectedStation)) {
+      setSelectedStation(null)
+      setSelectedIsland(null)
+      setSelectedDispenser(null)
+      setSelectedMeterId(null)
+      setSelectedTank(null)
+    }
+  }, [fuelForecourtStations, selectedStation])
   
   // Form data
   const [formData, setFormData] = useState({
@@ -574,7 +589,7 @@ export default function NozzlesPage() {
                     </p>
                     {nozzle.unit_price && (
                       <p className="text-xs text-gray-600 mt-1">
-                        {currencySymbol}{Number(nozzle.unit_price).toFixed(2)}/L
+                        {currencySymbol}{formatNumber(Number(nozzle.unit_price))}/L
                       </p>
                     )}
                   </div>
@@ -659,7 +674,7 @@ export default function NozzlesPage() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                       >
                         <option value="">Select Station</option>
-                        {stations.map((station) => (
+                        {fuelForecourtStations.map((station) => (
                           <option 
                             key={station.id} 
                             value={station.id}
@@ -670,7 +685,7 @@ export default function NozzlesPage() {
                         ))}
                       </select>
                       <p className="mt-1 text-xs text-gray-500">
-                        {stations.length} station(s) available
+                        {fuelForecourtStations.length} fuel forecourt site(s) — shop/aquaculture-only stations are hidden
                       </p>
                     </div>
 
@@ -921,7 +936,7 @@ export default function NozzlesPage() {
                               disabled={!selectable}
                               className={selectable ? 'text-gray-900 bg-white' : 'text-gray-400 bg-gray-100'}
                             >
-                              {tank.tank_name} - {tank.product_name} ({Number(tank.current_stock || 0).toFixed(0)}L / {Number(tank.capacity || 0).toFixed(0)}L)
+                              {tank.tank_name} - {tank.product_name} ({formatNumber(Number(tank.current_stock || 0), 2)}L / {formatNumber(Number(tank.capacity || 0), 2)}L)
                               {selectable ? ' ✓ [Available]' : ' ❌ [Different Station]'}
                             </option>
                           )
@@ -945,7 +960,7 @@ export default function NozzlesPage() {
                             return (
                               <>
                                 <p>Product: <span className="font-medium">{selectedTankData.product_name}</span></p>
-                                <p>Stock: <span className="font-medium">{Number(selectedTankData.current_stock || 0).toFixed(0)}L</span> / <span className="font-medium">{Number(selectedTankData.capacity || 0).toFixed(0)}L</span></p>
+                                <p>Stock: <span className="font-medium">{formatNumber(Number(selectedTankData.current_stock || 0), 2)}L</span> / <span className="font-medium">{formatNumber(Number(selectedTankData.capacity || 0), 2)}L</span></p>
                               </>
                             )
                           })()}

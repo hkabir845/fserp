@@ -5,10 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
-import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, BookOpen, Building2 } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, BookOpen, Building2, MapPin } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin } from '@/lib/api'
-import { getCurrencySymbol } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { isConnectionError } from '@/utils/connectionError'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
@@ -33,11 +33,20 @@ interface Vendor {
   /** Usual receiving site; new bills default here */
   default_station_id?: number | null
   default_station_name?: string | null
+  default_aquaculture_pond_id?: number | null
+  default_aquaculture_pond_name?: string | null
 }
 
 interface StationOption {
   id: number
   station_name: string
+  is_active?: boolean
+}
+
+interface PondOption {
+  id: number
+  name: string
+  code?: string
   is_active?: boolean
 }
 
@@ -55,6 +64,7 @@ export default function VendorsPage() {
   const [vendorRefCode, setVendorRefCode] = useState('')
   const [createCodeNonce, setCreateCodeNonce] = useState(0)
   const [stations, setStations] = useState<StationOption[]>([])
+  const [ponds, setPonds] = useState<PondOption[]>([])
   const [formData, setFormData] = useState({
     company_name: '',
     contact_person: '',
@@ -68,7 +78,8 @@ export default function VendorsPage() {
     opening_balance: 0,
     opening_balance_date: new Date().toISOString().split('T')[0],
     is_active: true,
-    default_station_id: '' as string | number,
+    /** '' | `s:${stationId}` | `p:${pondId}` — default receiving location for bills */
+    default_receiving: '' as string,
   })
 
   useEffect(() => {
@@ -78,8 +89,30 @@ export default function VendorsPage() {
       return
     }
     fetchStationsList()
+    fetchPondsList()
     fetchVendors()
   }, [router])
+
+  const fetchPondsList = async () => {
+    try {
+      const res = await api.get<unknown[]>('/aquaculture/ponds/', { timeout: 8000 })
+      const rows = Array.isArray(res.data) ? res.data : []
+      const parsed: PondOption[] = []
+      for (const r of rows) {
+        const o = r as { id?: number; name?: string; code?: string; is_active?: boolean }
+        if (typeof o.id !== 'number') continue
+        if (o.is_active === false) continue
+        parsed.push({
+          id: o.id,
+          name: (o.name || '').trim() || `Pond #${o.id}`,
+          code: (o.code || '').trim(),
+        })
+      }
+      setPonds(parsed)
+    } catch {
+      setPonds([])
+    }
+  }
 
   const fetchStationsList = async () => {
     try {
@@ -146,9 +179,32 @@ export default function VendorsPage() {
     }
   }
 
+  const parseDefaultReceivingPayload = (): {
+    default_station_id: number | null
+    default_aquaculture_pond_id: number | null
+  } => {
+    const dr = formData.default_receiving
+    if (dr.startsWith('p:')) {
+      const id = parseInt(dr.slice(2), 10)
+      return {
+        default_station_id: null,
+        default_aquaculture_pond_id: Number.isFinite(id) ? id : null,
+      }
+    }
+    if (dr.startsWith('s:')) {
+      const id = parseInt(dr.slice(2), 10)
+      return {
+        default_station_id: Number.isFinite(id) ? id : null,
+        default_aquaculture_pond_id: null,
+      }
+    }
+    return { default_station_id: null, default_aquaculture_pond_id: null }
+  }
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      const { default_station_id, default_aquaculture_pond_id } = parseDefaultReceivingPayload()
       await api.post('/vendors/', {
         company_name: formData.company_name || null,
         contact_person: formData.contact_person || '',
@@ -163,10 +219,8 @@ export default function VendorsPage() {
         opening_balance: formData.opening_balance,
         opening_balance_date: formData.opening_balance_date || null,
         is_active: formData.is_active,
-        default_station_id:
-          formData.default_station_id !== '' && formData.default_station_id != null
-            ? parseInt(String(formData.default_station_id), 10)
-            : null,
+        default_station_id,
+        default_aquaculture_pond_id,
         ...(vendorRefCode.trim() ? { vendor_number: vendorRefCode.trim() } : {}),
       })
       toast.success('Vendor created successfully!')
@@ -197,10 +251,12 @@ export default function VendorsPage() {
         ? new Date(vendor.opening_balance_date).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0],
       is_active: vendor.is_active,
-      default_station_id:
-        vendor.default_station_id != null && vendor.default_station_id > 0
-          ? String(vendor.default_station_id)
-          : '',
+      default_receiving:
+        vendor.default_aquaculture_pond_id != null && vendor.default_aquaculture_pond_id > 0
+          ? `p:${vendor.default_aquaculture_pond_id}`
+          : vendor.default_station_id != null && vendor.default_station_id > 0
+            ? `s:${vendor.default_station_id}`
+            : '',
     })
     setShowModal(true)
   }
@@ -210,6 +266,7 @@ export default function VendorsPage() {
     if (!editingVendor) return
 
     try {
+      const { default_station_id, default_aquaculture_pond_id } = parseDefaultReceivingPayload()
       await api.put(`/vendors/${editingVendor.id}/`, {
         company_name: formData.company_name || null,
         contact_person: formData.contact_person || '',
@@ -224,10 +281,8 @@ export default function VendorsPage() {
         is_active: formData.is_active,
         opening_balance: formData.opening_balance,
         opening_balance_date: formData.opening_balance_date || null,
-        default_station_id:
-          formData.default_station_id !== '' && formData.default_station_id != null
-            ? parseInt(String(formData.default_station_id), 10)
-            : null,
+        default_station_id,
+        default_aquaculture_pond_id,
       })
       toast.success('Vendor updated successfully!')
       setShowModal(false)
@@ -268,7 +323,7 @@ export default function VendorsPage() {
       opening_balance: 0,
       opening_balance_date: new Date().toISOString().split('T')[0],
       is_active: true,
-      default_station_id: '',
+      default_receiving: '',
     })
     setVendorRefCode('')
     setEditingVendor(null)
@@ -287,9 +342,18 @@ export default function VendorsPage() {
       vendor.company_name.toLowerCase().includes(q) ||
       vendor.vendor_number.toLowerCase().includes(q) ||
       (vendor.email || '').toLowerCase().includes(q) ||
-      (vendor.default_station_name || '').toLowerCase().includes(q)
+      (vendor.default_station_name || '').toLowerCase().includes(q) ||
+      (vendor.default_aquaculture_pond_name || '').toLowerCase().includes(q)
     )
   })
+
+  const defaultReceivingLabel = (vendor: Vendor) => {
+    const pond = (vendor.default_aquaculture_pond_name || '').trim()
+    if (pond) return pond
+    const site = (vendor.default_station_name || '').trim()
+    if (site) return site
+    return '—'
+  }
 
   return (
     <CompanyProvider>
@@ -306,7 +370,7 @@ export default function VendorsPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
             <input
               type="text"
-              placeholder="Search by name, #, email, or default site…"
+              placeholder="Search by name, #, email, default site or pond…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -361,7 +425,7 @@ export default function VendorsPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
                     <span className="inline-flex items-center gap-1">
                       <Building2 className="h-3.5 w-3.5 text-amber-600/90" />
-                      Default site
+                      Site / pond
                     </span>
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -390,11 +454,15 @@ export default function VendorsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {vendor.display_name}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-700 max-w-[11rem] hidden md:table-cell">
+                    <td className="px-6 py-4 text-sm text-gray-700 max-w-[14rem] hidden md:table-cell">
                       <span className="inline-flex items-center gap-1.5">
-                        <Building2 className="h-3.5 w-3.5 text-amber-600/80 shrink-0" />
-                        <span className="truncate" title={vendor.default_station_name || undefined}>
-                          {(vendor.default_station_name || '').trim() || '—'}
+                        {(vendor.default_aquaculture_pond_name || '').trim() ? (
+                          <MapPin className="h-3.5 w-3.5 text-teal-600/85 shrink-0" />
+                        ) : (
+                          <Building2 className="h-3.5 w-3.5 text-amber-600/80 shrink-0" />
+                        )}
+                        <span className="truncate" title={defaultReceivingLabel(vendor)}>
+                          {defaultReceivingLabel(vendor)}
                         </span>
                       </span>
                     </td>
@@ -402,7 +470,7 @@ export default function VendorsPage() {
                       {vendor.email}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {currencySymbol}{Number(vendor.current_balance || 0).toFixed(2)}
+                      {currencySymbol}{formatNumber(Number(vendor.current_balance || 0))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
@@ -545,27 +613,43 @@ export default function VendorsPage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2 inline-flex items-center gap-1.5">
                       <Building2 className="h-4 w-4 text-amber-600" />
-                      Default site
+                      Default site / pond
                     </label>
                     <select
-                      value={formData.default_station_id === '' ? '' : String(formData.default_station_id)}
+                      value={formData.default_receiving}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
-                          default_station_id: e.target.value === '' ? '' : e.target.value,
+                          default_receiving: e.target.value,
                         })
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                     >
                       <option value="">— Not set —</option>
-                      {stations.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.station_name}
-                        </option>
-                      ))}
+                      <optgroup label="Sites (shop / warehouse)">
+                        {stations.map((s) => (
+                          <option key={`s-${s.id}`} value={`s:${s.id}`}>
+                            {s.station_name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      {ponds.length > 0 ? (
+                        <optgroup label="Ponds (fish & fry — delivered to pond)">
+                          {ponds.map((p) => (
+                            <option key={`p-${p.id}`} value={`p:${p.id}`}>
+                              {p.name}
+                              {p.code ? ` (${p.code})` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null}
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      Usual site for deliveries and stock receipts; new bills default here when not specified.
+                      Shop sites for general receipts; ponds for fish and fry delivered to the pond. On{' '}
+                      <Link href="/stations" className="text-blue-600 hover:underline">
+                        Stations
+                      </Link>
+                      , set the shop's default pond so new bills still receive into the right stock.
                     </p>
                   </div>
                   <div className="col-span-2">

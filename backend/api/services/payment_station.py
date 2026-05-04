@@ -18,7 +18,7 @@ from api.models import (
     Station,
     Vendor,
 )
-from api.services.station_stock import get_or_create_default_station
+from api.services.station_stock import get_or_create_default_station, receipt_station_id_for_vendor
 
 
 def _active_station(company_id: int, station_id: int | None) -> int | None:
@@ -105,20 +105,21 @@ def resolve_payment_station_id(company_id: int, p: Payment) -> int | None:
             if ambig:
                 return None
             if not by_site:
-                v0 = Vendor.objects.filter(pk=p.vendor_id, company_id=company_id).only("default_station_id").first()
-                ds0 = _active_station(company_id, v0.default_station_id if v0 else None)
-                if ds0 is not None:
-                    return ds0
-                return int(get_or_create_default_station(company_id).id)
+                v0 = (
+                    Vendor.objects.filter(pk=p.vendor_id, company_id=company_id)
+                    .only("default_station_id", "default_aquaculture_pond_id")
+                    .first()
+                )
+                return receipt_station_id_for_vendor(company_id, v0)
             if len(by_site) == 1:
                 return by_site.pop()
             return None
-        v = Vendor.objects.filter(pk=p.vendor_id, company_id=company_id).only("default_station_id").first()
-        if v and v.default_station_id:
-            ds = _active_station(company_id, v.default_station_id)
-            if ds is not None:
-                return ds
-        return int(get_or_create_default_station(company_id).id)
+        v = (
+            Vendor.objects.filter(pk=p.vendor_id, company_id=company_id)
+            .only("default_station_id", "default_aquaculture_pond_id")
+            .first()
+        )
+        return receipt_station_id_for_vendor(company_id, v)
     return None
 
 

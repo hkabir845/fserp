@@ -5,16 +5,19 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Dispenser, Island
+from api.services.station_capabilities import require_island_on_fuel_forecourt
 
 
 def _dispenser_to_json(d):
+    st = getattr(getattr(d, "island", None), "station", None) if d.island_id else None
     return {
         "id": d.id,
         "dispenser_code": d.dispenser_code or "",
         "dispenser_name": d.dispenser_name,
         "island_id": d.island_id,
         "island_name": d.island.island_name if d.island_id else "",
-        "station_name": d.island.station.station_name if d.island_id and getattr(d.island, "station", None) else "",
+        "station_name": st.station_name if st else "",
+        "station_operates_fuel_retail": bool(getattr(st, "operates_fuel_retail", True)) if st else True,
         "model": getattr(d, "model", "") or "",
         "serial_number": getattr(d, "serial_number", "") or "",
         "meter_count": d.meters.count() if hasattr(d, "meters") else 0,
@@ -37,12 +40,19 @@ def dispensers_list_or_create(request):
         island_id = body.get("island_id")
         if not island_id:
             return JsonResponse({"detail": "island_id is required"}, status=400)
-        if not Island.objects.filter(id=island_id, company_id=request.company_id).exists():
+        try:
+            iid = int(island_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "island_id must be an integer"}, status=400)
+        if not Island.objects.filter(id=iid, company_id=request.company_id).exists():
             return JsonResponse({"detail": "Island not found"}, status=400)
+        serr = require_island_on_fuel_forecourt(request.company_id, iid)
+        if serr:
+            return serr
         name = (body.get("dispenser_name") or "").strip() or "Dispenser"
         d = Dispenser(
             company_id=request.company_id,
-            island_id=island_id,
+            island_id=iid,
             dispenser_name=name,
             dispenser_code=body.get("dispenser_code") or "",
             model=body.get("model") or "",
@@ -77,8 +87,17 @@ def dispenser_detail(request, dispenser_id: int):
             return err
         if body.get("dispenser_name") is not None:
             d.dispenser_name = (body.get("dispenser_name") or "").strip() or d.dispenser_name
-        if body.get("island_id") and Island.objects.filter(id=body["island_id"], company_id=request.company_id).exists():
-            d.island_id = body["island_id"]
+        if body.get("island_id") is not None and body.get("island_id") != "":
+            try:
+                new_iid = int(body["island_id"])
+            except (TypeError, ValueError):
+                return JsonResponse({"detail": "island_id must be an integer"}, status=400)
+            if not Island.objects.filter(id=new_iid, company_id=request.company_id).exists():
+                return JsonResponse({"detail": "Island not found"}, status=400)
+            serr = require_island_on_fuel_forecourt(request.company_id, new_iid)
+            if serr:
+                return serr
+            d.island_id = new_iid
         if "model" in body:
             d.model = body.get("model") or ""
         if "serial_number" in body:

@@ -24,6 +24,7 @@ import {
   Rocket,
   Eraser,
   Undo2,
+  Fish,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin } from '@/lib/api'
@@ -129,13 +130,17 @@ interface Company {
     users?: { used: number; limit: number; percentage: number }
     storage_gb?: { used: number; limit: number; percentage: number }
   }
+  /** SaaS: tenant may opt in to Aquaculture in Company settings. */
+  aquaculture_licensed?: boolean
+  /** Tenant Admin: Aquaculture on in ERP (menu, APIs). Requires aquaculture_licensed. */
+  aquaculture_enabled?: boolean
 }
 
 function CompaniesPageContent() {
   const searchParams = useSearchParams()
   const toast = useToast()
   useRequireSaasDashboardMode()
-  const { mode } = useCompany()
+  const { mode, selectedCompany } = useCompany()
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   /** Set when GET /admin/companies/ fails so we do not imply the database has zero tenants. */
@@ -216,7 +221,8 @@ function CompaniesPageContent() {
     admin_email: '',
     admin_full_name: '',
     admin_password: '',
-    admin_confirm_password: ''
+    admin_confirm_password: '',
+    aquaculture_licensed: false,
   })
 
   useEffect(() => {
@@ -539,7 +545,8 @@ function CompaniesPageContent() {
       admin_email: '',
       admin_full_name: '',
       admin_password: '',
-      admin_confirm_password: ''
+      admin_confirm_password: '',
+      aquaculture_licensed: false,
     })
     setShowCompanyModal(true)
   }
@@ -566,7 +573,8 @@ function CompaniesPageContent() {
       admin_email: '',
       admin_full_name: '',
       admin_password: '',
-      admin_confirm_password: ''
+      admin_confirm_password: '',
+      aquaculture_licensed: Boolean(company.aquaculture_licensed),
     })
     setShowCompanyModal(true)
   }
@@ -599,6 +607,13 @@ function CompaniesPageContent() {
         const { admin_email, admin_full_name, admin_password, admin_confirm_password, ...rest } = companyFormData
         await api.put(`/companies/${editingCompany.id}`, rest)
         toast.success('Company updated successfully!')
+        if (
+          typeof window !== 'undefined' &&
+          selectedCompany?.id != null &&
+          editingCompany.id === selectedCompany.id
+        ) {
+          window.dispatchEvent(new Event('fserp-company-settings-saved'))
+        }
       } else {
         const { admin_confirm_password, ...payload } = companyFormData
         const res = await api.post('/companies/', payload)
@@ -834,7 +849,15 @@ function CompaniesPageContent() {
       <div className="flex min-h-0 flex-1 overflow-y-auto">
         <div className="w-full min-w-0 p-4 sm:p-6 lg:p-8">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-bold text-gray-900 sm:text-xl">All Companies</h2>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 sm:text-xl">All Companies</h2>
+              <p className="mt-1 max-w-2xl text-xs text-gray-600 sm:text-sm">
+                Under <strong className="font-medium text-gray-800">Tenant modules</strong>, check{' '}
+                <strong className="font-medium text-gray-800">License Aquaculture</strong> so the tenant Admin can turn
+                Aquaculture on in <strong className="font-medium text-gray-800">Company settings</strong>. The ERP menu
+                shows Aquaculture only after the Admin enables it there.
+              </p>
+            </div>
             <button
               type="button"
               onClick={handleCreateCompany}
@@ -1145,6 +1168,17 @@ function CompaniesPageContent() {
                                 <span className="flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800 sm:px-3 sm:py-1">
                                   <Crown className="mr-1 h-3 w-3" />
                                   Subscribed
+                                </span>
+                              )}
+                              {company.aquaculture_licensed && !company.aquaculture_enabled && (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 sm:px-3 sm:py-1">
+                                  Aquaculture licensed
+                                </span>
+                              )}
+                              {company.aquaculture_enabled && (
+                                <span className="flex items-center rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-900 sm:px-3 sm:py-1">
+                                  <Fish className="mr-1 h-3 w-3 shrink-0" aria-hidden />
+                                  Aquaculture on
                                 </span>
                               )}
                             </div>
@@ -1603,6 +1637,26 @@ function CompaniesPageContent() {
                           <label className="text-sm font-medium text-gray-500">Status</label>
                           <p className={`text-base font-semibold mt-1 ${viewingCompany.is_active ? 'text-green-600' : 'text-red-600'}`}>
                             {viewingCompany.is_active ? 'Active' : 'Inactive'}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500">Aquaculture (SaaS license)</label>
+                          <p
+                            className={`text-base font-semibold mt-1 ${viewingCompany.aquaculture_licensed ? 'text-teal-700' : 'text-gray-500'}`}
+                          >
+                            {viewingCompany.aquaculture_licensed
+                              ? 'Licensed — tenant Admin may enable in Company settings'
+                              : 'Not licensed'}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500">Aquaculture (Company settings)</label>
+                          <p
+                            className={`text-base font-semibold mt-1 ${viewingCompany.aquaculture_enabled ? 'text-teal-700' : 'text-gray-500'}`}
+                          >
+                            {viewingCompany.aquaculture_enabled
+                              ? 'On in ERP (menu and features)'
+                              : 'Off'}
                           </p>
                         </div>
                       </div>
@@ -2249,6 +2303,31 @@ function CompaniesPageContent() {
                         {formatCompanyTime(new Date(2026, 3, 6, 14, 30), companyFormData.time_format)}
                       </span>
                     </p>
+
+                    <div className="rounded-lg border border-teal-200 bg-teal-50/60 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-teal-900">Tenant modules</p>
+                      <label className="mt-3 flex cursor-pointer items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={companyFormData.aquaculture_licensed}
+                          onChange={(e) =>
+                            setCompanyFormData({ ...companyFormData, aquaculture_licensed: e.target.checked })
+                          }
+                          className="mt-1 h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        <span>
+                          <span className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+                            <Fish className="h-4 w-4 shrink-0 text-teal-700" aria-hidden />
+                            License Aquaculture
+                          </span>
+                          <span className="mt-1 block text-xs leading-relaxed text-gray-600">
+                            When you grant this license, Aquaculture turns on in ERP for that company (menu and APIs).
+                            The tenant Admin can turn it off under Company settings. Revoking the license turns
+                            Aquaculture off immediately.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
 
                     <div>
                       <label className="flex items-center space-x-2">

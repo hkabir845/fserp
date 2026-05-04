@@ -26,6 +26,16 @@ def _serialize_date(d):
     return d.isoformat() if hasattr(d, "isoformat") else str(d)
 
 
+def _derive_invoice_list_source(inv: Invoice) -> str:
+    """UI source badge (no DB column); POS and aquaculture use stable number prefixes."""
+    n = (inv.invoice_number or "").strip().upper()
+    if n.startswith("INV-AQ-"):
+        return "aquaculture_pond_sale"
+    if n.startswith("INV-POS-"):
+        return "pos_general"
+    return "manual"
+
+
 def _invoice_to_json(inv, company_id: int):
     lines = list(inv.lines.all().select_related("item"))
     return {
@@ -48,6 +58,7 @@ def _invoice_to_json(inv, company_id: int):
         ),
         "payment_method": inv.payment_method or "",
         "status": inv.status,
+        "source": _derive_invoice_list_source(inv),
         "subtotal": str(inv.subtotal),
         "tax_total": str(inv.tax_total),
         "total": str(inv.total),

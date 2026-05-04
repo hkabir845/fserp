@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import Sidebar from "@/components/Sidebar"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { useToast } from "@/components/Toast"
 import { extractErrorMessage } from "@/utils/errorHandler"
@@ -170,6 +170,7 @@ type POSItem = {
   unit?: string
   unit_price?: number
   quantity_on_hand?: number
+  content_weight_kg?: number | string | null
   barcode?: string
   is_pos_available?: boolean
   image_url?: string
@@ -286,6 +287,7 @@ const computeCartTotals = (entries: CartEntry[]): CartTotals => {
 
 export default function CashierPOSPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const toast = useToast()
   const { selectedCompany } = useCompany()
 
@@ -352,6 +354,8 @@ export default function CashierPOSPage() {
   const canCompleteUnifiedSaleRef = useRef(false)
   /** Avoid POSTing line items from company A after superadmin switched context to company B. */
   const prevTenantCompanyIdRef = useRef<number | undefined>(undefined)
+  /** Last `customer` query value we applied (avoids duplicate runs; allows a new id on next navigation). */
+  const lastAppliedCustomerQueryRef = useRef<string | null>(null)
   const limitedPosRegister = isLimitedPosRegisterUser()
 
   useEffect(() => {
@@ -407,6 +411,7 @@ export default function CashierPOSPage() {
       setVehiclePlate("")
       setShowInvoicePreview(false)
       setPosMode("sale")
+      lastAppliedCustomerQueryRef.current = null
     }
     prevTenantCompanyIdRef.current = tid
   }, [selectedCompany?.id])
@@ -421,6 +426,33 @@ export default function CashierPOSPage() {
     loadInitialData()
     // Re-load POS when superadmin switches tenant (localStorage + X-Selected-Company-Id)
   }, [router, selectedCompany?.id])
+
+  useEffect(() => {
+    if (loading) return
+    const raw = searchParams.get("customer")
+    if (raw == null || raw === "") {
+      lastAppliedCustomerQueryRef.current = null
+      return
+    }
+    if (lastAppliedCustomerQueryRef.current === raw) return
+    const id = parseInt(raw, 10)
+    if (!Number.isFinite(id) || id <= 0) {
+      lastAppliedCustomerQueryRef.current = raw
+      router.replace("/cashier", { scroll: false })
+      return
+    }
+    if (!customers.length) return
+    const exists = customers.some(c => Number(c.id) === id)
+    if (!exists) {
+      lastAppliedCustomerQueryRef.current = raw
+      toast.error("Customer from link was not found for this company.")
+      router.replace("/cashier", { scroll: false })
+      return
+    }
+    setCustomerId(id)
+    lastAppliedCustomerQueryRef.current = raw
+    router.replace("/cashier", { scroll: false })
+  }, [loading, customers, searchParams, router, toast])
 
   useEffect(() => {
     if (!printMenuOpen) return
@@ -609,12 +641,13 @@ export default function CashierPOSPage() {
       const generalItems = itemsList.filter((item: POSItem) => {
         const itemPk = Number(item.id)
         const isNotLinkedToTank = !Number.isFinite(itemPk) || !tankProductIds.has(itemPk)
-        const allowedCategories = ["general", "service", "other"]
+        const allowedCategories = ["general", "feed", "service", "other"]
         const cat = (item.pos_category || "").trim().toLowerCase()
         const hasAllowedCategory = allowedCategories.includes(cat)
         const isAvailable = item.is_pos_available !== false
         const isNotFuel = cat !== "fuel"
-        return isNotLinkedToTank && hasAllowedCategory && isAvailable && isNotFuel
+        const isNotNonPos = cat !== "non_pos"
+        return isNotLinkedToTank && hasAllowedCategory && isAvailable && isNotFuel && isNotNonPos
       })
       setPosItems(generalItems)
     } catch (error: any) {
@@ -1770,6 +1803,20 @@ export default function CashierPOSPage() {
                               <p className="text-xs text-muted-foreground">
                                 In stock: {formatNumber(Number(item.quantity_on_hand))}{" "}
                                 {item.unit || "units"}
+                                {(() => {
+                                  const kgp =
+                                    item.content_weight_kg != null && item.content_weight_kg !== ""
+                                      ? Number(item.content_weight_kg)
+                                      : NaN
+                                  if (!Number.isFinite(kgp) || kgp <= 0) return null
+                                  const approx = Number(item.quantity_on_hand) * kgp
+                                  if (!Number.isFinite(approx)) return null
+                                  return (
+                                    <span className="block text-teal-700/90">
+                                      ≈ {formatNumber(approx)} kg ({kgp} kg/{item.unit || "unit"})
+                                    </span>
+                                  )
+                                })()}
                               </p>
                             )}
                         </button>
@@ -2070,7 +2117,15 @@ export default function CashierPOSPage() {
                                 <input
                                   type="number"
                                   min="0"
-                                  step={entry.item.unit === 'piece' || entry.item.unit === 'each' || entry.item.unit === 'box' || entry.item.unit === 'pack' ? "1" : "0.01"}
+                                  step={
+                                    entry.item.unit === "piece" ||
+                                    entry.item.unit === "each" ||
+                                    entry.item.unit === "box" ||
+                                    entry.item.unit === "pack" ||
+                                    entry.item.unit === "sack"
+                                      ? "1"
+                                      : "0.01"
+                                  }
                                   value={entry.quantity}
                                   onChange={event =>
                                     updateCartQuantity(
@@ -2080,6 +2135,21 @@ export default function CashierPOSPage() {
                                   }
                                   className={`${inputClassName} px-2 py-1.5`}
                                 />
+                                {(() => {
+                                  const kgp =
+                                    entry.item.content_weight_kg != null &&
+                                    entry.item.content_weight_kg !== ""
+                                      ? Number(entry.item.content_weight_kg)
+                                      : NaN
+                                  if (!Number.isFinite(kgp) || kgp <= 0) return null
+                                  const lineKg = entry.quantity * kgp
+                                  if (!Number.isFinite(lineKg)) return null
+                                  return (
+                                    <p className="mt-1 text-xs text-teal-700/90">
+                                      ≈ {formatNumber(lineKg)} kg on this line
+                                    </p>
+                                  )
+                                })()}
                               </div>
 
                               <div>

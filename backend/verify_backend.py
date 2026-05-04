@@ -57,7 +57,7 @@ def verify_backend():
     print("2. Testing CORS configuration...")
     try:
         response = requests.options(
-            f"{base}/api/auth/login",
+            f"{base}/api/auth/login/",
             headers={
                 "Origin": "http://localhost:3000",
                 "Access-Control-Request-Method": "POST",
@@ -90,10 +90,10 @@ def verify_backend():
     print()
 
     # Test 3: Login endpoint
-    print("3. Testing /api/auth/login endpoint...")
+    print("3. Testing /api/auth/login/ endpoint...")
     try:
         response = requests.post(
-            f"{base}/api/auth/login",
+            f"{base}/api/auth/login/",
             data={"username": "admin", "password": "admin123"},
             headers={"Origin": "http://localhost:3000"},
             timeout=8,

@@ -1,5 +1,7 @@
 # FSMS Backend (Django)
 
+**Production checklist:** [`../DEPLOYMENT.md`](../DEPLOYMENT.md) (env vars, `check --deploy`, Gunicorn, smoke tests).
+
 Single backend: **Django** (`api/`, `fsms/`). The web UI is a separate app: **Next.js 16** in [`../frontend/`](../frontend/) (this Python project does not embed Next.js).
 
 **Deploy / env:** Set **`DJANGO_SECRET_KEY`** (32+ chars) on the host. Copy [`env.example`](env.example) to **`backend/.env`** (loaded on startup) or export the same variables in systemd. Use **`DATABASE_URL`** for PostgreSQL on a real VPS. For **your own domain**, set **`DJANGO_ALLOWED_HOSTS`**, **`FSERP_CORS_ALLOWED_ORIGINS`**, **`FSERP_CSRF_TRUSTED_ORIGINS`**, and **`FRONTEND_BASE_URL`** (see `env.example`). If those are unset, defaults match `mahasoftcorporation.com` / `api.mahasoftcorporation.com`.

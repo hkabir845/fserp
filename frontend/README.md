@@ -2,6 +2,8 @@
 
 Next.js **16** frontend for Filling Station ERP (see `package.json` / `npm ls next`).
 
+**Production:** see [`../DEPLOYMENT.md`](../DEPLOYMENT.md) and set non-loopback `NEXT_PUBLIC_*` URLs in `.env.production`.
+
 ## Quick Start
 
 1. Install dependencies:

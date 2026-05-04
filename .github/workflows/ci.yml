@@ -34,8 +34,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
-      - name: Run production API audit
-        run: python -m pytest tests/test_api_production_audit.py -q --tb=short
+      - name: Run backend tests (API audit, password reset, backup, …)
+        run: python -m pytest tests/ -q --tb=short
+
+      - name: Django deployment system check
+        env:
+          DJANGO_SECRET_KEY: ci-not-for-production-use-50chars-minimum-abcdefgh
+        run: python manage.py check --deploy
 
   frontend:
     name: Frontend (lint & build)

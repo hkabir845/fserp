@@ -1,14 +1,4 @@
-"""
-Django settings — production-ready defaults (MahaSoft) with env overrides for self-hosted VPS.
-
-Deploy with DJANGO_SECRET_KEY (32+ chars). Optional `backend/.env` is loaded via python-dotenv.
-Do not duplicate CORS headers in nginx; only Django should send Access-Control-Allow-Origin.
-
-Production cutover checklist (non-exhaustive): use PostgreSQL with migrations and backups,
-DEBUG=False, DJANGO_ALLOWED_HOSTS / FSERP_CORS_* / FSERP_CSRF_TRUSTED_ORIGINS / FRONTEND_BASE_URL for your domain,
-HTTPS termination, CORS allowlist for browser origins only, rate limiting or WAF on auth endpoints (app-level limits on login/refresh/forgot-password; set DJANGO_CACHE_URL for multi-worker),
-structured logging, and periodic restore drills.
-"""
+"""Django settings. Load `backend/.env` (and optional `backend/env/.env`). Production: set DJANGO_SECRET_KEY (32+ chars), DATABASE_URL, hosts, and CORS/CSRF env vars per `env.example`."""
 import os
 import sys
 from pathlib import Path
@@ -22,7 +12,6 @@ try:
     from dotenv import load_dotenv
 
     load_dotenv(BASE_DIR / ".env")
-    # Optional secondary file (see backend/env/.env.example); does not override keys from backend/.env.
     load_dotenv(BASE_DIR / "env" / ".env", override=False)
 except ImportError:
     pass
@@ -35,53 +24,38 @@ except ImportError:
 _manage_cmd = sys.argv[1] if len(sys.argv) > 1 else ""
 _is_runserver = _manage_cmd == "runserver"
 
-# Local `manage.py` without DJANGO_SECRET_KEY — fixed dev-only key (never use in production).
-_manage_insecure_secret_ok = _manage_cmd in frozenset(
-    {
-        "runserver",
-        "shell",
-        "migrate",
-        "makemigrations",
-        "createsuperuser",
-        "test",
-        "showmigrations",
-        "dbshell",
-        "flush",
-        "loaddata",
-        "dumpdata",
-        "sqlmigrate",
-        "collectstatic",
-        "check",
-        "changepassword",
-        "compilemessages",
-        "makemessages",
-        "ensure_platform_owner_email",
-        "ensure_saas_superuser",
-        "create_superuser",
-    }
+# Commands allowed to use a short dev-only SECRET_KEY (never use that key in production).
+_DEV_SECRET_CMDS = frozenset(
+    "runserver shell migrate makemigrations createsuperuser test showmigrations dbshell "
+    "flush loaddata dumpdata sqlmigrate collectstatic check changepassword compilemessages "
+    "makemessages ensure_platform_owner_email ensure_saas_superuser create_superuser".split()
 )
 
-# --- Public site URLs (browser + API hostnames) ---
-# Self-hosted VPS: set DJANGO_ALLOWED_HOSTS or FSERP_ALLOWED_HOSTS (comma-separated, no scheme), e.g.
-# "api.example.com,example.com,www.example.com". If unset, MahaSoft defaults apply.
 
-
-def _csv_env_list(name: str) -> list[str]:
+def _csv(name: str) -> list[str]:
     raw = (os.environ.get(name) or "").strip()
-    if not raw:
-        return []
-    return [p.strip() for p in raw.split(",") if p.strip()]
+    return [p.strip() for p in raw.split(",") if p.strip()] if raw else []
 
 
-def _merge_unique(head: list[str], tail: list[str]) -> list[str]:
-    return list(dict.fromkeys([*head, *tail]))
+def _uniq(*lists: list[str]) -> list[str]:
+    out: list[str] = []
+    for lst in lists:
+        for x in lst:
+            if x not in out:
+                out.append(x)
+    return out
 
 
-_default_allowed_hosts = ["api.mahasoftcorporation.com", "mahasoftcorporation.com"]
-_env_allowed = _csv_env_list("DJANGO_ALLOWED_HOSTS") or _csv_env_list("FSERP_ALLOWED_HOSTS")
-ALLOWED_HOSTS = _env_allowed if _env_allowed else list(_default_allowed_hosts)
+def _truthy(name: str) -> bool:
+    return str(os.environ.get(name, "")).strip().lower() in ("1", "true", "yes")
+
+
+# --- Core ---
+_default_hosts = ["api.mahasoftcorporation.com", "mahasoftcorporation.com"]
+_env_hosts = _csv("DJANGO_ALLOWED_HOSTS") or _csv("FSERP_ALLOWED_HOSTS")
+ALLOWED_HOSTS = _env_hosts or list(_default_hosts)
 if _is_runserver:
-    ALLOWED_HOSTS = _merge_unique(ALLOWED_HOSTS, ["localhost", "127.0.0.1"])
+    ALLOWED_HOSTS = _uniq(ALLOWED_HOSTS, ["localhost", "127.0.0.1"])
 
 DEBUG = _is_runserver
 
@@ -89,7 +63,7 @@ _secret = (os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY") o
 if len(_secret) < 32:
     if "pytest" in sys.modules:
         _secret = "pytest-only-secret-key-do-not-use-in-production-32"
-    elif _manage_insecure_secret_ok:
+    elif _manage_cmd in _DEV_SECRET_CMDS:
         _secret = "django-insecure-local-manage-only-not-for-production-use-32"
     else:
         raise ImproperlyConfigured(
@@ -99,22 +73,14 @@ SECRET_KEY = _secret
 
 PLATFORM_TARGET_RELEASE = (_FSERP_APP_VERSION or "0.0.0-dev").strip()[:64]
 
-# Built-in Master demo tenant (FS-000001) after `migrate` — disabled for pytest / `manage.py test` / env override.
 SKIP_MASTER_TEMPLATE_BOOTSTRAP = (
-    str(os.environ.get("FSERP_SKIP_MASTER_BOOTSTRAP", "")).strip().lower() in ("1", "true", "yes")
+    _truthy("FSERP_SKIP_MASTER_BOOTSTRAP")
     or ("pytest" in sys.modules)
     or (_manage_cmd == "test")
 )
 
-
-def _env_truthy(name: str) -> bool:
-    return str(os.environ.get(name, "")).strip().lower() in ("1", "true", "yes")
-
-
-# Master template banners (CompactCompanyAlert / MasterCompanyBanner): optional fleet policy via env.
-# Locked overrides testing when both are set.
-MASTER_COMPANY_PROTECTION_LOCKED = _env_truthy("FSERP_MASTER_COMPANY_LOCKED")
-MASTER_COMPANY_PROTECTION_TESTING = _env_truthy("FSERP_MASTER_COMPANY_TESTING")
+MASTER_COMPANY_PROTECTION_LOCKED = _truthy("FSERP_MASTER_COMPANY_LOCKED")
+MASTER_COMPANY_PROTECTION_TESTING = _truthy("FSERP_MASTER_COMPANY_TESTING")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -158,16 +124,21 @@ TEMPLATES = [
 ]
 WSGI_APPLICATION = "fsms.wsgi.application"
 
+# --- Database ---
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
-if DATABASE_URL:
-    import dj_database_url
+if _truthy("FSERP_USE_SQLITE"):
+    DATABASE_URL = ""
 
-    DATABASES = {
-        "default": dj_database_url.config(
-            default=DATABASE_URL,
-            conn_max_age=600,
-        )
-    }
+if DATABASE_URL:
+    try:
+        import dj_database_url
+    except ImportError as exc:
+        raise ImproperlyConfigured(
+            "DATABASE_URL is set but dj-database-url is missing. "
+            "Use backend venv + pip install -r requirements.txt, or pip install dj-database-url, "
+            "or set FSERP_USE_SQLITE=1 for local SQLite."
+        ) from exc
+    DATABASES = {"default": dj_database_url.config(default=DATABASE_URL, conn_max_age=600)}
 else:
     DATABASES = {
         "default": {
@@ -193,43 +164,34 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Tenant backup / large uploads (nginx must allow the same body size)
 _upload_cap = 256 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = _upload_cap
 FILE_UPLOAD_MAX_MEMORY_SIZE = _upload_cap
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10240
 
-# CORS — do not duplicate Access-Control-* in nginx; Django sets them here.
-CORS_ALLOW_ALL_ORIGINS = False
-# Chrome may send preflight (incl. Private Network Access) for UI on *.localhost → API on localhost:8000.
-CORS_ALLOW_PRIVATE_NETWORK = True
-_default_cors_origins = [
+# --- CORS / CSRF (custom headers for tenant scope; do not duplicate CORS in nginx) ---
+_LOCAL = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://adib.localhost:3000",
+]
+_LOCALHOST_SUBDOMAIN = r"^http://[a-zA-Z0-9-]+\.localhost(:\d+)?$"
+
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_PRIVATE_NETWORK = True
+CORS_ALLOWED_ORIGINS = _csv("FSERP_CORS_ALLOWED_ORIGINS") or [
+    *_LOCAL,
     "https://mahasoftcorporation.com",
 ]
-_env_cors_origins = _csv_env_list("FSERP_CORS_ALLOWED_ORIGINS")
-CORS_ALLOWED_ORIGINS = _env_cors_origins if _env_cors_origins else list(_default_cors_origins)
-# CORS_ALLOWED_ORIGINS does not support "*.domain"; use regex for subdomains.
-_localhost_cors_regex = r"^http://[a-zA-Z0-9-]+\.localhost(:\d+)?$"
-_default_cors_regexes = [
+CORS_ALLOWED_ORIGIN_REGEXES = _csv("FSERP_CORS_ORIGIN_REGEXES") or [
     r"^https://[a-zA-Z0-9-]+\.mahasoftcorporation\.com$",
-    _localhost_cors_regex,
+    _LOCALHOST_SUBDOMAIN,
 ]
-_env_cors_regexes = _csv_env_list("FSERP_CORS_ORIGIN_REGEXES")
-CORS_ALLOWED_ORIGIN_REGEXES = (
-    _env_cors_regexes if _env_cors_regexes else list(_default_cors_regexes)
-)
 if _is_runserver:
-    _dev_cors = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://adib.localhost:3000",
-    ]
-    CORS_ALLOWED_ORIGINS = _merge_unique(CORS_ALLOWED_ORIGINS, _dev_cors)
-    if _localhost_cors_regex not in CORS_ALLOWED_ORIGIN_REGEXES:
-        CORS_ALLOWED_ORIGIN_REGEXES = [*CORS_ALLOWED_ORIGIN_REGEXES, _localhost_cors_regex]
+    CORS_ALLOWED_ORIGINS = _uniq(CORS_ALLOWED_ORIGINS, _LOCAL)
+    if _LOCALHOST_SUBDOMAIN not in CORS_ALLOWED_ORIGIN_REGEXES:
+        CORS_ALLOWED_ORIGIN_REGEXES = [*CORS_ALLOWED_ORIGIN_REGEXES, _LOCALHOST_SUBDOMAIN]
+
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-selected-company-id",
     "x-selected-station-id",
@@ -237,25 +199,13 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-request-id",
 ]
 
-# CSRF — list explicit origins (scheme + host, optional port). Self-hosted: FSERP_CSRF_TRUSTED_ORIGINS.
-_default_csrf_origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://adib.localhost:3000",
+CSRF_TRUSTED_ORIGINS = _csv("FSERP_CSRF_TRUSTED_ORIGINS") or [
+    *_LOCAL,
     "https://mahasoftcorporation.com",
     "https://www.mahasoftcorporation.com",
-    "https://localhost:3000",
 ]
-_env_csrf = _csv_env_list("FSERP_CSRF_TRUSTED_ORIGINS")
-CSRF_TRUSTED_ORIGINS = _env_csrf if _env_csrf else list(_default_csrf_origins)
 if _is_runserver:
-    _dev_csrf = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://adib.localhost:3000",
-        "https://localhost:3000",
-    ]
-    CSRF_TRUSTED_ORIGINS = _merge_unique(CSRF_TRUSTED_ORIGINS, _dev_csrf)
+    CSRF_TRUSTED_ORIGINS = _uniq(CSRF_TRUSTED_ORIGINS, _LOCAL + ["https://localhost:3000"])
 
 REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
@@ -265,13 +215,9 @@ FRONTEND_BASE_URL = (
     (os.environ.get("FRONTEND_BASE_URL") or "https://mahasoftcorporation.com").strip().rstrip("/")
     or "https://mahasoftcorporation.com"
 )
-
-# Platform owner (role=super_admin) recovery mailbox. Used by ensure_platform_owner_email and
-# create_superuser default. Override per deployment with FSERP_PLATFORM_OWNER_EMAIL.
 FSERP_PLATFORM_OWNER_EMAIL = (
     (os.environ.get("FSERP_PLATFORM_OWNER_EMAIL") or "bismillah.filling@gmail.com").strip()
 )
-# Shown in password-reset and system emails.
 FSERP_APP_DISPLAY_NAME = (os.environ.get("FSERP_APP_DISPLAY_NAME") or "FS ERP").strip() or "FS ERP"
 
 EMAIL_BACKEND = (
@@ -286,8 +232,6 @@ EMAIL_HOST_USER = (os.environ.get("EMAIL_HOST_USER") or "").strip()
 EMAIL_HOST_PASSWORD = (os.environ.get("EMAIL_HOST_PASSWORD") or "").strip()
 DEFAULT_FROM_EMAIL = (os.environ.get("DEFAULT_FROM_EMAIL") or "FS ERP <noreply@mahasoftcorporation.com>").strip()
 
-# Production: set DJANGO_CACHE_URL or REDIS_URL (e.g. redis://127.0.0.1:6379/1) so all workers share
-# password-reset OTP / rate-limit counters. Omit for single-process dev (LocMem).
 _cache_url = (os.environ.get("DJANGO_CACHE_URL") or os.environ.get("REDIS_URL") or "").strip()
 _cache_prefix = (os.environ.get("FSERP_CACHE_KEY_PREFIX") or "fserp")[:32]
 if _cache_url:
@@ -306,54 +250,30 @@ else:
         }
     }
 
-# TLS terminated at reverse proxy
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
-
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 SESSION_COOKIE_SECURE = not _is_runserver
 CSRF_COOKIE_SECURE = not _is_runserver
 
-# HTTPS hardening (optional). Prefer TLS redirect at nginx; use Django redirect only if no proxy does it.
-if _env_truthy("FSERP_SECURE_SSL_REDIRECT") and not _is_runserver:
+if _truthy("FSERP_SECURE_SSL_REDIRECT") and not _is_runserver:
     SECURE_SSL_REDIRECT = True
-_hsts_sec = int((os.environ.get("FSERP_SECURE_HSTS_SECONDS") or "0").strip() or "0")
-if _hsts_sec > 0 and not _is_runserver:
-    SECURE_HSTS_SECONDS = _hsts_sec
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_truthy("FSERP_SECURE_HSTS_INCLUDE_SUBDOMAINS")
-    SECURE_HSTS_PRELOAD = _env_truthy("FSERP_SECURE_HSTS_PRELOAD")
+_hsts = int((os.environ.get("FSERP_SECURE_HSTS_SECONDS") or "0").strip() or "0")
+if _hsts > 0 and not _is_runserver:
+    SECURE_HSTS_SECONDS = _hsts
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = _truthy("FSERP_SECURE_HSTS_INCLUDE_SUBDOMAINS")
+    SECURE_HSTS_PRELOAD = _truthy("FSERP_SECURE_HSTS_PRELOAD")
 
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {
-        "simple": {
-            "format": "{levelname} {asctime} {name} {message}",
-            "style": "{",
-        },
-    },
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "formatter": "simple",
-        },
-    },
-    "root": {
-        "handlers": ["console"],
-        "level": "INFO",
-    },
+    "formatters": {"simple": {"format": "{levelname} {asctime} {name} {message}", "style": "{"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "simple"}},
+    "root": {"handlers": ["console"], "level": "INFO"},
     "loggers": {
-        "django.request": {
-            "handlers": ["console"],
-            "level": "WARNING",
-            "propagate": False,
-        },
-        "django.security.DisallowedHost": {
-            "handlers": ["console"],
-            "level": "ERROR",
-            "propagate": False,
-        },
+        "django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "django.security.DisallowedHost": {"handlers": ["console"], "level": "ERROR", "propagate": False},
     },
 }

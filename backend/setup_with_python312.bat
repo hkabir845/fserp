@@ -1,7 +1,7 @@
 @echo off
 REM ============================================================
-REM  Backend setup using Python 3.12 (required - Python 3.14 breaks pydantic)
-REM  Run this if start.bat shows "No module named 'pydantic_core._pydantic_core'"
+REM  Backend setup using Python 3.12 or 3.11 (recommended for Django + binary wheels)
+REM  Use if the default venv fails to install deps on a very new Python preview.
 REM ============================================================
 
 cd /d "%~dp0"
@@ -19,7 +19,7 @@ if not defined PYTHON_EXE (
     echo.
     echo [ERROR] Python 3.12 or 3.11 not found.
     echo.
-    echo This project does NOT work with Python 3.14 - pydantic crashes.
+    echo Use Python 3.12 or 3.11 for the most reliable Django / psycopg installs on Windows.
     echo.
     echo Please install Python 3.12:
     echo   1. Go to: https://www.python.org/downloads/release/python-3120/

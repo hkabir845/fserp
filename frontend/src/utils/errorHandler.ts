@@ -1,136 +1,128 @@
 /**
- * Utility function to extract error messages from API responses
- * Handles both simple string errors and API validation error arrays (Django/FastAPI-style)
+ * Normalize JSON error bodies from the Django API (DRF `detail`, field errors, validation lists with `loc`/`msg`).
+ * Shared by `extractErrorMessage` (Axios) and `fetch` callers (e.g. login).
+ */
+export function formatApiErrorJson(data: unknown, fallback: string = 'Request failed'): string {
+  if (data == null) return fallback
+
+  if (typeof data === 'string') {
+    const t = data.trim()
+    return t || fallback
+  }
+
+  if (typeof data !== 'object' || Array.isArray(data)) {
+    try {
+      const s = JSON.stringify(data)
+      return s && s !== 'null' ? s : fallback
+    } catch {
+      return fallback
+    }
+  }
+
+  const o = data as Record<string, unknown>
+
+  if (typeof o.type === 'string' && o.msg != null && o.loc != null) {
+    const loc = o.loc
+    const location = Array.isArray(loc) ? loc.join('.') : String(loc)
+    return `${location}: ${String(o.msg)}`
+  }
+
+  if (Array.isArray(o.detail)) {
+    const messages = o.detail.map((err: unknown) => {
+      if (typeof err === 'object' && err !== null) {
+        const e = err as Record<string, unknown>
+        const loc = e.loc
+        const location = Array.isArray(loc) ? loc.join('.') : loc != null ? String(loc) : ''
+        const msg = e.msg ?? e.message ?? 'Validation error'
+        return location ? `${location}: ${String(msg)}` : String(msg)
+      }
+      return String(err)
+    })
+    const joined = messages.join('; ').trim()
+    return joined || fallback
+  }
+
+  if (typeof o.detail === 'string') {
+    const t = o.detail.trim()
+    if (t) return t
+  }
+
+  if (o.detail && typeof o.detail === 'object' && !Array.isArray(o.detail)) {
+    const d = o.detail as Record<string, unknown>
+    if (typeof d.msg === 'string') {
+      const loc = d.loc
+      const location = Array.isArray(loc) ? loc.join('.') : loc != null ? String(loc) : ''
+      return location ? `${location}: ${d.msg}` : d.msg
+    }
+    if (typeof d.message === 'string' && d.message.trim()) return d.message.trim()
+    try {
+      return JSON.stringify(o.detail)
+    } catch {
+      return fallback
+    }
+  }
+
+  if (typeof o.message === 'string' && o.message.trim()) return o.message.trim()
+  if (typeof o.error === 'string' && o.error.trim()) return o.error.trim()
+
+  const fieldParts: string[] = []
+  for (const [k, v] of Object.entries(o)) {
+    if (k === 'detail' || k === 'message' || k === 'error') continue
+    if (Array.isArray(v)) {
+      const msgs = v
+        .map((x) => (typeof x === 'string' ? x : JSON.stringify(x)))
+        .filter(Boolean)
+      if (msgs.length) fieldParts.push(`${k}: ${msgs.join(' ')}`)
+    } else if (typeof v === 'string' && v.trim()) {
+      fieldParts.push(`${k}: ${v}`)
+    }
+  }
+  if (fieldParts.length) return fieldParts.join('; ')
+
+  if (typeof o.msg === 'string' && o.msg.trim()) return o.msg.trim()
+
+  try {
+    const s = JSON.stringify(o)
+    if (s && s !== '{}' && s !== 'null') return s
+  } catch {
+    /* ignore */
+  }
+
+  return fallback
+}
+
+/**
+ * Extract a user-facing message from an API/Axios error or thrown value.
  */
 export function extractErrorMessage(error: any, fallback: string = 'An error occurred'): string {
-  // If error is already a string, return it
   if (typeof error === 'string') {
     return error
   }
 
-  // If error is an Error object, return its message
   if (error instanceof Error) {
     return error.message
   }
 
-  // Try to get error message from response data
-  if (error?.response?.data) {
-    const data = error.response.data
-    
-    // Handle API validation errors (array of error objects, Django 422-style)
-    if (Array.isArray(data.detail)) {
-      // Extract messages from validation error array
-      const messages = data.detail.map((err: any) => {
-        const location = err.loc ? err.loc.join('.') : ''
-        const message = err.msg || err.message || 'Validation error'
-        return location ? `${location}: ${message}` : message
-      })
-      return messages.join('; ')
-    }
-    
-    // Handle simple error object with detail property
-    if (data.detail) {
-      if (typeof data.detail === 'string') {
-        return data.detail
-      }
-      // If detail is an array (validation errors), process it
-      if (Array.isArray(data.detail)) {
-        const messages = data.detail.map((err: any) => {
-          if (typeof err === 'object' && err !== null) {
-            const location = err.loc ? err.loc.join('.') : ''
-            const msg = err.msg || err.message || 'Validation error'
-            return location ? `${location}: ${msg}` : msg
-          }
-          return String(err)
-        })
-        return messages.join('; ')
-      }
-      // If detail is an object, try to extract message
-      if (typeof data.detail === 'object') {
-        // Handle Pydantic validation error structure
-        if (data.detail.msg) {
-          const location = data.detail.loc ? data.detail.loc.join('.') : ''
-          return location ? `${location}: ${data.detail.msg}` : data.detail.msg
-        }
-        return data.detail.message || JSON.stringify(data.detail)
-      }
-    }
-    
-    // Handle error object with message property
-    if (data.message) {
-      return data.message
-    }
-
-    // Django REST / custom JSON: { "error": "..." } (no `detail`)
-    if (typeof data.error === 'string' && data.error.trim()) {
-      return data.error.trim()
-    }
-
-    // DRF field errors without top-level `detail`: { "field": ["msg"] } or { "field": "msg" }
-    if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
-      const fieldParts: string[] = []
-      for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-        if (k === 'detail' || k === 'message' || k === 'error') continue
-        if (Array.isArray(v)) {
-          const msgs = v
-            .map(x => (typeof x === 'string' ? x : JSON.stringify(x)))
-            .filter(Boolean)
-          if (msgs.length) fieldParts.push(`${k}: ${msgs.join(' ')}`)
-        } else if (typeof v === 'string' && v.trim()) {
-          fieldParts.push(`${k}: ${v}`)
-        }
-      }
-      if (fieldParts.length) return fieldParts.join('; ')
-    }
+  if (error?.response?.data != null) {
+    return formatApiErrorJson(error.response.data, fallback)
   }
 
-  // Try to get error from direct error object
-  if (error?.detail) {
-    if (Array.isArray(error.detail)) {
-      const messages = error.detail.map((err: any) => {
-        if (typeof err === 'object' && err !== null) {
-          const location = err.loc ? (Array.isArray(err.loc) ? err.loc.join('.') : String(err.loc)) : ''
-          const message = err.msg || err.message || 'Validation error'
-          return location ? `${location}: ${message}` : message
-        }
-        return String(err)
-      })
-      return messages.join('; ')
-    }
-    if (typeof error.detail === 'string') {
-      return error.detail
-    }
-    // Handle single error object with Pydantic structure
-    if (typeof error.detail === 'object' && error.detail !== null) {
-      if (error.detail.msg || error.detail.message) {
-        const location = error.detail.loc ? (Array.isArray(error.detail.loc) ? error.detail.loc.join('.') : String(error.detail.loc)) : ''
-        const msg = error.detail.msg || error.detail.message
-        return location ? `${location}: ${msg}` : msg
-      }
-    }
-  }
-
-  // Handle Pydantic validation error structure directly: {type, loc, msg, input, ctx}
   if (error && typeof error === 'object' && !Array.isArray(error)) {
-    if (error.type && error.loc && error.msg) {
-      const location = Array.isArray(error.loc) ? error.loc.join('.') : String(error.loc)
-      return `${location}: ${String(error.msg)}`
+    if (error.isAxiosError) {
+      const m = error.message
+      return typeof m === 'string' && m.trim() ? m.trim() : fallback
     }
-    if (error.msg) return String(error.msg)
-    if (error.message) return String(error.message)
+    return formatApiErrorJson(error, fallback)
   }
 
   if (error?.message) {
     return String(error.message)
   }
 
-  // Fallback to stringified error or default message
   try {
-    // If error is an object, try to extract meaningful info
     if (error && typeof error === 'object') {
       const errorString = JSON.stringify(error)
       if (errorString !== '{}' && errorString !== 'null' && errorString !== 'undefined') {
-        // If it's a large object, try to extract a summary
         if (errorString.length > 200) {
           return `Error: ${errorString.substring(0, 200)}...`
         }

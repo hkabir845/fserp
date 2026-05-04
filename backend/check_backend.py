@@ -4,7 +4,7 @@ Quick script to check if the backend server is running
 import sys
 try:
     import requests
-    response = requests.get('https://localhost:8000/health', timeout=2)
+    response = requests.get('http://127.0.0.1:8000/health', timeout=2)
     if response.status_code == 200:
         print("✅ Backend server is running!")
         print(f"   Response: {response.json()}")
@@ -14,7 +14,7 @@ try:
         sys.exit(1)
 except requests.exceptions.ConnectionError:
     print("❌ Backend server is NOT running!")
-    print("   Please start it with: uvicorn app.main:app --reload")
+    print("   Please start it with: python manage.py runserver 127.0.0.1:8000 (from backend/ with venv active)")
     sys.exit(1)
 except requests.exceptions.Timeout:
     print("❌ Backend server is not responding (timeout)")

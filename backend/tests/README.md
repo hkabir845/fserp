@@ -23,5 +23,3 @@ Uses **Django** + **pytest-django** (`DJANGO_SETTINGS_MODULE=fsms.settings`). A 
 - Dashboard stats, customers list, dummy customer POST, items list
 
 Extend this file (or add `test_*.py`) for new modules before production deploy.
-
-Legacy FastAPI test modules were cleared; they targeted a removed stack.

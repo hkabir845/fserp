@@ -1,6 +1,6 @@
 # FSMS Backend (Django)
 
-Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed. The web UI is a separate app: **Next.js 16** in [`../frontend/`](../frontend/) (this Python project does not embed Next.js).
+Single backend: **Django** (`api/`, `fsms/`). The web UI is a separate app: **Next.js 16** in [`../frontend/`](../frontend/) (this Python project does not embed Next.js).
 
 **Deploy / env:** Set **`DJANGO_SECRET_KEY`** (32+ chars) on the host. Copy [`env.example`](env.example) to **`backend/.env`** (loaded on startup) or export the same variables in systemd. Use **`DATABASE_URL`** for PostgreSQL on a real VPS. For **your own domain**, set **`DJANGO_ALLOWED_HOSTS`**, **`FSERP_CORS_ALLOWED_ORIGINS`**, **`FSERP_CSRF_TRUSTED_ORIGINS`**, and **`FRONTEND_BASE_URL`** (see `env.example`). If those are unset, defaults match `mahasoftcorporation.com` / `api.mahasoftcorporation.com`.
 
@@ -25,6 +25,7 @@ Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATC
 **Verify:** `python verify_backend.py` (includes a preflight check for `x-selected-company-id`). On the server, `curl -i -X OPTIONS "https://api.example.com/api/auth/login/" -H "Origin: https://localhost:3000 " -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: x-selected-company-id"` should show `access-control-allow-headers` containing `x-selected-company-id`.
 
 - **Run:** From `backend` folder: `python manage.py runserver 8000`
+- **Windows (recommended):** `run-dev.bat` — creates/uses `venv`, installs `requirements.txt`, then starts the server (avoids “missing dj-database-url” when using global Python while `DATABASE_URL` is set in `.env`).
 - **API root:** http://localhost:8000/api/
 - **API docs (simple):** http://localhost:8000/api/docs/
 - **Auth:** POST `/api/auth/login/form/` (JSON or form). Create user: `python manage.py create_superuser`

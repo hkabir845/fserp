@@ -12,7 +12,7 @@ def _password_bytes(raw_password: str) -> bytes:
 
 
 class Company(models.Model):
-    """Company/tenant for multi-tenant support. Replaces FastAPI app.models.company."""
+    """Company/tenant for multi-tenant support."""
     # Immutable business reference: Master = FS-000001 (reserved); others FS-{id:06d}. Set in save().
     company_code = models.CharField(max_length=24, null=True, blank=True, unique=True, db_index=True)
     name = models.CharField(max_length=200)

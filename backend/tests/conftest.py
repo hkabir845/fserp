@@ -1,5 +1,5 @@
 """
-Django API test fixtures (FSMS). Replaces legacy FastAPI/SQLAlchemy conftest.
+Django API test fixtures (FSMS).
 """
 from __future__ import annotations
 

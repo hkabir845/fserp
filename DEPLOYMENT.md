@@ -15,6 +15,10 @@ set DJANGO_SECRET_KEY=<paste-50+-char-random>   # Windows; use export on Linux/m
 python manage.py check --deploy
 ```
 
+Custom **FSERP deploy warnings** (non-fatal): **fserp.W001** SQLite without `FSERP_USE_SQLITE=1`, **fserp.W002** LocMem cache without Redis, **fserp.W003** missing `EMAIL_HOST`, **fserp.W004** WhiteNoise missing while static is not offloaded (`FSERP_DISABLE_WHITENOISE`). Fix in `.env` / `pip install` or accept the risk on internal hosts.
+
+**Dependencies:** `pip install -r requirements.txt` includes WhiteNoise for static files under Gunicorn. Use `pip install -r requirements-prod.txt` on the API host to add Gunicorn.
+
 You may see **warnings** until HTTPS is fully configured (`FSERP_SECURE_SSL_REDIRECT`, `FSERP_SECURE_HSTS_SECONDS`) — resolve those on the real host behind TLS.
 
 ```bash
@@ -59,8 +63,7 @@ Copy from `backend/env.example` and fill values. Never commit real `.env`.
 ```bash
 cd /path/to/FSERP/backend
 source venv/bin/activate
-pip install -r requirements.txt
-pip install gunicorn   # WSGI server (not in requirements.txt by design)
+pip install -r requirements-prod.txt
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
 ```
@@ -72,6 +75,8 @@ gunicorn fsms.wsgi:application --bind 127.0.0.1:8001 --workers 3
 ```
 
 Put **nginx** (or cPanel/Apache) in front: TLS, `proxy_set_header X-Forwarded-Proto https`, forward `/` and `/api/` to Gunicorn. Do not strip CORS headers if the proxy handles OPTIONS incorrectly — prefer forwarding OPTIONS to Django.
+
+**Static files:** With **WhiteNoise** (default when not using `runserver`), `collectstatic` output is served by Django/Gunicorn at `STATIC_URL`. You can still offload `/static/` to nginx for caching; or set **`FSERP_DISABLE_WHITENOISE=1`** if the proxy serves `STATIC_ROOT` exclusively.
 
 ## 6. Frontend release
 

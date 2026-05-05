@@ -1,4 +1,5 @@
 """Django settings. Load `backend/.env` (and optional `backend/env/.env`). Production: set DJANGO_SECRET_KEY (32+ chars), DATABASE_URL, hosts, and CORS/CSRF env vars per `env.example`."""
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -94,10 +95,30 @@ INSTALLED_APPS = [
     "api",
 ]
 
+# WhiteNoise serves collected static files when running under Gunicorn (DEBUG off). Skipped for
+# runserver (Django's static finder), when FSERP_DISABLE_WHITENOISE=1 (nginx-only static), or when
+# the package is not installed (migrate/check still work; install whitenoise for production).
+def _whitenoise_available() -> bool:
+    try:
+        return importlib.util.find_spec("whitenoise") is not None
+    except Exception:
+        return False
+
+
+_use_whitenoise = (
+    (not _is_runserver)
+    and (not _truthy("FSERP_DISABLE_WHITENOISE"))
+    and _whitenoise_available()
+)
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "fsms.middleware.CorrelationIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
+]
+if _use_whitenoise:
+    MIDDLEWARE.append("whitenoise.middleware.WhiteNoiseMiddleware")
+MIDDLEWARE += [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -163,6 +184,12 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+if _use_whitenoise:
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+    }
 
 _upload_cap = 256 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = _upload_cap

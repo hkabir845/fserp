@@ -98,7 +98,7 @@ Optional: copy **`backend/.env.example`** to **`backend/.env`** for `FRONTEND_BA
 
 Use **`DATABASE_URL`** for PostgreSQL (see `env.example`), or omit it to use the default SQLite file `backend/db.sqlite3`. Run `python manage.py migrate` to apply Django migrations.
 
-**Process manager (VPS):** After `pip install gunicorn`, run the API behind nginx or another reverse proxy, for example: `gunicorn fsms.wsgi:application --bind 127.0.0.1:8001 --workers 3`. Set **`DJANGO_SECRET_KEY`** and **`DATABASE_URL`** in the service environment (or `backend/.env`). Run **`python manage.py collectstatic`** if you serve `STATIC_ROOT` via nginx.
+**Process manager (VPS):** Install **`pip install -r requirements-prod.txt`** (or `requirements.txt` plus Gunicorn), then run the API behind nginx or another reverse proxy, for example: `gunicorn fsms.wsgi:application --bind 127.0.0.1:8001 --workers 3`. Set **`DJANGO_SECRET_KEY`** and **`DATABASE_URL`** in the service environment (or `backend/.env`). Run **`python manage.py collectstatic --noinput`**; **WhiteNoise** serves admin/static from `STATIC_ROOT` unless **`FSERP_DISABLE_WHITENOISE=1`** (nginx-only static).
 
 ## Run
 

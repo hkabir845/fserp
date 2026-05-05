@@ -1,0 +1,4 @@
+# Optional production install: core deps + WSGI server.
+#   pip install -r requirements-prod.txt
+-r requirements.txt
+gunicorn>=22.0.0,<24

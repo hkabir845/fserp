@@ -10,3 +10,4 @@ PyJWT>=2.10.0
 bcrypt>=4.0.1
 python-dotenv>=1.0.1
 redis>=5.0.0,<6
+whitenoise>=6.6.0,<7

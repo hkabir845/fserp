@@ -4,18 +4,15 @@ echo Restarting Backend Server
 echo ========================================
 echo.
 
-REM Find and kill existing uvicorn processes
-echo Stopping existing backend servers...
-taskkill /F /IM uvicorn.exe 2>nul
-taskkill /F /FI "WINDOWTITLE eq *uvicorn*" 2>nul
-timeout /t 2 /nobreak >nul
+echo If port 8000 is in use, stop the other process first (Ctrl+C in that window).
+timeout /t 1 /nobreak >nul
 
 echo.
-echo Starting backend server...
+echo Starting Django backend...
 echo.
 
-REM Start server
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+call "%~dp0venv\Scripts\activate.bat"
+python manage.py runserver 127.0.0.1:8000
 
 pause
 

@@ -1,4 +1,4 @@
-"""Stub list endpoints (empty or minimal) for resources not yet migrated from FastAPI."""
+"""Stub list endpoints (empty or minimal) for resources not yet fully implemented."""
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 from django.views.decorators.csrf import csrf_exempt

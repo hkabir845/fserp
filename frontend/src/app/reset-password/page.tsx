@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getApiBaseUrl } from '@/lib/api'
@@ -18,6 +18,12 @@ function ResetPasswordForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+
+  useEffect(() => {
+    if (tokenFromUrl && !token.trim()) {
+      setToken(tokenFromUrl)
+    }
+  }, [tokenFromUrl, token])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

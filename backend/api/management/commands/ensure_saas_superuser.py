@@ -59,6 +59,6 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"Updated '{user.username}': role=super_admin, is_active=True. "
-                f"Refresh SaaS → All Users; this account should appear at the top."
+                f"Refresh SaaS / All Users; this account should appear at the top."
             )
         )

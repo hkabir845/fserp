@@ -595,8 +595,8 @@ def main():
         print("  Cashier 2:  username: cashier2   password: cash123")
         
         print("\nNEXT STEPS:")
-        print("  1. Start backend: python -m uvicorn app.main:app --reload")
-        print("  2. Access API docs: https://localhost:8000/api/docs")
+        print("  1. Start backend: python manage.py runserver 127.0.0.1:8000")
+        print("  2. Access API docs: http://127.0.0.1:8000/api/docs")
         print("  3. Access frontend: http://localhost:3000")
         print("\n" + "="*60)
         

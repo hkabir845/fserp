@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Eye, EyeOff } from 'lucide-react'
 import { getApiBaseUrl, getBackendOrigin, getApiDocsUrl, setAuthApiOriginStamp } from '@/lib/api'
+import { formatApiErrorJson } from '@/utils/errorHandler'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -273,54 +274,17 @@ export default function LoginPage() {
         // Handle 404 specifically - endpoint might not be available
         if (response.status === 404) {
           errorMessage = `Login endpoint not found. Please ensure the backend is running on ${backendOrigin}`
-          console.error('Login endpoint not found. Check if backend is running.')
         } else {
           try {
             const contentType = response.headers.get('content-type')
             if (contentType && contentType.includes('application/json')) {
               const errorData = await response.json()
-              
-              // Handle Pydantic validation errors (422 status)
-              if (response.status === 422 && Array.isArray(errorData.detail)) {
-                // Pydantic validation errors are in an array
-                const validationErrors = errorData.detail.map((err: any) => {
-                  const field = err.loc?.join('.') || 'field'
-                  const msg = err.msg || 'validation error'
-                  return `${field}: ${msg}`
-                }).join(', ')
-                errorMessage = `Validation error: ${validationErrors}`
-              }
-              // Handle string detail
-              else if (typeof errorData.detail === 'string') {
-                errorMessage = errorData.detail
-              }
-              // Handle object detail (try to extract message)
-              else if (errorData.detail && typeof errorData.detail === 'object') {
-                if (errorData.detail.msg) {
-                  errorMessage = errorData.detail.msg
-                } else {
-                  errorMessage = JSON.stringify(errorData.detail)
-                }
-              }
-              // Handle message field
-              else if (errorData.message) {
-                errorMessage = errorData.message
-              }
-              // Handle string response
-              else if (typeof errorData === 'string') {
-                errorMessage = errorData
-              }
-              // Fallback to stringify
-              else {
-                errorMessage = JSON.stringify(errorData)
-              }
+              errorMessage = formatApiErrorJson(errorData, 'Login failed')
             } else {
-              // If response is not JSON, try to get text
               const text = await response.text()
               errorMessage = text || response.statusText || `Server error (${response.status})`
             }
           } catch (parseError) {
-            // If we can't parse the response, use status text
             console.warn('Failed to parse error response:', parseError)
             errorMessage = response.statusText || `Server error (${response.status})`
           }
@@ -359,15 +323,11 @@ export default function LoginPage() {
         router.push('/apps')
       }
     } catch (err: any) {
-      // Log detailed error information for debugging
-      if (err instanceof Error) {
-        console.error('Login error:', {
-          message: err.message,
-          stack: err.stack,
-          name: err.name
-        })
-      } else {
-        console.error('Login error:', err)
+      // One-line dev log (avoid console.error: it chains through SuppressWarnings + errorHandler and prints noisy stacks)
+      if (process.env.NODE_ENV === 'development') {
+        const logMsg =
+          err instanceof Error ? err.message : typeof err === 'string' ? err : 'Login request failed'
+        console.info('[login]', logMsg)
       }
       let errorMessage = 'Login failed. Please check your credentials.'
       

@@ -4,125 +4,40 @@
  */
 import axios from 'axios'
 
-/**
- * Canonical API base (.../api). Set `NEXT_PUBLIC_API_BASE_URL` in `frontend/.env` (production) or
- * `frontend/.env.development` (local Django). Path may include `/api` — never duplicate `/api/api`.
- */
-/** Default when env is missing at build time — production API (local dev uses `.env.development`). */
+/** Production API host (no env / dev switching). */
 export const FALLBACK_BACKEND_ORIGIN = 'https://api.mahasoftcorporation.com'
 
-const DEFAULT_BACKEND_ORIGIN = FALLBACK_BACKEND_ORIGIN
+/** Production app origin (password-reset links, help text). */
+export const FALLBACK_FRONTEND_ORIGIN = 'https://mahasoftcorporation.com'
 
-/** Default UI origin for help text; `next dev` sets `NEXT_PUBLIC_APP_ORIGIN` via `.env.development`. */
-export const FALLBACK_FRONTEND_ORIGIN =
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_APP_ORIGIN?.trim()) ||
-  'https://mahasoftcorporation.com'
+const PRODUCTION_BACKEND_ORIGIN = FALLBACK_BACKEND_ORIGIN.replace(/\/+$/, '')
 
-/**
- * `runserver` is HTTP-only. If env still has `https://localhost` / loopback, the browser throws
- * net::ERR_SSL_PROTOCOL_ERROR — force http. Set `NEXT_PUBLIC_API_FORCE_HTTPS_LOCAL=true` if you terminate TLS locally.
- */
-function forceHttpForLoopbackApiBase(origin: string): string {
-  if (process.env.NEXT_PUBLIC_API_FORCE_HTTPS_LOCAL === 'true') return origin.trim().replace(/\/+$/, '')
-  const t = origin.trim().replace(/\/+$/, '')
+function backendOriginFromPublicEnv(): string {
+  if (typeof process === 'undefined') return ''
+  const raw =
+    process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_API_URL?.trim() ||
+    ''
+  if (!raw) return ''
   try {
-    const withScheme = /^https?:\/\//i.test(t) ? t : `http://${t}`
-    const u = new URL(withScheme)
-    const h = u.hostname.toLowerCase()
-    const loopback = h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1'
-    if (u.protocol === 'https:' && loopback) {
-      u.protocol = 'http:'
-      return u.href.replace(/\/+$/, '')
-    }
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`
+    return new URL(withScheme).origin.replace(/\/+$/, '')
   } catch {
-    /* keep raw */
+    return ''
   }
-  return t
 }
 
-function rawBackendBaseFromEnv(): string {
-  const base = (process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_BACKEND_ORIGIN).trim().replace(/\/+$/, '')
-  return forceHttpForLoopbackApiBase(base)
-}
-
-/** API hostname is loopback (Django on same machine). */
-function isLoopbackApiHost(hostname: string): boolean {
-  const h = hostname.toLowerCase()
-  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1'
-}
-
-/**
- * Browser UI is clearly local dev: plain loopback or tenant subdomains like `adib.localhost`
- * (resolved to 127.0.0.1). Used to prefer local Django when env still points at production.
- */
-function isLocalhostStyleDevHost(hostname: string): boolean {
-  const h = hostname.toLowerCase()
-  if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]') return true
-  if (h.endsWith('.localhost')) return true
-  return false
-}
-
-/** True for typical LAN / machine-local UI hosts — do not rewrite API to production here. */
-function isPrivateOrLocalPageHost(hostname: string): boolean {
-  const h = hostname.toLowerCase()
-  if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]') return true
-  if (h.endsWith('.localhost')) return true
-  if (/^192\.168\./.test(h)) return true
-  if (/^10\./.test(h)) return true
-  const m = /^172\.(\d+)\./.exec(h)
-  if (m) {
-    const oct = Number(m[1])
-    if (oct >= 16 && oct <= 31) return true
-  }
-  return false
-}
-
-/**
- * Resolves which backend origin the browser should call.
- *
- * **Self-hosted / VPS:** If `NEXT_PUBLIC_API_BASE_URL` still points at loopback but users open the UI from a
- * public hostname, we no longer silently switch to `FALLBACK_BACKEND_ORIGIN` — that showed the wrong database
- * (empty companies) while the real data remained on the VPS. Set `NEXT_PUBLIC_API_BASE_URL` to your real API
- * origin and rebuild. Opt-in legacy behavior: `NEXT_PUBLIC_API_FALLBACK_TO_PRODUCTION_ORIGIN=true`.
- */
-function effectiveBackendBaseFromEnv(): string {
-  let base = rawBackendBaseFromEnv()
-  if (typeof window === 'undefined') return base.replace(/\/api\/?$/, '')
-
-  try {
-    const withScheme = /^https?:\/\//i.test(base) ? base : `https://${base}`
-    const apiHost = new URL(withScheme).hostname.toLowerCase()
-    const pageHost = window.location.hostname
-    const useProdApi = process.env.NEXT_PUBLIC_USE_PRODUCTION_API === 'true'
-    const devBackend =
-      (process.env.NEXT_PUBLIC_DEV_BACKEND_ORIGIN || 'http://localhost:8000').trim().replace(/\/+$/, '')
-    const allowLoopbackToProdFallback =
-      process.env.NEXT_PUBLIC_API_FALLBACK_TO_PRODUCTION_ORIGIN === 'true'
-
-    // Tenant UI on *.localhost but NEXT_PUBLIC_* still targets prod (e.g. .env.local) → local Django.
-    if (!useProdApi && isLocalhostStyleDevHost(pageHost) && !isLoopbackApiHost(apiHost)) {
-      base = devBackend
-    } else if (
-      allowLoopbackToProdFallback &&
-      isLoopbackApiHost(apiHost) &&
-      !isPrivateOrLocalPageHost(pageHost)
-    ) {
-      base = FALLBACK_BACKEND_ORIGIN.trim().replace(/\/+$/, '')
-    }
-  } catch {
-    /* keep base */
-  }
-  return forceHttpForLoopbackApiBase(base.replace(/\/api\/?$/, ''))
+function resolvedBackendOrigin(): string {
+  return backendOriginFromPublicEnv() || PRODUCTION_BACKEND_ORIGIN
 }
 
 export function getApiBaseUrl(): string {
-  const withoutApi = effectiveBackendBaseFromEnv().replace(/\/api\/?$/, '')
-  return `${withoutApi}/api`
+  return `${resolvedBackendOrigin()}/api`
 }
 
 /** Backend origin without `/api` (Django serves `/health` at root, not under `/api/`). */
 export function getBackendOrigin(): string {
-  return effectiveBackendBaseFromEnv()
+  return resolvedBackendOrigin()
 }
 
 /** API docs index (`/api/docs/`); host follows `NEXT_PUBLIC_API_BASE_URL`. */
@@ -267,45 +182,23 @@ function fetchNewAccessToken(): Promise<string | null> {
   return refreshInFlight
 }
 
-/**
- * Hostnames where the UI is served (e.g. fs.example.com) — not tenant vanity hosts.
- * Without this, a 3-part host like app.example.com is misread as tenant "app"
- * and every request sends X-Tenant-Subdomain, which breaks CORS if the API omits that header.
- * Set in .env: NEXT_PUBLIC_APP_SHELL_HOSTNAMES=app.example.com,www.app.example.com
- */
-function _appShellHostnames(): Set<string> {
-  const raw = process.env.NEXT_PUBLIC_APP_SHELL_HOSTNAMES || ''
-  return new Set(
-    raw
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  )
-}
+/** Apex / marketing hosts — not tenant subdomains (no `X-Tenant-Subdomain`). */
+const APP_SHELL_HOSTNAMES = new Set<string>(['mahasoftcorporation.com', 'www.mahasoftcorporation.com'])
 
-// Helper function to safely get tenant subdomain (only on client)
 function getTenantSubdomain(): string | null {
   if (typeof window === 'undefined' || !window.location) {
     return null
   }
   try {
     const hostname = window.location.hostname.toLowerCase()
-    if (_appShellHostnames().has(hostname)) {
+    if (APP_SHELL_HOSTNAMES.has(hostname)) {
       return null
     }
     const parts = hostname.split('.')
-
-    if (hostname.includes('localhost') || hostname.includes('127.0.0.1')) {
-      if (parts.length > 1 && !['localhost', '127', '0', '1'].includes(parts[0])) {
-        return parts[0]
-      }
-      return null
-    }
-
-    if (parts.length >= 3) {
+    const base = 'mahasoftcorporation.com'
+    if (parts.length >= 3 && hostname.endsWith(`.${base}`)) {
       return parts[0]
     }
-
     return null
   } catch {
     return null
@@ -398,12 +291,8 @@ api.interceptors.request.use(
       } catch {
         /* ignore */
       }
-    } catch (e) {
-      // Silently handle any errors during interceptor execution
-      // Don't log in production to avoid noise
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('Error in API request interceptor:', e)
-      }
+    } catch {
+      /* ignore */
     }
 
     // FormData: must not send application/json — browser/axios must set multipart boundary.
@@ -454,13 +343,6 @@ api.interceptors.response.use(
       error.message?.includes('ERR_CONNECTION_RESET') ||
       error.message?.includes('Failed to fetch')
     )) {
-      // Silently handle connection errors - don't log to console
-      // Components will handle the error gracefully
-      // Only log in development if explicitly debugging
-      if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEBUG_CONNECTION === 'true') {
-        console.warn('Backend server connection error:', error.code || error.message)
-        console.warn('Please ensure the server is running on', getApiBaseUrl())
-      }
       return Promise.reject(error)
     }
 
@@ -495,13 +377,6 @@ api.interceptors.response.use(
           window.location.assign('/login')
         }
       }
-    }
-
-    // Log 403 errors for debugging
-    if (error.response?.status === 403 && process.env.NODE_ENV === 'development') {
-      console.error('403 Forbidden - Permission denied')
-      console.error('Required roles may not match user role')
-      console.error('Error detail:', error.response?.data?.detail)
     }
 
     return Promise.reject(error)

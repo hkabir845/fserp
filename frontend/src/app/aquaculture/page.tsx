@@ -876,7 +876,7 @@ function KpiCard(props: {
   title: string
   value: string
   sub: string
-  icon: ComponentType<{ className?: string; strokeWidth?: number }>
+  icon: ComponentType<{ className?: string; strokeWidth?: number | string }>
   accent: 'positive' | 'negative' | 'neutral'
 }) {
   const { title, value, sub, icon: Icon, accent } = props

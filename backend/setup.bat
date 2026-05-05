@@ -36,7 +36,7 @@ echo.
 echo To run the server:
 echo   1. Make sure PostgreSQL is running
 echo   2. Run: venv\Scripts\activate
-echo   3. Run: uvicorn app.main:app --reload
+echo   3. Run: python manage.py runserver 127.0.0.1:8000
 echo.
 
 pause

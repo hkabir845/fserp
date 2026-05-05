@@ -1,4 +1,4 @@
-"""Admin API (Super Admin): stats, companies, users. Replaces FastAPI app.api.admin."""
+"""Admin API (Super Admin): stats, companies, users."""
 import json
 import logging
 

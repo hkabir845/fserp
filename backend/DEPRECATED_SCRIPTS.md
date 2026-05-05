@@ -1,4 +1,4 @@
-# Deprecated Scripts (FastAPI app removed)
+# Deprecated Scripts (legacy standalone `app` package)
 
 These scripts in the backend root imported from the removed `app` package and **will not run**. Use Django instead.
 

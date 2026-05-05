@@ -1,6 +1,8 @@
 # FSMS Backend (Django)
 
-Single backend: **Django** (`api/`, `fsms/`). FastAPI has been removed. The web UI is a separate app: **Next.js 16** in [`../frontend/`](../frontend/) (this Python project does not embed Next.js).
+**Production checklist:** [`../DEPLOYMENT.md`](../DEPLOYMENT.md) (env vars, `check --deploy`, Gunicorn, smoke tests).
+
+Single backend: **Django** (`api/`, `fsms/`). The web UI is a separate app: **Next.js 16** in [`../frontend/`](../frontend/) (this Python project does not embed Next.js).
 
 **Deploy / env:** Set **`DJANGO_SECRET_KEY`** (32+ chars) on the host. Copy [`env.example`](env.example) to **`backend/.env`** (loaded on startup) or export the same variables in systemd. Use **`DATABASE_URL`** for PostgreSQL on a real VPS. For **your own domain**, set **`DJANGO_ALLOWED_HOSTS`**, **`FSERP_CORS_ALLOWED_ORIGINS`**, **`FSERP_CSRF_TRUSTED_ORIGINS`**, and **`FRONTEND_BASE_URL`** (see `env.example`). If those are unset, defaults match `mahasoftcorporation.com` / `api.mahasoftcorporation.com`.
 
@@ -25,8 +27,9 @@ Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATC
 **Verify:** `python verify_backend.py` (includes a preflight check for `x-selected-company-id`). On the server, `curl -i -X OPTIONS "https://api.example.com/api/auth/login/" -H "Origin: https://localhost:3000 " -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: x-selected-company-id"` should show `access-control-allow-headers` containing `x-selected-company-id`.
 
 - **Run:** From `backend` folder: `python manage.py runserver 8000`
-- **API root:** https://localhost:8000/api/
-- **API docs (simple):** https://localhost:8000/api/docs/
+- **Windows (recommended):** `run-dev.bat` — creates/uses `venv`, installs `requirements.txt`, then starts the server (avoids “missing dj-database-url” when using global Python while `DATABASE_URL` is set in `.env`).
+- **API root:** http://localhost:8000/api/
+- **API docs (simple):** http://localhost:8000/api/docs/
 - **Auth:** POST `/api/auth/login/form/` (JSON or form). Create user: `python manage.py create_superuser`
 
 Endpoints: auth (login, refresh), companies/current, admin/stats, admin/companies, admin/users, dashboard/stats, broadcasts, and stub lists for customers, tanks, items, nozzles (empty until you add full CRUD).
@@ -75,12 +78,23 @@ Then log in on the frontend with that username and password.
 
 ## Setup
 
+**Windows (PowerShell)** — from repo root:
+
+```powershell
+pwsh -File backend/scripts/local-setup.ps1
+```
+
+**Manual:**
+
 ```bash
 cd backend
 python -m venv venv
 venv\Scripts\activate   # Windows
+# source venv/bin/activate   # macOS / Linux
 pip install -r requirements.txt
 ```
+
+Optional: copy **`backend/.env.example`** to **`backend/.env`** for `FRONTEND_BASE_URL=http://localhost:3000` and other overrides. You can also use **`backend/env/.env`** (loaded after `.env`).
 
 Use **`DATABASE_URL`** for PostgreSQL (see `env.example`), or omit it to use the default SQLite file `backend/db.sqlite3`. Run `python manage.py migrate` to apply Django migrations.
 
@@ -92,9 +106,9 @@ Use **`DATABASE_URL`** for PostgreSQL (see `env.example`), or omit it to use the
 python manage.py runserver 8000
 ```
 
-- Root: https://localhost:8000/
-- Health: https://localhost:8000/health
-- API: https://localhost:8000/api/
+- Root: http://localhost:8000/
+- Health: http://localhost:8000/health
+- API: http://localhost:8000/api/
 - Auth: POST /api/auth/login (JSON or form), /api/auth/refresh, /api/auth/me
 - Companies: /api/companies/, /api/companies/current, /api/companies/<id>
 - Users: /api/users/, /api/users/<id>

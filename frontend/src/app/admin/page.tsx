@@ -148,6 +148,9 @@ interface AdminUser {
   company_name: string | null
   is_active: boolean
   created_at: string
+  home_station_id?: number | null
+  home_station_name?: string | null
+  pos_sale_scope?: string
 }
 
 function SuperAdminPageContent() {
@@ -233,8 +236,60 @@ function SuperAdminPageContent() {
     role: 'cashier',
     password: '',
     confirmPassword: '',
-    company_id: ''
+    company_id: '',
+    home_station_id: '',
   })
+  const [adminStationOptions, setAdminStationOptions] = useState<
+    { id: number; station_name: string }[]
+  >([])
+
+  useEffect(() => {
+    if (!showUserModal || !userFormData.company_id) {
+      setAdminStationOptions([])
+      return
+    }
+    const cid = parseInt(userFormData.company_id, 10)
+    if (Number.isNaN(cid)) {
+      setAdminStationOptions([])
+      return
+    }
+    let cancelled = false
+    api
+      .get<{ stations?: { id: number; station_name: string; is_active?: boolean }[] }>(
+        `/admin/companies/${cid}/stations/`
+      )
+      .then((res) => {
+        if (cancelled) return
+        const raw = res.data?.stations
+        const list = Array.isArray(raw) ? raw : []
+        const active = list.filter((s) => s.is_active !== false)
+        setAdminStationOptions(
+          active.map((s) => ({
+            id: s.id,
+            station_name: (s.station_name || '').trim() || `Site ${s.id}`,
+          }))
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setAdminStationOptions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [showUserModal, userFormData.company_id])
+
+  useEffect(() => {
+    if (!showUserModal) return
+    if (userFormData.role !== 'cashier' && userFormData.role !== 'operator') return
+    if (!userFormData.company_id) return
+    if (adminStationOptions.length !== 1) return
+    const onlyId = adminStationOptions[0].id
+    setUserFormData((fd) => {
+      const cur = fd.home_station_id === '' ? '' : String(fd.home_station_id)
+      if (cur === String(onlyId)) return fd
+      return { ...fd, home_station_id: String(onlyId) }
+    })
+  }, [showUserModal, userFormData.role, userFormData.company_id, adminStationOptions])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -651,7 +706,8 @@ function SuperAdminPageContent() {
       role: 'admin',
       password: '',
       confirmPassword: '',
-      company_id: ''
+      company_id: '',
+      home_station_id: '',
     })
     setShowUserModal(true)
     fetchCompanies()
@@ -666,7 +722,11 @@ function SuperAdminPageContent() {
       role: user.role,
       password: '',
       confirmPassword: '',
-      company_id: user.company_id?.toString() || ''
+      company_id: user.company_id?.toString() || '',
+      home_station_id:
+        user.home_station_id != null && user.home_station_id > 0
+          ? String(user.home_station_id)
+          : '',
     })
     setShowUserModal(true)
   }
@@ -692,6 +752,18 @@ function SuperAdminPageContent() {
       return
     }
 
+    const posStaff =
+      userFormData.role === 'cashier' || userFormData.role === 'operator'
+    if (
+      posStaff &&
+      userFormData.company_id &&
+      adminStationOptions.length > 1 &&
+      (!userFormData.home_station_id || userFormData.home_station_id === '')
+    ) {
+      toast.error('Select a location (site) for this cashier or operator.')
+      return
+    }
+
     try {
       const userData: any = {
         username: userFormData.username,
@@ -705,6 +777,17 @@ function SuperAdminPageContent() {
         userData.password = userFormData.password
       } else if (userFormData.password) {
         userData.password = userFormData.password
+      }
+
+      if (posStaff && userFormData.company_id) {
+        userData.pos_sale_scope = 'both'
+        let hid: number | null = null
+        if (userFormData.home_station_id) {
+          hid = parseInt(String(userFormData.home_station_id), 10)
+        } else if (adminStationOptions.length === 1) {
+          hid = adminStationOptions[0].id
+        }
+        userData.home_station_id = hid
       }
 
       if (editingUser) {
@@ -2527,6 +2610,50 @@ function SuperAdminPageContent() {
                         </p>
                       </div>
                     </div>
+
+                    {(userFormData.role === 'cashier' || userFormData.role === 'operator') &&
+                      Boolean(userFormData.company_id) && (
+                        <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-4">
+                          <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-800">
+                            <MapPin className="h-4 w-4 text-amber-600" />
+                            Location (POS site)
+                            {adminStationOptions.length > 1 ? (
+                              <span className="text-red-500">*</span>
+                            ) : null}
+                          </label>
+                          {adminStationOptions.length === 0 ? (
+                            <p className="text-sm text-amber-900">
+                              No active sites for this company. Add sites under the tenant&apos;s Stations, or wait for
+                              the list to load.
+                            </p>
+                          ) : (
+                            <>
+                              <select
+                                required={adminStationOptions.length > 1}
+                                value={userFormData.home_station_id}
+                                onChange={(e) =>
+                                  setUserFormData({ ...userFormData, home_station_id: e.target.value })
+                                }
+                                className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                              >
+                                {adminStationOptions.length > 1 ? (
+                                  <option value="">Select location…</option>
+                                ) : null}
+                                {adminStationOptions.map((s) => (
+                                  <option key={s.id} value={String(s.id)}>
+                                    {s.station_name}
+                                  </option>
+                                ))}
+                              </select>
+                              <p className="mt-1.5 text-xs text-gray-600">
+                                {adminStationOptions.length > 1
+                                  ? 'This user can use the register only at the selected site.'
+                                  : 'Only one active site — it is assigned automatically.'}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      )}
 
                     {!editingUser && (
                       <div className="grid grid-cols-2 gap-4">

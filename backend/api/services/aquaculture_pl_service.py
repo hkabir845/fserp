@@ -26,7 +26,14 @@ from api.services.aquaculture_constants import (
     INTER_POND_FISH_TRANSFER_PL_NOTE,
     SHARED_OPERATING_COST_RULE,
 )
-from api.services.aquaculture_cost_per_kg import aquaculture_pl_cost_basis_doc, build_pond_cost_per_kg_block
+from api.services.aquaculture_cost_per_kg import (
+    aquaculture_pl_cost_basis_doc,
+    build_pond_cost_per_kg_block,
+    landlord_lease_payment_pond_operating_total,
+    landlord_lease_payment_pond_operating_total_company,
+    vendor_bill_pond_operating_total,
+    vendor_bill_pond_operating_total_company,
+)
 
 
 def _money_q(d: Decimal) -> Decimal:
@@ -147,7 +154,22 @@ def compute_aquaculture_pl_summary_dict(
     total_pay = Decimal("0")
 
     for pond in ponds_qs:
-        exp_direct = _money_q(_dexp_q(pond.id).aggregate(t=Sum("amount"))["t"] or Decimal("0"))
+        exp_aq = _money_q(_dexp_q(pond.id).aggregate(t=Sum("amount"))["t"] or Decimal("0"))
+        exp_bill = vendor_bill_pond_operating_total(
+            company_id=cid,
+            pond_id=pond.id,
+            start=start,
+            end=end,
+            cycle_filter_id=cycle_filter_id,
+        )
+        exp_landlord_lease = landlord_lease_payment_pond_operating_total(
+            company_id=cid,
+            pond_id=pond.id,
+            start=start,
+            end=end,
+            cycle_filter_id=cycle_filter_id,
+        )
+        exp_direct = _money_q(exp_aq + exp_bill + exp_landlord_lease)
         exp_shared = (
             Decimal("0") if cycle_filter_id is not None else _money_q(shared_per_pond.get(pond.id, Decimal("0")))
         )
@@ -234,9 +256,29 @@ def compute_aquaculture_pl_summary_dict(
             by_cat_dec[row["expense_category"]] += _money_q(row["s"] or Decimal("0"))
         for e in shared_expenses:
             by_cat_dec[e.expense_category] += _money_q(e.amount)
+        by_cat_dec["vendor_bill_pond"] += vendor_bill_pond_operating_total_company(
+            company_id=cid, start=start, end=end
+        )
+        by_cat_dec["lease"] += landlord_lease_payment_pond_operating_total_company(
+            company_id=cid, start=start, end=end
+        )
     elif cycle_filter_id is not None:
         for row in _dexp_q(pond_filter_id).values("expense_category").annotate(s=Sum("amount")):
             by_cat_dec[row["expense_category"]] += _money_q(row["s"] or Decimal("0"))
+        by_cat_dec["vendor_bill_pond"] += vendor_bill_pond_operating_total(
+            company_id=cid,
+            pond_id=pond_filter_id,
+            start=start,
+            end=end,
+            cycle_filter_id=cycle_filter_id,
+        )
+        by_cat_dec["lease"] += landlord_lease_payment_pond_operating_total(
+            company_id=cid,
+            pond_id=pond_filter_id,
+            start=start,
+            end=end,
+            cycle_filter_id=cycle_filter_id,
+        )
     else:
         for row in (
             AquacultureExpense.objects.filter(
@@ -252,12 +294,40 @@ def compute_aquaculture_pl_summary_dict(
         for e in shared_expenses:
             for sh in e.pond_shares.filter(pond_id=pond_filter_id):
                 by_cat_dec[e.expense_category] += _money_q(sh.amount)
+        by_cat_dec["vendor_bill_pond"] += vendor_bill_pond_operating_total(
+            company_id=cid,
+            pond_id=pond_filter_id,
+            start=start,
+            end=end,
+            cycle_filter_id=None,
+        )
+        by_cat_dec["lease"] += landlord_lease_payment_pond_operating_total(
+            company_id=cid,
+            pond_id=pond_filter_id,
+            start=start,
+            end=end,
+            cycle_filter_id=None,
+        )
 
     expenses_by_pond = []
     for pond in ponds_qs:
         by_cat_pond_dec: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
         for row in _dexp_q(pond.id).values("expense_category").annotate(s=Sum("amount")):
             by_cat_pond_dec[row["expense_category"]] += _money_q(row["s"] or Decimal("0"))
+        by_cat_pond_dec["vendor_bill_pond"] += vendor_bill_pond_operating_total(
+            company_id=cid,
+            pond_id=pond.id,
+            start=start,
+            end=end,
+            cycle_filter_id=cycle_filter_id,
+        )
+        by_cat_pond_dec["lease"] += landlord_lease_payment_pond_operating_total(
+            company_id=cid,
+            pond_id=pond.id,
+            start=start,
+            end=end,
+            cycle_filter_id=cycle_filter_id,
+        )
         if cycle_filter_id is None:
             for e in shared_expenses:
                 for sh in e.pond_shares.filter(pond_id=pond.id):
@@ -299,7 +369,7 @@ def compute_aquaculture_pl_summary_dict(
                     ).aggregate(t=Sum("total_amount"))["t"]
                     or Decimal("0")
                 )
-                cexp = _money_q(
+                cexp_aq = _money_q(
                     AquacultureExpense.objects.filter(
                         company_id=cid,
                         pond_id=pond.id,
@@ -309,6 +379,21 @@ def compute_aquaculture_pl_summary_dict(
                     ).aggregate(t=Sum("amount"))["t"]
                     or Decimal("0")
                 )
+                cexp_bill = vendor_bill_pond_operating_total(
+                    company_id=cid,
+                    pond_id=pond.id,
+                    start=start,
+                    end=end,
+                    cycle_filter_id=c.id,
+                )
+                cexp_ll = landlord_lease_payment_pond_operating_total(
+                    company_id=cid,
+                    pond_id=pond.id,
+                    start=start,
+                    end=end,
+                    cycle_filter_id=c.id,
+                )
+                cexp = _money_q(cexp_aq + cexp_bill + cexp_ll)
                 ct_in = _money_q(trans_cycle_in.get((pond.id, c.id), Decimal("0")))
                 ct_out = _money_q(trans_cycle_out.get((pond.id, c.id), Decimal("0")))
                 cexp_adj = _money_q(cexp + ct_in - ct_out)
@@ -337,7 +422,7 @@ def compute_aquaculture_pl_summary_dict(
                 ).aggregate(t=Sum("total_amount"))["t"]
                 or Decimal("0")
             )
-            uexp = _money_q(
+            uexp_aq = _money_q(
                 AquacultureExpense.objects.filter(
                     company_id=cid,
                     pond_id=pond.id,
@@ -347,6 +432,23 @@ def compute_aquaculture_pl_summary_dict(
                 ).aggregate(t=Sum("amount"))["t"]
                 or Decimal("0")
             )
+            uexp_bill = vendor_bill_pond_operating_total(
+                company_id=cid,
+                pond_id=pond.id,
+                start=start,
+                end=end,
+                cycle_filter_id=None,
+                uncycled_bill_lines_only=True,
+            )
+            uexp_ll = landlord_lease_payment_pond_operating_total(
+                company_id=cid,
+                pond_id=pond.id,
+                start=start,
+                end=end,
+                cycle_filter_id=None,
+                uncycled_landlord_lines_only=True,
+            )
+            uexp = _money_q(uexp_aq + uexp_bill + uexp_ll)
             ut_in = _money_q(trans_cycle_in.get((pond.id, None), Decimal("0")))
             ut_out = _money_q(trans_cycle_out.get((pond.id, None), Decimal("0")))
             uexp_adj = _money_q(uexp + ut_in - ut_out)

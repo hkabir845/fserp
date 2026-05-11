@@ -4,7 +4,18 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
-import { Users, Plus, Edit2, Trash2, UserCheck, OctagonAlert, X, Eye, EyeOff } from 'lucide-react'
+import {
+  Users,
+  Plus,
+  Edit2,
+  Trash2,
+  UserCheck,
+  OctagonAlert,
+  X,
+  Eye,
+  EyeOff,
+  MapPin,
+} from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
@@ -26,6 +37,15 @@ interface AdminUser {
   company_name: string | null
   is_active: boolean
   created_at: string
+  home_station_id?: number | null
+  home_station_name?: string | null
+}
+
+type TenantStationOption = {
+  id: number
+  station_name: string
+  station_number?: string
+  is_active?: boolean
 }
 
 function UsersPageContent() {
@@ -46,10 +66,12 @@ function UsersPageContent() {
     full_name: '',
     role: 'admin',
     pos_sale_scope: 'both',
+    home_station_id: '' as string | number,
     password: '',
     confirmPassword: '',
     company_id: ''
   })
+  const [tenantStationsForForm, setTenantStationsForForm] = useState<TenantStationOption[]>([])
   const [showInactiveUsers, setShowInactiveUsers] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
 
@@ -89,6 +111,37 @@ function UsersPageContent() {
       setLoading(false)
     }
   }, [mode, router]) // Only depend on mode to avoid infinite loops
+
+  useEffect(() => {
+    const cid = userFormData.company_id
+    const role = userFormData.role
+    if (!cid || (role !== 'cashier' && role !== 'operator')) {
+      setTenantStationsForForm([])
+      return
+    }
+    let cancelled = false
+    const companyIdNum = parseInt(String(cid), 10)
+    if (!Number.isFinite(companyIdNum)) {
+      setTenantStationsForForm([])
+      return
+    }
+    void api
+      .get<{ stations?: TenantStationOption[] }>(`/admin/companies/${companyIdNum}/stations/`)
+      .then(res => {
+        if (cancelled) return
+        const rows = res.data?.stations
+        const list = Array.isArray(rows) ? rows : []
+        setTenantStationsForForm(
+          list.filter(s => s && s.is_active !== false && Number.isFinite(Number(s.id)))
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setTenantStationsForForm([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userFormData.company_id, userFormData.role])
 
   const fetchCompanies = async () => {
     try {
@@ -143,6 +196,7 @@ function UsersPageContent() {
       full_name: '',
       role: 'admin',
       pos_sale_scope: 'both',
+      home_station_id: '',
       password: '',
       confirmPassword: '',
       company_id: ''
@@ -157,6 +211,8 @@ function UsersPageContent() {
       full_name: user.full_name,
       role: user.role,
       pos_sale_scope: user.pos_sale_scope || 'both',
+      home_station_id:
+        user.home_station_id != null && user.home_station_id > 0 ? user.home_station_id : '',
       password: '',
       confirmPassword: '',
       company_id: user.company_id?.toString() || ''
@@ -220,8 +276,22 @@ function UsersPageContent() {
       }
       if (userFormData.role === 'cashier' || userFormData.role === 'operator') {
         userData.pos_sale_scope = userFormData.pos_sale_scope || 'both'
+        if (userFormData.home_station_id === '' || userFormData.home_station_id == null) {
+          userData.home_station_id = null
+        } else {
+          userData.home_station_id =
+            typeof userFormData.home_station_id === 'string'
+              ? parseInt(String(userFormData.home_station_id), 10)
+              : userFormData.home_station_id
+        }
       } else {
         userData.pos_sale_scope = 'both'
+        if (
+          editingUser &&
+          (editingUser.role === 'cashier' || editingUser.role === 'operator')
+        ) {
+          userData.home_station_id = null
+        }
       }
 
       if (editingUser) {
@@ -439,6 +509,11 @@ function UsersPageContent() {
                           {(user.role === 'cashier' || user.role === 'operator') && (
                             <div className="mt-1 text-[11px] font-medium tabular-nums text-gray-500">
                               Lane: {formatPosSaleScopeShort(user.pos_sale_scope)}
+                              {user.home_station_id ? (
+                                <span className="mt-0.5 block text-gray-600">
+                                  Site: {(user.home_station_name || '').trim() || `#${user.home_station_id}`}
+                                </span>
+                              ) : null}
                             </div>
                           )}
                         </td>
@@ -543,10 +618,12 @@ function UsersPageContent() {
                         value={userFormData.role}
                         onChange={(e) => {
                           const role = e.target.value
+                          const keepHome = role === 'cashier' || role === 'operator'
                           setUserFormData({
                             ...userFormData,
                             role,
-                            company_id: role === 'super_admin' ? '' : userFormData.company_id
+                            company_id: role === 'super_admin' ? '' : userFormData.company_id,
+                            home_station_id: keepHome ? userFormData.home_station_id : '',
                           })
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -560,14 +637,56 @@ function UsersPageContent() {
                     </div>
 
                     {(userFormData.role === 'cashier' || userFormData.role === 'operator') && (
-                      <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4">
-                        <PosSaleScopeSelector
-                          name="admin-user-pos-scope"
-                          value={userFormData.pos_sale_scope}
-                          onChange={(next) =>
-                            setUserFormData((fd) => ({ ...fd, pos_sale_scope: next }))
-                          }
-                        />
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                          <PosSaleScopeSelector
+                            name="admin-user-pos-scope"
+                            value={userFormData.pos_sale_scope}
+                            onChange={(next) =>
+                              setUserFormData((fd) => ({ ...fd, pos_sale_scope: next }))
+                            }
+                          />
+                        </div>
+                        {userFormData.company_id ? (
+                          <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4">
+                            <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-800">
+                              <MapPin className="h-4 w-4 shrink-0 text-amber-700" />
+                              POS home station
+                            </label>
+                            <select
+                              value={
+                                userFormData.home_station_id === '' ||
+                                userFormData.home_station_id == null
+                                  ? ''
+                                  : String(userFormData.home_station_id)
+                              }
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setUserFormData((fd) => ({
+                                  ...fd,
+                                  home_station_id: v === '' ? '' : v,
+                                }))
+                              }}
+                              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="">All sites (not limited — can switch station in POS)</option>
+                              {tenantStationsForForm.map((s) => (
+                                <option key={s.id} value={String(s.id)}>
+                                  {s.station_name}
+                                  {s.station_number ? ` (${s.station_number})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="mt-2 text-xs text-gray-600">
+                              When set, this cashier or operator only sees catalog and pumps for that site and
+                              cannot change selling location after sign-in.
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-amber-800">
+                            Select a company above to choose a station for this POS user.
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -594,7 +713,13 @@ function UsersPageContent() {
                         <select
                           required={needsCompany}
                           value={userFormData.company_id}
-                          onChange={(e) => setUserFormData({ ...userFormData, company_id: e.target.value })}
+                          onChange={(e) =>
+                            setUserFormData({
+                              ...userFormData,
+                              company_id: e.target.value,
+                              home_station_id: '',
+                            })
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                         >
                           <option value="">— Select company —</option>

@@ -43,7 +43,7 @@ PERMISSION_CATALOG: list[dict[str, str]] = [
     {"id": "app.reports", "label": "Reports hub (general)", "group": "Reports"},
     {
         "id": "app.aquaculture",
-        "label": "Aquaculture (tenant Admin only; ponds, expenses, sales, sampling, P&L, payroll pond splits)",
+        "label": "Aquaculture (tenant Admin only; ponds, pond costs, pond & fish sales, sampling, P&L, payroll pond splits)",
         "group": "Operations",
     },
     {
@@ -67,6 +67,7 @@ REPORT_ID_EXTRA_PERMISSION: dict[str, str] = {
     "sales-by-station": "app.reports",
     "aquaculture-pond-pl": "app.aquaculture",
     "aquaculture-fish-sales": "app.aquaculture",
+    "aquaculture-pond-sales-comprehensive": "app.aquaculture",
     "aquaculture-expenses": "app.aquaculture",
     "aquaculture-sampling": "app.aquaculture",
     "aquaculture-production-cycles": "app.aquaculture",

@@ -35,6 +35,26 @@ export function getPosSaleScope(): PosSaleScope {
 }
 
 /**
+ * Cashier / operator logins with a home station: POS must use that site only (server enforces on checkout).
+ */
+export function getPosHomeStationId(): number | null {
+  if (typeof window === 'undefined') return null
+  const role = getCurrentUserRole()
+  if (role !== 'cashier' && role !== 'operator') return null
+  const userStr = localStorage.getItem('user')
+  if (!userStr || userStr === 'undefined' || userStr === 'null') return null
+  try {
+    const user = JSON.parse(userStr) as { home_station_id?: unknown }
+    const raw = user?.home_station_id
+    if (raw == null || raw === '') return null
+    const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Get current user role from localStorage
  */
 /** Effective permission keys from login (optional). When absent, UI falls back to role-based rules. */

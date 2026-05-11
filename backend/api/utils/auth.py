@@ -138,21 +138,61 @@ def company_context_error_response(request):
     return None
 
 
+def _parse_selected_company_id(request) -> int | None:
+    header = request.META.get("HTTP_X_SELECTED_COMPANY_ID", "").strip()
+    if not header:
+        return None
+    try:
+        return int(header)
+    except (ValueError, TypeError):
+        return None
+
+
+def _organization_from_subdomain(sub: str):
+    """Resolve tenant group from portal subdomain (Organization; legacy Company.subdomain fallback)."""
+    from api.models import Company, Organization
+
+    o = Organization.objects.filter(subdomain__iexact=sub).first()
+    if o:
+        return o
+    c = Company.objects.filter(subdomain__iexact=sub, is_deleted=False).select_related("organization").first()
+    if c and getattr(c, "organization_id", None):
+        return c.organization
+    return None
+
+
+def _tenant_admin_may_use_selected_company(user, selected_id: int, org) -> bool:
+    from api.models import Company
+    from api.services.permission_service import normalize_role_key
+
+    if user_is_super_admin(user):
+        return True
+    if normalize_role_key(getattr(user, "role", None)) != "admin":
+        return False
+    return Company.objects.filter(
+        pk=selected_id,
+        organization_id=org.id,
+        is_deleted=False,
+        is_active=True,
+    ).exists()
+
+
 def get_company_id(request):
     """
     Resolve company ID for tenant scoping.
 
-    When ``X-Tenant-Subdomain`` is present, resolve the company by ``Company.subdomain``:
-    - Super admin: ``X-Selected-Company-Id`` still wins if valid; otherwise use the subdomain company.
-    - Other users: must belong to that company (``user.company_id`` matches).
+    When ``X-Tenant-Subdomain`` is present, resolve the **organization** (tenant group) by
+    ``Organization.subdomain`` (legacy: ``Company.subdomain``), then:
+    - Super admin: ``X-Selected-Company-Id`` may select any company; otherwise first company in the org.
+    - Tenant admin: may switch among companies in the same organization via ``X-Selected-Company-Id``.
+    - Other users: fixed to ``user.company_id`` (must belong to that organization).
 
-    When the header is absent: use the user's ``company_id``, or super-admin ``X-Selected-Company-Id`` /
-    first existing company / auto-created master template — never assign an arbitrary tenant to
-    a normal user without ``company_id``.
+    Without subdomain: super-admin header / first company; tenant users use home company with optional
+    admin switch header when all companies share one organization.
 
     Sets ``request.tenant_subdomain_invalid`` or ``request.tenant_subdomain_forbidden`` on hard failures.
     """
-    from api.models import Company
+    from api.models import Company, Organization
 
     request.tenant_subdomain_invalid = False
     request.tenant_subdomain_forbidden = False
@@ -163,51 +203,63 @@ def get_company_id(request):
 
     sub = _subdomain_from_request(request)
     if sub:
-        co = Company.objects.filter(subdomain__iexact=sub, is_deleted=False).first()
-        if not co:
+        org = _organization_from_subdomain(sub)
+        if not org:
             request.tenant_subdomain_invalid = True
             return None
-        if user_is_super_admin(user):
-            header = request.META.get("HTTP_X_SELECTED_COMPANY_ID", "").strip()
-            if header:
-                try:
-                    cid = int(header)
-                    if Company.objects.filter(id=cid, is_deleted=False).exists():
-                        return cid
-                except (ValueError, TypeError):
-                    pass
-            return co.id
-        uid = getattr(user, "company_id", None)
-        if uid is not None and int(uid) == co.id:
-            return co.id
-        request.tenant_subdomain_forbidden = True
-        return None
 
-    # No tenant subdomain hint — legacy behavior
+        header_cid = _parse_selected_company_id(request)
+
+        if user_is_super_admin(user):
+            if header_cid and Company.objects.filter(id=header_cid, is_deleted=False).exists():
+                return header_cid
+            first = Company.objects.filter(organization_id=org.id, is_deleted=False).order_by("id").first()
+            return first.id if first else None
+
+        uid = getattr(user, "company_id", None)
+        if uid is None:
+            request.tenant_subdomain_forbidden = True
+            return None
+        if not Company.objects.filter(pk=uid, organization_id=org.id, is_deleted=False).exists():
+            request.tenant_subdomain_forbidden = True
+            return None
+
+        if header_cid and _tenant_admin_may_use_selected_company(user, header_cid, org):
+            return header_cid
+        return int(uid)
+
+    # No tenant subdomain hint — legacy / dev hosts
     if user_is_super_admin(user):
-        header = request.META.get("HTTP_X_SELECTED_COMPANY_ID", "").strip()
-        if header:
-            try:
-                cid = int(header)
-                if Company.objects.filter(id=cid, is_deleted=False).exists():
-                    return cid
-            except (ValueError, TypeError):
-                pass
+        header_cid = _parse_selected_company_id(request)
+        if header_cid and Company.objects.filter(id=header_cid, is_deleted=False).exists():
+            return header_cid
 
     if getattr(user, "company_id", None):
-        if Company.objects.filter(id=user.company_id, is_deleted=False).exists():
+        home = Company.objects.filter(id=user.company_id, is_deleted=False).select_related("organization").first()
+        if home:
+            org = getattr(home, "organization", None)
+            if org is not None:
+                header_cid = _parse_selected_company_id(request)
+                if header_cid and _tenant_admin_may_use_selected_company(user, header_cid, org):
+                    if Company.objects.filter(pk=header_cid, is_deleted=False, is_active=True).exists():
+                        return header_cid
             return user.company_id
 
     if user_is_super_admin(user):
         first = Company.objects.filter(is_deleted=False).order_by("id").first()
         if first:
             return first.id
+        org = Organization.objects.create(
+            name="Master Filling Station",
+            legal_name="Master Filling Station (Development)",
+        )
         default_company = Company.objects.create(
             name="Master Filling Station",
             legal_name="Master Filling Station (Development)",
             currency="BDT",
             is_active=True,
             is_master="true",
+            organization=org,
         )
         try:
             from api.chart_templates.fuel_station import seed_fuel_station_if_empty

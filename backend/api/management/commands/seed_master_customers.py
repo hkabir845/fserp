@@ -5,6 +5,7 @@ Usage: python manage.py seed_master_customers
 from decimal import Decimal
 from django.core.management.base import BaseCommand
 from api.models import Company, Customer
+from api.services.organization_service import ensure_company_organization_shell
 
 
 # Sample dummy data for 12 filling-station-style customers
@@ -36,21 +37,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # Get or create Master Filling Station
-        master, created = Company.objects.get_or_create(
+        master, created = ensure_company_organization_shell(
             name="Master Filling Station",
-            is_deleted=False,
-            defaults={
-                "legal_name": "Master Filling Station (Development)",
-                "currency": "BDT",
-                "is_active": True,
-                "is_master": "true",
-            },
+            legal_name="Master Filling Station (Development)",
         )
         if created:
             self.stdout.write(self.style.SUCCESS("Created company: Master Filling Station"))
         else:
-            master.is_master = "true"
-            master.save()
             self.stdout.write("Using company: Master Filling Station")
 
         if options.get("replace"):

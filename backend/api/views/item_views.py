@@ -8,22 +8,25 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import DecimalField, Exists, F, OuterRef, Q, Sum, Value
+from django.db.models import Count, DecimalField, Exists, F, OuterRef, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
 from api.utils.auth import auth_required
+from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
 from api.views.common import parse_json_body, require_company_id, _serialize_decimal
-from api.models import Item, Station, Tank
+from api.models import AquaculturePond, Item, Station, Tank
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.item_catalog import item_tracks_physical_stock, normalize_item_type
 from api.services.station_stock import (
     ensure_item_station_row_for_new_shop_item,
     get_or_create_default_station,
     item_uses_station_bins,
+    per_pond_quantities,
     per_station_quantities,
+    set_pond_stock,
     set_station_stock,
 )
 from api.services.item_reporting_categories import (
@@ -241,13 +244,48 @@ def _item_to_json(i, *, company_id: int | None = None, include_location_stocks: 
         "image_url": i.image_url or "",
     }
     cid = company_id if company_id is not None else getattr(i, "company_id", None)
-    if (
-        include_location_stocks
-        and cid
-        and item_uses_station_bins(int(cid), i)
-    ):
-        row["location_stocks"] = per_station_quantities(int(cid), i.id)
+    if include_location_stocks and cid:
+        if item_uses_station_bins(int(cid), i):
+            row["location_stocks"] = per_station_quantities(int(cid), i.id)
+        elif (i.pos_category or "").strip().lower() == "fish" and item_tracks_physical_stock(i):
+            row["pond_stocks"] = per_pond_quantities(int(cid), i.id)
     return row
+
+
+def _items_apply_q(qs, raw_q: str):
+    q = (raw_q or "").strip()
+    if not q:
+        return qs
+    return qs.filter(
+        Q(name__icontains=q) | Q(item_number__icontains=q) | Q(description__icontains=q)
+    )
+
+
+def _items_apply_sort(qs, request):
+    sort_key = (request.GET.get("sort") or "id").strip()
+    desc = (request.GET.get("dir") or "asc").strip().lower() == "desc"
+    prefix = "-" if desc else ""
+    mapping = {
+        "id": "id",
+        "name": "name",
+        "item_number": "item_number",
+        "item_type": "item_type",
+    }
+    field = mapping.get(sort_key, "id")
+    order = [f"{prefix}{field}"]
+    if sort_key != "id":
+        order.append("id")
+    return qs.order_by(*order)
+
+
+def _items_type_breakdown(qs):
+    rows = qs.values("item_type").annotate(c=Count("id"))
+    out = {"inventory": 0, "non_inventory": 0, "service": 0}
+    for r in rows:
+        t = (r["item_type"] or "").lower()
+        if t in out:
+            out[t] = r["c"]
+    return out
 
 
 @csrf_exempt
@@ -263,10 +301,34 @@ def items_list_or_create(request):
         qs = _items_queryset_with_tank_annotations(qs)
         want_loc = request.GET.get("location_stocks") in ("1", "true", "yes")
         cid = int(request.company_id)
-        return JsonResponse(
-            [_item_to_json(i, company_id=cid, include_location_stocks=want_loc) for i in qs],
-            safe=False,
-        )
+
+        base_qs = qs
+        qs = _items_apply_q(qs, request.GET.get("q", ""))
+        it = (request.GET.get("item_type") or "").strip().lower()
+        if it in ("inventory", "non_inventory", "service"):
+            qs = qs.filter(item_type=it)
+        qs = _items_apply_sort(qs, request)
+
+        def _row(i):
+            return _item_to_json(i, company_id=cid, include_location_stocks=want_loc)
+
+        if wants_paged_response(request):
+            skip, limit = parse_skip_limit(request, default_limit=50, max_limit=200)
+            total = qs.count()
+            stats = {
+                "by_type": _items_type_breakdown(base_qs),
+                "catalog_total": base_qs.count(),
+            }
+            page = qs[skip : skip + limit]
+            return json_paged(
+                [_row(i) for i in page],
+                total=total,
+                skip=skip,
+                limit=limit,
+                extras={"stats": stats},
+            )
+
+        return JsonResponse([_row(i) for i in qs], safe=False)
 
     if request.method == "POST":
         body, err = parse_json_body(request)
@@ -332,6 +394,39 @@ def items_list_or_create(request):
                 },
                 status=400,
             )
+        pos_cat_pre = _truncate(body.get("pos_category") or "general", 64) or "general"
+        itype_pre = _coerce_item_type_for_storage(body.get("item_type"))
+        if (
+            pos_cat_pre.strip().lower() == "fish"
+            and normalize_item_type(itype_pre) == "inventory"
+            and qty > 0
+        ):
+            n_ponds_chk = AquaculturePond.objects.filter(
+                company_id=request.company_id, is_active=True
+            ).count()
+            if n_ponds_chk > 1:
+                raw_pid = body.get("pond_id")
+                if raw_pid is None or raw_pid == "":
+                    return JsonResponse(
+                        {
+                            "detail": (
+                                "This company has multiple aquaculture ponds. Send pond_id so initial "
+                                "fish stock is recorded on the correct pond."
+                            )
+                        },
+                        status=400,
+                    )
+                try:
+                    pid_chk = int(raw_pid)
+                except (TypeError, ValueError):
+                    return JsonResponse({"detail": "Invalid pond_id"}, status=400)
+                if not AquaculturePond.objects.filter(
+                    pk=pid_chk, company_id=request.company_id, is_active=True
+                ).exists():
+                    return JsonResponse(
+                        {"detail": "Unknown pond_id for this company"},
+                        status=404,
+                    )
         i = Item(
             company_id=request.company_id,
             name=name,
@@ -351,13 +446,34 @@ def items_list_or_create(request):
             image_url=_truncate(body.get("image_url"), 500),
             item_number=inum or "",
         )
-        if (i.pos_category or "").strip().lower() == "non_pos":
+        if (i.pos_category or "").strip().lower() in ("non_pos", "fish"):
             i.is_pos_available = False
         try:
             i.save()
         except ValidationError as e:
             return JsonResponse({"detail": "Validation failed", "errors": e.message_dict if hasattr(e, "message_dict") else str(e)}, status=400)
         ensure_item_station_row_for_new_shop_item(request.company_id, i)
+        if (
+            (i.pos_category or "").strip().lower() == "fish"
+            and item_tracks_physical_stock(i)
+            and qty > 0
+        ):
+            n_ponds = AquaculturePond.objects.filter(company_id=request.company_id, is_active=True).count()
+            if n_ponds >= 1:
+                if n_ponds == 1:
+                    pid = (
+                        AquaculturePond.objects.filter(company_id=request.company_id, is_active=True)
+                        .order_by("sort_order", "id")
+                        .values_list("id", flat=True)
+                        .first()
+                    )
+                else:
+                    pid = int(body.get("pond_id"))
+                try:
+                    set_pond_stock(request.company_id, int(pid), i.pk, qty)
+                except ValueError as e:
+                    return JsonResponse({"detail": str(e)}, status=400)
+                i.refresh_from_db()
         if not i.item_number:
             assigned, aerr = assign_string_code_if_empty(
                 request.company_id, Item, "item_number", "ITM", i.pk, None, None
@@ -475,7 +591,7 @@ def item_detail(request, item_id: int):
             i.is_taxable = bool(body["is_taxable"])
         if "is_pos_available" in body:
             i.is_pos_available = bool(body["is_pos_available"])
-        if (i.pos_category or "").strip().lower() == "non_pos":
+        if (i.pos_category or "").strip().lower() in ("non_pos", "fish"):
             i.is_pos_available = False
         if "is_active" in body:
             i.is_active = bool(body["is_active"])
@@ -539,7 +655,59 @@ def item_detail(request, item_id: int):
                 set_station_stock(i.company_id, target_sid, i.pk, q)
                 i.refresh_from_db()
             elif not tanks:
-                i.quantity_on_hand = q
+                pos_fish = (i.pos_category or "").strip().lower() == "fish" and item_tracks_physical_stock(i)
+                if pos_fish:
+                    n_ponds = AquaculturePond.objects.filter(
+                        company_id=i.company_id, is_active=True
+                    ).count()
+                    if n_ponds > 1:
+                        raw_pid = body.get("pond_id")
+                        if raw_pid is None or raw_pid == "":
+                            return JsonResponse(
+                                {
+                                    "detail": (
+                                        "This company has multiple aquaculture ponds. Send pond_id with "
+                                        "quantity_on_hand to set stock for that pond."
+                                    )
+                                },
+                                status=400,
+                            )
+                        try:
+                            target_pid = int(raw_pid)
+                        except (TypeError, ValueError):
+                            return JsonResponse({"detail": "Invalid pond_id"}, status=400)
+                        if not AquaculturePond.objects.filter(
+                            pk=target_pid, company_id=i.company_id, is_active=True
+                        ).exists():
+                            return JsonResponse(
+                                {"detail": "Unknown pond_id for this company"},
+                                status=404,
+                            )
+                        try:
+                            set_pond_stock(i.company_id, target_pid, i.pk, q)
+                        except ValueError as e:
+                            return JsonResponse({"detail": str(e)}, status=400)
+                        i.refresh_from_db()
+                    elif n_ponds == 1:
+                        only = (
+                            AquaculturePond.objects.filter(
+                                company_id=i.company_id, is_active=True
+                            )
+                            .order_by("sort_order", "id")
+                            .first()
+                        )
+                        if only is None:
+                            i.quantity_on_hand = q
+                        else:
+                            try:
+                                set_pond_stock(i.company_id, only.id, i.pk, q)
+                            except ValueError as e:
+                                return JsonResponse({"detail": str(e)}, status=400)
+                            i.refresh_from_db()
+                    else:
+                        i.quantity_on_hand = q
+                else:
+                    i.quantity_on_hand = q
             elif len(tanks) == 1:
                 Tank.objects.filter(pk=tanks[0].pk).update(current_stock=q)
                 i.quantity_on_hand = q

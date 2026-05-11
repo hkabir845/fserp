@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -8,6 +8,8 @@ import { CompanyProvider } from '@/contexts/CompanyContext'
 import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, BookOpen, Building2, MapPin } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin } from '@/lib/api'
+import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
+import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { isConnectionError } from '@/utils/connectionError'
@@ -65,6 +67,10 @@ export default function VendorsPage() {
   const [createCodeNonce, setCreateCodeNonce] = useState(0)
   const [stations, setStations] = useState<StationOption[]>([])
   const [ponds, setPonds] = useState<PondOption[]>([])
+  const [listPage, setListPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [totalCount, setTotalCount] = useState(0)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [formData, setFormData] = useState({
     company_name: '',
     contact_person: '',
@@ -90,8 +96,16 @@ export default function VendorsPage() {
     }
     fetchStationsList()
     fetchPondsList()
-    fetchVendors()
   }, [router])
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 350)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  useEffect(() => {
+    setListPage(1)
+  }, [debouncedSearch, pageSize])
 
   const fetchPondsList = async () => {
     try {
@@ -131,53 +145,80 @@ export default function VendorsPage() {
     }
   }
 
-  const fetchVendors = async () => {
+  const fetchVendors = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      // Fetch company currency
       try {
         const companyRes = await api.get('/companies/current')
         if (companyRes.data?.currency) {
           setCurrencySymbol(getCurrencySymbol(companyRes.data.currency))
         }
       } catch (error) {
-        // Silently handle connection errors - backend may not be running
         if (!isConnectionError(error)) {
           console.error('Error fetching company currency:', error)
         }
       }
 
-      const response = await api.get('/vendors/')
-      if (response.status === 200) {
-        setVendors(response.data)
-        setError(null)
-      } else if (response.status === 401 || response.status === 403) {
+      const params = offsetListParams({
+        page: listPage,
+        pageSize,
+        q: debouncedSearch,
+        sort: 'id',
+        dir: 'asc',
+      })
+      const response = await api.get('/vendors/', { params })
+      if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('access_token')
         router.push('/login')
         return
-      } else {
+      }
+      if (response.status !== 200) {
         const errorMsg = `Failed to load vendors: ${response.status}`
         setError(errorMsg)
         toast.error(errorMsg)
+        return
+      }
+      const data = response.data
+      if (isOffsetPagedPayload(data)) {
+        setVendors(data.results as Vendor[])
+        setTotalCount(data.count)
+        const totalPages = Math.max(1, Math.ceil(data.count / pageSize))
+        if (listPage > totalPages) {
+          setListPage(totalPages)
+        }
+        setError(null)
+      } else {
+        setError('Invalid data format received from server')
+        setVendors([])
+        setTotalCount(0)
+        toast.error('Invalid data format received from server')
       }
     } catch (error) {
       console.error('Error fetching vendors:', error)
       const errorMessage = extractErrorMessage(error, 'Failed to load vendors')
       let userMessage = 'Error connecting to server'
-      
+
       if (errorMessage.includes('fetch') || errorMessage.includes('Failed to fetch')) {
         userMessage = `Cannot connect to backend server. Please ensure the backend is running on ${getBackendOrigin()}`
       } else {
         userMessage = errorMessage
       }
-      
+
       setError(userMessage)
       toast.error(userMessage)
+      setVendors([])
+      setTotalCount(0)
     } finally {
       setLoading(false)
     }
-  }
+  }, [debouncedSearch, listPage, pageSize, router, toast])
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+    void fetchVendors()
+  }, [fetchVendors])
 
   const parseDefaultReceivingPayload = (): {
     default_station_id: number | null
@@ -334,19 +375,6 @@ export default function VendorsPage() {
     resetForm()
   }
 
-  const filteredVendors = vendors.filter((vendor) => {
-    const q = searchTerm.toLowerCase()
-    if (!q) return true
-    return (
-      vendor.display_name.toLowerCase().includes(q) ||
-      vendor.company_name.toLowerCase().includes(q) ||
-      vendor.vendor_number.toLowerCase().includes(q) ||
-      (vendor.email || '').toLowerCase().includes(q) ||
-      (vendor.default_station_name || '').toLowerCase().includes(q) ||
-      (vendor.default_aquaculture_pond_name || '').toLowerCase().includes(q)
-    )
-  })
-
   const defaultReceivingLabel = (vendor: Vendor) => {
     const pond = (vendor.default_aquaculture_pond_name || '').trim()
     if (pond) return pond
@@ -443,7 +471,7 @@ export default function VendorsPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredVendors.map((vendor) => (
+                {vendors.map((vendor) => (
                   <tr key={vendor.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {vendor.vendor_number}
@@ -511,6 +539,21 @@ export default function VendorsPage() {
               </tbody>
             </table>
             </div>
+            {totalCount > 0 && (
+              <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
+                <OffsetPaginationControls
+                  page={listPage}
+                  pageSize={pageSize}
+                  total={totalCount}
+                  disabled={loading}
+                  onPageChange={setListPage}
+                  onPageSizeChange={(n) => {
+                    setPageSize(n)
+                    setListPage(1)
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
 

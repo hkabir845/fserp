@@ -9,7 +9,7 @@ from decimal import Decimal
 from django.db.models import F
 from django.db import transaction
 
-from api.models import Item, ItemStationStock, Station, Tank
+from api.models import AquaculturePond, Item, ItemPondStock, ItemStationStock, Station, Tank
 from api.services.item_catalog import item_tracks_physical_stock
 from django.db.models import Sum as DjSum
 
@@ -24,7 +24,7 @@ def item_uses_station_bins(company_id: int, item: Item) -> bool:
     """
     True when this SKU's physical stock is tracked per station (ItemStationStock), not in tanks.
 
-    POS category ``non_pos`` is for aquaculture hatchery / internal stock (e.g. fish fry moved to
+    POS categories ``non_pos`` and ``fish`` are for aquaculture hatchery / internal stock (e.g. fish fry moved to
     ponds) — not shop or warehouse bins.
     """
     if not item_tracks_physical_stock(item):
@@ -32,7 +32,7 @@ def item_uses_station_bins(company_id: int, item: Item) -> bool:
     if tanks_exist_for_item(company_id, item.id):
         return False
     pos_cat = (getattr(item, "pos_category", None) or "").strip().lower()
-    if pos_cat == "non_pos":
+    if pos_cat in ("non_pos", "fish"):
         return False
     return True
 
@@ -95,12 +95,30 @@ def refresh_item_quantity_on_hand(company_id: int, item_id: int) -> None:
         return
     if not item_tracks_physical_stock(it):
         return
+    pos_cat = (getattr(it, "pos_category", None) or "").strip().lower()
+    if pos_cat == "fish":
+        n_active_ponds = AquaculturePond.objects.filter(company_id=company_id, is_active=True).count()
+        if n_active_ponds == 0:
+            return
+        if not ItemPondStock.objects.filter(company_id=company_id, item_id=item_id).exists():
+            return
+        agg_pond = ItemPondStock.objects.filter(company_id=company_id, item_id=item_id).aggregate(
+            s=DjSum("quantity")
+        )["s"]
+        total = agg_pond if agg_pond is not None else Decimal("0")
+        Item.objects.filter(pk=item_id, company_id=company_id).update(quantity_on_hand=total)
+        return
     if not item_uses_station_bins(company_id, it):
         return
-    agg = ItemStationStock.objects.filter(company_id=company_id, item_id=item_id).aggregate(
+    agg_st = ItemStationStock.objects.filter(company_id=company_id, item_id=item_id).aggregate(
         s=DjSum("quantity")
     )["s"]
-    total = agg if agg is not None else Decimal("0")
+    agg_pond = ItemPondStock.objects.filter(company_id=company_id, item_id=item_id).aggregate(
+        s=DjSum("quantity")
+    )["s"]
+    st = agg_st if agg_st is not None else Decimal("0")
+    pd = agg_pond if agg_pond is not None else Decimal("0")
+    total = st + pd
     Item.objects.filter(pk=item_id, company_id=company_id).update(quantity_on_hand=total)
 
 
@@ -161,6 +179,48 @@ def ensure_item_station_row_for_new_shop_item(company_id: int, item: Item) -> No
     st = get_or_create_default_station(company_id)
     q = item.quantity_on_hand or Decimal("0")
     set_station_stock(company_id, st.id, item.pk, q)
+
+
+def per_pond_quantities(company_id: int, item_id: int) -> list[dict]:
+    """Per-pond quantities for fish SKUs (ItemPondStock), all active ponds included."""
+    qty_by_pond: dict[int, Decimal] = {}
+    for row in ItemPondStock.objects.filter(company_id=company_id, item_id=item_id).only(
+        "pond_id", "quantity"
+    ):
+        q = row.quantity if row.quantity is not None else Decimal("0")
+        qty_by_pond[int(row.pond_id)] = q
+    out: list[dict] = []
+    for p in AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by(
+        "sort_order", "id"
+    ):
+        q = qty_by_pond.get(int(p.id), Decimal("0"))
+        out.append(
+            {
+                "pond_id": p.id,
+                "pond_name": (p.name or f"Pond #{p.id}").strip(),
+                "quantity": str(q),
+            }
+        )
+    return out
+
+
+def set_pond_stock(company_id: int, pond_id: int, item_id: int, quantity: Decimal) -> None:
+    """Set absolute fish-SKU quantity at a pond; refreshes Item.quantity_on_hand when pond rows exist."""
+    if quantity < 0:
+        quantity = Decimal("0")
+    if not AquaculturePond.objects.filter(
+        pk=pond_id, company_id=company_id, is_active=True
+    ).exists():
+        raise ValueError("pond_id is not an active pond for this company")
+    row, _ = ItemPondStock.objects.get_or_create(
+        company_id=company_id,
+        pond_id=pond_id,
+        item_id=item_id,
+        defaults={"quantity": quantity},
+    )
+    if row.quantity != quantity:
+        ItemPondStock.objects.filter(pk=row.pk).update(quantity=quantity)
+    refresh_item_quantity_on_hand(company_id, item_id)
 
 
 def per_station_quantities(company_id: int, item_id: int) -> list[dict]:

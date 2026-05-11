@@ -8,10 +8,10 @@ import { useCompany } from '@/contexts/CompanyContext'
 import { 
   FileText, TrendingUp, DollarSign, Users, Package, 
   BarChart3, Calendar, Download, Filter, RefreshCw, Printer,
-  Gauge, Droplet,   ClipboardList, Layers, ShoppingCart, MapPin, Fish,
+  Gauge, Droplet,   ClipboardList, Layers, ShoppingCart, MapPin, Fish, Store,
   Scale, Landmark, Banknote, BookOpen, CreditCard,
 } from 'lucide-react'
-import { canViewInventorySkuReport } from '@/utils/rbac'
+import { canViewInventorySkuReport, hasPermission } from '@/utils/rbac'
 import api from '@/lib/api'
 import { formatDate, formatDateOnly, formatDateRange, localDateISO, toDateInputValue } from '@/utils/date'
 import { formatAmountPlain, formatCurrency, formatNumber } from '@/utils/formatting'
@@ -65,6 +65,7 @@ type ReportType =
   | 'analytics-kpi'
   | 'aquaculture-pond-pl'
   | 'aquaculture-fish-sales'
+  | 'aquaculture-pond-sales-comprehensive'
   | 'aquaculture-expenses'
   | 'aquaculture-sampling'
   | 'aquaculture-production-cycles'
@@ -291,18 +292,26 @@ const reports: ReportCard[] = [
     category: 'analytical'
   },
 
-  // Aquaculture (BDT; pond sub-totals and company totals on each report)
-  {
-    id: 'aquaculture-pond-pl',
-    title: 'Aquaculture — Pond P&L',
-    description: 'Pond-wise revenue, operating costs, payroll allocation, and net profit for the period',
-    icon: Fish,
-    category: 'aquaculture',
-  },
+  // Aquaculture (BDT): sales / revenue reports first, then P&L and operations
   {
     id: 'aquaculture-fish-sales',
     title: 'Aquaculture — Pond sales register',
     description: 'Fish harvest plus sacks, scrap, and other pond income lines by pond with sub-totals (BDT)',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-pond-sales-comprehensive',
+    title: 'Aquaculture — All pond revenue (fish + pond POS)',
+    description:
+      'Registered pond income (all types) plus General POS / invoice lines to each pond POS customer; motor-fuel lines excluded',
+    icon: Store,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-pond-pl',
+    title: 'Aquaculture — Pond P&L',
+    description: 'Pond-wise revenue, operating costs, payroll allocation, and net profit for the period',
     icon: Fish,
     category: 'aquaculture',
   },
@@ -347,7 +356,18 @@ const SUMMARY_EXCLUDED_REPORTS: ReportType[] = [
   'loans-borrow-and-lent',
 ]
 
-/** Mix — Fuel & Aquaculture tab: fixed shortlist (same order as sidebar). */
+/** All aquaculture module reports (for Mix tab, permission gating, company module flag). */
+const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
+  'aquaculture-pond-pl',
+  'aquaculture-fish-sales',
+  'aquaculture-pond-sales-comprehensive',
+  'aquaculture-expenses',
+  'aquaculture-sampling',
+  'aquaculture-production-cycles',
+  'aquaculture-profit-transfers',
+])
+
+/** Mix — Fuel & Aquaculture: core GL + fuel ops + every aquaculture report (when role allows). */
 const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'trial-balance',
   'balance-sheet',
@@ -355,6 +375,16 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'customer-balances',
   'vendor-balances',
   'daily-summary',
+  'fuel-sales',
+  'sales-by-station',
+  'shift-summary',
+  'aquaculture-fish-sales',
+  'aquaculture-pond-sales-comprehensive',
+  'aquaculture-pond-pl',
+  'aquaculture-expenses',
+  'aquaculture-sampling',
+  'aquaculture-production-cycles',
+  'aquaculture-profit-transfers',
 ] as const
 
 /** Reports that accept optional `station_id` (all sites when empty; home-station users are always scoped in API). */
@@ -426,6 +456,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'item-purchase-velocity-analysis',
   'aquaculture-pond-pl',
   'aquaculture-fish-sales',
+  'aquaculture-pond-sales-comprehensive',
   'aquaculture-expenses',
   'aquaculture-sampling',
   'aquaculture-production-cycles',
@@ -512,6 +543,8 @@ export default function ReportsPage() {
   const [aquacultureIncludeCycleBreakdown, setAquacultureIncludeCycleBreakdown] = useState(false)
   const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string }[]>([])
   const [aquacultureCycles, setAquacultureCycles] = useState<{ id: number; name: string }[]>([])
+  /** null = not loaded yet; false = company setting off */
+  const [companyAquacultureEnabled, setCompanyAquacultureEnabled] = useState<boolean | null>(null)
 
   /** Shared filters for item-scoped reports (category + multi-select products). */
   const [itemScopeCategory, setItemScopeCategory] = useState('')
@@ -598,11 +631,20 @@ export default function ReportsPage() {
       .get('/companies/current/')
       .then((res) => {
         if (cancelled || !res.data) return
-        const d = res.data as { name?: string; company_name?: string }
+        const d = res.data as {
+          name?: string
+          company_name?: string
+          aquaculture_enabled?: boolean
+        }
         const label = [d.name, d.company_name]
           .map((x) => (typeof x === 'string' ? x.trim() : ''))
           .find((s) => s.length > 0)
         if (label) setReportCompanyLabel(label)
+        if (typeof d.aquaculture_enabled === 'boolean') {
+          setCompanyAquacultureEnabled(d.aquaculture_enabled)
+        } else {
+          setCompanyAquacultureEnabled(true)
+        }
       })
       .catch(() => {})
     return () => {
@@ -749,6 +791,14 @@ export default function ReportsPage() {
     }
   }, [aquaculturePondId, selectedReport])
 
+  const showAquacultureReports = companyAquacultureEnabled !== false && hasPermission('app.aquaculture')
+
+  useEffect(() => {
+    if (!showAquacultureReports && filterCategory === 'aquaculture') {
+      setFilterCategory('all')
+    }
+  }, [showAquacultureReports, filterCategory])
+
   const persistReportStation = useCallback((id: string) => {
     setReportStationId(id)
     try {
@@ -811,7 +861,11 @@ export default function ReportsPage() {
     roleFilteredReports = roleFilteredReports.filter(
       (report) => !inventoryExtraReports.includes(report.id) || canShowInventoryBlock
     )
-    
+
+    if (!showAquacultureReports) {
+      roleFilteredReports = roleFilteredReports.filter((report) => !AQUACULTURE_REPORT_ID_SET.has(report.id))
+    }
+
     // Then filter by category
     if (filterCategory === 'all') {
       return roleFilteredReports
@@ -1310,6 +1364,42 @@ export default function ReportsPage() {
       contentHTML += `<tr><td><strong>Total amount</strong></td><td>${formatCurrency(reportData.total_amount)}</td></tr>`
       contentHTML += `<tr><td><strong>Average per fuel line</strong></td><td>${formatCurrency(reportData.average_sale_amount)}</td></tr>`
       contentHTML += '</tbody></table>'
+    } else if (selectedReport === 'aquaculture-pond-sales-comprehensive' && reportData) {
+      const sm = reportData.summary || {}
+      contentHTML += '<h2>Summary (BDT)</h2><table><tbody>'
+      contentHTML += `<tr><td><strong>Registered pond income</strong></td><td>${formatCurrency(sm.fish_total_amount_bdt ?? 0)}</td></tr>`
+      contentHTML += `<tr><td><strong>Pond POS (non-fuel lines)</strong></td><td>${formatCurrency(sm.pos_non_fuel_total_amount_bdt ?? 0)}</td></tr>`
+      contentHTML += `<tr><td><strong>Combined</strong></td><td>${formatCurrency(sm.combined_total_amount_bdt ?? 0)}</td></tr>`
+      contentHTML += '</tbody></table>'
+      const byInc: any[] = Array.isArray(sm.fish_by_income_type) ? sm.fish_by_income_type : []
+      if (byInc.length) {
+        contentHTML +=
+          '<h2>Registered income by type</h2><table><thead><tr><th>Type</th><th style="text-align:right">Lines</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
+        byInc.forEach((r: any) => {
+          contentHTML += `<tr><td>${escapeHtml(String(r.income_type_label || r.income_type || ''))}</td><td style="text-align:right">${r.line_count ?? 0}</td><td style="text-align:right">${formatCurrency(r.amount_bdt ?? 0)}</td></tr>`
+        })
+        contentHTML += '</tbody></table>'
+      }
+      const fish = reportData.fish_sales || {}
+      const fg: any[] = Array.isArray(fish.groups) ? fish.groups : []
+      contentHTML += '<h2>A. Registered pond sales</h2>'
+      fg.forEach((g: any) => {
+        contentHTML += `<h3>${escapeHtml(String(g.pond_name || ''))}</h3><table><thead><tr><th>Date</th><th>Type</th><th>Species</th><th style="text-align:right">Kg</th><th style="text-align:right">Amount</th><th>Buyer</th></tr></thead><tbody>`
+        ;(g.lines || []).forEach((ln: any) => {
+          contentHTML += `<tr><td>${ln.sale_date || ''}</td><td>${escapeHtml(String(ln.income_type_label || ''))}</td><td>${escapeHtml(String(ln.fish_species_label || ''))}</td><td style="text-align:right">${ln.weight_kg ?? ''}</td><td style="text-align:right">${formatCurrency(Number(ln.total_amount ?? 0))}</td><td>${escapeHtml(String(ln.buyer_name || ''))}</td></tr>`
+        })
+        contentHTML += `</tbody><tfoot><tr><td colspan="4" style="text-align:right"><strong>Sub-total</strong></td><td style="text-align:right"><strong>${formatCurrency(Number(g.subtotal_amount ?? 0))}</strong></td><td></td></tr></tfoot></table>`
+      })
+      const pos = reportData.pos_shop_sales || {}
+      const pg: any[] = Array.isArray(pos.groups) ? pos.groups : []
+      contentHTML += '<h2>B. Pond POS (non-fuel lines)</h2>'
+      pg.forEach((g: any) => {
+        contentHTML += `<h3>${escapeHtml(String(g.pond_name || ''))}</h3><table><thead><tr><th>Date</th><th>Invoice</th><th>Station</th><th>Item</th><th>POS</th><th style="text-align:right">Qty</th><th style="text-align:right">Amount</th></tr></thead><tbody>`
+        ;(g.lines || []).forEach((ln: any) => {
+          contentHTML += `<tr><td>${ln.invoice_date || ''}</td><td>${escapeHtml(String(ln.invoice_number || ''))}</td><td>${escapeHtml(String(ln.station_name || ''))}</td><td>${escapeHtml(String(ln.item_name || ''))}</td><td>${escapeHtml(String(ln.pos_category || ''))}</td><td style="text-align:right">${ln.quantity ?? ''}</td><td style="text-align:right">${formatCurrency(Number(ln.amount ?? 0))}</td></tr>`
+        })
+        contentHTML += `</tbody><tfoot><tr><td colspan="6" style="text-align:right"><strong>Sub-total</strong></td><td style="text-align:right"><strong>${formatCurrency(Number(g.subtotal_amount ?? 0))}</strong></td></tr></tfoot></table>`
+      })
     } else {
       contentHTML += '<p>Report data not available for printing in this format.</p>'
     }
@@ -1740,6 +1830,25 @@ export default function ReportsPage() {
             })
           })
         }
+        if (selectedReport === 'aquaculture-pond-sales-comprehensive' && reportData && typeof reportData === 'object') {
+          const rd = reportData as Record<string, unknown>
+          const fish = rd.fish_sales as { groups?: any[] } | undefined
+          const pos = rd.pos_shop_sales as { groups?: any[] } | undefined
+          csvContent += '\n--- fish_sales groups ---\nPond group,Field,Value\n'
+          ;(Array.isArray(fish?.groups) ? fish.groups : []).forEach((g: any) => {
+            csvContent += `${escapeCsv(g.pond_name)},subtotal_amount,${g.subtotal_amount ?? ''}\n`
+            ;(g.lines || []).forEach((ln: any) => {
+              csvContent += `${escapeCsv(g.pond_name)},line,${JSON.stringify(ln)}\n`
+            })
+          })
+          csvContent += '\n--- pos_shop_sales groups (non-fuel lines) ---\nPond group,Field,Value\n'
+          ;(Array.isArray(pos?.groups) ? pos.groups : []).forEach((g: any) => {
+            csvContent += `${escapeCsv(g.pond_name)},subtotal_amount,${g.subtotal_amount ?? ''}\n`
+            ;(g.lines || []).forEach((ln: any) => {
+              csvContent += `${escapeCsv(g.pond_name)},line,${JSON.stringify(ln)}\n`
+            })
+          })
+        }
       } else {
         // Fallback to JSON if CSV not supported
         const dataStr = JSON.stringify(reportData, null, 2)
@@ -1838,16 +1947,18 @@ export default function ReportsPage() {
               >
                 Analytical
               </button>
-              <button
-                onClick={() => setFilterCategory('aquaculture')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  filterCategory === 'aquaculture'
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Aquaculture
-              </button>
+              {showAquacultureReports ? (
+                <button
+                  onClick={() => setFilterCategory('aquaculture')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    filterCategory === 'aquaculture'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Aquaculture
+                </button>
+              ) : null}
             </div>
           )}
 
@@ -6101,6 +6212,205 @@ function renderReportTable(
             </div>
           </div>
         ) : null}
+      </div>
+    )
+  }
+
+  if (reportType === 'aquaculture-pond-sales-comprehensive' && data) {
+    const period = data.period || {}
+    const sm = data.summary || {}
+    const fish = data.fish_sales || {}
+    const pos = data.pos_shop_sales || {}
+    const fishGroups: any[] = Array.isArray(fish.groups) ? fish.groups : []
+    const posGroups: any[] = Array.isArray(pos.groups) ? pos.groups : []
+    const fishTot = fish.totals || {}
+    const posTot = pos.totals || {}
+    const byInc: any[] = Array.isArray(sm.fish_by_income_type) ? sm.fish_by_income_type : []
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Fish rows use Aquaculture sale date; POS rows use invoice date. Optional pond filter applies to both sections.'
+          )}
+        <p className="text-sm font-medium text-slate-700">
+          All amounts in <strong>BDT</strong>. {data.accounting_note ? String(data.accounting_note) : ''}
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-cyan-200 bg-cyan-50/80 p-4">
+            <p className="text-xs font-medium uppercase text-cyan-900">Registered pond income</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-cyan-950">
+              {aqBdt(sm.fish_total_amount_bdt)}
+            </p>
+            <p className="text-xs text-cyan-800">{sm.fish_line_count ?? 0} line(s)</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase text-slate-600">Pond POS (non-fuel)</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+              {aqBdt(sm.pos_non_fuel_total_amount_bdt)}
+            </p>
+            <p className="text-xs text-slate-500">{sm.pos_non_fuel_line_count ?? 0} invoice line(s)</p>
+          </div>
+          <div className="rounded-lg border-2 border-slate-400 bg-slate-50 p-4">
+            <p className="text-xs font-medium uppercase text-slate-800">Combined</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-slate-900">
+              {aqBdt(sm.combined_total_amount_bdt)}
+            </p>
+          </div>
+        </div>
+        {byInc.length > 0 ? (
+          <div>
+            <h4 className="mb-2 font-semibold text-slate-900">Registered income by type</h4>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Income type</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Lines</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Amount (BDT)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {byInc.map((r: any) => (
+                    <tr key={r.income_type || 'x'}>
+                      <td className="px-3 py-2">{r.income_type_label || r.income_type || '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.line_count ?? 0}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{aqBdt(r.amount_bdt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+
+        <div>
+          <h4 className="mb-2 font-semibold text-cyan-950">A. Registered pond sales (all income types)</h4>
+          {fishGroups.length === 0 ? (
+            <p className="text-sm text-slate-500">No registered pond sales in this range.</p>
+          ) : (
+            fishGroups.map((g: any) => (
+              <div key={`fish-${g.pond_id}`} className="mb-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+                <div className="border-b border-gray-100 bg-cyan-50/80 px-4 py-2">
+                  <h5 className="font-semibold text-cyan-950">{g.pond_name}</h5>
+                </div>
+                <div className="overflow-x-auto p-2">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-xs text-gray-500">
+                        <th className="px-2 py-1">Date</th>
+                        <th className="px-2 py-1">Income type</th>
+                        <th className="px-2 py-1">Species</th>
+                        <th className="px-2 py-1 text-right">Weight (kg)</th>
+                        <th className="px-2 py-1 text-right">Amount (BDT)</th>
+                        <th className="px-2 py-1">Buyer</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {(g.lines || []).map((ln: any) => (
+                        <tr key={ln.id}>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{ln.sale_date}</td>
+                          <td className="px-2 py-1.5">{ln.income_type_label}</td>
+                          <td className="px-2 py-1.5">{ln.fish_species_label || '—'}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">
+                            {Number(ln.weight_kg).toLocaleString()}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.total_amount)}</td>
+                          <td className="px-2 py-1.5 text-gray-600">{ln.buyer_name || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-50">
+                      <tr>
+                        <td colSpan={4} className="px-2 py-2 text-right text-xs font-semibold text-slate-800">
+                          Sub-total — {g.pond_name}
+                        </td>
+                        <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
+                          {aqBdt(g.subtotal_amount)}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            ))
+          )}
+          {fishGroups.length > 0 ? (
+            <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
+              <span>Total — registered pond sales</span>
+              <span className="float-right tabular-nums">{aqBdt(fishTot.total_amount)}</span>
+            </div>
+          ) : null}
+        </div>
+
+        <div>
+          <h4 className="mb-2 font-semibold text-slate-900">B. Invoices to pond POS customers (excludes fuel lines)</h4>
+          <p className="mb-3 text-xs text-slate-500">
+            Uses each pond&apos;s linked POS customer. Motor-fuel-classified products (same rule as the Fuel sales report)
+            are omitted.
+          </p>
+          {posGroups.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No matching invoice lines. Link a POS customer on the pond and record non-draft invoices to that customer.
+            </p>
+          ) : (
+            posGroups.map((g: any) => (
+              <div key={`pos-${g.pond_id}`} className="mb-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+                <div className="border-b border-gray-100 bg-slate-100 px-4 py-2">
+                  <h5 className="font-semibold text-slate-900">{g.pond_name}</h5>
+                </div>
+                <div className="overflow-x-auto p-2">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-xs text-gray-500">
+                        <th className="px-2 py-1">Invoice date</th>
+                        <th className="px-2 py-1">Invoice #</th>
+                        <th className="px-2 py-1">Station</th>
+                        <th className="px-2 py-1">Item</th>
+                        <th className="px-2 py-1">POS class</th>
+                        <th className="px-2 py-1 text-right">Qty</th>
+                        <th className="px-2 py-1 text-right">Amount (BDT)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {(g.lines || []).map((ln: any) => (
+                        <tr key={ln.id}>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{ln.invoice_date}</td>
+                          <td className="px-2 py-1.5 font-mono text-xs">{ln.invoice_number}</td>
+                          <td className="px-2 py-1.5 text-gray-600">{ln.station_name || '—'}</td>
+                          <td className="px-2 py-1.5">{ln.item_name || '—'}</td>
+                          <td className="px-2 py-1.5 text-gray-600">{ln.pos_category || '—'}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{ln.quantity}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-50">
+                      <tr>
+                        <td colSpan={6} className="px-2 py-2 text-right text-xs font-semibold text-slate-800">
+                          Sub-total — {g.pond_name}
+                        </td>
+                        <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
+                          {aqBdt(g.subtotal_amount)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            ))
+          )}
+          {posGroups.length > 0 ? (
+            <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
+              <span>Total — pond POS (non-fuel)</span>
+              <span className="float-right tabular-nums">{aqBdt(posTot.total_amount)}</span>
+            </div>
+          ) : null}
+        </div>
       </div>
     )
   }

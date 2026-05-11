@@ -7,14 +7,11 @@ import Sidebar from '@/components/Sidebar'
 import { Plus, Edit, Trash2, Search, Package, Box, Wrench, Camera, X, Grid3x3, List, ArrowRightLeft } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
+import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
+import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
-
-/** Match backend duplicate-name rules: trim, collapse spaces, case-insensitive. */
-function normalizeItemNameKey(name: string): string {
-  return name.trim().replace(/\s+/g, ' ').toLowerCase()
-}
 
 /** API returns decimals as strings; tanks-backed quantity is merged server-side. */
 function parseInventoryQty(raw: unknown): number {
@@ -28,7 +25,7 @@ function itemHasPerStationShopStock(item: Item): boolean {
   const t = String(item.item_type).toLowerCase()
   if (t !== 'inventory') return false
   const pc = (item.pos_category || '').toLowerCase()
-  if (pc === 'fuel' || pc === 'non_pos') return false
+  if (pc === 'fuel' || pc === 'non_pos' || pc === 'fish') return false
   return true
 }
 
@@ -65,6 +62,18 @@ interface ShopStationRow {
   station_id: number
   station_name: string
   quantity: number
+}
+
+/** Per-pond fish SKU quantities when the company has aquaculture ponds. */
+interface FishPondRow {
+  pond_id: number
+  pond_name: string
+  quantity: number
+}
+
+/** Shape of GET /items/:id/ used when merging fish inventory with pond list (avoid `as typeof itemPayload` collapsing to null). */
+interface ItemFishPondStocksPayload {
+  pond_stocks?: { pond_id?: number; pond_name?: string; quantity?: string | number }[]
 }
 
 function useNonPassiveWheelPreventRef() {
@@ -178,6 +187,14 @@ export default function ItemsPage() {
   const toast = useToast()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
+  const [listPage, setListPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [totalCount, setTotalCount] = useState(0)
+  const [listStats, setListStats] = useState<{
+    by_type: { inventory: number; non_inventory: number; service: number }
+    catalog_total: number
+  } | null>(null)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [filterType, setFilterType] = useState<string>('ALL')
@@ -208,6 +225,9 @@ export default function ItemsPage() {
   const [shopStationRows, setShopStationRows] = useState<ShopStationRow[]>([])
   const [selectedShopStationId, setSelectedShopStationId] = useState<number | null>(null)
   const [shopStockLoading, setShopStockLoading] = useState(false)
+  const [fishPondRows, setFishPondRows] = useState<FishPondRow[]>([])
+  const [selectedFishPondId, setSelectedFishPondId] = useState<number | null>(null)
+  const [fishPondLoading, setFishPondLoading] = useState(false)
 
   /** React's onWheel is passive; non-passive listeners stop number inputs changing on scroll. */
   const contentWeightWheelRef = useNonPassiveWheelPreventRef()
@@ -227,6 +247,8 @@ export default function ItemsPage() {
    */
   const urlEditHydratedIdRef = useRef<number | null>(null)
   const urlNewHydratedRef = useRef(false)
+  /** List row aggregate QOH when opening edit — used if GET /items/:id fails while hydrating multi-site bins. */
+  const itemEditAggregateQohRef = useRef(0)
 
   /** Default must match SSR; hydrate from localStorage after mount to avoid hydration mismatch. */
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
@@ -260,9 +282,17 @@ export default function ItemsPage() {
       router.push('/login')
       return
     }
-    fetchItems()
     loadCategoryOptions()
   }, [router, loadCategoryOptions])
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 350)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  useEffect(() => {
+    setListPage(1)
+  }, [debouncedSearch, pageSize, filterType])
 
   useEffect(() => {
     if (showModal) void loadCategoryOptions()
@@ -307,7 +337,15 @@ export default function ItemsPage() {
     }
   }, [showModal, editingId])
 
-  /** Hydrate per-station shop bins so PUT sends station_id when the company has multiple active sites. */
+  /**
+   * Hydrate per-station shop bins so PUT sends station_id when the company has multiple active sites.
+   * GET may omit `location_stocks` when the saved row does not use station bins (e.g. service); if the
+   * user switches the form to inventory, the API still requires station_id — so we merge from /stations/
+   * and fall back to aggregate quantity_on_hand on the first site when per-row data is missing.
+   *
+   * Fuel with active tanks uses tank stock only (skip bins). Fuel with *no* tanks still follows the same
+   * multi-site bin rules as other inventory on the server (`item_uses_station_bins`).
+   */
   useEffect(() => {
     if (!showModal || !editingId) {
       setShopStationRows([])
@@ -316,12 +354,29 @@ export default function ItemsPage() {
       return
     }
     const pc = (formData.pos_category || '').toLowerCase()
-    if (pc === 'non_pos' || pc === 'fuel') {
+    if (pc === 'non_pos' || pc === 'fish') {
       setShopStationRows([])
       setSelectedShopStationId(null)
       setShopStockLoading(false)
       return
     }
+    if (formData.item_type.toLowerCase() !== 'inventory') {
+      setShopStationRows([])
+      setSelectedShopStationId(null)
+      setShopStockLoading(false)
+      return
+    }
+    if (fuelTanksLoading) {
+      setShopStockLoading(true)
+      return
+    }
+    if (fuelTanksForProduct.length > 0) {
+      setShopStationRows([])
+      setSelectedShopStationId(null)
+      setShopStockLoading(false)
+      return
+    }
+
     let cancel = false
     setShopStockLoading(true)
     ;(async () => {
@@ -334,17 +389,6 @@ export default function ItemsPage() {
           }
           return
         }
-        const r = await api.get(`/items/${editingId}/`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (cancel) return
-        const data = r.data as { location_stocks?: unknown }
-        if (!data || !('location_stocks' in data) || !Array.isArray(data.location_stocks)) {
-          setShopStationRows([])
-          setSelectedShopStationId(null)
-          return
-        }
-        const loc = data.location_stocks as { station_id?: number; station_name?: string; quantity?: string }[]
         const stRes = await api.get('/stations/', {
           headers: { Authorization: `Bearer ${token}` },
         })
@@ -352,10 +396,55 @@ export default function ItemsPage() {
         const stations = Array.isArray(stRes.data) ? stRes.data : []
         const active = stations.filter((s: { is_active?: boolean }) => s.is_active !== false)
         if (active.length <= 1) {
-          setShopStationRows([])
-          setSelectedShopStationId(null)
+          if (!cancel) {
+            setShopStationRows([])
+            setSelectedShopStationId(null)
+          }
           return
         }
+
+        let data: { location_stocks?: unknown; quantity_on_hand?: string | number } | null = null
+        try {
+          const r = await api.get(`/items/${editingId}/`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          data = r.data as { location_stocks?: unknown; quantity_on_hand?: string | number }
+        } catch {
+          data = null
+        }
+        if (cancel) return
+
+        if (!data) {
+          const qohFallback = itemEditAggregateQohRef.current
+          const merged: ShopStationRow[] = active.map(
+            (s: { id: number; station_name?: string }, idx: number) => ({
+              station_id: s.id,
+              station_name: (s.station_name || `Station #${s.id}`).trim(),
+              quantity: idx === 0 && Number.isFinite(qohFallback) ? qohFallback : 0,
+            })
+          )
+          if (!cancel) {
+            setShopStationRows(merged)
+            const firstId = merged[0]?.station_id ?? null
+            setSelectedShopStationId(firstId)
+            const firstQty = merged[0]?.quantity ?? 0
+            if (firstId != null) {
+              setFormData((prev) => ({ ...prev, quantity_on_hand: firstQty }))
+            }
+            toast.warning(
+              'Could not load per-location stock for this product. Using total quantity on the first site — adjust the location dropdown if needed, then save.'
+            )
+          }
+          return
+        }
+
+        const hasLocArray = Boolean(
+          data && 'location_stocks' in data && Array.isArray(data.location_stocks)
+        )
+        const loc = hasLocArray
+          ? (data.location_stocks as { station_id?: number; quantity?: string }[])
+          : []
+
         const qtyByStation = new Map<number, number>()
         for (const row of loc) {
           const sid = row.station_id
@@ -363,17 +452,29 @@ export default function ItemsPage() {
           const q = parseFloat(String(row.quantity ?? '0').replace(/,/g, ''))
           qtyByStation.set(sid, Number.isFinite(q) ? q : 0)
         }
-        const merged: ShopStationRow[] = active.map((s: { id: number; station_name?: string }) => ({
-          station_id: s.id,
-          station_name: (s.station_name || `Station #${s.id}`).trim(),
-          quantity: qtyByStation.get(s.id) ?? 0,
-        }))
-        setShopStationRows(merged)
-        const firstId = merged[0]?.station_id ?? null
-        setSelectedShopStationId(firstId)
-        const firstQty = merged[0]?.quantity ?? 0
-        if (firstId != null) {
-          setFormData((prev) => ({ ...prev, quantity_on_hand: firstQty }))
+
+        const qohTop = parseFloat(String(data?.quantity_on_hand ?? '0').replace(/,/g, ''))
+        const useFallbackSplit = !hasLocArray
+
+        const merged: ShopStationRow[] = active.map(
+          (s: { id: number; station_name?: string }, idx: number) => ({
+            station_id: s.id,
+            station_name: (s.station_name || `Station #${s.id}`).trim(),
+            quantity: useFallbackSplit
+              ? idx === 0 && Number.isFinite(qohTop)
+                ? qohTop
+                : 0
+              : qtyByStation.get(s.id) ?? 0,
+          })
+        )
+        if (!cancel) {
+          setShopStationRows(merged)
+          const firstId = merged[0]?.station_id ?? null
+          setSelectedShopStationId(firstId)
+          const firstQty = merged[0]?.quantity ?? 0
+          if (firstId != null) {
+            setFormData((prev) => ({ ...prev, quantity_on_hand: firstQty }))
+          }
         }
       } catch {
         if (!cancel) {
@@ -387,7 +488,130 @@ export default function ItemsPage() {
     return () => {
       cancel = true
     }
-  }, [showModal, editingId, formData.pos_category])
+  }, [
+    showModal,
+    editingId,
+    formData.pos_category,
+    formData.item_type,
+    fuelTanksLoading,
+    fuelTanksForProduct.length,
+    toast,
+  ])
+
+  /** Fish inventory: per-pond quantities (not shop stations — avoids showing e.g. Non Fuel / Premium Agro as “shop”). */
+  useEffect(() => {
+    if (!showModal || formData.item_type.toLowerCase() !== 'inventory') {
+      setFishPondRows([])
+      setSelectedFishPondId(null)
+      setFishPondLoading(false)
+      return
+    }
+    const pc = (formData.pos_category || '').toLowerCase()
+    if (pc !== 'fish') {
+      setFishPondRows([])
+      setSelectedFishPondId(null)
+      setFishPondLoading(false)
+      return
+    }
+
+    let cancel = false
+    setFishPondLoading(true)
+    ;(async () => {
+      const token = localStorage.getItem('access_token')
+      if (!token) {
+        if (!cancel) {
+          setFishPondRows([])
+          setSelectedFishPondId(null)
+          setFishPondLoading(false)
+        }
+        return
+      }
+      try {
+        let itemPayload: ItemFishPondStocksPayload | null = null
+        if (editingId) {
+          try {
+            const r = await api.get(`/items/${editingId}/`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            if (cancel) return
+            itemPayload = r.data as ItemFishPondStocksPayload
+          } catch {
+            itemPayload = null
+          }
+        }
+        if (cancel) return
+
+        const pondRes = await api.get('/aquaculture/ponds/', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (cancel) return
+        const all = Array.isArray(pondRes.data) ? pondRes.data : []
+        const active = all.filter((p: { is_active?: boolean }) => p.is_active !== false)
+
+        if (!editingId) {
+          const merged: FishPondRow[] = active.map((p: { id: number; name?: string }) => ({
+            pond_id: p.id,
+            pond_name: (p.name || `Pond #${p.id}`).trim(),
+            quantity: 0,
+          }))
+          if (!cancel) {
+            setFishPondRows(merged)
+            setSelectedFishPondId(merged[0]?.pond_id ?? null)
+          }
+          return
+        }
+
+        // Edit: align with server `per_pond_quantities` — always include every active pond so PUT sends
+        // pond_id when the company has multiple ponds (avoids 400 if GET /items/:id/ failed or omitted pond_stocks).
+        const rows =
+          itemPayload && Array.isArray(itemPayload.pond_stocks) ? itemPayload.pond_stocks : []
+        const qtyByPond = new Map<number, number>()
+        for (const row of rows) {
+          const pid = row.pond_id
+          if (pid == null) continue
+          const q = parseFloat(String(row.quantity ?? '0').replace(/,/g, ''))
+          qtyByPond.set(Number(pid), Number.isFinite(q) ? q : 0)
+        }
+        const qohFallback = itemEditAggregateQohRef.current
+        const itemGetFailed = itemPayload == null
+        const merged: FishPondRow[] = active.map(
+          (p: { id: number; name?: string }, idx: number) => ({
+            pond_id: p.id,
+            pond_name: (p.name || `Pond #${p.id}`).trim(),
+            quantity:
+              qtyByPond.get(p.id) ??
+              (itemGetFailed && active.length > 0 && idx === 0 && Number.isFinite(qohFallback)
+                ? qohFallback
+                : 0),
+          })
+        )
+        if (!cancel) {
+          setFishPondRows(merged)
+          const firstNonZero = merged.find((row) => row.quantity > 0)
+          const pick = firstNonZero ?? merged[0]
+          setSelectedFishPondId(pick?.pond_id ?? null)
+          if (pick && merged.length > 1 && firstNonZero) {
+            setFormData((prev) => ({ ...prev, quantity_on_hand: firstNonZero.quantity }))
+          }
+          if (itemGetFailed && active.length > 1) {
+            toast.warning(
+              'Could not load fish stock from the product API. Ponds are shown from aquaculture; pick the correct pond and quantity, then save.'
+            )
+          }
+        }
+      } catch {
+        if (!cancel) {
+          setFishPondRows([])
+          setSelectedFishPondId(null)
+        }
+      } finally {
+        if (!cancel) setFishPondLoading(false)
+      }
+    })()
+    return () => {
+      cancel = true
+    }
+  }, [showModal, editingId, formData.pos_category, formData.item_type, toast])
 
   // Set video stream when camera is available
   useEffect(() => {
@@ -404,9 +628,8 @@ export default function ItemsPage() {
     }
   }, [cameraVideoRef, cameraStream])
 
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async () => {
     try {
-      // Fetch company currency
       try {
         const companyRes = await api.get('/companies/current')
         if (companyRes.data?.currency) {
@@ -417,20 +640,82 @@ export default function ItemsPage() {
       }
 
       const token = localStorage.getItem('access_token')
+      const itemTypeExtra =
+        filterType === 'ALL'
+          ? {}
+          : {
+              item_type:
+                filterType === 'INVENTORY'
+                  ? 'inventory'
+                  : filterType === 'NON_INVENTORY'
+                    ? 'non_inventory'
+                    : filterType === 'SERVICE'
+                      ? 'service'
+                      : '',
+            }
+      const params = offsetListParams({
+        page: listPage,
+        pageSize,
+        q: debouncedSearch,
+        sort: 'id',
+        dir: 'asc',
+        extra: itemTypeExtra,
+      })
       const response = await api.get('/items/', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        params,
       })
 
       if (response.status === 200) {
-        setItems(response.data)
+        const data = response.data
+        if (isOffsetPagedPayload(data)) {
+          setItems(data.results as Item[])
+          setTotalCount(data.count)
+          const st = data.stats as
+            | {
+                by_type?: { inventory?: number; non_inventory?: number; service?: number }
+                catalog_total?: number
+              }
+            | undefined
+          if (st?.by_type && typeof st.catalog_total === 'number') {
+            setListStats({
+              by_type: {
+                inventory: Number(st.by_type.inventory ?? 0),
+                non_inventory: Number(st.by_type.non_inventory ?? 0),
+                service: Number(st.by_type.service ?? 0),
+              },
+              catalog_total: st.catalog_total,
+            })
+          } else {
+            setListStats(null)
+          }
+          const totalPages = Math.max(1, Math.ceil(data.count / pageSize))
+          if (listPage > totalPages) {
+            setListPage(totalPages)
+          }
+        } else {
+          setItems([])
+          setTotalCount(0)
+          setListStats(null)
+          toast.error('Unexpected items list format')
+        }
       }
     } catch (error) {
       console.error('Error fetching items:', error)
       toast.error('Failed to load items')
+      setItems([])
+      setTotalCount(0)
+      setListStats(null)
     } finally {
       setLoading(false)
     }
-  }
+  }, [debouncedSearch, filterType, listPage, pageSize, toast])
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+    void fetchItems()
+  }, [fetchItems])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -457,15 +742,6 @@ export default function ItemsPage() {
         return
       }
 
-      const nameKey = normalizeItemNameKey(formData.name)
-      const nameDuplicate = items.some(
-        (it) => it.id !== editingId && normalizeItemNameKey(it.name) === nameKey
-      )
-      if (nameDuplicate) {
-        toast.error('An item with this name already exists for this company.')
-        return
-      }
-
       const categoryTrim = formData.category?.trim() || ''
       if (!categoryTrim) {
         toast.error('Reporting category is required (e.g. General, Fuel, Fish feed).')
@@ -482,6 +758,7 @@ export default function ItemsPage() {
 
       const isInventory = formData.item_type.toLowerCase() === 'inventory'
       const isFuelPos = (formData.pos_category || '').toLowerCase() === 'fuel'
+      const isFishPos = (formData.pos_category || '').toLowerCase() === 'fish'
 
       if (editingId && isInventory && isFuelPos && fuelTanksLoading) {
         toast.error('Loading fuel tank information… please wait a moment, then save again.')
@@ -501,6 +778,10 @@ export default function ItemsPage() {
         toast.error('Loading location stock… please wait a moment, then save again.')
         return
       }
+      if (editingId && isInventory && isFishPos && fishPondLoading) {
+        toast.error('Loading pond stock… please wait a moment, then save again.')
+        return
+      }
       if (
         editingId &&
         isInventory &&
@@ -508,6 +789,27 @@ export default function ItemsPage() {
         selectedShopStationId == null
       ) {
         toast.error('Select which shop location to update before saving quantity.')
+        return
+      }
+      if (
+        editingId &&
+        isInventory &&
+        isFishPos &&
+        fishPondRows.length > 1 &&
+        selectedFishPondId == null
+      ) {
+        toast.error('Select which pond to update before saving quantity.')
+        return
+      }
+      if (
+        !editingId &&
+        isInventory &&
+        isFishPos &&
+        fishPondRows.length > 1 &&
+        (Number(formData.quantity_on_hand) || 0) > 0 &&
+        selectedFishPondId == null
+      ) {
+        toast.error('Select which pond receives this starting stock.')
         return
       }
 
@@ -556,6 +858,17 @@ export default function ItemsPage() {
       if (editingId && isInventory && shopStationRows.length > 1 && selectedShopStationId != null) {
         qtyPayload.station_id = selectedShopStationId
       }
+      if (
+        isInventory &&
+        isFishPos &&
+        fishPondRows.length > 1 &&
+        selectedFishPondId != null
+      ) {
+        const q0 = Number(formData.quantity_on_hand) || 0
+        if (editingId || q0 > 0) {
+          qtyPayload.pond_id = selectedFishPondId
+        }
+      }
 
       const response = await api({
         method: editingId ? 'PUT' : 'POST',
@@ -573,7 +886,8 @@ export default function ItemsPage() {
           barcode: formData.barcode?.trim() || null,
           is_taxable: formData.is_taxable !== undefined ? formData.is_taxable : true,
           is_pos_available:
-            (formData.pos_category || '').toLowerCase() === 'non_pos'
+            (formData.pos_category || '').toLowerCase() === 'non_pos' ||
+            (formData.pos_category || '').toLowerCase() === 'fish'
               ? false
               : formData.is_pos_available !== undefined
                 ? formData.is_pos_available
@@ -613,7 +927,8 @@ export default function ItemsPage() {
         (errorMessage.includes('multiple stations') ||
           errorMessage.includes('multiple active fuel tanks') ||
           errorMessage.includes('Send station_id') ||
-          errorMessage.includes('Send tank_id'))
+          errorMessage.includes('Send tank_id') ||
+          errorMessage.includes('pond_id'))
       if (qtyRuleHint) {
         toast.error(
           `${errorMessage} If you only changed price or cost, those values may already be saved — check the list after fixing quantity/station settings.`
@@ -627,6 +942,7 @@ export default function ItemsPage() {
 
   const populateEditorFromItem = useCallback((item: Item) => {
     setEditingId(item.id)
+    itemEditAggregateQohRef.current = parseInventoryQty(item.quantity_on_hand)
     const up = Number(item.unit_price)
     const co = Number(item.cost)
     const uStr = Number.isFinite(up) ? String(up) : '0'
@@ -915,30 +1231,6 @@ export default function ItemsPage() {
     }
   }
 
-  const filteredItems = items.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.item_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (item.description && item.description.toLowerCase().includes(searchTerm.toLowerCase()))
-
-    // Normalize to lowercase for case-insensitive comparison
-    // Backend returns: "inventory", "non_inventory", "service" (lowercase)
-    const itemTypeLower = item.item_type.toLowerCase()
-    let matchesType = false
-    
-    if (filterType === 'ALL') {
-      matchesType = true
-    } else if (filterType === 'INVENTORY') {
-      matchesType = itemTypeLower === 'inventory'
-    } else if (filterType === 'NON_INVENTORY') {
-      // Backend returns "non_inventory" (with underscore)
-      matchesType = itemTypeLower === 'non_inventory'
-    } else if (filterType === 'SERVICE') {
-      matchesType = itemTypeLower === 'service'
-    }
-
-    return matchesSearch && matchesType
-  })
-
   const getItemIcon = (type: string) => {
     const typeUpper = type.toUpperCase()
     switch (typeUpper) {
@@ -970,14 +1262,15 @@ export default function ItemsPage() {
   }
 
   const itemTypeCounts = {
-    ALL: items.length,
-    INVENTORY: items.filter(i => i.item_type.toLowerCase() === 'inventory').length,
-    NON_INVENTORY: items.filter(i => i.item_type.toLowerCase() === 'non_inventory').length,
-    SERVICE: items.filter(i => i.item_type.toLowerCase() === 'service').length,
+    ALL: listStats?.catalog_total ?? totalCount,
+    INVENTORY: listStats?.by_type?.inventory ?? 0,
+    NON_INVENTORY: listStats?.by_type?.non_inventory ?? 0,
+    SERVICE: listStats?.by_type?.service ?? 0,
   }
 
   const isFeedItemForm = (formData.pos_category || '').toLowerCase() === 'feed'
   const isNonPosForm = (formData.pos_category || '').toLowerCase() === 'non_pos'
+  const isFishItemForm = (formData.pos_category || '').toLowerCase() === 'fish'
 
   const feedSellingPriceSuspicion = useMemo(() => {
     if (!isFeedItemForm) return null
@@ -1081,7 +1374,7 @@ export default function ItemsPage() {
           <div className="flex justify-center items-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="bg-white rounded-lg shadow p-12 text-center">
             <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No items found</h3>
@@ -1100,10 +1393,12 @@ export default function ItemsPage() {
               <span>Add Item</span>
             </button>
           </div>
-        ) : viewMode === 'card' ? (
+        ) : (
+          <>
+            {viewMode === 'card' ? (
           // Card View
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredItems.map((item) => (
+            {items.map((item) => (
               <div key={item.id} className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
@@ -1231,7 +1526,7 @@ export default function ItemsPage() {
               </div>
             ))}
           </div>
-        ) : (
+            ) : (
           // List View
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
@@ -1267,7 +1562,7 @@ export default function ItemsPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredItems.map((item) => (
+                {items.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       {item.image_url ? (
@@ -1378,6 +1673,23 @@ export default function ItemsPage() {
               </tbody>
             </table>
           </div>
+            )}
+            {totalCount > 0 && (
+              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <OffsetPaginationControls
+                  page={listPage}
+                  pageSize={pageSize}
+                  total={totalCount}
+                  disabled={loading}
+                  onPageChange={setListPage}
+                  onPageSizeChange={(n) => {
+                    setPageSize(n)
+                    setListPage(1)
+                  }}
+                />
+              </div>
+            )}
+          </>
         )}
 
         {/* Create/Edit Modal */}
@@ -1561,7 +1873,9 @@ export default function ItemsPage() {
                     <p className="mt-1 text-xs text-gray-500">
                       {isFeedItemForm
                         ? 'For sack-packed feed, choose Sack — stock and POS quantity are counted in sacks.'
-                        : 'Select the unit of measure for this item'}
+                        : isFishItemForm
+                          ? 'Fry and fingerlings are often sold or stocked by piece (head count); grow-out may use kg. Vendor bills for fish still require both total weight (kg) and headcount on each line.'
+                          : 'Select the unit of measure for this item'}
                     </p>
                   </div>
 
@@ -1578,7 +1892,7 @@ export default function ItemsPage() {
                           pos_category: v,
                           ...(v === 'feed' && prev.unit === 'piece' ? { unit: 'sack' } : {}),
                           ...(v !== 'feed' ? { content_weight_kg: '' } : {}),
-                          ...(v === 'non_pos' ? { is_pos_available: false } : {}),
+                          ...(v === 'non_pos' || v === 'fish' ? { is_pos_available: false } : {}),
                         }))
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -1588,14 +1902,18 @@ export default function ItemsPage() {
                       <option value="fuel">Fuel (For POS Fuel Tab - Linked to Tanks)</option>
                       <option value="service">Service</option>
                       <option value="other">Other</option>
+                      <option value="fish">
+                        Fish Type (hatchery / pond fish — kg + headcount required on vendor bills; not Cashier)
+                      </option>
                       <option value="non_pos">
                         Non-POS (aquaculture hatchery / pond stock — not shop or Cashier)
                       </option>
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
                       General and feed items appear in the Cashier retail catalog. Fuel items use the Fuel tab and tanks.
-                      Non-POS items are excluded from Cashier and per-station shop stock; use Aquaculture flows to move
-                      stock (e.g. fish fry) into ponds.
+                      Fish Type and Non-POS items are excluded from Cashier and per-station shop stock; use vendor bills to
+                      record total weight (kg) and headcount on each fish line (both required), and Aquaculture flows to move
+                      stock into ponds.
                     </p>
                   </div>
 
@@ -1745,6 +2063,52 @@ export default function ItemsPage() {
 
                   {formData.item_type === 'inventory' && (
                     <div className="space-y-2">
+                      {isFishItemForm && fishPondRows.length > 1 && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Pond (quantity applies here)
+                          </label>
+                          <select
+                            value={selectedFishPondId ?? ''}
+                            onChange={(e) => {
+                              const pid = e.target.value ? parseInt(e.target.value, 10) : null
+                              setSelectedFishPondId(pid)
+                              const row = fishPondRows.find((r) => r.pond_id === pid)
+                              if (row) {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  quantity_on_hand: row.quantity,
+                                }))
+                              }
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          >
+                            {fishPondRows.map((p) => (
+                              <option key={p.pond_id} value={p.pond_id}>
+                                {p.pond_name} (on hand: {formatNumber(p.quantity)} {formData.unit || 'unit'})
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Fish SKUs are not stored in shop station bins. Pick the pond whose on-hand amount you are
+                            editing; the item card shows the total across ponds.
+                          </p>
+                        </div>
+                      )}
+                      {isFishItemForm && fishPondRows.length === 1 && (
+                        <p className="text-xs text-gray-600">
+                          Pond: <span className="font-medium text-gray-900">{fishPondRows[0].pond_name}</span>
+                        </p>
+                      )}
+                      {isFishItemForm &&
+                        formData.item_type === 'inventory' &&
+                        fishPondRows.length === 0 &&
+                        !fishPondLoading && (
+                          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                            No active ponds loaded (Aquaculture may be off or you have no ponds yet). Quantity stays
+                            company-wide until ponds exist — then stock can be split per pond here.
+                          </p>
+                        )}
                       {shopStationRows.length > 1 && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1834,7 +2198,9 @@ export default function ItemsPage() {
                               }`
                             : shopStationRows.length > 1
                               ? `Quantity is for the shop location selected above (not the company-wide total).`
-                              : isNonPosForm
+                              : isFishItemForm && fishPondRows.length > 1
+                                ? `Quantity is for the pond selected above; the list shows the sum across ponds.`
+                                : isNonPosForm
                                 ? `Company-level quantity for this SKU (not split across shop locations). Record pond movements in Aquaculture.`
                                 : isFeedItemForm
                                   ? `Number of physical sacks at this location (10 kg, 25 kg, etc. depends on this item’s kg per sack). Total kg ≈ sacks × kg per sack.`
@@ -1907,11 +2273,15 @@ export default function ItemsPage() {
 
                   <div className="col-span-2">
                     <div className="flex items-center space-x-6">
-                      <label className={`flex items-center space-x-2 ${isNonPosForm ? 'opacity-60' : ''}`}>
+                      <label
+                        className={`flex items-center space-x-2 ${isNonPosForm || isFishItemForm ? 'opacity-60' : ''}`}
+                      >
                         <input
                           type="checkbox"
-                          checked={isNonPosForm ? false : formData.is_pos_available}
-                          disabled={isNonPosForm}
+                          checked={
+                            isNonPosForm || isFishItemForm ? false : formData.is_pos_available
+                          }
+                          disabled={isNonPosForm || isFishItemForm}
                           onChange={(e) => setFormData((prev) => ({ ...prev, is_pos_available: e.target.checked }))}
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
@@ -1920,6 +2290,11 @@ export default function ItemsPage() {
                       {isNonPosForm && (
                         <span className="text-xs text-gray-500">
                           Off for Non-POS (Cashier cannot sell this SKU).
+                        </span>
+                      )}
+                      {isFishItemForm && (
+                        <span className="text-xs text-gray-500">
+                          Off for Fish Type (Cashier cannot sell this SKU).
                         </span>
                       )}
                       <label className="flex items-center space-x-2">

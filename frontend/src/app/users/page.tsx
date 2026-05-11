@@ -39,9 +39,9 @@ const JOB_TITLE_HINT: Record<string, string> = {
   admin: 'Company admin: can manage people, company settings, and all modules (unless a custom access profile below overrides).',
   accountant: 'Full accounting, sales, inventory, and reports. Typical back-office user.',
   cashier:
-    'Register, customers, and basic reports. Set POS lane (fuel + shop, shop only, or fuel only) in the box below.',
+    'Register, customers, and basic reports. Choose their POS location when you have more than one site; sales stay at that site only. Set lane (fuel + shop, etc.) below.',
   operator:
-    'POS only: new sale and donation. Set POS lane (fuel + shop, shop only, or fuel only) in the box below.',
+    'POS only: new sale and donation. Choose their POS location when you have more than one site. Set lane below.',
 }
 
 const CREATE_STEPS = [
@@ -125,6 +125,20 @@ export default function UsersPage() {
       cancelled = true
     }
   }, [isCompanyOwner, isSuperAdminSession, showModal, formData.company_id])
+
+  useEffect(() => {
+    if (!showModal) return
+    if (formData.role !== 'cashier' && formData.role !== 'operator') return
+    if (!hasAccessContext) return
+    if (stationOptions.length !== 1) return
+    const onlyId = stationOptions[0].id
+    setFormData((fd) => {
+      const cur =
+        fd.home_station_id === '' || fd.home_station_id == null ? '' : String(fd.home_station_id)
+      if (cur === String(onlyId)) return fd
+      return { ...fd, home_station_id: String(onlyId) }
+    })
+  }, [showModal, formData.role, hasAccessContext, stationOptions])
 
   const loadCompanyRolesList = useCallback(async () => {
     try {
@@ -428,6 +442,17 @@ export default function UsersPage() {
       return
     }
 
+    if (
+      hasAccessContext &&
+      (formData.role === 'cashier' || formData.role === 'operator') &&
+      stationOptions.length > 1
+    ) {
+      if (formData.home_station_id === '' || formData.home_station_id == null) {
+        toast.error('Select a location for this cashier or operator.')
+        return
+      }
+    }
+
     try {
       await persistCustomRoleIfNeeded()
       const payload: Record<string, unknown> = {
@@ -512,6 +537,17 @@ export default function UsersPage() {
     if (formData.password && formData.password.length < 6) {
       toast.error('Password must be at least 6 characters long')
       return
+    }
+
+    if (
+      hasAccessContext &&
+      (formData.role === 'cashier' || formData.role === 'operator') &&
+      stationOptions.length > 1
+    ) {
+      if (formData.home_station_id === '' || formData.home_station_id == null) {
+        toast.error('Select a location for this cashier or operator.')
+        return
+      }
     }
 
     try {
@@ -1316,33 +1352,87 @@ export default function UsersPage() {
                           />
                         </div>
                       )}
-                      {hasAccessContext && stationOptions.length > 0 && (
-                        <div className="mt-4 max-w-xl">
-                          <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-700">
-                            <MapPin className="h-4 w-4 text-amber-600" />
-                            Home station (optional)
-                          </label>
-                          <select
-                            value={formData.home_station_id === '' || formData.home_station_id == null ? '' : String(formData.home_station_id)}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setFormData((fd) => ({ ...fd, home_station_id: v === '' ? '' : v }))
-                            }}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">All sites (not limited to one station)</option>
-                            {stationOptions.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.station_name}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="mt-1.5 text-xs text-gray-500">
-                            When set, this user can only use POS, stock, and report data for that site (typical for
-                            on-site cashiers; owners leave empty).
-                          </p>
-                        </div>
-                      )}
+                      {hasAccessContext &&
+                        (formData.role === 'cashier' || formData.role === 'operator') && (
+                          <div className="mt-4 max-w-xl">
+                            <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-700">
+                              <MapPin className="h-4 w-4 text-amber-600" />
+                              Location (POS site)
+                              {stationOptions.length > 1 ? (
+                                <span className="text-red-500">*</span>
+                              ) : null}
+                            </label>
+                            {stationOptions.length === 0 ? (
+                              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                                No active sites yet. Add a site under Stations, then set this user&apos;s location.
+                              </p>
+                            ) : (
+                              <>
+                                <select
+                                  required={stationOptions.length > 1}
+                                  value={
+                                    formData.home_station_id === '' || formData.home_station_id == null
+                                      ? ''
+                                      : String(formData.home_station_id)
+                                  }
+                                  onChange={(e) => {
+                                    const v = e.target.value
+                                    setFormData((fd) => ({ ...fd, home_station_id: v === '' ? '' : v }))
+                                  }}
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                >
+                                  {stationOptions.length > 1 ? (
+                                    <option value="">Select location…</option>
+                                  ) : null}
+                                  {stationOptions.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.station_name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <p className="mt-1.5 text-xs text-gray-500">
+                                  {stationOptions.length > 1
+                                    ? 'This cashier or operator can sell and use registers only at the selected site.'
+                                    : 'Only one site exists; it is assigned automatically.'}
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      {hasAccessContext &&
+                        formData.role !== 'cashier' &&
+                        formData.role !== 'operator' &&
+                        stationOptions.length > 0 && (
+                          <div className="mt-4 max-w-xl">
+                            <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-700">
+                              <MapPin className="h-4 w-4 text-amber-600" />
+                              Home station / POS site (optional)
+                            </label>
+                            <select
+                              value={
+                                formData.home_station_id === '' || formData.home_station_id == null
+                                  ? ''
+                                  : String(formData.home_station_id)
+                              }
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setFormData((fd) => ({ ...fd, home_station_id: v === '' ? '' : v }))
+                              }}
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="">All sites (not limited to one station)</option>
+                              {stationOptions.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.station_name}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="mt-1.5 text-xs text-gray-500">
+                              When set, this user can only use POS, stock, and report data for that site (optional for
+                              admins and accountants).
+                            </p>
+                          </div>
+                        )}
                     </div>
                     {hasAccessContext && (
                       <div className="space-y-3 border-t border-gray-100 pt-3">

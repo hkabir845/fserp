@@ -84,6 +84,7 @@ def admin_companies(request):
     # Master tenants first so the first page always includes dev baseline even with many companies
     qs = (
         Company.objects.filter(is_deleted=False)
+        .select_related("organization")
         .annotate(
             _master_first=Case(
                 When(is_master="true", then=0),
@@ -100,15 +101,18 @@ def admin_companies(request):
         current_release = (getattr(c, "platform_release", None) or "").strip()
         release_behind = current_release != target_release
         applied = getattr(c, "platform_release_applied_at", None)
+        org = getattr(c, "organization", None)
         result.append({
             "id": c.id,
             "company_code": resolved_company_code(c),
+            "organization_id": org.id if org else None,
+            "organization_name": org.name if org else "",
             "name": c.name,
             "legal_name": c.legal_name or "",
             "email": c.email or "",
             "phone": c.phone or "",
-            "subdomain": c.subdomain or "",
-            "custom_domain": c.custom_domain or "",
+            "subdomain": (org.subdomain or "") if org else "",
+            "custom_domain": (org.custom_domain or "") if org else "",
             "currency": c.currency or "BDT",
             "is_active": c.is_active,
             "is_master": getattr(c, "is_master", "false") or "false",
@@ -151,7 +155,8 @@ def admin_users(request):
     limit = min(int(request.GET.get("limit", 500)), 500)
     # Super admins first (case-insensitive role), then by id
     qs = (
-        User.objects.annotate(
+        User.objects.select_related("home_station")
+        .annotate(
             _saas_sort=Case(
                 When(Q(role__iexact="super_admin"), then=0),
                 default=1,
@@ -172,6 +177,8 @@ def admin_users(request):
         pss = getattr(u, "pos_sale_scope", None) or "both"
         if rlow not in ("cashier", "operator"):
             pss = "both"
+        hs_id = getattr(u, "home_station_id", None)
+        hs = getattr(u, "home_station", None)
         result.append({
             "id": u.id,
             "username": u.username,
@@ -183,6 +190,8 @@ def admin_users(request):
             "company_name": company_name,
             "is_active": u.is_active,
             "created_at": created.isoformat() if created else None,
+            "home_station_id": int(hs_id) if hs_id is not None else None,
+            "home_station_name": (hs.station_name or "").strip() if hs is not None and hs_id else None,
         })
     return JsonResponse(result, safe=False)
 

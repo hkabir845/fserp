@@ -24,11 +24,13 @@ except ImportError:
 
 _manage_cmd = sys.argv[1] if len(sys.argv) > 1 else ""
 _is_runserver = _manage_cmd == "runserver"
+_seed_management_cmd = _manage_cmd.startswith("seed_")
 
 # Commands allowed to use a short dev-only SECRET_KEY (never use that key in production).
+# `collectstatic` is excluded so VPS/CI deploy steps must set DJANGO_SECRET_KEY like Gunicorn does.
 _DEV_SECRET_CMDS = frozenset(
     "runserver shell migrate makemigrations createsuperuser test showmigrations dbshell "
-    "flush loaddata dumpdata sqlmigrate collectstatic check changepassword compilemessages "
+    "flush loaddata dumpdata sqlmigrate check changepassword compilemessages "
     "makemessages ensure_platform_owner_email ensure_saas_superuser create_superuser".split()
 )
 
@@ -56,7 +58,17 @@ _default_hosts = ["api.mahasoftcorporation.com", "mahasoftcorporation.com"]
 _env_hosts = _csv("DJANGO_ALLOWED_HOSTS") or _csv("FSERP_ALLOWED_HOSTS")
 ALLOWED_HOSTS = _env_hosts or list(_default_hosts)
 if _is_runserver:
-    ALLOWED_HOSTS = _uniq(ALLOWED_HOSTS, ["localhost", "127.0.0.1"])
+    # DisallowedHost surfaces as HTTP 400 (HTML) — browsers show Axios "400" with little detail.
+    # - `.localhost` matches tenant-style dev hosts (e.g. adib.localhost:8000) used with Next.js.
+    # - [::1] covers IPv6 loopback API URLs.
+    # - FSERP_DEV_ALLOW_ALL_HOSTS=1 allows LAN IPs (phones, other PCs) without listing each host.
+    if _truthy("FSERP_DEV_ALLOW_ALL_HOSTS"):
+        ALLOWED_HOSTS = ["*"]
+    else:
+        ALLOWED_HOSTS = _uniq(
+            ALLOWED_HOSTS,
+            ["localhost", "127.0.0.1", "[::1]", ".localhost"],
+        )
 
 DEBUG = _is_runserver
 
@@ -64,7 +76,7 @@ _secret = (os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY") o
 if len(_secret) < 32:
     if "pytest" in sys.modules:
         _secret = "pytest-only-secret-key-do-not-use-in-production-32"
-    elif _manage_cmd in _DEV_SECRET_CMDS:
+    elif _manage_cmd in _DEV_SECRET_CMDS or _seed_management_cmd:
         _secret = "django-insecure-local-manage-only-not-for-production-use-32"
     else:
         raise ImproperlyConfigured(
@@ -159,7 +171,9 @@ if DATABASE_URL:
             "Use backend venv + pip install -r requirements.txt, or pip install dj-database-url, "
             "or set FSERP_USE_SQLITE=1 for local SQLite."
         ) from exc
-    DATABASES = {"default": dj_database_url.config(default=DATABASE_URL, conn_max_age=600)}
+    _db = dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
+    _db.setdefault("CONN_HEALTH_CHECKS", True)
+    DATABASES = {"default": _db}
 else:
     DATABASES = {
         "default": {
@@ -292,6 +306,8 @@ if _hsts > 0 and not _is_runserver:
     SECURE_HSTS_SECONDS = _hsts
     SECURE_HSTS_INCLUDE_SUBDOMAINS = _truthy("FSERP_SECURE_HSTS_INCLUDE_SUBDOMAINS")
     SECURE_HSTS_PRELOAD = _truthy("FSERP_SECURE_HSTS_PRELOAD")
+
+SILENCED_SYSTEM_CHECKS = _csv("FSERP_SILENCED_SYSTEM_CHECKS")
 
 LOGGING = {
     "version": 1,

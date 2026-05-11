@@ -713,43 +713,76 @@ export default function Sidebar() {
             const sectionItems = menuItemsForNav.filter((item) => item.section === section.id)
             if (sectionItems.length === 0) return null
 
+            const matches = sectionItems.filter(
+              (other) => pathname === other.href || pathname.startsWith(other.href + '/')
+            )
+            const best =
+              matches.length === 0
+                ? null
+                : matches.reduce((a, b) => (a.href.length >= b.href.length ? a : b))
+
+            const renderItem = (item: typeof sectionItems[number]) => {
+              const Icon = item.icon
+              const isActive = best !== null && item.href === best.href
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileNavOpen(false)}
+                  className={`flex items-center space-x-3 px-3 py-2.5 rounded-md transition-all duration-200 group ${
+                    isActive
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-500/30'
+                      : 'text-gray-300 hover:bg-gray-800/70 hover:text-white'
+                  }`}
+                >
+                  <Icon className={`h-4.5 w-4.5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'} transition-colors`} />
+                  <span className="text-sm font-medium flex-1 truncate">{item.label}</span>
+                  {isActive && (
+                    <div className="ml-auto h-2 w-2 rounded-full bg-white shadow-sm"></div>
+                  )}
+                </Link>
+              )
+            }
+
+            // Aquaculture is rendered with sub-group headings (Overview / Site & lease / …);
+            // all other sections keep the flat list.
+            const hasSubGroups =
+              section.id === 'aquaculture' && sectionItems.some((i) => i.subGroupId)
+
             return (
               <div key={section.id} className="mb-5">
                 <h3 className="mb-2.5 rounded-md bg-gray-800/50 px-2 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-300">
                   {section.label}
                 </h3>
-                <div className="space-y-0.5 pl-1">
-                  {sectionItems.map((item) => {
-                    const Icon = item.icon
-                    const matches = sectionItems.filter(
-                      (other) => pathname === other.href || pathname.startsWith(other.href + '/')
-                    )
-                    const best =
-                      matches.length === 0
-                        ? null
-                        : matches.reduce((a, b) => (a.href.length >= b.href.length ? a : b))
-                    const isActive = best !== null && item.href === best.href
-
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setMobileNavOpen(false)}
-                        className={`flex items-center space-x-3 px-3 py-2.5 rounded-md transition-all duration-200 group ${
-                          isActive
-                            ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-500/30'
-                            : 'text-gray-300 hover:bg-gray-800/70 hover:text-white'
-                        }`}
-                      >
-                        <Icon className={`h-4.5 w-4.5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'} transition-colors`} />
-                        <span className="text-sm font-medium flex-1 truncate">{item.label}</span>
-                        {isActive && (
-                          <div className="ml-auto h-2 w-2 rounded-full bg-white shadow-sm"></div>
-                        )}
-                      </Link>
-                    )
-                  })}
-                </div>
+                {hasSubGroups ? (
+                  <div className="space-y-3 pl-1">
+                    {(() => {
+                      const groups: { id: string; label: string; items: typeof sectionItems }[] = []
+                      for (const item of sectionItems) {
+                        const gid = item.subGroupId ?? '_other'
+                        const glabel = item.subGroupLabel ?? ''
+                        let g = groups.find((x) => x.id === gid)
+                        if (!g) {
+                          g = { id: gid, label: glabel, items: [] }
+                          groups.push(g)
+                        }
+                        g.items.push(item)
+                      }
+                      return groups.map((g) => (
+                        <div key={g.id}>
+                          {g.label ? (
+                            <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                              {g.label}
+                            </p>
+                          ) : null}
+                          <div className="space-y-0.5">{g.items.map(renderItem)}</div>
+                        </div>
+                      ))
+                    })()}
+                  </div>
+                ) : (
+                  <div className="space-y-0.5 pl-1">{sectionItems.map(renderItem)}</div>
+                )}
               </div>
             )
           })

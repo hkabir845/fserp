@@ -11,7 +11,10 @@ from api.services.loan_islamic import loan_uses_islamic_terminology
 @pytest.mark.django_db
 class TestLoanIslamicTerminology(TestCase):
     def setUp(self):
-        self.co = Company.objects.create(name="Co")
+        from api.models import Organization
+
+        org = Organization.objects.create(name="Co")
+        self.co = Company.objects.create(name="Co", organization=org)
         self.cp = LoanCounterparty.objects.create(
             company=self.co,
             code="CP1",

@@ -1,10 +1,13 @@
 """Vendors API: list, create, get, update, delete (company-scoped)."""
 from datetime import date
 from decimal import Decimal
+
+from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
+from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
 from api.views.common import parse_json_body, require_company_id
 from api.models import Vendor
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
@@ -70,16 +73,58 @@ def _parse_date(val):
         return None
 
 
+def _vendor_apply_q(qs, raw_q: str):
+    q = (raw_q or "").strip()
+    if not q:
+        return qs
+    return qs.filter(
+        Q(company_name__icontains=q)
+        | Q(display_name__icontains=q)
+        | Q(vendor_number__icontains=q)
+        | Q(email__icontains=q)
+        | Q(phone__icontains=q)
+        | Q(contact_person__icontains=q)
+        | Q(default_station__station_name__icontains=q)
+        | Q(default_aquaculture_pond__name__icontains=q)
+    )
+
+
+def _vendor_apply_sort(qs, request):
+    sort_key = (request.GET.get("sort") or "id").strip()
+    desc = (request.GET.get("dir") or "asc").strip().lower() == "desc"
+    prefix = "-" if desc else ""
+    mapping = {
+        "id": "id",
+        "company_name": "company_name",
+        "display_name": "display_name",
+        "vendor_number": "vendor_number",
+        "current_balance": "current_balance",
+        "is_active": "is_active",
+        "email": "email",
+        "phone": "phone",
+    }
+    field = mapping.get(sort_key, "id")
+    order = [f"{prefix}{field}"]
+    if sort_key != "id":
+        order.append("id")
+    return qs.order_by(*order)
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
 def vendors_list_or_create(request):
     if request.method == "GET":
-        qs = (
-            Vendor.objects.filter(company_id=request.company_id)
-            .select_related("default_station", "default_aquaculture_pond")
-            .order_by("id")
+        qs = Vendor.objects.filter(company_id=request.company_id).select_related(
+            "default_station", "default_aquaculture_pond"
         )
+        qs = _vendor_apply_q(qs, request.GET.get("q", ""))
+        qs = _vendor_apply_sort(qs, request)
+        if wants_paged_response(request):
+            skip, limit = parse_skip_limit(request, default_limit=50, max_limit=500)
+            total = qs.count()
+            page = qs[skip : skip + limit]
+            return json_paged([_vendor_to_json(v) for v in page], total=total, skip=skip, limit=limit)
         return JsonResponse([_vendor_to_json(v) for v in qs], safe=False)
 
     if request.method == "POST":

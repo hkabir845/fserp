@@ -20,6 +20,10 @@ Usage:
 
   # Skip heavy sections:
   python manage.py seed_application_full_demo --skip-aquaculture --skip-loan
+
+  # Add ≥5 example rows per major list (ponds, sales, bills, loans, …) on Master:
+  python manage.py seed_application_full_demo --bulk-example
+  # Or only: python manage.py seed_master_example_bulk
 """
 from __future__ import annotations
 
@@ -100,6 +104,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Do not create DEMO-BILL-SEED-1 draft vendor bill.",
         )
+        parser.add_argument(
+            "--bulk-example",
+            action="store_true",
+            help="After seed, run seed_master_example_bulk (≥5 ponds, expenses, sales, bills, loans, …).",
+        )
 
     def handle(self, *args, **options):
         fd_kw: dict = {}
@@ -130,6 +139,10 @@ class Command(BaseCommand):
             self.stdout.write(self.style.NOTICE("==> Draft vendor bill (shop line)"))
             self._seed_draft_bill(master)
 
+        if options.get("bulk_example"):
+            self.stdout.write(self.style.NOTICE("==> Bulk example data (≥5 per category)"))
+            call_command("seed_master_example_bulk")
+
         self.stdout.write(
             self.style.SUCCESS(
                 "\nApplication demo seed complete. Log in, select Master Filling Station, then test "
@@ -158,6 +171,19 @@ class Command(BaseCommand):
         if n_coa:
             self.stdout.write(f"  + Aquaculture COA lines added: {n_coa}")
 
+        if not Station.objects.filter(company_id=cid, station_name__iexact="Premium Agro").exists():
+            Station.objects.create(
+                company_id=cid,
+                station_name="Premium Agro",
+                is_active=True,
+                operates_fuel_retail=False,
+                address_line1="Aquaculture feed & medicine hub (demo)",
+            )
+            self.stdout.write(
+                "  + Station 'Premium Agro' (shop-only hub in this demo company). "
+                "For real books: create a separate Company for Premium Agro vs the filling station under the same Organization."
+            )
+
         station = Station.objects.filter(company_id=cid, station_name="Main Station").first()
         if not station:
             station = Station.objects.filter(company_id=cid, is_active=True).order_by("id").first()
@@ -173,7 +199,9 @@ class Command(BaseCommand):
                 sort_order=10,
                 is_active=True,
                 notes="Application demo seed — grow-out.",
-                pond_size_decimal=Decimal("12.5000"),
+                leasing_area_decimal=Decimal("12.5000"),
+                water_area_decimal=Decimal("11.8000"),
+                pond_depth_ft=Decimal("5.250"),
                 pond_role="grow_out",
             )
             grow.save()
@@ -189,7 +217,9 @@ class Command(BaseCommand):
                 sort_order=20,
                 is_active=True,
                 notes="Application demo seed — nursing.",
-                pond_size_decimal=Decimal("4.2500"),
+                leasing_area_decimal=Decimal("4.2500"),
+                water_area_decimal=Decimal("4.0000"),
+                pond_depth_ft=Decimal("3.937"),
                 pond_role="nursing",
             )
             nursery.save()

@@ -25,9 +25,9 @@ import {
   Database,
   Shield,
   ArrowRightLeft,
-  Layers,
-  Fish,
 } from 'lucide-react'
+
+import { getAquacultureMenuItemsFlatWithGroup } from '@/navigation/aquacultureNavConfig'
 
 /** Sidebar search hints (unchanged from Sidebar) */
 export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
@@ -42,7 +42,7 @@ export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
   management: 'management company settings subscription user roles access rbac tax admin backup restore',
   reports: 'reports analytics export print',
   aquaculture:
-    'aquaculture dashboard pond cycle crop production fish farm biomass sampling pl profit lease feed fry pos customer cashier inventory nursing transfer grow-out mortality stock ledger snake bird predation pond economics site gl fuel shop',
+    'aquaculture dashboard pond cycle crop production fish farm biomass sampling feeding advice tilapia worldfish ration pl profit lease feed fry pos customer cashier inventory nursing transfer grow-out mortality stock ledger pond warehouse supplies medicine snake bird predation site gl fuel shop landlord rent lessor pond fish sales harvest revenue pond costs operating expenses',
   saas: 'saas platform admin tenant companies users contract subscription billing overview ledger backup restore export',
 }
 
@@ -67,10 +67,28 @@ export interface ErpAppMenuItem {
   /** Light tile background + icon color (Odoo-style) */
   tileClass: string
   count?: number
+  /** Optional sub-section grouping inside `section` (currently used by Aquaculture). */
+  subGroupId?: string
+  subGroupLabel?: string
 }
 
 function tile(iconBg: string, iconText: string) {
   return `${iconBg} ${iconText}`
+}
+
+/** Pastel tiles for aquaculture launcher cards (keys = `href`) */
+const AQUACULTURE_TILE_BY_HREF: Record<string, string> = {
+  '/aquaculture': tile('bg-cyan-100', 'text-cyan-700'),
+  '/aquaculture/ponds': tile('bg-sky-100', 'text-sky-700'),
+  '/aquaculture/sales': tile('bg-emerald-100', 'text-emerald-800'),
+  '/aquaculture/expenses': tile('bg-stone-100', 'text-stone-800'),
+  '/aquaculture/landlords': tile('bg-amber-100', 'text-amber-900'),
+  '/aquaculture/cycles': tile('bg-sky-100', 'text-sky-800'),
+  '/aquaculture/transfers': tile('bg-cyan-100', 'text-cyan-800'),
+  '/aquaculture/stock': tile('bg-teal-100', 'text-teal-800'),
+  '/aquaculture/sampling': tile('bg-lime-100', 'text-lime-800'),
+  '/aquaculture/feeding': tile('bg-amber-100', 'text-amber-800'),
+  '/aquaculture/report': tile('bg-indigo-100', 'text-indigo-700'),
 }
 
 const PERM_WILDCARD = '*'
@@ -114,14 +132,15 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   '/reports/analytics': ['app.reports'],
   '/aquaculture': ['app.aquaculture'],
   '/aquaculture/ponds': ['app.aquaculture'],
-  '/aquaculture/pond-economics': ['app.aquaculture'],
   '/aquaculture/expenses': ['app.aquaculture'],
   '/aquaculture/sales': ['app.aquaculture'],
   '/aquaculture/sampling': ['app.aquaculture'],
+  '/aquaculture/feeding': ['app.aquaculture'],
   '/aquaculture/report': ['app.aquaculture'],
   '/aquaculture/cycles': ['app.aquaculture'],
   '/aquaculture/transfers': ['app.aquaculture'],
   '/aquaculture/stock': ['app.aquaculture'],
+  '/aquaculture/landlords': ['app.aquaculture'],
 }
 
 function menuItemAllowedByPermissions(href: string, perms: string[]): boolean {
@@ -201,50 +220,15 @@ export function getFsmsErpMenuItems(): ErpAppMenuItem[] {
 
     { href: '/reports', label: 'Reports', section: 'reports', icon: BarChart3, tileClass: tile('bg-violet-100', 'text-violet-600') },
 
-    {
-      href: '/aquaculture',
-      label: 'Dashboard',
-      section: 'aquaculture',
-      icon: LayoutDashboard,
-      tileClass: tile('bg-cyan-100', 'text-cyan-700'),
-    },
-    { href: '/aquaculture/ponds', label: 'Ponds', section: 'aquaculture', icon: MapPin, tileClass: tile('bg-sky-100', 'text-sky-700') },
-    {
-      href: '/aquaculture/cycles',
-      label: 'Production cycles',
-      section: 'aquaculture',
-      icon: Layers,
-      tileClass: tile('bg-sky-100', 'text-sky-800'),
-    },
-    {
-      href: '/aquaculture/transfers',
-      label: 'Fish pond transfers',
-      section: 'aquaculture',
-      icon: ArrowRightLeft,
-      tileClass: tile('bg-cyan-100', 'text-cyan-800'),
-    },
-    {
-      href: '/aquaculture/stock',
-      label: 'Fish stock & mortality',
-      section: 'aquaculture',
-      icon: Fish,
-      tileClass: tile('bg-teal-100', 'text-teal-800'),
-    },
-    {
-      href: '/aquaculture/pond-economics',
-      label: 'Pond economics',
-      section: 'aquaculture',
-      icon: Receipt,
-      tileClass: tile('bg-teal-100', 'text-teal-800'),
-    },
-    { href: '/aquaculture/sampling', label: 'Biomass sampling', section: 'aquaculture', icon: Gauge, tileClass: tile('bg-lime-100', 'text-lime-800') },
-    {
-      href: '/aquaculture/report',
-      label: 'P&L: fuel site & ponds',
-      section: 'aquaculture',
-      icon: BarChart3,
-      tileClass: tile('bg-indigo-100', 'text-indigo-700'),
-    },
+    ...getAquacultureMenuItemsFlatWithGroup().map((item) => ({
+      href: item.href,
+      label: item.sidebarLabel ?? item.label,
+      section: 'aquaculture' as const,
+      icon: item.icon,
+      tileClass: AQUACULTURE_TILE_BY_HREF[item.href] ?? tile('bg-slate-100', 'text-slate-700'),
+      subGroupId: item.groupId,
+      subGroupLabel: item.groupLabel,
+    })),
   ]
 }
 

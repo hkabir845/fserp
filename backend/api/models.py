@@ -11,8 +11,28 @@ def _password_bytes(raw_password: str) -> bytes:
     return raw_password.encode("utf-8")[:72]
 
 
+class Organization(models.Model):
+    """
+    Tenant group (subscription / portal). One organization owns the login subdomain and
+    may contain multiple Company rows (legal entities) sharing that portal.
+    """
+
+    name = models.CharField(max_length=200)
+    legal_name = models.CharField(max_length=200, blank=True)
+    subdomain = models.CharField(max_length=100, blank=True, null=True, unique=True, db_index=True)
+    custom_domain = models.CharField(max_length=255, blank=True, null=True, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True)
+
+    class Meta:
+        db_table = "organization"
+
+    def __str__(self):
+        return self.name
+
+
 class Company(models.Model):
-    """Company/tenant for multi-tenant support."""
+    """Legal entity (books, inventory, stations). Belongs to an Organization (tenant group)."""
     # Immutable business reference: Master = FS-000001 (reserved); others FS-{id:06d}. Set in save().
     company_code = models.CharField(max_length=24, null=True, blank=True, unique=True, db_index=True)
     name = models.CharField(max_length=200)
@@ -70,6 +90,12 @@ class Company(models.Model):
     aquaculture_enabled = models.BooleanField(
         default=False,
         help_text="When true (and typically aquaculture_licensed), tenant Admin may use Aquaculture in ERP (menu, APIs).",
+    )
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.PROTECT,
+        related_name="companies",
+        help_text="Tenant group; portal subdomain and custom domain are stored on Organization.",
     )
 
     class Meta:
@@ -349,7 +375,7 @@ class Item(models.Model):
 class ItemStationStock(models.Model):
     """
     Per-station on-hand quantity for shop / non-tank inventory items.
-    Item.quantity_on_hand is the company-wide total for these SKUs (sum of this table).
+    For station-bin SKUs, Item.quantity_on_hand is the sum of this table plus ItemPondStock (pond-side stores).
     Fuel and tank-tracked products use Tank.current_stock only; no rows here.
     """
 
@@ -365,6 +391,63 @@ class ItemStationStock(models.Model):
         indexes = [
             models.Index(fields=["company", "item"]),
         ]
+
+
+class ItemPondStock(models.Model):
+    """
+    Feed / supplies physically at a pond (transferred from a shop station). Company QOH for station-bin SKUs is
+    the sum of ItemStationStock and ItemPondStock. Consumed when feeding advice is applied or adjusted manually.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="item_pond_stocks")
+    pond = models.ForeignKey("AquaculturePond", on_delete=models.CASCADE, related_name="item_stocks")
+    item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="pond_stocks")
+    quantity = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "item_pond_stock"
+        unique_together = [["pond", "item"]]
+        indexes = [
+            models.Index(fields=["company", "item"]),
+        ]
+
+
+class PondWarehouseStockReceipt(models.Model):
+    """
+    Audit trail: shop station bin → pond warehouse (ItemPondStock). No GL; company inventory unchanged.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="pond_warehouse_receipts")
+    from_station = models.ForeignKey(
+        "Station",
+        on_delete=models.PROTECT,
+        related_name="pond_warehouse_receipts_out",
+    )
+    pond = models.ForeignKey(
+        "AquaculturePond",
+        on_delete=models.CASCADE,
+        related_name="warehouse_stock_receipts",
+    )
+    receipt_number = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "pond_warehouse_stock_receipt"
+        ordering = ["-created_at", "-id"]
+
+
+class PondWarehouseStockReceiptLine(models.Model):
+    receipt = models.ForeignKey(
+        PondWarehouseStockReceipt,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name="pond_warehouse_receipt_lines")
+    quantity = models.DecimalField(max_digits=14, decimal_places=4)
+
+    class Meta:
+        db_table = "pond_warehouse_stock_receipt_line"
 
 
 class Tank(models.Model):
@@ -911,6 +994,39 @@ class BillLine(models.Model):
     quantity = models.DecimalField(max_digits=14, decimal_places=4, default=1)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    aquaculture_pond = models.ForeignKey(
+        "AquaculturePond",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bill_lines",
+        help_text="When set, expense-side GL lines from this bill line are tagged for aquaculture pond P&L.",
+    )
+    aquaculture_production_cycle = models.ForeignKey(
+        "AquacultureProductionCycle",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bill_lines",
+        help_text="Optional production cycle (must belong to aquaculture_pond).",
+    )
+    aquaculture_cost_bucket = models.CharField(
+        max_length=40,
+        blank=True,
+        help_text="Optional P&L cost bucket when aquaculture_pond is set (e.g. equipment, feed).",
+    )
+    aquaculture_fish_weight_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="For fish-type items (Item.pos_category=fish): total weight (kg) on this line (optional).",
+    )
+    aquaculture_fish_count = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="For fish-type items: total headcount on this line (optional).",
+    )
 
     class Meta:
         db_table = "bill_line"
@@ -1395,17 +1511,34 @@ class AquaculturePond(models.Model):
     sort_order = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
     notes = models.TextField(blank=True)
-    pond_size_decimal = models.DecimalField(
+    leasing_area_decimal = models.DecimalField(
         max_digits=14,
-        decimal_places=4,
+        decimal_places=2,
         null=True,
         blank=True,
-        help_text="Pond area in decimal units (land measure).",
+        help_text="Leased land area in decimals — used with lease price per decimal for landlord rent.",
+    )
+    water_area_decimal = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Effective water surface area in decimals — for stocking, density, and production planning.",
+    )
+    pond_depth_ft = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=(
+            "Representative average depth in feet — with water area (decimals) uses "
+            "435.6 sq ft per decimal for volume."
+        ),
     )
     lease_contract_start = models.DateField(null=True, blank=True)
     lease_contract_end = models.DateField(null=True, blank=True)
     lease_price_per_decimal_per_year = models.DecimalField(
-        max_digits=18, decimal_places=4, null=True, blank=True
+        max_digits=18, decimal_places=2, null=True, blank=True
     )
     lease_paid_to_landlord = models.DecimalField(
         max_digits=18,
@@ -1425,6 +1558,22 @@ class AquaculturePond(models.Model):
         default=False,
         help_text="When true, pos_customer was created for this pond; display name and active flag sync from pond.",
     )
+    default_feed_item = models.ForeignKey(
+        Item,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="ponds_default_feed",
+        help_text="Inventory SKU drawn from this pond's warehouse when feeding advice is applied (sack or kg unit).",
+    )
+    default_medicine_item = models.ForeignKey(
+        Item,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="ponds_default_medicine",
+        help_text="Inventory SKU drawn from this pond's warehouse when recording medicine consumption.",
+    )
     pond_role = models.CharField(
         max_length=32,
         default="grow_out",
@@ -1443,6 +1592,142 @@ class AquaculturePond(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class AquacultureLandlord(models.Model):
+    """Lease counterparty: may hold land across multiple ponds (see pond shares)."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_landlords")
+    name = models.CharField(max_length=200)
+    code = models.CharField(max_length=64, blank=True)
+    phone = models.CharField(max_length=64, blank=True)
+    email = models.EmailField(blank=True)
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_landlord"
+        ordering = ["name", "id"]
+        indexes = [
+            models.Index(fields=["company", "is_active"]),
+        ]
+
+    def __str__(self):
+        return self.name or f"Landlord #{self.pk}"
+
+
+class AquacultureLandlordPondShare(models.Model):
+    """How much leased land (decimals) is attributed to a landlord on a given pond."""
+
+    landlord = models.ForeignKey(
+        AquacultureLandlord, on_delete=models.CASCADE, related_name="pond_shares"
+    )
+    pond = models.ForeignKey(
+        AquaculturePond, on_delete=models.CASCADE, related_name="landlord_pond_shares"
+    )
+    land_area_decimal = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        help_text="Portion of leased land (decimals) for this landlord on this pond.",
+    )
+    notes = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_landlord_pond_share"
+        unique_together = [("landlord", "pond")]
+        indexes = [
+            models.Index(fields=["pond"]),
+        ]
+
+
+class AquacultureLandlordLedgerEntry(models.Model):
+    """
+    Subledger: positive amount_signed increases obligation to the landlord (rent due);
+    negative reduces it (payment or credit). Optional link to a pond; payments may bump
+    AquaculturePond.lease_paid_to_landlord when applies_to_lease_paid is true.
+    """
+
+    KIND_RENT_CHARGE = "rent_charge"
+    KIND_PAYMENT = "payment"
+    KIND_ADJUSTMENT = "adjustment"
+    KIND_CHOICES = (
+        (KIND_RENT_CHARGE, "Rent charge"),
+        (KIND_PAYMENT, "Payment"),
+        (KIND_ADJUSTMENT, "Adjustment"),
+    )
+
+    landlord = models.ForeignKey(
+        AquacultureLandlord, on_delete=models.CASCADE, related_name="ledger_entries"
+    )
+    pond = models.ForeignKey(
+        AquaculturePond,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="landlord_ledger_entries",
+    )
+    entry_date = models.DateField(db_index=True)
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES)
+    amount_signed = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        help_text="Positive: obligation to landlord increases; negative: payment or credit.",
+    )
+    memo = models.CharField(max_length=500, blank=True)
+    reference = models.CharField(max_length=200, blank=True)
+    applies_to_lease_paid = models.BooleanField(
+        default=False,
+        help_text="If true, creating this row increased lease_paid_to_landlord on pond.",
+    )
+    lease_paid_delta = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Positive amount added to pond lease_paid_to_landlord when applies_to_lease_paid is true.",
+    )
+    bank_account = models.ForeignKey(
+        "BankAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_landlord_ledger_entries",
+        help_text="When set on a payment, posts Dr aquaculture lease expense (6711) / Cr this register's G/L.",
+    )
+    payment_method = models.CharField(
+        max_length=32,
+        blank=True,
+        default="cash",
+        help_text="Mirrors Payment.payment_method for resolving cash vs bank G/L credit line.",
+    )
+    station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_landlord_ledger_entries",
+        help_text="Optional site dimension on the auto journal (e.g. Premium Agro hub paying lease).",
+    )
+    journal_entry = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_landlord_ledger_entries",
+        help_text="AUTO-LL-PAY-{this row id} when bank_account is set and G/L posted.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "aquaculture_landlord_ledger_entry"
+        ordering = ["entry_date", "id"]
+        indexes = [
+            models.Index(fields=["landlord", "entry_date"]),
+        ]
 
 
 class AquacultureProductionCycle(models.Model):
@@ -1610,7 +1895,7 @@ class AquacultureFishSale(models.Model):
 
 class AquaculturePondProfitTransfer(models.Model):
     """
-    Moves value from aquaculture pond economics into the GL: debit one account, credit another
+    Moves value from aquaculture management P&L into the GL: debit one account, credit another
     (e.g. Dr Bank / Cr retained earnings). Creates a journal entry for the same company.
     """
 
@@ -1734,6 +2019,39 @@ class AquacultureBiomassSample(models.Model):
     estimated_fish_count = models.IntegerField(null=True, blank=True)
     estimated_total_weight_kg = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
     avg_weight_kg = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
+    stock_reference_fish_count = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Implied net head from stock movements (Fish stock basis), snapshot at save.",
+    )
+    stock_reference_net_weight_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Implied net biological kg for this species, snapshot at save.",
+    )
+    stock_reference_avg_weight_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        help_text="Reference mean kg/fish = net kg ÷ head when both positive.",
+    )
+    extrapolated_biomass_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Sample mean × reference head count (estimated pond biomass).",
+    )
+    biomass_gain_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="(sample mean − reference mean) × reference head; may be negative.",
+    )
     fish_species = models.CharField(
         max_length=64,
         db_index=True,
@@ -1814,6 +2132,103 @@ class AquacultureFishStockLedger(models.Model):
         ordering = ["-entry_date", "-id"]
         indexes = [
             models.Index(fields=["company", "pond", "entry_date"]),
+        ]
+
+
+class AquacultureFeedingAdvice(models.Model):
+    """
+    Heuristic / AI-style daily feeding recommendation from pond status; manager edits, approves, then applies.
+    """
+
+    STATUS_PENDING_REVIEW = "pending_review"
+    STATUS_APPROVED = "approved"
+    STATUS_APPLIED = "applied"
+    STATUS_CANCELLED = "cancelled"
+
+    STATUS_CHOICES = (
+        (STATUS_PENDING_REVIEW, "Pending review"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_APPLIED, "Applied"),
+        (STATUS_CANCELLED, "Cancelled"),
+    )
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_feeding_advices")
+    pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="feeding_advices")
+    production_cycle = models.ForeignKey(
+        AquacultureProductionCycle,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="feeding_advices",
+    )
+    target_date = models.DateField(db_index=True, help_text="Calendar day this feeding plan targets.")
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING_REVIEW, db_index=True)
+
+    pond_status_snapshot = models.JSONField(
+        default=dict,
+        help_text="Pond metrics at generation time (stock position, recent feed, etc.).",
+    )
+    ai_advice_text = models.TextField(help_text="Original generated advisory narrative.")
+    edited_advice_text = models.TextField(
+        blank=True,
+        help_text="Manager-edited narrative; when empty, effective text follows ai_advice_text.",
+    )
+    suggested_feed_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Suggested total feed (kg) for target_date; manager may override before approval.",
+    )
+    sack_size_kg = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Commercial sack size (kg) for field instructions; optional.",
+    )
+
+    approved_advice_text = models.TextField(blank=True, help_text="Snapshot of agreed text at approval.")
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_feeding_advices_approved",
+    )
+
+    applied_feed_kg = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    applied_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_feeding_advices_applied",
+    )
+    linked_expense = models.ForeignKey(
+        AquacultureExpense,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="feeding_advice",
+    )
+
+    created_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_feeding_advices_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_feeding_advice"
+        ordering = ["-target_date", "-id"]
+        indexes = [
+            models.Index(fields=["company", "pond", "target_date"]),
+            models.Index(fields=["company", "status"]),
         ]
 
 

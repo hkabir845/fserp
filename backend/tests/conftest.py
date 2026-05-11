@@ -20,8 +20,9 @@ def api_client() -> Client:
 
 @pytest.fixture
 def company_master(db):
-    from api.models import Company
+    from api.models import Company, Organization
 
+    org = Organization.objects.create(name="Audit Master Co", legal_name="Audit Master Ltd")
     return Company.objects.create(
         name="Audit Master Co",
         legal_name="Audit Master Ltd",
@@ -29,13 +30,15 @@ def company_master(db):
         is_master="true",
         is_deleted=False,
         is_active=True,
+        organization=org,
     )
 
 
 @pytest.fixture
 def company_tenant(db):
-    from api.models import Company
+    from api.models import Company, Organization
 
+    org = Organization.objects.create(name="Audit Tenant Co", legal_name="Audit Tenant Ltd")
     return Company.objects.create(
         name="Audit Tenant Co",
         legal_name="Audit Tenant Ltd",
@@ -43,6 +46,7 @@ def company_tenant(db):
         is_master="false",
         is_deleted=False,
         is_active=True,
+        organization=org,
     )
 
 

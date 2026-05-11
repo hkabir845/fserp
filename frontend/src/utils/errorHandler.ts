@@ -1,4 +1,34 @@
 /**
+ * Flatten Django `ValidationError.message_dict` / JsonResponse `{ errors: { field: ["msg"] } }`.
+ */
+function formatDjangoFieldErrors(errors: unknown): string | null {
+  if (errors == null) return null
+  if (typeof errors === 'string') {
+    const t = errors.trim()
+    return t || null
+  }
+  if (typeof errors !== 'object' || Array.isArray(errors)) return null
+  const parts: string[] = []
+  for (const [k, v] of Object.entries(errors as Record<string, unknown>)) {
+    if (Array.isArray(v)) {
+      const msgs = v
+        .map((x) => (typeof x === 'string' ? x : JSON.stringify(x)))
+        .filter(Boolean)
+      if (msgs.length) parts.push(`${k}: ${msgs.join(' ')}`)
+    } else if (typeof v === 'string' && v.trim()) {
+      parts.push(`${k}: ${v.trim()}`)
+    } else if (v != null && typeof v === 'object') {
+      try {
+        parts.push(`${k}: ${JSON.stringify(v)}`)
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return parts.length ? parts.join('; ') : null
+}
+
+/**
  * Normalize JSON error bodies from the Django API (DRF `detail`, field errors, validation lists with `loc`/`msg`).
  * Shared by `extractErrorMessage` (Axios) and `fetch` callers (e.g. login).
  */
@@ -20,6 +50,7 @@ export function formatApiErrorJson(data: unknown, fallback: string = 'Request fa
   }
 
   const o = data as Record<string, unknown>
+  const djangoFieldErrors = formatDjangoFieldErrors(o.errors)
 
   if (typeof o.type === 'string' && o.msg != null && o.loc != null) {
     const loc = o.loc
@@ -44,7 +75,17 @@ export function formatApiErrorJson(data: unknown, fallback: string = 'Request fa
 
   if (typeof o.detail === 'string') {
     const t = o.detail.trim()
-    if (t) return t
+    if (t) {
+      if (djangoFieldErrors) {
+        const generic =
+          t === 'Validation failed' ||
+          t === 'Invalid input.' ||
+          /validation failed/i.test(t)
+        if (generic) return djangoFieldErrors
+        return `${t}: ${djangoFieldErrors}`
+      }
+      return t
+    }
   }
 
   if (o.detail && typeof o.detail === 'object' && !Array.isArray(o.detail)) {
@@ -64,6 +105,8 @@ export function formatApiErrorJson(data: unknown, fallback: string = 'Request fa
 
   if (typeof o.message === 'string' && o.message.trim()) return o.message.trim()
   if (typeof o.error === 'string' && o.error.trim()) return o.error.trim()
+
+  if (djangoFieldErrors) return djangoFieldErrors
 
   const fieldParts: string[] = []
   for (const [k, v] of Object.entries(o)) {
@@ -99,12 +142,13 @@ export function extractErrorMessage(error: any, fallback: string = 'An error occ
     return error
   }
 
-  if (error instanceof Error) {
-    return error.message
-  }
-
+  // AxiosError extends Error — read API body first so we don't show only "Request failed with status code 400"
   if (error?.response?.data != null) {
     return formatApiErrorJson(error.response.data, fallback)
+  }
+
+  if (error instanceof Error) {
+    return error.message
   }
 
   if (error && typeof error === 'object' && !Array.isArray(error)) {

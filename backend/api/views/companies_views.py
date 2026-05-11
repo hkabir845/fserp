@@ -14,7 +14,7 @@ from api.utils.auth import (
     get_company_id,
     user_is_super_admin,
 )
-from api.models import Company, Station, User
+from api.models import Company, Organization, Station, User
 from api.chart_templates.fuel_station import seed_fuel_station_if_empty
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 from api.services.permission_service import normalize_role_key
@@ -69,21 +69,21 @@ def _normalize_custom_domain(val) -> str:
     return s[:255] if s else ""
 
 
-def _subdomain_taken(subdomain: str, exclude_company_id: int | None = None) -> bool:
+def _org_subdomain_taken(subdomain: str, exclude_org_id: int | None = None) -> bool:
     if not subdomain:
         return False
-    qs = Company.objects.filter(is_deleted=False, subdomain__iexact=subdomain)
-    if exclude_company_id is not None:
-        qs = qs.exclude(id=exclude_company_id)
+    qs = Organization.objects.filter(subdomain__iexact=subdomain)
+    if exclude_org_id is not None:
+        qs = qs.exclude(pk=exclude_org_id)
     return qs.exists()
 
 
-def _custom_domain_taken(domain: str, exclude_company_id: int | None = None) -> bool:
+def _org_custom_domain_taken(domain: str, exclude_org_id: int | None = None) -> bool:
     if not domain:
         return False
-    qs = Company.objects.filter(is_deleted=False, custom_domain__iexact=domain)
-    if exclude_company_id is not None:
-        qs = qs.exclude(id=exclude_company_id)
+    qs = Organization.objects.filter(custom_domain__iexact=domain)
+    if exclude_org_id is not None:
+        qs = qs.exclude(pk=exclude_org_id)
     return qs.exists()
 
 
@@ -240,9 +240,13 @@ def _company_to_json(c: Company) -> dict:
     parts = [getattr(c, "address_line1", "") or "", getattr(c, "city", "") or "", getattr(c, "state", "") or "", getattr(c, "postal_code", "") or "", getattr(c, "country", "") or ""]
     address = ", ".join(p for p in parts if p).strip() or None
     code = resolved_company_code(c)
+    org = getattr(c, "organization", None)
+    sub_out = (org.subdomain or "") if org else ""
+    dom_out = (org.custom_domain or "") if org else ""
     return {
         "id": c.id,
         "company_code": code,
+        "organization_id": org.id if org else None,
         "name": c.name,
         "company_name": c.name,
         "legal_name": c.legal_name or "",
@@ -257,8 +261,8 @@ def _company_to_json(c: Company) -> dict:
         "postal_code": getattr(c, "postal_code", "") or "",
         "country": getattr(c, "country", "") or "",
         "fiscal_year_start": (getattr(c, "fiscal_year_start", None) or "01-01")[:5],
-        "subdomain": c.subdomain or "",
-        "custom_domain": c.custom_domain or "",
+        "subdomain": sub_out,
+        "custom_domain": dom_out,
         "currency": c.currency or "BDT",
         "is_active": c.is_active,
         "is_master": getattr(c, "is_master", "false") or "false",
@@ -277,6 +281,44 @@ def _company_to_json(c: Company) -> dict:
     }
 
 
+def _enrich_company_group_context(payload: dict, company: Company, user) -> None:
+    """Add organization + sibling companies for tenant admin / super-admin company switching."""
+    org = getattr(company, "organization", None)
+    if not org:
+        payload["organization"] = None
+        payload["group_companies"] = []
+        payload["can_switch_group_company"] = False
+        return
+    payload["organization"] = {
+        "id": org.id,
+        "name": org.name,
+        "legal_name": org.legal_name or "",
+    }
+    show_siblings = bool(
+        user
+        and (
+            user_is_super_admin(user)
+            or normalize_role_key(getattr(user, "role", None)) == "admin"
+        )
+    )
+    if not show_siblings:
+        payload["group_companies"] = []
+        payload["can_switch_group_company"] = False
+        return
+    rows = []
+    for x in Company.objects.filter(organization_id=org.id, is_deleted=False).order_by("id"):
+        rows.append(
+            {
+                "id": x.id,
+                "name": x.name,
+                "company_code": resolved_company_code(x),
+                "is_master": getattr(x, "is_master", "false") or "false",
+            }
+        )
+    payload["group_companies"] = rows
+    payload["can_switch_group_company"] = len(rows) > 1
+
+
 @auth_required
 @require_GET
 def companies_current(request):
@@ -285,7 +327,11 @@ def companies_current(request):
     err = company_context_error_response(request)
     if err:
         return err
-    company = Company.objects.filter(id=cid, is_deleted=False).first() if cid else None
+    company = (
+        Company.objects.filter(id=cid, is_deleted=False).select_related("organization").first()
+        if cid
+        else None
+    )
     if not company:
         return JsonResponse(
             {
@@ -297,6 +343,7 @@ def companies_current(request):
             status=403,
         )
     payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
+    _enrich_company_group_context(payload, company, getattr(request, "api_user", None))
     return JsonResponse(payload)
 
 
@@ -342,15 +389,56 @@ def companies_list_or_create(request):
 
     sub_norm = _normalize_subdomain(body.get("subdomain"))
     dom_norm = _normalize_custom_domain(body.get("custom_domain"))
-    if sub_norm and _subdomain_taken(sub_norm):
-        return JsonResponse(
-            {"detail": f"Subdomain '{sub_norm}' is already used by another company."},
-            status=409,
-        )
-    if dom_norm and _custom_domain_taken(dom_norm):
-        return JsonResponse(
-            {"detail": f"Custom domain '{dom_norm}' is already used by another company."},
-            status=409,
+
+    raw_org_id = body.get("organization_id")
+    org_id_int = None
+    if raw_org_id is not None and str(raw_org_id).strip() != "":
+        try:
+            org_id_int = int(raw_org_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "organization_id must be an integer when provided."}, status=400)
+
+    if org_id_int is not None:
+        attach_org = Organization.objects.filter(pk=org_id_int).first()
+        if not attach_org:
+            return JsonResponse({"detail": "organization_id not found."}, status=404)
+        if sub_norm and (attach_org.subdomain or "").strip().lower() != sub_norm:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "This company is added under an existing tenant group. "
+                        "Leave subdomain blank or match the group's subdomain exactly."
+                    ),
+                },
+                status=400,
+            )
+        if dom_norm and (attach_org.custom_domain or "").strip().lower() != dom_norm:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "This company is added under an existing tenant group. "
+                        "Leave custom_domain blank or match the group's custom domain exactly."
+                    ),
+                },
+                status=400,
+            )
+        org = attach_org
+    else:
+        if sub_norm and _org_subdomain_taken(sub_norm):
+            return JsonResponse(
+                {"detail": f"Subdomain '{sub_norm}' is already used by another tenant."},
+                status=409,
+            )
+        if dom_norm and _org_custom_domain_taken(dom_norm):
+            return JsonResponse(
+                {"detail": f"Custom domain '{dom_norm}' is already used by another tenant."},
+                status=409,
+            )
+        org = Organization.objects.create(
+            name=name,
+            legal_name=(body.get("legal_name") or "")[:200],
+            subdomain=sub_norm or None,
+            custom_domain=dom_norm or None,
         )
 
     reclaim_err, reclaimed_stale = _maybe_reclaim_admin_username(admin_email)
@@ -361,12 +449,13 @@ def companies_list_or_create(request):
         aquaculture_chart_accounts_created = 0
         with transaction.atomic():
             c = Company(
+                organization=org,
                 name=name,
                 legal_name=body.get("legal_name") or "",
                 email=(body.get("email") or "")[:100],
                 phone=body.get("phone") or "",
-                subdomain=sub_norm,
-                custom_domain=dom_norm,
+                subdomain="",
+                custom_domain="",
                 currency=body.get("currency") or "BDT",
                 is_active=body.get("is_active", True),
                 contact_person=body.get("contact_person") or "",
@@ -452,7 +541,7 @@ def companies_list_or_create(request):
 @auth_required
 def company_detail(request, company_id: int):
     """GET /api/companies/<id>/ - get one. PUT - update. DELETE - permanent removal (requires confirm_phrase). Super admin for create/delete; super admin or own company for update."""
-    company = Company.objects.filter(id=company_id).first()
+    company = Company.objects.filter(id=company_id).select_related("organization").first()
     if not company:
         return JsonResponse({"detail": "Company not found"}, status=404)
     if company.is_deleted:
@@ -460,6 +549,7 @@ def company_detail(request, company_id: int):
 
     if request.method == "GET":
         payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
+        _enrich_company_group_context(payload, company, getattr(request, "api_user", None))
         return JsonResponse(payload)
 
     if request.method == "PUT":
@@ -517,20 +607,28 @@ def company_detail(request, company_id: int):
                 company.phone = (body["phone"] or "")[:20]
             if "subdomain" in body:
                 sub_norm = _normalize_subdomain(body.get("subdomain"))
-                if sub_norm and _subdomain_taken(sub_norm, exclude_company_id=company.id):
+                org_row = company.organization
+                if not org_row:
+                    return JsonResponse({"detail": "Organization missing for this company."}, status=500)
+                if sub_norm and _org_subdomain_taken(sub_norm, exclude_org_id=org_row.id):
                     return JsonResponse(
-                        {"detail": f"Subdomain '{sub_norm}' is already used by another company."},
+                        {"detail": f"Subdomain '{sub_norm}' is already used by another tenant."},
                         status=409,
                     )
-                company.subdomain = sub_norm
+                org_row.subdomain = sub_norm or None
+                org_row.save(update_fields=["subdomain", "updated_at"])
             if "custom_domain" in body:
                 dom_norm = _normalize_custom_domain(body.get("custom_domain"))
-                if dom_norm and _custom_domain_taken(dom_norm, exclude_company_id=company.id):
+                org_row = company.organization
+                if not org_row:
+                    return JsonResponse({"detail": "Organization missing for this company."}, status=500)
+                if dom_norm and _org_custom_domain_taken(dom_norm, exclude_org_id=org_row.id):
                     return JsonResponse(
-                        {"detail": f"Custom domain '{dom_norm}' is already used by another company."},
+                        {"detail": f"Custom domain '{dom_norm}' is already used by another tenant."},
                         status=409,
                     )
-                company.custom_domain = dom_norm
+                org_row.custom_domain = dom_norm or None
+                org_row.save(update_fields=["custom_domain", "updated_at"])
             if "currency" in body:
                 company.currency = (body["currency"] or "BDT")[:3]
             if "date_format" in body:
@@ -644,6 +742,7 @@ def company_detail(request, company_id: int):
                     )
             company.save()
             payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
+            _enrich_company_group_context(payload, company, getattr(request, "api_user", None))
             if should_seed_aquaculture_coa:
                 payload["aquaculture_chart_accounts_created"] = ensure_aquaculture_chart_accounts(company.id)
             return JsonResponse(payload)
@@ -712,7 +811,7 @@ def company_deactivate(request, company_id: int):
     user = getattr(request, "api_user", None) or get_user_from_request(request)
     if not user or not user_is_super_admin(user):
         return JsonResponse({"detail": "Super Admin access required"}, status=403)
-    company = Company.objects.filter(id=company_id, is_deleted=False).first()
+    company = Company.objects.filter(id=company_id, is_deleted=False).select_related("organization").first()
     if not company:
         return JsonResponse({"detail": "Company not found"}, status=404)
     if _is_master_company(company):
@@ -734,10 +833,144 @@ def company_activate(request, company_id: int):
     user = getattr(request, "api_user", None) or get_user_from_request(request)
     if not user or not user_is_super_admin(user):
         return JsonResponse({"detail": "Super Admin access required"}, status=403)
-    company = Company.objects.filter(id=company_id, is_deleted=False).first()
+    company = Company.objects.filter(id=company_id, is_deleted=False).select_related("organization").first()
     if not company:
         return JsonResponse({"detail": "Company not found"}, status=404)
     company.is_active = True
     company.save(update_fields=["is_active", "updated_at"])
     return JsonResponse({**_company_to_json(company), "detail": "Company activated."})
+
+
+@csrf_exempt
+@auth_required
+def company_group_entity_create(request):
+    """
+    POST /api/companies/group-entity/
+
+    Add another legal entity (Company) under the same Organization. Tenant administrators
+    add entities to their own group; platform Super Admins must pass organization_id.
+    """
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    user = getattr(request, "api_user", None) or get_user_from_request(request)
+    if not user:
+        return JsonResponse({"detail": "Authentication required"}, status=401)
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"detail": "Invalid JSON"}, status=400)
+    if not isinstance(body, dict):
+        body = {}
+
+    if user_is_super_admin(user):
+        raw_oid = body.get("organization_id")
+        if raw_oid is None or str(raw_oid).strip() == "":
+            return JsonResponse(
+                {
+                    "detail": (
+                        "organization_id is required when adding an entity as platform Super Admin "
+                        "(use POST /api/companies/ without organization_id to create a new tenant group)."
+                    ),
+                },
+                status=400,
+            )
+        try:
+            oid = int(raw_oid)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "organization_id must be an integer."}, status=400)
+        org = Organization.objects.filter(pk=oid).first()
+        if not org:
+            return JsonResponse({"detail": "organization_id not found."}, status=404)
+    else:
+        if normalize_role_key(getattr(user, "role", None)) != "admin":
+            return JsonResponse({"detail": "Tenant administrator access required."}, status=403)
+        home = Company.objects.filter(pk=user.company_id, is_deleted=False).select_related("organization").first()
+        if not home or not getattr(home, "organization_id", None):
+            return JsonResponse({"detail": "No company organization context for this user."}, status=403)
+        org = home.organization
+
+    name = (body.get("company_name") or body.get("name") or "").strip()
+    if not name:
+        return JsonResponse({"detail": "Company name is required."}, status=400)
+
+    skip_coa = bool(
+        body.get("skip_chart_of_accounts")
+        or body.get("skip_chart_of_accounts_template")
+    )
+    coa_profile = (body.get("chart_of_accounts_profile") or body.get("coa_profile") or "full").strip().lower()
+    if coa_profile not in ("full", "retail"):
+        coa_profile = "full"
+
+    ref = Company.objects.filter(organization_id=org.id, is_deleted=False).order_by("id").first()
+    currency = (body.get("currency") or (ref.currency if ref else "BDT") or "BDT")[:3]
+    raw_tz = body.get("time_zone", ref.time_zone if ref else "Asia/Dhaka")
+    if raw_tz is not None and str(raw_tz).strip() == "":
+        raw_tz = "Asia/Dhaka"
+    tz, tz_err = _validate_time_zone(raw_tz)
+    if tz_err:
+        return JsonResponse({"detail": tz_err}, status=400)
+
+    try:
+        aquaculture_chart_accounts_created = 0
+        with transaction.atomic():
+            c = Company(
+                organization=org,
+                name=name,
+                legal_name=(body.get("legal_name") or "")[:200],
+                email=(body.get("email") or "")[:100],
+                phone=body.get("phone") or "",
+                subdomain="",
+                custom_domain="",
+                currency=currency,
+                is_active=body.get("is_active", True),
+                contact_person=body.get("contact_person") or "",
+                payment_type=body.get("payment_type") or "",
+                time_zone=tz,
+                platform_release=get_target_release()[:64],
+                aquaculture_licensed=bool(ref.aquaculture_licensed) if ref else False,
+                aquaculture_enabled=False,
+            )
+            if body.get("payment_start_date"):
+                try:
+                    c.payment_start_date = date.fromisoformat(body["payment_start_date"].split("T")[0])
+                except (TypeError, ValueError):
+                    pass
+            if body.get("payment_end_date"):
+                try:
+                    c.payment_end_date = date.fromisoformat(body["payment_end_date"].split("T")[0])
+                except (TypeError, ValueError):
+                    pass
+            if body.get("payment_amount") is not None and body.get("payment_amount") != "":
+                try:
+                    c.payment_amount = Decimal(str(body["payment_amount"]))
+                except (TypeError, ValueError):
+                    pass
+            if "billing_plan_code" in body:
+                c.billing_plan_code = (str(body.get("billing_plan_code") or "").strip().lower())[:32]
+            sm_create, sm_err = _parse_station_mode_value(body, "station_mode")
+            if sm_err:
+                return JsonResponse({"detail": sm_err}, status=400)
+            if sm_create is not None:
+                c.station_mode = sm_create
+            c.save()
+
+            chart_of_accounts_result = None
+            if not skip_coa:
+                chart_of_accounts_result = seed_fuel_station_if_empty(c.id, profile=coa_profile)
+
+            if getattr(c, "aquaculture_licensed", False):
+                aquaculture_chart_accounts_created = ensure_aquaculture_chart_accounts(c.id)
+
+        payload = _company_to_json(Company.objects.filter(pk=c.id).select_related("organization").first() or c)
+        if chart_of_accounts_result is not None:
+            payload["chart_of_accounts"] = chart_of_accounts_result
+        if aquaculture_chart_accounts_created:
+            payload["aquaculture_chart_accounts_created"] = aquaculture_chart_accounts_created
+        return JsonResponse(payload, status=201)
+    except Exception as e:
+        logger.exception("create group entity failed")
+        return JsonResponse(
+            {"detail": "Failed to create company entity", "error": str(e)},
+            status=500,
+        )
 

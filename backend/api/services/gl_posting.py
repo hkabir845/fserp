@@ -25,6 +25,7 @@ from api.models import (
     AquacultureExpense,
     AquacultureFishSale,
     AquacultureFishStockLedger,
+    AquacultureLandlordLedgerEntry,
     AquaculturePond,
     AquacultureProductionCycle,
     BankAccount,
@@ -208,6 +209,8 @@ CODE_COGS_SHOP = "5120"
 CODE_SHRINK_FUEL = "5200"
 CODE_INV_FUEL = "1200"
 CODE_INV_SHOP = "1220"
+# Aquaculture lease / pond rental (see aquaculture_coa_seed 6711)
+CODE_AQ_LEASE_EXPENSE = "6711"
 # Payroll (fuel_station template; optional — posting skips if 6400 missing)
 CODE_SALARY_EXP = "6400"
 CODE_SALARY_PAYABLE = "2200"
@@ -802,6 +805,93 @@ def post_aquaculture_shop_stock_issue_journal(
     )
 
 
+def post_aquaculture_pond_feed_consumption_journal(
+    company_id: int,
+    expense_id: int,
+    entry_date: date,
+    line_rows: list[tuple[Item, Decimal]],
+) -> bool:
+    """
+    Dr COGS / Cr inventory at average cost when feed or medicine is consumed from a pond warehouse (no POS invoice).
+
+    Idempotent: entry_number AUTO-AQ-POND-{expense_id}-COGS.
+    """
+    entry_number = f"AUTO-AQ-POND-{expense_id}-COGS"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
+        return True
+
+    buckets: dict[tuple[int, int], Decimal] = defaultdict(lambda: Decimal("0"))
+    for it, qty in line_rows:
+        if not item_tracks_physical_stock(it):
+            continue
+        uc = item_inventory_unit_cost(it)
+        if uc <= 0:
+            continue
+        q = qty if qty is not None else Decimal("0")
+        amt = (q * uc).quantize(Decimal("0.01"))
+        if amt <= 0:
+            continue
+        inv_acc = _inventory_account_for_item(company_id, it)
+        cogs_acc = _cogs_account_for_item(company_id, it)
+        if not inv_acc or not cogs_acc:
+            continue
+        key = (cogs_acc.id, inv_acc.id)
+        buckets[key] = buckets.get(key, Decimal("0")) + amt
+
+    if not buckets:
+        return False
+
+    lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = []
+    aq_costing: list[Optional[dict]] = []
+    exp_row = AquacultureExpense.objects.filter(pk=expense_id, company_id=company_id).first()
+    cat = (exp_row.expense_category if exp_row else "") or ""
+    if cat == "medicine_consumed":
+        line_memo = f"Aquaculture pond medicine consumption (expense {expense_id})"[:300]
+        desc = f"Aquaculture — pond warehouse medicine consumption (expense #{expense_id})"[:500]
+    else:
+        line_memo = f"Aquaculture pond feed consumption (expense {expense_id})"[:300]
+        desc = f"Aquaculture — pond warehouse feed consumption (expense #{expense_id})"[:500]
+    aq_meta: dict | None = None
+    if exp_row and exp_row.pond_id:
+        aq_meta = {
+            "pond_id": exp_row.pond_id,
+            "production_cycle_id": exp_row.production_cycle_id,
+            "cost_bucket": aquaculture_expense_category_to_cost_bucket(exp_row.expense_category),
+        }
+    for (cogs_id, inv_id), amt in buckets.items():
+        cogs = ChartOfAccount.objects.filter(
+            id=cogs_id, company_id=company_id, is_active=True
+        ).first()
+        inv_a = ChartOfAccount.objects.filter(
+            id=inv_id, company_id=company_id, is_active=True
+        ).first()
+        if not cogs or not inv_a:
+            continue
+        lines.append((cogs, amt, Decimal("0"), line_memo))
+        lines.append((inv_a, Decimal("0"), amt, line_memo))
+        aq_costing.append(aq_meta)
+        aq_costing.append(aq_meta)
+
+    if not lines:
+        return False
+    debit = sum(_unpack_gl_line(x)[1] for x in lines)
+    credit = sum(_unpack_gl_line(x)[2] for x in lines)
+    if debit != credit or debit <= 0:
+        return False
+    return (
+        _create_posted_entry(
+            company_id,
+            entry_date,
+            entry_number,
+            desc,
+            lines,
+            gl_station_id=None,
+            aquaculture_line_costing=aq_costing,
+        )
+        is not None
+    )
+
+
 def post_aquaculture_fish_stock_ledger_journal(
     company_id: int,
     ledger_id: int,
@@ -1301,6 +1391,26 @@ def _item_receives_physical_stock(item: Optional[Item]) -> bool:
     return item_tracks_physical_stock(item)
 
 
+def _bill_line_physical_receipt_quantity(line: BillLine, item: Item) -> Decimal:
+    """
+    Units to receive for a vendor bill line. Fish-type SKUs use headcount when set — line
+    quantity is often one batch while aquaculture_fish_count is the biological stocking.
+    """
+    base = line.quantity if line.quantity is not None else Decimal("0")
+    if (getattr(item, "pos_category", None) or "").strip().lower() != "fish":
+        return base
+    fc = getattr(line, "aquaculture_fish_count", None)
+    if fc is None:
+        return base
+    try:
+        n = int(fc)
+    except (TypeError, ValueError):
+        return base
+    if n > 0:
+        return Decimal(n)
+    return base
+
+
 def _tanks_for_stock_receipt(company_id: int, item: Item):
     """Active tanks for this product; if none and item is fuel-like, include inactive (so receipt still lands)."""
     qs = Tank.objects.filter(
@@ -1350,7 +1460,7 @@ def receipt_inventory_from_posted_bill(
         item = line.item
         if not item:
             continue
-        qty = line.quantity if line.quantity is not None else Decimal("0")
+        qty = _bill_line_physical_receipt_quantity(line, item)
         if qty <= 0:
             continue
         if not _item_receives_physical_stock(item):
@@ -1363,25 +1473,43 @@ def receipt_inventory_from_posted_bill(
                 Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") + qty)
                 _sync_item_qoh_from_tanks(company_id, item.id)
         else:
-            from api.services.station_stock import add_station_stock, get_or_create_default_station
+            from api.services.station_stock import (
+                add_station_stock,
+                get_or_create_default_station,
+                item_uses_station_bins,
+            )
 
-            st_id = bill.receipt_station_id
-            if not st_id:
-                st_id = get_or_create_default_station(company_id).id
-            add_station_stock(company_id, st_id, item.id, qty)
+            # Fish / hatchery SKUs (pos_category fish, non_pos, …) do not use shop station bins;
+            # physical qty belongs in ItemPondStock when the line tags a pond (e.g. fry to nursing pond).
+            if not item_uses_station_bins(company_id, item):
+                pond_id = getattr(line, "aquaculture_pond_id", None)
+                if pond_id:
+                    from api.services.aquaculture_pond_stock_service import add_pond_stock
+
+                    add_pond_stock(company_id, int(pond_id), item.id, qty)
+                else:
+                    st_id = bill.receipt_station_id
+                    if not st_id:
+                        st_id = get_or_create_default_station(company_id).id
+                    add_station_stock(company_id, st_id, item.id, qty)
+            else:
+                st_id = bill.receipt_station_id
+                if not st_id:
+                    st_id = get_or_create_default_station(company_id).id
+                add_station_stock(company_id, st_id, item.id, qty)
     return applied_lines
 
 
 def reverse_receipt_inventory_from_posted_bill(bill: Bill) -> None:
     """Undo receipt_inventory_from_posted_bill for current line rows (mirror receipt logic)."""
-    from api.services.station_stock import add_station_stock, get_or_create_default_station
+    from api.services.station_stock import add_station_stock, get_or_create_default_station, item_uses_station_bins
 
     company_id = bill.company_id
     for line in BillLine.objects.filter(bill_id=bill.id).select_related("item", "tank"):
         item = line.item
         if not item:
             continue
-        qty = line.quantity if line.quantity is not None else Decimal("0")
+        qty = _bill_line_physical_receipt_quantity(line, item)
         if qty <= 0:
             continue
         if not _item_receives_physical_stock(item):
@@ -1393,10 +1521,22 @@ def reverse_receipt_inventory_from_posted_bill(bill: Bill) -> None:
                 Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") - qty)
                 _sync_item_qoh_from_tanks(company_id, item.id)
         else:
-            st_id = bill.receipt_station_id
-            if not st_id:
-                st_id = get_or_create_default_station(company_id).id
-            add_station_stock(company_id, st_id, item.id, -qty)
+            if not item_uses_station_bins(company_id, item):
+                pond_id = getattr(line, "aquaculture_pond_id", None)
+                if pond_id:
+                    from api.services.aquaculture_pond_stock_service import add_pond_stock
+
+                    add_pond_stock(company_id, int(pond_id), item.id, -qty)
+                else:
+                    st_id = bill.receipt_station_id
+                    if not st_id:
+                        st_id = get_or_create_default_station(company_id).id
+                    add_station_stock(company_id, st_id, item.id, -qty)
+            else:
+                st_id = bill.receipt_station_id
+                if not st_id:
+                    st_id = get_or_create_default_station(company_id).id
+                add_station_stock(company_id, st_id, item.id, -qty)
 
 
 def undo_bill_stock_receipt(bill: Bill) -> None:
@@ -1440,13 +1580,40 @@ def try_apply_bill_stock_receipt(
             Bill.objects.filter(pk=bill.pk).update(stock_receipt_applied=True)
 
 
+def _bill_line_aquaculture_meta(company_id: int, line: BillLine) -> Optional[dict]:
+    """Maps optional bill line pond/cycle/bucket to journal line aquaculture costing (validated)."""
+    if not getattr(line, "aquaculture_pond_id", None):
+        return None
+    pid = line.aquaculture_pond_id
+    if not AquaculturePond.objects.filter(pk=pid, company_id=company_id).exists():
+        return None
+    meta: dict[str, Any] = {"pond_id": pid}
+    cid = getattr(line, "aquaculture_production_cycle_id", None)
+    if cid:
+        cyc = AquacultureProductionCycle.objects.filter(
+            pk=cid, company_id=company_id, pond_id=pid
+        ).first()
+        if cyc:
+            meta["production_cycle_id"] = cid
+    bucket = (getattr(line, "aquaculture_cost_bucket", None) or "").strip()
+    item = getattr(line, "item", None)
+    if not bucket and item:
+        bucket = item_shop_issue_cost_bucket(item)
+    if not bucket:
+        bucket = "equipment"
+    meta["cost_bucket"] = bucket[:40]
+    return meta
+
+
 def _build_bill_journal_lines(
     company_id: int, bill: Bill
-) -> Optional[list[tuple[ChartOfAccount, Decimal, Decimal, str]]]:
+) -> Optional[tuple[list[tuple], list[Optional[dict]]]]:
     """
-    Build balanced GL lines for a vendor bill.
-    Inventory lines debit Inventory Fuel (1200) / Inventory Shop (1220) per item; any
-    remainder (tax, non-inventory lines, missing COA) debits office expense; credit AP.
+    Build balanced GL lines for a vendor bill (one debit row per bill line when possible).
+    Inventory lines debit inventory accounts; other lines debit office expense. Remainder (e.g. tax)
+    debits office expense. Optional aquaculture pond/cycle/bucket on each BillLine tags matching debit lines.
+
+    Returns (lines, aquaculture_line_costing) for _create_posted_entry.
     """
     ap = _coa(company_id, CODE_AP)
     exp = _coa(company_id, CODE_OFFICE_EXP) or ChartOfAccount.objects.filter(
@@ -1455,68 +1622,88 @@ def _build_bill_journal_lines(
     if not ap or not exp:
         return None
 
-    total = bill.total
-    inv_amounts: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
-    other_debit = Decimal("0")
+    total = bill.total if bill.total is not None else Decimal("0")
+    if total <= 0:
+        return None
 
-    for line in BillLine.objects.filter(bill_id=bill.id).select_related("item"):
+    memo_ap = (bill.bill_number or "")[:300]
+    debit_rows: list[tuple[ChartOfAccount, Decimal, str, Optional[dict]]] = []
+
+    lines_qs = BillLine.objects.filter(bill_id=bill.id).select_related(
+        "item", "aquaculture_pond", "aquaculture_production_cycle"
+    )
+    for line in lines_qs:
         amt = line.amount if line.amount is not None else Decimal("0")
         if amt <= 0:
             continue
+        meta = _bill_line_aquaculture_meta(company_id, line)
+        desc_base = (line.description or "").strip()
+        memo = (
+            f"{bill.bill_number} — {desc_base}"[:300] if desc_base else (bill.bill_number or "")[:300]
+        )
         item = line.item
         if not item:
-            other_debit += amt
+            debit_rows.append((exp, amt, memo, meta))
             continue
         if _item_receives_physical_stock(item):
             inv_acc = _inventory_account_for_item(company_id, item)
             if inv_acc:
-                inv_amounts[inv_acc.id] += amt
+                debit_rows.append((inv_acc, amt, memo, meta))
             else:
-                other_debit += amt
+                debit_rows.append((exp, amt, memo, meta))
         else:
-            other_debit += amt
+            debit_rows.append((exp, amt, memo, meta))
 
-    sum_lines = sum(inv_amounts.values(), Decimal("0")) + other_debit
-    remainder = total - sum_lines
-    if remainder > 0:
-        other_debit += remainder
-    elif remainder < 0:
-        need = -remainder
-        for acc_id in sorted(inv_amounts.keys(), key=lambda k: inv_amounts[k], reverse=True):
-            if need <= 0:
-                break
-            avail = inv_amounts[acc_id]
-            if avail <= 0:
-                continue
-            take = min(need, avail)
-            inv_amounts[acc_id] -= take
-            need -= take
-        if need > 0:
+    sum_lines = sum(am for _, am, _, _ in debit_rows if am > 0)
+    if sum_lines < total:
+        debit_rows.append((exp, (total - sum_lines).quantize(Decimal("0.01")), memo_ap, None))
+        sum_lines = total
+    elif sum_lines > total:
+        positive_rows = [(a, am, d, m) for a, am, d, m in debit_rows if am > 0]
+        if not positive_rows:
+            logger.warning("bill %s: no positive line amounts to scale", bill.id)
+            return None
+        S = sum(am for _, am, _, _ in positive_rows)
+        factor = total / S
+        scaled: list[tuple[ChartOfAccount, Decimal, str, Optional[dict]]] = []
+        run = Decimal("0")
+        for j, (acc, amt, desc, meta) in enumerate(positive_rows):
+            if j == len(positive_rows) - 1:
+                na = (total - run).quantize(Decimal("0.01"))
+            else:
+                na = (amt * factor).quantize(Decimal("0.01"))
+            scaled.append((acc, na, desc, meta))
+            run += na
+        debit_rows = scaled
+        sum_lines = sum(am for _, am, _, _ in debit_rows)
+
+    if sum_lines != total:
+        diff = (total - sum_lines).quantize(Decimal("0.01"))
+        if debit_rows and abs(diff) <= Decimal("0.02"):
+            acc, am, ds, mt = debit_rows[-1]
+            debit_rows[-1] = (acc, (am + diff).quantize(Decimal("0.01")), ds, mt)
+        else:
             logger.warning(
-                "bill %s: line amounts exceed total by %s after inventory trim",
+                "skip bill %s journal: debit sum %s != total %s",
                 bill.id,
-                need,
+                sum_lines,
+                total,
             )
             return None
 
-    if not any(amt > 0 for amt in inv_amounts.values()):
-        return [
-            (exp, total, Decimal("0"), bill.bill_number),
-            (ap, Decimal("0"), total, bill.bill_number),
-        ]
+    if not debit_rows:
+        debit_rows = [(exp, total, memo_ap, None)]
 
-    je_lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = []
-    for acc_id, amt in sorted(inv_amounts.items()):
+    je_lines: list[tuple] = []
+    aq_costing: list[Optional[dict]] = []
+    for acc, amt, desc, meta in debit_rows:
         if amt <= 0:
             continue
-        acc = ChartOfAccount.objects.filter(
-            pk=acc_id, company_id=company_id, is_active=True
-        ).first()
-        if acc:
-            je_lines.append((acc, amt, Decimal("0"), bill.bill_number))
-    if other_debit > 0:
-        je_lines.append((exp, other_debit, Decimal("0"), bill.bill_number))
-    je_lines.append((ap, Decimal("0"), total, bill.bill_number))
+        je_lines.append((acc, amt, Decimal("0"), desc))
+        aq_costing.append(meta)
+
+    je_lines.append((ap, Decimal("0"), total, memo_ap))
+    aq_costing.append(None)
 
     td = sum(d for _, d, _, _ in je_lines)
     tc = sum(c for _, _, c, _ in je_lines)
@@ -1528,7 +1715,7 @@ def _build_bill_journal_lines(
             tc,
         )
         return None
-    return je_lines
+    return (je_lines, aq_costing)
 
 
 def bill_eligible_for_posting(bill: Optional[Bill]) -> bool:
@@ -1628,9 +1815,10 @@ def post_bill_journal(
             )
         return True
 
-    lines = _build_bill_journal_lines(company_id, bill)
+    built = _build_bill_journal_lines(company_id, bill)
     je = None
-    if lines:
+    if built:
+        lines, aq_cost = built
         bst = _gl_station_id(company_id, bill.receipt_station_id)
         je = _create_posted_entry(
             company_id,
@@ -1639,6 +1827,7 @@ def post_bill_journal(
             f"Bill {bill.bill_number}",
             lines,
             gl_station_id=bst,
+            aquaculture_line_costing=aq_cost,
         )
 
     _ensure_vendor_ap_for_posted_bill(company_id, bill)
@@ -2042,3 +2231,85 @@ def delete_auto_inventory_transfer_journal(company_id: int, transfer_id: int) ->
         company_id=company_id, entry_number=f"AUTO-ISTR-{transfer_id}"
     ).delete()
     return deleted
+
+
+def delete_landlord_lease_payment_journal(company_id: int, landlord_ledger_entry_id: int) -> int:
+    """Remove AUTO-LL-PAY-{id} if present (landlord subledger row deleted or re-synced)."""
+    deleted, _ = JournalEntry.objects.filter(
+        company_id=company_id,
+        entry_number=f"AUTO-LL-PAY-{landlord_ledger_entry_id}",
+    ).delete()
+    return deleted
+
+
+def sync_landlord_lease_payment_journal(
+    company_id: int, ent: AquacultureLandlordLedgerEntry
+) -> tuple[Optional[JournalEntry], Optional[str]]:
+    """
+    Cash-basis lease cost: Dr 6711 Aquaculture — Lease & Pond Rights (pond + lease bucket), Cr cash/bank.
+
+    Runs when kind is payment, bank_account_id is set, and pond_id is set. Idempotent per ledger row id.
+    Returns (journal, None) on success, (None, None) when skipped, or (None, error_message) on failure.
+    """
+    from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
+
+    en = f"AUTO-LL-PAY-{ent.id}"
+    delete_landlord_lease_payment_journal(company_id, ent.id)
+    AquacultureLandlordLedgerEntry.objects.filter(pk=ent.pk).update(journal_entry_id=None)
+
+    if ent.kind != AquacultureLandlordLedgerEntry.KIND_PAYMENT:
+        return None, None
+    if not ent.bank_account_id:
+        return None, None
+    if not ent.pond_id:
+        return (
+            None,
+            "bank_account_id requires pond_id so lease expense posts to the correct pond.",
+        )
+    mag = abs(ent.amount_signed or Decimal("0")).quantize(Decimal("0.01"))
+    if mag <= 0:
+        return None, None
+
+    ensure_aquaculture_chart_accounts(company_id)
+    lease_acc = _coa(company_id, CODE_AQ_LEASE_EXPENSE)
+    if not lease_acc:
+        return (
+            None,
+            "Chart account 6711 Aquaculture Expense — Lease & Pond Rights is missing. "
+            "Enable Aquaculture for the company or run aquaculture COA seed.",
+        )
+    pm = (getattr(ent, "payment_method", None) or "cash").strip().lower() or "cash"
+    credit_acc = _debit_account_for_paid_sale(company_id, pm, ent.bank_account_id)
+    if not credit_acc:
+        return (
+            None,
+            "No G/L credit account for this payment: link the bank register to a chart line or add 1010/1030.",
+        )
+
+    cycle_id = _default_open_cycle_id_for_pond(company_id, int(ent.pond_id))
+    meta: dict[str, Any] = {"pond_id": int(ent.pond_id), "cost_bucket": "lease"}
+    if cycle_id is not None:
+        meta["production_cycle_id"] = cycle_id
+
+    ll = ent.landlord
+    ll_name = (ll.name or f"Landlord #{ent.landlord_id}").strip()[:120]
+    base_memo = (ent.reference or ent.memo or f"Landlord payment — {ll_name}")[:300]
+    desc = f"Aquaculture landlord lease payment — {ll_name}"[:500]
+    lines = [
+        (lease_acc, mag, Decimal("0"), base_memo),
+        (credit_acc, Decimal("0"), mag, base_memo),
+    ]
+    aq_costing: list[Optional[dict]] = [meta, None]
+    je = _create_posted_entry(
+        company_id,
+        ent.entry_date,
+        en,
+        desc,
+        lines,
+        gl_station_id=_gl_station_id(company_id, ent.station_id),
+        aquaculture_line_costing=aq_costing,
+    )
+    if not je:
+        return None, "Could not post landlord payment journal (unbalanced or invalid lines)."
+    AquacultureLandlordLedgerEntry.objects.filter(pk=ent.pk).update(journal_entry_id=je.id)
+    return je, None

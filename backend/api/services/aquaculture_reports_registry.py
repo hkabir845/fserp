@@ -19,12 +19,15 @@ from api.models import (
     AquaculturePondProfitTransfer,
     AquacultureProductionCycle,
     Company,
+    Invoice,
+    InvoiceLine,
 )
 from api.services.aquaculture_constants import (
     EXPENSE_CATEGORY_LABELS,
     INCOME_TYPE_LABELS,
     fish_species_display_label,
 )
+from api.services.reporting import _is_fuel_line
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.permission_service import user_may_access_aquaculture_api
 from django.http import HttpRequest, JsonResponse
@@ -94,6 +97,8 @@ def build_aquaculture_report(
         return _report_pond_pl(company_id, start, end, request)
     if report_id == "aquaculture-fish-sales":
         return _report_fish_sales(company_id, start, end, request)
+    if report_id == "aquaculture-pond-sales-comprehensive":
+        return _report_pond_sales_comprehensive(company_id, start, end, request)
     if report_id == "aquaculture-expenses":
         return _report_expenses(company_id, start, end, request)
     if report_id == "aquaculture-sampling":
@@ -227,6 +232,166 @@ def _report_fish_sales(company_id: int, start: date, end: date, request: HttpReq
     }
 
 
+def _report_pos_pond_shop_sales(
+    company_id: int, start: date, end: date, pond_filter_id: int | None
+) -> dict[str, Any]:
+    """
+    Invoices (non-draft) to each pond's linked POS customer; excludes motor-fuel-classified lines
+    (same rule as fuel-sales report).
+    """
+    pond_q = AquaculturePond.objects.filter(company_id=company_id).exclude(pos_customer_id__isnull=True)
+    if pond_filter_id is not None:
+        pond_q = pond_q.filter(pk=pond_filter_id)
+    ponds = list(pond_q.only("id", "name", "pos_customer_id"))
+    cust_to_pond: dict[int, AquaculturePond] = {}
+    for p in ponds:
+        cid_cust = getattr(p, "pos_customer_id", None)
+        if cid_cust:
+            cust_to_pond[int(cid_cust)] = p
+    if not cust_to_pond:
+        return {
+            "groups": [],
+            "totals": {"total_amount": "0.00", "line_count": 0},
+            "summary": {"total_amount_bdt": 0.0, "line_count": 0, "pond_group_count": 0},
+        }
+
+    inv_qs = (
+        Invoice.objects.filter(
+            company_id=company_id,
+            invoice_date__gte=start,
+            invoice_date__lte=end,
+            customer_id__in=list(cust_to_pond.keys()),
+        )
+        .exclude(status="draft")
+        .select_related("station", "customer")
+    )
+    inv_ids = list(inv_qs.values_list("id", flat=True))
+    lines = (
+        InvoiceLine.objects.filter(invoice_id__in=inv_ids)
+        .select_related("item", "invoice", "invoice__station")
+        .order_by("invoice_id", "id")
+    )
+
+    by_pond: dict[int, list[dict]] = defaultdict(list)
+    pond_names: dict[int, str] = {p.id: (p.name or "").strip() for p in ponds}
+
+    grand_amt = Decimal("0")
+    grand_n = 0
+    for line in lines:
+        if _is_fuel_line(line):
+            continue
+        inv = line.invoice
+        cust_id = inv.customer_id
+        pond = cust_to_pond.get(cust_id)
+        if not pond:
+            continue
+        pid = pond.id
+        it = line.item
+        amt = line.amount or Decimal("0")
+        grand_amt += amt
+        grand_n += 1
+        st = inv.station
+        st_name = (st.station_name or "").strip() if st else ""
+        by_pond[pid].append(
+            {
+                "id": line.id,
+                "invoice_id": inv.id,
+                "invoice_number": inv.invoice_number or "",
+                "invoice_date": inv.invoice_date.isoformat(),
+                "invoice_status": inv.status or "",
+                "station_name": st_name,
+                "item_id": it.id if it else None,
+                "item_name": ((it.name if it else "") or (line.description or ""))[:200],
+                "item_number": (it.item_number or "") if it else "",
+                "pos_category": (it.pos_category or "") if it else "",
+                "reporting_category": (it.category or "") if it else "",
+                "quantity": str(line.quantity or 0),
+                "amount": str(amt),
+                "line_description": (line.description or "")[:200],
+            }
+        )
+
+    groups: list[dict[str, Any]] = []
+    for pid in sorted(by_pond.keys(), key=lambda x: (pond_names.get(x, ""), x)):
+        plines = by_pond[pid]
+        sub = _money_q(sum((_decimal(l["amount"]) for l in plines), Decimal("0")))
+        groups.append(
+            {
+                "pond_id": pid,
+                "pond_name": pond_names.get(pid, f"Pond #{pid}"),
+                "lines": plines,
+                "subtotal_amount": str(sub),
+                "line_count": len(plines),
+            }
+        )
+
+    g_amt = _money_q(grand_amt)
+    summary = {
+        "total_amount_bdt": float(g_amt),
+        "line_count": grand_n,
+        "pond_group_count": len(groups),
+    }
+    return {
+        "groups": groups,
+        "totals": {"total_amount": str(g_amt), "line_count": grand_n},
+        "summary": summary,
+    }
+
+
+def _report_pond_sales_comprehensive(
+    company_id: int, start: date, end: date, request: HttpRequest
+) -> dict[str, Any] | JsonResponse:
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+
+    fish = _report_fish_sales(company_id, start, end, request)
+    if isinstance(fish, JsonResponse):
+        return fish
+
+    pos = _report_pos_pond_shop_sales(company_id, start, end, pond_filter_id)
+
+    fish_amt = _decimal(fish["totals"]["total_amount"])
+    pos_amt = _decimal(pos["totals"]["total_amount"])
+    combined = _money_q(fish_amt + pos_amt)
+
+    by_income: dict[str, dict[str, Any]] = defaultdict(lambda: {"amount": Decimal("0"), "n": 0})
+    for g in fish["groups"]:
+        for ln in g["lines"]:
+            k = str(ln.get("income_type") or "")
+            by_income[k]["amount"] += _decimal(ln["total_amount"])
+            by_income[k]["n"] += 1
+
+    fish_by_income_type = [
+        {
+            "income_type": k,
+            "income_type_label": INCOME_TYPE_LABELS.get(k, k or "—"),
+            "amount_bdt": float(_money_q(v["amount"])),
+            "line_count": v["n"],
+        }
+        for k, v in sorted(by_income.items(), key=lambda x: (x[0] or ""))
+    ]
+
+    return {
+        "period": fish["period"],
+        "currency_code": BDT,
+        "summary": {
+            "fish_total_amount_bdt": fish["summary"]["total_amount_bdt"],
+            "pos_non_fuel_total_amount_bdt": pos["summary"]["total_amount_bdt"],
+            "combined_total_amount_bdt": float(combined),
+            "fish_line_count": fish["summary"]["line_count"],
+            "pos_non_fuel_line_count": pos["summary"]["line_count"],
+            "fish_by_income_type": fish_by_income_type,
+        },
+        "fish_sales": {"groups": fish["groups"], "totals": fish["totals"], "summary": fish["summary"]},
+        "pos_shop_sales": pos,
+        "accounting_note": (
+            "Fish: all Aquaculture pond income lines in the period (every income_type). "
+            "POS: invoices to each pond's linked POS customer; lines classified as motor fuel are excluded."
+        ),
+    }
+
+
 def _report_expenses(company_id: int, start: date, end: date, request: HttpRequest) -> dict[str, Any]:
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
@@ -347,6 +512,12 @@ def _report_sampling(company_id: int, start: date, end: date, request: HttpReque
                 "estimated_fish_count": b.estimated_fish_count,
                 "estimated_total_weight_kg": str(b.estimated_total_weight_kg) if b.estimated_total_weight_kg is not None else "",
                 "avg_weight_kg": str(b.avg_weight_kg) if b.avg_weight_kg is not None else "",
+                "stock_reference_fish_count": b.stock_reference_fish_count,
+                "stock_reference_avg_weight_kg": (
+                    str(b.stock_reference_avg_weight_kg) if b.stock_reference_avg_weight_kg is not None else ""
+                ),
+                "extrapolated_biomass_kg": str(b.extrapolated_biomass_kg) if b.extrapolated_biomass_kg is not None else "",
+                "biomass_gain_kg": str(b.biomass_gain_kg) if b.biomass_gain_kg is not None else "",
                 "notes": (b.notes or "")[:200],
             }
         )

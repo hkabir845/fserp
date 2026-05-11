@@ -11,7 +11,172 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
-from api.models import AquacultureExpense, AquacultureFishSale
+from api.models import AquacultureExpense, AquacultureFishSale, JournalEntryLine
+
+
+# Journal lines from posted vendor bills: debit accounts in these types count toward pond operating P&L.
+_VENDOR_BILL_POND_PL_ACCOUNT_TYPES = frozenset({"expense", "cost_of_goods_sold"})
+
+
+def vendor_bill_pond_expense_lines_qs(
+    *,
+    company_id: int,
+    pond_id: int | None,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    uncycled_bill_lines_only: bool = False,
+):
+    """
+    Journal lines from AUTO-BILL entries with aquaculture pond tagging.
+    When pond_id is None, includes all ponds (company-wide).
+    uncycled_bill_lines_only: only lines with no production cycle on the journal line
+    (for "no cycle" pond segments).
+    """
+    q = JournalEntryLine.objects.filter(
+        journal_entry__company_id=company_id,
+        journal_entry__entry_date__gte=start,
+        journal_entry__entry_date__lte=end,
+        journal_entry__entry_number__startswith="AUTO-BILL-",
+        debit__gt=0,
+        account__account_type__in=_VENDOR_BILL_POND_PL_ACCOUNT_TYPES,
+        aquaculture_pond_id__isnull=False,
+    )
+    if pond_id is not None:
+        q = q.filter(aquaculture_pond_id=pond_id)
+    if uncycled_bill_lines_only:
+        q = q.filter(aquaculture_production_cycle_id__isnull=True)
+    elif cycle_filter_id is not None:
+        q = q.filter(aquaculture_production_cycle_id=cycle_filter_id)
+    return q
+
+
+def vendor_bill_pond_operating_total(
+    *,
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    uncycled_bill_lines_only: bool = False,
+) -> Decimal:
+    t = vendor_bill_pond_expense_lines_qs(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+        uncycled_bill_lines_only=uncycled_bill_lines_only,
+    ).aggregate(s=Sum("debit"))["s"]
+    return _money_q(Decimal(str(t or 0)))
+
+
+def vendor_bill_pond_operating_total_company(
+    *,
+    company_id: int,
+    start: date,
+    end: date,
+) -> Decimal:
+    t = vendor_bill_pond_expense_lines_qs(
+        company_id=company_id,
+        pond_id=None,
+        start=start,
+        end=end,
+        cycle_filter_id=None,
+    ).aggregate(s=Sum("debit"))["s"]
+    return _money_q(Decimal(str(t or 0)))
+
+
+def landlord_lease_payment_pond_journal_qs(
+    *,
+    company_id: int,
+    pond_id: int | None,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    uncycled_landlord_lines_only: bool = False,
+):
+    """
+    Journal debits from AUTO-LL-PAY-* (landlord ledger payment with bank register).
+    Tagged with aquaculture_cost_bucket=lease and pond on the expense line.
+    """
+    q = JournalEntryLine.objects.filter(
+        journal_entry__company_id=company_id,
+        journal_entry__entry_date__gte=start,
+        journal_entry__entry_date__lte=end,
+        journal_entry__entry_number__startswith="AUTO-LL-PAY-",
+        debit__gt=0,
+        account__account_type__in=_VENDOR_BILL_POND_PL_ACCOUNT_TYPES,
+        aquaculture_pond_id__isnull=False,
+        aquaculture_cost_bucket="lease",
+    )
+    if pond_id is not None:
+        q = q.filter(aquaculture_pond_id=pond_id)
+    if uncycled_landlord_lines_only:
+        q = q.filter(aquaculture_production_cycle_id__isnull=True)
+    elif cycle_filter_id is not None:
+        q = q.filter(aquaculture_production_cycle_id=cycle_filter_id)
+    return q
+
+
+def landlord_lease_payment_pond_operating_total(
+    *,
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    uncycled_landlord_lines_only: bool = False,
+) -> Decimal:
+    t = landlord_lease_payment_pond_journal_qs(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+        uncycled_landlord_lines_only=uncycled_landlord_lines_only,
+    ).aggregate(s=Sum("debit"))["s"]
+    return _money_q(Decimal(str(t or 0)))
+
+
+def landlord_lease_payment_pond_operating_total_company(
+    *,
+    company_id: int,
+    start: date,
+    end: date,
+) -> Decimal:
+    t = landlord_lease_payment_pond_journal_qs(
+        company_id=company_id,
+        pond_id=None,
+        start=start,
+        end=end,
+        cycle_filter_id=None,
+    ).aggregate(s=Sum("debit"))["s"]
+    return _money_q(Decimal(str(t or 0)))
+
+
+def vendor_bill_pond_bucket_additions(
+    *,
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    uncycled_bill_lines_only: bool = False,
+) -> dict[str, Decimal]:
+    out: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    qs = vendor_bill_pond_expense_lines_qs(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+        uncycled_bill_lines_only=uncycled_bill_lines_only,
+    )
+    for row in qs.values("aquaculture_cost_bucket").annotate(s=Sum("debit")):
+        b = (row["aquaculture_cost_bucket"] or "").strip() or "ancillary"
+        out[b] += _money_q(Decimal(str(row["s"] or 0)))
+    return dict(out)
 
 
 def aquaculture_expense_category_to_cost_bucket(category: str) -> str:
@@ -21,10 +186,12 @@ def aquaculture_expense_category_to_cost_bucket(category: str) -> str:
         return "fry_stocking"
     if c in ("pond_preparation", "soilcut"):
         return "pond_preparation"
-    if c == "feed_purchase" or c == "feed_medicine":
+    if c in ("feed_purchase", "feed_consumed", "feed_medicine"):
         return "feed"
-    if c == "medicine_purchase":
+    if c in ("medicine_purchase", "medicine_consumed"):
         return "medicine"
+    if c == "vendor_bill_pond":
+        return "miscellaneous"
     if c == "worker_salary":
         return "labor"
     if c == "electricity":
@@ -170,6 +337,26 @@ def pond_bucket_amounts_for_period(
     if payroll_allocated != 0:
         out["labor"] += _money_q(payroll_allocated)
 
+    for bkey, bamt in vendor_bill_pond_bucket_additions(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+    ).items():
+        if bamt != 0:
+            out[bkey] += bamt
+
+    ll_lease = landlord_lease_payment_pond_operating_total(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+    )
+    if ll_lease != 0:
+        out["lease"] += ll_lease
+
     return dict(out)
 
 
@@ -289,5 +476,6 @@ def aquaculture_pl_cost_basis_doc() -> str:
         "lease, transportation, fisherman, miscellaneous, plus ancillary for unknown codes). "
         "Labor includes worker_salary lines and PayrollRunPondAllocation. "
         "Posted journals can carry aquaculture_pond, production_cycle, and aquaculture_cost_bucket on each line for "
-        "traceability (shop issues, biological stock, fish-sale invoices, and POS COGS to a pond’s linked customer)."
+        "traceability (shop issues, biological stock, fish-sale invoices, POS COGS to a pond's linked customer, "
+        "and landlord lease payments with bank_account_id on the landlord ledger)."
     )

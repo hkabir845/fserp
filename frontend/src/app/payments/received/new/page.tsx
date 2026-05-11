@@ -6,10 +6,10 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { ArrowLeft, AlertCircle, UserPlus } from 'lucide-react'
 import api from '@/lib/api'
-import { getCurrencySymbol, formatNumber } from '@/utils/currency'
+import { getCurrencySymbol, formatNumber, roundToDecimals } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_ALLOCATE_GREEN_CLASS, AMOUNT_EDITABLE_FULL_GREEN_CLASS } from '@/utils/amountFieldStyles'
-import { ContactArApBalances } from '@/components/ContactArApBalances'
+import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
 
 interface OutstandingInvoice {
   id: number
@@ -59,9 +59,13 @@ function isOaOrAdvanceRow(inv: OutstandingInvoice) {
   return Boolean(inv.synthetic && inv.on_account)
 }
 
+function roundMoney(n: number): number {
+  return roundToDecimals(n, 2)
+}
+
 /** Open balance to pre-fill when a line is checked (user can still reduce for partial payment). */
 function defaultAllocWhenSelected(inv: OutstandingInvoice) {
-  return Math.max(0, Number(inv.balance_due) || 0)
+  return roundMoney(Math.max(0, Number(inv.balance_due) || 0))
 }
 
 /** Stable key for selection state (synthetic on-account is always `oa`) */
@@ -132,6 +136,55 @@ function normalizeCustomersFromApi(data: unknown): Customer[] {
     })
 }
 
+interface BankRegister {
+  id: number
+  account_number: string
+  account_name: string
+  current_balance: number | string | null
+  opening_balance?: string | number
+  opening_balance_date?: string | null
+}
+
+function normalizeBankRegistersFromApi(data: unknown): BankRegister[] {
+  let rows: unknown[] = []
+  if (Array.isArray(data)) {
+    rows = data
+  } else if (data && typeof data === 'object') {
+    const o = data as Record<string, unknown>
+    if (Array.isArray(o.results)) rows = o.results
+    else if (Array.isArray(o.data)) rows = o.data
+  }
+
+  return rows
+    .filter((row): row is Record<string, unknown> => row != null && typeof row === 'object')
+    .map((r): BankRegister | null => {
+      const id = typeof r.id === 'number' ? r.id : Number(r.id)
+      if (!Number.isFinite(id)) return null
+      return {
+        id,
+        account_number: String(r.account_number ?? ''),
+        account_name: String(r.account_name ?? ''),
+        current_balance: r.current_balance as BankRegister['current_balance'],
+        opening_balance: r.opening_balance as string | number | undefined,
+        opening_balance_date:
+          r.opening_balance_date != null && r.opening_balance_date !== ''
+            ? String(r.opening_balance_date)
+            : null,
+      }
+    })
+    .filter((a): a is BankRegister => a != null)
+}
+
+function formatRegisterBalance(balance: number | string | null): string {
+  const numericValue =
+    typeof balance === 'number'
+      ? balance
+      : balance !== null && balance !== undefined && balance !== ''
+        ? Number(balance)
+        : 0
+  return formatNumber(Number.isFinite(numericValue) ? numericValue : 0)
+}
+
 function buildCustomerPaymentMemo(c: Customer): string {
   const name =
     (c.display_name || '').trim() ||
@@ -181,6 +234,9 @@ function RecordPaymentReceivedInner() {
   const [newPhone, setNewPhone] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [creatingCustomer, setCreatingCustomer] = useState(false)
+  /** Bank/cash register: debit side where the receipt is posted (credits A/R). */
+  const [bankRegisters, setBankRegisters] = useState<BankRegister[]>([])
+  const [depositRegisterId, setDepositRegisterId] = useState<number | null>(null)
   /** false = deselected (exclude from allocation); true = include */
   const [lineSelected, setLineSelected] = useState<Record<string, boolean>>({})
 
@@ -201,13 +257,31 @@ function RecordPaymentReceivedInner() {
         } catch {
           /* optional */
         }
-        const response = await api.get('/customers/', { params: { skip: 0, limit: 10000 } })
+        const settled = await Promise.allSettled([
+          api.get('/customers/', { params: { skip: 0, limit: 10000 } }),
+          api.get('/bank-accounts/'),
+        ])
         setError('')
-        setCustomers(normalizeCustomersFromApi(response.data))
+        const custR = settled[0]
+        const bankR = settled[1]
+        if (custR.status === 'fulfilled') {
+          setCustomers(normalizeCustomersFromApi(custR.value.data))
+        } else {
+          console.error('Error loading customers:', custR.reason)
+          setCustomers([])
+          setError('Could not load customers. Check your connection and try again.')
+        }
+        if (bankR.status === 'fulfilled') {
+          setBankRegisters(normalizeBankRegistersFromApi(bankR.value.data))
+        } else {
+          console.error('Error loading bank registers:', bankR.reason)
+          setBankRegisters([])
+        }
       } catch (e) {
-        console.error('Error loading customers:', e)
+        console.error('Error loading payment form:', e)
         setCustomers([])
-        setError('Could not load customers. Check your connection and try again.')
+        setBankRegisters([])
+        setError('Could not load form data. Check your connection and try again.')
       } finally {
         setLoading(false)
       }
@@ -342,7 +416,7 @@ function RecordPaymentReceivedInner() {
           const n = a.map((x) =>
             x.invoice_id === aid ? { ...x, allocated_amount: 0 } : x
           )
-          setTotalPaymentAmount(n.reduce((s, x) => s + x.allocated_amount, 0))
+          setTotalPaymentAmount(roundMoney(n.reduce((s, x) => s + x.allocated_amount, 0)))
           return n
         })
       } else {
@@ -351,7 +425,7 @@ function RecordPaymentReceivedInner() {
           const n = a.map((x) =>
             x.invoice_id === aid ? { ...x, allocated_amount: full } : x
           )
-          setTotalPaymentAmount(n.reduce((s, x) => s + x.allocated_amount, 0))
+          setTotalPaymentAmount(roundMoney(n.reduce((s, x) => s + x.allocated_amount, 0)))
           return n
         })
       }
@@ -375,7 +449,7 @@ function RecordPaymentReceivedInner() {
           if (!oa || oa.synthetic) return x
           return { ...x, allocated_amount: 0 }
         })
-        setTotalPaymentAmount(n.reduce((s, el) => s + el.allocated_amount, 0))
+        setTotalPaymentAmount(roundMoney(n.reduce((s, el) => s + el.allocated_amount, 0)))
         return n
       })
     } else {
@@ -392,9 +466,7 @@ function RecordPaymentReceivedInner() {
           if (!oa || oa.synthetic) return x
           return { ...x, allocated_amount: defaultAllocWhenSelected(oa) }
         })
-        setTotalPaymentAmount(
-          n.reduce((s, el) => s + el.allocated_amount, 0)
-        )
+        setTotalPaymentAmount(roundMoney(n.reduce((s, el) => s + el.allocated_amount, 0)))
         return n
       })
     }
@@ -409,19 +481,19 @@ function RecordPaymentReceivedInner() {
     const maxAmount = isOaOrAdvanceRow(invoice)
       ? 1e12
       : openInv
-    const allocatedAmount = Math.min(Math.max(0, amount), maxAmount)
+    const allocatedAmount = roundMoney(Math.min(Math.max(0, amount), maxAmount))
     setAllocations((prev) => {
       const updated = prev.map((alloc) =>
         alloc.invoice_id === invoiceId ? { ...alloc, allocated_amount: allocatedAmount } : alloc
       )
-      const newTotal = updated.reduce((sum, a) => sum + a.allocated_amount, 0)
+      const newTotal = roundMoney(updated.reduce((sum, a) => sum + a.allocated_amount, 0))
       setTotalPaymentAmount(newTotal)
       return updated
     })
   }
 
   const handleAutoAllocate = () => {
-    let remaining = totalPaymentAmount
+    let remaining = roundMoney(totalPaymentAmount)
     const order = [...outstandingInvoices]
       .filter((inv) => isRowSelected(inv))
       .sort((a, b) => {
@@ -437,8 +509,8 @@ function RecordPaymentReceivedInner() {
         }
         const balanceDue = Number(inv.balance_due) || 0
         const cap = isOaOrAdvanceRow(inv) ? remaining : Math.min(remaining, balanceDue)
-        const amt = cap
-        remaining -= amt
+        const amt = roundMoney(cap)
+        remaining = roundMoney(remaining - amt)
         return [aid, amt] as const
       })
     )
@@ -458,9 +530,10 @@ function RecordPaymentReceivedInner() {
   }
 
   const handlePaymentAmountChange = (amount: number) => {
-    setTotalPaymentAmount(amount)
-    if (amount > 0) {
-      let remaining = amount
+    const a = Number.isFinite(amount) ? roundMoney(amount) : 0
+    setTotalPaymentAmount(a)
+    if (a > 0) {
+      let remaining = a
       const order = [...outstandingInvoices]
         .filter((inv) => isRowSelected(inv))
         .sort((a, b) => {
@@ -475,8 +548,8 @@ function RecordPaymentReceivedInner() {
           }
           const balanceDue = Number(invoice.balance_due) || 0
           const take = isOaOrAdvanceRow(invoice) ? remaining : Math.min(remaining, balanceDue)
-          const allocatedAmount = take
-          remaining -= allocatedAmount
+          const allocatedAmount = roundMoney(take)
+          remaining = roundMoney(remaining - allocatedAmount)
           return [allocInvoiceId(invoice), allocatedAmount] as const
         })
       )
@@ -493,6 +566,8 @@ function RecordPaymentReceivedInner() {
           }
         })
       )
+    } else {
+      setAllocations((prev) => prev.map((x) => ({ ...x, allocated_amount: 0 })))
     }
   }
 
@@ -562,16 +637,25 @@ function RecordPaymentReceivedInner() {
       setSubmitting(false)
       return
     }
+    if (bankRegisters.length > 0 && depositRegisterId == null) {
+      setError('Select the bank or cash register this receipt is deposited to.')
+      setSubmitting(false)
+      return
+    }
 
     try {
       const response = await api.post('/payments/received', {
         customer_id: selectedCustomerId,
         payment_date: paymentDate,
         payment_method: paymentMethod,
-        amount: totalPaymentAmount,
+        ...(depositRegisterId != null ? { bank_account_id: depositRegisterId } : {}),
+        amount: roundMoney(totalPaymentAmount),
         reference_number: referenceNumber || null,
         memo: memo || null,
-        allocations: validAllocations,
+        allocations: validAllocations.map((al) => ({
+          ...al,
+          allocated_amount: roundMoney(al.allocated_amount),
+        })),
       })
       if (response.status === 201 || response.status === 200) {
         alert('Payment recorded successfully!')
@@ -813,6 +897,62 @@ function RecordPaymentReceivedInner() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Deposit to{bankRegisters.length > 0 ? ' *' : ''}
+                  </label>
+                  <p className="text-xs text-gray-500 mb-1.5">
+                    Register where funds are received (debits this account; credits A/R). Matches Pay bills and
+                    Record deposits.
+                  </p>
+                  {bankRegisters.length > 0 ? (
+                    <>
+                      <select
+                        value={depositRegisterId != null ? String(depositRegisterId) : ''}
+                        onChange={(e) => {
+                          const n = Number(e.target.value)
+                          setDepositRegisterId(Number.isFinite(n) ? n : null)
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                        required
+                      >
+                        <option value="">Select bank or cash register</option>
+                        {bankRegisters.map((account) => (
+                          <option key={account.id} value={String(account.id)}>
+                            {account.account_name} — Op. {currencySymbol}
+                            {formatRegisterBalance(account.opening_balance ?? 0)} | {currencySymbol}
+                            {formatRegisterBalance(account.current_balance)}
+                          </option>
+                        ))}
+                      </select>
+                      {depositRegisterId != null ? (
+                        (() => {
+                          const acc = bankRegisters.find((a) => a.id === depositRegisterId)
+                          if (!acc) return null
+                          return (
+                            <BankRegisterBalances
+                              openingBalance={acc.opening_balance}
+                              openingBalanceDate={acc.opening_balance_date}
+                              currentBalance={acc.current_balance}
+                              currencySymbol={currencySymbol}
+                              className="mt-2"
+                            />
+                          )
+                        })()
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                      No bank or cash registers found. The receipt will post to undeposited / cash accounts from your
+                      chart. Add registers under{' '}
+                      <Link href="/chart-of-accounts" className="font-medium text-amber-900 underline">
+                        Chart of accounts
+                      </Link>
+                      .
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Reference Number
                   </label>
                   <input
@@ -834,6 +974,7 @@ function RecordPaymentReceivedInner() {
                     min="0"
                     value={totalPaymentAmount || ''}
                     onChange={(e) => handlePaymentAmountChange(Number(e.target.value))}
+                    onBlur={() => setTotalPaymentAmount((v) => roundMoney(v))}
                     className={AMOUNT_EDITABLE_FULL_GREEN_CLASS}
                     required
                   />
@@ -1077,6 +1218,11 @@ function RecordPaymentReceivedInner() {
                                   onChange={(e) =>
                                     handleAllocationChange(aid, Number(e.target.value))
                                   }
+                                  onBlur={() =>
+                                    canEdit
+                                      ? handleAllocationChange(aid, roundMoney(allocatedAmount))
+                                      : undefined
+                                  }
                                   className={AMOUNT_ALLOCATE_GREEN_CLASS + (!canEdit ? ' cursor-not-allowed' : '')}
                                 />
                               </td>
@@ -1128,6 +1274,11 @@ function RecordPaymentReceivedInner() {
                                       disabled={!canEdit}
                                       onChange={(e) =>
                                         handleAllocationChange(aid, Number(e.target.value))
+                                      }
+                                      onBlur={() =>
+                                        canEdit
+                                          ? handleAllocationChange(aid, roundMoney(allocatedAmount))
+                                          : undefined
                                       }
                                       className={
                                         AMOUNT_ALLOCATE_GREEN_CLASS +

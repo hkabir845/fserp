@@ -17,22 +17,14 @@ from api.models import (
     Nozzle,
 )
 from api.services.station_capabilities import reconcile_station_fuel_flags_for_company
+from api.services.organization_service import ensure_company_organization_shell
 
 
 def get_or_create_master():
-    master, created = Company.objects.get_or_create(
+    master, _created = ensure_company_organization_shell(
         name="Master Filling Station",
-        is_deleted=False,
-        defaults={
-            "legal_name": "Master Filling Station (Development)",
-            "currency": "BDT",
-            "is_active": True,
-            "is_master": "true",
-        },
+        legal_name="Master Filling Station (Development)",
     )
-    if not created:
-        master.is_master = "true"
-        master.save()
     return master
 
 

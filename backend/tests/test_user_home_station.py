@@ -40,6 +40,74 @@ def test_report_fuel_sales_respects_station_param(
     assert body.get("filter_station_id") == s2.id
 
 
+def test_create_cashier_multistation_requires_home_station(
+    api_client: Client, auth_admin_headers, company_tenant
+):
+    from api.models import Station
+
+    s1 = Station.objects.create(company_id=company_tenant.id, station_name="East")
+    Station.objects.create(company_id=company_tenant.id, station_name="West")
+    r = api_client.post(
+        "/api/users/",
+        data=json.dumps(
+            {
+                "username": "new_cashier_loc@test.com",
+                "email": "new_cashier_loc@test.com",
+                "full_name": "New Cashier",
+                "role": "cashier",
+                "password": "AuditTest#99",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 400
+    assert "location" in json.loads(r.content).get("detail", "").lower()
+
+    r2 = api_client.post(
+        "/api/users/",
+        data=json.dumps(
+            {
+                "username": "new_cashier_ok@test.com",
+                "email": "new_cashier_ok@test.com",
+                "full_name": "New Cashier OK",
+                "role": "cashier",
+                "password": "AuditTest#99",
+                "home_station_id": s1.id,
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r2.status_code == 201, r2.content
+    body = json.loads(r2.content)
+    assert body.get("home_station_id") == s1.id
+
+
+def test_create_cashier_single_station_auto_home(
+    api_client: Client, auth_admin_headers, company_tenant
+):
+    from api.models import Station
+
+    st = Station.objects.create(company_id=company_tenant.id, station_name="Only Site")
+    r = api_client.post(
+        "/api/users/",
+        data=json.dumps(
+            {
+                "username": "cashier_one_site@test.com",
+                "email": "cashier_one_site@test.com",
+                "full_name": "One Site Cashier",
+                "role": "cashier",
+                "password": "AuditTest#99",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content
+    assert json.loads(r.content).get("home_station_id") == st.id
+
+
 def test_cashier_without_home_multistation_report_forbidden(
     api_client: Client, company_tenant, user_admin
 ):

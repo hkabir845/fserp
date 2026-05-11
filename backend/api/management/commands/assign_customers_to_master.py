@@ -4,6 +4,7 @@ Usage: python manage.py assign_customers_to_master
 """
 from django.core.management.base import BaseCommand
 from api.models import Company, Customer
+from api.services.organization_service import ensure_company_organization_shell
 
 
 class Command(BaseCommand):
@@ -11,21 +12,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # Get or create Master Filling Station
-        master, created = Company.objects.get_or_create(
+        master, created = ensure_company_organization_shell(
             name="Master Filling Station",
-            is_deleted=False,
-            defaults={
-                "legal_name": "Master Filling Station (Development)",
-                "currency": "BDT",
-                "is_active": True,
-                "is_master": "true",
-            },
+            legal_name="Master Filling Station (Development)",
         )
         if created:
             self.stdout.write(self.style.SUCCESS("Created company: Master Filling Station"))
         else:
-            master.is_master = "true"
-            master.save()
             self.stdout.write("Using existing company: Master Filling Station")
 
         # Get up to 12 customers (any company), order by id

@@ -15,6 +15,7 @@ from api.models import (
     Nozzle,
 )
 from api.services.station_capabilities import reconcile_station_fuel_flags_for_company
+from api.services.organization_service import ensure_company_organization_shell
 
 
 class Command(BaseCommand):
@@ -28,21 +29,13 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        master, created = Company.objects.get_or_create(
+        master, created = ensure_company_organization_shell(
             name="Master Filling Station",
-            is_deleted=False,
-            defaults={
-                "legal_name": "Master Filling Station (Development)",
-                "currency": "BDT",
-                "is_active": True,
-                "is_master": "true",
-            },
+            legal_name="Master Filling Station (Development)",
         )
         if created:
             self.stdout.write(self.style.SUCCESS("Created company: Master Filling Station"))
         else:
-            master.is_master = "true"
-            master.save()
             self.stdout.write("Using company: Master Filling Station")
 
         cid = master.id
@@ -154,6 +147,23 @@ class Command(BaseCommand):
         )
         self.stdout.write(f"  Dispenser: {dispenser.dispenser_name} (id={dispenser.id})")
 
+        # Island 2 + Dispenser 2 (same Main Station; shares Diesel Tank 1 / Petrol Tank 1)
+        island2, _ = Island.objects.get_or_create(
+            company_id=cid,
+            station_id=station.id,
+            island_name="Island 2",
+            defaults={"island_code": "ISL-2", "is_active": True},
+        )
+        self.stdout.write(f"  Island: {island2.island_name} (id={island2.id})")
+
+        dispenser2, _ = Dispenser.objects.get_or_create(
+            company_id=cid,
+            island_id=island2.id,
+            dispenser_name="Dispenser 2",
+            defaults={"dispenser_code": "DSP-2", "is_active": True},
+        )
+        self.stdout.write(f"  Dispenser: {dispenser2.dispenser_name} (id={dispenser2.id})")
+
         # Meters (one per fuel type)
         meter_diesel, _ = Meter.objects.get_or_create(
             company_id=cid,
@@ -176,6 +186,28 @@ class Command(BaseCommand):
             },
         )
         self.stdout.write(f"  Meters: {meter_diesel.meter_name}, {meter_petrol.meter_name}")
+
+        meter2_diesel, _ = Meter.objects.get_or_create(
+            company_id=cid,
+            dispenser_id=dispenser2.id,
+            meter_name="Diesel Meter 2",
+            defaults={
+                "meter_number": "M-D-02",
+                "current_reading": Decimal("0"),
+                "is_active": True,
+            },
+        )
+        meter2_petrol, _ = Meter.objects.get_or_create(
+            company_id=cid,
+            dispenser_id=dispenser2.id,
+            meter_name="Petrol Meter 2",
+            defaults={
+                "meter_number": "M-P-02",
+                "current_reading": Decimal("0"),
+                "is_active": True,
+            },
+        )
+        self.stdout.write(f"  Meters (Dispenser 2): {meter2_diesel.meter_name}, {meter2_petrol.meter_name}")
 
         # Nozzles
         n1, c1 = Nozzle.objects.get_or_create(
@@ -204,7 +236,33 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        created_nozzles = sum([c1, c2])
+        n3, c3 = Nozzle.objects.get_or_create(
+            company_id=cid,
+            meter_id=meter2_diesel.id,
+            tank_id=tank_diesel.id,
+            defaults={
+                "product_id": diesel.id,
+                "nozzle_number": "NZ-D-02",
+                "nozzle_name": "Diesel Meter 2 - Diesel",
+                "color_code": "#EAB308",
+                "is_operational": True,
+                "is_active": True,
+            },
+        )
+        n4, c4 = Nozzle.objects.get_or_create(
+            company_id=cid,
+            meter_id=meter2_petrol.id,
+            tank_id=tank_petrol.id,
+            defaults={
+                "product_id": petrol.id,
+                "nozzle_number": "NZ-P-02",
+                "nozzle_name": "Petrol Meter 2 - Petrol",
+                "color_code": "#DC2626",
+                "is_operational": True,
+                "is_active": True,
+            },
+        )
+        created_nozzles = sum([c1, c2, c3, c4])
         fixed = reconcile_station_fuel_flags_for_company(cid)
         if fixed:
             self.stdout.write(self.style.WARNING(f"  Reconciled operates_fuel_retail for {fixed} station(s) with forecourt assets."))

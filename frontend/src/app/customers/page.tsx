@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -8,9 +8,12 @@ import { CompanyProvider } from '@/contexts/CompanyContext'
 import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, Users, UserCheck, DollarSign, X, Mail, Phone, ArrowUpDown, ArrowUp, ArrowDown, Download, BookOpen, Building2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiDocsUrl, getBackendOrigin } from '@/lib/api'
+import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
+import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { isConnectionError } from '@/utils/connectionError'
 import { formatJsonApiError } from '@/utils/apiErrors'
+import { extractErrorMessage } from '@/utils/errorHandler'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 interface Customer {
@@ -64,6 +67,15 @@ export default function CustomersPage() {
   const [addingDummy, setAddingDummy] = useState(false)
   const [customerRefCode, setCustomerRefCode] = useState('')
   const [createCodeNonce, setCreateCodeNonce] = useState(0)
+  const [listPage, setListPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [totalCount, setTotalCount] = useState(0)
+  const [listStats, setListStats] = useState<{
+    active_count: number
+    total_balance: string
+    total_receivable: string
+  } | null>(null)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [stations, setStations] = useState<StationOption[]>([])
   const [formData, setFormData] = useState({
     company_name: '',
@@ -90,10 +102,18 @@ export default function CustomersPage() {
       router.push('/login')
       return
     }
-    
+
     fetchStationsList()
-    fetchCustomers()
   }, [router])
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 350)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  useEffect(() => {
+    setListPage(1)
+  }, [debouncedSearch, pageSize])
 
   const fetchStationsList = async () => {
     try {
@@ -112,60 +132,79 @@ export default function CustomersPage() {
     }
   }
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      // Fetch company currency (with shorter timeout and don't block on it)
       try {
         const companyRes = await Promise.race([
           api.get('/companies/current', { timeout: 5000 }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-        ]) as any
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+        ]) as { data?: { currency?: string } }
         if (companyRes?.data?.currency) {
           setCurrencySymbol(getCurrencySymbol(companyRes.data.currency))
         }
       } catch (error) {
-        // Silently handle connection errors - backend may not be running
         if (!isConnectionError(error)) {
           console.warn('Error fetching company currency (non-critical):', error)
         }
-        // Don't fail the whole request if currency fetch fails
       }
 
-      // Fetch ALL customers using the api helper with high limit
       try {
-        // Fetch customers with a reasonable timeout
-        const customersPromise = api.get('/customers/?skip=0&limit=10000', {
-          timeout: 15000 // 15 second timeout for this specific request
+        const params = offsetListParams({
+          page: listPage,
+          pageSize,
+          q: debouncedSearch,
+          sort: sortField || 'id',
+          dir: sortDirection,
         })
-        
-        const response = await customersPromise
+        const response = await api.get('/customers/', { params, timeout: 15000 })
         const data = response.data
-        
-        // Store API response for debugging
         setApiResponse({ data, status: response.status, headers: response.headers })
-        
-        // Ensure data is an array
-        if (Array.isArray(data)) {
-          setCustomers(data)
+
+        if (isOffsetPagedPayload(data)) {
+          setCustomers(data.results as Customer[])
+          setTotalCount(data.count)
+          const st = data.stats as
+            | { active_count?: number; total_balance?: string; total_receivable?: string }
+            | undefined
+          if (st && typeof st.active_count === 'number') {
+            setListStats({
+              active_count: st.active_count,
+              total_balance: String(st.total_balance ?? '0'),
+              total_receivable: String(st.total_receivable ?? '0'),
+            })
+          } else {
+            setListStats(null)
+          }
           setError(null)
-          if (data.length === 0) {
-            console.warn('No customers found in database')
-            toast.info('No customers found in the database. You can add your first customer using the "Add Customer" button.')
+          const totalPages = Math.max(1, Math.ceil(data.count / pageSize))
+          if (listPage > totalPages) {
+            setListPage(totalPages)
           }
         } else {
-          console.error('Invalid data format received:', data)
+          console.error('Invalid paged data format received:', data)
           setError('Invalid data format received from server')
           setCustomers([])
+          setTotalCount(0)
+          setListStats(null)
           toast.error('Received invalid data format from server')
         }
-      } catch (apiError: any) {
+      } catch (apiError: unknown) {
         console.error('API Error fetching customers:', apiError)
-        
-        // Handle timeout errors specifically
-        if (apiError.code === 'ECONNABORTED' || apiError.message?.includes('timeout') || apiError.message?.includes('exceeded')) {
-          const errorMsg = 'Backend server is not responding (timeout). The backend may be:\n' +
+        const ax = apiError as {
+          code?: string
+          message?: string
+          response?: { status?: number; data?: { detail?: string } }
+        }
+
+        if (
+          ax.code === 'ECONNABORTED' ||
+          ax.message?.includes('timeout') ||
+          ax.message?.includes('exceeded')
+        ) {
+          const errorMsg =
+            'Backend server is not responding (timeout). The backend may be:\n' +
             '• Not running - Please start the backend server\n' +
             '• Frozen/hanging - Check backend logs for errors\n' +
             '• Database connection issues - Check database is running\n\n' +
@@ -173,19 +212,25 @@ export default function CustomersPage() {
           setError(errorMsg)
           toast.error('Backend timeout - Server may not be running. Check backend console.', 10000)
           setCustomers([])
+          setTotalCount(0)
+          setListStats(null)
           return
         }
-        
-        // Handle authentication errors
-        if (apiError.response?.status === 401 || apiError.response?.status === 403) {
+
+        if (ax.response?.status === 401 || ax.response?.status === 403) {
           localStorage.removeItem('access_token')
           router.push('/login')
           return
         }
-        
-        // Handle connection errors
-        if (!apiError.response && (apiError.code === 'ECONNREFUSED' || apiError.message?.includes('Network Error') || apiError.message?.includes('Failed to fetch'))) {
-          const errorMsg = 'Cannot connect to backend server.\n\n' +
+
+        if (
+          !ax.response &&
+          (ax.code === 'ECONNREFUSED' ||
+            ax.message?.includes('Network Error') ||
+            ax.message?.includes('Failed to fetch'))
+        ) {
+          const errorMsg =
+            'Cannot connect to backend server.\n\n' +
             'Please ensure:\n' +
             `• Backend is running on ${backendOrigin}\n` +
             '• No firewall is blocking the connection\n' +
@@ -193,33 +238,53 @@ export default function CustomersPage() {
           setError(errorMsg)
           toast.error('Cannot connect to backend. Is it running?', 10000)
           setCustomers([])
+          setTotalCount(0)
+          setListStats(null)
           return
         }
-        
-        // Handle other API errors
-        const errorMsg = apiError.response?.data?.detail || apiError.message || 'Failed to load customers'
+
+        const errorMsg = ax.response?.data?.detail || ax.message || 'Failed to load customers'
         setError(errorMsg)
         toast.error(errorMsg)
         setCustomers([])
+        setTotalCount(0)
+        setListStats(null)
       }
     } catch (error) {
       console.error('Unexpected error fetching customers:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       let userMessage = 'Error connecting to server'
-      
+
       if (errorMessage.includes('fetch') || errorMessage.includes('Failed to fetch')) {
         userMessage = `Cannot connect to backend server. Please ensure the backend is running on ${backendOrigin}`
       } else {
         userMessage = `Error: ${errorMessage}`
       }
-      
+
       setError(userMessage)
       toast.error(userMessage)
       setCustomers([])
+      setTotalCount(0)
+      setListStats(null)
     } finally {
       setLoading(false)
     }
-  }
+  }, [
+    backendOrigin,
+    debouncedSearch,
+    listPage,
+    pageSize,
+    router,
+    sortDirection,
+    sortField,
+    toast,
+  ])
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+    void fetchCustomers()
+  }, [fetchCustomers])
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -409,6 +474,7 @@ export default function CustomersPage() {
   }
 
   const handleSort = (field: keyof Customer) => {
+    setListPage(1)
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
     } else {
@@ -417,56 +483,10 @@ export default function CustomersPage() {
     }
   }
 
-  const filteredAndSortedCustomers = customers
-    .filter(customer => {
-      if (!searchTerm.trim()) return true
-      
-      const searchLower = searchTerm.toLowerCase()
-      const displayName = (customer.display_name || '').toLowerCase()
-      const email = (customer.email || '').toLowerCase()
-      const customerNumber = (customer.customer_number || '').toLowerCase()
-      const phone = (customer.phone || '').toLowerCase()
-      const site = (customer.default_station_name || '').toLowerCase()
-      
-      return (
-        displayName.includes(searchLower) ||
-        email.includes(searchLower) ||
-        customerNumber.includes(searchLower) ||
-        phone.includes(searchLower) ||
-        site.includes(searchLower)
-      )
-    })
-    .sort((a, b) => {
-      if (!sortField) return 0
-      
-      let aValue: any = a[sortField]
-      let bValue: any = b[sortField]
-      
-      // Handle null/undefined values
-      if (aValue == null) aValue = ''
-      if (bValue == null) bValue = ''
-      
-      // Handle numbers
-      if (sortField === 'current_balance' || sortField === 'opening_balance') {
-        aValue = Number(aValue || 0)
-        bValue = Number(bValue || 0)
-      } else {
-        // Handle strings
-        aValue = String(aValue).toLowerCase()
-        bValue = String(bValue).toLowerCase()
-      }
-      
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
-      return 0
-    })
-
-  // Calculate statistics
-  const totalCustomers = customers.length
-  const activeCustomers = customers.filter(c => c.is_active).length
-  const totalBalance = customers.reduce((sum, c) => sum + Number(c.current_balance || 0), 0)
-  const totalReceivable = customers.filter(c => Number(c.current_balance || 0) > 0)
-    .reduce((sum, c) => sum + Number(c.current_balance || 0), 0)
+  const totalCustomers = totalCount
+  const activeCustomers = listStats?.active_count ?? 0
+  const totalBalance = Number(listStats?.total_balance ?? 0)
+  const totalReceivable = Number(listStats?.total_receivable ?? 0)
 
   const SortIcon = ({ field }: { field: keyof Customer }) => {
     if (sortField !== field) {
@@ -510,7 +530,7 @@ export default function CustomersPage() {
               {showDebug && (
                 <div className="mt-4 p-4 bg-gray-100 rounded-lg text-xs font-mono">
                   <div className="mb-2"><strong>Total Customers:</strong> {totalCustomers}</div>
-                  <div className="mb-2"><strong>Filtered:</strong> {filteredAndSortedCustomers.length}</div>
+                  <div className="mb-2"><strong>Rows (this page):</strong> {customers.length}</div>
                   <div className="mb-2"><strong>API Response:</strong> {apiResponse ? JSON.stringify(apiResponse, null, 2).substring(0, 500) : 'Not loaded yet'}</div>
                   <div><strong>First Customer:</strong> {customers.length > 0 ? JSON.stringify(customers[0], null, 2).substring(0, 300) : 'None'}</div>
                 </div>
@@ -675,21 +695,25 @@ export default function CustomersPage() {
                   </ol>
                 </div>
               </div>
-            ) : filteredAndSortedCustomers.length === 0 ? (
+            ) : customers.length === 0 ? (
               <div className="bg-white rounded-lg shadow-sm p-12 text-center border border-gray-200">
                 <Users className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  {searchTerm ? 'No customers found' : totalCustomers === 0 ? 'No customers in database' : 'No customers match your search'}
+                  {debouncedSearch.trim()
+                    ? 'No customers found'
+                    : totalCustomers === 0
+                      ? 'No customers in database'
+                      : 'No customers to show'}
                 </h3>
                 <p className="text-gray-600 mb-6">
-                  {searchTerm 
-                    ? `Try adjusting your search terms. There are ${totalCustomers} total customers.`
+                  {debouncedSearch.trim()
+                    ? 'Try adjusting your search terms.'
                     : totalCustomers === 0
-                    ? 'The database appears to be empty. Click below to add dummy customers (cash and credit) or add your first customer manually.'
-                    : 'Get started by adding your first customer'}
+                      ? 'The database appears to be empty. Click below to add dummy customers (cash and credit) or add your first customer manually.'
+                      : 'Get started by adding your first customer'}
                 </p>
                 <div className="flex items-center justify-center gap-3 flex-wrap">
-                  {!searchTerm && totalCustomers === 0 && (
+                  {!debouncedSearch.trim() && totalCustomers === 0 && (
                     <button
                       onClick={handleAddDummyCustomers}
                       disabled={addingDummy}
@@ -708,7 +732,7 @@ export default function CustomersPage() {
                       )}
                     </button>
                   )}
-                  {!searchTerm && (
+                  {!debouncedSearch.trim() && (
                     <button
                       onClick={() => {
                         resetForm()
@@ -805,7 +829,7 @@ export default function CustomersPage() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredAndSortedCustomers.map((customer) => {
+                      {customers.map((customer) => {
                         const balance = Number(customer.current_balance || 0)
                         return (
                           <tr key={customer.id} className="hover:bg-gray-50 transition-colors">
@@ -900,45 +924,67 @@ export default function CustomersPage() {
                     </tbody>
                   </table>
                 </div>
-                {filteredAndSortedCustomers.length > 0 && (
-                  <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-gray-600">
-                        Showing <span className="font-semibold">{filteredAndSortedCustomers.length}</span> of{' '}
-                        <span className="font-semibold">{totalCustomers}</span> customers
-                        {searchTerm && ` matching "${searchTerm}"`}
-                        {sortField && (
-                          <span className="ml-2 text-gray-500">
-                            • Sorted by {sortField.replace('_', ' ')} ({sortDirection === 'asc' ? 'ascending' : 'descending'})
-                          </span>
-                        )}
-                      </p>
+                {totalCount > 0 && (
+                  <div className="space-y-3 bg-gray-50 px-6 py-4 border-t border-gray-200">
+                    <OffsetPaginationControls
+                      page={listPage}
+                      pageSize={pageSize}
+                      total={totalCount}
+                      disabled={loading}
+                      onPageChange={setListPage}
+                      onPageSizeChange={(n) => {
+                        setPageSize(n)
+                        setListPage(1)
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      {sortField && (
+                        <p className="text-xs text-gray-500">
+                          Sorted by {String(sortField).replace('_', ' ')} (
+                          {sortDirection === 'asc' ? 'ascending' : 'descending'})
+                        </p>
+                      )}
                       <button
-                        onClick={() => {
-                          const csv = [
-                            ['Customer #', 'Name', 'Default site', 'Email', 'Phone', 'Balance', 'Status'].join(','),
-                            ...filteredAndSortedCustomers.map((c) =>
-                              [
-                                escapeCsvField(c.customer_number),
-                                escapeCsvField(c.display_name),
-                                escapeCsvField(c.default_station_name),
-                                escapeCsvField(c.email),
-                                escapeCsvField(c.phone),
-                                c.current_balance ?? 0,
-                                c.is_active ? 'Active' : 'Inactive',
-                              ].join(',')
-                            ),
-                          ].join('\n')
-                          const blob = new Blob([csv], { type: 'text/csv' })
-                          const url = window.URL.createObjectURL(blob)
-                          const a = document.createElement('a')
-                          a.href = url
-                          a.download = `customers-${new Date().toISOString().split('T')[0]}.csv`
-                          a.click()
-                          window.URL.revokeObjectURL(url)
-                          toast.success('Customers exported successfully!')
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const { data } = await api.get<Customer[]>('/customers/', {
+                              params: {
+                                skip: 0,
+                                limit: 10000,
+                                ...(debouncedSearch.trim() ? { q: debouncedSearch.trim() } : {}),
+                                sort: sortField || 'id',
+                                dir: sortDirection,
+                              },
+                            })
+                            const rows = Array.isArray(data) ? data : []
+                            const csv = [
+                              ['Customer #', 'Name', 'Default site', 'Email', 'Phone', 'Balance', 'Status'].join(','),
+                              ...rows.map((c) =>
+                                [
+                                  escapeCsvField(c.customer_number),
+                                  escapeCsvField(c.display_name),
+                                  escapeCsvField(c.default_station_name),
+                                  escapeCsvField(c.email),
+                                  escapeCsvField(c.phone),
+                                  c.current_balance ?? 0,
+                                  c.is_active ? 'Active' : 'Inactive',
+                                ].join(','),
+                              ),
+                            ].join('\n')
+                            const blob = new Blob([csv], { type: 'text/csv' })
+                            const url = window.URL.createObjectURL(blob)
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = `customers-${new Date().toISOString().split('T')[0]}.csv`
+                            a.click()
+                            window.URL.revokeObjectURL(url)
+                            toast.success('Customers exported successfully!')
+                          } catch (e) {
+                            toast.error(extractErrorMessage(e, 'Export failed'))
+                          }
                         }}
-                        className="flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        className="ml-auto flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                       >
                         <Download className="h-4 w-4" />
                         <span>Export CSV</span>

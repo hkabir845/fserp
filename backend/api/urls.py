@@ -61,7 +61,9 @@ def api_docs(request):
             "/api/system/tenant-data-summary/",
             "/api/admin/stats", "/api/admin/companies", "/api/admin/users",
             "/api/broadcasts/", "/api/broadcasts/my", "/api/stations/",
-            "/api/inventory/availability/", "/api/inventory/transfers/",
+            "/api/inventory/availability/",
+            "/api/inventory/transfers/",
+            "/api/inventory/pond-warehouse-receipts/",
             "/api/tanks/",
             "/api/items/", "/api/islands/", "/api/dispensers/", "/api/meters/", "/api/nozzles/",
             "/api/customers/", "/api/vendors/", "/api/invoices", "/api/bills/",
@@ -74,7 +76,8 @@ def api_docs(request):
             "/api/aquaculture/ponds/", "/api/aquaculture/expenses/", "/api/aquaculture/sales/",
             "/api/aquaculture/samples/", "/api/aquaculture/pl-summary/", "/api/aquaculture/expense-categories/",
             "/api/aquaculture/income-types/", "/api/aquaculture/fish-species/", "/api/aquaculture/production-cycles/",
-            "/api/aquaculture/pond-profit-transfers/",
+            "/api/aquaculture/feeding-advice/", "/api/aquaculture/pond-profit-transfers/",
+            "/api/aquaculture/landlords/",
             "/api/shifts/", "/api/tank-dips", "/api/taxes/",             "/api/reports/<id>",
             "/api/company/backup/", "/api/company/restore/",
             "/api/admin/companies/<id>/backup/", "/api/admin/companies/<id>/restore/",
@@ -115,6 +118,7 @@ urlpatterns = [
     path("auth/change-password/", password_views.change_password),
     # Companies
     path("companies/current/", companies_views.companies_current),
+    path("companies/group-entity/", companies_views.company_group_entity_create),
     path("companies/", companies_views.companies_list_or_create),
     path(
         "companies/<int:company_id>/deactivate/",
@@ -233,6 +237,11 @@ urlpatterns = [
     path("stations/", station_views.stations_list_or_create),
     path("stations/<int:station_id>/", station_views.station_detail),
     path("inventory/availability/", inventory_views.inventory_item_availability),
+    path("inventory/pond-warehouse-receipts/", inventory_views.pond_warehouse_receipts_list),
+    path(
+        "inventory/pond-warehouse-receipts/<int:receipt_id>/reverse/",
+        inventory_views.pond_warehouse_receipt_reverse_view,
+    ),
     path("inventory/transfers/", inventory_views.inventory_transfers_list_or_create),
     path(
         "inventory/transfers/<int:transfer_id>/",
@@ -241,6 +250,10 @@ urlpatterns = [
     path(
         "inventory/transfers/<int:transfer_id>/delete/",
         inventory_views.inventory_transfer_delete,
+    ),
+    path(
+        "inventory/transfers/<int:transfer_id>/unpost/",
+        inventory_views.inventory_transfer_unpost,
     ),
     path("tanks/", tank_views.tanks_list_or_create),
     path("tanks/<int:tank_id>/", tank_views.tank_detail),
@@ -387,8 +400,34 @@ urlpatterns = [
         "aquaculture/production-cycles/<int:cycle_id>/",
         aquaculture_views.aquaculture_production_cycle_detail,
     ),
+    path("aquaculture/landlords/", aquaculture_views.aquaculture_landlords_list_or_create),
+    path("aquaculture/landlords/<int:landlord_id>/", aquaculture_views.aquaculture_landlord_detail),
+    path(
+        "aquaculture/landlords/<int:landlord_id>/ledger/",
+        aquaculture_views.aquaculture_landlord_ledger_create,
+    ),
+    path(
+        "aquaculture/landlords/<int:landlord_id>/ledger/<int:entry_id>/",
+        aquaculture_views.aquaculture_landlord_ledger_entry_detail,
+    ),
     path("aquaculture/ponds/", aquaculture_views.aquaculture_ponds_list_or_create),
     path("aquaculture/ponds/<int:pond_id>/", aquaculture_views.aquaculture_pond_detail),
+    path(
+        "aquaculture/ponds/<int:pond_id>/warehouse-stock/",
+        aquaculture_views.aquaculture_pond_warehouse_stock,
+    ),
+    path(
+        "aquaculture/pond-warehouse-stock-overview/",
+        aquaculture_views.aquaculture_pond_warehouse_stock_overview,
+    ),
+    path(
+        "aquaculture/pond-warehouse-transfer/",
+        aquaculture_views.aquaculture_pond_warehouse_transfer,
+    ),
+    path(
+        "aquaculture/pond-warehouse-consume/",
+        aquaculture_views.aquaculture_pond_warehouse_consume,
+    ),
     path("aquaculture/expenses/", aquaculture_views.aquaculture_expenses_list_or_create),
     path("aquaculture/shop-stock-issue/", aquaculture_views.aquaculture_shop_stock_issue),
     path("aquaculture/expenses/<int:expense_id>/", aquaculture_views.aquaculture_expense_detail),
@@ -413,9 +452,20 @@ urlpatterns = [
     ),
     path("aquaculture/stock-ledger/reference/", aquaculture_views.aquaculture_stock_ledger_reference),
     path("aquaculture/fish-stock-position/", aquaculture_views.aquaculture_fish_stock_position),
+    path("aquaculture/fish-biomass-ledger/", aquaculture_views.aquaculture_fish_biomass_ledger),
+    path(
+        "aquaculture/pond-warehouse-consumption-ledger/",
+        aquaculture_views.aquaculture_pond_warehouse_consumption_ledger,
+    ),
     path("aquaculture/fish-stock-ledger/", aquaculture_views.aquaculture_fish_stock_ledger_list_or_create),
     path(
         "aquaculture/fish-stock-ledger/<int:ledger_id>/",
         aquaculture_views.aquaculture_fish_stock_ledger_detail,
     ),
+    path("aquaculture/feeding-advice/", aquaculture_views.aquaculture_feeding_advice_list),
+    path("aquaculture/feeding-advice/generate/", aquaculture_views.aquaculture_feeding_advice_generate),
+    path("aquaculture/feeding-advice/<int:advice_id>/", aquaculture_views.aquaculture_feeding_advice_detail),
+    path("aquaculture/feeding-advice/<int:advice_id>/approve/", aquaculture_views.aquaculture_feeding_advice_approve),
+    path("aquaculture/feeding-advice/<int:advice_id>/cancel/", aquaculture_views.aquaculture_feeding_advice_cancel),
+    path("aquaculture/feeding-advice/<int:advice_id>/apply/", aquaculture_views.aquaculture_feeding_advice_apply),
 ]

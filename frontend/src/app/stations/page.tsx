@@ -506,7 +506,7 @@ export default function StationsPage() {
                         <Link href="/aquaculture" className="font-medium text-teal-700 hover:underline">
                           Aquaculture
                         </Link>{' '}
-                        for pond economics.
+                        for pond P&amp;L, costs, and harvest sales.
                       </div>
                     )}
                     <div className="flex items-center gap-1">

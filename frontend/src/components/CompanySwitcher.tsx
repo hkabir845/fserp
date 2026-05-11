@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, Building2, Crown, Shield } from 'lucide-react'
 import { useCompany } from '@/contexts/CompanyContext'
-import api from '@/lib/api'
+import api, { isSuperAdminRole, isTenantAdminRole } from '@/lib/api'
 import { messageForAdminListError } from '@/utils/adminApiErrors'
 import { safeLogError } from '@/utils/connectionError'
 
@@ -21,6 +21,33 @@ function isMasterCompanyRecord(c: Company): boolean {
   return false
 }
 
+type SwitcherMode = 'fleet' | 'group' | 'single'
+
+interface CurrentCompanyResponse {
+  id?: number
+  name?: string
+  is_master?: string | boolean
+  can_switch_group_company?: boolean
+  group_companies?: {
+    id: number
+    name: string
+    is_master?: string | boolean
+    company_code?: string
+  }[]
+}
+
+function readUserRole(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const userStr = localStorage.getItem('user')
+    if (!userStr || userStr === 'undefined' || userStr === 'null') return null
+    const u = JSON.parse(userStr) as { role?: string }
+    return u?.role != null ? String(u.role) : null
+  } catch {
+    return null
+  }
+}
+
 export default function CompanySwitcher() {
   const router = useRouter()
   const { selectedCompany, setSelectedCompany, isSaaSDashboard, isMasterCompany, mode } = useCompany()
@@ -28,36 +55,50 @@ export default function CompanySwitcher() {
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  const [switcherMode, setSwitcherMode] = useState<SwitcherMode>('single')
+  const [readOnlySwitch, setReadOnlySwitch] = useState(false)
 
-  useEffect(() => {
-    fetchCompanies()
-  }, [])
+  const syncSelectionToContext = useCallback(
+    (list: Company[], preferredId: number | null) => {
+      if (list.length === 0) return
+      try {
+        const raw = localStorage.getItem('superadmin_selected_company')
+        if (raw && raw !== 'undefined' && raw !== 'null') {
+          const p = JSON.parse(raw) as { id?: number; name?: string; is_master?: string | boolean }
+          if (p?.id != null && list.some((c) => c.id === p.id)) {
+            const row = list.find((c) => c.id === p.id)!
+            setSelectedCompany({
+              id: row.id,
+              name: (p.name && String(p.name).trim()) || row.name,
+              is_master: p.is_master ?? row.is_master,
+            })
+            return
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      const cur =
+        (preferredId != null ? list.find((c) => c.id === preferredId) : null) || list[0]
+      if (cur) {
+        setSelectedCompany({
+          id: cur.id,
+          name: cur.name,
+          is_master: cur.is_master,
+        })
+      }
+    },
+    [setSelectedCompany],
+  )
 
-  // FSMS ERP: if no company is picked yet, scope API calls (X-Selected-Company-Id) to a default tenant.
-  // Prefer Master demo company when present; otherwise first company (pure tenant deployments).
-  useEffect(() => {
-    if (loading || fetchError) return
-    if (mode !== 'fsms_erp') return
-    if (selectedCompany?.id) return
-    if (companies.length === 0) return
-    const firstMaster = companies.find(isMasterCompanyRecord)
-    const pick = firstMaster ?? companies[0]
-    setSelectedCompany({
-      id: pick.id,
-      name: pick.name,
-      is_master: pick.is_master,
-    })
-  }, [loading, fetchError, mode, selectedCompany?.id, companies, setSelectedCompany])
-
-  const fetchCompanies = async () => {
+  const fetchAdminFleet = async () => {
     setFetchError(null)
     setLoading(true)
     try {
       const response = await api.get('/admin/companies/')
       if (response.data) {
-        // Include all companies
-        const allCompanies: Company[] = response.data.map((c: any) => ({
-          id: c.id,
+        const allCompanies: Company[] = response.data.map((c: Record<string, unknown>) => ({
+          id: c.id as number,
           name: String(c.name ?? c.company_name ?? '').trim() || `Company #${c.id}`,
           is_master:
             c.is_master === true || String(c.is_master || '').toLowerCase() === 'true'
@@ -65,8 +106,10 @@ export default function CompanySwitcher() {
               : 'false',
         }))
         setCompanies(allCompanies)
+        setSwitcherMode('fleet')
+        setReadOnlySwitch(false)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       safeLogError('Error fetching companies:', error)
       setFetchError(messageForAdminListError(error, 'companies'))
     } finally {
@@ -74,37 +117,127 @@ export default function CompanySwitcher() {
     }
   }
 
+  const fetchTenantContext = async () => {
+    setFetchError(null)
+    setLoading(true)
+    const role = readUserRole()
+    try {
+      const { data } = await api.get<CurrentCompanyResponse>('/companies/current/')
+      const cid = data?.id
+      if (cid == null || typeof cid !== 'number') {
+        setFetchError('Could not load company context.')
+        setCompanies([])
+        setSwitcherMode('single')
+        setReadOnlySwitch(true)
+        return
+      }
+      const admin = isTenantAdminRole(role)
+      const multi = Boolean(data.can_switch_group_company) && Array.isArray(data.group_companies)
+      if (admin && multi && data.group_companies!.length > 1) {
+        const list: Company[] = data.group_companies!.map((g) => ({
+          id: g.id,
+          name: String(g.name || '').trim() || `Company #${g.id}`,
+          is_master:
+            g.is_master === true || String(g.is_master || '').toLowerCase() === 'true'
+              ? 'true'
+              : 'false',
+        }))
+        setCompanies(list)
+        setSwitcherMode('group')
+        setReadOnlySwitch(false)
+        syncSelectionToContext(list, cid)
+      } else {
+        const list: Company[] = [
+          {
+            id: cid,
+            name: String(data.name || '').trim() || `Company #${cid}`,
+            is_master:
+              data.is_master === true || String(data.is_master || '').toLowerCase() === 'true'
+                ? 'true'
+                : 'false',
+          },
+        ]
+        setCompanies(list)
+        setSwitcherMode('single')
+        setReadOnlySwitch(true)
+        syncSelectionToContext(list, cid)
+      }
+    } catch (error: unknown) {
+      safeLogError('Error fetching company context:', error)
+      setFetchError(
+        messageForAdminListError(error, 'companies') || 'Could not load company context.',
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    const role = readUserRole()
+    if (isSuperAdminRole(role)) {
+      void fetchAdminFleet()
+    } else {
+      void fetchTenantContext()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load only
+  }, [])
+
+  // FSMS ERP: if no company is picked yet, scope API calls (X-Selected-Company-Id) to a default tenant.
+  useEffect(() => {
+    if (loading || fetchError) return
+    if (mode !== 'fsms_erp') return
+    if (selectedCompany?.id) return
+    if (companies.length === 0) return
+    if (switcherMode === 'fleet') {
+      const firstMaster = companies.find(isMasterCompanyRecord)
+      const pick = firstMaster ?? companies[0]
+      setSelectedCompany({
+        id: pick.id,
+        name: pick.name,
+        is_master: pick.is_master,
+      })
+      return
+    }
+    if (switcherMode === 'group' || switcherMode === 'single') {
+      const pick = companies[0]
+      setSelectedCompany({
+        id: pick.id,
+        name: pick.name,
+        is_master: pick.is_master,
+      })
+    }
+  }, [loading, fetchError, mode, selectedCompany?.id, companies, setSelectedCompany, switcherMode])
+
   const handleSelect = async (company: Company | null) => {
+    if (readOnlySwitch && company !== null) return
     setSelectedCompany(company)
     setIsOpen(false)
-    
-    // Wait a bit to ensure state is saved to localStorage
-    await new Promise(resolve => setTimeout(resolve, 100))
-    
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
     if (mode === 'fsms_erp') {
-      // In FSMS ERP mode, always redirect to dashboard when company is selected
       if (company) {
         router.push('/dashboard')
       }
     } else {
-      // In SaaS Dashboard mode, selecting null means SaaS dashboard
       if (company === null) {
         if (window.location.pathname !== '/admin') {
           router.push('/admin')
         } else {
-          // Already on admin page, just refresh the data by re-rendering
           router.refresh()
         }
       } else {
-        // Company selected in SaaS mode - redirect to dashboard
         router.push('/dashboard')
       }
     }
   }
 
-  const currentLabel = mode === 'fsms_erp'
-    ? (selectedCompany?.name || 'Select Company')
-    : (isSaaSDashboard ? 'SaaS Dashboard' : selectedCompany?.name || 'Select Company')
+  const currentLabel =
+    mode === 'fsms_erp'
+      ? selectedCompany?.name || 'Select Company'
+      : isSaaSDashboard
+        ? 'SaaS Dashboard'
+        : selectedCompany?.name || 'Select Company'
 
   const masterCompanies = companies.filter(isMasterCompanyRecord)
   const regularCompanies = companies.filter((c) => !isMasterCompanyRecord(c))
@@ -126,7 +259,11 @@ export default function CompanySwitcher() {
           <p className="text-xs leading-snug text-amber-200">{fetchError}</p>
           <button
             type="button"
-            onClick={() => fetchCompanies()}
+            onClick={() => {
+              const role = readUserRole()
+              if (isSuperAdminRole(role)) void fetchAdminFleet()
+              else void fetchTenantContext()
+            }}
             className="mt-2 text-xs font-medium text-amber-300 underline hover:text-amber-100"
           >
             Retry
@@ -136,13 +273,17 @@ export default function CompanySwitcher() {
     )
   }
 
+  const openDisabled = readOnlySwitch && companies.length <= 1
+
   return (
     <div className="relative z-30 w-full min-w-0 max-w-full sm:max-w-sm">
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          if (!openDisabled) setIsOpen(!isOpen)
+        }}
         title={currentLabel}
-        className="flex w-full min-w-0 items-start gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-left hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:items-center sm:px-4"
+        className={`flex w-full min-w-0 items-start gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-left hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:items-center sm:px-4 ${openDisabled ? 'cursor-default opacity-95' : ''}`}
       >
         <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -169,48 +310,49 @@ export default function CompanySwitcher() {
             </span>
           )}
         </div>
-        <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform sm:mt-0 ${isOpen ? 'rotate-180' : ''}`} />
+        {!openDisabled && (
+          <ChevronDown
+            className={`mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform sm:mt-0 ${isOpen ? 'rotate-180' : ''}`}
+          />
+        )}
       </button>
-      {mode === 'fsms_erp' && masterCompanies.length === 0 && companies.length > 0 && (
-        <p className="mt-1.5 text-[10px] leading-snug text-gray-500 px-0.5">
+      {switcherMode === 'fleet' && mode === 'fsms_erp' && masterCompanies.length === 0 && companies.length > 0 && (
+        <p className="mt-1.5 px-0.5 text-[10px] leading-snug text-gray-500">
           No Master demo company: the first tenant is auto-selected for API scope (like Master Filling Station). Switch
           here if you use multiple tenants.
         </p>
       )}
+      {switcherMode === 'group' && (
+        <p className="mt-1.5 px-0.5 text-[10px] leading-snug text-gray-500">
+          Same login portal — switch legal entity (company books). Data stays scoped per company.
+        </p>
+      )}
 
-      {isOpen && (
+      {isOpen && !openDisabled && (
         <>
-          <div 
-            className="fixed inset-0 z-[25]" 
-            onClick={() => setIsOpen(false)}
-            aria-hidden
-          />
+          <div className="fixed inset-0 z-[25]" onClick={() => setIsOpen(false)} aria-hidden />
           <div className="absolute left-0 right-0 top-full z-[35] mt-2 max-h-[min(70vh,24rem)] w-full min-w-0 overflow-y-auto rounded-lg border border-gray-700 bg-gray-800 shadow-lg sm:left-auto sm:right-0 sm:w-80 sm:max-w-[min(100vw-2rem,22rem)]">
-            {/* SaaS Dashboard Option - Only show in SaaS Dashboard mode */}
-            {mode === 'saas_dashboard' && (
+            {switcherMode === 'fleet' && mode === 'saas_dashboard' && (
               <>
                 <button
                   type="button"
                   onClick={() => handleSelect(null)}
                   className={`flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-gray-700 ${
-                    isSaaSDashboard ? 'bg-blue-900/50 border-l-4 border-blue-500' : ''
+                    isSaaSDashboard ? 'border-l-4 border-blue-500 bg-blue-900/50' : ''
                   }`}
                 >
                   <Shield className="h-4 w-4 shrink-0 text-blue-400" />
                   <span className="min-w-0 flex-1 font-medium text-white">SaaS Dashboard</span>
-                  {isSaaSDashboard && (
-                    <span className="ml-auto text-xs text-blue-400">Current</span>
-                  )}
+                  {isSaaSDashboard && <span className="ml-auto text-xs text-blue-400">Current</span>}
                 </button>
-                <div className="border-t border-gray-700"></div>
+                <div className="border-t border-gray-700" />
               </>
             )}
 
-            {/* Master company row(s) — every org flagged master appears here so tenants are not hidden */}
-            {masterCompanies.length > 0 && (
+            {switcherMode === 'fleet' && masterCompanies.length > 0 && (
               <>
-                <div className="px-4 py-2 bg-yellow-900/30 border-b border-yellow-700/50">
-                  <span className="text-xs font-semibold text-yellow-300 uppercase tracking-wide">
+                <div className="border-b border-yellow-700/50 bg-yellow-900/30 px-4 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-yellow-300">
                     Master {masterCompanies.length > 1 ? `(${masterCompanies.length})` : 'Company'}
                   </span>
                 </div>
@@ -221,7 +363,7 @@ export default function CompanySwitcher() {
                     onClick={() => handleSelect(mc)}
                     title={mc.name}
                     className={`flex w-full flex-col gap-2 px-4 py-3 text-left hover:bg-gray-700 sm:flex-row sm:items-center sm:gap-3 ${
-                      selectedCompany?.id === mc.id ? 'bg-blue-900/50 border-l-4 border-blue-500' : ''
+                      selectedCompany?.id === mc.id ? 'border-l-4 border-blue-500 bg-blue-900/50' : ''
                     }`}
                   >
                     <div className="flex min-w-0 flex-1 items-start gap-2">
@@ -238,55 +380,82 @@ export default function CompanySwitcher() {
                     </div>
                   </button>
                 ))}
-                <div className="border-t border-gray-700"></div>
+                <div className="border-t border-gray-700" />
               </>
             )}
 
-            {/* Regular Companies */}
-            <div className="px-4 py-2 bg-gray-700/50 border-b border-gray-700">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-                Companies ({regularCompanies.length})
-              </span>
-            </div>
-            {regularCompanies.map((company) => (
-              <button
-                type="button"
-                key={company.id}
-                onClick={() => handleSelect(company)}
-                title={company.name}
-                className={`flex w-full flex-col gap-2 px-4 py-3 text-left hover:bg-gray-700 sm:flex-row sm:items-center sm:gap-3 ${
-                  selectedCompany?.id === company.id ? 'bg-blue-900/50 border-l-4 border-blue-500' : ''
-                }`}
-              >
-                <div className="flex min-w-0 flex-1 items-start gap-2">
-                  <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                  <span className="min-w-0 flex-1 break-words font-medium leading-snug text-white">
-                    {company.name}
+            {switcherMode === 'fleet' && (
+              <>
+                <div className="border-b border-gray-700 bg-gray-700/50 px-4 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Companies ({regularCompanies.length})
                   </span>
                 </div>
-                {selectedCompany?.id === company.id && (
-                  <span className="shrink-0 pl-6 text-xs text-blue-400 sm:ml-auto sm:pl-0">Current</span>
-                )}
-              </button>
-            ))}
+                {regularCompanies.map((company) => (
+                  <button
+                    type="button"
+                    key={company.id}
+                    onClick={() => handleSelect(company)}
+                    title={company.name}
+                    className={`flex w-full flex-col gap-2 px-4 py-3 text-left hover:bg-gray-700 sm:flex-row sm:items-center sm:gap-3 ${
+                      selectedCompany?.id === company.id ? 'border-l-4 border-blue-500 bg-blue-900/50' : ''
+                    }`}
+                  >
+                    <div className="flex min-w-0 flex-1 items-start gap-2">
+                      <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                      <span className="min-w-0 flex-1 break-words font-medium leading-snug text-white">
+                        {company.name}
+                      </span>
+                    </div>
+                    {selectedCompany?.id === company.id && (
+                      <span className="shrink-0 pl-6 text-xs text-blue-400 sm:ml-auto sm:pl-0">Current</span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
 
-            {regularCompanies.length === 0 && masterCompanies.length === 0 && (
+            {switcherMode === 'group' && (
+              <>
+                <div className="border-b border-gray-700 bg-gray-700/50 px-4 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Legal entities ({companies.length})
+                  </span>
+                </div>
+                {companies.map((company) => (
+                  <button
+                    type="button"
+                    key={company.id}
+                    onClick={() => handleSelect(company)}
+                    title={company.name}
+                    className={`flex w-full flex-col gap-2 px-4 py-3 text-left hover:bg-gray-700 sm:flex-row sm:items-center sm:gap-3 ${
+                      selectedCompany?.id === company.id ? 'border-l-4 border-blue-500 bg-blue-900/50' : ''
+                    }`}
+                  >
+                    <div className="flex min-w-0 flex-1 items-start gap-2">
+                      {isMasterCompanyRecord(company) ? (
+                        <Crown className="mt-0.5 h-4 w-4 shrink-0 text-yellow-400" />
+                      ) : (
+                        <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                      )}
+                      <span className="min-w-0 flex-1 break-words font-medium leading-snug text-white">
+                        {company.name}
+                      </span>
+                    </div>
+                    {selectedCompany?.id === company.id && (
+                      <span className="shrink-0 pl-6 text-xs text-blue-400 sm:ml-auto sm:pl-0">Current</span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
+
+            {switcherMode === 'fleet' && regularCompanies.length === 0 && masterCompanies.length === 0 && (
               <div className="space-y-2 px-4 py-3 text-center text-xs leading-snug text-gray-400">
                 <p>No companies found.</p>
-                <p className="text-gray-500">
-                  From the <span className="text-gray-400">backend</span> folder run{' '}
-                  <code className="rounded bg-gray-900 px-1 py-0.5 text-[11px] text-gray-300">
-                    python manage.py seed_master_chart_of_accounts
-                  </code>{' '}
-                  to create <span className="text-gray-300">Master Filling Station</span>, or{' '}
-                  <code className="rounded bg-gray-900 px-1 py-0.5 text-[11px] text-gray-300">
-                    python manage.py promote_default_to_master
-                  </code>{' '}
-                  if you still have an old &quot;Default Company&quot; row.
-                </p>
               </div>
             )}
-            {regularCompanies.length === 0 && masterCompanies.length > 0 && (
+            {switcherMode === 'fleet' && regularCompanies.length === 0 && masterCompanies.length > 0 && (
               <div className="px-4 py-2 text-center text-xs text-gray-500">No other tenants</div>
             )}
           </div>
@@ -295,5 +464,3 @@ export default function CompanySwitcher() {
     </div>
   )
 }
-
-

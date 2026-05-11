@@ -481,7 +481,7 @@ export default function AquacultureReportPage() {
             Same engine as <strong className="text-slate-800">Reports → Income statement</strong>. Amounts are{' '}
             <strong className="text-slate-800">posted</strong> journal activity only. When you pick a site, only lines
             tagged with that station are included; leave the site empty to sum every station-tagged line in range
-            (company-wide site dimension, not pond economics).
+            (company-wide site dimension, not per-pond aquaculture P&amp;L).
           </>
         )}
       </p>
@@ -547,11 +547,15 @@ export default function AquacultureReportPage() {
             </button>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Pond internal economics stay under the <strong>Ponds</strong> tab. Use{' '}
-            <Link href="/aquaculture/pond-economics" className="text-teal-800 underline">
-              Pond economics
+            Per-pond costs and harvest sales tie to each pond under <strong>Ponds</strong>. Record pond costs on{' '}
+            <Link href="/aquaculture/expenses" className="text-teal-800 underline">
+              Pond costs
             </Link>{' '}
-            to record pond costs and sales.
+            and harvest revenue on{' '}
+            <Link href="/aquaculture/sales" className="text-teal-800 underline">
+              Pond &amp; fish sales
+            </Link>
+            .
           </p>
 
           {fuelData && (

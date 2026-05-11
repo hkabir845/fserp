@@ -4,14 +4,11 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import {
   ArrowRight,
-  BarChart3,
   CalendarRange,
   Fish,
   Gauge,
-  Layers,
   MapPin,
   Package,
-  Receipt,
   RefreshCw,
   Scale,
   ShoppingBag,
@@ -19,7 +16,6 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
-  ArrowRightLeft,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -104,12 +100,21 @@ function parseNum(s: string | null | undefined): number {
   return Number.isFinite(n) ? n : 0
 }
 
+/** Estimated total biomass (kg) on a sample row; matches pond detail / FCR biomass logic. */
+function sampleTotalBiomassKg(s: SampleRow): number | null {
+  if (s.estimated_total_weight_kg == null || s.estimated_total_weight_kg === '') return null
+  const n = Number(String(s.estimated_total_weight_kg).replace(/,/g, ''))
+  return Number.isFinite(n) ? n : null
+}
+
 interface PondFull {
   id: number
   name: string
   code?: string
   is_active?: boolean
-  pond_size_decimal?: string | null
+  leasing_area_decimal?: string | null
+  water_area_decimal?: string | null
+  pond_depth_ft?: string | null
 }
 
 interface CycleRow {
@@ -222,16 +227,6 @@ const PIE_COLORS = [
 
 const PURCHASE_LIKE = new Set(['feed_purchase', 'medicine_purchase', 'fry_stocking', 'equipment'])
 
-const moduleLinks = [
-  { href: '/aquaculture/ponds', label: 'Ponds', icon: MapPin },
-  { href: '/aquaculture/cycles', label: 'Cycles', icon: Layers },
-  { href: '/aquaculture/transfers', label: 'Fish transfers', icon: ArrowRightLeft },
-  { href: '/aquaculture/stock', label: 'Stock & mortality', icon: Fish },
-  { href: '/aquaculture/pond-economics', label: 'Pond economics', icon: Receipt },
-  { href: '/aquaculture/sampling', label: 'Sampling', icon: Gauge },
-  { href: '/aquaculture/report', label: 'P&L: site & ponds', icon: BarChart3 },
-] as const
-
 export default function AquacultureOverviewPage() {
   const toast = useToast()
   const [preset, setPreset] = useState<PeriodPreset>('this_month')
@@ -330,6 +325,35 @@ export default function AquacultureOverviewPage() {
   const fcrHarvest = harvestKg > 0 ? feedKgRecorded / harvestKg : null
   const fcrAllSalesWeight = totalSaleKg > 0 ? feedKgRecorded / totalSaleKg : null
 
+  /** Per-pond first→last sample biomass Δ in period, summed (same date window as pond P&L). */
+  const portfolioBiomassGainKg = useMemo(() => {
+    const byPond = new Map<number, SampleRow[]>()
+    for (const s of samplesInPeriod) {
+      const list = byPond.get(s.pond_id) ?? []
+      list.push(s)
+      byPond.set(s.pond_id, list)
+    }
+    let sum = 0
+    let anyPondWithPair = false
+    for (const rows of byPond.values()) {
+      const usable = rows
+        .map((row) => ({ total: sampleTotalBiomassKg(row), day: row.sample_date.split('T')[0] }))
+        .filter((x) => x.total != null)
+        .sort((a, b) => a.day.localeCompare(b.day))
+      if (usable.length < 2) continue
+      anyPondWithPair = true
+      const first = usable[0].total!
+      const last = usable[usable.length - 1].total!
+      sum += last - first
+    }
+    return anyPondWithPair ? sum : null
+  }, [samplesInPeriod])
+
+  const fcrBiomass =
+    portfolioBiomassGainKg != null && portfolioBiomassGainKg > 0 && feedKgRecorded > 0
+      ? feedKgRecorded / portfolioBiomassGainKg
+      : null
+
   const purchaseLikeTotal = useMemo(
     () => expensesInPeriod.filter((e) => PURCHASE_LIKE.has(e.expense_category)).reduce((a, e) => a + parseNum(e.amount), 0),
     [expensesInPeriod],
@@ -415,6 +439,12 @@ export default function AquacultureOverviewPage() {
             the selected period. Packaged goods (feed sacks, medicine SKUs) follow Bills, Inventory, and Cashier; fish kg
             and head in water follow Aquaculture sales, stock, and sampling—this dashboard rolls up module data and pond
             P&amp;L allocation.
+          </p>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+            When fish farming is a different business than fuel retail (for example Premium Agro vs the filling station)
+            but the same owner, create a separate company for each under one organization, switch books from the header
+            company menu, and turn on aquaculture only on the farming company. A station named Premium Agro is only a
+            site inside the company you are viewing—not a second set of books by itself.
           </p>
         </div>
         <div className="flex flex-col items-stretch gap-3 sm:items-end">
@@ -529,7 +559,7 @@ export default function AquacultureOverviewPage() {
         />
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <KpiCard
           title="Harvest weight (est.)"
           value={`${formatNumber(harvestKg, 2)} kg`}
@@ -545,6 +575,21 @@ export default function AquacultureOverviewPage() {
           accent="neutral"
         />
         <KpiCard
+          title="FCR (feed ÷ biomass gain)"
+          value={fcrBiomass != null ? formatNumber(fcrBiomass, 2) : '—'}
+          sub={
+            fcrBiomass == null
+              ? portfolioBiomassGainKg == null
+                ? 'Need 2+ biomass samples (total kg) per pond in period'
+                : portfolioBiomassGainKg <= 0
+                  ? 'Biomass gain not positive (pond totals in range)'
+                  : 'No feed kg on expenses'
+              : `Σ pond Δ kg: ${formatNumber(portfolioBiomassGainKg!, 2)} (first→last sample)`
+          }
+          icon={Scale}
+          accent="neutral"
+        />
+        <KpiCard
           title="FCR (feed ÷ harvest kg)"
           value={fcrHarvest != null ? formatNumber(fcrHarvest, 2) : '—'}
           sub={
@@ -554,7 +599,7 @@ export default function AquacultureOverviewPage() {
                 : 'No feed kg on expenses'
               : 'Lower is better; uses harvest-line weight only'
           }
-          icon={Scale}
+          icon={Gauge}
           accent="neutral"
         />
         <KpiCard
@@ -684,7 +729,7 @@ export default function AquacultureOverviewPage() {
       {/* Tables */}
       <div className="mt-10 grid gap-6 lg:grid-cols-3">
         <MiniTable
-          title="Recent pond sales"
+          title="Recent pond & fish sales"
           href="/aquaculture/sales"
           rows={recentSales.map((s) => ({
             primary: s.pond_name,
@@ -795,13 +840,25 @@ export default function AquacultureOverviewPage() {
               <Fish className="h-4 w-4 text-teal-700" />
               <h2 className="text-sm font-semibold text-slate-900">Fish on hand (transfers − sales ± ledger)</h2>
             </div>
-            <Link
-              href="/aquaculture/stock"
-              className="inline-flex items-center gap-1 text-xs font-medium text-teal-800 hover:text-teal-950"
-            >
-              Mortality &amp; adjustments
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/aquaculture/stock?fish_species=tilapia"
+                className="inline-flex items-center gap-1 text-xs font-medium text-teal-800 hover:text-teal-950"
+              >
+                Tilapia stock &amp; ledger
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+              <span className="text-slate-300" aria-hidden>
+                |
+              </span>
+              <Link
+                href="/aquaculture/stock"
+                className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900"
+              >
+                All species
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] text-left text-sm">
@@ -845,29 +902,6 @@ export default function AquacultureOverviewPage() {
         </div>
       ) : null}
 
-      {/* Quick modules */}
-      <div className="mt-10">
-        <h2 className="text-sm font-semibold text-slate-900">Module shortcuts</h2>
-        <ul className="mt-3 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-3" aria-label="Aquaculture modules">
-          {moduleLinks.map((t) => {
-            const Icon = t.icon
-            return (
-              <li key={t.href}>
-                <Link
-                  href={t.href}
-                  className="flex items-center gap-3 rounded-xl border border-slate-200/90 bg-white px-4 py-3 text-sm shadow-sm outline-none ring-teal-600/15 transition hover:border-teal-200 hover:shadow-md focus-visible:ring-2"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
-                    <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-                  </div>
-                  <span className="font-medium text-slate-900">{t.label}</span>
-                  <ArrowRight className="ml-auto h-4 w-4 text-slate-400" />
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-      </div>
     </div>
   )
 }

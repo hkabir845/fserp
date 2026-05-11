@@ -90,6 +90,9 @@ def test_push_updates_selected_tenant_only(
 ):
     from api.models import Company
 
+    from api.models import Organization
+
+    oorg = Organization.objects.create(name="Other Tenant")
     other = Company.objects.create(
         name="Other Tenant",
         currency="BDT",
@@ -97,6 +100,7 @@ def test_push_updates_selected_tenant_only(
         is_deleted=False,
         is_active=True,
         platform_release="",
+        organization=oorg,
     )
     company_tenant.platform_release = ""
     company_tenant.save(update_fields=["platform_release"])
@@ -127,12 +131,16 @@ def test_push_updates_selected_tenant_only(
 def test_push_data_sync_requires_master_company(api_client, auth_super_headers):
     from api.models import Company
 
+    from api.models import Organization
+
+    lorg = Organization.objects.create(name="Lonely Tenant")
     Company.objects.create(
         name="Lonely Tenant",
         currency="BDT",
         is_master="false",
         is_deleted=False,
         is_active=True,
+        organization=lorg,
     )
     body = {
         "scope": "all_tenants",

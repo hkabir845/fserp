@@ -60,6 +60,46 @@ def _set_home_station_from_request(user: User, data: dict, company_id: int | Non
     return None
 
 
+def _ensure_pos_staff_home_station(user: User, company_id: int | None) -> "JsonResponse|None":
+    """
+    Cashier/operator must be bound to a location (home station) when the tenant has multiple
+    active sites; if there is exactly one site, assign it when unset.
+    """
+    rk = normalize_role_key(user.role)
+    if rk not in ("cashier", "operator"):
+        return None
+    if company_id is None:
+        return None
+    qs = Station.objects.filter(company_id=company_id, is_active=True).only("id").order_by("id")
+    n = qs.count()
+    if n == 0:
+        return JsonResponse(
+            {
+                "detail": (
+                    "Add at least one active site (location) for this company before assigning "
+                    "cashier or operator users."
+                )
+            },
+            status=400,
+        )
+    if n == 1:
+        only_id = int(qs.first().id)
+        if not user.home_station_id:
+            user.home_station_id = only_id
+        return None
+    if not user.home_station_id:
+        return JsonResponse(
+            {
+                "detail": (
+                    "Location is required for cashier and operator when the company has more than one active site. "
+                    "Set home_station_id to the station where this user works (POS / register scope)."
+                )
+            },
+            status=400,
+        )
+    return None
+
+
 def _set_custom_role_from_request(user: User, data: dict, api_user, company_id: int | None) -> "JsonResponse|None":
     if "custom_role_id" not in data:
         return None
@@ -237,6 +277,9 @@ def users_list_or_create(request):
         herr = _set_home_station_from_request(user, data, company_id)
         if herr is not None:
             return herr
+        loc_err = _ensure_pos_staff_home_station(user, company_id)
+        if loc_err is not None:
+            return loc_err
         user.set_password(password)
         user.save()
         return JsonResponse(
@@ -359,6 +402,10 @@ def user_detail(request, user_id):
             her = _set_home_station_from_request(user, data, user.company_id)
             if her is not None:
                 return her
+        if {"role", "home_station_id", "company_id"} & data.keys():
+            loc_err = _ensure_pos_staff_home_station(user, user.company_id)
+            if loc_err is not None:
+                return loc_err
         if data.get("password"):
             user.set_password(data["password"])
         final_username = (user.username or "").strip()

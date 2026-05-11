@@ -7,8 +7,9 @@ INTER_POND_FISH_TRANSFER_PL_NOTE = (
     "Inter-pond fish transfers: each line can carry cost_amount (same currency as expenses). "
     "Pond P&L treats this as moving biological cost — operating expenses increase on receiving ponds and "
     "decrease on the source pond by the same totals, so company-wide direct costs are unchanged. "
-    "Enter weight_kg (and optional fish_count / pcs_per_kg) for production tracking; allocate cost_amount "
-    "from the nursing pond’s fry and nursing-period costs (for example proportional to kg or your auditor’s rule)."
+    "Each line requires weight_kg and fish_count (heads), both greater than zero, for production tracking; "
+    "pcs_per_kg is optional. Allocate cost_amount from the nursing pond’s fry and nursing-period costs "
+    "(for example proportional to kg or your auditor’s rule)."
 )
 
 # Pond role (management / UX; not GL).
@@ -38,7 +39,13 @@ AQUACULTURE_EXPENSE_CATEGORY_CHOICES: tuple[tuple[str, str], ...] = (
     ("pond_preparation", "Pond preparation"),
     ("fry_stocking", "Fry stocking"),
     ("feed_purchase", "Feed purchase"),
+    ("feed_consumed", "Feed consumed (pond warehouse)"),
+    ("medicine_consumed", "Medicine consumed (pond warehouse)"),
     ("medicine_purchase", "Medicine purchase"),
+    (
+        "vendor_bill_pond",
+        "Vendor bill (pond-tagged line)",
+    ),
     ("electricity", "Electricity"),
     ("equipment", "Equipment (aerators, nets, etc.)"),
     ("fisherman", "Fisherman bills"),
@@ -50,18 +57,81 @@ EXPENSE_CATEGORY_CODES: frozenset[str] = frozenset(c for c, _ in AQUACULTURE_EXP
 
 EXPENSE_CATEGORY_LABELS: dict[str, str] = {c: label for c, label in AQUACULTURE_EXPENSE_CATEGORY_CHOICES}
 
+# POST/PUT /aquaculture/expenses/: categories operators may add or switch to. Excludes automatic / duplicate paths.
+_MANUAL_AQUACULTURE_EXPENSE_EXCLUDED: frozenset[str] = frozenset(
+    {
+        "vendor_bill_pond",  # roll-up from posted AP (normalize_expense_category also rejects)
+        "fry_stocking",  # vendor bill: fish-type line + pond + kg + head count
+        "feed_purchase",  # Bills, POS on account, or shop-stock-issue — not plain "Add expense"
+        "medicine_purchase",  # same as feed_purchase
+        "feed_consumed",  # pond warehouse / feeding advice
+        "medicine_consumed",  # pond warehouse consumption
+    }
+)
+MANUAL_AQUACULTURE_EXPENSE_CATEGORY_CODES: frozenset[str] = frozenset(
+    c for c, _ in AQUACULTURE_EXPENSE_CATEGORY_CHOICES if c not in _MANUAL_AQUACULTURE_EXPENSE_EXCLUDED
+)
+
+
+def manual_aquaculture_expense_category_change_allowed(
+    *, old_category: str | None, new_category: str
+) -> tuple[bool, str | None]:
+    """Allow category change when it stays manual, or when the code is unchanged (editing legacy rows)."""
+    if new_category in MANUAL_AQUACULTURE_EXPENSE_CATEGORY_CODES:
+        return True, None
+    if old_category == new_category:
+        return True, None
+    detail_by_cat: dict[str, str] = {
+        "fry_stocking": (
+            "Fry and fingerling purchases belong on a vendor bill: use a fish-type line with pond, kg, and head count."
+        ),
+        "feed_purchase": (
+            "Feed purchases belong on vendor bills, Cashier (POS) on account to the pond customer, or the internal "
+            "shop-stock-issue flow—not as a typed amount on Add expense."
+        ),
+        "medicine_purchase": (
+            "Medicine purchases belong on vendor bills, POS on account, or internal shop stock issue—not as Add expense."
+        ),
+        "feed_consumed": (
+            "Feed consumption is recorded from the pond warehouse or when feeding advice is applied, not as a manual pond cost."
+        ),
+        "medicine_consumed": (
+            "Medicine consumption is recorded from the pond warehouse flow, not as a manual pond cost."
+        ),
+        "vendor_bill_pond": "This amount is derived from posted vendor bills with pond-tagged lines.",
+    }
+    return False, detail_by_cat.get(
+        new_category,
+        "This category cannot be selected for manual pond costs.",
+    )
+
 # Optional longer copy for UIs (expense-categories API includes hint when present).
 EXPENSE_CATEGORY_EXTRA_HELP: dict[str, str] = {
+    "lease": (
+        "Record cash paid to the landlord on the Landlords screen with a bank/cash register and pond: the system posts "
+        "Dr 6711 Aquaculture Expense — Lease & Pond Rights (pond + lease bucket) and Cr the register's G/L. "
+        "Manual aquaculture expenses in category lease also roll into the same pond lease bucket."
+    ),
     "feed_purchase": (
-        "Recommended: sell inventoried feed from Cashier (POS) to the pond’s linked customer on account—quantities, "
-        "inventory, revenue, and AR follow your normal POS posting. Link each pond to a customer under Ponds. Use "
-        "“Add expense” here for cash/off-site feed (no POS draw) or allocations; add sacks/kg when helpful. Optional "
-        "“internal stock issue” on the expenses page is only for at-cost transfers without a POS sale—never use both "
-        "for the same goods."
+        "Not offered on Add expense: use vendor Bills (pond-tagged lines), Cashier (POS) on account to the pond’s "
+        "customer, or Advanced → internal stock issue on this page. Sacks/kg can be set on the stock-issue path."
+    ),
+    "feed_consumed": (
+        "Posted automatically when approved feeding advice is applied and stock is drawn from the pond warehouse "
+        "(after transferring feed from a shop station such as Premium Agro). COGS and inventory follow average cost."
+    ),
+    "medicine_consumed": (
+        "Posted when medicine is recorded as used from the pond warehouse (after transferring from a shop station). "
+        "Same accounting as feed consumed: Dr COGS / Cr inventory at average cost; tagged to the medicine cost bucket."
     ),
     "medicine_purchase": (
-        "Same pattern as feed: prefer POS sale on account to the pond’s customer for stocked medicine so quantity and "
-        "GL stay correct. Use this expense line for cash purchases or vendor bills not rung through POS."
+        "Not offered on Add expense: use Bills, POS on account to the pond customer, or internal shop stock issue—"
+        "same pattern as feed."
+    ),
+    "vendor_bill_pond": (
+        "Automatic: expense debits from posted vendor bills where a line sets aquaculture_pond (and optional cycle / "
+        "bucket). Inventory debits on the same bill are not counted in pond operating P&L until consumed. "
+        "Avoid re-entering the same purchase as a manual pond expense."
     ),
     "equipment": (
         "For inventoried equipment or supplies sold from your shop to a pond, prefer POS on account to the pond’s "
@@ -112,6 +182,7 @@ AQUACULTURE_FISH_SPECIES_CHOICES: tuple[tuple[str, str], ...] = (
     ("grass_carp", "Grass carp"),
     ("puti", "Puti"),
     ("kalibaush", "Kalibaush"),
+    ("pangas", "Pangas"),
     ("other", "Other"),
 )
 
@@ -155,6 +226,8 @@ _FISH_SPECIES_ALIASES: dict[str, str] = {
     "ruhi": "rui",
     "rohu": "rui",
     "general_carp": "common_carp",
+    "pangasius": "pangas",
+    "pangas_catfish": "pangas",
 }
 
 
@@ -169,6 +242,11 @@ def normalize_expense_category(raw: str | None) -> tuple[str | None, str | None]
         return None, "expense_category must be at most 64 characters"
     if s not in EXPENSE_CATEGORY_CODES:
         return None, f"Unknown expense_category: {raw!r}. Use a known category code."
+    if s == "vendor_bill_pond":
+        return (
+            None,
+            "vendor_bill_pond is derived from posted vendor bills with pond-tagged lines; it cannot be entered manually.",
+        )
     return s, None
 
 

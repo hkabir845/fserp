@@ -8,6 +8,7 @@ Usage:
 """
 from django.core.management.base import BaseCommand
 from api.models import Company
+from api.services.organization_service import ensure_company_organization_shell
 from api.chart_templates.fuel_station import seed_fuel_station_chart
 
 
@@ -28,21 +29,13 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        master, created = Company.objects.get_or_create(
+        master, created = ensure_company_organization_shell(
             name="Master Filling Station",
-            is_deleted=False,
-            defaults={
-                "legal_name": "Master Filling Station (Development)",
-                "currency": "BDT",
-                "is_active": True,
-                "is_master": "true",
-            },
+            legal_name="Master Filling Station (Development)",
         )
         if created:
             self.stdout.write(self.style.SUCCESS("Created company: Master Filling Station"))
         else:
-            master.is_master = "true"
-            master.save(update_fields=["is_master"])
             self.stdout.write("Using company: Master Filling Station (id={})".format(master.id))
 
         profile = options["profile"]

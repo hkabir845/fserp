@@ -16,7 +16,7 @@ from django.core.management import call_command
 from django.db.models import Q
 
 from api.chart_templates.fuel_station import seed_fuel_station_if_empty
-from api.models import Company, Item
+from api.models import Company, Item, Organization
 from api.services.company_code import MASTER_COMPANY_CODE, resolved_company_code
 from api.services.tenant_release import get_target_release
 
@@ -131,6 +131,10 @@ def get_or_create_master_template_company() -> tuple[Company, bool]:
         return legacy, False
 
     target = get_target_release()[:64]
+    org = Organization.objects.create(
+        name=MASTER_TEMPLATE_NAME,
+        legal_name=MASTER_TEMPLATE_LEGAL_NAME,
+    )
     c = Company.objects.create(
         name=MASTER_TEMPLATE_NAME,
         legal_name=MASTER_TEMPLATE_LEGAL_NAME,
@@ -139,6 +143,7 @@ def get_or_create_master_template_company() -> tuple[Company, bool]:
         is_master="true",
         is_deleted=False,
         platform_release=target,
+        organization=org,
     )
     return c, True
 

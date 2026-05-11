@@ -1,8 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
-import { Package, Plus, RefreshCw, Store, Trash2 } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { BookOpen, Package, Plus, RefreshCw, Store, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -17,6 +18,8 @@ interface Cat {
   id: string
   label: string
   hint?: string | null
+  /** When false, hidden from Add expense (use Bills / POS / automated flows instead). */
+  manual_create_allowed?: boolean
 }
 interface PondShare {
   pond_id: number
@@ -104,6 +107,7 @@ type CostMode = 'direct' | 'shared_equal' | 'shared_manual'
 
 export default function AquacultureExpensesPage() {
   const toast = useToast()
+  const searchParams = useSearchParams()
   const [ponds, setPonds] = useState<Pond[]>([])
   const [cats, setCats] = useState<Cat[]>([])
   const [rows, setRows] = useState<ExpenseRow[]>([])
@@ -147,6 +151,29 @@ export default function AquacultureExpensesPage() {
     manual_shares: [] as { pond_id: string; amount: string }[],
   })
 
+  const apiSendsManualFlag = cats.some((c) => c.manual_create_allowed !== undefined)
+  const manualCreateCats = useMemo(() => {
+    if (!cats.length) return []
+    if (!apiSendsManualFlag) return cats
+    return cats.filter((c) => c.manual_create_allowed)
+  }, [cats, apiSendsManualFlag])
+
+  const shopStockIssueCategories = useMemo(() => {
+    const feed = cats.find((c) => c.id === 'feed_purchase')
+    const med = cats.find((c) => c.id === 'medicine_purchase')
+    const pair = [feed, med].filter(Boolean) as Cat[]
+    return pair.length ? pair : manualCreateCats
+  }, [cats, manualCreateCats])
+
+  const categoryChoicesForModal = useMemo(() => {
+    if (!editing) return manualCreateCats.length ? manualCreateCats : cats
+    const cur = editing.expense_category
+    if (manualCreateCats.some((c) => c.id === cur)) return manualCreateCats.length ? manualCreateCats : cats
+    const legacy = cats.find((c) => c.id === cur)
+    if (legacy) return [...manualCreateCats, legacy]
+    return manualCreateCats.length ? manualCreateCats : cats
+  }, [cats, editing, manualCreateCats])
+
   const loadMeta = useCallback(async () => {
     try {
       const [co, pRes, cRes, stRes, vRes] = await Promise.all([
@@ -185,6 +212,13 @@ export default function AquacultureExpensesPage() {
   }, [loadMeta])
 
   useEffect(() => {
+    const raw = searchParams.get('pond_id')
+    if (raw != null && /^\d+$/.test(raw.trim())) {
+      setFilterPond(raw.trim())
+    }
+  }, [searchParams])
+
+  useEffect(() => {
     void loadRows()
   }, [loadRows])
 
@@ -206,12 +240,11 @@ export default function AquacultureExpensesPage() {
     if (!shopIssueOpen) return
     setShopDate((d) => d || new Date().toISOString().slice(0, 10))
     setShopCategory((c) => {
-      if (c) return c
-      if (!cats.length) return ''
-      const feed = cats.find((x) => x.id === 'feed_purchase')
-      return feed?.id ?? cats[0].id
+      if (c && shopStockIssueCategories.some((x) => x.id === c)) return c
+      const feed = shopStockIssueCategories.find((x) => x.id === 'feed_purchase')
+      return feed?.id ?? shopStockIssueCategories[0]?.id ?? ''
     })
-  }, [shopIssueOpen, cats])
+  }, [shopIssueOpen, shopStockIssueCategories])
 
   useEffect(() => {
     if (!shopIssueOpen || shopCatalog.length > 0 || shopCatalogLoading) return
@@ -285,7 +318,7 @@ export default function AquacultureExpensesPage() {
       cost_mode: 'direct',
       pond_id: defaultPond,
       production_cycle_id: '',
-      expense_category: cats[0]?.id || '',
+      expense_category: (manualCreateCats[0] ?? cats[0])?.id || '',
       expense_date: today,
       amount: '',
       vendor_name: '',
@@ -554,9 +587,20 @@ export default function AquacultureExpensesPage() {
       </datalist>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 id="aq-expenses-title" className="text-xl font-bold tracking-tight text-slate-900">
-            Operating expenses
+          <p className="text-xs font-medium text-teal-800">
+            <Link href="/aquaculture" className="hover:underline">
+              Aquaculture
+            </Link>
+            <span className="text-slate-400" aria-hidden>
+              {' '}
+              /{' '}
+            </span>
+            <span className="text-slate-700">Pond costs</span>
+          </p>
+          <h1 id="aq-expenses-title" className="mt-1 text-xl font-bold tracking-tight text-slate-900">
+            Pond costs
           </h1>
+          <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-slate-500">Operating expenses</p>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
             <span className="font-medium text-slate-800">Shop inventory (feed sacks, medicine SKUs):</span> ring them
             out on <Link href="/cashier" className="font-medium text-teal-800 underline">Cashier (POS)</Link> on account
@@ -567,15 +611,19 @@ export default function AquacultureExpensesPage() {
             )—that keeps perpetual SKU quantity and GL aligned with{' '}
             <Link href="/inventory" className="font-medium text-teal-800 underline">Inventory</Link>. Fish kg and head
             in the pond are tracked under{' '}
-            <Link href="/aquaculture/stock" className="font-medium text-teal-800 underline">Fish stock</Link> and{' '}
-            <Link href="/aquaculture/sales" className="font-medium text-teal-800 underline">Pond sales</Link>, not here.{' '}
+            <Link href="/aquaculture/stock" className="font-medium text-teal-800 underline">Pond stock</Link> and{' '}
+            <Link href="/aquaculture/sales" className="font-medium text-teal-800 underline">Pond &amp; fish sales</Link>, not here.{' '}
             <span className="font-medium text-slate-800">This screen</span> is for operating costs paid in cash, shared
-            splits, vendor bills not through POS, and management categories (lease, power, labour, etc.).{' '}
+            splits, and management categories (lease, power, labour, soil cut, pond prep, transport, etc.).{' '}
+            <span className="font-medium text-slate-800">Feed and medicine inventory</span> are not added with{' '}
+            <span className="font-medium text-slate-800">Add expense</span>—use Bills, POS on account, or{' '}
+            <span className="font-medium text-slate-800">Advanced: internal stock issue</span> below (sacks/kg there for
+            feed).{' '}
             <span className="font-medium text-slate-800">Direct cost:</span> one pond (optional production cycle).{' '}
             <span className="font-medium text-slate-800">Shared cost:</span> leave pond unset and split across at least
             two ponds; shared lines cannot use a production cycle.{' '}
             <span className="font-medium text-slate-800">Miscellaneous</span> covers boats, repairs, casual labour, site
-            meals, and anything else—use Memo. For feed lines, add sacks/kg when the category is Feed purchase.
+            meals, and anything else—use Memo.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -611,6 +659,37 @@ export default function AquacultureExpensesPage() {
             <Plus className="h-4 w-4" />
             Add expense
           </button>
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-xl border border-indigo-200/90 bg-indigo-50/80 px-4 py-3 text-sm text-indigo-950 shadow-sm">
+        <div className="flex gap-2">
+          <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-indigo-700" aria-hidden />
+          <div>
+            <p className="font-semibold text-indigo-950">How this relates to accounting</p>
+            <p className="mt-1 leading-relaxed text-indigo-950/95">
+              <strong className="text-indigo-950">Add expense</strong> rows here are for{' '}
+              <strong className="text-indigo-950">pond management P&amp;L</strong> (category, pond, memo).               The category
+              list is limited to pond operating costs (not fry, feed/medicine purchases, consumption, or bill roll-ups).
+              This form does not pick chart-of-account
+              lines and does <strong className="text-indigo-950">not</strong> create{' '}
+              <strong className="text-indigo-950">Payments</strong> entries. For the general ledger—vendor AP, bank
+              outflows, COGS from stock—use{' '}
+              <Link href="/bills" className="font-medium text-indigo-900 underline decoration-indigo-400/60 underline-offset-2">
+                Bills
+              </Link>
+              {' '}(with pond tags on lines when needed),{' '}
+              <Link href="/payments" className="font-medium text-indigo-900 underline decoration-indigo-400/60 underline-offset-2">
+                Payments
+              </Link>
+              , <Link href="/cashier" className="font-medium text-indigo-900 underline decoration-indigo-400/60 underline-offset-2">Cashier</Link>,{' '}
+              <strong className="text-indigo-950">internal shop issue</strong> below, or{' '}
+              <Link href="/journal-entries" className="font-medium text-indigo-900 underline decoration-indigo-400/60 underline-offset-2">
+                Journal entries
+              </Link>
+              . Do not duplicate the same purchase as both a posted bill line and a manual line here.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -731,7 +810,7 @@ export default function AquacultureExpensesPage() {
                   setShopFeedWeightKg('')
                 }}
               >
-                {cats.map((c) => (
+                {shopStockIssueCategories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.label}
                   </option>
@@ -1104,7 +1183,7 @@ export default function AquacultureExpensesPage() {
                     }))
                   }}
                 >
-                  {cats.map((c) => (
+                  {categoryChoicesForModal.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.label}
                     </option>

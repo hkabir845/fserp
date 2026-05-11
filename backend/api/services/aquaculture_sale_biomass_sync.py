@@ -4,6 +4,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from api.models import AquacultureBiomassSample, AquacultureFishSale
+from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
 
 
 def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
@@ -35,7 +36,7 @@ def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
         f"Approx. {fish_per_kg} fish per kg (pcs/kg); avg {avg_kg} kg per fish."
     )
 
-    AquacultureBiomassSample.objects.update_or_create(
+    obj, _created = AquacultureBiomassSample.objects.update_or_create(
         source_fish_sale_id=sale.id,
         defaults={
             "company_id": sale.company_id,
@@ -50,3 +51,5 @@ def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
             "notes": notes[:5000],
         },
     )
+    apply_aquaculture_biomass_sample_extrapolation(obj)
+    obj.save()

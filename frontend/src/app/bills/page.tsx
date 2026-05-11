@@ -1,16 +1,23 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl } from '@/lib/api'
+import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
+import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
-import { AMOUNT_LINE_COL_CLASS, AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
+import { AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 import { extractErrorMessage } from '@/utils/errorHandler'
+
+/** Bill line inputs: fixed height so grid rows align across columns */
+const BILL_LINE_CTL =
+  'w-full min-w-0 h-9 px-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
+const BILL_LINE_NUM = `${BILL_LINE_CTL} text-right tabular-nums`
 
 interface BillLineItem {
   id?: number
@@ -25,6 +32,23 @@ interface BillLineItem {
   unit_price?: number
   amount: number
   tax_amount: number
+  /** Fish-type items (Item.pos_category === 'fish'): required kg and headcount on the vendor line */
+  aquaculture_fish_weight_kg?: number | string | null
+  aquaculture_fish_count?: number | string | null
+  /** Optional: tag line to a pond/cycle for aquaculture P&L when the bill posts (GL). */
+  aquaculture_pond_id?: number | '' | null
+  aquaculture_production_cycle_id?: number | '' | null
+}
+
+interface AquaculturePondOption {
+  id: number
+  name: string
+}
+
+interface ProductionCycleOption {
+  id: number
+  pond_id: number
+  name: string
 }
 
 interface Station {
@@ -145,8 +169,109 @@ interface Item {
   cost: number
   unit: string
   item_type: string  // 'inventory', 'non_inventory', 'service'
-  pos_category?: string  // 'fuel', 'general', etc.
+  pos_category?: string  // 'fuel', 'general', 'fish' (Fish Type), etc.
   quantity_on_hand?: number | string
+}
+
+function isFishTypeItem(item: Item | undefined): boolean {
+  return (item?.pos_category || '').toLowerCase() === 'fish'
+}
+
+/** Returns an error message if any fish-type line is missing positive kg or headcount. */
+function validateFishTypeBillLines(lines: BillLineItem[], itemList: Item[]): string | null {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!line.item_id) continue
+    const item = itemList.find((it) => it.id === line.item_id)
+    if (!isFishTypeItem(item)) continue
+    const w = line.aquaculture_fish_weight_kg
+    const c = line.aquaculture_fish_count
+    const wn = w === undefined || w === '' || w === null ? NaN : Number(w)
+    const cn =
+      c === undefined || c === '' || c === null ? NaN : parseInt(String(c), 10)
+    if (!Number.isFinite(wn) || wn <= 0) {
+      return `Line ${i + 1} (${item?.name || 'Fish item'}): enter total weight (kg) greater than zero.`
+    }
+    if (!Number.isInteger(cn) || cn <= 0) {
+      return `Line ${i + 1} (${item?.name || 'Fish item'}): enter total fish count (heads) as a positive whole number.`
+    }
+  }
+  return null
+}
+
+function billLineRowAmount(quantity: number, unitCost: number): number {
+  return quantity * unitCost
+}
+
+function applyItemSelectionToBillLine(
+  line: BillLineItem,
+  itemId: number,
+  itemList: Item[],
+  tankList: Tank[]
+): BillLineItem {
+  const item = itemList.find((i) => i.id === itemId)
+  if (!item) return line
+  const uc = item.cost || 0
+  const qty = Number(line.quantity ?? 0)
+  const next: BillLineItem = {
+    ...line,
+    item_id: itemId,
+    expense_account_id: undefined,
+    tank_id: defaultTankIdForProduct(itemId, itemList, tankList),
+    unit_cost: uc,
+    description: item.name,
+    amount: billLineRowAmount(qty, uc),
+  }
+  if (!isFishTypeItem(item)) {
+    next.aquaculture_fish_weight_kg = undefined
+    next.aquaculture_fish_count = undefined
+  }
+  return next
+}
+
+function serializeBillLineForApi(line: BillLineItem, itemList: Item[]): Record<string, unknown> {
+  const item = line.item_id ? itemList.find((i) => i.id === line.item_id) : undefined
+  const fish = isFishTypeItem(item)
+  const w = line.aquaculture_fish_weight_kg
+  const c = line.aquaculture_fish_count
+  const weightPayload =
+    !fish || w === undefined || w === '' || w === null
+      ? null
+      : Number(w)
+  const countPayload =
+    !fish || c === undefined || c === '' || c === null
+      ? null
+      : parseInt(String(c), 10)
+  return {
+    description: line.description || null,
+    item_id: line.item_id || null,
+    expense_account_id: line.expense_account_id || null,
+    tank_id: line.tank_id || null,
+    quantity: line.quantity,
+    unit_cost: line.unit_cost,
+    amount: line.amount,
+    tax_amount: line.tax_amount || 0,
+    ...(fish
+      ? {
+          aquaculture_fish_weight_kg:
+            weightPayload != null && Number.isFinite(weightPayload) ? weightPayload : null,
+          aquaculture_fish_count:
+            countPayload != null && Number.isInteger(countPayload) ? countPayload : null,
+        }
+      : {}),
+    aquaculture_pond_id: (() => {
+      const r = line.aquaculture_pond_id
+      if (r === '' || r == null) return null
+      const n = Number(r)
+      return Number.isFinite(n) ? n : null
+    })(),
+    aquaculture_production_cycle_id: (() => {
+      const r = line.aquaculture_production_cycle_id
+      if (r === '' || r == null) return null
+      const n = Number(r)
+      return Number.isFinite(n) ? n : null
+    })(),
+  }
 }
 
 interface Tank {
@@ -284,6 +409,10 @@ export default function BillsPage() {
   const [expenseAccounts, setExpenseAccounts] = useState<ExpenseAccount[]>([])
   const [tanks, setTanks] = useState<Tank[]>([])  // All tanks for the company
   const [loading, setLoading] = useState(true)
+  const [listPage, setListPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [billsTotal, setBillsTotal] = useState(0)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [showModal, setShowModal] = useState(false)
@@ -304,6 +433,8 @@ export default function BillsPage() {
   } | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [stations, setStations] = useState<Station[]>([])
+  const [aquaculturePonds, setAquaculturePonds] = useState<AquaculturePondOption[]>([])
+  const [productionCycles, setProductionCycles] = useState<ProductionCycleOption[]>([])
   const [formData, setFormData] = useState(() => {
     const billDate = new Date().toISOString().split('T')[0]
     const due = new Date(`${billDate}T12:00:00`)
@@ -325,9 +456,16 @@ export default function BillsPage() {
       router.push('/login')
       return
     }
+  }, [router])
 
-    fetchData()
-  }, [router, statusFilter])
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 350)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  useEffect(() => {
+    setListPage(1)
+  }, [debouncedSearch, pageSize, statusFilter])
 
   // Fetch vendors when modal opens if not already loaded
   useEffect(() => {
@@ -354,9 +492,39 @@ export default function BillsPage() {
     }
   }, [showModal, vendors.length, loading])
 
-  const fetchData = async () => {
+  const loadBills = useCallback(async () => {
     try {
-      // Fetch company currency
+      const params = offsetListParams({
+        page: listPage,
+        pageSize,
+        q: debouncedSearch,
+        extra: statusFilter ? { status_filter: statusFilter } : {},
+      })
+      const billsRes = await api.get('/bills/', { params })
+      const data = billsRes.data
+      if (isOffsetPagedPayload(data)) {
+        setBills(data.results as Bill[])
+        setBillsTotal(data.count)
+        const totalPages = Math.max(1, Math.ceil(data.count / pageSize))
+        if (listPage > totalPages) {
+          setListPage(totalPages)
+        }
+      } else {
+        console.error('Failed to load bills: unexpected format', data)
+        toast.error('Failed to load bills')
+        setBills([])
+        setBillsTotal(0)
+      }
+    } catch (e) {
+      console.error('Failed to load bills:', e)
+      toast.error('Failed to load bills')
+      setBills([])
+      setBillsTotal(0)
+    }
+  }, [debouncedSearch, listPage, pageSize, statusFilter, toast])
+
+  const loadReference = useCallback(async () => {
+    try {
       try {
         const companyRes = await api.get('/companies/current')
         if (companyRes.data?.currency) {
@@ -366,25 +534,18 @@ export default function BillsPage() {
         console.error('Error fetching company currency:', error)
       }
 
-      const [billsRes, vendorsRes, itemsRes, accountsRes, tanksRes, stationsRes] = await Promise.allSettled([
-        api.get(`/bills/?status_filter=${statusFilter || ''}`),
-        api.get('/vendors/'),
-        api.get('/items/'),
+      const [vendorsRes, itemsRes, accountsRes, tanksRes, stationsRes] = await Promise.allSettled([
+        api.get('/vendors/', { params: { skip: 0, limit: 10000 } }),
+        api.get('/items/', { params: { skip: 0, limit: 10000 } }),
         api.get('/chart-of-accounts/'),
         api.get('/tanks/'),
         api.get('/stations/'),
       ])
 
-      if (billsRes.status === 'fulfilled') {
-        setBills(billsRes.value.data)
-      } else {
-        console.error('Failed to load bills:', billsRes)
-        toast.error('Failed to load bills')
-      }
-
       if (vendorsRes.status === 'fulfilled') {
         const vendorsData = vendorsRes.value.data
-        const activeVendors = vendorsData.filter((v: Vendor) => v.is_active)
+        const raw = Array.isArray(vendorsData) ? vendorsData : []
+        const activeVendors = raw.filter((v: Vendor) => v.is_active)
         setVendors(activeVendors)
       } else {
         console.error('❌ Failed to load vendors:', vendorsRes)
@@ -403,24 +564,24 @@ export default function BillsPage() {
             console.error('❌ Items data is not an array:', itemsData)
             toast.error('Items data format error')
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('❌ Error processing items:', err)
           console.error('❌ Items response:', itemsRes.value)
           toast.error('Failed to process items data')
         }
       } else {
         console.error('❌ Failed to load items:', itemsRes.reason)
-        const errorMsg = itemsRes.reason?.response?.data?.detail || itemsRes.reason?.message || 'Unknown error'
+        const reason = itemsRes.reason as { response?: { data?: { detail?: string } }; message?: string }
+        const errorMsg = reason?.response?.data?.detail || reason?.message || 'Unknown error'
         console.error('❌ Items API error details:', errorMsg)
         toast.error(`Failed to load items: ${errorMsg}`)
       }
 
       if (accountsRes.status === 'fulfilled') {
         const accountsData = accountsRes.value.data
-        // Filter for expense accounts
-        setExpenseAccounts(accountsData.filter((acc: ExpenseAccount) => 
-          acc.account_type.toLowerCase() === 'expense'
-        ))
+        setExpenseAccounts(
+          accountsData.filter((acc: ExpenseAccount) => acc.account_type.toLowerCase() === 'expense'),
+        )
       }
 
       if (tanksRes.status === 'fulfilled') {
@@ -430,7 +591,7 @@ export default function BillsPage() {
         console.error('❌ Failed to load tanks:', tanksRes)
         setTanks([])
         toast.error(
-          'Could not load tanks. Fuel bills need tanks to receive stock — refresh the page or check the Tanks API.'
+          'Could not load tanks. Fuel bills need tanks to receive stock — refresh the page or check the Tanks API.',
         )
       }
 
@@ -443,18 +604,69 @@ export default function BillsPage() {
               station_name: String(s.station_name || '').trim() || 'Station',
               station_number: s.station_number != null ? String(s.station_number) : undefined,
             }))
-            .filter((s: Station) => Number.isFinite(s.id))
+            .filter((s: Station) => Number.isFinite(s.id)),
         )
       } else {
         setStations([])
       }
+
+      const [pondsRes, cyclesRes] = await Promise.allSettled([
+        api.get('/aquaculture/ponds/'),
+        api.get('/aquaculture/production-cycles/'),
+      ])
+      if (pondsRes.status === 'fulfilled' && Array.isArray(pondsRes.value.data)) {
+        setAquaculturePonds(
+          pondsRes.value.data
+            .map((p: { id?: unknown; name?: unknown }) => ({
+              id: typeof p.id === 'number' ? p.id : Number(p.id),
+              name: String(p.name || '').trim() || `Pond ${p.id}`,
+            }))
+            .filter((p: AquaculturePondOption) => Number.isFinite(p.id)),
+        )
+      } else {
+        setAquaculturePonds([])
+      }
+      if (cyclesRes.status === 'fulfilled' && Array.isArray(cyclesRes.value.data)) {
+        setProductionCycles(
+          cyclesRes.value.data
+            .map((c: { id?: unknown; pond_id?: unknown; name?: unknown }) => ({
+              id: typeof c.id === 'number' ? c.id : Number(c.id),
+              pond_id: typeof c.pond_id === 'number' ? c.pond_id : Number(c.pond_id),
+              name: String(c.name || '').trim() || `Cycle ${c.id}`,
+            }))
+            .filter((c: ProductionCycleOption) => Number.isFinite(c.id) && Number.isFinite(c.pond_id)),
+        )
+      } else {
+        setProductionCycles([])
+      }
     } catch (error) {
-      console.error('Error fetching data:', error)
+      console.error('Error fetching reference data:', error)
       toast.error('Error connecting to server')
+    }
+  }, [toast])
+
+  const refreshAll = useCallback(async () => {
+    setLoading(true)
+    try {
+      await loadReference()
+      await loadBills()
     } finally {
       setLoading(false)
     }
-  }
+  }, [loadReference, loadBills])
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+    setLoading(true)
+    void loadReference().finally(() => setLoading(false))
+  }, [router, loadReference])
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+    void loadBills()
+  }, [loadBills])
 
   const calculateLineAmount = (quantity: number, unitCost: number) => {
     return quantity * unitCost
@@ -481,7 +693,11 @@ export default function BillsPage() {
           quantity: 1,
           unit_cost: 0,
           amount: 0,
-          tax_amount: 0
+          tax_amount: 0,
+          aquaculture_fish_weight_kg: undefined,
+          aquaculture_fish_count: undefined,
+          aquaculture_pond_id: '',
+          aquaculture_production_cycle_id: '',
         }
       ]
     })
@@ -495,24 +711,38 @@ export default function BillsPage() {
 
   const handleLineChange = (index: number, field: string, value: any) => {
     const newLines = [...formData.lines]
+
+    if (field === 'aquaculture_pond_id') {
+      const pid = value === '' || value === undefined ? '' : parseInt(String(value), 10)
+      const cleanPond = pid === '' || !Number.isFinite(pid) ? '' : pid
+      newLines[index] = { ...newLines[index], aquaculture_pond_id: cleanPond }
+      const cycRaw = newLines[index].aquaculture_production_cycle_id
+      if (cycRaw !== '' && cycRaw != null) {
+        const cid = parseInt(String(cycRaw), 10)
+        if (Number.isFinite(cid)) {
+          const cRow = productionCycles.find((c) => c.id === cid)
+          if (!cRow || cleanPond === '' || cRow.pond_id !== Number(cleanPond)) {
+            newLines[index].aquaculture_production_cycle_id = ''
+          }
+        }
+      }
+      setFormData({ ...formData, lines: newLines })
+      return
+    }
+
     newLines[index] = { ...newLines[index], [field]: value }
-    
+
     // If item is selected, clear expense account, set default tank for fuel, update cost/description
     if (field === 'item_id' && value) {
-      const item = items.find(i => i.id === value)
-      if (item) {
-        newLines[index].expense_account_id = undefined
-        newLines[index].unit_cost = item.cost || 0
-        newLines[index].description = item.name
-        const defTank = defaultTankIdForProduct(value, items, tanks)
-        newLines[index].tank_id = defTank
-      }
+      newLines[index] = applyItemSelectionToBillLine(newLines[index], value, items, tanks)
     }
-    
+
     // If expense account is selected, clear item and tank
     if (field === 'expense_account_id' && value) {
       newLines[index].item_id = undefined
       newLines[index].tank_id = undefined
+      newLines[index].aquaculture_fish_weight_kg = undefined
+      newLines[index].aquaculture_fish_count = undefined
       const account = expenseAccounts.find(a => a.id === value)
       if (account) {
         newLines[index].description = account.account_name
@@ -574,15 +804,8 @@ export default function BillsPage() {
       acknowledge_tank_overfill: sendAck ? true : undefined,
       lines: formData.lines.map((line, idx) => ({
         line_number: idx + 1,
-        description: line.description || null,
-        item_id: line.item_id || null,
-        expense_account_id: line.expense_account_id || null,
-        tank_id: line.tank_id || null,
-        quantity: line.quantity,
-        unit_cost: line.unit_cost,
-        amount: line.amount,
-        tax_amount: line.tax_amount || 0
-      }))
+        ...serializeBillLineForApi(line, items),
+      })),
     })
 
     toast.success(approveBill ? 'Bill approved and posted (Open).' : 'Bill saved as draft.')
@@ -590,7 +813,7 @@ export default function BillsPage() {
     setStockReviewOpen(false)
     setStockReviewPayload(null)
     resetForm()
-    fetchData()
+    void refreshAll()
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -616,6 +839,11 @@ export default function BillsPage() {
           return
         }
       }
+    }
+    const fishErr = validateFishTypeBillLines(formData.lines, items)
+    if (fishErr) {
+      toast.error(fishErr)
+      return
     }
 
     try {
@@ -654,7 +882,24 @@ export default function BillsPage() {
             quantity: Number(line.quantity),
             unit_cost: Number(line.unit_cost ?? line.unit_price ?? 0),
             amount: Number(line.amount),
-            tax_amount: Number(line.tax_amount || 0)
+            tax_amount: Number(line.tax_amount || 0),
+            aquaculture_fish_weight_kg:
+              line.aquaculture_fish_weight_kg != null && String(line.aquaculture_fish_weight_kg) !== ''
+                ? line.aquaculture_fish_weight_kg
+                : '',
+            aquaculture_fish_count:
+              line.aquaculture_fish_count != null && String(line.aquaculture_fish_count) !== ''
+                ? line.aquaculture_fish_count
+                : '',
+            aquaculture_pond_id:
+              line.aquaculture_pond_id != null && String(line.aquaculture_pond_id) !== ''
+                ? Number(line.aquaculture_pond_id)
+                : '',
+            aquaculture_production_cycle_id:
+              line.aquaculture_production_cycle_id != null &&
+              String(line.aquaculture_production_cycle_id) !== ''
+                ? Number(line.aquaculture_production_cycle_id)
+                : '',
           })) || []
         })
         setShowEditModal(true)
@@ -707,15 +952,8 @@ export default function BillsPage() {
       acknowledge_tank_overfill: sendAck ? true : undefined,
       lines: formData.lines.map((line, idx) => ({
         line_number: idx + 1,
-        description: line.description || null,
-        item_id: line.item_id || null,
-        expense_account_id: line.expense_account_id || null,
-        tank_id: line.tank_id || null,
-        quantity: line.quantity,
-        unit_cost: line.unit_cost,
-        amount: line.amount,
-        tax_amount: line.tax_amount || 0
-      }))
+        ...serializeBillLineForApi(line, items),
+      })),
     })
 
     toast.success(
@@ -728,7 +966,7 @@ export default function BillsPage() {
     setStockReviewOpen(false)
     setStockReviewPayload(null)
     resetForm()
-    fetchData()
+    void refreshAll()
   }
 
   const handleUpdate = async (e: React.FormEvent) => {
@@ -745,6 +983,11 @@ export default function BillsPage() {
           return
         }
       }
+    }
+    const fishErrUpd = validateFishTypeBillLines(formData.lines, items)
+    if (fishErrUpd) {
+      toast.error(fishErrUpd)
+      return
     }
 
     try {
@@ -783,7 +1026,7 @@ export default function BillsPage() {
 
       if (response.status === 204 || response.status === 200) {
         toast.success(`Bill ${billNumber} deleted successfully!`)
-        fetchData()
+        void refreshAll()
       } else {
         console.error('Failed to delete bill:', response.status)
         toast.error('Failed to delete bill')
@@ -877,12 +1120,6 @@ export default function BillsPage() {
     }
   }
 
-  const filteredBills = bills.filter(bill =>
-    bill.bill_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    bill.vendor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    bill.vendor_reference?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-
   const { subtotal, taxAmount, total } = calculateTotals()
 
   return (
@@ -968,7 +1205,7 @@ export default function BillsPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredBills.map((bill) => (
+                {bills.map((bill) => (
                   <tr key={bill.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {bill.bill_number}
@@ -1038,9 +1275,24 @@ export default function BillsPage() {
                 ))}
               </tbody>
             </table>
-            {filteredBills.length === 0 && (
+            {bills.length === 0 && (
               <div className="text-center py-12 text-gray-500">
                 <p>No bills found</p>
+              </div>
+            )}
+            {billsTotal > 0 && (
+              <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
+                <OffsetPaginationControls
+                  page={listPage}
+                  pageSize={pageSize}
+                  total={billsTotal}
+                  disabled={loading}
+                  onPageChange={setListPage}
+                  onPageSizeChange={(n) => {
+                    setPageSize(n)
+                    setListPage(1)
+                  }}
+                />
               </div>
             )}
           </div>
@@ -1098,39 +1350,69 @@ export default function BillsPage() {
                 </div>
 
                 {/* Line Items */}
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-lg font-semibold mb-4">Line Items</h3>
-                  <table className="min-w-full divide-y divide-gray-200">
+                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="min-w-[56rem] w-full divide-y divide-gray-200 text-sm">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tank</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pond</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Wt (kg)</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Fish #</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Unit Cost</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {viewingBill.lines?.map((item: BillLineItem) => (
-                        <tr key={item.id}>
-                          <td className="px-4 py-3 text-sm text-gray-900">
-                            {items.find(i => i.id === item.item_id)?.name || expenseAccounts.find(a => a.id === item.expense_account_id)?.account_name || 'N/A'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{item.description || '-'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">
-                            {item.tank_name ||
-                              (item.tank_id
-                                ? tanks.find((t) => t.id === item.tank_id)?.tank_name || `Tank #${item.tank_id}`
-                                : '—')}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatNumber(Number(item.quantity))}</td>
-                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{currencySymbol}{formatNumber(Number(item.unit_cost ?? item.unit_price ?? 0))}</td>
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">{currencySymbol}{formatNumber(Number(item.amount || 0))}</td>
-                        </tr>
-                      ))}
+                      {viewingBill.lines?.map((item: BillLineItem) => {
+                        const rowItem = item.item_id ? items.find((i) => i.id === item.item_id) : undefined
+                        const showFishCols = isFishTypeItem(rowItem)
+                        const wkg = item.aquaculture_fish_weight_kg
+                        const fc = item.aquaculture_fish_count
+                        return (
+                          <tr key={item.id}>
+                            <td className="px-4 py-3 text-sm text-gray-900">
+                              {items.find(i => i.id === item.item_id)?.name || expenseAccounts.find(a => a.id === item.expense_account_id)?.account_name || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{item.description || '-'}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">
+                              {item.tank_name ||
+                                (item.tank_id
+                                  ? tanks.find((t) => t.id === item.tank_id)?.tank_name || `Tank #${item.tank_id}`
+                                  : '—')}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700">
+                              {item.aquaculture_pond_id
+                                ? aquaculturePonds.find((p) => p.id === item.aquaculture_pond_id)?.name ||
+                                  `Pond #${item.aquaculture_pond_id}`
+                                : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700">
+                              {item.aquaculture_production_cycle_id
+                                ? productionCycles.find((c) => c.id === item.aquaculture_production_cycle_id)
+                                    ?.name || `Cycle #${item.aquaculture_production_cycle_id}`
+                                : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
+                              {showFishCols && wkg != null && String(wkg) !== '' ? formatNumber(Number(wkg)) : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
+                              {showFishCols && fc != null && String(fc) !== '' ? formatNumber(Number(fc)) : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatNumber(Number(item.quantity))}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right">{currencySymbol}{formatNumber(Number(item.unit_cost ?? item.unit_price ?? 0))}</td>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">{currencySymbol}{formatNumber(Number(item.amount || 0))}</td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
 
                 {/* Totals */}
@@ -1284,7 +1566,11 @@ export default function BillsPage() {
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      Optional. Non-fuel inventory lines post to this location when the bill is open or posted.
+                      Shop hub for <strong className="font-medium">non-fuel</strong> SKUs that use station bins (e.g.
+                      feed). <strong className="font-medium">Fish-type items</strong> (fry, etc.) do not use this
+                      dropdown: when you set <strong className="font-medium">Pond (P&amp;L tag)</strong> on the line,
+                      posted quantity goes to that pond&apos;s fish stock. Leave &quot;Not set&quot; if this bill is
+                      only fuel, only fish with a pond on each line, or other lines that skip shop bins.
                     </p>
                   </div>
                   <div className="col-span-2">
@@ -1322,6 +1608,10 @@ export default function BillsPage() {
                               unit_cost: 0,
                               amount: 0,
                               tax_amount: 0,
+                              aquaculture_fish_weight_kg: undefined,
+                              aquaculture_fish_count: undefined,
+                              aquaculture_pond_id: '',
+                              aquaculture_production_cycle_id: '',
                             },
                           ],
                         })
@@ -1336,11 +1626,26 @@ export default function BillsPage() {
                   <div className="space-y-2">
                     {formData.lines.map((line, index) => {
                       const availableTanks = getTanksForItem(line.item_id)
+                      const lineItem = line.item_id ? items.find((i) => i.id === line.item_id) : undefined
+                      const showFishDims = isFishTypeItem(lineItem)
+                      const pondSel =
+                        line.aquaculture_pond_id === '' || line.aquaculture_pond_id == null
+                          ? ''
+                          : Number(line.aquaculture_pond_id)
+                      const cyclesForLine =
+                        pondSel === '' || !Number.isFinite(pondSel)
+                          ? []
+                          : productionCycles.filter((c) => c.pond_id === pondSel)
+                      const showAqTag =
+                        aquaculturePonds.length > 0 || (pondSel !== '' && Number.isFinite(pondSel))
                       return (
-                        <div key={index} className="border border-gray-200 rounded-lg p-2 min-w-0">
-                          <div className="flex flex-wrap lg:flex-nowrap items-end gap-2 min-w-0">
-                            <div className="min-w-0 flex-[1.4] basis-[min(100%,14rem)]">
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Item/Account</label>
+                        <div
+                          key={index}
+                          className="border border-gray-200 rounded-lg p-3 min-w-0 bg-white shadow-sm"
+                        >
+                          <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
+                            <div className="col-span-12 lg:col-span-2 min-w-0">
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Item</label>
                               <select
                                 value={line.item_id || line.expense_account_id || ''}
                                 onChange={(e) => {
@@ -1350,31 +1655,23 @@ export default function BillsPage() {
                                   const account = expenseAccounts.find((a) => a.id === value)
                                   const newLines = [...formData.lines]
                                   if (item) {
-                                    const uc = item.cost || 0
-                                    const qty = Number(newLines[index].quantity ?? 0)
-                                    newLines[index] = {
-                                      ...newLines[index],
-                                      item_id: value,
-                                      expense_account_id: undefined,
-                                      tank_id: defaultTankIdForProduct(value, items, tanks),
-                                      unit_cost: uc,
-                                      description: item.name,
-                                      amount: calculateLineAmount(qty, uc),
-                                    }
+                                    newLines[index] = applyItemSelectionToBillLine(newLines[index], value, items, tanks)
                                   } else if (account) {
                                     newLines[index] = {
                                       ...newLines[index],
                                       expense_account_id: value,
                                       item_id: undefined,
                                       tank_id: undefined,
+                                      aquaculture_fish_weight_kg: undefined,
+                                      aquaculture_fish_count: undefined,
                                       description: account.account_name,
                                     }
                                   }
                                   setFormData({ ...formData, lines: newLines })
                                 }}
-                                className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                className={`${BILL_LINE_CTL} max-w-full truncate`}
                               >
-                                <option value="">Select Item/Account...</option>
+                                <option value="">Select…</option>
                                 <optgroup label="Items">
                                   {items.map((item) => (
                                     <option key={`item-${item.id}`} value={item.id}>
@@ -1392,79 +1689,214 @@ export default function BillsPage() {
                               </select>
                             </div>
                             {availableTanks.length > 0 && (
-                              <div className="min-w-0 flex-1 basis-[min(100%,10rem)]">
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Tank</label>
+                              <div className="col-span-12 lg:col-span-2 min-w-0">
+                                <label className="block text-xs font-medium text-gray-700 mb-0.5">Tank</label>
                                 <select
                                   value={line.tank_id || ''}
-                                  onChange={(e) => handleLineChange(index, 'tank_id', e.target.value ? parseInt(e.target.value) : undefined)}
-                                  className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                  onChange={(e) =>
+                                    handleLineChange(
+                                      index,
+                                      'tank_id',
+                                      e.target.value ? parseInt(e.target.value) : undefined
+                                    )
+                                  }
+                                  className={BILL_LINE_CTL}
                                 >
-                                  <option value="">Select Tank...</option>
+                                  <option value="">Select…</option>
                                   {availableTanks.map((tank) => (
                                     <option key={`tank-${tank.id}`} value={tank.id}>
-                                      {tank.tank_name} ({tank.tank_number}) {tank.station_name ? `- ${tank.station_name}` : ''}
+                                      {tank.tank_name} ({tank.tank_number})
+                                      {tank.station_name ? ` · ${tank.station_name}` : ''}
                                     </option>
                                   ))}
                                 </select>
                               </div>
                             )}
-                            <div className="min-w-0 flex-1 basis-[min(100%,12rem)]">
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                            <div
+                              className={`col-span-12 min-w-0 ${availableTanks.length > 0 ? 'lg:col-span-4' : 'lg:col-span-6'}`}
+                            >
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Description</label>
                               <input
                                 type="text"
                                 value={line.description || ''}
                                 onChange={(e) => handleLineChange(index, 'description', e.target.value)}
-                                className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                placeholder="Line memo"
+                                className={BILL_LINE_CTL}
                               />
                             </div>
-                            <div className="w-[4.5rem] shrink-0">
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Qty</label>
+                            <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[5.25rem]">
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Qty</label>
                               <input
                                 type="number"
                                 step="0.01"
                                 min="0"
                                 value={line.quantity}
                                 onChange={(e) => handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                className={BILL_LINE_NUM}
                               />
                             </div>
-                            <div className="w-[5.25rem] shrink-0">
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Unit</label>
+                            <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[5.25rem]">
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Unit</label>
                               <input
                                 type="number"
                                 step="0.01"
                                 min="0"
                                 value={line.unit_cost}
                                 onChange={(e) => handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                className={BILL_LINE_NUM}
                               />
                             </div>
-                            <div className={AMOUNT_LINE_COL_CLASS}>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
+                            <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Amount</label>
                               <input
                                 type="text"
-value={formatNumber(line.amount)}
-                            readOnly
-                            title={`${currencySymbol}${formatNumber(line.amount)}`}
-                                className={AMOUNT_READ_ONLY_INPUT_CLASS}
+                                readOnly
+                                value={formatNumber(line.amount)}
+                                title={`${currencySymbol}${formatNumber(line.amount)}`}
+                                className={`${AMOUNT_READ_ONLY_INPUT_CLASS} min-h-[2.25rem] py-1.5`}
                               />
                             </div>
-                            <div className="shrink-0 pb-px">
-                              <label className="block text-xs font-medium text-transparent mb-1 select-none">—</label>
+                            <div className="col-span-12 sm:col-span-3 lg:col-span-1 flex justify-end lg:justify-center pb-0.5">
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const newLines = formData.lines.filter((_, i) => i !== index)
+                                  const newLines = formData.lines
+                                    .filter((_, i) => i !== index)
                                     .map((line, i) => ({ ...line, line_number: i + 1 }))
                                   setFormData({ ...formData, lines: newLines })
                                 }}
-                                className="px-2 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors h-[30px] flex items-center justify-center"
+                                className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md border border-transparent hover:border-red-100"
                                 aria-label="Remove line"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
                             </div>
                           </div>
+                          {showFishDims ? (
+                            <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-gray-200 pt-2">
+                              <div className="w-[7.5rem] shrink-0">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Weight (kg) *</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.0001"
+                                  value={
+                                    line.aquaculture_fish_weight_kg === undefined ||
+                                    line.aquaculture_fish_weight_kg === null ||
+                                    line.aquaculture_fish_weight_kg === ''
+                                      ? ''
+                                      : line.aquaculture_fish_weight_kg
+                                  }
+                                  onChange={(e) =>
+                                    handleLineChange(
+                                      index,
+                                      'aquaculture_fish_weight_kg',
+                                      e.target.value === '' ? '' : e.target.value
+                                    )
+                                  }
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                  placeholder="—"
+                                />
+                              </div>
+                              <div className="w-[7.5rem] shrink-0">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Total fish (heads) *</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={
+                                    line.aquaculture_fish_count === undefined ||
+                                    line.aquaculture_fish_count === null ||
+                                    line.aquaculture_fish_count === ''
+                                      ? ''
+                                      : line.aquaculture_fish_count
+                                  }
+                                  onChange={(e) =>
+                                    handleLineChange(
+                                      index,
+                                      'aquaculture_fish_count',
+                                      e.target.value === '' ? '' : e.target.value
+                                    )
+                                  }
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                  placeholder="—"
+                                />
+                              </div>
+                              <p className="text-xs text-gray-500 flex-1 min-w-[12rem] pb-1">
+                                Required for fish-type items: total weight (kg) and headcount (separate from Qty × Unit
+                                for billing). When the line tags a pond, posted inventory uses this headcount (and kg for
+                                stock position), not the billing quantity alone.
+                              </p>
+                            </div>
+                          ) : null}
+                          {showAqTag ? (
+                            <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-teal-200 pt-2">
+                              <div className="min-w-[10rem] flex-1">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Pond (P&amp;L tag)
+                                </label>
+                                <select
+                                  value={pondSel === '' ? '' : String(pondSel)}
+                                  onChange={(e) => {
+                                    const v = e.target.value
+                                    handleLineChange(
+                                      index,
+                                      'aquaculture_pond_id',
+                                      v === '' ? '' : parseInt(v, 10)
+                                    )
+                                  }}
+                                  className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                >
+                                  <option value="">— Not tagged —</option>
+                                  {aquaculturePonds.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name}
+                                    </option>
+                                  ))}
+                                  {pondSel !== '' &&
+                                    Number.isFinite(pondSel) &&
+                                    !aquaculturePonds.some((p) => p.id === pondSel) && (
+                                      <option value={String(pondSel)}>Pond #{pondSel}</option>
+                                    )}
+                                </select>
+                              </div>
+                              <div className="min-w-[10rem] flex-1">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Production cycle (optional)
+                                </label>
+                                <select
+                                  disabled={pondSel === '' || !Number.isFinite(pondSel)}
+                                  value={
+                                    line.aquaculture_production_cycle_id === '' ||
+                                    line.aquaculture_production_cycle_id == null
+                                      ? ''
+                                      : String(line.aquaculture_production_cycle_id)
+                                  }
+                                  onChange={(e) => {
+                                    const v = e.target.value
+                                    handleLineChange(
+                                      index,
+                                      'aquaculture_production_cycle_id',
+                                      v === '' ? '' : parseInt(v, 10)
+                                    )
+                                  }}
+                                  className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                                >
+                                  <option value="">— Any / not set —</option>
+                                  {cyclesForLine.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <p className="text-xs text-gray-500 flex-1 min-w-[14rem] pb-1">
+                                Tags P&amp;L to this pond when the bill posts. For <strong className="font-medium">fish-type</strong>{' '}
+                                SKUs, choose the nursing or grow-out pond here so fry post into that pond&apos;s
+                                warehouse and fish stock (headcount above), not only the shop receipt station.
+                              </p>
+                            </div>
+                          ) : null}
                         </div>
                       )
                     })}
@@ -1732,7 +2164,11 @@ value={formatNumber(line.amount)}
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      Optional. Non-fuel inventory lines post to this location when the bill is open or posted.
+                      Shop hub for <strong className="font-medium">non-fuel</strong> SKUs that use station bins (e.g.
+                      feed). <strong className="font-medium">Fish-type items</strong> (fry, etc.) do not use this
+                      dropdown: when you set <strong className="font-medium">Pond (P&amp;L tag)</strong> on the line,
+                      posted quantity goes to that pond&apos;s fish stock. Leave &quot;Not set&quot; if this bill is
+                      only fuel, only fish with a pond on each line, or other lines that skip shop bins.
                     </p>
                   </div>
                   <div className="col-span-2">
@@ -1774,12 +2210,27 @@ value={formatNumber(line.amount)}
                         selectedTank != null
                           ? `Current: ${formatNumber(Number(selectedTank.current_stock) || 0)}L / Capacity: ${formatNumber(Number(selectedTank.capacity) || 0)}L`
                           : undefined
+                      const lineItem = line.item_id ? items.find((i) => i.id === line.item_id) : undefined
+                      const showFishDims = isFishTypeItem(lineItem)
+                      const pondSel =
+                        line.aquaculture_pond_id === '' || line.aquaculture_pond_id == null
+                          ? ''
+                          : Number(line.aquaculture_pond_id)
+                      const cyclesForLine =
+                        pondSel === '' || !Number.isFinite(pondSel)
+                          ? []
+                          : productionCycles.filter((c) => c.pond_id === pondSel)
+                      const showAqTag =
+                        aquaculturePonds.length > 0 || (pondSel !== '' && Number.isFinite(pondSel))
 
                       return (
-                        <div key={index} className="border border-gray-200 rounded-lg p-2 bg-gray-50 min-w-0">
-                          <div className="flex flex-wrap lg:flex-nowrap items-end gap-2 min-w-0">
-                            <div className="min-w-0 flex-[1.25] basis-[min(100%,13rem)]">
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Item/Account</label>
+                        <div
+                          key={index}
+                          className="border border-gray-200 rounded-lg p-3 min-w-0 bg-gray-50/80 shadow-sm"
+                        >
+                          <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
+                            <div className="col-span-12 lg:col-span-2 min-w-0">
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Item</label>
                               <select
                                 value={line.item_id || line.expense_account_id || ''}
                                 onChange={(e) => {
@@ -1790,17 +2241,7 @@ value={formatNumber(line.amount)}
                                   if (opt?.dataset.type === 'item') {
                                     const item = items.find((i) => i.id === value)
                                     if (!item) return
-                                    const uc = item.cost || 0
-                                    const qty = Number(newLines[index].quantity ?? 0)
-                                    newLines[index] = {
-                                      ...newLines[index],
-                                      item_id: value,
-                                      expense_account_id: undefined,
-                                      tank_id: defaultTankIdForProduct(value, items, tanks),
-                                      unit_cost: uc,
-                                      description: item.name,
-                                      amount: calculateLineAmount(qty, uc),
-                                    }
+                                    newLines[index] = applyItemSelectionToBillLine(newLines[index], value, items, tanks)
                                   } else {
                                     const account = expenseAccounts.find((a) => a.id === value)
                                     newLines[index] = {
@@ -1808,17 +2249,21 @@ value={formatNumber(line.amount)}
                                       expense_account_id: value,
                                       item_id: undefined,
                                       tank_id: undefined,
+                                      aquaculture_fish_weight_kg: undefined,
+                                      aquaculture_fish_count: undefined,
                                       description: account?.account_name || '',
                                     }
                                   }
                                   setFormData({ ...formData, lines: newLines })
                                 }}
-                                className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                className={`${BILL_LINE_CTL} max-w-full truncate`}
                               >
-                                <option value="">Select...</option>
+                                <option value="">Select…</option>
                                 <optgroup label="Items">
                                   {items.length === 0 ? (
-                                    <option value="" disabled>No items available</option>
+                                    <option value="" disabled>
+                                      No items
+                                    </option>
                                   ) : (
                                     items.map((item) => (
                                       <option key={`item-${item.id}`} value={item.id} data-type="item">
@@ -1838,91 +2283,224 @@ value={formatNumber(line.amount)}
                             </div>
 
                             {isFuelItem && (
-                              <div className="min-w-0 flex-1 basis-[min(100%,9rem)]">
-                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                              <div className="col-span-12 lg:col-span-2 min-w-0">
+                                <label className="block text-xs font-medium text-gray-700 mb-0.5">
                                   Tank <span className="text-red-500">*</span>
                                 </label>
                                 <select
                                   value={line.tank_id || ''}
                                   title={tankTitle}
                                   onChange={(e) =>
-                                    handleLineChange(index, 'tank_id', e.target.value ? parseInt(e.target.value) : undefined)
+                                    handleLineChange(
+                                      index,
+                                      'tank_id',
+                                      e.target.value ? parseInt(e.target.value) : undefined
+                                    )
                                   }
-                                  className="w-full min-w-0 px-2 py-1 text-sm border border-yellow-400 rounded focus:ring-1 focus:ring-yellow-500 bg-yellow-50"
+                                  className={`${BILL_LINE_CTL} border-yellow-400 bg-yellow-50 focus:ring-yellow-500`}
                                   required={isFuelItem}
                                 >
-                                  <option value="">Select Tank...</option>
+                                  <option value="">Select…</option>
                                   {availableTanks.map((tank) => (
                                     <option key={`tank-${tank.id}`} value={tank.id}>
-                                      {tank.tank_name} ({tank.tank_number}) {tank.station_name ? `- ${tank.station_name}` : ''}
+                                      {tank.tank_name} ({tank.tank_number})
+                                      {tank.station_name ? ` · ${tank.station_name}` : ''}
                                     </option>
                                   ))}
                                 </select>
                               </div>
                             )}
 
-                            <div className="min-w-0 flex-1 basis-[min(100%,11rem)]">
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                            <div
+                              className={`col-span-12 min-w-0 ${isFuelItem ? 'lg:col-span-3' : 'lg:col-span-5'}`}
+                            >
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Description</label>
                               <input
                                 type="text"
                                 value={line.description || ''}
                                 onChange={(e) => handleLineChange(index, 'description', e.target.value)}
-                                className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                placeholder="Line memo"
+                                className={BILL_LINE_CTL}
                               />
                             </div>
-                            <div className="w-[4.25rem] shrink-0">
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Qty</label>
+                            <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5.25rem]">
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Qty</label>
                               <input
                                 type="number"
                                 step="0.01"
+                                min="0"
                                 value={line.quantity}
                                 onChange={(e) => handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                className={BILL_LINE_NUM}
                               />
                             </div>
-                            <div className="w-[4.75rem] shrink-0">
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Rate</label>
+                            <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5.25rem]">
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Rate</label>
                               <input
                                 type="number"
                                 step="0.01"
+                                min="0"
                                 value={line.unit_cost}
                                 onChange={(e) => handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                className={BILL_LINE_NUM}
                               />
                             </div>
-                            <div className="w-[4.75rem] shrink-0">
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Tax</label>
+                            <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5rem]">
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Tax</label>
                               <input
                                 type="number"
                                 step="0.01"
+                                min="0"
                                 value={line.tax_amount}
                                 onChange={(e) => handleLineChange(index, 'tax_amount', parseFloat(e.target.value) || 0)}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                className={BILL_LINE_NUM}
                               />
                             </div>
-                            <div className={AMOUNT_LINE_COL_CLASS}>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
+                            <div className="col-span-6 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Amount</label>
                               <input
                                 type="text"
                                 readOnly
                                 inputMode="decimal"
                                 value={formatNumber(Number(line.amount) || 0)}
                                 title={`${currencySymbol}${formatNumber(Number(line.amount) || 0)}`}
-                                className={AMOUNT_READ_ONLY_INPUT_CLASS}
+                                className={`${AMOUNT_READ_ONLY_INPUT_CLASS} min-h-[2.25rem] py-1.5`}
                               />
                             </div>
-                            <div className="shrink-0 pb-px">
-                              <label className="block text-xs font-medium text-transparent mb-1 select-none">—</label>
+                            <div className="col-span-6 sm:col-span-3 lg:col-span-1 flex justify-end lg:justify-center pb-0.5">
                               <button
                                 type="button"
                                 onClick={() => handleRemoveLine(index)}
-                                className="px-2 py-1 text-sm text-red-600 hover:bg-red-50 rounded h-[30px] flex items-center justify-center"
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-md border border-transparent hover:border-red-100"
                                 aria-label="Remove line"
                               >
                                 <X className="h-4 w-4" />
                               </button>
                             </div>
                           </div>
+                          {showFishDims ? (
+                            <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-gray-200 pt-2">
+                              <div className="w-[7.5rem] shrink-0">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Weight (kg) *</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.0001"
+                                  value={
+                                    line.aquaculture_fish_weight_kg === undefined ||
+                                    line.aquaculture_fish_weight_kg === null ||
+                                    line.aquaculture_fish_weight_kg === ''
+                                      ? ''
+                                      : line.aquaculture_fish_weight_kg
+                                  }
+                                  onChange={(e) =>
+                                    handleLineChange(
+                                      index,
+                                      'aquaculture_fish_weight_kg',
+                                      e.target.value === '' ? '' : e.target.value
+                                    )
+                                  }
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
+                                  placeholder="—"
+                                />
+                              </div>
+                              <div className="w-[7.5rem] shrink-0">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Total fish (heads) *</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={
+                                    line.aquaculture_fish_count === undefined ||
+                                    line.aquaculture_fish_count === null ||
+                                    line.aquaculture_fish_count === ''
+                                      ? ''
+                                      : line.aquaculture_fish_count
+                                  }
+                                  onChange={(e) =>
+                                    handleLineChange(
+                                      index,
+                                      'aquaculture_fish_count',
+                                      e.target.value === '' ? '' : e.target.value
+                                    )
+                                  }
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
+                                  placeholder="—"
+                                />
+                              </div>
+                              <p className="text-xs text-gray-500 flex-1 min-w-[12rem] pb-1">
+                                Required for fish-type items: total weight (kg) and headcount (separate from Qty × Rate).
+                              </p>
+                            </div>
+                          ) : null}
+                          {showAqTag ? (
+                            <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-teal-200 pt-2">
+                              <div className="min-w-[10rem] flex-1">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Pond (P&amp;L tag)
+                                </label>
+                                <select
+                                  value={pondSel === '' ? '' : String(pondSel)}
+                                  onChange={(e) => {
+                                    const v = e.target.value
+                                    handleLineChange(
+                                      index,
+                                      'aquaculture_pond_id',
+                                      v === '' ? '' : parseInt(v, 10)
+                                    )
+                                  }}
+                                  className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
+                                >
+                                  <option value="">— Not tagged —</option>
+                                  {aquaculturePonds.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name}
+                                    </option>
+                                  ))}
+                                  {pondSel !== '' &&
+                                    Number.isFinite(pondSel) &&
+                                    !aquaculturePonds.some((p) => p.id === pondSel) && (
+                                      <option value={String(pondSel)}>Pond #{pondSel}</option>
+                                    )}
+                                </select>
+                              </div>
+                              <div className="min-w-[10rem] flex-1">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Production cycle (optional)
+                                </label>
+                                <select
+                                  disabled={pondSel === '' || !Number.isFinite(pondSel)}
+                                  value={
+                                    line.aquaculture_production_cycle_id === '' ||
+                                    line.aquaculture_production_cycle_id == null
+                                      ? ''
+                                      : String(line.aquaculture_production_cycle_id)
+                                  }
+                                  onChange={(e) => {
+                                    const v = e.target.value
+                                    handleLineChange(
+                                      index,
+                                      'aquaculture_production_cycle_id',
+                                      v === '' ? '' : parseInt(v, 10)
+                                    )
+                                  }}
+                                  className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:text-gray-500"
+                                >
+                                  <option value="">— Any / not set —</option>
+                                  {cyclesForLine.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <p className="text-xs text-gray-500 flex-1 min-w-[14rem] pb-1">
+                                Tags P&amp;L to this pond when the bill posts. For <strong className="font-medium">fish-type</strong>{' '}
+                                SKUs, choose the nursing or grow-out pond here so fry post into that pond&apos;s
+                                warehouse and fish stock (headcount above), not only the shop receipt station.
+                              </p>
+                            </div>
+                          ) : null}
                         </div>
                       )
                     })}

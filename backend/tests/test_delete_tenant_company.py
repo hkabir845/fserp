@@ -9,6 +9,7 @@ from api.models import (
     BroadcastRead,
     Company,
     Customer,
+    Organization,
     TenantPlatformReleaseEvent,
     User,
 )
@@ -17,12 +18,14 @@ from api.services.tenant_backup import delete_tenant_company_data
 
 @pytest.mark.django_db
 def test_delete_tenant_clears_global_broadcast_reads_and_release_events():
+    org = Organization.objects.create(name="Purge Test Co")
     co = Company.objects.create(
         name="Purge Test Co",
         currency="BDT",
         is_master="false",
         is_deleted=False,
         is_active=True,
+        organization=org,
     )
     u = User(
         username="purgetest@example.com",

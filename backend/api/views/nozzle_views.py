@@ -5,7 +5,8 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
-from api.models import Nozzle, Meter, Tank, Item
+from api.models import Nozzle, Meter, Tank, Item, User
+from api.services.permission_service import normalize_role_key
 from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 
@@ -111,6 +112,19 @@ def nozzles_details(request):
         .filter(is_active=True, is_operational=True)
         .order_by("id")
     )
+    api_user = getattr(request, "api_user", None)
+    if api_user:
+        rk = normalize_role_key(getattr(api_user, "role", None))
+        if rk in ("cashier", "operator"):
+            uid = getattr(api_user, "id", None) or getattr(api_user, "pk", None)
+            if uid:
+                hid = (
+                    User.objects.filter(pk=uid)
+                    .values_list("home_station_id", flat=True)
+                    .first()
+                )
+                if hid:
+                    qs = qs.filter(meter__dispenser__island__station_id=int(hid))
     return JsonResponse([_nozzle_to_pos_json(n) for n in qs], safe=False)
 
 

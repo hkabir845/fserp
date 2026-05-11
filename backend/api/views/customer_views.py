@@ -1,10 +1,13 @@
 """Customers API: list, create, get, update, delete, add-dummy (company-scoped)."""
 from datetime import date
 from decimal import Decimal
+
+from django.db.models import Q, Sum
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
+from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
 from api.views.common import parse_json_body, require_company_id
 from api.models import Customer
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
@@ -67,18 +70,76 @@ def _parse_date(val):
         return None
 
 
+def _customer_apply_q(qs, raw_q: str):
+    q = (raw_q or "").strip()
+    if not q:
+        return qs
+    return qs.filter(
+        Q(display_name__icontains=q)
+        | Q(company_name__icontains=q)
+        | Q(first_name__icontains=q)
+        | Q(email__icontains=q)
+        | Q(phone__icontains=q)
+        | Q(customer_number__icontains=q)
+        | Q(default_station__station_name__icontains=q)
+    )
+
+
+def _customer_apply_sort(qs, request):
+    sort_key = (request.GET.get("sort") or "id").strip()
+    desc = (request.GET.get("dir") or "asc").strip().lower() == "desc"
+    prefix = "-" if desc else ""
+    mapping = {
+        "id": "id",
+        "display_name": "display_name",
+        "company_name": "company_name",
+        "customer_number": "customer_number",
+        "current_balance": "current_balance",
+        "is_active": "is_active",
+        "email": "email",
+        "phone": "phone",
+        "default_station_name": "default_station__station_name",
+    }
+    field = mapping.get(sort_key, "id")
+    order = [f"{prefix}{field}"]
+    if sort_key != "id":
+        order.append("id")
+    return qs.order_by(*order)
+
+
+def _customer_list_stats(qs):
+    active = qs.filter(is_active=True).count()
+    bal = qs.aggregate(s=Sum("current_balance"))["s"] or Decimal("0")
+    recv = qs.filter(current_balance__gt=0).aggregate(s=Sum("current_balance"))["s"] or Decimal("0")
+    return {
+        "active_count": active,
+        "total_balance": str(bal),
+        "total_receivable": str(recv),
+    }
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
 def customers_list(request):
     if request.method == "GET":
-        qs = (
-            Customer.objects.filter(company_id=request.company_id)
-            .select_related("default_station")
-            .order_by("id")
-        )
-        skip = int(request.GET.get("skip", 0))
-        limit = int(request.GET.get("limit", 10000))
+        qs = Customer.objects.filter(company_id=request.company_id).select_related("default_station")
+        qs = _customer_apply_q(qs, request.GET.get("q", ""))
+        qs = _customer_apply_sort(qs, request)
+        if wants_paged_response(request):
+            skip, limit = parse_skip_limit(request, default_limit=50, max_limit=500)
+            total = qs.count()
+            stats = _customer_list_stats(qs)
+            page = qs[skip : skip + limit]
+            return json_paged(
+                [_customer_to_json(c) for c in page],
+                total=total,
+                skip=skip,
+                limit=limit,
+                extras={"stats": stats},
+            )
+        skip = max(0, int(request.GET.get("skip", 0)))
+        limit = max(1, int(request.GET.get("limit", 10000)))
         qs = qs[skip : skip + limit]
         return JsonResponse([_customer_to_json(c) for c in qs], safe=False)
     if request.method == "POST":

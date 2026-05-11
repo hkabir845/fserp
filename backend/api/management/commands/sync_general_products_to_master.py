@@ -12,7 +12,8 @@ Usage:
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
-from api.models import Company, Item
+from api.models import Company, Item, Organization
+from api.services.organization_service import ensure_company_organization_shell
 
 
 GENERAL_CATEGORIES = ("general", "service", "other")
@@ -24,23 +25,22 @@ def get_master_company():
         or Company.objects.filter(name__iexact="Master Filling Station", is_deleted=False).first()
     )
     if master:
+        if not master.organization_id:
+            org = Organization.objects.create(
+                name=master.name,
+                legal_name=(master.legal_name or "")[:200],
+            )
+            master.organization = org
+            master.save(update_fields=["organization_id"])
         if master.is_master != "true":
             master.is_master = "true"
             master.save(update_fields=["is_master"])
         return master
-    master, _ = Company.objects.get_or_create(
+    c, _ = ensure_company_organization_shell(
         name="Master Filling Station",
-        is_deleted=False,
-        defaults={
-            "legal_name": "Master Filling Station (Development)",
-            "currency": "BDT",
-            "is_active": True,
-            "is_master": "true",
-        },
+        legal_name="Master Filling Station (Development)",
     )
-    master.is_master = "true"
-    master.save(update_fields=["is_master"])
-    return master
+    return c
 
 
 class Command(BaseCommand):

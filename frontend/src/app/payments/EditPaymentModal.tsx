@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import api from '@/lib/api'
 import { AMOUNT_SLATE_EDITABLE_CLASS } from '@/utils/amountFieldStyles'
 import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
-import { getCurrencySymbol, formatAmountPlain } from '@/utils/currency'
+import { getCurrencySymbol, formatAmountPlain, roundToDecimals } from '@/utils/currency'
 import { AlertCircle, Loader2, X } from 'lucide-react'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_ALLOCATE_GREEN_CLASS } from '@/utils/amountFieldStyles'
@@ -228,7 +228,7 @@ function isDraftBillRow(b: OutstandingBill) {
 }
 
 function roundTwo(n: number): number {
-  return Math.round(n * 100) / 100
+  return roundToDecimals(n, 2)
 }
 
 export interface PaymentDetailPayload {
@@ -632,6 +632,11 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                     inputMode="decimal"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
+                    onBlur={() => {
+                      const n = parseMoneyNumber(amount)
+                      if (String(amount).trim() === '') return
+                      if (Number.isFinite(n)) setAmount(formatAmountPlain(n))
+                    }}
                     className={AMOUNT_SLATE_EDITABLE_CLASS}
                     required
                   />
@@ -747,6 +752,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                                       onChange={(e) =>
                                         updateRecvAlloc(inv, Number(e.target.value))
                                       }
+                                      onBlur={() => updateRecvAlloc(inv, allocated)}
                                       className={AMOUNT_ALLOCATE_GREEN_CLASS}
                                     />
                                   </td>
@@ -826,11 +832,12 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                                           : bal
                                     }
                                     value={allocated}
-                                    onChange={(e) =>
-                                      updateMadeAlloc(bill, Number(e.target.value))
-                                    }
-                                    className={AMOUNT_ALLOCATE_BLUE_CLASS}
-                                  />
+                                      onChange={(e) =>
+                                        updateMadeAlloc(bill, Number(e.target.value))
+                                      }
+                                      onBlur={() => updateMadeAlloc(bill, allocated)}
+                                      className={AMOUNT_ALLOCATE_BLUE_CLASS}
+                                    />
                                 </td>
                               </tr>
                             )

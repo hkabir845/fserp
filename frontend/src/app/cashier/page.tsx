@@ -11,7 +11,12 @@ import api, { getApiBaseUrl } from "@/lib/api"
 import { useCompany } from "@/contexts/CompanyContext"
 import { getCurrencySymbol, formatNumber } from "@/utils/currency"
 import { formatDate } from "@/utils/date"
-import { getPosSaleScope, isLimitedPosRegisterUser, type PosSaleScope } from "@/utils/rbac"
+import {
+  getPosHomeStationId,
+  getPosSaleScope,
+  isLimitedPosRegisterUser,
+  type PosSaleScope,
+} from "@/utils/rbac"
 import { escapeHtml, printDocument, printLedgerStatement } from "@/utils/printDocument"
 import { loadPrintBranding } from "@/utils/printBranding"
 import type { LedgerPayload } from "@/components/ContactLedgerPage"
@@ -174,6 +179,12 @@ type POSItem = {
   barcode?: string
   is_pos_available?: boolean
   image_url?: string
+  location_stocks?: {
+    station_id: number
+    station_name?: string
+    station_number?: string
+    quantity: string
+  }[]
 }
 
 /** Response from GET /inventory/availability/?item_id= (shop / station bins). */
@@ -204,6 +215,16 @@ function posItemSupportsShopStationStockView(item: POSItem): boolean {
   return (item.pos_category || "").toLowerCase() !== "fuel"
 }
 
+/** Shop SKUs tracked in station bins: only show at a site when that bin has quantity. */
+function posItemHasStockAtSellingStation(item: POSItem, stationId: number | null): boolean {
+  if (stationId == null || !Number.isFinite(stationId)) return true
+  const loc = item.location_stocks
+  if (!loc || !Array.isArray(loc) || loc.length === 0) return true
+  const row = loc.find(l => Number(l.station_id) === Number(stationId))
+  const q = row ? parseFloat(String(row.quantity)) : 0
+  return Number.isFinite(q) && q > 0
+}
+
 type CartEntry = {
   item: POSItem
   quantity: number
@@ -223,6 +244,7 @@ type StationOption = {
   id: number
   station_name: string
   station_number?: string
+  operates_fuel_retail?: boolean
 }
 
 const roundTwo = (value: number) =>
@@ -293,9 +315,7 @@ export default function CashierPOSPage() {
 
   /** What this login may sell: from localStorage user (set at login). */
   const posSaleScope: PosSaleScope = getPosSaleScope()
-  const showNozzleColumn = posSaleScope !== "general"
   const showCatalog = posSaleScope !== "fuel"
-  const showFuelDispensePanel = posSaleScope !== "general"
   const scopeUi = POS_SCOPE_UI[posSaleScope]
 
   const [loading, setLoading] = useState(true)
@@ -356,14 +376,81 @@ export default function CashierPOSPage() {
   const prevTenantCompanyIdRef = useRef<number | undefined>(undefined)
   /** Last `customer` query value we applied (avoids duplicate runs; allows a new id on next navigation). */
   const lastAppliedCustomerQueryRef = useRef<string | null>(null)
+  const invalidHomeStationToastShownRef = useRef(false)
   const limitedPosRegister = isLimitedPosRegisterUser()
+  const lockedPosStationId = useMemo(() => getPosHomeStationId(), [])
+  const isPosStationLocked = useMemo(
+    () =>
+      lockedPosStationId != null &&
+      stations.length > 0 &&
+      stations.some(s => Number(s.id) === Number(lockedPosStationId)),
+    [lockedPosStationId, stations]
+  )
 
   useEffect(() => {
-    if (selectedNozzle?.station_id != null) {
-      const sid = Number(selectedNozzle.station_id)
-      if (Number.isFinite(sid)) setPosStationId(sid)
+    if (!isPosStationLocked || lockedPosStationId == null) return
+    setPosStationId(lockedPosStationId)
+  }, [isPosStationLocked, lockedPosStationId])
+
+  useEffect(() => {
+    if (loading || stations.length === 0 || lockedPosStationId == null) {
+      if (loading) invalidHomeStationToastShownRef.current = false
+      return
     }
-  }, [selectedNozzle])
+    if (!stations.some(s => Number(s.id) === Number(lockedPosStationId))) {
+      if (!invalidHomeStationToastShownRef.current) {
+        invalidHomeStationToastShownRef.current = true
+        toast.error(
+          "This login is tied to a station that is missing or inactive for this company. Ask an admin to fix Home station on your user."
+        )
+      }
+    } else {
+      invalidHomeStationToastShownRef.current = false
+    }
+  }, [loading, stations, lockedPosStationId, toast])
+
+  const selectedSellingLocationFuelsForecourt = useMemo(() => {
+    if (posSaleScope !== "both") return true
+    const st = stations.find(s => s.id === posStationId)
+    if (!st) return true
+    return st.operates_fuel_retail !== false
+  }, [posSaleScope, stations, posStationId])
+
+  const showNozzleColumn =
+    posSaleScope !== "general" && (posSaleScope === "fuel" || selectedSellingLocationFuelsForecourt)
+  const showFuelDispensePanel = showNozzleColumn
+
+  const nozzlesForSellingContext = useMemo(() => {
+    if (posSaleScope === "fuel") return nozzles
+    if (!showNozzleColumn) return []
+    if (posStationId == null || !Number.isFinite(posStationId)) return nozzles
+    return nozzles.filter(n => Number(n.station_id) === Number(posStationId))
+  }, [nozzles, posSaleScope, showNozzleColumn, posStationId])
+
+  const catalogItemsForSellingStation = useMemo(
+    () => posItems.filter(it => posItemHasStockAtSellingStation(it, posStationId)),
+    [posItems, posStationId]
+  )
+
+  useEffect(() => {
+    if (!showNozzleColumn) {
+      setSelectedNozzle(null)
+      setQuantity("")
+      setAmount("")
+      return
+    }
+    const list = nozzlesForSellingContext
+    if (list.length === 0) {
+      setSelectedNozzle(null)
+      setQuantity("")
+      setAmount("")
+      return
+    }
+    setSelectedNozzle(prev => {
+      if (prev && list.some(n => Number(n.id) === Number(prev.id))) return prev
+      return list[0]
+    })
+  }, [showNozzleColumn, nozzlesForSellingContext])
 
   useEffect(() => {
     if (!stationStockItem) {
@@ -541,7 +628,9 @@ export default function CashierPOSPage() {
           api.get("/customers/"),
           api.get("/vendors/", { params: { skip: 0, limit: 10000 } }),
           api.get("/companies/current/"),
-          scope !== "fuel" ? api.get("/items/", { params: { pos_only: "true" } }) : Promise.resolve({ data: [] }),
+          scope !== "fuel"
+            ? api.get("/items/", { params: { pos_only: "true", location_stocks: "true" } })
+            : Promise.resolve({ data: [] }),
           scope !== "fuel" ? api.get("/tanks/") : Promise.resolve({ data: [] }),
           api.get("/bank-accounts/"),
           api.get("/stations/"),
@@ -568,10 +657,17 @@ export default function CashierPOSPage() {
       const stationsData = Array.isArray(stationsRes.data) ? stationsRes.data : []
       const stationOptions: StationOption[] = stationsData
         .map(
-          (s: { id?: unknown; station_name?: string; station_number?: string }) => ({
+          (s: {
+            id?: unknown
+            station_name?: string
+            station_number?: string
+            operates_fuel_retail?: unknown
+          }) => ({
             id: typeof s.id === "number" ? s.id : Number(s.id),
             station_name: (s.station_name && String(s.station_name).trim()) || "Station",
             station_number: s.station_number != null ? String(s.station_number) : undefined,
+            operates_fuel_retail:
+              s.operates_fuel_retail === undefined ? true : Boolean(s.operates_fuel_retail),
           })
         )
         .filter(s => Number.isFinite(s.id))
@@ -583,23 +679,36 @@ export default function CashierPOSPage() {
         setSelectedNozzle(null)
         setQuantity("")
         setAmount("")
-      } else {
+      } else if (scope === "fuel") {
         setSelectedNozzle(prev => {
           const match = prev
             ? nozzlesData.find(n => Number(n.id) === Number(prev.id))
             : undefined
           return match ?? nozzlesData[0]
         })
+      } else {
+        setSelectedNozzle(null)
       }
 
       {
+        const lockSid = getPosHomeStationId()
         const firstN = nozzlesData[0] as (Nozzle & { station_id?: number }) | undefined
         const fromNozzle =
           firstN && firstN.station_id != null && Number.isFinite(Number(firstN.station_id))
             ? Number(firstN.station_id)
             : null
         const fromList = stationOptions[0]?.id ?? null
-        setPosStationId(fromNozzle ?? fromList)
+        const lockedInCompany =
+          lockSid != null && stationOptions.some(s => Number(s.id) === Number(lockSid))
+        let nextPos: number | null
+        if (scope === "fuel") {
+          nextPos = fromNozzle ?? fromList
+        } else if (lockedInCompany) {
+          nextPos = lockSid
+        } else {
+          nextPos = fromList
+        }
+        setPosStationId(nextPos)
       }
 
       setCustomers(Array.isArray(customerRes.data) ? customerRes.data : [])
@@ -857,9 +966,9 @@ export default function CashierPOSPage() {
   const shouldShowLivePreview = !!selectedNozzle && quantityNumber > 0
 
   const filteredItems = useMemo(() => {
-    if (!itemSearch) return posItems
+    if (!itemSearch) return catalogItemsForSellingStation
     const keyword = itemSearch.toLowerCase()
-    return posItems.filter(item =>
+    return catalogItemsForSellingStation.filter(item =>
       [
         item.name,
         item.pos_category || "",
@@ -870,7 +979,7 @@ export default function CashierPOSPage() {
         .toLowerCase()
         .includes(keyword)
     )
-  }, [itemSearch, posItems])
+  }, [itemSearch, catalogItemsForSellingStation])
 
   const filteredCustomers = useMemo(() => {
     const q = customerFilter.trim().toLowerCase()
@@ -917,7 +1026,7 @@ export default function CashierPOSPage() {
             : Math.min(Math.max(entry.discountPercent, 0), 100),
       }))
 
-    const catalogIdSet = new Set(posItems.map(p => Number(p.id)))
+    const catalogIdSet = new Set(catalogItemsForSellingStation.map(p => Number(p.id)))
     if (validItems.some(row => !catalogIdSet.has(Number(row.item_id)))) {
       toast.error(
         "Cart has products that are not in the current catalog (e.g. after switching company). Clear the cart or reload."
@@ -926,7 +1035,7 @@ export default function CashierPOSPage() {
     }
 
     if (fuelLines.length > 0) {
-      const nozzleIdSet = new Set(nozzles.map(n => Number(n.id)))
+      const nozzleIdSet = new Set(nozzlesForSellingContext.map(n => Number(n.id)))
       if (fuelLines.some(fl => !nozzleIdSet.has(Number(fl.nozzle_id)))) {
         toast.error(
           "Selected nozzle is not valid for this company (e.g. after switching tenant). Clear fuel selection or reload the page."
@@ -1437,7 +1546,7 @@ export default function CashierPOSPage() {
               Register mode
             </p>
             <div className="flex min-w-0 w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:min-w-[min(100%,20rem)] sm:max-w-none sm:flex-1 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
-              {posMode === "sale" && stations.length > 0 && posSaleScope !== "fuel" ? (
+              {posMode === "sale" && stations.length > 0 && posSaleScope !== "fuel" && !isPosStationLocked ? (
                 <div className="w-full min-w-0 sm:max-w-[16rem] sm:shrink-0">
                   <label
                     className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
@@ -1460,6 +1569,16 @@ export default function CashierPOSPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+              ) : null}
+              {posMode === "sale" && isPosStationLocked && posSaleScope !== "fuel" ? (
+                <div className="w-full min-w-0 rounded-lg border border-border/80 bg-muted/40 px-3 py-2 text-xs text-muted-foreground sm:max-w-[20rem] sm:shrink-0">
+                  <span className="font-semibold text-foreground">Assigned site: </span>
+                  {stations.find(s => Number(s.id) === Number(lockedPosStationId))?.station_name ||
+                    `Station #${lockedPosStationId}`}
+                  <span className="block mt-0.5 text-[11px]">
+                    This cashier login can only sell stock and fuel for this location.
+                  </span>
                 </div>
               ) : null}
               <div
@@ -1523,9 +1642,30 @@ export default function CashierPOSPage() {
             </div>
             {posMode === "sale" && stations.length > 0 && posSaleScope !== "fuel" ? (
               <p className="w-full basis-full text-xs leading-relaxed text-muted-foreground">
-                Product lines deduct stock from this station. Fuel uses the selected nozzle’s station. On
-                a product, tap <span className="font-medium text-foreground">Stock at all stations</span> to
-                see quantities everywhere.
+                {isPosStationLocked ? (
+                  <>
+                    Catalog and pumps (if any) are limited to your assigned site. Tap{" "}
+                    <span className="font-medium text-foreground">Stock at all stations</span> on a product to
+                    compare other locations (read-only).
+                  </>
+                ) : posSaleScope === "both" && !selectedSellingLocationFuelsForecourt ? (
+                  <>
+                    This site is not set up for fuel retail — pumps are hidden. The catalog lists products
+                    you can sell from here: items without per-site bins, and shop stock with quantity at this
+                    station. Tap <span className="font-medium text-foreground">Stock at all stations</span>{" "}
+                    to compare locations.
+                  </>
+                ) : (
+                  <>
+                    Product lines deduct stock from this station.
+                    {posSaleScope === "both" && selectedSellingLocationFuelsForecourt
+                      ? " Pump lanes are limited to this station."
+                      : ""}{" "}
+                    On a product, tap{" "}
+                    <span className="font-medium text-foreground">Stock at all stations</span> to see
+                    quantities everywhere.
+                  </>
+                )}
               </p>
             ) : null}
           </div>
@@ -1582,12 +1722,12 @@ export default function CashierPOSPage() {
                     <p className="mt-0.5 text-xs text-muted-foreground">Select a lane to load pricing and meter context</p>
                   </div>
                   <span className="rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-xs font-medium tabular-nums text-muted-foreground">
-                    {nozzles.length} active
+                    {nozzlesForSellingContext.length} active
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] sm:gap-3">
-                  {nozzles.map(nozzle => {
+                  {nozzlesForSellingContext.map(nozzle => {
                     const isSelected = selectedNozzle?.id === nozzle.id
                     const capacity = nozzle.tank_capacity || 0
                     const baseStock = Number(nozzle.current_stock || 0)
@@ -1690,9 +1830,11 @@ export default function CashierPOSPage() {
                     )
                   })}
 
-                  {!nozzles.length && (
+                  {!nozzlesForSellingContext.length && (
                     <div className="col-span-full rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center text-sm text-muted-foreground">
-                      No nozzles configured yet.
+                      {posSaleScope === "both" && posStationId != null && selectedSellingLocationFuelsForecourt
+                        ? "No pump lanes at this station."
+                        : "No nozzles configured yet."}
                     </div>
                   )}
                 </div>
@@ -1740,6 +1882,18 @@ export default function CashierPOSPage() {
                 <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 sm:grid-cols-2 2xl:grid-cols-3">
                   {filteredItems.map(item => {
                     const isSelected = selectedItem?.id === item.id
+                    const siteStockRow =
+                      posStationId != null && Number.isFinite(posStationId)
+                        ? item.location_stocks?.find(
+                            l => Number(l.station_id) === Number(posStationId)
+                          )
+                        : undefined
+                    const displayQty =
+                      siteStockRow != null
+                        ? parseFloat(String(siteStockRow.quantity))
+                        : item.quantity_on_hand !== undefined
+                          ? Number(item.quantity_on_hand)
+                          : undefined
                     return (
                       <div
                         key={item.id}
@@ -1798,18 +1952,19 @@ export default function CashierPOSPage() {
                               </span>
                             )}
                           </p>
-                          {item.quantity_on_hand !== undefined &&
+                          {displayQty !== undefined &&
+                            Number.isFinite(displayQty) &&
                             item.item_type?.toLowerCase() === "inventory" && (
                               <p className="text-xs text-muted-foreground">
-                                In stock: {formatNumber(Number(item.quantity_on_hand))}{" "}
-                                {item.unit || "units"}
+                                {siteStockRow != null ? "At this site: " : "In stock: "}
+                                {formatNumber(displayQty)} {item.unit || "units"}
                                 {(() => {
                                   const kgp =
                                     item.content_weight_kg != null && item.content_weight_kg !== ""
                                       ? Number(item.content_weight_kg)
                                       : NaN
                                   if (!Number.isFinite(kgp) || kgp <= 0) return null
-                                  const approx = Number(item.quantity_on_hand) * kgp
+                                  const approx = displayQty * kgp
                                   if (!Number.isFinite(approx)) return null
                                   return (
                                     <span className="block text-teal-700/90">
@@ -2027,7 +2182,9 @@ export default function CashierPOSPage() {
                   {!cartEntries.length && pendingFuelAmount <= 0 && (
                     <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
                       {posSaleScope === "both" &&
-                        "Enter fuel in the panel above and/or add products from the catalog. Fuel-only or shop-only sales are both supported."}
+                        (selectedSellingLocationFuelsForecourt
+                          ? "Enter fuel in the panel above and/or add products from the catalog. Fuel-only or shop-only sales are both supported."
+                          : "Add products from the catalog for this station, then complete checkout.")}
                       {posSaleScope === "general" && "Add products from the catalog to the cart, then complete checkout."}
                       {posSaleScope === "fuel" && "Set quantity in the fuel panel and add the line, or add fuel to the cart above."}
                     </div>

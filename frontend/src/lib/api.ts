@@ -319,6 +319,13 @@ export function isSuperAdminRole(role: unknown): boolean {
   return n === 'super_admin' || n === 'superadmin'
 }
 
+/** Tenant administrator may switch legal entities within the same organization (group). */
+export function isTenantAdminRole(role: unknown): boolean {
+  if (role == null || typeof role !== 'string') return false
+  const n = role.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  return n === 'admin'
+}
+
 // Request interceptor to add auth token, tenant subdomain, and ensure trailing slashes for list endpoints
 api.interceptors.request.use(
   (config) => {
@@ -352,19 +359,21 @@ api.interceptors.request.use(
         // Ignore tenant errors
       }
       
-      // Add selected company ID for superadmin context switching
+      // Selected company: super admin (any tenant) or tenant admin (same organization only; server validates)
       try {
         const selectedCompanyStr = localStorage.getItem('superadmin_selected_company')
         if (selectedCompanyStr && selectedCompanyStr !== 'undefined' && selectedCompanyStr !== 'null') {
           try {
             const selectedCompany = JSON.parse(selectedCompanyStr)
             if (selectedCompany && selectedCompany.id) {
-              // Check if user is superadmin
               const userStr = localStorage.getItem('user')
               if (userStr && userStr !== 'undefined' && userStr !== 'null') {
                 try {
-                  const user = JSON.parse(userStr)
-                  if (user && isSuperAdminRole(user.role)) {
+                  const user = JSON.parse(userStr) as { role?: string }
+                  if (
+                    user &&
+                    (isSuperAdminRole(user.role) || isTenantAdminRole(user.role))
+                  ) {
                     config.headers['X-Selected-Company-Id'] = String(selectedCompany.id)
                   }
                 } catch (e) {

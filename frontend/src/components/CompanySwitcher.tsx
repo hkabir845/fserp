@@ -179,7 +179,6 @@ export default function CompanySwitcher() {
     } else {
       void fetchTenantContext()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load only
   }, [])
 
   // FSMS ERP: if no company is picked yet, scope API calls (X-Selected-Company-Id) to a default tenant.

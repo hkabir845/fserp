@@ -212,8 +212,10 @@ export default function ContactLedgerPage({
                     {data.note}
                   </p>
                 )}
-                {data.balance_note && !data.note && (
-                  <p className="mt-2 text-sm text-gray-600">{data.balance_note}</p>
+                {data.balance_note && (
+                  <p className={`text-sm text-gray-600 ${data.note ? 'mt-3' : 'mt-2'}`}>
+                    {data.balance_note}
+                  </p>
                 )}
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div>

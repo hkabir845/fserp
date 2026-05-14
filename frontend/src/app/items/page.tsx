@@ -11,6 +11,7 @@ import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 /** API returns decimals as strings; tanks-backed quantity is merged server-side. */
@@ -114,6 +115,13 @@ function normalizeMoneyTyping(raw: string): string {
   return out
 }
 
+function optionalCoaIdFromForm(s: string): number | null {
+  const t = (s || '').trim()
+  if (!t) return null
+  const n = parseInt(t, 10)
+  return Number.isFinite(n) ? n : null
+}
+
 interface Item {
   id: number
   item_number: string
@@ -133,6 +141,17 @@ interface Item {
   image_url?: string
   /** Labeled kg per selling unit (e.g. kg per sack) when POS category is feed */
   content_weight_kg?: number | string | null
+  revenue_account_id?: number | null
+  cogs_account_id?: number | null
+  inventory_account_id?: number | null
+  expense_account_id?: number | null
+}
+
+interface CoaPickRow {
+  id: number
+  account_code: string
+  account_name: string
+  account_type: string
 }
 
 /** Feed: catch sack weight (e.g. 25 kg) saved as BDT unit_price while cost is per-sack in hundreds/thousands. */
@@ -179,6 +198,11 @@ type ItemFormData = {
   category: string
   image_url: string
   content_weight_kg: number | string
+  /** Optional GL overrides (empty string = use template defaults) */
+  revenue_account_id: string
+  cogs_account_id: string
+  inventory_account_id: string
+  expense_account_id: string
 }
 
 export default function ItemsPage() {
@@ -218,6 +242,10 @@ export default function ItemsPage() {
     category: 'General',
     image_url: '',
     content_weight_kg: '',
+    revenue_account_id: '',
+    cogs_account_id: '',
+    inventory_account_id: '',
+    expense_account_id: '',
   })
   const [fuelTanksForProduct, setFuelTanksForProduct] = useState<ProductTankRow[]>([])
   const [selectedFuelTankId, setSelectedFuelTankId] = useState<number | null>(null)
@@ -239,6 +267,53 @@ export default function ItemsPage() {
   const [cameraVideoRef, setCameraVideoRef] = useState<HTMLVideoElement | null>(null)
   const [categoryPresets, setCategoryPresets] = useState<string[]>([])
   const [categoryCustomInUse, setCategoryCustomInUse] = useState<string[]>([])
+  const [coaAccounts, setCoaAccounts] = useState<CoaPickRow[]>([])
+
+  const loadCoaForItemModal = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('access_token')
+      if (!token) return
+      const r = await api.get('/chart-of-accounts/', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const rows = Array.isArray(r.data) ? r.data : []
+      setCoaAccounts(
+        rows
+          .filter((x: { is_active?: boolean }) => x.is_active !== false)
+          .map((x: { id: number; account_code?: string; account_name?: string; account_type?: string }) => ({
+            id: x.id,
+            account_code: String(x.account_code || ''),
+            account_name: String(x.account_name || ''),
+            account_type: String(x.account_type || ''),
+          }))
+      )
+    } catch {
+      setCoaAccounts([])
+    }
+  }, [])
+
+  const incomeCoaOptions = useMemo(
+    () => coaAccounts.filter((a) => (a.account_type || '').toLowerCase() === 'income'),
+    [coaAccounts]
+  )
+  const expenseCoaOptions = useMemo(
+    () =>
+      coaAccounts.filter((a) =>
+        ['expense', 'cost_of_goods_sold'].includes((a.account_type || '').toLowerCase())
+      ),
+    [coaAccounts]
+  )
+  const cogsCoaOptions = useMemo(
+    () => coaAccounts.filter((a) => (a.account_type || '').toLowerCase() === 'cost_of_goods_sold'),
+    [coaAccounts]
+  )
+  const assetCoaOptions = useMemo(
+    () =>
+      coaAccounts.filter((a) =>
+        ['asset', 'bank_account'].includes((a.account_type || '').toLowerCase())
+      ),
+    [coaAccounts]
+  )
 
   /**
    * Opening /items?edit=123 or ?new=1 must hydrate the modal once. The effect also depends on `items`,
@@ -296,7 +371,8 @@ export default function ItemsPage() {
 
   useEffect(() => {
     if (showModal) void loadCategoryOptions()
-  }, [showModal, loadCategoryOptions])
+    if (showModal) void loadCoaForItemModal()
+  }, [showModal, loadCategoryOptions, loadCoaForItemModal])
 
   useEffect(() => {
     if (!showModal || !editingId) {
@@ -901,6 +977,10 @@ export default function ItemsPage() {
                   : formData.content_weight_kg
               )
             : null,
+          revenue_account_id: optionalCoaIdFromForm(formData.revenue_account_id),
+          cogs_account_id: optionalCoaIdFromForm(formData.cogs_account_id),
+          inventory_account_id: optionalCoaIdFromForm(formData.inventory_account_id),
+          expense_account_id: optionalCoaIdFromForm(formData.expense_account_id),
           ...(!editingId && itemRefCode.trim() ? { item_number: itemRefCode.trim() } : {}),
         },
         headers: {
@@ -969,6 +1049,22 @@ export default function ItemsPage() {
         const n = Number(raw)
         return Number.isFinite(n) ? n : ('' as const)
       })(),
+      revenue_account_id:
+        (item as Item).revenue_account_id != null && (item as Item).revenue_account_id !== undefined
+          ? String((item as Item).revenue_account_id)
+          : '',
+      cogs_account_id:
+        (item as Item).cogs_account_id != null && (item as Item).cogs_account_id !== undefined
+          ? String((item as Item).cogs_account_id)
+          : '',
+      inventory_account_id:
+        (item as Item).inventory_account_id != null && (item as Item).inventory_account_id !== undefined
+          ? String((item as Item).inventory_account_id)
+          : '',
+      expense_account_id:
+        (item as Item).expense_account_id != null && (item as Item).expense_account_id !== undefined
+          ? String((item as Item).expense_account_id)
+          : '',
     })
     const itemImageUrl = (item as any).image_url
     if (itemImageUrl) {
@@ -1028,6 +1124,10 @@ export default function ItemsPage() {
       category: 'General',
       image_url: '',
       content_weight_kg: '',
+      revenue_account_id: '',
+      cogs_account_id: '',
+      inventory_account_id: '',
+      expense_account_id: '',
     })
     setImagePreview(null)
     setItemRefCode('')
@@ -2256,6 +2356,85 @@ export default function ItemsPage() {
                         <option key={c} value={c} />
                       ))}
                     </datalist>
+                  </div>
+
+                  <div className="col-span-2 border-t border-gray-200 pt-4 mt-2">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-1">Chart of accounts (optional)</h3>
+                    <p className="text-xs text-gray-500 mb-3">
+                      When set, automatic journals use these accounts instead of fuel-station template codes (4100/4200/5100/1220/6900). Leave blank to keep defaults.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Revenue (sales)</label>
+                        <select
+                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          value={formData.revenue_account_id}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, revenue_account_id: e.target.value }))
+                          }
+                        >
+                          <option value="">— Template default —</option>
+                          {incomeCoaOptions.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {formatCoaOptionLabel(a)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">COGS</label>
+                        <select
+                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          value={formData.cogs_account_id}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, cogs_account_id: e.target.value }))
+                          }
+                        >
+                          <option value="">— Template default —</option>
+                          {cogsCoaOptions.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {formatCoaOptionLabel(a)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Inventory asset</label>
+                        <select
+                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          value={formData.inventory_account_id}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, inventory_account_id: e.target.value }))
+                          }
+                        >
+                          <option value="">— Template default —</option>
+                          {assetCoaOptions.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {formatCoaOptionLabel(a)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Expense (non-inventory bills)
+                        </label>
+                        <select
+                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          value={formData.expense_account_id}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, expense_account_id: e.target.value }))
+                          }
+                        >
+                          <option value="">— Template default —</option>
+                          {expenseCoaOptions.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {formatCoaOptionLabel(a)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                   </div>
 
                   <div>

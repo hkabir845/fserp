@@ -27,6 +27,8 @@ from api.services.reference_code import (
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.services.contact_ledgers import build_employee_ledger, ledger_query_dates
+from api.services.employee_payroll_subledger import refresh_employee_balance
+from api.services.coa_gl_defaults import ALLOWED_SALARY_EXPENSE, parse_optional_chart_account_id
 from api.services.gl_posting import post_payroll_salary
 from api.services.station_defaults import parse_optional_station_fk
 
@@ -142,20 +144,6 @@ def _suggested_next_employee_code(company_id: int) -> str:
     used = collect_used_suffixes(company_id, Employee, "employee_code", "EMP")
     n = first_free_suffix(used)
     return format_code("EMP", n, 5)
-
-
-def _refresh_employee_balance(employee_id: int) -> None:
-    emp = Employee.objects.filter(pk=employee_id).first()
-    if not emp:
-        return
-    ob = emp.opening_balance or Decimal("0")
-    agg = EmployeeLedgerEntry.objects.filter(employee_id=employee_id).aggregate(
-        d=Sum("debit"), c=Sum("credit")
-    )
-    d = agg.get("d") or Decimal("0")
-    c = agg.get("c") or Decimal("0")
-    nb = ob + d - c
-    Employee.objects.filter(pk=employee_id).update(current_balance=nb)
 
 
 @csrf_exempt
@@ -316,7 +304,7 @@ def employee_detail(request, employee_id: int):
                 return JsonResponse({"detail": hs_err}, status=400)
             e.home_station_id = hs_id
         e.save()
-        _refresh_employee_balance(e.id)
+        refresh_employee_balance(e.id)
         e = (
             Employee.objects.filter(pk=e.pk, company_id=cid)
             .select_related("home_station")
@@ -373,7 +361,7 @@ def employee_ledger_entries(request, employee_id: int):
             debit=debit,
             credit=credit,
         )
-        _refresh_employee_balance(e.id)
+        refresh_employee_balance(e.id)
     return JsonResponse(
         {
             "id": entry.id,
@@ -441,6 +429,17 @@ def _payroll_run_to_json(p: PayrollRun, *, include_allocations: bool = True) -> 
         "station_name": (
             (p.station.station_name or "").strip()
             if getattr(p, "station_id", None) and getattr(p, "station", None)
+            else ""
+        ),
+        "salary_expense_account_id": getattr(p, "salary_expense_account_id", None),
+        "salary_expense_account_code": (
+            (p.salary_expense_account.account_code or "").strip()
+            if getattr(p, "salary_expense_account_id", None) and getattr(p, "salary_expense_account", None)
+            else ""
+        ),
+        "salary_expense_account_name": (
+            (p.salary_expense_account.account_name or "").strip()
+            if getattr(p, "salary_expense_account_id", None) and getattr(p, "salary_expense_account", None)
             else ""
         ),
     }
@@ -525,7 +524,9 @@ def _validate_payroll_amounts(gross: Decimal, ded: Decimal, net: Decimal) -> str
 def payroll_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
-        qs = PayrollRun.objects.filter(company_id=cid).select_related("salary_journal", "station")
+        qs = PayrollRun.objects.filter(company_id=cid).select_related(
+            "salary_journal", "station", "salary_expense_account"
+        )
         return JsonResponse(
             [_payroll_run_to_json(p, include_allocations=False) for p in qs],
             safe=False,
@@ -582,6 +583,17 @@ def payroll_list_or_create(request):
         if pr_err:
             return JsonResponse({"detail": pr_err}, status=400)
 
+    salary_exp_id = None
+    if "salary_expense_account_id" in body:
+        salary_exp_id, se_err = parse_optional_chart_account_id(
+            cid,
+            body.get("salary_expense_account_id"),
+            allowed_normalized_types=ALLOWED_SALARY_EXPENSE,
+            field_label="salary_expense_account_id",
+        )
+        if se_err:
+            return JsonResponse({"detail": se_err}, status=400)
+
     p = PayrollRun(
         company_id=cid,
         station_id=pr_station_id,
@@ -596,6 +608,7 @@ def payroll_list_or_create(request):
         total_gross=g,
         total_deductions=d,
         total_net=n,
+        salary_expense_account_id=salary_exp_id,
     )
     p.save()
     if not p.payroll_number:
@@ -603,7 +616,7 @@ def payroll_list_or_create(request):
         p.refresh_from_db()
     p = (
         PayrollRun.objects.filter(pk=p.pk, company_id=cid)
-        .select_related("salary_journal", "station")
+        .select_related("salary_journal", "station", "salary_expense_account")
         .first()
     )
     return JsonResponse(_payroll_run_to_json(p), status=201)
@@ -617,7 +630,7 @@ def payroll_detail(request, payroll_id: int):
     cid = request.company_id
     p = (
         PayrollRun.objects.filter(pk=payroll_id, company_id=cid)
-        .select_related("salary_journal", "station")
+        .select_related("salary_journal", "station", "salary_expense_account")
         .first()
     )
     if not p:
@@ -695,6 +708,16 @@ def payroll_detail(request, payroll_id: int):
             if pr_err:
                 return JsonResponse({"detail": pr_err}, status=400)
             p.station_id = pr_sid
+        if "salary_expense_account_id" in body:
+            seid, se_err = parse_optional_chart_account_id(
+                cid,
+                body.get("salary_expense_account_id"),
+                allowed_normalized_types=ALLOWED_SALARY_EXPENSE,
+                field_label="salary_expense_account_id",
+            )
+            if se_err:
+                return JsonResponse({"detail": se_err}, status=400)
+            p.salary_expense_account_id = seid
         p.save()
         if "pond_allocations" in body:
             if p.salary_journal_id:
@@ -725,7 +748,7 @@ def payroll_detail(request, payroll_id: int):
                 return sync_err
         p2 = (
             PayrollRun.objects.filter(pk=p.pk, company_id=cid)
-            .select_related("salary_journal", "station")
+            .select_related("salary_journal", "station", "salary_expense_account")
             .first()
         )
         return JsonResponse(_payroll_run_to_json(p2))
@@ -772,6 +795,7 @@ def payroll_from_employees(request, payroll_id: int):
     p.total_gross = s
     p.total_deductions = Decimal("0")
     p.total_net = s
+    p.subledger_employee_id = None
     p.save()
     p.refresh_from_db()
     p = (
@@ -841,6 +865,7 @@ def payroll_from_one_employee(request, payroll_id: int):
     p.total_gross = s
     p.total_deductions = Decimal("0")
     p.total_net = s
+    p.subledger_employee_id = eid
     p.save()
     p.refresh_from_db()
     p = (

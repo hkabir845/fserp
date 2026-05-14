@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Eye, Search, X, PlusCircle, Trash2, Send, CheckCircle, Edit2, FileText, Printer } from 'lucide-react'
@@ -13,6 +13,7 @@ import type { PrintBranding } from '@/utils/printBranding'
 import { loadPrintBranding } from '@/utils/printBranding'
 import { printListView } from '@/utils/printListView'
 import { AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
+import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 
 interface InvoiceLineItem {
   id?: number
@@ -21,6 +22,8 @@ interface InvoiceLineItem {
   item_id?: number
   /** From API when item relation is present (POS / list detail). */
   item_name?: string
+  /** Line-level revenue GL override (income-type accounts). */
+  revenue_account_id?: number
   quantity: number
   unit_price: number
   amount: number
@@ -61,6 +64,14 @@ interface Item {
   unit_price: number | null
   unit: string
   is_deleted?: boolean
+  revenue_account_id?: number | null
+}
+
+interface CoaIncomeRow {
+  id: number
+  account_code: string
+  account_name: string
+  account_type: string
 }
 
 /** Map API `lines` (or `line_items`) to UI line_items with numeric fields. */
@@ -77,6 +88,10 @@ function normalizeInvoiceLinesFromApi(raw: Record<string, unknown>): InvoiceLine
     unit_price: Number(row.unit_price ?? 0),
     amount: Number(row.amount ?? 0),
     tax_amount: Number(row.tax_amount ?? 0),
+    revenue_account_id:
+      row.revenue_account_id != null && row.revenue_account_id !== ''
+        ? Number(row.revenue_account_id)
+        : undefined,
   }))
 }
 
@@ -118,12 +133,37 @@ export default function InvoicesPage() {
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [printBranding, setPrintBranding] = useState<PrintBranding | null>(null)
+  const [revenueCoaOptions, setRevenueCoaOptions] = useState<CoaIncomeRow[]>([])
   const [formData, setFormData] = useState({
     customer_id: 0,
     invoice_date: new Date().toISOString().split('T')[0],
     due_date: '',
     lines: [] as InvoiceLineItem[]
   })
+
+  const loadRevenueCoa = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('access_token')
+      if (!token) return
+      const r = await api.get('/chart-of-accounts/', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const rows = Array.isArray(r.data) ? r.data : []
+      setRevenueCoaOptions(
+        rows
+          .filter((x: { is_active?: boolean }) => x.is_active !== false)
+          .map((x: { id: number; account_code?: string; account_name?: string; account_type?: string }) => ({
+            id: x.id,
+            account_code: String(x.account_code || ''),
+            account_name: String(x.account_name || ''),
+            account_type: String(x.account_type || ''),
+          }))
+          .filter((x) => x.account_type.toLowerCase() === 'income')
+      )
+    } catch {
+      setRevenueCoaOptions([])
+    }
+  }, [])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -140,8 +180,9 @@ export default function InvoicesPage() {
     if (showModal || showEditModal) {
       // Always fetch to ensure fresh data
       fetchCustomersAndItems()
+      void loadRevenueCoa()
     }
-  }, [showModal, showEditModal])
+  }, [showModal, showEditModal, loadRevenueCoa])
 
   const fetchData = async (isRetry = false) => {
     try {
@@ -450,6 +491,62 @@ export default function InvoicesPage() {
     return quantity * unitPrice
   }
 
+  const applyInvoiceLineItemFromSelect = useCallback(
+    (index: number, selectedValue: string) => {
+      if (selectedValue && selectedValue !== '') {
+        const probeId = parseInt(selectedValue, 10)
+        if (Number.isFinite(probeId) && probeId > 0 && !items.some((i) => i.id === probeId)) {
+          toast.error(`Item with ID ${probeId} not found`)
+          return
+        }
+      }
+      let warnItemName: string | null = null
+      setFormData((prev) => {
+        const newLines = [...prev.lines]
+        const row = { ...newLines[index] }
+        if (!selectedValue || selectedValue === '') {
+          row.item_id = undefined
+          row.unit_price = 0
+          row.description = ''
+          row.revenue_account_id = undefined
+          row.amount = calculateLineAmount(row.quantity || 1, 0)
+          newLines[index] = row
+          return { ...prev, lines: newLines }
+        }
+        const itemId = parseInt(selectedValue, 10)
+        if (!Number.isFinite(itemId) || itemId <= 0) {
+          return prev
+        }
+        const item = items.find((i) => i.id === itemId)
+        if (!item) {
+          return prev
+        }
+        const unitPrice =
+          item.unit_price != null && item.unit_price !== undefined
+            ? parseFloat(String(item.unit_price))
+            : 0
+        const rev =
+          item.revenue_account_id != null && Number(item.revenue_account_id) > 0
+            ? Number(item.revenue_account_id)
+            : undefined
+        row.item_id = itemId
+        row.unit_price = unitPrice
+        row.description = item.name || ''
+        row.revenue_account_id = rev
+        row.amount = calculateLineAmount(row.quantity || 1, unitPrice)
+        newLines[index] = row
+        if (unitPrice === 0) warnItemName = item.name || null
+        return { ...prev, lines: newLines }
+      })
+      if (warnItemName) {
+        toast.warning(
+          `Item "${warnItemName}" has no unit price set. Please enter a price manually.`
+        )
+      }
+    },
+    [items, toast]
+  )
+
   const calculateTotals = () => {
     const subtotal = formData.lines.reduce((sum, line) => sum + (line.amount || 0), 0)
     const taxAmount = formData.lines.reduce((sum, line) => sum + (line.tax_amount || 0), 0)
@@ -561,7 +658,11 @@ export default function InvoicesPage() {
             item_id: line.item_id && line.item_id > 0 ? line.item_id : null,
             description: line.description && line.description.trim() ? line.description.trim() : null,
             quantity: quantity,
-            unit_price: unitPrice
+            unit_price: unitPrice,
+            revenue_account_id:
+              line.revenue_account_id != null && line.revenue_account_id > 0
+                ? line.revenue_account_id
+                : null,
           }
         })
       }
@@ -702,6 +803,10 @@ export default function InvoicesPage() {
             unit_price: Number(item.unit_price || 0),
             amount: Number(item.amount || 0),
             tax_amount: Number(item.tax_amount || 0),
+            revenue_account_id:
+              item.revenue_account_id != null && Number(item.revenue_account_id) > 0
+                ? Number(item.revenue_account_id)
+                : undefined,
           })),
         })
         setShowEditModal(true)
@@ -757,7 +862,11 @@ export default function InvoicesPage() {
           item_id: line.item_id && line.item_id > 0 ? line.item_id : null,
           description: line.description && line.description.trim() ? line.description.trim() : null,
           quantity: parseFloat(line.quantity.toString()) || 0,
-          unit_price: parseFloat(line.unit_price.toString()) || 0
+          unit_price: parseFloat(line.unit_price.toString()) || 0,
+          revenue_account_id:
+            line.revenue_account_id != null && line.revenue_account_id > 0
+              ? line.revenue_account_id
+              : null,
         }))
       })
 
@@ -1283,54 +1392,13 @@ export default function InvoicesPage() {
 
                   <div className="space-y-3">
                     {formData.lines.map((line, index) => (
-                      <div key={index} className="grid grid-cols-12 gap-2 p-3 border border-gray-200 rounded-lg">
+                      <div key={index} className="space-y-2 p-3 border border-gray-200 rounded-lg">
+                      <div className="grid grid-cols-12 gap-2">
                         <div className="col-span-12 md:col-span-3">
                           <label className="block text-xs font-medium text-gray-700 mb-1">Item</label>
                           <select
                             value={line.item_id || ''}
-                            onChange={(e) => {
-                              const selectedValue = e.target.value
-                              
-                              if (!selectedValue || selectedValue === '') {
-                                handleLineChange(index, 'item_id', undefined)
-                                handleLineChange(index, 'unit_price', 0)
-                                handleLineChange(index, 'description', '')
-                                return
-                              }
-                              
-                              const itemId = parseInt(selectedValue)
-                              if (isNaN(itemId) || itemId === 0) {
-                                console.warn('Invalid item ID:', selectedValue)
-                                return
-                              }
-                              
-                              const item = items.find(i => i.id === itemId)
-                              
-                              if (item) {
-                                // Set unit_price, defaulting to 0 if null/undefined
-                                const unitPrice = item.unit_price != null && item.unit_price !== undefined 
-                                  ? parseFloat(item.unit_price.toString()) 
-                                  : 0
-                                
-                                // Update all fields at once
-                                const newLines = [...formData.lines]
-                                newLines[index] = {
-                                  ...newLines[index],
-                                  item_id: itemId,
-                                  unit_price: unitPrice,
-                                  description: item.name || '',
-                                  amount: calculateLineAmount(newLines[index].quantity || 1, unitPrice)
-                                }
-                                setFormData({ ...formData, lines: newLines })
-                                
-                                if (unitPrice === 0) {
-                                  toast.warning(`Item "${item.name}" has no unit price set. Please enter a price manually.`)
-                                }
-                              } else {
-                                console.error('Item not found. Item ID:', itemId, 'Available items:', items.map(i => ({ id: i.id, name: i.name })))
-                                toast.error(`Item with ID ${itemId} not found`)
-                              }
-                            }}
+                            onChange={(e) => applyInvoiceLineItemFromSelect(index, e.target.value)}
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                             disabled={loadingItems}
                           >
@@ -1406,6 +1474,42 @@ export default function InvoicesPage() {
                             <Trash2 className="h-4 w-4 mx-auto" />
                           </button>
                         </div>
+                      </div>
+                      <div className="grid grid-cols-12 gap-2">
+                        <div className="col-span-12 md:col-span-10">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Revenue account (optional)
+                          </label>
+                          <select
+                            value={line.revenue_account_id ? String(line.revenue_account_id) : ''}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              if (v === '') {
+                                handleLineChange(index, 'revenue_account_id', undefined)
+                                return
+                              }
+                              const n = parseInt(v, 10)
+                              handleLineChange(
+                                index,
+                                'revenue_account_id',
+                                Number.isFinite(n) && n > 0 ? n : undefined
+                              )
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
+                          >
+                            <option value="">— From item or company default —</option>
+                            {revenueCoaOptions.map((a) => (
+                              <option key={a.id} value={String(a.id)}>
+                                {formatCoaOptionLabel(a)}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-0.5 text-[11px] text-gray-500">
+                            Choosing an item with a default revenue account fills this automatically; you can override
+                            per line.
+                          </p>
+                        </div>
+                      </div>
                       </div>
                     ))}
                   </div>
@@ -1714,54 +1818,13 @@ export default function InvoicesPage() {
 
                   <div className="space-y-3">
                     {formData.lines.map((line, index) => (
-                      <div key={index} className="grid grid-cols-12 gap-2 p-3 border border-gray-200 rounded-lg">
+                      <div key={index} className="space-y-2 p-3 border border-gray-200 rounded-lg">
+                      <div className="grid grid-cols-12 gap-2">
                         <div className="col-span-12 md:col-span-3">
                           <label className="block text-xs font-medium text-gray-700 mb-1">Item</label>
                           <select
                             value={line.item_id || ''}
-                            onChange={(e) => {
-                              const selectedValue = e.target.value
-                              
-                              if (!selectedValue || selectedValue === '') {
-                                handleLineChange(index, 'item_id', undefined)
-                                handleLineChange(index, 'unit_price', 0)
-                                handleLineChange(index, 'description', '')
-                                return
-                              }
-                              
-                              const itemId = parseInt(selectedValue)
-                              if (isNaN(itemId) || itemId === 0) {
-                                console.warn('Invalid item ID:', selectedValue)
-                                return
-                              }
-                              
-                              const item = items.find(i => i.id === itemId)
-                              
-                              if (item) {
-                                // Set unit_price, defaulting to 0 if null/undefined
-                                const unitPrice = item.unit_price != null && item.unit_price !== undefined 
-                                  ? parseFloat(item.unit_price.toString()) 
-                                  : 0
-                                
-                                // Update all fields at once
-                                const newLines = [...formData.lines]
-                                newLines[index] = {
-                                  ...newLines[index],
-                                  item_id: itemId,
-                                  unit_price: unitPrice,
-                                  description: item.name || '',
-                                  amount: calculateLineAmount(newLines[index].quantity || 1, unitPrice)
-                                }
-                                setFormData({ ...formData, lines: newLines })
-                                
-                                if (unitPrice === 0) {
-                                  toast.warning(`Item "${item.name}" has no unit price set. Please enter a price manually.`)
-                                }
-                              } else {
-                                console.error('Item not found. Item ID:', itemId, 'Available items:', items.map(i => ({ id: i.id, name: i.name })))
-                                toast.error(`Item with ID ${itemId} not found`)
-                              }
-                            }}
+                            onChange={(e) => applyInvoiceLineItemFromSelect(index, e.target.value)}
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                             disabled={loadingItems}
                           >
@@ -1837,6 +1900,42 @@ export default function InvoicesPage() {
                             <Trash2 className="h-4 w-4 mx-auto" />
                           </button>
                         </div>
+                      </div>
+                      <div className="grid grid-cols-12 gap-2">
+                        <div className="col-span-12 md:col-span-10">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Revenue account (optional)
+                          </label>
+                          <select
+                            value={line.revenue_account_id ? String(line.revenue_account_id) : ''}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              if (v === '') {
+                                handleLineChange(index, 'revenue_account_id', undefined)
+                                return
+                              }
+                              const n = parseInt(v, 10)
+                              handleLineChange(
+                                index,
+                                'revenue_account_id',
+                                Number.isFinite(n) && n > 0 ? n : undefined
+                              )
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
+                          >
+                            <option value="">— From item or company default —</option>
+                            {revenueCoaOptions.map((a) => (
+                              <option key={a.id} value={String(a.id)}>
+                                {formatCoaOptionLabel(a)}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-0.5 text-[11px] text-gray-500">
+                            Choosing an item with a default revenue account fills this automatically; you can override
+                            per line.
+                          </p>
+                        </div>
+                      </div>
                       </div>
                     ))}
                   </div>

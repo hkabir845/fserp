@@ -10,6 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.utils.customer_display import customer_display_name
 from api.views.common import parse_json_body, require_company_id
+from api.services.coa_gl_defaults import ALLOWED_INCOME, parse_optional_chart_account_id
 from api.models import Invoice, InvoiceLine, Customer, ShiftSession
 from api.services.gl_posting import sync_invoice_gl
 from api.services.invoice_station import (
@@ -37,7 +38,7 @@ def _derive_invoice_list_source(inv: Invoice) -> str:
 
 
 def _invoice_to_json(inv, company_id: int):
-    lines = list(inv.lines.all().select_related("item"))
+    lines = list(inv.lines.all().select_related("item", "revenue_account"))
     return {
         "id": inv.id,
         "invoice_number": inv.invoice_number,
@@ -74,6 +75,7 @@ def _invoice_to_json(inv, company_id: int):
                 "quantity": str(l.quantity),
                 "unit_price": str(l.unit_price),
                 "amount": str(l.amount),
+                "revenue_account_id": getattr(l, "revenue_account_id", None),
             }
             for i, l in enumerate(lines, start=1)
         ],
@@ -128,7 +130,7 @@ def invoices_list_or_create(request):
         qs = (
             Invoice.objects.filter(company_id=cid)
             .select_related("customer", "shift_session", "station")
-            .prefetch_related("lines", "lines__item", "payment_allocations")
+            .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
             .order_by("-invoice_date", "-id")
         )
         return JsonResponse([_invoice_to_json(inv, cid) for inv in qs], safe=False)
@@ -167,6 +169,14 @@ def invoices_list_or_create(request):
         line_rows = list(body.get("lines") or body.get("line_items") or [])
         for row in line_rows:
             amount = _decimal(row.get("amount"), _decimal(row.get("quantity"), 1) * _decimal(row.get("unit_price"), 0))
+            rid, rerr = parse_optional_chart_account_id(
+                cid,
+                row.get("revenue_account_id"),
+                allowed_normalized_types=ALLOWED_INCOME,
+                field_label="revenue_account_id",
+            )
+            if rerr:
+                return JsonResponse({"detail": rerr}, status=400)
             InvoiceLine.objects.create(
                 invoice=inv,
                 item_id=row.get("item_id") or None,
@@ -174,6 +184,7 @@ def invoices_list_or_create(request):
                 quantity=_decimal(row.get("quantity"), 1),
                 unit_price=_decimal(row.get("unit_price"), 0),
                 amount=amount,
+                revenue_account_id=rid,
             )
         if line_rows:
             _refresh_invoice_totals_from_lines(inv)
@@ -181,7 +192,7 @@ def invoices_list_or_create(request):
         inv = (
             Invoice.objects.filter(id=inv.id)
             .select_related("customer", "shift_session", "station")
-            .prefetch_related("lines", "lines__item", "payment_allocations")
+            .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
             .first()
         )
         sync_invoice_gl(
@@ -202,7 +213,7 @@ def invoice_detail(request, invoice_id: int):
     inv = (
         Invoice.objects.filter(id=invoice_id, company_id=cid)
         .select_related("customer", "shift_session", "station")
-        .prefetch_related("lines", "lines__item", "payment_allocations")
+        .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
         .first()
     )
     if not inv:
@@ -245,6 +256,14 @@ def invoice_detail(request, invoice_id: int):
             inv.lines.all().delete()
             for row in line_payload or []:
                 amount = _decimal(row.get("amount"), _decimal(row.get("quantity"), 1) * _decimal(row.get("unit_price"), 0))
+                rid, rerr = parse_optional_chart_account_id(
+                    cid,
+                    row.get("revenue_account_id"),
+                    allowed_normalized_types=ALLOWED_INCOME,
+                    field_label="revenue_account_id",
+                )
+                if rerr:
+                    return JsonResponse({"detail": rerr}, status=400)
                 InvoiceLine.objects.create(
                     invoice=inv,
                     item_id=row.get("item_id") or None,
@@ -252,13 +271,14 @@ def invoice_detail(request, invoice_id: int):
                     quantity=_decimal(row.get("quantity"), 1),
                     unit_price=_decimal(row.get("unit_price"), 0),
                     amount=amount,
+                    revenue_account_id=rid,
                 )
             _refresh_invoice_totals_from_lines(inv)
         inv.refresh_from_db()
         inv = (
             Invoice.objects.filter(id=inv.id)
             .select_related("customer", "shift_session", "station")
-            .prefetch_related("lines", "lines__item", "payment_allocations")
+            .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
             .first()
         )
         sync_invoice_gl(
@@ -302,7 +322,7 @@ def invoice_status(request, invoice_id: int):
         )
     inv = (
         Invoice.objects.filter(id=invoice_id, company_id=cid)
-        .prefetch_related("lines", "lines__item", "payment_allocations")
+        .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
         .select_related("customer", "shift_session", "station")
         .first()
     )

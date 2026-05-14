@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText } from 'lucide-react'
@@ -160,6 +160,7 @@ interface Vendor {
   vendor_number: string
   display_name: string
   is_active: boolean
+  default_expense_account_id?: number | null
 }
 
 interface Item {
@@ -171,6 +172,7 @@ interface Item {
   item_type: string  // 'inventory', 'non_inventory', 'service'
   pos_category?: string  // 'fuel', 'general', 'fish' (Fish Type), etc.
   quantity_on_hand?: number | string
+  expense_account_id?: number | null
 }
 
 function isFishTypeItem(item: Item | undefined): boolean {
@@ -207,16 +209,30 @@ function applyItemSelectionToBillLine(
   line: BillLineItem,
   itemId: number,
   itemList: Item[],
-  tankList: Tank[]
+  tankList: Tank[],
+  vendorDefaultExpenseAccountId?: number | null
 ): BillLineItem {
   const item = itemList.find((i) => i.id === itemId)
   if (!item) return line
   const uc = item.cost || 0
   const qty = Number(line.quantity ?? 0)
+  const itype = (item.item_type || '').toLowerCase()
+  const receivesInventory = itype === 'inventory'
+  let defaultExpense: number | undefined
+  if (!receivesInventory) {
+    if (item.expense_account_id != null && item.expense_account_id > 0) {
+      defaultExpense = item.expense_account_id
+    } else if (
+      vendorDefaultExpenseAccountId != null &&
+      vendorDefaultExpenseAccountId > 0
+    ) {
+      defaultExpense = vendorDefaultExpenseAccountId
+    }
+  }
   const next: BillLineItem = {
     ...line,
     item_id: itemId,
-    expense_account_id: undefined,
+    expense_account_id: defaultExpense,
     tank_id: defaultTankIdForProduct(itemId, itemList, tankList),
     unit_cost: uc,
     description: item.name,
@@ -449,6 +465,13 @@ export default function BillsPage() {
       lines: [] as BillLineItem[],
     }
   })
+
+  const resolvedVendorDefaultExpenseId = useMemo(() => {
+    const vid = formData.vendor_id
+    if (!vid) return undefined
+    const x = vendors.find((v) => v.id === vid)?.default_expense_account_id
+    return x != null && x > 0 ? x : undefined
+  }, [formData.vendor_id, vendors])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -734,7 +757,13 @@ export default function BillsPage() {
 
     // If item is selected, clear expense account, set default tank for fuel, update cost/description
     if (field === 'item_id' && value) {
-      newLines[index] = applyItemSelectionToBillLine(newLines[index], value, items, tanks)
+      newLines[index] = applyItemSelectionToBillLine(
+        newLines[index],
+        value,
+        items,
+        tanks,
+        resolvedVendorDefaultExpenseId
+      )
     }
 
     // If expense account is selected, clear item and tank
@@ -1655,7 +1684,13 @@ export default function BillsPage() {
                                   const account = expenseAccounts.find((a) => a.id === value)
                                   const newLines = [...formData.lines]
                                   if (item) {
-                                    newLines[index] = applyItemSelectionToBillLine(newLines[index], value, items, tanks)
+                                    newLines[index] = applyItemSelectionToBillLine(
+        newLines[index],
+        value,
+        items,
+        tanks,
+        resolvedVendorDefaultExpenseId
+      )
                                   } else if (account) {
                                     newLines[index] = {
                                       ...newLines[index],
@@ -2241,7 +2276,13 @@ export default function BillsPage() {
                                   if (opt?.dataset.type === 'item') {
                                     const item = items.find((i) => i.id === value)
                                     if (!item) return
-                                    newLines[index] = applyItemSelectionToBillLine(newLines[index], value, items, tanks)
+                                    newLines[index] = applyItemSelectionToBillLine(
+        newLines[index],
+        value,
+        items,
+        tanks,
+        resolvedVendorDefaultExpenseId
+      )
                                   } else {
                                     const account = expenseAccounts.find((a) => a.id === value)
                                     newLines[index] = {

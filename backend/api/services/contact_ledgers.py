@@ -384,6 +384,11 @@ def build_employee_ledger(
     if not emp:
         return {"detail": "Employee not found"}
 
+    from api.services.employee_payroll_subledger import backfill_missing_payroll_subledger_lines
+
+    backfill_missing_payroll_subledger_lines(company_id)
+    emp.refresh_from_db()
+
     rows: list[_Row] = []
     ob = _d(emp.opening_balance)
     obd = emp.opening_balance_date
@@ -443,7 +448,14 @@ def build_employee_ledger(
         "entity": "employee",
         "entity_id": emp.id,
         "display_name": f"{emp.first_name} {emp.last_name}".strip(),
-        "balance_note": "Running balance: net amount the company owes the employee (positive) or employee owes the company (negative).",
+        "balance_note": (
+            "Running balance: net amount the company owes the employee (positive) or the "
+            "employee owes the company (negative). Each posted payroll run adds matching "
+            "subledger lines—gross earnings (debit), deductions when applicable (credit), "
+            "and net pay paid or payable (credit)—so the employee ledger follows the same "
+            "story as the salary journal; for a simple run with no deductions you still "
+            "see gross and net as two lines, and they net to zero."
+        ),
         "opening_balance": str(ob),
         "opening_balance_date": obd.isoformat() if obd else None,
         "period_start_balance": str(period_start),

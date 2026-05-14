@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BookOpen, Package, Plus, RefreshCw, Store, Trash2 } from 'lucide-react'
+import { BookOpen, Edit2, Package, Plus, RefreshCw, Store, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -1010,8 +1010,14 @@ export default function AquacultureExpensesPage() {
                   </td>
                   <td className="px-3 py-2 max-w-[140px] truncate text-slate-600">{r.vendor_name || '—'}</td>
                   <td className="px-3 py-2">
-                    <button type="button" className="text-blue-600 hover:underline mr-2" onClick={() => openEdit(r)}>
-                      Edit
+                    <button
+                      type="button"
+                      className="text-blue-600 hover:underline mr-2"
+                      onClick={() => openEdit(r)}
+                      title="Edit expense"
+                      aria-label="Edit expense"
+                    >
+                      <Edit2 className="h-4 w-4 inline" aria-hidden />
                     </button>
                     <button type="button" className="text-red-600 hover:underline" onClick={() => void remove(r)}>
                       <Trash2 className="h-4 w-4 inline" />

@@ -365,6 +365,38 @@ class Item(models.Model):
     is_pos_available = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     image_url = models.CharField(max_length=500, blank=True)
+    revenue_account = models.ForeignKey(
+        "ChartOfAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="items_default_revenue",
+        help_text="When set, invoice/POS revenue for this SKU posts here instead of template fuel/shop revenue codes.",
+    )
+    cogs_account = models.ForeignKey(
+        "ChartOfAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="items_default_cogs",
+        help_text="When set, COGS for this SKU uses this account instead of template COGS codes.",
+    )
+    inventory_account = models.ForeignKey(
+        "ChartOfAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="items_default_inventory",
+        help_text="When set, inventory receipt/sale GL for this SKU uses this asset account instead of 1200/1220.",
+    )
+    expense_account = models.ForeignKey(
+        "ChartOfAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="items_default_expense",
+        help_text="When set, non-inventory vendor bill lines for this SKU debit this expense (else office default).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -588,6 +620,14 @@ class Vendor(models.Model):
         related_name="vendors_preferred_delivery_pond",
         help_text="Optional default pond for fish/fry deliveries; new bills use linked shop site stock when configured.",
     )
+    default_expense_account = models.ForeignKey(
+        "ChartOfAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="vendors_default_expense",
+        help_text="Default expense debit for vendor bill lines without an item or without a line-level GL override.",
+    )
     vendor_number = models.CharField(max_length=64, blank=True)
     company_name = models.CharField(max_length=200)
     display_name = models.CharField(max_length=200, blank=True)
@@ -645,12 +685,20 @@ class Employee(models.Model):
 
 class EmployeeLedgerEntry(models.Model):
     """
-    Manual HR subledger: debit increases net payable to employee (e.g. accrued wages);
-    credit decreases (payment to employee, advance recovery).
+    HR subledger: debit increases net payable to employee (e.g. accrued wages);
+    credit decreases (payment to employee, advance recovery). Manual lines have no
+    payroll_run; posting payroll to the G/L creates lines linked to that run.
     """
 
     employee = models.ForeignKey(
         Employee, on_delete=models.CASCADE, related_name="ledger_entries"
+    )
+    payroll_run = models.ForeignKey(
+        "PayrollRun",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="employee_ledger_entries",
     )
     entry_date = models.DateField()
     entry_type = models.CharField(max_length=32, default="adjustment")
@@ -677,6 +725,14 @@ class PayrollRun(models.Model):
         related_name="payroll_runs",
         help_text="Optional: attribute this run to one site (management / job-cost reporting; GL still company-level).",
     )
+    subledger_employee = models.ForeignKey(
+        Employee,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payroll_runs_subledger",
+        help_text="When set (from-one-employee), posted payroll subledger lines are attributed entirely to this person.",
+    )
     payroll_number = models.CharField(max_length=64, blank=True)
     pay_period_start = models.DateField()
     pay_period_end = models.DateField()
@@ -689,6 +745,14 @@ class PayrollRun(models.Model):
     total_gross = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total_deductions = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total_net = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    salary_expense_account = models.ForeignKey(
+        "ChartOfAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payroll_runs_salary_expense",
+        help_text="When set, posted salary journals debit this expense instead of template 6400.",
+    )
     status = models.CharField(max_length=32, default="draft")
     notes = models.TextField(blank=True)
     # Posted salary payment ( Dr salary expense, Cr bank / statutory; see gl_posting.post_payroll_salary )
@@ -938,6 +1002,14 @@ class InvoiceLine(models.Model):
     quantity = models.DecimalField(max_digits=14, decimal_places=4, default=1)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    revenue_account = models.ForeignKey(
+        "ChartOfAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="invoice_lines_revenue_override",
+        help_text="Optional revenue GL for this line; overrides item-level revenue and template splits.",
+    )
 
     class Meta:
         db_table = "invoice_line"
@@ -994,6 +1066,14 @@ class BillLine(models.Model):
     quantity = models.DecimalField(max_digits=14, decimal_places=4, default=1)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    expense_account = models.ForeignKey(
+        "ChartOfAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bill_lines_expense_override",
+        help_text="Optional expense/COGS-side debit for this line; overrides item and vendor defaults.",
+    )
     aquaculture_pond = models.ForeignKey(
         "AquaculturePond",
         null=True,

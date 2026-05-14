@@ -10,6 +10,7 @@ from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
 from api.views.common import parse_json_body, require_company_id
 from api.models import Vendor
+from api.services.coa_gl_defaults import ALLOWED_BILL_EXPENSE_DEBIT, parse_optional_chart_account_id
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.station_defaults import parse_optional_pond_fk, parse_optional_station_fk
 from api.services.contact_ledgers import build_vendor_ledger, ledger_query_dates
@@ -49,6 +50,17 @@ def _vendor_to_json(v):
         "default_aquaculture_pond_name": (
             (v.default_aquaculture_pond.name or "").strip()
             if getattr(v, "default_aquaculture_pond_id", None) and getattr(v, "default_aquaculture_pond", None)
+            else ""
+        ),
+        "default_expense_account_id": getattr(v, "default_expense_account_id", None),
+        "default_expense_account_code": (
+            (v.default_expense_account.account_code or "").strip()
+            if getattr(v, "default_expense_account_id", None) and getattr(v, "default_expense_account", None)
+            else ""
+        ),
+        "default_expense_account_name": (
+            (v.default_expense_account.account_name or "").strip()
+            if getattr(v, "default_expense_account_id", None) and getattr(v, "default_expense_account", None)
             else ""
         ),
     }
@@ -116,7 +128,7 @@ def _vendor_apply_sort(qs, request):
 def vendors_list_or_create(request):
     if request.method == "GET":
         qs = Vendor.objects.filter(company_id=request.company_id).select_related(
-            "default_station", "default_aquaculture_pond"
+            "default_station", "default_aquaculture_pond", "default_expense_account"
         )
         qs = _vendor_apply_q(qs, request.GET.get("q", ""))
         qs = _vendor_apply_sort(qs, request)
@@ -154,10 +166,21 @@ def vendors_list_or_create(request):
             pond_id, perr = parse_optional_pond_fk(request.company_id, body.get("default_aquaculture_pond_id"))
             if perr:
                 return JsonResponse({"detail": perr}, status=400)
+        def_exp_id = None
+        if "default_expense_account_id" in body:
+            def_exp_id, ea_err = parse_optional_chart_account_id(
+                request.company_id,
+                body.get("default_expense_account_id"),
+                allowed_normalized_types=ALLOWED_BILL_EXPENSE_DEBIT,
+                field_label="default_expense_account_id",
+            )
+            if ea_err:
+                return JsonResponse({"detail": ea_err}, status=400)
         v = Vendor(
             company_id=request.company_id,
             default_station_id=vst_id,
             default_aquaculture_pond_id=pond_id,
+            default_expense_account_id=def_exp_id,
             company_name=company_name,
             display_name=body.get("display_name") or company_name,
             contact_person=body.get("contact_person") or "",
@@ -186,7 +209,7 @@ def vendors_list_or_create(request):
             v.save(update_fields=["vendor_number"])
         v2 = (
             Vendor.objects.filter(pk=v.pk, company_id=request.company_id)
-            .select_related("default_station", "default_aquaculture_pond")
+            .select_related("default_station", "default_aquaculture_pond", "default_expense_account")
             .first()
         )
         return JsonResponse(_vendor_to_json(v2), status=201)
@@ -200,7 +223,7 @@ def vendors_list_or_create(request):
 def vendor_detail(request, vendor_id: int):
     v = (
         Vendor.objects.filter(id=vendor_id, company_id=request.company_id)
-        .select_related("default_station", "default_aquaculture_pond")
+        .select_related("default_station", "default_aquaculture_pond", "default_expense_account")
         .first()
     )
     if not v:
@@ -255,10 +278,20 @@ def vendor_detail(request, vendor_id: int):
             if perr:
                 return JsonResponse({"detail": perr}, status=400)
             v.default_aquaculture_pond_id = pond_id
+        if "default_expense_account_id" in body:
+            deid, de_err = parse_optional_chart_account_id(
+                request.company_id,
+                body.get("default_expense_account_id"),
+                allowed_normalized_types=ALLOWED_BILL_EXPENSE_DEBIT,
+                field_label="default_expense_account_id",
+            )
+            if de_err:
+                return JsonResponse({"detail": de_err}, status=400)
+            v.default_expense_account_id = deid
         v.save()
         v = (
             Vendor.objects.filter(pk=v.pk, company_id=request.company_id)
-            .select_related("default_station", "default_aquaculture_pond")
+            .select_related("default_station", "default_aquaculture_pond", "default_expense_account")
             .first()
         )
         return JsonResponse(_vendor_to_json(v))

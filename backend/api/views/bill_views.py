@@ -36,6 +36,7 @@ from api.services.gl_posting import (
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
 from api.views.common import parse_json_body, require_company_id
+from api.services.coa_gl_defaults import ALLOWED_BILL_EXPENSE_DEBIT, parse_optional_chart_account_id
 
 
 def _serialize_date(d):
@@ -192,6 +193,7 @@ def _bill_to_json(b):
             "tank",
             "aquaculture_pond",
             "aquaculture_production_cycle",
+            "expense_account",
         )
     )
     total = b.total or Decimal("0")
@@ -250,6 +252,16 @@ def _bill_to_json(b):
                     else None
                 ),
                 "aquaculture_fish_count": getattr(l, "aquaculture_fish_count", None),
+                "expense_account_code": (
+                    (l.expense_account.account_code or "").strip()
+                    if getattr(l, "expense_account_id", None) and getattr(l, "expense_account", None)
+                    else ""
+                ),
+                "expense_account_name": (
+                    (l.expense_account.account_name or "").strip()
+                    if getattr(l, "expense_account_id", None) and getattr(l, "expense_account", None)
+                    else ""
+                ),
             }
             for l in lines
         ],
@@ -362,6 +374,7 @@ def _bills_list(request):
             "lines__tank",
             "lines__aquaculture_pond",
             "lines__aquaculture_production_cycle",
+            "lines__expense_account",
             "payment_allocations",
         )
         .order_by("-bill_date", "-id")
@@ -444,6 +457,14 @@ def bills_create(request):
         if fish_err:
             return fish_err
         assert fish_kw is not None
+        eid, eerr = parse_optional_chart_account_id(
+            request.company_id,
+            row.get("expense_account_id"),
+            allowed_normalized_types=ALLOWED_BILL_EXPENSE_DEBIT,
+            field_label="expense_account_id",
+        )
+        if eerr:
+            return JsonResponse({"detail": eerr}, status=400)
         parsed_lines.append(
             {
                 "item_id": item_id,
@@ -452,6 +473,7 @@ def bills_create(request):
                 "quantity": _decimal(row.get("quantity"), 1),
                 "unit_price": _decimal(row.get("unit_cost", row.get("unit_price")), 0),
                 "amount": amt,
+                "expense_account_id": eid,
                 **aq_kw,
                 **fish_kw,
             }
@@ -489,6 +511,7 @@ def bills_create(request):
                     aquaculture_cost_bucket=pl.get("aquaculture_cost_bucket") or "",
                     aquaculture_fish_weight_kg=pl.get("aquaculture_fish_weight_kg"),
                     aquaculture_fish_count=pl.get("aquaculture_fish_count"),
+                    expense_account_id=pl.get("expense_account_id"),
                 )
             b.tax_total = tax_total
             b.save(update_fields=["tax_total", "updated_at"])
@@ -502,6 +525,7 @@ def bills_create(request):
                     "lines__tank",
                     "lines__aquaculture_pond",
                     "lines__aquaculture_production_cycle",
+                    "lines__expense_account",
                     "payment_allocations",
                 )
                 .first()
@@ -529,6 +553,7 @@ def bill_detail(request, bill_id: int):
             "lines__tank",
             "lines__aquaculture_pond",
             "lines__aquaculture_production_cycle",
+            "lines__expense_account",
             "payment_allocations",
         )
         .first()
@@ -601,6 +626,14 @@ def bill_detail(request, bill_id: int):
                 if fish_err:
                     return fish_err
                 assert fish_kw is not None
+                eid, eerr = parse_optional_chart_account_id(
+                    request.company_id,
+                    row.get("expense_account_id"),
+                    allowed_normalized_types=ALLOWED_BILL_EXPENSE_DEBIT,
+                    field_label="expense_account_id",
+                )
+                if eerr:
+                    return JsonResponse({"detail": eerr}, status=400)
                 parsed_lines.append(
                     {
                         "item_id": item_id,
@@ -609,6 +642,7 @@ def bill_detail(request, bill_id: int):
                         "quantity": _decimal(row.get("quantity"), 1),
                         "unit_price": _decimal(row.get("unit_cost", row.get("unit_price")), 0),
                         "amount": amt,
+                        "expense_account_id": eid,
                         **aq_kw,
                         **fish_kw,
                     }
@@ -635,6 +669,7 @@ def bill_detail(request, bill_id: int):
                             aquaculture_cost_bucket=pl.get("aquaculture_cost_bucket") or "",
                             aquaculture_fish_weight_kg=pl.get("aquaculture_fish_weight_kg"),
                             aquaculture_fish_count=pl.get("aquaculture_fish_count"),
+                            expense_account_id=pl.get("expense_account_id"),
                         )
                 _refresh_bill_totals_from_lines(b)
                 b.refresh_from_db()
@@ -646,6 +681,7 @@ def bill_detail(request, bill_id: int):
                         "lines__tank",
                         "lines__aquaculture_pond",
                         "lines__aquaculture_production_cycle",
+                        "lines__expense_account",
                         "payment_allocations",
                     )
                     .first()

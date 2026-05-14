@@ -20,6 +20,13 @@ from api.views.common import parse_json_body, require_company_id, _serialize_dec
 from api.models import AquaculturePond, Item, Station, Tank
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.item_catalog import item_tracks_physical_stock, normalize_item_type
+from api.services.coa_gl_defaults import (
+    ALLOWED_BILL_EXPENSE_DEBIT,
+    ALLOWED_COGS,
+    ALLOWED_INCOME,
+    ALLOWED_INVENTORY_ASSET,
+    parse_optional_chart_account_id,
+)
 from api.services.station_stock import (
     ensure_item_station_row_for_new_shop_item,
     get_or_create_default_station,
@@ -79,6 +86,32 @@ def _truncate(val, max_len):
     if val is None:
         return ""
     return (str(val) or "")[:max_len]
+
+
+def _apply_item_gl_accounts_from_body(company_id: int, body: dict, target: Item) -> JsonResponse | None:
+    """
+    When JSON keys are present, set optional revenue / COGS / inventory / expense chart FKs on target.
+    Returns JsonResponse on validation error, else None.
+    """
+    pairs = (
+        ("revenue_account_id", ALLOWED_INCOME),
+        ("cogs_account_id", ALLOWED_COGS),
+        ("inventory_account_id", ALLOWED_INVENTORY_ASSET),
+        ("expense_account_id", ALLOWED_BILL_EXPENSE_DEBIT),
+    )
+    for key, allowed in pairs:
+        if key not in body:
+            continue
+        rid, err = parse_optional_chart_account_id(
+            company_id,
+            body.get(key),
+            allowed_normalized_types=allowed,
+            field_label=key,
+        )
+        if err:
+            return JsonResponse({"detail": err}, status=400)
+        setattr(target, key, rid)
+    return None
 
 
 def _normalize_item_name_for_storage(raw) -> str:
@@ -242,6 +275,10 @@ def _item_to_json(i, *, company_id: int | None = None, include_location_stocks: 
         "is_pos_available": i.is_pos_available,
         "is_active": i.is_active,
         "image_url": i.image_url or "",
+        "revenue_account_id": int(i.revenue_account_id) if getattr(i, "revenue_account_id", None) else None,
+        "cogs_account_id": int(i.cogs_account_id) if getattr(i, "cogs_account_id", None) else None,
+        "inventory_account_id": int(i.inventory_account_id) if getattr(i, "inventory_account_id", None) else None,
+        "expense_account_id": int(i.expense_account_id) if getattr(i, "expense_account_id", None) else None,
     }
     cid = company_id if company_id is not None else getattr(i, "company_id", None)
     if include_location_stocks and cid:
@@ -293,7 +330,11 @@ def _items_type_breakdown(qs):
 @require_company_id
 def items_list_or_create(request):
     if request.method == "GET":
-        qs = Item.objects.filter(company_id=request.company_id).order_by("id")
+        qs = (
+            Item.objects.filter(company_id=request.company_id)
+            .select_related("revenue_account", "cogs_account", "inventory_account", "expense_account")
+            .order_by("id")
+        )
         if request.GET.get("for_tanks") in ("true", "1", "yes"):
             qs = _items_queryset_for_tank_assignment(qs)
         elif request.GET.get("pos_only") in ("true", "1", "yes"):
@@ -446,6 +487,9 @@ def items_list_or_create(request):
             image_url=_truncate(body.get("image_url"), 500),
             item_number=inum or "",
         )
+        gl_err = _apply_item_gl_accounts_from_body(request.company_id, body, i)
+        if gl_err:
+            return gl_err
         if (i.pos_category or "").strip().lower() in ("non_pos", "fish"):
             i.is_pos_available = False
         try:
@@ -497,7 +541,9 @@ def items_list_or_create(request):
 def item_detail(request, item_id: int):
     i = (
         _items_queryset_with_tank_annotations(
-            Item.objects.filter(id=item_id, company_id=request.company_id)
+            Item.objects.filter(id=item_id, company_id=request.company_id).select_related(
+                "revenue_account", "cogs_account", "inventory_account", "expense_account"
+            )
         ).first()
     )
     if not i:
@@ -516,6 +562,9 @@ def item_detail(request, item_id: int):
         body, err = parse_json_body(request)
         if err:
             return err
+        gl_err = _apply_item_gl_accounts_from_body(request.company_id, body, i)
+        if gl_err:
+            return gl_err
         if body.get("name") is not None:
             nm = _normalize_item_name_for_storage(body.get("name"))
             if nm:

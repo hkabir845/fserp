@@ -56,7 +56,8 @@ from api.services.aquaculture_cost_per_kg import (
 )
 from api.services.item_catalog import item_tracks_physical_stock
 from api.utils.customer_display import customer_display_name
-from api.services.coa_constants import normalize_chart_account_type
+from api.services.coa_constants import is_pl_credit_normal_type, normalize_chart_account_type
+from api.services.employee_payroll_subledger import sync_payroll_run_to_employee_ledgers
 
 logger = logging.getLogger(__name__)
 
@@ -337,12 +338,26 @@ def _is_fuel_item(item) -> bool:
 
 
 def _inventory_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]:
+    if item is not None and getattr(item, "inventory_account_id", None):
+        acc = ChartOfAccount.objects.filter(
+            pk=item.inventory_account_id, company_id=company_id, is_active=True
+        ).first()
+        if acc:
+            nt = normalize_chart_account_type(acc.account_type)
+            if nt in ("asset", "bank_account"):
+                return acc
     if _is_fuel_item(item):
         return _coa(company_id, CODE_INV_FUEL)
     return _coa(company_id, CODE_INV_SHOP) or _coa(company_id, CODE_INV_FUEL)
 
 
 def _cogs_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]:
+    if item is not None and getattr(item, "cogs_account_id", None):
+        acc = ChartOfAccount.objects.filter(
+            pk=item.cogs_account_id, company_id=company_id, is_active=True
+        ).first()
+        if acc and normalize_chart_account_type(acc.account_type) == "cost_of_goods_sold":
+            return acc
     if _is_fuel_item(item):
         return _coa(company_id, CODE_COGS_FUEL)
     return _coa(company_id, CODE_COGS_SHOP) or _coa(company_id, CODE_COGS_FUEL)
@@ -517,6 +532,12 @@ def bulk_sync_tank_dip_variance_journals(company_id: int) -> dict[str, Any]:
 
 
 def _revenue_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]:
+    if item is not None and getattr(item, "revenue_account_id", None):
+        acc = ChartOfAccount.objects.filter(
+            pk=item.revenue_account_id, company_id=company_id, is_active=True
+        ).first()
+        if acc and is_pl_credit_normal_type(acc.account_type):
+            return acc
     if item:
         unit = (item.unit or "").lower()
         pos_cat = (item.pos_category or "").lower()
@@ -545,7 +566,7 @@ def _build_revenue_splits(company_id: int, inv: Invoice) -> dict[int, Decimal]:
             code,
         )
     lines = list(
-        InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item")
+        InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item", "revenue_account")
     )
     if not lines:
         acc = _revenue_account_for_item(company_id, None)
@@ -553,7 +574,15 @@ def _build_revenue_splits(company_id: int, inv: Invoice) -> dict[int, Decimal]:
             amounts[acc.id] = inv.subtotal
         return dict(amounts)
     for line in lines:
-        acc = _revenue_account_for_item(company_id, line.item)
+        acc = None
+        if getattr(line, "revenue_account_id", None):
+            ra = ChartOfAccount.objects.filter(
+                pk=line.revenue_account_id, company_id=company_id, is_active=True
+            ).first()
+            if ra and is_pl_credit_normal_type(ra.account_type):
+                acc = ra
+        if acc is None:
+            acc = _revenue_account_for_item(company_id, line.item)
         if acc:
             amounts[acc.id] += line.amount or Decimal("0")
     total_lines = sum(amounts.values(), Decimal("0"))
@@ -1605,6 +1634,36 @@ def _bill_line_aquaculture_meta(company_id: int, line: BillLine) -> Optional[dic
     return meta
 
 
+_EXP_DEBIT_TYPES = frozenset({"expense", "cost_of_goods_sold"})
+
+
+def _bill_line_expense_debit_account(
+    company_id: int,
+    line: BillLine,
+    item: Optional[Item],
+    vendor: Optional[Vendor],
+    office_exp: ChartOfAccount,
+) -> ChartOfAccount:
+    """Non-inventory bill debits: line override, then item default, then vendor default, else office expense."""
+    lid = getattr(line, "expense_account_id", None)
+    if lid:
+        acc = ChartOfAccount.objects.filter(pk=lid, company_id=company_id, is_active=True).first()
+        if acc and normalize_chart_account_type(acc.account_type) in _EXP_DEBIT_TYPES:
+            return acc
+    if item and not _item_receives_physical_stock(item):
+        iid = getattr(item, "expense_account_id", None)
+        if iid:
+            acc = ChartOfAccount.objects.filter(pk=iid, company_id=company_id, is_active=True).first()
+            if acc and normalize_chart_account_type(acc.account_type) in _EXP_DEBIT_TYPES:
+                return acc
+    if vendor and getattr(vendor, "default_expense_account_id", None):
+        vid = vendor.default_expense_account_id
+        acc = ChartOfAccount.objects.filter(pk=vid, company_id=company_id, is_active=True).first()
+        if acc and normalize_chart_account_type(acc.account_type) in _EXP_DEBIT_TYPES:
+            return acc
+    return office_exp
+
+
 def _build_bill_journal_lines(
     company_id: int, bill: Bill
 ) -> Optional[tuple[list[tuple], list[Optional[dict]]]]:
@@ -1629,8 +1688,10 @@ def _build_bill_journal_lines(
     memo_ap = (bill.bill_number or "")[:300]
     debit_rows: list[tuple[ChartOfAccount, Decimal, str, Optional[dict]]] = []
 
+    vendor = Vendor.objects.filter(pk=bill.vendor_id).first() if bill.vendor_id else None
+
     lines_qs = BillLine.objects.filter(bill_id=bill.id).select_related(
-        "item", "aquaculture_pond", "aquaculture_production_cycle"
+        "item", "aquaculture_pond", "aquaculture_production_cycle", "expense_account"
     )
     for line in lines_qs:
         amt = line.amount if line.amount is not None else Decimal("0")
@@ -1643,16 +1704,19 @@ def _build_bill_journal_lines(
         )
         item = line.item
         if not item:
-            debit_rows.append((exp, amt, memo, meta))
+            debit_acc = _bill_line_expense_debit_account(company_id, line, None, vendor, exp)
+            debit_rows.append((debit_acc, amt, memo, meta))
             continue
         if _item_receives_physical_stock(item):
             inv_acc = _inventory_account_for_item(company_id, item)
             if inv_acc:
                 debit_rows.append((inv_acc, amt, memo, meta))
             else:
-                debit_rows.append((exp, amt, memo, meta))
+                debit_acc = _bill_line_expense_debit_account(company_id, line, item, vendor, exp)
+                debit_rows.append((debit_acc, amt, memo, meta))
         else:
-            debit_rows.append((exp, amt, memo, meta))
+            debit_acc = _bill_line_expense_debit_account(company_id, line, item, vendor, exp)
+            debit_rows.append((debit_acc, amt, memo, meta))
 
     sum_lines = sum(am for _, am, _, _ in debit_rows if am > 0)
     if sum_lines < total:
@@ -2094,11 +2158,15 @@ def post_payroll_salary(
 
     If both bank_account_id and pay_from_chart_account_id are provided, the bank register is used.
     Idempotent entry: AUTO-PAYROLL-{id}. Returns (JournalEntry|None, error message).
+
+    Also syncs per-employee HR subledger lines (linked to this payroll run) when totals
+    can be allocated across active employees with positive salary.
     """
     pr = PayrollRun.objects.filter(id=pr.id, company_id=company_id).first()
     if not pr:
         return None, "Payroll run not found"
     if pr.salary_journal_id:
+        sync_payroll_run_to_employee_ledgers(company_id, pr)
         return pr.salary_journal, ""
 
     gross = (pr.total_gross or Decimal("0")).quantize(Decimal("0.01"))
@@ -2112,9 +2180,17 @@ def post_payroll_salary(
             f"Gross ({gross}) must equal deductions ({ded}) + net pay ({net})",
         )
 
-    expense = _coa(company_id, CODE_SALARY_EXP)
+    expense = None
+    if getattr(pr, "salary_expense_account_id", None):
+        expense = ChartOfAccount.objects.filter(
+            pk=pr.salary_expense_account_id, company_id=company_id, is_active=True
+        ).first()
+        if expense and normalize_chart_account_type(expense.account_type) != "expense":
+            expense = None
     if not expense:
-        return None, f"Add chart account {CODE_SALARY_EXP} (Salaries & Wages) to post salary."
+        expense = _coa(company_id, CODE_SALARY_EXP)
+    if not expense:
+        return None, f"Add chart account {CODE_SALARY_EXP} (Salaries & Wages) or pick a salary expense account."
 
     pay_account, pay_err = _payroll_net_pay_credit_account(
         company_id, bank_account_id, pay_from_chart_account_id
@@ -2131,6 +2207,7 @@ def post_payroll_salary(
         je = JournalEntry.objects.filter(company_id=company_id, entry_number=en).first()
         if je and not pr.salary_journal_id:
             PayrollRun.objects.filter(pk=pr.pk).update(salary_journal=je, status="paid")
+        sync_payroll_run_to_employee_ledgers(company_id, pr)
         return je, ""
 
     lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = [
@@ -2157,6 +2234,9 @@ def post_payroll_salary(
         return None, "Failed to post journal (unbalanced or invalid)"
     with transaction.atomic():
         PayrollRun.objects.filter(pk=pr.pk).update(salary_journal=je, status="paid")
+    pr = PayrollRun.objects.filter(pk=pr.pk).first()
+    if pr:
+        sync_payroll_run_to_employee_ledgers(company_id, pr)
     return je, ""
 
 

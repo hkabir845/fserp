@@ -10,6 +10,7 @@ import { getCurrencySymbol, formatNumber, formatAmountPlain } from '@/utils/curr
 import { formatDateOnly } from '@/utils/date'
 import { getApiBaseUrl } from '@/lib/api'
 import { isTenantAdminAquacultureUser } from '@/navigation/erpAppMenu'
+import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 
 interface PayrollRun {
   id: number
@@ -33,6 +34,9 @@ interface PayrollRun {
   created_at: string
   updated_at: string
   pond_allocations?: { pond_id: number; pond_name?: string; amount: string }[]
+  salary_expense_account_id?: number | null
+  salary_expense_account_code?: string | null
+  salary_expense_account_name?: string | null
 }
 
 function parseMoneyInput(s: string): number {
@@ -116,6 +120,7 @@ export default function PayrollPage() {
     other_earnings_amount: '',
     total_deductions: '',
     total_net: '',
+    salary_expense_account_id: '',
   })
 
   const formComputedGross = useMemo(
@@ -135,6 +140,8 @@ export default function PayrollPage() {
   )
   const [bankRegisters, setBankRegisters] = useState<BankAccountRow[]>([])
   const [glPayAccounts, setGlPayAccounts] = useState<GlPayAccountRow[]>([])
+  /** Expense-type GL accounts for salary debit override on the payroll run. */
+  const [salaryExpenseAccountOptions, setSalaryExpenseAccountOptions] = useState<GlPayAccountRow[]>([])
   /** Shown in details: 6400 is not user-pickable; we resolve it from the chart for display. */
   const [salaryExpenseCoa, setSalaryExpenseCoa] = useState<{
     account_code: string
@@ -397,14 +404,20 @@ export default function PayrollPage() {
       })
       if (response.ok) {
         const raw: GlPayAccountRow[] = await response.json()
-        setGlPayAccounts((raw || []).filter(isGlValidForNetPayCredit))
-        const exp = (raw || []).find(
+        const all = raw || []
+        setGlPayAccounts(all.filter(isGlValidForNetPayCredit))
+        const exp = all.find(
           (a) => String(a.account_code).trim() === '6400' && a.is_active !== false
         )
         setSalaryExpenseCoa(
           exp
             ? { account_code: String(exp.account_code), account_name: exp.account_name }
             : null
+        )
+        setSalaryExpenseAccountOptions(
+          all.filter(
+            (a) => a.is_active !== false && (a.account_type || '').toLowerCase() === 'expense'
+          )
         )
       }
     } catch (e) {
@@ -424,6 +437,7 @@ export default function PayrollPage() {
       other_earnings_amount: '',
       total_deductions: '',
       total_net: '',
+      salary_expense_account_id: '',
     })
     setEditingId(null)
   }
@@ -443,6 +457,10 @@ export default function PayrollPage() {
         payroll.other_earnings_amount != null ? String(payroll.other_earnings_amount) : '',
       total_deductions: payroll.total_deductions != null ? String(payroll.total_deductions) : '',
       total_net: payroll.total_net != null ? String(payroll.total_net) : '',
+      salary_expense_account_id:
+        payroll.salary_expense_account_id != null && payroll.salary_expense_account_id > 0
+          ? String(payroll.salary_expense_account_id)
+          : '',
     })
     setShowModal(true)
   }
@@ -458,6 +476,13 @@ export default function PayrollPage() {
       total_deductions: parseMoneyInput(formData.total_deductions),
       ...(nField !== '' ? { total_net: parseMoneyInput(formData.total_net) } : {}),
     }
+  }
+
+  const parseSalaryExpenseAccountIdPayload = (): number | null => {
+    const s = String(formData.salary_expense_account_id || '').trim()
+    if (!s) return null
+    const n = parseInt(s, 10)
+    return Number.isFinite(n) && n > 0 ? n : null
   }
 
   const handleUpdate = async (e: React.FormEvent) => {
@@ -498,6 +523,7 @@ export default function PayrollPage() {
           payment_date: formData.payment_date,
           notes: formData.notes || null,
           ...payrollAmountsPayload(),
+          salary_expense_account_id: parseSalaryExpenseAccountIdPayload(),
         })
       })
 
@@ -584,6 +610,7 @@ export default function PayrollPage() {
           payment_date: formData.payment_date,
           notes: formData.notes || null,
           ...payrollAmountsPayload(),
+          salary_expense_account_id: parseSalaryExpenseAccountIdPayload(),
         })
       })
 
@@ -1175,6 +1202,31 @@ export default function PayrollPage() {
                         placeholder="e.g. April 2026 — Yunus Khan (EMP-00006). Optional; helps you find this run later."
                       />
                     </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Salary expense account (optional)
+                      </label>
+                      <select
+                        value={formData.salary_expense_account_id}
+                        onChange={(e) =>
+                          setFormData({ ...formData, salary_expense_account_id: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                      >
+                        <option value="">
+                          Default — 6400 Salaries and Wages (or company template) when posting
+                        </option>
+                        {salaryExpenseAccountOptions.map((a) => (
+                          <option key={a.id} value={String(a.id)}>
+                            {formatCoaOptionLabel(a)}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Chooses which expense GL account is debited for gross pay. Leave blank unless you need a
+                        different account than the default template.
+                      </p>
+                    </div>
                     <div className="md:col-span-2 rounded-lg border border-gray-200 bg-gray-50/80 p-4">
                       <p className="mb-3 text-sm font-semibold text-gray-900">Earnings (optional)</p>
                       <p className="mb-3 text-xs text-gray-600">
@@ -1729,14 +1781,21 @@ export default function PayrollPage() {
                           account.
                         </p>
                         <div className="mt-2 rounded border border-amber-100 bg-amber-50/80 px-2.5 py-2 text-xs text-amber-950">
-                          <span className="font-medium">Salary expense (set automatically on post):</span>{' '}
-                          {salaryExpenseCoa ? (
+                          <span className="font-medium">Salary expense (used when posting gross):</span>{' '}
+                          {selectedPayroll?.salary_expense_account_id &&
+                          (selectedPayroll.salary_expense_account_code ||
+                            selectedPayroll.salary_expense_account_name) ? (
+                            <span>
+                              {(selectedPayroll.salary_expense_account_code || '').trim() || '—'} —{' '}
+                              {(selectedPayroll.salary_expense_account_name || '').trim() || '—'}
+                            </span>
+                          ) : salaryExpenseCoa ? (
                             <span>
                               {salaryExpenseCoa.account_code} — {salaryExpenseCoa.account_name}
                             </span>
                           ) : (
                             <span>
-                              add <span className="whitespace-nowrap">6400 Salaries &amp; Wages</span> in{' '}
+                              add <span className="whitespace-nowrap">6400 Salaries and Wages</span> in{' '}
                               <span className="font-medium">Chart of accounts</span> (posting will fail until
                               it exists)
                             </span>
@@ -1789,8 +1848,9 @@ export default function PayrollPage() {
                           )}
                         </select>
                         <p className="mt-1 text-xs text-gray-500">
-                          If you do not choose, net pay credits default bank/cash (1030/1010) when they exist. You
-                          do not select 6400 here — the journal debits 6400 for gross automatically.
+                          If you do not choose, net pay credits default bank/cash (1030/1010) when they exist. The
+                          salary journal debits the expense account configured for this run (if set) or otherwise the
+                          template account (e.g. 6400).
                         </p>
                         <button
                           type="button"

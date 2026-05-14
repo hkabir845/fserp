@@ -14,6 +14,7 @@ import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { isConnectionError } from '@/utils/connectionError'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
+import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 
 interface Vendor {
   id: number
@@ -37,6 +38,9 @@ interface Vendor {
   default_station_name?: string | null
   default_aquaculture_pond_id?: number | null
   default_aquaculture_pond_name?: string | null
+  default_expense_account_id?: number | null
+  default_expense_account_code?: string | null
+  default_expense_account_name?: string | null
 }
 
 interface StationOption {
@@ -50,6 +54,13 @@ interface PondOption {
   name: string
   code?: string
   is_active?: boolean
+}
+
+interface CoaPickRow {
+  id: number
+  account_code: string
+  account_name: string
+  account_type: string
 }
 
 export default function VendorsPage() {
@@ -67,6 +78,7 @@ export default function VendorsPage() {
   const [createCodeNonce, setCreateCodeNonce] = useState(0)
   const [stations, setStations] = useState<StationOption[]>([])
   const [ponds, setPonds] = useState<PondOption[]>([])
+  const [coaExpenseOptions, setCoaExpenseOptions] = useState<CoaPickRow[]>([])
   const [listPage, setListPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const [totalCount, setTotalCount] = useState(0)
@@ -86,6 +98,7 @@ export default function VendorsPage() {
     is_active: true,
     /** '' | `s:${stationId}` | `p:${pondId}` — default receiving location for bills */
     default_receiving: '' as string,
+    default_expense_account_id: '' as string,
   })
 
   useEffect(() => {
@@ -144,6 +157,34 @@ export default function VendorsPage() {
       setStations([])
     }
   }
+
+  const loadExpenseCoa = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('access_token')
+      if (!token) return
+      const r = await api.get('/chart-of-accounts/', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const rows = Array.isArray(r.data) ? r.data : []
+      setCoaExpenseOptions(
+        rows
+          .filter((x: { is_active?: boolean }) => x.is_active !== false)
+          .map((x: { id: number; account_code?: string; account_name?: string; account_type?: string }) => ({
+            id: x.id,
+            account_code: String(x.account_code || ''),
+            account_name: String(x.account_name || ''),
+            account_type: String(x.account_type || ''),
+          }))
+          .filter((x) => ['expense', 'cost_of_goods_sold'].includes(x.account_type.toLowerCase()))
+      )
+    } catch {
+      setCoaExpenseOptions([])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (showModal) void loadExpenseCoa()
+  }, [showModal, loadExpenseCoa])
 
   const fetchVendors = useCallback(async () => {
     setLoading(true)
@@ -242,6 +283,13 @@ export default function VendorsPage() {
     return { default_station_id: null, default_aquaculture_pond_id: null }
   }
 
+  const parseDefaultExpenseAccountIdPayload = (): number | null => {
+    const s = String(formData.default_expense_account_id || '').trim()
+    if (!s) return null
+    const n = parseInt(s, 10)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -262,6 +310,7 @@ export default function VendorsPage() {
         is_active: formData.is_active,
         default_station_id,
         default_aquaculture_pond_id,
+        default_expense_account_id: parseDefaultExpenseAccountIdPayload(),
         ...(vendorRefCode.trim() ? { vendor_number: vendorRefCode.trim() } : {}),
       })
       toast.success('Vendor created successfully!')
@@ -298,6 +347,10 @@ export default function VendorsPage() {
           : vendor.default_station_id != null && vendor.default_station_id > 0
             ? `s:${vendor.default_station_id}`
             : '',
+      default_expense_account_id:
+        vendor.default_expense_account_id != null && vendor.default_expense_account_id > 0
+          ? String(vendor.default_expense_account_id)
+          : '',
     })
     setShowModal(true)
   }
@@ -324,6 +377,7 @@ export default function VendorsPage() {
         opening_balance_date: formData.opening_balance_date || null,
         default_station_id,
         default_aquaculture_pond_id,
+        default_expense_account_id: parseDefaultExpenseAccountIdPayload(),
       })
       toast.success('Vendor updated successfully!')
       setShowModal(false)
@@ -365,6 +419,7 @@ export default function VendorsPage() {
       opening_balance_date: new Date().toISOString().split('T')[0],
       is_active: true,
       default_receiving: '',
+      default_expense_account_id: '',
     })
     setVendorRefCode('')
     setEditingVendor(null)
@@ -693,6 +748,29 @@ export default function VendorsPage() {
                         Stations
                       </Link>
                       , set the shop's default pond so new bills still receive into the right stock.
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Default expense account (optional)
+                    </label>
+                    <select
+                      value={formData.default_expense_account_id}
+                      onChange={(e) =>
+                        setFormData({ ...formData, default_expense_account_id: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">— Use system default —</option>
+                      {coaExpenseOptions.map((a) => (
+                        <option key={a.id} value={String(a.id)}>
+                          {formatCoaOptionLabel(a)}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Used on vendor bills when a line has no line-level or item-level expense account (non-inventory
+                      lines).
                     </p>
                   </div>
                   <div className="col-span-2">

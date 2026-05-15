@@ -9,11 +9,13 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from django.db import models
 from django.db.models import Sum
 
 from api.models import (
     AquacultureBiomassSample,
     AquacultureExpense,
+    AquacultureFishPondTransfer,
     AquacultureFishSale,
     AquaculturePond,
     AquaculturePondProfitTransfer,
@@ -75,7 +77,7 @@ def aquaculture_gate(company_id: int, user) -> JsonResponse | None:
         )
     if not user_may_access_aquaculture_api(user):
         return JsonResponse(
-            {"detail": "Aquaculture reports are only available to the company Admin account for this tenant."},
+            {"detail": "Aquaculture reports require Admin or app.aquaculture permission for this tenant."},
             status=403,
         )
     return None
@@ -107,6 +109,8 @@ def build_aquaculture_report(
         return _report_production_cycles(company_id, start, end, request)
     if report_id == "aquaculture-profit-transfers":
         return _report_profit_transfers(company_id, start, end, request)
+    if report_id == "aquaculture-fish-transfers":
+        return _report_fish_transfers(company_id, start, end, request)
     return JsonResponse({"detail": "Unknown aquaculture report"}, status=404)
 
 
@@ -663,4 +667,99 @@ def _report_profit_transfers(company_id: int, start: date, end: date, request: H
         "summary": summary,
         "groups": groups,
         "totals": {"total_amount": str(grand), "line_count": summary["line_count"]},
+    }
+
+
+def _report_fish_transfers(company_id: int, start: date, end: date, request: HttpRequest) -> dict[str, Any]:
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    qs = (
+        AquacultureFishPondTransfer.objects.filter(
+            company_id=company_id,
+            transfer_date__gte=start,
+            transfer_date__lte=end,
+        )
+        .select_related("from_pond", "from_production_cycle")
+        .prefetch_related("lines__to_pond", "lines__to_production_cycle")
+        .order_by("-transfer_date", "-id")
+    )
+    if pond_filter_id is not None:
+        qs = qs.filter(
+            models.Q(from_pond_id=pond_filter_id) | models.Q(lines__to_pond_id=pond_filter_id)
+        ).distinct()
+
+    groups: list[dict[str, Any]] = []
+    grand_wt = Decimal("0")
+    grand_cost = Decimal("0")
+    grand_lines = 0
+    for t in qs:
+        from_name = (t.from_pond.name or "").strip() if t.from_pond_id else ""
+        line_rows: list[dict[str, Any]] = []
+        sub_wt = Decimal("0")
+        sub_cost = Decimal("0")
+        for ln in t.lines.all():
+            wt = ln.weight_kg or Decimal("0")
+            cost = ln.cost_amount or Decimal("0")
+            sub_wt += wt
+            sub_cost += cost
+            to_name = (ln.to_pond.name or "").strip() if ln.to_pond_id else ""
+            line_rows.append(
+                {
+                    "id": ln.id,
+                    "to_pond_id": ln.to_pond_id,
+                    "to_pond_name": to_name,
+                    "to_cycle_name": (
+                        (ln.to_production_cycle.name or "").strip()
+                        if ln.to_production_cycle_id
+                        else ""
+                    ),
+                    "weight_kg": str(wt),
+                    "fish_count": ln.fish_count,
+                    "cost_amount": str(cost),
+                }
+            )
+        grand_wt += sub_wt
+        grand_cost += sub_cost
+        grand_lines += len(line_rows)
+        sp = getattr(t, "fish_species", None) or "tilapia"
+        spo = getattr(t, "fish_species_other", None) or ""
+        groups.append(
+            {
+                "id": t.id,
+                "transfer_date": t.transfer_date.isoformat(),
+                "from_pond_id": t.from_pond_id,
+                "from_pond_name": from_name,
+                "from_cycle_name": (
+                    (t.from_production_cycle.name or "").strip()
+                    if t.from_production_cycle_id
+                    else ""
+                ),
+                "fish_species": sp,
+                "fish_species_label": fish_species_display_label(sp, spo),
+                "memo": (t.memo or "")[:200],
+                "lines": line_rows,
+                "subtotal_weight_kg": str(_money_q(sub_wt)),
+                "subtotal_cost_amount": str(_money_q(sub_cost)),
+                "line_count": len(line_rows),
+            }
+        )
+
+    summary = {
+        "transfer_count": len(groups),
+        "line_count": grand_lines,
+        "total_weight_kg": float(_money_q(grand_wt)),
+        "total_cost_amount_bdt": float(_money_q(grand_cost)),
+    }
+    return {
+        "period": _period_block(start, end),
+        "currency_code": BDT,
+        "summary": summary,
+        "groups": groups,
+        "totals": {
+            "transfer_count": len(groups),
+            "line_count": grand_lines,
+            "total_weight_kg": str(_money_q(grand_wt)),
+            "total_cost_amount": str(_money_q(grand_cost)),
+        },
     }

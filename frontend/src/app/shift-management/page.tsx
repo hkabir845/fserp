@@ -108,6 +108,7 @@ interface ShiftSession {
   total_sales_amount: string
   sale_transaction_count: number
   opening_meters?: OpeningMeterSnapshot[] | null
+  closing_meters?: OpeningMeterSnapshot[] | null
   employee_schedule?: ScheduleSnapshot[] | null
 }
 
@@ -117,6 +118,8 @@ export default function ShiftManagementPage() {
   /** Remount template time fields when the modal open payload changes so 12h controls stay in sync. */
   const [templateTimeFieldsKey, setTemplateTimeFieldsKey] = useState(0)
   const [activeSession, setActiveSession] = useState<ShiftSession | null>(null)
+  /** Session currently shown in the close-shift panel (multi-site may have several open). */
+  const [closingSessionId, setClosingSessionId] = useState<number | null>(null)
   /** All sessions (open + last closed), newest first – from GET /shifts/ */
   const [sessionHistory, setSessionHistory] = useState<ShiftSession[]>([])
   const [templates, setTemplates] = useState<ShiftTemplate[]>([])
@@ -131,6 +134,7 @@ export default function ShiftManagementPage() {
   const [scheduleRows, setScheduleRows] = useState<ScheduleFormRow[]>([])
   const [closingCash, setClosingCash] = useState('0.00')
   const [closingNotes, setClosingNotes] = useState('')
+  const [closingMeterReadings, setClosingMeterReadings] = useState<Record<number, string>>({})
   const [loading, setLoading] = useState(true)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
@@ -193,10 +197,21 @@ export default function ShiftManagementPage() {
       )
 
       const session = activeRes.data
-      setActiveSession(session && typeof session === 'object' ? session : null)
-
       const historyRaw = sessionsRes.data
-      setSessionHistory(Array.isArray(historyRaw) ? (historyRaw as ShiftSession[]) : [])
+      const history = Array.isArray(historyRaw) ? (historyRaw as ShiftSession[]) : []
+      setSessionHistory(history)
+      const openSessions = history.filter((s) => !s.closed_at)
+      setActiveSession(
+        openSessions.length > 0
+          ? openSessions[0]!
+          : session && typeof session === 'object'
+            ? session
+            : null,
+      )
+      setClosingSessionId((prev) => {
+        if (prev != null && openSessions.some((s) => s.id === prev)) return prev
+        return openSessions.length > 0 ? openSessions[0]!.id : null
+      })
 
       setSelectedTemplate((prev) => {
         if (prev != null && list.some((t) => t.id === prev)) return prev
@@ -229,6 +244,43 @@ export default function ShiftManagementPage() {
     loadData()
   }, [loadData])
 
+  const openSessions = useMemo(
+    () => sessionHistory.filter((s) => !s.closed_at),
+    [sessionHistory],
+  )
+
+  const closingSession = useMemo(() => {
+    if (closingSessionId != null) {
+      return openSessions.find((s) => s.id === closingSessionId) ?? openSessions[0] ?? null
+    }
+    return openSessions[0] ?? null
+  }, [openSessions, closingSessionId])
+
+  const stationHasOpenShift = useCallback(
+    (stationId: number | null) =>
+      stationId != null && openSessions.some((s) => s.station_id === stationId),
+    [openSessions],
+  )
+
+  const closingStationMeters = useMemo(() => {
+    const sid = closingSession?.station_id
+    if (sid == null) return []
+    return allMeters.filter((m) => m.is_active && m.station_id === sid)
+  }, [allMeters, closingSession])
+
+  useEffect(() => {
+    if (!closingSession) return
+    setClosingMeterReadings((prev) => {
+      const next: Record<number, string> = {}
+      for (const m of closingStationMeters) {
+        next[m.id] = Object.prototype.hasOwnProperty.call(prev, m.id)
+          ? prev[m.id]!
+          : m.current_reading
+      }
+      return next
+    })
+  }, [closingSession, closingStationMeters])
+
   const stationMeters = useMemo(() => {
     if (selectedStation == null) return []
     return allMeters.filter(
@@ -237,7 +289,7 @@ export default function ShiftManagementPage() {
   }, [allMeters, selectedStation])
 
   useEffect(() => {
-    if (activeSession) return
+    if (openSessions.length > 0) return
     if (selectedStation == null) return
     setOpeningMeterReadings((prev) => {
       const next: Record<number, string> = {}
@@ -252,7 +304,7 @@ export default function ShiftManagementPage() {
       }
       return next
     })
-  }, [allMeters, selectedStation, activeSession])
+  }, [allMeters, selectedStation, openSessions.length])
 
   const canManageTemplates = ['admin', 'super_admin', 'manager'].includes(userRole || '')
 
@@ -350,17 +402,34 @@ export default function ShiftManagementPage() {
   }
 
   const handleCloseShift = async () => {
-    if (!activeSession) return
+    const session = closingSession
+    if (!session) return
     if (!confirm('Are you sure you want to close this shift?')) return
 
+    const closing_meters: { meter_id: number; reading: number }[] = []
+    for (const m of closingStationMeters) {
+      const raw = (closingMeterReadings[m.id] ?? m.current_reading ?? '0').trim()
+      const n = parseFloat(raw)
+      if (Number.isNaN(n) || n < 0) {
+        toast.error(
+          `Enter a valid non-negative closing meter reading for “${m.meter_name}” (dispenser: ${m.dispenser_name || '—'})`,
+        )
+        return
+      }
+      closing_meters.push({ meter_id: m.id, reading: n })
+    }
+
     try {
-      await api.post(`/shifts/sessions/${activeSession.id}/close/`, {
+      await api.post(`/shifts/sessions/${session.id}/close/`, {
         closing_cash_counted: parseFloat(closingCash || '0'),
+        closing_meters,
       })
       toast.success('Shift closed successfully')
       setActiveSession(null)
+      setClosingSessionId(null)
       setClosingCash('0.00')
       setClosingNotes('')
+      setClosingMeterReadings({})
       await loadData()
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } } }
@@ -439,11 +508,13 @@ export default function ShiftManagementPage() {
     }
   }
 
-  const openingFloat = activeSession ? Number(activeSession.opening_cash_float || 0) : 0
-  const expectedCashTotal = activeSession ? Number(activeSession.expected_cash_total || 0) : 0
+  const openingFloat = closingSession ? Number(closingSession.opening_cash_float || 0) : 0
+  const expectedCashTotal = closingSession ? Number(closingSession.expected_cash_total || 0) : 0
   const expectedInDrawer = openingFloat + expectedCashTotal
   const closingCounted = parseFloat(closingCash || '0')
   const variancePreview = closingCounted - expectedInDrawer
+  const canOpenAtSelectedStation =
+    selectedStation != null && !stationHasOpenShift(selectedStation)
 
   if (loading) {
     return (
@@ -465,7 +536,7 @@ export default function ShiftManagementPage() {
           <p className="text-gray-600">Open and close cashier shifts by template and station</p>
         </div>
 
-        {activeSession ? (
+        {openSessions.length > 0 && closingSession && (
           <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
@@ -474,20 +545,35 @@ export default function ShiftManagementPage() {
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-green-900">Shift active</h2>
+                  {openSessions.length > 1 && (
+                    <div className="mt-2">
+                      <label className="block text-xs font-medium text-green-800 mb-1">Close which shift?</label>
+                      <select
+                        value={closingSession.id}
+                        onChange={(e) => setClosingSessionId(Number(e.target.value))}
+                        className="text-sm px-2 py-1 border rounded-md bg-white"
+                      >
+                        {openSessions.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {sessionStationLabel(s.station_id)} · opened {formatDate(s.opened_at, true)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <p className="text-green-700 text-sm">
-                    Opened {formatDate(activeSession.opened_at, true)}
-                    {activeSession.template_id != null && (
+                    Opened {formatDate(closingSession.opened_at, true)}
+                    {closingSession.template_id != null && (
                       <>
                         {' '}
                         · Template #
-                        {activeSession.template_id}
+                        {closingSession.template_id}
                       </>
                     )}
-                    {activeSession.station_id != null && (
+                    {closingSession.station_id != null && (
                       <>
                         {' '}
-                        · Station #
-                        {activeSession.station_id}
+                        · {sessionStationLabel(closingSession.station_id)}
                       </>
                     )}
                   </p>
@@ -500,12 +586,12 @@ export default function ShiftManagementPage() {
               <div className="bg-white rounded-lg p-4 shadow">
                 <div className="text-sm text-gray-600 mb-1">Total sales</div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {formatCurrency(Number(activeSession.total_sales_amount || 0))}
+                  {formatCurrency(Number(closingSession.total_sales_amount || 0))}
                 </div>
               </div>
               <div className="bg-white rounded-lg p-4 shadow">
                 <div className="text-sm text-gray-600 mb-1">Transactions</div>
-                <div className="text-2xl font-bold text-indigo-600">{activeSession.sale_transaction_count ?? 0}</div>
+                <div className="text-2xl font-bold text-indigo-600">{closingSession.sale_transaction_count ?? 0}</div>
               </div>
               <div className="bg-white rounded-lg p-4 shadow">
                 <div className="text-sm text-gray-600 mb-1">Opening float</div>
@@ -517,7 +603,7 @@ export default function ShiftManagementPage() {
               </div>
             </div>
 
-            {Array.isArray(activeSession.opening_meters) && activeSession.opening_meters.length > 0 && (
+            {Array.isArray(closingSession.opening_meters) && closingSession.opening_meters.length > 0 && (
               <div className="bg-white rounded-lg p-4 shadow mb-6">
                 <h3 className="text-sm font-bold text-gray-900 mb-2">Opening meter snapshot</h3>
                 <div className="overflow-x-auto text-sm">
@@ -531,7 +617,7 @@ export default function ShiftManagementPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {activeSession.opening_meters.map((om) => (
+                      {closingSession.opening_meters.map((om) => (
                         <tr key={om.meter_id} className="border-b border-gray-100">
                           <td className="py-1.5 pr-2">{om.meter_name}</td>
                           <td className="py-1.5 pr-2 text-gray-600">{om.dispenser_name || '—'}</td>
@@ -545,7 +631,7 @@ export default function ShiftManagementPage() {
               </div>
             )}
 
-            {Array.isArray(activeSession.employee_schedule) && activeSession.employee_schedule.length > 0 && (
+            {Array.isArray(closingSession.employee_schedule) && closingSession.employee_schedule.length > 0 && (
               <div className="bg-white rounded-lg p-4 shadow mb-6">
                 <h3 className="text-sm font-bold text-gray-900 mb-2">Planned team (this shift)</h3>
                 <div className="overflow-x-auto text-sm">
@@ -559,7 +645,7 @@ export default function ShiftManagementPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {activeSession.employee_schedule.map((row) => (
+                      {closingSession.employee_schedule.map((row) => (
                         <tr
                           key={`${row.employee_id}-${row.scheduled_start}-${row.scheduled_end}`}
                           className="border-b border-gray-100"
@@ -609,6 +695,37 @@ export default function ShiftManagementPage() {
                   </div>
                 </div>
               </div>
+              {closingStationMeters.length > 0 && (
+                <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <h4 className="text-sm font-bold text-gray-900 mb-2">Closing meter readings</h4>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Record the physical meter total at shift end for reconciliation with POS liters sold.
+                  </p>
+                  <div className="space-y-3">
+                    {closingStationMeters.map((m) => (
+                      <div key={m.id} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                        <div className="md:col-span-2 text-sm">
+                          <div className="font-medium text-gray-900">{m.meter_name}</div>
+                          <div className="text-gray-500">{m.dispenser_name || '—'}</div>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Reading at close</label>
+                          <input
+                            type="number"
+                            step="0.001"
+                            min="0"
+                            value={closingMeterReadings[m.id] ?? m.current_reading}
+                            onChange={(e) =>
+                              setClosingMeterReadings((prev) => ({ ...prev, [m.id]: e.target.value }))
+                            }
+                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Notes (optional)</label>
                 <textarea
@@ -629,7 +746,9 @@ export default function ShiftManagementPage() {
               </button>
             </div>
           </div>
-        ) : (
+        )}
+
+        {(canOpenAtSelectedStation || openSessions.length === 0) && (
           <div className="bg-blue-50 border-2 border-blue-500 rounded-lg p-6 mb-6">
             <div className="flex items-center space-x-3 mb-4">
               <div className="bg-blue-500 text-white p-3 rounded-full">
@@ -850,6 +969,7 @@ export default function ShiftManagementPage() {
                 disabled={
                   !selectedTemplate ||
                   !selectedStation ||
+                  !canOpenAtSelectedStation ||
                   openingCash === '' ||
                   parseFloat(openingCash) < 0 ||
                   templates.length === 0

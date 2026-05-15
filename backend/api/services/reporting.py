@@ -1181,22 +1181,24 @@ def report_shift_summary(company_id: int, start: date, end: date, station_id: in
         by_cashier[uid]["total_liters"] += liters
         by_cashier[uid]["cash_variance"] += var if s.closed_at else Decimal("0")
 
-        sessions.append(
-            {
-                "id": s.id,
-                "cashier_name": f"User #{s.opened_by_user_id or '-'}",
-                "station_name": s.station.station_name if s.station_id else "",
-                "opened_at": s.opened_at.isoformat() if s.opened_at else None,
-                "closed_at": s.closed_at.isoformat() if s.closed_at else None,
-                "transaction_count": period_tx_count,
-                "total_sales": _f(period_sales_sum),
-                "total_liters": _f(liters),
-                "cash_expected": _f(expected_cash),
-                "cash_counted": _f(counted) if s.closing_cash_counted is not None else 0.0,
-                "variance": _f(var),
-                "status": "closed" if s.closed_at else "open",
-            }
-        )
+        session_row: dict[str, Any] = {
+            "id": s.id,
+            "cashier_name": f"User #{s.opened_by_user_id or '-'}",
+            "station_name": s.station.station_name if s.station_id else "",
+            "opened_at": s.opened_at.isoformat() if s.opened_at else None,
+            "closed_at": s.closed_at.isoformat() if s.closed_at else None,
+            "transaction_count": period_tx_count,
+            "total_sales": _f(period_sales_sum),
+            "total_liters": _f(liters),
+            "cash_expected": _f(expected_cash),
+            "cash_counted": _f(counted) if s.closing_cash_counted is not None else 0.0,
+            "variance": _f(var),
+            "status": "closed" if s.closed_at else "open",
+        }
+        meter_rec = _shift_meter_reconciliation(s, inv_ids)
+        if meter_rec:
+            session_row["meter_reconciliation"] = meter_rec
+        sessions.append(session_row)
     sum_tx = sum(int(x["transaction_count"] or 0) for x in sessions)
     sum_sales = sum((_d(x["total_sales"]) for x in sessions), start=Decimal("0"))
     sum_liters = sum((_d(x["total_liters"]) for x in sessions), start=Decimal("0"))
@@ -1233,6 +1235,58 @@ def report_shift_summary(company_id: int, start: date, end: date, station_id: in
     return sh_out
 
 
+def _shift_meter_reconciliation(session: ShiftSession, inv_ids: list[int]) -> list[dict[str, Any]] | None:
+    opening_map: dict[int, Decimal] = {}
+    for row in session.opening_meters or []:
+        if not isinstance(row, dict) or row.get("meter_id") is None:
+            continue
+        opening_map[int(row["meter_id"])] = _d(row.get("reading"))
+
+    closing_map: dict[int, Decimal] = {}
+    for row in session.closing_meters or []:
+        if not isinstance(row, dict) or row.get("meter_id") is None:
+            continue
+        closing_map[int(row["meter_id"])] = _d(row.get("reading"))
+
+    if not opening_map and not closing_map:
+        return None
+
+    liters_by_meter: dict[int, Decimal] = defaultdict(Decimal)
+    for line in (
+        InvoiceLine.objects.filter(invoice_id__in=inv_ids, nozzle_id__isnull=False)
+        .select_related("nozzle")
+        .only("quantity", "nozzle_id", "nozzle__meter_id")
+    ):
+        mid = line.nozzle.meter_id if line.nozzle_id and line.nozzle else None
+        if mid:
+            liters_by_meter[int(mid)] += line.quantity or Decimal("0")
+
+    meter_names: dict[int, str] = {}
+    for row in (session.opening_meters or []) + (session.closing_meters or []):
+        if isinstance(row, dict) and row.get("meter_id"):
+            meter_names[int(row["meter_id"])] = str(row.get("meter_name") or f"Meter #{row['meter_id']}")
+
+    out: list[dict[str, Any]] = []
+    for mid in sorted(set(opening_map) | set(closing_map) | set(liters_by_meter)):
+        opening = opening_map.get(mid, Decimal("0"))
+        closing = closing_map.get(mid, Decimal("0"))
+        sold = liters_by_meter.get(mid, Decimal("0"))
+        meter_delta = closing - opening if mid in closing_map and mid in opening_map else Decimal("0")
+        variance = meter_delta - sold if mid in closing_map and mid in opening_map else Decimal("0")
+        out.append(
+            {
+                "meter_id": mid,
+                "meter_name": meter_names.get(mid, f"Meter #{mid}"),
+                "opening_reading": _f(opening),
+                "closing_reading": _f(closing) if mid in closing_map else None,
+                "invoice_liters": _f(sold),
+                "meter_delta": _f(meter_delta) if mid in closing_map and mid in opening_map else None,
+                "variance_liters": _f(variance) if mid in closing_map and mid in opening_map else None,
+            }
+        )
+    return out
+
+
 def report_sales_by_nozzle(company_id: int, start: date, end: date, station_id: int | None = None) -> dict[str, Any]:
     inv_line_qs = InvoiceLine.objects.filter(
         invoice__company_id=company_id,
@@ -1241,12 +1295,27 @@ def report_sales_by_nozzle(company_id: int, start: date, end: date, station_id: 
     )
     if station_id is not None:
         inv_line_qs = inv_line_qs.filter(invoice__station_id=station_id)
-    inv_lines = inv_line_qs.select_related("item").values("item_id").annotate(
+
+    # Prefer nozzle-level attribution when POS persisted nozzle_id on the line.
+    by_nozzle: dict[int, dict[str, Any]] = {}
+    for row in (
+        inv_line_qs.filter(nozzle_id__isnull=False)
+        .values("nozzle_id")
+        .annotate(
+            tx=Count("id"),
+            liters=Coalesce(Sum("quantity"), Decimal("0")),
+            amt=Coalesce(Sum("amount"), Decimal("0")),
+        )
+    ):
+        by_nozzle[int(row["nozzle_id"])] = row
+
+    # Legacy rows without nozzle_id: allocate by product across nozzles selling that grade.
+    legacy_lines = inv_line_qs.filter(nozzle_id__isnull=True).values("item_id").annotate(
         tx=Count("id"),
         liters=Coalesce(Sum("quantity"), Decimal("0")),
         amt=Coalesce(Sum("amount"), Decimal("0")),
     )
-    by_product = {row["item_id"]: row for row in inv_lines if row["item_id"]}
+    by_product = {row["item_id"]: row for row in legacy_lines if row["item_id"]}
 
     nz_qs = Nozzle.objects.filter(company_id=company_id, is_active=True).select_related(
         "product", "meter__dispenser__island__station"
@@ -1257,11 +1326,17 @@ def report_sales_by_nozzle(company_id: int, start: date, end: date, station_id: 
     out: list[dict[str, Any]] = []
     tot_tx = tot_l = tot_a = Decimal("0")
     for nz in nozzles:
-        pid = nz.product_id
-        row = by_product.get(pid, {})
-        tx = int(row.get("tx") or 0)
-        liters = _d(row.get("liters"))
-        amt = _d(row.get("amt"))
+        row = by_nozzle.get(nz.id)
+        if row:
+            tx = int(row.get("tx") or 0)
+            liters = _d(row.get("liters"))
+            amt = _d(row.get("amt"))
+        else:
+            pid = nz.product_id
+            prow = by_product.get(pid, {})
+            tx = int(prow.get("tx") or 0)
+            liters = _d(prow.get("liters"))
+            amt = _d(prow.get("amt"))
         tot_tx += tx
         tot_l += liters
         tot_a += amt
@@ -1281,6 +1356,7 @@ def report_sales_by_nozzle(company_id: int, start: date, end: date, station_id: 
                 "total_liters": _f(liters),
                 "total_amount": _f(amt),
                 "average_sale_amount": _f(avg),
+                "attribution": "nozzle" if nz.id in by_nozzle else ("product_legacy" if tx else "none"),
             }
         )
     n_nz = len(out) or 1
@@ -1544,7 +1620,26 @@ def report_meter_readings(company_id: int, start: date, end: date, station_id: i
     )
     if station_id is not None:
         inv_line_m = inv_line_m.filter(invoice__station_id=station_id)
-    inv_lines = inv_line_m.select_related("item").values("item_id").annotate(
+
+    by_meter_nozzle: dict[int, dict[str, Decimal]] = {}
+    for row in (
+        inv_line_m.filter(nozzle_id__isnull=False)
+        .values("nozzle__meter_id")
+        .annotate(
+            tx=Count("id"),
+            liters=Coalesce(Sum("quantity"), Decimal("0")),
+            amt=Coalesce(Sum("amount"), Decimal("0")),
+        )
+    ):
+        mid = row.get("nozzle__meter_id")
+        if mid:
+            by_meter_nozzle[int(mid)] = {
+                "tx": Decimal(str(row.get("tx") or 0)),
+                "liters": _d(row.get("liters")),
+                "amt": _d(row.get("amt")),
+            }
+
+    inv_lines = inv_line_m.filter(nozzle_id__isnull=True).select_related("item").values("item_id").annotate(
         tx=Count("id"),
         liters=Coalesce(Sum("quantity"), Decimal("0")),
         amt=Coalesce(Sum("amount"), Decimal("0")),
@@ -1557,16 +1652,23 @@ def report_meter_readings(company_id: int, start: date, end: date, station_id: i
     meters = mtr_qs.prefetch_related("nozzles", "nozzles__product").order_by("meter_number", "id")
     meters_out: list[dict[str, Any]] = []
     tot_sales = tot_liters = tot_amt = Decimal("0")
+    uses_nozzle_attribution = bool(by_meter_nozzle)
     for m in meters:
-        product_ids = list({n.product_id for n in m.nozzles.all() if n.product_id})
-        tx = liters = amt = Decimal("0")
-        for pid in product_ids:
-            r = by_product.get(pid)
-            if not r:
-                continue
-            tx += int(r.get("tx") or 0)
-            liters += _d(r.get("liters"))
-            amt += _d(r.get("amt"))
+        nm = by_meter_nozzle.get(m.id)
+        if nm:
+            tx = int(nm["tx"])
+            liters = nm["liters"]
+            amt = nm["amt"]
+        else:
+            product_ids = list({n.product_id for n in m.nozzles.all() if n.product_id})
+            tx = liters = amt = Decimal("0")
+            for pid in product_ids:
+                r = by_product.get(pid)
+                if not r:
+                    continue
+                tx += int(r.get("tx") or 0)
+                liters += _d(r.get("liters"))
+                amt += _d(r.get("amt"))
         cur = m.current_reading or Decimal("0")
         opening = cur - liters
         if opening < 0:
@@ -1591,9 +1693,18 @@ def report_meter_readings(company_id: int, start: date, end: date, station_id: i
                 "opening_reading_date": start.isoformat(),
                 "closing_reading_date": end.isoformat(),
                 "station_name": st_name,
+                "attribution": "nozzle" if nm else "product_legacy",
             }
         )
     avg_sale = (tot_amt / tot_sales) if tot_sales else Decimal("0")
+    note = (
+        "Sales liters are attributed by nozzle on invoice lines when available; otherwise by product linked to each meter."
+        if uses_nozzle_attribution
+        else (
+            "Opening reading is derived as current meter reading minus period sales liters (approximation). "
+            "Amounts come from invoice lines by product linked to each meter."
+        )
+    )
     mtr_out: dict[str, Any] = {
         "report_id": "meter-readings",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -1605,10 +1716,7 @@ def report_meter_readings(company_id: int, start: date, end: date, station_id: i
             "average_sale": _f(avg_sale),
         },
         "meters": meters_out,
-        "accounting_note": (
-            "Opening reading is derived as current meter reading minus period sales liters (approximation), "
-            "not a physical opening stick. Amounts come from invoice lines by product linked to each meter."
-        ),
+        "accounting_note": note,
     }
     if station_id is not None:
         mtr_out["filter_station_id"] = station_id

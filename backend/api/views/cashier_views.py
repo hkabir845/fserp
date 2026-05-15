@@ -466,6 +466,7 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
                 InvoiceLine.objects.create(
                     invoice=inv,
                     item=product,
+                    nozzle=fe["nozzle"],
                     description=product.name,
                     quantity=qty,
                     unit_price=unit_price,

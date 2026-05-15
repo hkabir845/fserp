@@ -111,7 +111,7 @@ _DEFAULT_ROLE_PERMS: dict[str, list[str]] = {
     "manager": [
         p["id"]
         for p in PERMISSION_CATALOG
-        if p["id"] not in ("app.users", "app.aquaculture")
+        if p["id"] != "app.users"
     ],
     "cashier": [
         "app.launcher",
@@ -131,15 +131,16 @@ def normalize_role_key(role: str | None) -> str:
 
 def user_may_access_aquaculture_api(user) -> bool:
     """
-    Aquaculture is for fuel-station tenants only when a superuser enables the module; only that
-    tenant's built-in Admin (role ``admin``) may call aquaculture APIs. Platform super-admins
-    retain access for support.
+    Aquaculture requires company module enablement. Platform super-admins, tenant Admins, and
+    any user granted ``app.aquaculture`` (e.g. Manager or a custom role) may call aquaculture APIs.
     """
     if not user:
         return False
     if user_is_super_admin(user):
         return True
-    return normalize_role_key(getattr(user, "role", None)) == "admin"
+    if normalize_role_key(getattr(user, "role", None)) == "admin":
+        return True
+    return has_permission(resolve_user_permissions(user), "app.aquaculture")
 
 
 def default_permissions_for_role(role: str | None) -> list[str]:

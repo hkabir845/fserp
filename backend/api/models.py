@@ -998,6 +998,14 @@ class Invoice(models.Model):
 class InvoiceLine(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="lines")
     item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.SET_NULL, related_name="invoice_lines")
+    nozzle = models.ForeignKey(
+        "Nozzle",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="invoice_lines",
+        help_text="Forecourt nozzle used for this fuel sale line (POS attribution).",
+    )
     description = models.CharField(max_length=300, blank=True)
     quantity = models.DecimalField(max_digits=14, decimal_places=4, default=1)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
@@ -1219,6 +1227,8 @@ class ShiftSession(models.Model):
     sale_transaction_count = models.IntegerField(default=0)
     # Snapshot at open: [{ "meter_id", "reading", "previous_reading", "meter_name", "dispenser_name" }, ...]
     opening_meters = models.JSONField(default=list, blank=True)
+    # Snapshot at close: [{ "meter_id", "reading", "previous_reading", "meter_name", "dispenser_name" }, ...]
+    closing_meters = models.JSONField(default=list, blank=True)
     # Planned staff: [{ "employee_id", "first_name", "last_name", "scheduled_start", "scheduled_end", "notes" }, ...]
     employee_schedule = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

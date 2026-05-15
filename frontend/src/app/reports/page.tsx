@@ -70,6 +70,7 @@ type ReportType =
   | 'aquaculture-sampling'
   | 'aquaculture-production-cycles'
   | 'aquaculture-profit-transfers'
+  | 'aquaculture-fish-transfers'
 
 const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [
   'item-sales-custom',
@@ -343,6 +344,13 @@ const reports: ReportCard[] = [
     icon: Fish,
     category: 'aquaculture',
   },
+  {
+    id: 'aquaculture-fish-transfers',
+    title: 'Aquaculture — Inter-pond fish transfers',
+    description: 'Fish moves between ponds with weight, head count, and cost allocation (BDT)',
+    icon: Fish,
+    category: 'aquaculture',
+  },
 ]
 
 const SUMMARY_EXCLUDED_REPORTS: ReportType[] = [
@@ -365,6 +373,7 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
   'aquaculture-sampling',
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
+  'aquaculture-fish-transfers',
 ])
 
 /** Mix — Fuel & Aquaculture: core GL + fuel ops + every aquaculture report (when role allows). */
@@ -385,6 +394,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'aquaculture-sampling',
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
+  'aquaculture-fish-transfers',
 ] as const
 
 /** Reports that accept optional `station_id` (all sites when empty; home-station users are always scoped in API). */
@@ -461,6 +471,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'aquaculture-sampling',
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
+  'aquaculture-fish-transfers',
 ])
 
 /** In-report + export label for which site(s) a station-scoped report covers. */
@@ -6594,6 +6605,77 @@ function renderReportTable(
                     : `Samples: ${totals.sample_count ?? 0}`}
             </span>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'aquaculture-fish-transfers' && data && Array.isArray(data.groups)) {
+    const period = data.period || {}
+    const groups: any[] = data.groups
+    const totals = data.totals || {}
+    const summary = data.summary || {}
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Transfers filtered by transfer date within this range.'
+          )}
+        <p className="text-sm font-medium text-slate-700">
+          Inter-pond fish moves — weight and optional biological cost allocation in <strong>BDT</strong>.
+        </p>
+        {groups.map((g: any) => (
+          <div key={`xfer-${g.id}`} className="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-100 bg-cyan-50/80 px-4 py-2">
+              <h4 className="font-semibold text-cyan-950">
+                {g.transfer_date} · {g.from_pond_name || 'Source pond'} → destinations
+              </h4>
+              <p className="text-xs text-cyan-900/80">
+                {g.fish_species_label || '—'}
+                {g.from_cycle_name ? ` · cycle: ${g.from_cycle_name}` : ''}
+              </p>
+            </div>
+            <div className="overflow-x-auto p-2">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-gray-500">
+                    <th className="px-2 py-1">To pond</th>
+                    <th className="px-2 py-1 text-right">Weight (kg)</th>
+                    <th className="px-2 py-1 text-right">Fish count</th>
+                    <th className="px-2 py-1 text-right">Cost (BDT)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(g.lines || []).map((ln: any) => (
+                    <tr key={ln.id}>
+                      <td className="px-2 py-1.5">{ln.to_pond_name || '—'}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{Number(ln.weight_kg).toLocaleString()}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{ln.fish_count ?? '—'}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.cost_amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50">
+                  <tr>
+                    <td className="px-2 py-2 text-right text-xs font-semibold text-slate-800">Sub-total</td>
+                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">{Number(g.subtotal_weight_kg).toLocaleString()}</td>
+                    <td />
+                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">{aqBdt(g.subtotal_cost_amount)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        ))}
+        <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
+          <span>Total — {summary.transfer_count ?? groups.length} transfer(s)</span>
+          <span className="float-right tabular-nums">
+            {Number(totals.total_weight_kg ?? 0).toLocaleString()} kg · {aqBdt(totals.total_cost_amount)}
+          </span>
         </div>
       </div>
     )

@@ -504,7 +504,7 @@ def _aquaculture_access(request) -> JsonResponse | None:
     if not user_may_access_aquaculture_api(user):
         return JsonResponse(
             {
-                "detail": "Aquaculture is only available to the company Admin account for this tenant. Other roles use core fuel station and retail features.",
+                "detail": "Aquaculture requires Admin or app.aquaculture permission for this tenant.",
             },
             status=403,
         )

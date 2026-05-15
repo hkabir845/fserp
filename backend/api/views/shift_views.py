@@ -54,9 +54,12 @@ def _template_to_json(t):
 
 def _session_to_json(s):
     om = getattr(s, "opening_meters", None) or []
+    cm = getattr(s, "closing_meters", None) or []
     es = getattr(s, "employee_schedule", None) or []
     if not isinstance(om, list):
         om = []
+    if not isinstance(cm, list):
+        cm = []
     if not isinstance(es, list):
         es = []
     return {
@@ -76,6 +79,7 @@ def _session_to_json(s):
         "total_sales_amount": str(s.total_sales_amount or Decimal("0")),
         "sale_transaction_count": s.sale_transaction_count or 0,
         "opening_meters": om,
+        "closing_meters": cm,
         "employee_schedule": es,
     }
 
@@ -197,7 +201,45 @@ def _apply_opening_meter_intent(company_id: int, station_id, to_apply: list[tupl
     return snapshot
 
 
-@csrf_exempt
+def _build_closing_meter_snapshot(
+    company_id: int, station_id, to_apply: list[tuple[int, Decimal]]
+) -> list[dict]:
+    """Validate closing readings and return snapshot without mutating meter registers."""
+    if not to_apply:
+        return []
+    want_sid = int(station_id) if station_id else None
+    snapshot: list[dict] = []
+    for mid, r in to_apply:
+        m = (
+            Meter.objects.filter(id=mid, company_id=company_id, is_active=True)
+            .select_related("dispenser", "dispenser__island", "dispenser__island__station")
+            .first()
+        )
+        if not m:
+            raise ValueError(f"Meter {mid} not found or inactive")
+        m_sid = m.dispenser.island.station_id if m.dispenser and m.dispenser.island_id else None
+        if want_sid is not None and m_sid != want_sid:
+            raise ValueError(
+                f"Meter {mid} is not on the selected station (station_id={m_sid}, expected {want_sid})"
+            )
+        prev = m.current_reading
+        snapshot.append(
+            {
+                "meter_id": m.id,
+                "reading": str(r),
+                "previous_reading": str(prev),
+                "meter_name": (m.meter_name or m.meter_code or str(m.id)),
+                "dispenser_name": m.dispenser.dispenser_name if m.dispenser_id else "",
+            }
+        )
+    return snapshot
+
+
+def _active_shift_exists(company_id: int, station_id: int | None) -> bool:
+    qs = ShiftSession.objects.filter(company_id=company_id, closed_at__isnull=True)
+    if station_id:
+        return qs.filter(station_id=station_id).exists()
+    return qs.filter(station_id__isnull=True).exists()
 @auth_required
 @require_company_id
 def shift_templates_list_or_create(request):
@@ -283,7 +325,16 @@ def shifts_list(request):
 def shifts_sessions_active(request):
     if request.method != "GET":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
-    s = ShiftSession.objects.filter(company_id=request.company_id, closed_at__isnull=True).select_related("station", "template").first()
+    qs = ShiftSession.objects.filter(company_id=request.company_id, closed_at__isnull=True).select_related(
+        "station", "template"
+    )
+    raw_sid = request.GET.get("station_id")
+    if raw_sid not in (None, "") and str(raw_sid).strip().isdigit():
+        qs = qs.filter(station_id=int(raw_sid))
+    qs = qs.order_by("-opened_at")
+    if str(request.GET.get("all", "")).lower() in ("1", "true", "yes"):
+        return JsonResponse([_session_to_json(s) for s in qs], safe=False)
+    s = qs.first()
     if not s:
         return JsonResponse(None, safe=False)
     return JsonResponse(_session_to_json(s))
@@ -300,8 +351,6 @@ def shifts_sessions_open(request):
         return err
     station_id = body.get("station_id")
     template_id = body.get("template_id")
-    if ShiftSession.objects.filter(company_id=request.company_id, closed_at__isnull=True).exists():
-        return JsonResponse({"detail": "An active shift session already exists"}, status=400)
     n_active = active_station_count(request.company_id)
     raw_sid = body.get("station_id")
     has_sid = raw_sid not in (None, "", 0, "0")
@@ -333,6 +382,13 @@ def shifts_sessions_open(request):
             status=400,
         )
     station_id = resolved_station_id
+    if _active_shift_exists(request.company_id, station_id):
+        detail = (
+            "An active shift session already exists for this station"
+            if station_id
+            else "An active shift session already exists"
+        )
+        return JsonResponse({"detail": detail}, status=400)
     opening = _decimal(body.get("opening_cash_float"), Decimal("0"))
     if opening is None:
         opening = Decimal("0")
@@ -378,12 +434,25 @@ def shifts_sessions_close(request, session_id: int):
         return JsonResponse({"detail": "Session not found"}, status=404)
     if s.closed_at:
         return JsonResponse({"detail": "Session already closed"}, status=400)
-    s.closed_at = django_timezone.now()
-    s.closed_by_user_id = getattr(request.api_user, "id", None)
-    if body.get("closing_cash_counted") is not None:
-        s.closing_cash_counted = _decimal(body.get("closing_cash_counted"))
-    expected = (s.opening_cash_float or Decimal("0")) + (s.expected_cash_total or Decimal("0"))
-    if s.closing_cash_counted is not None:
-        s.cash_variance = s.closing_cash_counted - expected
-    s.save()
+    to_apply, merr = _parse_opening_meter_intent(
+        request.company_id, s.station_id, body.get("closing_meters") or []
+    )
+    if merr:
+        return JsonResponse({"detail": merr}, status=400)
+    try:
+        with transaction.atomic():
+            closing_snap = _build_closing_meter_snapshot(
+                request.company_id, s.station_id, to_apply
+            )
+            s.closed_at = django_timezone.now()
+            s.closed_by_user_id = getattr(request.api_user, "id", None)
+            if body.get("closing_cash_counted") is not None:
+                s.closing_cash_counted = _decimal(body.get("closing_cash_counted"))
+            expected = (s.opening_cash_float or Decimal("0")) + (s.expected_cash_total or Decimal("0"))
+            if s.closing_cash_counted is not None:
+                s.cash_variance = s.closing_cash_counted - expected
+            s.closing_meters = closing_snap
+            s.save()
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
     return JsonResponse(_session_to_json(s))

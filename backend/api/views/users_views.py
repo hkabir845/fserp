@@ -6,6 +6,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
+from api.utils.password_reset_tokens import (
+    clear_password_reset_rate_limit_cache_for_user,
+    invalidate_password_reset_tokens_for_user,
+)
 from api.utils.recovery_email import profile_allows_password_recovery
 from api.models import BroadcastRead, Company, CompanyRole, Station, User
 from api.services.permission_service import user_client_dict, POS_SALE_SCOPES, normalize_role_key
@@ -433,6 +437,9 @@ def user_detail(request, user_id):
                     status=400,
                 )
         user.save()
+        if data.get("password"):
+            invalidate_password_reset_tokens_for_user(user)
+            clear_password_reset_rate_limit_cache_for_user(user.id)
         return JsonResponse(_user_to_json(user))
     except json.JSONDecodeError:
         return JsonResponse({"detail": "Invalid JSON"}, status=400)

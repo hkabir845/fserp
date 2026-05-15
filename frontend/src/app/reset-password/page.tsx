@@ -174,7 +174,7 @@ export default function ResetPasswordPage() {
         <p className="mt-2 text-xs text-slate-500">
           Prefer a one-time code? Open{' '}
           <Link href="/forgot-password" className="font-medium text-blue-600 hover:underline">
-            Forgot password
+            Forgot password?
           </Link>{' '}
           and select the 6-digit code option.
         </p>

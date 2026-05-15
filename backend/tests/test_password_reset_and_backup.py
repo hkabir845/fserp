@@ -117,6 +117,57 @@ def test_forgot_password_otp_then_reset_password(api_client, company_tenant):
     assert u.check_password("OtpAfter#2")
 
 
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_admin_password_change_invalidates_pending_otp(
+    api_client, company_tenant, auth_admin_headers
+):
+    """Pending OTP rows must not work after an admin sets a new password for that user."""
+    mail.outbox.clear()
+    u = User(
+        username="pw_reset_inval@test.com",
+        email="pw_reset_inval@test.com",
+        full_name="PW Reset Invalidate",
+        role="cashier",
+        is_active=True,
+        company_id=company_tenant.id,
+    )
+    u.set_password("BeforeAdmin#1")
+    u.save()
+
+    r = api_client.post(
+        "/api/auth/forgot-password/",
+        data=json.dumps({"email": u.username, "method": "otp"}),
+        content_type="application/json",
+    )
+    assert r.status_code == 200
+    assert len(mail.outbox) >= 1
+    combined = mail.outbox[0].body
+    if mail.outbox[0].alternatives:
+        combined += str(mail.outbox[0].alternatives[0][0])
+    m = re.search(r"\b(\d{6})\b", combined)
+    assert m, combined[:800]
+    otp = m.group(1)
+
+    r_put = api_client.put(
+        f"/api/users/{u.id}/",
+        data=json.dumps({"password": "AdminSetNew#2"}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r_put.status_code == 200, r_put.content.decode()
+
+    r2 = api_client.post(
+        "/api/auth/reset-password/",
+        data=json.dumps(
+            {"email": u.username, "otp": otp, "new_password": "ShouldNotApply#3"}
+        ),
+        content_type="application/json",
+    )
+    assert r2.status_code == 400, r2.content.decode()
+    u.refresh_from_db()
+    assert u.check_password("AdminSetNew#2")
+
+
 def test_reset_password_rejects_bad_token(api_client):
     r = api_client.post(
         "/api/auth/reset-password/",

@@ -268,7 +268,9 @@ EMAIL_BACKEND = (
 )
 EMAIL_HOST = (os.environ.get("EMAIL_HOST") or "").strip()
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587") or "587")
+# Port 465 often uses implicit SSL; 587 typically uses STARTTLS (TLS).
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("1", "true", "yes")
+EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "").strip().lower() in ("1", "true", "yes")
 EMAIL_HOST_USER = (os.environ.get("EMAIL_HOST_USER") or "").strip()
 EMAIL_HOST_PASSWORD = (os.environ.get("EMAIL_HOST_PASSWORD") or "").strip()
 DEFAULT_FROM_EMAIL = (os.environ.get("DEFAULT_FROM_EMAIL") or "FS ERP <noreply@mahasoftcorporation.com>").strip()

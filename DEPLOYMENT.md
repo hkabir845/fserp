@@ -31,8 +31,10 @@ npm run build
 
 ## 2. Forgot password (production)
 
-- Configure **SMTP** in `.env` (`EMAIL_HOST`, `EMAIL_HOST_USER`, …). Without it, Django uses the **console** backend and no email is delivered.
-- Set **`FRONTEND_BASE_URL`** to your live Next.js origin (no trailing slash). Reset links are built as `{FRONTEND_BASE_URL}/reset-password?token=…`.
+- Configure **SMTP** in `.env` (`EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`, …). Without `EMAIL_HOST`, Django uses the **console** backend and no email is delivered.
+- For **port 465** (implicit SSL), set **`EMAIL_USE_SSL=1`** and usually **`EMAIL_USE_TLS=false`** (see `backend/env.example`).
+- Set **`FRONTEND_BASE_URL`** to your live Next.js origin (no trailing slash). **Link** resets use `{FRONTEND_BASE_URL}/reset-password?token=…`. **OTP** resets complete on `/forgot-password` and do not need this URL for delivery.
+- **OTP codes** are stored in PostgreSQL (`password_reset_token`), so they work across multiple Gunicorn workers even without Redis; **`DJANGO_CACHE_URL` / `REDIS_URL`** is still recommended for shared rate limits and OTP lockout counters (**fserp.W002** if missing).
 - Users must have a **deliverable address**: username that looks like an email, or a non-empty profile **`email`** (see `ensure_platform_owner_email` / user admin for platform accounts).
 
 ## 3. Tenant backup & restore

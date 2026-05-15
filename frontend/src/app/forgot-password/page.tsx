@@ -11,7 +11,7 @@ type ResetMethod = 'link' | 'otp'
 export default function ForgotPasswordPage() {
   const router = useRouter()
   const [identifier, setIdentifier] = useState('')
-  const [method, setMethod] = useState<ResetMethod>('link')
+  const [method, setMethod] = useState<ResetMethod>('otp')
   const [step, setStep] = useState<1 | 2>(1)
   const [otp, setOtp] = useState('')
   const [newPassword, setNewPassword] = useState('')

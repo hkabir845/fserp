@@ -18,6 +18,10 @@ from django.views.decorators.http import require_http_methods
 
 from api.models import PasswordResetToken, User
 from api.utils.auth import auth_required
+from api.utils.password_reset_tokens import (
+    clear_password_reset_rate_limit_cache_for_user,
+    invalidate_password_reset_tokens_for_user,
+)
 from api.utils.rate_limit import auth_rate_limits_enabled, client_ip, rate_limit_exceeded
 from api.utils.recovery_email import username_looks_like_email
 
@@ -110,10 +114,6 @@ def _password_reset_delivery_email(user: User) -> str | None:
     return None
 
 
-def _otp_cache_key(user_id: int) -> str:
-    return f"pwreset_otp:{user_id}"
-
-
 def _otp_lock_key(user_id: int) -> str:
     return f"pwreset_otp_lock:{user_id}"
 
@@ -124,11 +124,6 @@ def _hash_otp(user_id: int, raw_otp: str) -> str:
         f"{user_id}:{raw_otp.strip()}".encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
-
-
-def _store_otp(user_id: int, raw_otp: str) -> None:
-    cache.set(_otp_cache_key(user_id), _hash_otp(user_id, raw_otp), OTP_TTL_SEC)
-    cache.delete(_otp_lock_key(user_id))
 
 
 def _send_password_reset_link_email(to_email: str, reset_link: str, user_name: str) -> None:
@@ -253,8 +248,9 @@ def forgot_password(request):
       - method: "link" (default) | "otp"
 
     Link: user must open the link to confirm they want to reset; then they set a new password.
-    OTP: a 6-digit code is sent; user completes reset with POST /auth/reset-password/ using
-         email, otp, new_password (see reset_password).
+    OTP: a 6-digit code is sent and stored in the database (works across multiple API workers);
+         user completes reset with POST /auth/reset-password/ using email, otp, new_password
+         (see reset_password).
 
     Always returns a generic success when no user matches (anti-enumeration).
     """
@@ -292,14 +288,30 @@ def forgot_password(request):
     display = getattr(user, "full_name", None) or user.username
 
     if method == "otp":
-        cache.delete(_otp_cache_key(user.id))
+        # Store OTP in the database so password reset works with multiple Gunicorn workers
+        # (LocMem cache is not shared across processes).
+        token_row = None
         raw_otp = f"{secrets.randbelow(900000) + 100000:06d}"
-        _store_otp(user.id, raw_otp)
+        otp_hash = _hash_otp(user.id, raw_otp)
+        expires = timezone.now() + timedelta(seconds=OTP_TTL_SEC)
+        with transaction.atomic():
+            PasswordResetToken.objects.filter(user=user, used_at__isnull=True).update(
+                used_at=timezone.now()
+            )
+            try:
+                token_row = PasswordResetToken.objects.create(
+                    user=user, token_hash=otp_hash, expires_at=expires
+                )
+            except Exception:
+                logger.exception("password reset: failed to store OTP token for user id=%s", user.id)
+                cache.delete(throttle_key)
+                return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
         try:
             _send_password_reset_otp_email(to_addr, raw_otp, display)
         except Exception:
             logger.exception("password reset OTP: email send failed for user id=%s", user.id)
-            cache.delete(_otp_cache_key(user.id))
+            if token_row is not None:
+                PasswordResetToken.objects.filter(pk=token_row.pk).delete()
             cache.delete(throttle_key)
             return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
         if settings.DEBUG:
@@ -348,7 +360,7 @@ def reset_password(request):
     """
     Complete password reset using either:
       - token + new_password (from the confirmation email link), or
-      - email + otp + new_password (after receiving a one-time code).
+      - email + otp + new_password (OTP is validated against a short-lived row in password_reset_token).
     """
     body = _parse_json(request)
     if body is None:
@@ -382,10 +394,18 @@ def reset_password(request):
                 },
                 status=400,
             )
-        expect = cache.get(_otp_cache_key(user.id))
-        if not expect or not hmac.compare_digest(
-            expect, _hash_otp(user.id, otp)
-        ):
+        th = _hash_otp(user.id, otp)
+        rec = (
+            PasswordResetToken.objects.filter(
+                user=user,
+                token_hash=th,
+                used_at__isnull=True,
+                expires_at__gte=timezone.now(),
+            )
+            .select_related("user")
+            .first()
+        )
+        if not rec:
             kfail = f"pwreset_otp_fail:{user.id}"
             fails = int(cache.get(kfail) or 0) + 1
             cache.set(kfail, fails, OTP_FAIL_TRACK_TTL_SEC)
@@ -397,22 +417,41 @@ def reset_password(request):
                 },
                 status=400,
             )
+        otp_reset_ok = False
         with transaction.atomic():
-            user = User.objects.select_for_update().filter(
-                pk=user.pk, is_active=True
-            ).first()
-            if not user:
+            locked = (
+                PasswordResetToken.objects.select_for_update()
+                .filter(
+                    pk=rec.pk,
+                    used_at__isnull=True,
+                    expires_at__gte=timezone.now(),
+                )
+                .first()
+            )
+            if locked:
+                user_locked = User.objects.select_for_update().filter(
+                    pk=user.pk, is_active=True
+                ).first()
+                if user_locked:
+                    user_locked.set_password(new_pw)
+                    user_locked.save(update_fields=["password_hash", "updated_at"])
+                    PasswordResetToken.objects.filter(
+                        user=user_locked, used_at__isnull=True
+                    ).update(used_at=timezone.now())
+                    otp_reset_ok = True
+        if not otp_reset_ok:
+            if not User.objects.filter(pk=user.pk, is_active=True).exists():
                 return JsonResponse(
                     {"detail": "This account is disabled. Contact your administrator."},
                     status=400,
                 )
-            user.set_password(new_pw)
-            user.save(update_fields=["password_hash", "updated_at"])
-        cache.delete(_otp_cache_key(user.id))
-        cache.delete(f"pwreset_otp_fail:{user.id}")
-        PasswordResetToken.objects.filter(user=user, used_at__isnull=True).update(
-            used_at=timezone.now()
-        )
+            return JsonResponse(
+                {
+                    "detail": "This code is invalid or has expired. Request a new code and try again.",
+                },
+                status=400,
+            )
+        clear_password_reset_rate_limit_cache_for_user(user.id)
         return JsonResponse(
             {
                 "detail": "Your password has been reset. You can sign in with your new password.",
@@ -458,9 +497,9 @@ def reset_password(request):
             )
         user.set_password(new_pw)
         user.save(update_fields=["password_hash", "updated_at"])
-        PasswordResetToken.objects.filter(pk=locked.pk).update(used_at=timezone.now())
+        invalidate_password_reset_tokens_for_user(user)
 
-    cache.delete(_otp_cache_key(user.id))
+    clear_password_reset_rate_limit_cache_for_user(user.id)
 
     return JsonResponse(
         {"detail": "Your password has been reset. You can sign in with your new password."},
@@ -495,4 +534,6 @@ def change_password(request):
 
     user.set_password(new_pw)
     user.save(update_fields=["password_hash", "updated_at"])
+    invalidate_password_reset_tokens_for_user(user)
+    clear_password_reset_rate_limit_cache_for_user(user.id)
     return JsonResponse({"detail": "Password updated successfully."}, status=200)

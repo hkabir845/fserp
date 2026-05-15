@@ -15,7 +15,7 @@ from django.db import transaction
 from django.db.models import F
 
 from api.exceptions import GlPostingError, StockBusinessError
-from api.models import AquacultureExpense, AquaculturePond, AquacultureProductionCycle, Item, Station
+from api.models import AquacultureExpense, AquacultureExpenseInventoryLine, AquaculturePond, AquacultureProductionCycle, Item, Station
 from api.services.gl_posting import (
     _item_receives_physical_stock,
     item_inventory_unit_cost,
@@ -160,6 +160,14 @@ def execute_aquaculture_shop_stock_issue(
             feed_weight_kg=feed_weight_kg,
         )
         x.save()
+
+        for d in lines_data:
+            AquacultureExpenseInventoryLine.objects.create(
+                expense=x,
+                item=d["item"],
+                quantity=d["quantity"],
+                source_station_id=station_id,
+            )
 
         row_tuples: list[tuple[Item, Decimal]] = [(d["item"], d["quantity"]) for d in lines_data]
         posted = post_aquaculture_shop_stock_issue_journal(

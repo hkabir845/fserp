@@ -60,6 +60,7 @@ from api.services.aquaculture_units import (
     quantize_pond_area_decimal,
     quantize_two_decimal_places,
 )
+from api.services.aquaculture_expense_cleanup import cleanup_aquaculture_expense_posting_effects
 from api.services.gl_posting import (
     delete_landlord_lease_payment_journal,
     item_inventory_unit_cost,
@@ -1664,7 +1665,9 @@ def aquaculture_expense_detail(request, expense_id: int):
             .first()
         )
         return JsonResponse(_expense_to_json(x))
-    x.delete()
+    with transaction.atomic():
+        cleanup_aquaculture_expense_posting_effects(cid, expense_id)
+        x.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
 
 

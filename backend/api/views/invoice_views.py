@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db.models import Sum
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
@@ -12,7 +12,7 @@ from api.utils.customer_display import customer_display_name
 from api.views.common import parse_json_body, require_company_id
 from api.services.coa_gl_defaults import ALLOWED_INCOME, parse_optional_chart_account_id
 from api.models import Invoice, InvoiceLine, Customer, ShiftSession
-from api.services.gl_posting import sync_invoice_gl
+from api.services.gl_posting import cleanup_invoice_posting_effects, sync_invoice_gl
 from api.services.invoice_station import (
     default_station_id_for_document,
     parse_valid_station_id,
@@ -290,8 +290,11 @@ def invoice_detail(request, invoice_id: int):
         )
         return JsonResponse(_invoice_to_json(inv, cid))
     if request.method == "DELETE":
+        ok, err = cleanup_invoice_posting_effects(cid, inv)
+        if not ok:
+            return JsonResponse({"detail": err}, status=409)
         inv.delete()
-        return JsonResponse({"detail": "Deleted"}, status=200)
+        return HttpResponse(status=204)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
 

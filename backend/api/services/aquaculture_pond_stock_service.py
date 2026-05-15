@@ -16,6 +16,7 @@ from django.db.models import F
 from api.exceptions import GlPostingError, StockBusinessError
 from api.models import (
     AquacultureExpense,
+    AquacultureExpenseInventoryLine,
     AquaculturePond,
     AquacultureProductionCycle,
     Item,
@@ -305,6 +306,13 @@ def consume_pond_warehouse_stock(
         feed_sack_count=feed_sack_count,
     )
     x.save()
+
+    AquacultureExpenseInventoryLine.objects.create(
+        expense=x,
+        item=item,
+        quantity=quantity,
+        source_station=None,
+    )
 
     row_tuples: list[tuple[Item, Decimal]] = [(item, quantity)]
     posted = post_aquaculture_pond_feed_consumption_journal(

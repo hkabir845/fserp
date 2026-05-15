@@ -41,7 +41,9 @@ from api.models import (
     Item,
     JournalEntry,
     JournalEntryLine,
+    Meter,
     Payment,
+    PaymentInvoiceAllocation,
     PayrollRun,
     Station,
     Tank,
@@ -55,6 +57,8 @@ from api.services.aquaculture_cost_per_kg import (
     item_shop_issue_cost_bucket,
 )
 from api.services.item_catalog import item_tracks_physical_stock
+from api.services.shift_sales import unrecord_invoice_from_shift
+from api.services.station_stock import add_station_stock, item_uses_station_bins
 from api.utils.customer_display import customer_display_name
 from api.services.coa_constants import is_pl_credit_normal_type, normalize_chart_account_type
 from api.services.employee_payroll_subledger import sync_payroll_run_to_employee_ledgers
@@ -1835,6 +1839,165 @@ def cleanup_vendor_bill_posting_effects(company_id: int, bill: Bill) -> None:
         JournalEntry.objects.filter(
             company_id=company_id, entry_number=f"AUTO-BILL-{b.id}"
         ).delete()
+
+
+def _invoice_unrecord_shift_params(company_id: int, inv: Invoice) -> tuple[Decimal, str, Decimal | None]:
+    """
+    Mirror record_invoice_on_shift / cashier_pos: split-tender invoices store payment_method ``mixed``,
+    but shift cash used the tender type(s) of the immediate payment row(s).
+    """
+    total = inv.total if inv.total is not None else Decimal("0")
+    pm = (inv.payment_method or "").strip().lower()
+    if pm != "mixed":
+        return total, pm, None
+    cash_part = Decimal("0")
+    for alloc in PaymentInvoiceAllocation.objects.filter(invoice_id=inv.id).select_related("payment"):
+        p = alloc.payment
+        if (p.payment_method or "").strip().lower() == "cash":
+            cash_part += alloc.amount if alloc.amount is not None else Decimal("0")
+    if cash_part > 0:
+        return total, "cash", cash_part
+    return total, "card", None
+
+
+def cleanup_invoice_posting_effects(company_id: int, inv: Invoice) -> tuple[bool, str]:
+    """
+    Before deleting an invoice (manual or POS): reverse subledger/shift/POS stock effects and remove
+    AUTO-INV-* journals. Customer payments that also apply to other invoices, or receipts already bank-deposited,
+    block deletion (same spirit as vendor bills). Aquaculture-linked revenue uses the same journals; pond
+    operating costs with inventory use ``cleanup_aquaculture_expense_posting_effects`` on expense delete.
+    """
+    inv_id = int(inv.id)
+    with transaction.atomic():
+        locked = (
+            Invoice.objects.select_for_update()
+            .filter(pk=inv_id, company_id=company_id)
+            .select_related("customer")
+            .first()
+        )
+        if not locked:
+            return True, ""
+
+        alloc_rows = list(
+            PaymentInvoiceAllocation.objects.filter(
+                invoice_id=inv_id, payment__company_id=company_id
+            ).select_related("payment")
+        )
+        pay_by_id: dict[int, Payment] = {}
+        for a in alloc_rows:
+            pay_by_id[a.payment_id] = a.payment
+
+        for p in pay_by_id.values():
+            if getattr(p, "bank_deposit_id", None):
+                return (
+                    False,
+                    "Cannot delete this invoice: a linked customer receipt was included in a bank deposit. "
+                    "Remove that receipt from the deposit first.",
+                )
+            other = PaymentInvoiceAllocation.objects.filter(payment_id=p.id).exclude(invoice_id=inv_id)
+            if other.exists():
+                return (
+                    False,
+                    "Cannot delete this invoice while customer payments are applied to other invoices. "
+                    "Remove or reallocate those payments in Payments first.",
+                )
+
+        is_pos_invoice = (locked.invoice_number or "").strip().upper().startswith("INV-POS-")
+        if is_pos_invoice:
+            total, shift_pm, shift_cash_tender = _invoice_unrecord_shift_params(company_id, locked)
+            unrecord_invoice_from_shift(
+                company_id,
+                locked.shift_session_id,
+                total,
+                shift_pm,
+                cash_tender_amount=shift_cash_tender,
+            )
+
+        for p in sorted(pay_by_id.values(), key=lambda x: x.id):
+            ok_rev, rerr = reverse_payment_received_posting(company_id, p)
+            if not ok_rev:
+                return (
+                    False,
+                    (rerr or "Could not reverse a linked payment").strip()
+                    + " Remove the payment in Payments before deleting this invoice.",
+                )
+            p.delete()
+
+        for line in (
+            InvoiceLine.objects.filter(invoice_id=inv_id)
+            .select_related("nozzle", "nozzle__meter", "nozzle__tank", "item")
+        ):
+            nz = line.nozzle
+            qty = line.quantity if line.quantity is not None else Decimal("0")
+            if qty <= 0:
+                continue
+            if nz is not None:
+                m = nz.meter
+                t = nz.tank
+                if m is not None:
+                    Meter.objects.filter(pk=m.pk).update(
+                        current_reading=F("current_reading") - qty
+                    )
+                if t is not None:
+                    Tank.objects.filter(pk=t.pk).update(
+                        current_stock=F("current_stock") + qty
+                    )
+                continue
+            it = line.item
+            st_id = locked.station_id
+            if it is None or st_id is None or not is_pos_invoice:
+                continue
+            if item_uses_station_bins(company_id, it):
+                add_station_stock(company_id, int(st_id), int(it.id), qty)
+            elif (
+                item_tracks_physical_stock(it)
+                and _item_receives_physical_stock(it)
+                and it.quantity_on_hand is not None
+            ):
+                Item.objects.filter(pk=it.pk, company_id=company_id).update(
+                    quantity_on_hand=F("quantity_on_hand") + qty
+                )
+
+        used_ar = invoice_sale_used_ar(company_id, inv_id)
+        cust = locked.customer
+        walkin = _is_walkin_customer(cust) if cust else True
+
+        rcpt = (
+            JournalEntry.objects.filter(
+                company_id=company_id, entry_number=f"AUTO-INV-{inv_id}-RCPT"
+            )
+            .prefetch_related("lines")
+            .first()
+        )
+        if rcpt and locked.customer_id and not walkin:
+            ar = _coa(company_id, CODE_AR)
+            if ar:
+                ar_credit = Decimal("0")
+                for ln in rcpt.lines.all():
+                    if ln.account_id == ar.id:
+                        ar_credit += ln.credit if ln.credit is not None else Decimal("0")
+                if ar_credit > 0:
+                    Customer.objects.filter(pk=locked.customer_id).update(
+                        current_balance=F("current_balance") + ar_credit
+                    )
+        JournalEntry.objects.filter(
+            company_id=company_id, entry_number=f"AUTO-INV-{inv_id}-RCPT"
+        ).delete()
+
+        inv_total = locked.total if locked.total is not None else Decimal("0")
+        if used_ar and locked.customer_id and not walkin and inv_total > 0:
+            Customer.objects.filter(pk=locked.customer_id).update(
+                current_balance=F("current_balance") - inv_total
+            )
+
+        JournalEntry.objects.filter(
+            company_id=company_id, entry_number=f"AUTO-INV-{inv_id}-COGS"
+        ).delete()
+        JournalEntry.objects.filter(
+            company_id=company_id, entry_number=f"AUTO-INV-{inv_id}-SALE"
+        ).delete()
+
+    return True, ""
 
 
 def sync_posted_vendor_bill(

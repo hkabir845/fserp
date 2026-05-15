@@ -8,6 +8,39 @@ from django.db.models import F
 from api.models import ShiftSession
 
 
+def unrecord_invoice_from_shift(
+    company_id: int,
+    shift_session_id: int | None,
+    invoice_total: Decimal,
+    payment_method: str,
+    *,
+    cash_tender_amount: Decimal | None = None,
+) -> None:
+    """
+    Reverse record_invoice_on_shift for an open shift (closed shifts are left unchanged, mirroring record).
+    """
+    if not shift_session_id:
+        return
+    pm = (payment_method or "").strip().lower()
+    updates: dict = {
+        "total_sales_amount": F("total_sales_amount") - invoice_total,
+        "sale_transaction_count": F("sale_transaction_count") - 1,
+    }
+    if pm == "cash":
+        cash_part = (
+            cash_tender_amount
+            if cash_tender_amount is not None
+            else invoice_total
+        )
+        if cash_part and cash_part > 0:
+            updates["expected_cash_total"] = F("expected_cash_total") - cash_part
+    ShiftSession.objects.filter(
+        id=shift_session_id,
+        company_id=company_id,
+        closed_at__isnull=True,
+    ).update(**updates)
+
+
 def record_invoice_on_shift(
     company_id: int,
     shift_session_id: int | None,

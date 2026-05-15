@@ -1914,6 +1914,37 @@ class AquacultureExpense(models.Model):
         ]
 
 
+class AquacultureExpenseInventoryLine(models.Model):
+    """
+    Persisted inventory movements for pond consume / shop-issue expenses so delete can restore
+    pond warehouse or station shop stock and drop AUTO-AQ-* journals (aligned with invoice/bill rollback).
+    """
+
+    expense = models.ForeignKey(
+        AquacultureExpense,
+        on_delete=models.CASCADE,
+        related_name="inventory_lines",
+    )
+    item = models.ForeignKey(
+        Item,
+        on_delete=models.PROTECT,
+        related_name="aquaculture_expense_inventory_lines",
+    )
+    quantity = models.DecimalField(max_digits=14, decimal_places=4)
+    source_station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_expense_inventory_lines",
+        help_text="When set, stock was taken from this station's shop (bins or QOH); when null, from the expense pond warehouse.",
+    )
+
+    class Meta:
+        db_table = "aquaculture_expense_inventory_line"
+        ordering = ["id"]
+
+
 class AquacultureExpensePondShare(models.Model):
     """Allocated slice of a shared aquaculture expense (parent expense.pond is null)."""
 

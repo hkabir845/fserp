@@ -895,7 +895,7 @@ export default function InvoicesPage() {
     try {
       const response = await api.delete(`/invoices/${invoiceId}`)
 
-      if (response.status === 204) {
+      if (response.status === 204 || response.status === 200) {
         toast.success(`Invoice ${invoiceNumber} deleted successfully!`)
         fetchData() // Refresh the invoice list
       } else {

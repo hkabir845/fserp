@@ -5,7 +5,19 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
-import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, BookOpen, Building2, MapPin } from 'lucide-react'
+import {
+  Plus,
+  Edit,
+  Trash2,
+  Search,
+  AlertTriangle,
+  RefreshCw,
+  BookOpen,
+  Building2,
+  MapPin,
+  Info,
+} from 'lucide-react'
+import { vendorUsualReceivingLabel } from '@/lib/vendorReceivingDefaults'
 import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin } from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
@@ -15,6 +27,7 @@ import { extractErrorMessage } from '@/utils/errorHandler'
 import { isConnectionError } from '@/utils/connectionError'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { suggestVendorDefaultExpenseAccountId } from '@/lib/vendorDefaults'
 
 interface Vendor {
   id: number
@@ -47,6 +60,7 @@ interface StationOption {
   id: number
   station_name: string
   is_active?: boolean
+  operates_fuel_retail?: boolean
 }
 
 interface PondOption {
@@ -147,10 +161,20 @@ export default function VendorsPage() {
       const rows = Array.isArray(res.data) ? res.data : []
       const parsed: StationOption[] = []
       for (const r of rows) {
-        const o = r as { id?: number; station_name?: string; is_active?: boolean }
+        const o = r as {
+          id?: number
+          station_name?: string
+          is_active?: boolean
+          operates_fuel_retail?: boolean
+        }
         if (typeof o.id !== 'number') continue
         if (o.is_active === false) continue
-        parsed.push({ id: o.id, station_name: o.station_name || `Site #${o.id}`, is_active: o.is_active })
+        parsed.push({
+          id: o.id,
+          station_name: o.station_name || `Site #${o.id}`,
+          is_active: o.is_active,
+          operates_fuel_retail: o.operates_fuel_retail !== false,
+        })
       }
       setStations(parsed)
     } catch {
@@ -185,6 +209,22 @@ export default function VendorsPage() {
   useEffect(() => {
     if (showModal) void loadExpenseCoa()
   }, [showModal, loadExpenseCoa])
+
+  /** Fill suggestion when COA loads after site/pond was chosen (onChange may run before options exist). */
+  useEffect(() => {
+    if (!showModal || !formData.default_receiving || formData.default_expense_account_id) return
+    const suggested = suggestVendorDefaultExpenseAccountId(
+      formData.default_receiving,
+      coaExpenseOptions
+    )
+    if (!suggested) return
+    setFormData((prev) => ({ ...prev, default_expense_account_id: suggested }))
+  }, [
+    showModal,
+    formData.default_receiving,
+    formData.default_expense_account_id,
+    coaExpenseOptions,
+  ])
 
   const fetchVendors = useCallback(async () => {
     setLoading(true)
@@ -430,12 +470,12 @@ export default function VendorsPage() {
     resetForm()
   }
 
+  const fuelStations = stations.filter((s) => s.operates_fuel_retail !== false)
+  const shopStations = stations.filter((s) => s.operates_fuel_retail === false)
+
   const defaultReceivingLabel = (vendor: Vendor) => {
-    const pond = (vendor.default_aquaculture_pond_name || '').trim()
-    if (pond) return pond
-    const site = (vendor.default_station_name || '').trim()
-    if (site) return site
-    return '—'
+    const label = vendorUsualReceivingLabel(vendor)
+    return label || '—'
   }
 
   return (
@@ -445,7 +485,39 @@ export default function VendorsPage() {
         <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Vendors</h1>
-          <p className="text-gray-600 mt-1">Manage your vendor accounts</p>
+          <p className="text-gray-600 mt-1">
+            One record per supplier (payables). Where each delivery goes is chosen on{' '}
+            <Link href="/bills" className="text-blue-600 hover:underline">
+              vendor bills
+            </Link>
+            , not by duplicating vendors per pond or site.
+          </p>
+        </div>
+
+        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950">
+          <div className="flex gap-3">
+            <Info className="h-5 w-5 shrink-0 text-blue-600 mt-0.5" aria-hidden />
+            <div className="space-y-1.5 min-w-0">
+              <p className="font-medium">How to set up suppliers</p>
+              <ul className="list-disc pl-4 space-y-1 text-blue-900/95">
+                <li>
+                  <strong>Multi-site suppliers</strong> (feed to all ponds and all shops): leave{' '}
+                  <em>Usual receiving location</em> blank; pick site or pond on each bill.
+                </li>
+                <li>
+                  <strong>Usual receiving location</strong> is optional — it only pre-fills new bills when most
+                  deliveries go to the same place.
+                </li>
+                <li>
+                  Fuel vs aquaculture vs general POS is configured on{' '}
+                  <Link href="/stations" className="text-blue-700 underline hover:text-blue-900">
+                    Stations
+                  </Link>
+                  ; do not create separate vendor records per business line.
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center justify-between mb-6">
@@ -453,7 +525,7 @@ export default function VendorsPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
             <input
               type="text"
-              placeholder="Search by name, #, email, default site or pond…"
+              placeholder="Search by name, #, email, usual location…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -508,7 +580,7 @@ export default function VendorsPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
                     <span className="inline-flex items-center gap-1">
                       <Building2 className="h-3.5 w-3.5 text-amber-600/90" />
-                      Site / pond
+                      Usual location
                     </span>
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -711,28 +783,56 @@ export default function VendorsPage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2 inline-flex items-center gap-1.5">
                       <Building2 className="h-4 w-4 text-amber-600" />
-                      Default site / pond
+                      Usual receiving location (optional)
                     </label>
                     <select
                       value={formData.default_receiving}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const default_receiving = e.target.value
+                        const suggested = suggestVendorDefaultExpenseAccountId(
+                          default_receiving,
+                          coaExpenseOptions
+                        )
                         setFormData({
                           ...formData,
-                          default_receiving: e.target.value,
+                          default_receiving,
+                          default_expense_account_id: suggested
+                            ? suggested
+                            : default_receiving
+                              ? formData.default_expense_account_id
+                              : '',
                         })
-                      }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                     >
-                      <option value="">— Not set —</option>
-                      <optgroup label="Sites (shop / warehouse)">
-                        {stations.map((s) => (
-                          <option key={`s-${s.id}`} value={`s:${s.id}`}>
-                            {s.station_name}
-                          </option>
-                        ))}
-                      </optgroup>
+                      <option value="">— Any site or pond (choose on each bill) —</option>
+                      {fuelStations.length > 0 ? (
+                        <optgroup label="Sites — fuel forecourt">
+                          {fuelStations.map((s) => (
+                            <option key={`s-${s.id}`} value={`s:${s.id}`}>
+                              {s.station_name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null}
+                      {shopStations.length > 0 ? (
+                        <optgroup label="Sites — shop / POS (no fuel)">
+                          {shopStations.map((s) => (
+                            <option key={`s-${s.id}`} value={`s:${s.id}`}>
+                              {s.station_name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null}
+                      {fuelStations.length === 0 && shopStations.length === 0
+                        ? stations.map((s) => (
+                            <option key={`s-${s.id}`} value={`s:${s.id}`}>
+                              {s.station_name}
+                            </option>
+                          ))
+                        : null}
                       {ponds.length > 0 ? (
-                        <optgroup label="Ponds (fish & fry — delivered to pond)">
+                        <optgroup label="Ponds — fish & fry delivered to pond">
                           {ponds.map((p) => (
                             <option key={`p-${p.id}`} value={`p:${p.id}`}>
                               {p.name}
@@ -743,11 +843,15 @@ export default function VendorsPage() {
                       ) : null}
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      Shop sites for general receipts; ponds for fish and fry delivered to the pond. On{' '}
+                      Does not restrict this supplier to one place. Pre-fills{' '}
+                      <Link href="/bills" className="text-blue-600 hover:underline">
+                        vendor bills
+                      </Link>{' '}
+                      only. For pond defaults, a shop linked to that pond on{' '}
                       <Link href="/stations" className="text-blue-600 hover:underline">
                         Stations
-                      </Link>
-                      , set the shop's default pond so new bills still receive into the right stock.
+                      </Link>{' '}
+                      is used when you pick a pond here.
                     </p>
                   </div>
                   <div className="col-span-2">
@@ -769,8 +873,8 @@ export default function VendorsPage() {
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      Used on vendor bills when a line has no line-level or item-level expense account (non-inventory
-                      lines).
+                      Suggested when you pick a usual location (site 6900, pond 6725). Used on bills when a line has no
+                      item or line-level expense account.
                     </p>
                   </div>
                   <div className="col-span-2">

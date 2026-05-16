@@ -169,16 +169,52 @@ def set_station_stock(
     refresh_item_quantity_on_hand(company_id, item_id)
 
 
-def ensure_item_station_row_for_new_shop_item(company_id: int, item: Item) -> None:
+@transaction.atomic
+def move_shop_stock_to_station(
+    company_id: int, station_id: int, item_id: int, quantity: Decimal
+) -> None:
+    """Clear other shop bins, then set quantity at the target station (relocate, not duplicate)."""
+    if quantity < 0:
+        quantity = Decimal("0")
+    ItemStationStock.objects.filter(company_id=company_id, item_id=item_id).exclude(
+        station_id=station_id
+    ).update(quantity=Decimal("0"))
+    set_station_stock(company_id, station_id, item_id, quantity)
+
+
+def resolve_active_station_id(company_id: int, raw_station_id) -> int | None:
+    if raw_station_id is None or raw_station_id == "":
+        return None
+    try:
+        sid = int(raw_station_id)
+    except (TypeError, ValueError):
+        return None
+    if Station.objects.filter(pk=sid, company_id=company_id, is_active=True).exists():
+        return sid
+    return None
+
+
+def ensure_item_station_row_for_new_shop_item(
+    company_id: int,
+    item: Item,
+    *,
+    station_id: int | None = None,
+    move_all: bool = False,
+) -> None:
     """
-    On product create: put initial shop QOH on the default (first) station.
+    On product create: put initial shop QOH on the chosen or default station.
     No-op for tank-tracked or non-physical items.
     """
     if not item_uses_station_bins(company_id, item):
         return
-    st = get_or_create_default_station(company_id)
+    target_sid = resolve_active_station_id(company_id, station_id)
+    if target_sid is None:
+        target_sid = int(get_or_create_default_station(company_id).id)
     q = item.quantity_on_hand or Decimal("0")
-    set_station_stock(company_id, st.id, item.pk, q)
+    if move_all:
+        move_shop_stock_to_station(company_id, target_sid, item.pk, q)
+    else:
+        set_station_stock(company_id, target_sid, item.pk, q)
 
 
 def per_pond_quantities(company_id: int, item_id: int) -> list[dict]:
@@ -224,19 +260,23 @@ def set_pond_stock(company_id: int, pond_id: int, item_id: int, quantity: Decima
 
 
 def per_station_quantities(company_id: int, item_id: int) -> list[dict]:
-    out: list[dict] = []
-    for row in (
-        ItemStationStock.objects.filter(company_id=company_id, item_id=item_id)
-        .select_related("station")
-        .order_by("station__station_name", "station_id")
+    """All active stations with on-hand qty (0 when no bin row yet)."""
+    qty_by_station: dict[int, Decimal] = {}
+    for row in ItemStationStock.objects.filter(company_id=company_id, item_id=item_id).only(
+        "station_id", "quantity"
     ):
-        st = row.station
+        q = row.quantity if row.quantity is not None else Decimal("0")
+        qty_by_station[int(row.station_id)] = q
+    out: list[dict] = []
+    for st in Station.objects.filter(company_id=company_id, is_active=True).order_by(
+        "station_name", "id"
+    ):
         out.append(
             {
                 "station_id": st.id,
                 "station_name": (st.station_name or f"Station {st.id}").strip(),
                 "station_number": st.station_number or "",
-                "quantity": str(row.quantity or Decimal("0")),
+                "quantity": str(qty_by_station.get(int(st.id), Decimal("0"))),
             }
         )
     return out

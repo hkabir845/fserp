@@ -4,7 +4,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from api.models import AquacultureBiomassSample, AquacultureFishSale
-from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
+from api.services.tenant_reporting_categories import resolve_aquaculture_income_to_builtin
 
 
 def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
@@ -18,7 +18,7 @@ def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
     linked = AquacultureBiomassSample.objects.filter(source_fish_sale_id=sale.id).first()
 
     ok = (
-        (sale.income_type or "") == "fish_harvest_sale"
+        resolve_aquaculture_income_to_builtin(sale.company_id, sale.income_type or "") == "fish_harvest_sale"
         and sale.fish_count is not None
         and sale.fish_count > 0
         and sale.weight_kg is not None

@@ -41,6 +41,10 @@ from api.models import (
 from api.views.journal_entries_views import _entry_to_json
 from api.services.aquaculture_feeding_advice_service import build_feeding_advice_payload, effective_advice_text
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
+from api.services.aquaculture_transfer_cost import (
+    backfill_missing_transfer_line_costs,
+    resolve_auto_transfer_line_cost,
+)
 from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 from api.services.aquaculture_fish_biomass_ledger_service import (
@@ -60,7 +64,15 @@ from api.services.aquaculture_units import (
     quantize_pond_area_decimal,
     quantize_two_decimal_places,
 )
-from api.services.aquaculture_expense_cleanup import cleanup_aquaculture_expense_posting_effects
+from api.services.aquaculture_expense_cleanup import (
+    aquaculture_expense_has_posting_effects,
+    cleanup_aquaculture_expense_posting_effects,
+    sync_aquaculture_expense_posting_effects,
+)
+from api.services.aquaculture_sale_cleanup import (
+    cleanup_aquaculture_fish_sale_effects,
+    reconcile_aquaculture_fish_sale_with_invoice,
+)
 from api.services.gl_posting import (
     delete_landlord_lease_payment_journal,
     item_inventory_unit_cost,
@@ -73,6 +85,7 @@ from api.services.aquaculture_pond_pos_customer import (
     on_pond_deleted,
     on_pond_pos_customer_cleared,
     on_pond_pos_customer_replaced,
+    provision_missing_pond_pos_customers,
     sync_auto_pos_customer_from_pond,
 )
 from api.services.aquaculture_sale_biomass_sync import sync_biomass_sample_from_fish_sale
@@ -85,16 +98,21 @@ from api.services.aquaculture_pond_stock_service import (
     transfer_station_stock_to_pond_warehouse,
 )
 from api.services.aquaculture_shop_stock import execute_aquaculture_shop_stock_issue
+from api.services.tenant_reporting_categories import (
+    aquaculture_expense_label,
+    aquaculture_income_label,
+    income_type_is_non_biological_for_company,
+    manual_aquaculture_expense_category_change_allowed_for_company,
+    merged_aquaculture_expense_category_list_for_api,
+    merged_aquaculture_income_type_list_for_api,
+    normalize_expense_category_for_company,
+    normalize_income_type_for_company,
+    resolve_aquaculture_expense_to_builtin,
+)
 from api.services.aquaculture_constants import (
-    AQUACULTURE_EXPENSE_CATEGORY_CHOICES,
     AQUACULTURE_FISH_SPECIES_CHOICES,
-    AQUACULTURE_INCOME_TYPE_CHOICES,
     AQUACULTURE_POND_ROLE_CHOICES,
-    EXPENSE_CATEGORY_EXTRA_HELP,
-    EXPENSE_CATEGORY_LABELS,
-    INCOME_TYPE_LABELS,
     INTER_POND_FISH_TRANSFER_PL_NOTE,
-    MANUAL_AQUACULTURE_EXPENSE_CATEGORY_CODES,
     POND_ROLE_LABELS,
     STOCK_LEDGER_COA_NOTE,
     STOCK_LEDGER_ENTRY_KIND_CHOICES,
@@ -102,12 +120,8 @@ from api.services.aquaculture_constants import (
     STOCK_LEDGER_LOSS_REASON_CHOICES,
     STOCK_LEDGER_LOSS_REASON_LABELS,
     fish_species_display_label,
-    manual_aquaculture_expense_category_change_allowed,
-    NON_BIOLOGICAL_POND_SALE_INCOME_TYPES,
-    normalize_expense_category,
     normalize_fish_species,
     normalize_fish_species_other,
-    normalize_income_type,
     normalize_pond_role,
     normalize_stock_ledger_entry_kind,
     normalize_stock_ledger_loss_reason,
@@ -692,18 +706,7 @@ def aquaculture_expense_categories(request):
     err = _aquaculture_access(request)
     if err:
         return err
-    return JsonResponse(
-        [
-            {
-                "id": c,
-                "label": lbl,
-                "hint": EXPENSE_CATEGORY_EXTRA_HELP.get(c),
-                "manual_create_allowed": c in MANUAL_AQUACULTURE_EXPENSE_CATEGORY_CODES,
-            }
-            for c, lbl in AQUACULTURE_EXPENSE_CATEGORY_CHOICES
-        ],
-        safe=False,
-    )
+    return JsonResponse(merged_aquaculture_expense_category_list_for_api(request.company_id), safe=False)
 
 
 @csrf_exempt
@@ -714,10 +717,7 @@ def aquaculture_income_types(request):
     err = _aquaculture_access(request)
     if err:
         return err
-    return JsonResponse(
-        [{"id": c, "label": lbl} for c, lbl in AQUACULTURE_INCOME_TYPE_CHOICES],
-        safe=False,
-    )
+    return JsonResponse(merged_aquaculture_income_type_list_for_api(request.company_id), safe=False)
 
 
 @csrf_exempt
@@ -936,6 +936,19 @@ def aquaculture_ponds_list_or_create(request):
 
 
 @csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def aquaculture_ponds_provision_pos_customers(request):
+    """Create missing Aquaculture — [pond] POS customers for on-account sales at the shop hub."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    result = provision_missing_pond_pos_customers(company_id=request.company_id)
+    return JsonResponse(result)
+
+
+@csrf_exempt
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
@@ -1068,7 +1081,7 @@ def _expense_to_json(x: AquacultureExpense) -> dict:
         "production_cycle_id": cid_cycle,
         "production_cycle_name": cname,
         "expense_category": x.expense_category,
-        "expense_category_label": EXPENSE_CATEGORY_LABELS.get(x.expense_category, x.expense_category),
+        "expense_category_label": aquaculture_expense_label(x.company_id, x.expense_category),
         "expense_date": x.expense_date.isoformat(),
         "amount": str(x.amount),
         "memo": x.memo or "",
@@ -1103,112 +1116,17 @@ def aquaculture_expenses_list_or_create(request):
         qs = qs.order_by("-expense_date", "-id")[:500]
         return JsonResponse([_expense_to_json(x) for x in qs], safe=False)
 
-    body, e = parse_json_body(request)
-    if e:
-        return e
-    cat, cerr = normalize_expense_category(body.get("expense_category"))
-    if cerr:
-        return JsonResponse({"detail": cerr}, status=400)
-    ok_cat, cat_detail = manual_aquaculture_expense_category_change_allowed(old_category=None, new_category=cat)
-    if not ok_cat:
-        return JsonResponse({"detail": cat_detail or "Invalid expense category for manual pond cost."}, status=400)
-    ed = _parse_date(body.get("expense_date"))
-    if not ed:
-        return JsonResponse({"detail": "expense_date is required (YYYY-MM-DD)"}, status=400)
-    amt = _decimal(body.get("amount"))
-    if amt <= 0:
-        return JsonResponse({"detail": "amount must be greater than zero"}, status=400)
-    amt = _money_q(amt)
-
-    pond_raw = body.get("pond_id")
-    is_shared = pond_raw is None or (isinstance(pond_raw, str) and pond_raw.strip() == "")
-
-    cycle_obj = None
-    raw_cy = body.get("production_cycle_id")
-    if raw_cy not in (None, ""):
-        try:
-            cy_id = int(raw_cy)
-        except (TypeError, ValueError):
-            return JsonResponse({"detail": "production_cycle_id must be an integer"}, status=400)
-        cycle_obj = _cycle_for_company(cid, cy_id)
-        if not cycle_obj:
-            return JsonResponse({"detail": "Production cycle not found"}, status=404)
-
-    if is_shared:
-        if cycle_obj is not None:
-            return JsonResponse(
-                {"detail": "Shared expenses cannot be assigned to a production_cycle (omit production_cycle_id)."},
-                status=400,
-            )
-        pairs, perr = _parse_shared_expense_plan(body, cid, amt)
-        if perr:
-            return JsonResponse({"detail": perr}, status=400)
-        assert pairs is not None
-        with transaction.atomic():
-            x = AquacultureExpense(
-                company_id=cid,
-                pond=None,
-                production_cycle=None,
-                expense_category=cat,
-                expense_date=ed,
-                amount=amt,
-                memo=(body.get("memo") or "")[:5000],
-                vendor_name=(body.get("vendor_name") or "")[:200],
-            )
-            fer = _apply_expense_feed_metrics_from_body(x, body)
-            if fer:
-                return JsonResponse({"detail": fer}, status=400)
-            x.save()
-            for pid, a in pairs:
-                AquacultureExpensePondShare.objects.create(
-                    expense=x,
-                    pond_id=pid,
-                    amount=_money_q(a),
-                )
-        x = (
-            AquacultureExpense.objects.filter(pk=x.pk)
-            .select_related("pond", "production_cycle", "source_station")
-            .prefetch_related("pond_shares__pond")
-            .first()
-        )
-        return JsonResponse(_expense_to_json(x), status=201)
-
-    try:
-        pond_id = int(pond_raw)
-    except (TypeError, ValueError):
-        return JsonResponse({"detail": "pond_id is required (integer) unless saving a shared expense"}, status=400)
-    pond = _pond_for_company(cid, pond_id)
-    if not pond:
-        return JsonResponse({"detail": "Pond not found"}, status=404)
-    if body.get("pond_shares") is not None or body.get("shared_equal_pond_ids") is not None:
-        return JsonResponse(
-            {"detail": "Do not send pond_shares or shared_equal_pond_ids when pond_id is set (direct cost)."},
-            status=400,
-        )
-    if cycle_obj is not None and cycle_obj.pond_id != pond.id:
-        return JsonResponse({"detail": "production_cycle_id does not belong to the selected pond"}, status=400)
-
-    x = AquacultureExpense(
-        company_id=cid,
-        pond=pond,
-        production_cycle=cycle_obj,
-        expense_category=cat,
-        expense_date=ed,
-        amount=amt,
-        memo=(body.get("memo") or "")[:5000],
-        vendor_name=(body.get("vendor_name") or "")[:200],
+    return JsonResponse(
+        {
+            "detail": (
+                "Manual pond costs are no longer created here. Record operating expenses on "
+                "Vendor bills: add a line, tag the pond, choose an expense category (chart account "
+                "is suggested automatically), then post the bill and pay from Payments. "
+                "Feed/medicine inventory, lease, and payroll use their dedicated flows."
+            ),
+        },
+        status=400,
     )
-    fer = _apply_expense_feed_metrics_from_body(x, body)
-    if fer:
-        return JsonResponse({"detail": fer}, status=400)
-    x.save()
-    x = (
-        AquacultureExpense.objects.filter(pk=x.pk)
-        .select_related("pond", "production_cycle", "source_station")
-        .prefetch_related("pond_shares__pond")
-        .first()
-    )
-    return JsonResponse(_expense_to_json(x), status=201)
 
 
 @csrf_exempt
@@ -1228,10 +1146,11 @@ def aquaculture_shop_stock_issue(request):
     if e:
         return e
     cid = request.company_id
-    cat, cerr = normalize_expense_category(body.get("expense_category"))
+    cat, cerr = normalize_expense_category_for_company(cid, body.get("expense_category"))
     if cerr:
         return JsonResponse({"detail": cerr}, status=400)
-    if cat not in ("feed_purchase", "medicine_purchase"):
+    resolved = resolve_aquaculture_expense_to_builtin(cid, cat)
+    if resolved not in ("feed_purchase", "medicine_purchase"):
         return JsonResponse(
             {
                 "detail": "Shop stock issue only supports expense_category feed_purchase or medicine_purchase.",
@@ -1408,10 +1327,11 @@ def aquaculture_pond_warehouse_consume(request):
     except (TypeError, ValueError):
         return JsonResponse({"detail": "pond_id must be an integer"}, status=400)
 
-    cat, cerr = normalize_expense_category(body.get("expense_category"))
+    cat, cerr = normalize_expense_category_for_company(cid, body.get("expense_category"))
     if cerr:
         return JsonResponse({"detail": cerr}, status=400)
-    if cat not in ("feed_consumed", "medicine_consumed"):
+    resolved = resolve_aquaculture_expense_to_builtin(cid, cat)
+    if resolved not in ("feed_consumed", "medicine_consumed"):
         return JsonResponse(
             {"detail": "expense_category must be feed_consumed or medicine_consumed"},
             status=400,
@@ -1550,6 +1470,7 @@ def aquaculture_expense_detail(request, expense_id: int):
         if e:
             return e
         was_shared = x.pond_id is None
+        must_reshare = False
         if "amount" in body:
             na = _decimal(body.get("amount"))
             if na <= 0:
@@ -1633,10 +1554,11 @@ def aquaculture_expense_detail(request, expense_id: int):
                 AquacultureExpensePondShare.objects.filter(expense=x).delete()
 
         if "expense_category" in body:
-            cat, cerr = normalize_expense_category(body.get("expense_category"))
+            cat, cerr = normalize_expense_category_for_company(cid, body.get("expense_category"))
             if cerr:
                 return JsonResponse({"detail": cerr}, status=400)
-            ok_cat, cat_detail = manual_aquaculture_expense_category_change_allowed(
+            ok_cat, cat_detail = manual_aquaculture_expense_category_change_allowed_for_company(
+                company_id=cid,
                 old_category=x.expense_category,
                 new_category=cat,
             )
@@ -1657,7 +1579,24 @@ def aquaculture_expense_detail(request, expense_id: int):
         if fer:
             return JsonResponse({"detail": fer}, status=400)
 
-        x.save()
+        material_expense = must_reshare or any(
+            k in body
+            for k in (
+                "amount",
+                "pond_id",
+                "production_cycle_id",
+                "expense_category",
+                "expense_date",
+                "pond_shares",
+                "shared_equal_pond_ids",
+            )
+        )
+
+        with transaction.atomic():
+            x.save()
+            if material_expense and aquaculture_expense_has_posting_effects(cid, expense_id):
+                cleanup_aquaculture_expense_posting_effects(cid, expense_id)
+                sync_aquaculture_expense_posting_effects(cid, expense_id)
         x = (
             AquacultureExpense.objects.filter(pk=x.pk)
             .select_related("pond", "production_cycle", "source_station")
@@ -1687,7 +1626,7 @@ def _sale_to_json(s: AquacultureFishSale) -> dict:
         "production_cycle_id": cid_cycle,
         "production_cycle_name": cname,
         "income_type": it,
-        "income_type_label": INCOME_TYPE_LABELS.get(it, it),
+        "income_type_label": aquaculture_income_label(s.company_id, it),
         "fish_species": sp,
         "fish_species_other": spo,
         "fish_species_label": fish_species_display_label(sp, spo),
@@ -1735,9 +1674,9 @@ def aquaculture_sales_list_or_create(request):
     pond = _pond_for_company(cid, pond_id)
     if not pond:
         return JsonResponse({"detail": "Pond not found"}, status=404)
-    it, ierr = normalize_income_type(body.get("income_type"))
-    if ierr:
-        return JsonResponse({"detail": ierr}, status=400)
+    it, ierr = normalize_income_type_for_company(cid, body.get("income_type"))
+    if ierr or not it:
+        return JsonResponse({"detail": ierr or "Invalid income_type"}, status=400)
     cycle_obj = None
     raw_cy = body.get("production_cycle_id")
     if raw_cy not in (None, ""):
@@ -1766,7 +1705,7 @@ def aquaculture_sales_list_or_create(request):
             fc_int = int(fc)
         except (TypeError, ValueError):
             return JsonResponse({"detail": "fish_count must be an integer"}, status=400)
-    if it in NON_BIOLOGICAL_POND_SALE_INCOME_TYPES:
+    if income_type_is_non_biological_for_company(cid, it):
         fs = "not_applicable"
         fso = ""
         fc_int = None
@@ -1826,14 +1765,6 @@ def aquaculture_sale_detail(request, sale_id: int):
     if request.method == "GET":
         return JsonResponse(_sale_to_json(s))
     if request.method == "PUT":
-        if getattr(s, "invoice_id", None):
-            return JsonResponse(
-                {
-                    "detail": "This sale is posted to the books. Change or void the linked invoice from the "
-                    "Invoices page, or delete that invoice first to unlock editing this line."
-                },
-                status=409,
-            )
         body, e = parse_json_body(request)
         if e:
             return e
@@ -1847,9 +1778,9 @@ def aquaculture_sale_detail(request, sale_id: int):
                 return JsonResponse({"detail": "Pond not found"}, status=404)
             s.pond = pond
         if "income_type" in body:
-            it, ierr = normalize_income_type(body.get("income_type"))
-            if ierr:
-                return JsonResponse({"detail": ierr}, status=400)
+            it, ierr = normalize_income_type_for_company(cid, body.get("income_type"))
+            if ierr or not it:
+                return JsonResponse({"detail": ierr or "Invalid income_type"}, status=400)
             s.income_type = it
         if "production_cycle_id" in body:
             raw_cy = body.get("production_cycle_id")
@@ -1905,7 +1836,7 @@ def aquaculture_sale_detail(request, sale_id: int):
                 s.fish_species_other = normalize_fish_species_other(None, fs)
         elif "fish_species_other" in body:
             s.fish_species_other = normalize_fish_species_other(body.get("fish_species_other"), s.fish_species)
-        if s.income_type in NON_BIOLOGICAL_POND_SALE_INCOME_TYPES:
+        if income_type_is_non_biological_for_company(cid, s.income_type):
             s.fish_species = "not_applicable"
             s.fish_species_other = ""
             s.fish_count = None
@@ -1918,22 +1849,37 @@ def aquaculture_sale_detail(request, sale_id: int):
             )
         elif s.fish_count is None or s.fish_count <= 0:
             return JsonResponse({"detail": "fish_count is required and must be greater than zero"}, status=400)
+        material_sale = any(
+            k in body
+            for k in (
+                "pond_id",
+                "production_cycle_id",
+                "income_type",
+                "sale_date",
+                "weight_kg",
+                "total_amount",
+                "fish_count",
+                "fish_species",
+                "fish_species_other",
+            )
+        )
         with transaction.atomic():
             s.save()
-            sync_biomass_sample_from_fish_sale(s)
+            if s.invoice_id and material_sale:
+                ok_sync, err_sync = reconcile_aquaculture_fish_sale_with_invoice(cid, s)
+                if not ok_sync:
+                    return JsonResponse({"detail": err_sync}, status=409)
+            else:
+                sync_biomass_sample_from_fish_sale(s)
         s = AquacultureFishSale.objects.filter(pk=s.pk).select_related(
             "pond", "production_cycle", "invoice"
         ).first()
         return JsonResponse(_sale_to_json(s))
-    if getattr(s, "invoice_id", None):
-        return JsonResponse(
-            {
-                "detail": "This sale is linked to an invoice. Delete or void that invoice first, then you can "
-                "remove this pond sale line."
-            },
-            status=409,
-        )
-    s.delete()
+    with transaction.atomic():
+        ok_del, err_del = cleanup_aquaculture_fish_sale_effects(cid, s)
+        if not ok_del:
+            return JsonResponse({"detail": err_del}, status=409)
+        s.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
 
 
@@ -3081,7 +3027,8 @@ def _parse_fish_transfer_payload(cid: int, body: dict) -> tuple[JsonResponse | N
         return JsonResponse({"detail": "lines must be a non-empty array"}, status=400), None
 
     memo = str(body.get("memo") or "")[:5000]
-    line_models: list[AquacultureFishPondTransferLine] = []
+    parsed_rows: list[dict] = []
+    total_transfer_weight = Decimal("0")
     for i, row in enumerate(raw_lines):
         if not isinstance(row, dict):
             return JsonResponse({"detail": f"lines[{i}] must be an object"}, status=400), None
@@ -3097,21 +3044,16 @@ def _parse_fish_transfer_payload(cid: int, body: dict) -> tuple[JsonResponse | N
         wk = _decimal(row.get("weight_kg"))
         if wk <= 0:
             return JsonResponse({"detail": f"lines[{i}].weight_kg must be greater than zero"}, status=400), None
-        cost_amt = _money_q(_decimal(row.get("cost_amount"), "0"))
-        if cost_amt < 0:
-            return JsonResponse({"detail": f"lines[{i}].cost_amount cannot be negative"}, status=400), None
-        fc_raw = row.get("to_production_cycle_id")
-        to_cycle = None
-        if fc_raw not in (None, ""):
-            try:
-                tcy = int(fc_raw)
-            except (TypeError, ValueError):
-                return JsonResponse({"detail": f"lines[{i}].to_production_cycle_id must be integer or null"}, status=400), None
-            to_cycle = AquacultureProductionCycle.objects.filter(
-                pk=tcy, company_id=cid, pond_id=to_pond_id
-            ).first()
-            if not to_cycle:
-                return JsonResponse({"detail": f"lines[{i}].to_production_cycle_id not found for destination pond"}, status=404), None
+        total_transfer_weight += wk
+        parsed_rows.append({"index": i, "row": row, "to_pond": to_pond, "wk": wk})
+
+    total_transfer_weight = _money_q(total_transfer_weight)
+    line_models: list[AquacultureFishPondTransferLine] = []
+    for pr in parsed_rows:
+        i = pr["index"]
+        row = pr["row"]
+        to_pond = pr["to_pond"]
+        wk = pr["wk"]
         fcount = row.get("fish_count")
         if fcount in (None, ""):
             return JsonResponse(
@@ -3127,6 +3069,31 @@ def _parse_fish_transfer_payload(cid: int, body: dict) -> tuple[JsonResponse | N
                 {"detail": f"lines[{i}].fish_count must be greater than zero"},
                 status=400,
             ), None
+        cost_amt = _money_q(_decimal(row.get("cost_amount"), "0"))
+        if cost_amt < 0:
+            return JsonResponse({"detail": f"lines[{i}].cost_amount cannot be negative"}, status=400), None
+        cost_amt = resolve_auto_transfer_line_cost(
+            company_id=cid,
+            from_pond_id=from_pond_id,
+            transfer_date=td,
+            from_cycle=from_cycle_obj,
+            weight_kg=wk,
+            submitted_cost=cost_amt,
+            transfer_total_weight_kg=total_transfer_weight,
+            fish_count=fcount_i,
+        )
+        fc_raw = row.get("to_production_cycle_id")
+        to_cycle = None
+        if fc_raw not in (None, ""):
+            try:
+                tcy = int(fc_raw)
+            except (TypeError, ValueError):
+                return JsonResponse({"detail": f"lines[{i}].to_production_cycle_id must be integer or null"}, status=400), None
+            to_cycle = AquacultureProductionCycle.objects.filter(
+                pk=tcy, company_id=cid, pond_id=to_pond_id
+            ).first()
+            if not to_cycle:
+                return JsonResponse({"detail": f"lines[{i}].to_production_cycle_id not found for destination pond"}, status=404), None
         pcs_raw = row.get("pcs_per_kg")
         pcs_dec = None
         if pcs_raw not in (None, ""):
@@ -3191,11 +3158,21 @@ def aquaculture_fish_pond_transfers(request):
         tp = request.GET.get("to_pond_id")
         if tp and str(tp).strip().isdigit():
             qs = qs.filter(lines__to_pond_id=int(tp)).distinct()
-        qs = qs[:300]
+        ordered_ids = list(qs.values_list("pk", flat=True)[:300])
+        xfer_qs = AquacultureFishPondTransfer.objects.filter(pk__in=ordered_ids).select_related(
+            "from_pond", "from_production_cycle"
+        ).prefetch_related("lines__to_pond", "lines__to_production_cycle")
+        for t in xfer_qs:
+            backfill_missing_transfer_line_costs(t)
+        if ordered_ids:
+            order = Case(*[When(pk=pk, then=pos) for pos, pk in enumerate(ordered_ids)])
+            xfer_qs = xfer_qs.order_by(order)
+        else:
+            xfer_qs = xfer_qs.none()
         return JsonResponse(
             {
                 "inter_pond_fish_transfer_note": INTER_POND_FISH_TRANSFER_PL_NOTE,
-                "transfers": [_fish_transfer_to_json(t) for t in qs],
+                "transfers": [_fish_transfer_to_json(t) for t in xfer_qs],
             }
         )
 
@@ -3650,15 +3627,16 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
                     },
                     status=400,
                 )
-            cat, cerr = normalize_expense_category(body.get("expense_category") or "feed_purchase")
+            cat, cerr = normalize_expense_category_for_company(cid, body.get("expense_category") or "feed_purchase")
             if cerr:
                 return JsonResponse({"detail": cerr}, status=400)
+            resolved_cat = resolve_aquaculture_expense_to_builtin(cid, cat)
             ed = _parse_date(body.get("expense_date")) or a.target_date
             raw_amt = body.get("amount")
             amt = _money_q(_decimal(raw_amt)) if raw_amt not in (None, "") else Decimal("0")
             item_for_auto_sacks: Item | None = None
             if amt <= 0:
-                if cat != "feed_purchase":
+                if resolved_cat != "feed_purchase":
                     return JsonResponse(
                         {"detail": "amount must be greater than zero when create_expense is true"},
                         status=400,
@@ -3736,7 +3714,7 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
                     metrics_payload["feed_sack_count"] = str(
                         (applied_kg / Decimal(sack_sz)).quantize(Decimal("0.0001"))
                     )
-            elif cat == "feed_purchase" and applied_kg > 0:
+            elif resolved_cat == "feed_purchase" and applied_kg > 0:
                 advice_sack = int(a.sack_size_kg) if a.sack_size_kg is not None else None
                 if advice_sack is not None and advice_sack > 0:
                     metrics_payload["feed_sack_count"] = str(

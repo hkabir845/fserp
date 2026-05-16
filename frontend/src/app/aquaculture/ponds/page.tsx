@@ -31,15 +31,8 @@ interface CustomerOpt {
   company_name?: string | null
   customer_number?: string | null
   is_active?: boolean
-}
-
-function customerPickLabel(c: CustomerOpt): string {
-  const co = (c.company_name || '').trim()
-  if (co) return co
-  const d = (c.display_name || '').trim()
-  if (d) return d
-  const n = (c.customer_number || '').trim()
-  return n ? `Customer ${n}` : `Customer #${c.id}`
+  default_station_id?: number | null
+  default_station_name?: string | null
 }
 
 interface Pond {
@@ -79,6 +72,23 @@ interface Pond {
   lease_remaining_months: number | null
   lease_balance_due: string | null
   created_at?: string
+}
+
+function customerPickLabel(c: CustomerOpt, ponds: Pond[]): string {
+  const co = (c.company_name || '').trim()
+  const d = (c.display_name || '').trim()
+  const base = co || d || ((c.customer_number || '').trim() ? `Customer ${c.customer_number}` : `Customer #${c.id}`)
+  const linkedPond = ponds.find((p) => p.pos_customer_id === c.id)
+  const isAquaculture =
+    Boolean(linkedPond) || d.startsWith('Aquaculture') || d.startsWith('Aquaculture —')
+  if (!isAquaculture) return base
+  const site = (c.default_station_name || '').trim()
+  const pondHint = linkedPond ? linkedPond.name : d.replace(/^Aquaculture\s*—\s*/i, '').trim()
+  const bits = [base]
+  if (pondHint && !base.toLowerCase().includes(pondHint.toLowerCase())) bits.push(`(${pondHint})`)
+  if (site) bits.push(`· ${site}`)
+  bits.push('· on-account')
+  return bits.join(' ')
 }
 
 function parseDecimalInput(s: string): number | null {
@@ -374,7 +384,13 @@ export default function AquaculturePondsPage() {
   const [form, setForm] = useState(emptyForm)
   const [customers, setCustomers] = useState<CustomerOpt[]>([])
   const [customersLoading, setCustomersLoading] = useState(false)
+  const [provisioningCustomers, setProvisioningCustomers] = useState(false)
   const [skipAutoPosCustomer, setSkipAutoPosCustomer] = useState(false)
+
+  const pondsMissingPosCustomer = useMemo(
+    () => ponds.filter((p) => !p.pos_customer_id),
+    [ponds],
+  )
 
   const preview = useMemo(() => computeLeasePreview(form), [form])
 
@@ -433,20 +449,68 @@ export default function AquaculturePondsPage() {
     void load()
   }, [load])
 
-  useEffect(() => {
-    if (!modal || customers.length > 0 || customersLoading) return
-    void (async () => {
-      setCustomersLoading(true)
-      try {
-        const { data } = await api.get<CustomerOpt[]>('/customers/', { params: { limit: 500 } })
-        setCustomers(Array.isArray(data) ? data : [])
-      } catch {
-        setCustomers([])
-      } finally {
-        setCustomersLoading(false)
+  const loadCustomersForModal = useCallback(async () => {
+    setCustomersLoading(true)
+    try {
+      const { data } = await api.get<CustomerOpt[]>('/customers/', { params: { limit: 10000 } })
+      const fromApi = Array.isArray(data) ? data : []
+      const byId = new Map<number, CustomerOpt>()
+      for (const c of fromApi) byId.set(c.id, c)
+      for (const p of ponds) {
+        if (p.pos_customer_id == null) continue
+        if (byId.has(p.pos_customer_id)) continue
+        byId.set(p.pos_customer_id, {
+          id: p.pos_customer_id,
+          display_name: p.pos_customer_display || `Aquaculture — ${p.name}`,
+          is_active: p.is_active,
+        })
       }
-    })()
-  }, [modal, customers.length, customersLoading])
+      const merged = [...byId.values()].sort((a, b) => {
+        const aAq = (a.display_name || '').startsWith('Aquaculture')
+        const bAq = (b.display_name || '').startsWith('Aquaculture')
+        if (aAq !== bAq) return aAq ? -1 : 1
+        return (a.display_name || '').localeCompare(b.display_name || '', undefined, { sensitivity: 'base' })
+      })
+      setCustomers(merged)
+    } catch {
+      setCustomers([])
+    } finally {
+      setCustomersLoading(false)
+    }
+  }, [ponds])
+
+  useEffect(() => {
+    if (!modal) return
+    void loadCustomersForModal()
+  }, [modal, loadCustomersForModal])
+
+  const provisionMissingPosCustomers = async () => {
+    setProvisioningCustomers(true)
+    try {
+      const { data } = await api.post<{ created?: number[]; errors?: { pond_id: number; detail: string }[] }>(
+        '/aquaculture/ponds/provision-pos-customers/',
+        {},
+      )
+      const n = Array.isArray(data?.created) ? data.created.length : 0
+      const errs = Array.isArray(data?.errors) ? data.errors : []
+      if (errs.length > 0) {
+        toast.error(errs[0]?.detail || 'Some ponds could not get a POS customer')
+      }
+      if (n > 0) {
+        toast.success(
+          `Created ${n} pond POS customer${n === 1 ? '' : 's'} (Aquaculture — …) for on-account sales at your shop hub`,
+        )
+        await load()
+        if (modal) await loadCustomersForModal()
+      } else if (errs.length === 0) {
+        toast.success('Every pond already has a linked POS customer')
+      }
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Could not create pond POS customers'))
+    } finally {
+      setProvisioningCustomers(false)
+    }
+  }
 
   const openNew = () => {
     setEditing(null)
@@ -770,6 +834,28 @@ export default function AquaculturePondsPage() {
                 </ul>
               </div>
             </details>
+
+            {!loading && pondsMissingPosCustomer.length > 0 ? (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <p className="font-medium">
+                  {pondsMissingPosCustomer.length} pond{pondsMissingPosCustomer.length === 1 ? '' : 's'}{' '}
+                  {pondsMissingPosCustomer.length === 1 ? 'has' : 'have'} no POS customer
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
+                  On-account feed and supplies from your shop station (e.g. Premium Agro) need an
+                  &quot;Aquaculture — [pond name]&quot; customer in Cashier. Create the missing customers now — they
+                  default to your shop-only station when one exists.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void provisionMissingPosCustomers()}
+                  disabled={provisioningCustomers}
+                  className="mt-2 rounded-lg bg-amber-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-900 disabled:opacity-60"
+                >
+                  {provisioningCustomers ? 'Creating…' : 'Create missing POS customers'}
+                </button>
+              </div>
+            ) : null}
 
             {loading ? (
               <div className="flex justify-center py-16" aria-busy="true">
@@ -1117,7 +1203,7 @@ export default function AquaculturePondsPage() {
                     const locked = editing && String(c.id) === form.pos_customer_id.trim()
                     return (
                       <option key={c.id} value={c.id} disabled={inactive && !locked}>
-                        {customerPickLabel(c)}
+                        {customerPickLabel(c, ponds)}
                         {inactive ? ' (inactive)' : ''}
                       </option>
                     )

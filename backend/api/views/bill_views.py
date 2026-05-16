@@ -1,8 +1,9 @@
 """Bills API: list, create, get, update, delete (company-scoped)."""
 from __future__ import annotations
 
+import re
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from django.db import transaction
@@ -27,6 +28,10 @@ from api.services.aquaculture_production_cycle_service import (
 )
 from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.station_stock import get_or_create_default_station, receipt_station_id_for_vendor
+from api.services.document_posting_lifecycle import (
+    body_has_material_bill_change,
+    reconcile_bill_after_material_edit,
+)
 from api.services.gl_posting import (
     bill_eligible_for_posting,
     cleanup_vendor_bill_posting_effects,
@@ -36,7 +41,54 @@ from api.services.gl_posting import (
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
 from api.views.common import parse_json_body, require_company_id
+from api.services.aquaculture_bill_defaults import (
+    apply_aquaculture_expense_category_to_bill_line_row,
+    expense_category_from_cost_bucket,
+)
+from api.services.fuel_station_bill_defaults import apply_fuel_station_category_to_bill_line_row
 from api.services.coa_gl_defaults import ALLOWED_BILL_EXPENSE_DEBIT, parse_optional_chart_account_id
+from api.services.tenant_reporting_categories import (
+    FUEL_STATION_EXPENSE_MAP_TARGETS,
+    tenant_expense_row,
+    APP_FUEL_STATION,
+)
+
+_BILL_NUMBER_RE = re.compile(r"^BILL-(\d+)$", re.IGNORECASE)
+
+
+def _bill_number_taken(company_id: int, bill_number: str) -> bool:
+    return Bill.objects.filter(company_id=company_id, bill_number__iexact=bill_number).exists()
+
+
+def _next_bill_number(company_id: int) -> str:
+    """
+    Next available BILL-{n} for this company. Uses max existing BILL-* suffix, not row count,
+    so deletes and seeded numbers (e.g. DEMO-BILL-*) do not cause UNIQUE collisions.
+    """
+    max_n = 0
+    for bn in Bill.objects.filter(company_id=company_id).values_list("bill_number", flat=True):
+        m = _BILL_NUMBER_RE.match((bn or "").strip())
+        if m:
+            max_n = max(max_n, int(m.group(1)))
+    n = max_n + 1
+    candidate = f"BILL-{n}"
+    while _bill_number_taken(company_id, candidate):
+        n += 1
+        candidate = f"BILL-{n}"
+    return candidate
+
+
+def _fuel_station_category_label(company_id: int, code: str, trc) -> str:
+    if trc and getattr(trc, "label", None):
+        return (trc.label or "").strip()
+    c = (code or "").strip()
+    if not c:
+        return ""
+    for key, lbl in FUEL_STATION_EXPENSE_MAP_TARGETS:
+        if key == c:
+            return lbl
+    row = tenant_expense_row(company_id, APP_FUEL_STATION, c)
+    return (row.label or "").strip() if row else c.replace("_", " ").title()
 
 
 def _serialize_date(d):
@@ -126,6 +178,8 @@ def _parse_bill_line_aquaculture(company_id: int, row: dict):
 def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Optional[int]):
     """
     Weight (kg) and headcount are required for Item.pos_category == 'fish' lines (both must be > 0).
+    When the item has Line (pieces_per_kg), headcount and line amount are the user inputs: weight (kg)
+    is heads ÷ Line; billing quantity is that kg (stored on the line for AP).
     Ignored (stored null) for other items. Returns (kwargs_dict, error_response_or_None).
     """
     w_raw = row.get("aquaculture_fish_weight_kg")
@@ -142,12 +196,41 @@ def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Opti
             )
         return _empty()
 
-    item = Item.objects.filter(pk=item_id, company_id=request_company_id).only("pos_category").first()
+    item = Item.objects.filter(pk=item_id, company_id=request_company_id).only(
+        "pos_category", "pieces_per_kg"
+    ).first()
     if not item:
         return None, JsonResponse({"detail": "Unknown item_id for this company"}, status=400)
 
     if (item.pos_category or "").strip().lower() != "fish":
         return _empty()
+
+    ppk = getattr(item, "pieces_per_kg", None)
+    if ppk is not None and ppk > 0:
+        try:
+            fish_n = int(c_raw)
+        except (TypeError, ValueError):
+            return None, JsonResponse(
+                {
+                    "detail": "Fish items with Line (pieces per kg) require aquaculture_fish_count "
+                    "(total heads, greater than zero).",
+                },
+                status=400,
+            )
+        if fish_n <= 0:
+            return None, JsonResponse(
+                {
+                    "detail": "aquaculture_fish_count must be greater than zero for fish items with Line.",
+                },
+                status=400,
+            )
+        fish_kg = (Decimal(fish_n) / ppk).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        if fish_kg <= 0:
+            return None, JsonResponse(
+                {"detail": "Derived weight (kg) must be greater than zero."},
+                status=400,
+            )
+        return {"aquaculture_fish_weight_kg": fish_kg, "aquaculture_fish_count": fish_n}, None
 
     if w_raw in (None, "") or c_raw in (None, ""):
         return None, JsonResponse(
@@ -186,6 +269,23 @@ def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Opti
     return {"aquaculture_fish_weight_kg": fish_kg, "aquaculture_fish_count": fish_n}, None
 
 
+def _bill_line_quantity_from_row(
+    request_company_id: int,
+    item_id: Optional[int],
+    row: dict,
+    fish_kw: dict,
+) -> Decimal:
+    """AP quantity: for fish items with Line, billing kg equals derived weight from heads."""
+    qty = _decimal(row.get("quantity"), 1)
+    w = fish_kw.get("aquaculture_fish_weight_kg")
+    if not item_id or w is None:
+        return qty
+    item = Item.objects.filter(pk=item_id, company_id=request_company_id).only("pieces_per_kg").first()
+    if item and getattr(item, "pieces_per_kg", None) and item.pieces_per_kg > 0:
+        return w
+    return qty
+
+
 def _bill_to_json(b):
     lines = list(
         b.lines.all().select_related(
@@ -194,6 +294,7 @@ def _bill_to_json(b):
             "aquaculture_pond",
             "aquaculture_production_cycle",
             "expense_account",
+            "tenant_reporting_category",
         )
     )
     total = b.total or Decimal("0")
@@ -246,6 +347,9 @@ def _bill_to_json(b):
                 "aquaculture_pond_id": getattr(l, "aquaculture_pond_id", None),
                 "aquaculture_production_cycle_id": getattr(l, "aquaculture_production_cycle_id", None),
                 "aquaculture_cost_bucket": (getattr(l, "aquaculture_cost_bucket", None) or "")[:40],
+                "aquaculture_expense_category": expense_category_from_cost_bucket(
+                    getattr(l, "aquaculture_cost_bucket", None)
+                ),
                 "aquaculture_fish_weight_kg": (
                     str(l.aquaculture_fish_weight_kg)
                     if getattr(l, "aquaculture_fish_weight_kg", None) is not None
@@ -261,6 +365,15 @@ def _bill_to_json(b):
                     (l.expense_account.account_name or "").strip()
                     if getattr(l, "expense_account_id", None) and getattr(l, "expense_account", None)
                     else ""
+                ),
+                "fuel_station_expense_category": (
+                    getattr(l, "fuel_station_expense_category", None) or ""
+                )[:64],
+                "tenant_reporting_category_id": getattr(l, "tenant_reporting_category_id", None),
+                "fuel_station_expense_category_label": _fuel_station_category_label(
+                    b.company_id,
+                    getattr(l, "fuel_station_expense_category", None) or "",
+                    getattr(l, "tenant_reporting_category", None),
                 ),
             }
             for l in lines
@@ -410,7 +523,6 @@ def bills_create(request):
     vendor_id = body.get("vendor_id")
     if not vendor_id or not Vendor.objects.filter(id=vendor_id, company_id=request.company_id).exists():
         return JsonResponse({"detail": "Valid vendor_id required"}, status=400)
-    count = Bill.objects.filter(company_id=request.company_id).count()
     bill_date = _parse_date(body.get("bill_date")) or date.today()
     due_date = _normalize_due_date(bill_date, _parse_date(body.get("due_date")))
     tax_total = _decimal(body.get("tax_amount", body.get("tax_total")))
@@ -441,6 +553,12 @@ def bills_create(request):
 
     parsed_lines: list[dict] = []
     for row in body.get("lines") or []:
+        cat_err = apply_aquaculture_expense_category_to_bill_line_row(request.company_id, row)
+        if cat_err:
+            return JsonResponse({"detail": cat_err}, status=400)
+        fs_err = apply_fuel_station_category_to_bill_line_row(request.company_id, row)
+        if fs_err:
+            return JsonResponse({"detail": fs_err}, status=400)
         amt = _decimal(
             row.get("amount"),
             _decimal(row.get("quantity"), 1) * _decimal(row.get("unit_cost", row.get("unit_price")), 0),
@@ -470,10 +588,14 @@ def bills_create(request):
                 "item_id": item_id,
                 "tank_id": tank_id,
                 "description": row.get("description") or "",
-                "quantity": _decimal(row.get("quantity"), 1),
+                "quantity": _bill_line_quantity_from_row(
+                    request.company_id, item_id, row, fish_kw
+                ),
                 "unit_price": _decimal(row.get("unit_cost", row.get("unit_price")), 0),
                 "amount": amt,
                 "expense_account_id": eid,
+                "fuel_station_expense_category": (row.get("fuel_station_expense_category") or "")[:64],
+                "tenant_reporting_category_id": row.get("tenant_reporting_category_id"),
                 **aq_kw,
                 **fish_kw,
             }
@@ -485,7 +607,7 @@ def bills_create(request):
                 company_id=request.company_id,
                 vendor_id=vendor_id,
                 receipt_station_id=receipt_station_id,
-                bill_number=f"BILL-{count + 1}",
+                bill_number=_next_bill_number(request.company_id),
                 bill_date=bill_date,
                 due_date=due_date,
                 vendor_reference=(body.get("vendor_reference") or "")[:200],
@@ -512,6 +634,8 @@ def bills_create(request):
                     aquaculture_fish_weight_kg=pl.get("aquaculture_fish_weight_kg"),
                     aquaculture_fish_count=pl.get("aquaculture_fish_count"),
                     expense_account_id=pl.get("expense_account_id"),
+                    fuel_station_expense_category=pl.get("fuel_station_expense_category") or "",
+                    tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
                 )
             b.tax_total = tax_total
             b.save(update_fields=["tax_total", "updated_at"])
@@ -526,6 +650,7 @@ def bills_create(request):
                     "lines__aquaculture_pond",
                     "lines__aquaculture_production_cycle",
                     "lines__expense_account",
+                    "lines__tenant_reporting_category",
                     "payment_allocations",
                 )
                 .first()
@@ -538,6 +663,16 @@ def bills_create(request):
                 )
     except StockBusinessError as e:
         return JsonResponse({"detail": e.detail}, status=400)
+    except IntegrityError:
+        return JsonResponse(
+            {
+                "detail": (
+                    "Could not assign a unique bill number. Retry once; if it persists, "
+                    "contact support (bill number collision)."
+                )
+            },
+            status=409,
+        )
     return JsonResponse(_bill_to_json(b), status=201)
 
 
@@ -554,6 +689,7 @@ def bill_detail(request, bill_id: int):
             "lines__aquaculture_pond",
             "lines__aquaculture_production_cycle",
             "lines__expense_account",
+            "lines__tenant_reporting_category",
             "payment_allocations",
         )
         .first()
@@ -606,9 +742,17 @@ def bill_detail(request, bill_id: int):
         if "status" in body:
             b.status = _normalize_bill_status(body.get("status"), b.status)
         ack_tank_overfill = _acknowledge_tank_overfill_from_body(body)
-        if "lines" in body:
+        lines_in_body = "lines" in body
+        material_bill = body_has_material_bill_change(body, lines_changed=lines_in_body)
+        if lines_in_body:
             parsed_lines = []
             for row in body.get("lines") or []:
+                cat_err = apply_aquaculture_expense_category_to_bill_line_row(request.company_id, row)
+                if cat_err:
+                    return JsonResponse({"detail": cat_err}, status=400)
+                fs_err = apply_fuel_station_category_to_bill_line_row(request.company_id, row)
+                if fs_err:
+                    return JsonResponse({"detail": fs_err}, status=400)
                 amt = _decimal(
                     row.get("amount"),
                     _decimal(row.get("quantity"), 1)
@@ -639,10 +783,16 @@ def bill_detail(request, bill_id: int):
                         "item_id": item_id,
                         "tank_id": tank_id,
                         "description": row.get("description") or "",
-                        "quantity": _decimal(row.get("quantity"), 1),
+                        "quantity": _bill_line_quantity_from_row(
+                            request.company_id, item_id, row, fish_kw
+                        ),
                         "unit_price": _decimal(row.get("unit_cost", row.get("unit_price")), 0),
                         "amount": amt,
                         "expense_account_id": eid,
+                        "fuel_station_expense_category": (
+                            row.get("fuel_station_expense_category") or ""
+                        )[:64],
+                        "tenant_reporting_category_id": row.get("tenant_reporting_category_id"),
                         **aq_kw,
                         **fish_kw,
                     }
@@ -651,8 +801,9 @@ def bill_detail(request, bill_id: int):
             with transaction.atomic():
                 b.save()
                 if parsed_lines is not None:
-                    undo_bill_stock_receipt(b)
-                    b.refresh_from_db(fields=["stock_receipt_applied"])
+                    if not (material_bill and bill_eligible_for_posting(b)):
+                        undo_bill_stock_receipt(b)
+                        b.refresh_from_db(fields=["stock_receipt_applied"])
                     b.lines.all().delete()
                     assign_auto_production_cycles_for_parsed_bill_lines(request.company_id, b, parsed_lines)
                     for pl in parsed_lines:
@@ -682,16 +833,24 @@ def bill_detail(request, bill_id: int):
                         "lines__aquaculture_pond",
                         "lines__aquaculture_production_cycle",
                         "lines__expense_account",
+                        "lines__tenant_reporting_category",
                         "payment_allocations",
                     )
                     .first()
                 )
                 if bill_eligible_for_posting(b):
-                    sync_posted_vendor_bill(
-                        request.company_id,
-                        b,
-                        acknowledge_tank_overfill=ack_tank_overfill,
-                    )
+                    if material_bill:
+                        reconcile_bill_after_material_edit(
+                            request.company_id,
+                            b,
+                            acknowledge_tank_overfill=ack_tank_overfill,
+                        )
+                    else:
+                        sync_posted_vendor_bill(
+                            request.company_id,
+                            b,
+                            acknowledge_tank_overfill=ack_tank_overfill,
+                        )
         except StockBusinessError as e:
             return JsonResponse({"detail": e.detail}, status=400)
         return JsonResponse(_bill_to_json(b))

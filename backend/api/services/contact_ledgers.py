@@ -19,7 +19,7 @@ from api.models import (
     PaymentInvoiceAllocation,
     Vendor,
 )
-from api.services.gl_posting import _is_walkin_customer
+from api.services.gl_posting import _is_walkin_customer, invoice_sale_used_ar
 
 
 def _d(val) -> Decimal:
@@ -138,6 +138,9 @@ def build_customer_ledger(
     ):
         t = _d(inv.total)
         if t <= 0:
+            continue
+        # Cash/settled POS sales (paid, no A/R journal) are not receivable ledger activity.
+        if inv.status == "paid" and not invoice_sale_used_ar(company_id, inv.id):
             continue
         rows.append(
             _Row(

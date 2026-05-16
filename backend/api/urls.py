@@ -45,6 +45,7 @@ from api.views import (
     backup_views,
     reference_code_views,
     inventory_views,
+    tenant_reporting_categories_views,
 )
 
 
@@ -166,6 +167,19 @@ urlpatterns = [
     path("permission-catalog/", company_roles_views.permission_catalog),
     path("company-roles/", company_roles_views.company_roles_list_or_create),
     path("company-roles/<int:role_id>/", company_roles_views.company_role_detail),
+    path(
+        "reporting-categories/map-targets/",
+        tenant_reporting_categories_views.reporting_category_map_targets,
+    ),
+    path("reporting-categories/", tenant_reporting_categories_views.reporting_categories_list_or_create),
+    path(
+        "reporting-categories/<int:category_id>/",
+        tenant_reporting_categories_views.reporting_category_detail,
+    ),
+    path(
+        "fuel-station/expense-categories/",
+        tenant_reporting_categories_views.fuel_station_expense_categories,
+    ),
     # Admin (Super Admin)
     path("admin/stats/", admin_views.admin_stats),
     path("admin/companies/", admin_views.admin_companies),
@@ -411,6 +425,10 @@ urlpatterns = [
         aquaculture_views.aquaculture_landlord_ledger_entry_detail,
     ),
     path("aquaculture/ponds/", aquaculture_views.aquaculture_ponds_list_or_create),
+    path(
+        "aquaculture/ponds/provision-pos-customers/",
+        aquaculture_views.aquaculture_ponds_provision_pos_customers,
+    ),
     path("aquaculture/ponds/<int:pond_id>/", aquaculture_views.aquaculture_pond_detail),
     path(
         "aquaculture/ponds/<int:pond_id>/warehouse-stock/",

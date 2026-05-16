@@ -44,6 +44,7 @@ from api.services.inventory_validation import (
     assert_pos_general_lines_within_qoh,
 )
 from api.services.station_scope import enforce_pos_home_station
+from api.services.aquaculture_pond_pos_customer import customer_is_linked_pond_pos
 from api.services.station_stock import (
     decrement_station_lines,
     get_or_create_default_station,
@@ -379,6 +380,19 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
         )
         if cerr:
             return cerr
+
+    if customer_id and customer_is_linked_pond_pos(company_id, int(customer_id)):
+        if split_tender:
+            return _cashier_pos_error(
+                "Aquaculture pond customers cannot use split tender. Charge the full amount "
+                "On account (A/R); collect payment later under Payments → Received."
+            )
+        if not on_account:
+            return _cashier_pos_error(
+                "Sales to an aquaculture pond customer must use On account (A/R), not cash or card. "
+                "This charges the pond, posts shop COGS to pond costing, and keeps feed/medicine "
+                "off cash retail. Record payment when the pond pays under Payments → Received."
+            )
 
     fuel_stations: set[int] = set()
     for fe in fuel_entries:

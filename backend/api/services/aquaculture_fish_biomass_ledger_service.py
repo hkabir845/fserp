@@ -25,12 +25,12 @@ from api.models import (
     Item,
 )
 from api.services.aquaculture_constants import (
-    NON_BIOLOGICAL_POND_SALE_INCOME_TYPES,
     STOCK_LEDGER_ENTRY_KIND_LABELS,
     STOCK_LEDGER_LOSS_REASON_LABELS,
     fish_species_display_label,
     normalize_fish_species,
 )
+from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
 from api.services.aquaculture_stock_service import (
     _vendor_bill_fish_matches_species_filter,
 )
@@ -213,7 +213,7 @@ def compute_fish_biomass_ledger_rows(
         if production_cycle_id is not None:
             sq = sq.filter(production_cycle_id=production_cycle_id)
         for s in sq:
-            if getattr(s, "income_type", None) in NON_BIOLOGICAL_POND_SALE_INCOME_TYPES:
+            if income_type_is_non_biological_for_company(cid, getattr(s, "income_type", None) or ""):
                 continue
             if species_code is not None:
                 sp, _err = normalize_fish_species(getattr(s, "fish_species", None))

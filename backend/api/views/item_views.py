@@ -31,11 +31,18 @@ from api.services.station_stock import (
     ensure_item_station_row_for_new_shop_item,
     get_or_create_default_station,
     item_uses_station_bins,
+    move_shop_stock_to_station,
     per_pond_quantities,
     per_station_quantities,
+    resolve_active_station_id,
     set_pond_stock,
     set_station_stock,
 )
+
+
+def _body_flag(body: dict, key: str) -> bool:
+    v = body.get(key)
+    return v in (True, "true", "1", 1, "yes")
 from api.services.item_reporting_categories import (
     SUGGESTED_ITEM_REPORTING_CATEGORIES,
     normalize_item_reporting_category,
@@ -79,6 +86,25 @@ def _parse_optional_content_weight_kg(val):
             "Kg per sack is unrealistically large. This field must be the weight on the label (e.g. 25), "
             "not the selling price in BDT.",
         )
+    return d, None
+
+
+_MAX_PIECES_PER_KG = Decimal("1000000")
+
+
+def _parse_optional_pieces_per_kg(val):
+    """Optional positive pcs/kg for fish SKUs. None or blank -> None."""
+    if val is None:
+        return None, None
+    if isinstance(val, str) and not val.strip():
+        return None, None
+    d = _parse_decimal(val, "0")
+    if d is None:
+        return None, "Invalid pieces_per_kg"
+    if d <= 0:
+        return None, "pieces_per_kg must be greater than zero when provided"
+    if d > _MAX_PIECES_PER_KG:
+        return None, "pieces_per_kg is unrealistically large"
     return d, None
 
 
@@ -269,6 +295,11 @@ def _item_to_json(i, *, company_id: int | None = None, include_location_stocks: 
             if getattr(i, "content_weight_kg", None) is not None
             else None
         ),
+        "pieces_per_kg": (
+            _serialize_decimal(i.pieces_per_kg)
+            if getattr(i, "pieces_per_kg", None) is not None
+            else None
+        ),
         "category": i.category or "",
         "barcode": i.barcode or "",
         "is_taxable": i.is_taxable,
@@ -424,6 +455,11 @@ def items_list_or_create(request):
             content_weight_kg, cw_err = _parse_optional_content_weight_kg(body.get("content_weight_kg"))
             if cw_err:
                 return JsonResponse({"detail": cw_err}, status=400)
+        pieces_per_kg = None
+        if "pieces_per_kg" in body:
+            pieces_per_kg, ppk_err = _parse_optional_pieces_per_kg(body.get("pieces_per_kg"))
+            if ppk_err:
+                return JsonResponse({"detail": ppk_err}, status=400)
         cat = normalize_item_reporting_category(body.get("category"))
         if not cat:
             return JsonResponse(
@@ -479,6 +515,7 @@ def items_list_or_create(request):
             unit=_truncate(body.get("unit") or "piece", 20) or "piece",
             pos_category=_truncate(body.get("pos_category") or "general", 64) or "general",
             content_weight_kg=content_weight_kg,
+            pieces_per_kg=pieces_per_kg,
             category=cat,
             barcode=bc,
             is_taxable=body.get("is_taxable", True),
@@ -496,7 +533,12 @@ def items_list_or_create(request):
             i.save()
         except ValidationError as e:
             return JsonResponse({"detail": "Validation failed", "errors": e.message_dict if hasattr(e, "message_dict") else str(e)}, status=400)
-        ensure_item_station_row_for_new_shop_item(request.company_id, i)
+        ensure_item_station_row_for_new_shop_item(
+            request.company_id,
+            i,
+            station_id=resolve_active_station_id(request.company_id, body.get("station_id")),
+            move_all=_body_flag(body, "move_all_shop_stock"),
+        )
         if (
             (i.pos_category or "").strip().lower() == "fish"
             and item_tracks_physical_stock(i)
@@ -614,6 +656,15 @@ def item_detail(request, item_id: int):
                 if cw_err:
                     return JsonResponse({"detail": cw_err}, status=400)
                 i.content_weight_kg = cw_dec
+        if "pieces_per_kg" in body:
+            raw_ppk = body.get("pieces_per_kg")
+            if raw_ppk is None or (isinstance(raw_ppk, str) and not str(raw_ppk).strip()):
+                i.pieces_per_kg = None
+            else:
+                ppk_dec, ppk_err = _parse_optional_pieces_per_kg(raw_ppk)
+                if ppk_err:
+                    return JsonResponse({"detail": ppk_err}, status=400)
+                i.pieces_per_kg = ppk_dec
         if "category" in body:
             cat = normalize_item_reporting_category(body.get("category"))
             if not cat:
@@ -701,7 +752,10 @@ def item_detail(request, item_id: int):
                             return JsonResponse(
                                 {"detail": "Unknown station_id for this company"}, status=404
                             )
-                set_station_stock(i.company_id, target_sid, i.pk, q)
+                if _body_flag(body, "move_all_shop_stock"):
+                    move_shop_stock_to_station(i.company_id, target_sid, i.pk, q)
+                else:
+                    set_station_stock(i.company_id, target_sid, i.pk, q)
                 i.refresh_from_db()
             elif not tanks:
                 pos_fish = (i.pos_category or "").strip().lower() == "fish" and item_tracks_physical_stock(i)

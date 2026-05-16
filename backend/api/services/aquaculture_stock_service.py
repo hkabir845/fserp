@@ -15,11 +15,8 @@ from api.models import (
     BillLine,
     Item,
 )
-from api.services.aquaculture_constants import (
-    NON_BIOLOGICAL_POND_SALE_INCOME_TYPES,
-    fish_species_display_label,
-    normalize_fish_species,
-)
+from api.services.aquaculture_constants import fish_species_display_label, normalize_fish_species
+from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
 from api.services.aquaculture_units import (
     compute_stocking_load_advice,
     compute_water_volume_cu_ft,
@@ -121,7 +118,7 @@ def compute_fish_stock_position_rows(
 
     sale_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
     for s in sale_q.only("pond_id", "weight_kg", "fish_count", "income_type", "fish_species"):
-        if getattr(s, "income_type", None) in NON_BIOLOGICAL_POND_SALE_INCOME_TYPES:
+        if income_type_is_non_biological_for_company(cid, getattr(s, "income_type", None) or ""):
             continue
         if species_filter_code is not None:
             sp, _ = normalize_fish_species(getattr(s, "fish_species", None))

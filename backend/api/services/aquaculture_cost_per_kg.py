@@ -9,13 +9,24 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 
 from api.models import AquacultureExpense, AquacultureFishSale, JournalEntryLine
 
 
 # Journal lines from posted vendor bills: debit accounts in these types count toward pond operating P&L.
 _VENDOR_BILL_POND_PL_ACCOUNT_TYPES = frozenset({"expense", "cost_of_goods_sold"})
+
+# Pond-tagged COGS / expense journals (bills, POS shop sales to pond customers, internal shop issues).
+_POND_PL_JOURNAL_Q = (
+    Q(journal_entry__entry_number__startswith="AUTO-BILL-")
+    | (
+        Q(journal_entry__entry_number__startswith="AUTO-INV-")
+        & Q(journal_entry__entry_number__endswith="-COGS")
+    )
+    | Q(journal_entry__entry_number__startswith="AUTO-AQ-SHOP-")
+    | Q(journal_entry__entry_number__startswith="AUTO-AQ-POND-")
+)
 
 
 def vendor_bill_pond_expense_lines_qs(
@@ -28,7 +39,8 @@ def vendor_bill_pond_expense_lines_qs(
     uncycled_bill_lines_only: bool = False,
 ):
     """
-    Journal lines from AUTO-BILL entries with aquaculture pond tagging.
+    Journal debits with aquaculture pond tagging: vendor bills, POS COGS to pond customers,
+    and internal shop/pond stock issues.
     When pond_id is None, includes all ponds (company-wide).
     uncycled_bill_lines_only: only lines with no production cycle on the journal line
     (for "no cycle" pond segments).
@@ -37,11 +49,10 @@ def vendor_bill_pond_expense_lines_qs(
         journal_entry__company_id=company_id,
         journal_entry__entry_date__gte=start,
         journal_entry__entry_date__lte=end,
-        journal_entry__entry_number__startswith="AUTO-BILL-",
         debit__gt=0,
         account__account_type__in=_VENDOR_BILL_POND_PL_ACCOUNT_TYPES,
         aquaculture_pond_id__isnull=False,
-    )
+    ).filter(_POND_PL_JOURNAL_Q)
     if pond_id is not None:
         q = q.filter(aquaculture_pond_id=pond_id)
     if uncycled_bill_lines_only:
@@ -179,9 +190,13 @@ def vendor_bill_pond_bucket_additions(
     return dict(out)
 
 
-def aquaculture_expense_category_to_cost_bucket(category: str) -> str:
+def aquaculture_expense_category_to_cost_bucket(category: str, company_id: int | None = None) -> str:
     """Maps AquacultureExpense.expense_category to a stable cost-bucket code (P&L + journal tagging)."""
     c = (category or "").strip()
+    if company_id is not None:
+        from api.services.tenant_reporting_categories import resolve_aquaculture_expense_to_builtin
+
+        c = resolve_aquaculture_expense_to_builtin(company_id, c)
     if c == "fry_stocking":
         return "fry_stocking"
     if c in ("pond_preparation", "soilcut"):
@@ -198,6 +213,8 @@ def aquaculture_expense_category_to_cost_bucket(category: str) -> str:
         return "electricity"
     if c == "equipment":
         return "equipment"
+    if c == "repair_maintenance":
+        return "repair_maintenance"
     if c == "lease":
         return "lease"
     if c == "transportation":
@@ -233,7 +250,8 @@ COST_BUCKET_LABELS: dict[str, str] = {
     "medicine": "Medicine",
     "labor": "Labor (worker salary expenses + payroll allocated to pond)",
     "electricity": "Electricity",
-    "equipment": "Equipment (aerators, nets, repairs, etc.)",
+    "equipment": "Equipment (aerators, nets, tools, and similar purchases)",
+    "repair_maintenance": "Repair & maintenance (structures, pumps, vehicles, site upkeep)",
     "lease": "Lease / pond rental",
     "transportation": "Transportation",
     "fisherman": "Harvesting / fisherman charges",
@@ -307,7 +325,7 @@ def pond_bucket_amounts_for_period(
     out: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
 
     def add_from_expense_row(amount: Decimal, category: str) -> None:
-        b = aquaculture_expense_category_to_cost_bucket(category)
+        b = aquaculture_expense_category_to_cost_bucket(category, company_id=company_id)
         out[b] += _money_q(amount)
 
     q = AquacultureExpense.objects.filter(
@@ -406,6 +424,7 @@ def build_pond_cost_per_kg_block(
         "labor",
         "electricity",
         "equipment",
+        "repair_maintenance",
         "lease",
         "transportation",
         "fisherman",
@@ -440,6 +459,35 @@ def build_pond_cost_per_kg_block(
     opex_per_kg = str(_money_q(operating_expenses_total / denom_kg)) if denom_kg > 0 else None
     pay_per_kg = str(_money_q(payroll_allocated / denom_kg)) if denom_kg > 0 else None
 
+    from api.services.aquaculture_transfer_cost import (
+        _biological_production_cost_total,
+        _transfer_denominator_kg,
+    )
+
+    bio_total = _biological_production_cost_total(lines)
+    transfer_denom, transfer_denom_note = _transfer_denominator_kg(
+        company_id=company_id,
+        pond_id=pond_id,
+        cycle_filter_id=cycle_filter_id,
+        cpk={
+            "denominator_kg": str(denom_kg),
+            "weight_basis": basis,
+        },
+        line_weight_kg=None,
+    )
+    transfer_cost_per_kg: str | None = None
+    transfer_cost_basis_note: str | None = None
+    if bio_total > 0 and transfer_denom > 0:
+        transfer_cost_per_kg = str(_money_q(bio_total / transfer_denom))
+        transfer_cost_basis_note = (
+            f"Inter-pond transfer uses production costs (fry, feed, medicine, preparation) "
+            f"÷ {transfer_denom} kg ({transfer_denom_note}). "
+            "Shop supplies and overhead are not included."
+        )
+    elif total_per_kg:
+        transfer_cost_per_kg = total_per_kg
+        transfer_cost_basis_note = None
+
     if basis == "harvest_sale":
         basis_note = (
             "Per kg uses kg from fish harvest sales (income_type=fish_harvest_sale) in this period and scope."
@@ -462,6 +510,8 @@ def build_pond_cost_per_kg_block(
         "basis_note": basis_note,
         "total_costs": str(_money_q(total_costs)),
         "total_cost_per_kg": total_per_kg,
+        "transfer_cost_per_kg": transfer_cost_per_kg,
+        "transfer_cost_basis_note": transfer_cost_basis_note,
         "operating_expenses_per_kg": opex_per_kg,
         "payroll_allocated_per_kg": pay_per_kg,
         "costing_lines": lines,
@@ -473,7 +523,7 @@ def aquaculture_pl_cost_basis_doc() -> str:
         "Pond cost per kg: total pond costs (operating expenses including shared allocation, inter-pond transfer "
         "adjustments, biological write-offs, plus payroll allocated to the pond) divided by sale kg. "
         "Expense categories map to buckets (fry, pond preparation, feed, medicine, labor, electricity, equipment, "
-        "lease, transportation, fisherman, miscellaneous, plus ancillary for unknown codes). "
+        "repair & maintenance, lease, transportation, fisherman, miscellaneous, plus ancillary for unknown codes). "
         "Labor includes worker_salary lines and PayrollRunPondAllocation. "
         "Posted journals can carry aquaculture_pond, production_cycle, and aquaculture_cost_bucket on each line for "
         "traceability (shop issues, biological stock, fish-sale invoices, POS COGS to a pond's linked customer, "

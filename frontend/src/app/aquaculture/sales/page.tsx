@@ -18,6 +18,9 @@ interface Pond {
 interface IncomeTypeOpt {
   id: string
   label: string
+  tenant_defined?: boolean
+  maps_to_code?: string | null
+  non_biological_sale?: boolean
 }
 interface FishSpeciesOpt {
   id: string
@@ -57,7 +60,10 @@ const NON_BIOLOGICAL_INCOME_TYPES = new Set([
   'used_equipment_sale',
 ])
 
-function isNonFishSaleIncome(incomeType: string): boolean {
+function isNonFishSaleIncome(incomeType: string | undefined, types: IncomeTypeOpt[]): boolean {
+  if (!incomeType) return false
+  const row = types.find((t) => t.id === incomeType)
+  if (row && typeof row.non_biological_sale === 'boolean') return row.non_biological_sale
   return NON_BIOLOGICAL_INCOME_TYPES.has(incomeType)
 }
 
@@ -145,7 +151,7 @@ export default function AquacultureSalesPage() {
     buyer_name: '',
     memo: '',
   })
-  const nonFishForm = isNonFishSaleIncome(form.income_type)
+  const nonFishForm = isNonFishSaleIncome(form.income_type, incomeTypes)
 
   const loadPonds = useCallback(async () => {
     try {
@@ -329,7 +335,7 @@ export default function AquacultureSalesPage() {
       return
     }
     const wk = Number(form.weight_kg)
-    const nonFish = isNonFishSaleIncome(form.income_type)
+    const nonFish = isNonFishSaleIncome(form.income_type, incomeTypes)
     if (!Number.isFinite(wk) || wk <= 0) {
       toast.error(nonFish ? 'Quantity must be a positive number' : 'Weight (kg) must be a positive number')
       return
@@ -621,11 +627,11 @@ export default function AquacultureSalesPage() {
                   <td className="min-w-0 break-words px-2 py-2 align-top text-slate-600">{r.production_cycle_name || '—'}</td>
                   <td className="min-w-0 break-words px-2 py-2 align-top text-slate-700">{r.income_type_label || r.income_type || '—'}</td>
                   <td className="min-w-0 break-words px-2 py-2 align-top text-slate-700">
-                    {r.income_type && isNonFishSaleIncome(r.income_type) ? '—' : r.fish_species_label || '—'}
+                    {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? '—' : r.fish_species_label || '—'}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums align-top">{formatNumber(Number(r.weight_kg))}</td>
                   <td className="px-2 py-2 text-right tabular-nums align-top">
-                    {r.income_type && isNonFishSaleIncome(r.income_type) ? '—' : (r.fish_count ?? '—')}
+                    {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? '—' : (r.fish_count ?? '—')}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums align-top text-slate-600">
                     {rowFishPerKg != null ? formatNumber(rowFishPerKg) : '—'}
@@ -748,14 +754,14 @@ export default function AquacultureSalesPage() {
                       setForm((f) => ({
                         ...f,
                         income_type: v,
-                        fish_species: isNonFishSaleIncome(v)
+                        fish_species: isNonFishSaleIncome(v, incomeTypes)
                           ? 'not_applicable'
                           : f.fish_species === 'not_applicable'
                             ? 'tilapia'
                             : f.fish_species,
-                        fish_species_other: isNonFishSaleIncome(v) ? '' : f.fish_species_other,
-                        fish_per_kg: isNonFishSaleIncome(v) ? '' : f.fish_per_kg,
-                        fish_count: isNonFishSaleIncome(v) ? '' : f.fish_count,
+                        fish_species_other: isNonFishSaleIncome(v, incomeTypes) ? '' : f.fish_species_other,
+                        fish_per_kg: isNonFishSaleIncome(v, incomeTypes) ? '' : f.fish_per_kg,
+                        fish_count: isNonFishSaleIncome(v, incomeTypes) ? '' : f.fish_count,
                       }))
                     }}
                   >

@@ -20,12 +20,11 @@ from api.models import (
 )
 from api.services.aquaculture_constants import (
     AQUACULTURE_EXPENSE_CATEGORY_CHOICES,
-    AQUACULTURE_INCOME_TYPE_CHOICES,
-    EXPENSE_CATEGORY_LABELS,
     FISH_STOCK_LEDGER_PL_NOTE,
     INTER_POND_FISH_TRANSFER_PL_NOTE,
     SHARED_OPERATING_COST_RULE,
 )
+from api.services.tenant_reporting_categories import aquaculture_expense_label, aquaculture_income_label
 from api.services.aquaculture_cost_per_kg import (
     aquaculture_pl_cost_basis_doc,
     build_pond_cost_per_kg_block,
@@ -198,10 +197,19 @@ def compute_aquaculture_pl_summary_dict(
 
         rev_by_type: list[dict] = []
         rq = _rev_q(pond.id)
-        for code, lbl in AQUACULTURE_INCOME_TYPE_CHOICES:
-            tq = _money_q(rq.filter(income_type=code).aggregate(t=Sum("total_amount"))["t"] or Decimal("0"))
-            if tq != 0:
-                rev_by_type.append({"income_type": code, "label": lbl, "amount": str(tq)})
+        for row in rq.values("income_type").annotate(t=Sum("total_amount")):
+            tq = _money_q(Decimal(str(row["t"] or 0)))
+            if tq == 0:
+                continue
+            code = str(row["income_type"] or "")
+            rev_by_type.append(
+                {
+                    "income_type": code,
+                    "label": aquaculture_income_label(cid, code),
+                    "amount": str(tq),
+                }
+            )
+        rev_by_type.sort(key=lambda x: x["income_type"])
 
         rows.append(
             {
@@ -332,6 +340,11 @@ def compute_aquaculture_pl_summary_dict(
             for e in shared_expenses:
                 for sh in e.pond_shares.filter(pond_id=pond.id):
                     by_cat_pond_dec[e.expense_category] += _money_q(sh.amount)
+        builtin_exp_keys = [c for c, _ in AQUACULTURE_EXPENSE_CATEGORY_CHOICES]
+        keys_nonzero = [k for k, v in by_cat_pond_dec.items() if v != Decimal("0")]
+        cat_keys = [k for k in builtin_exp_keys if k in keys_nonzero] + sorted(
+            k for k in keys_nonzero if k not in builtin_exp_keys
+        )
         expenses_by_pond.append(
             {
                 "pond_id": pond.id,
@@ -339,11 +352,10 @@ def compute_aquaculture_pl_summary_dict(
                 "categories": [
                     {
                         "category": c,
-                        "label": EXPENSE_CATEGORY_LABELS.get(c, c),
+                        "label": aquaculture_expense_label(cid, c),
                         "amount": str(by_cat_pond_dec.get(c, Decimal("0"))),
                     }
-                    for c, _ in AQUACULTURE_EXPENSE_CATEGORY_CHOICES
-                    if by_cat_pond_dec.get(c, Decimal("0")) != 0
+                    for c in cat_keys
                 ],
             }
         )
@@ -468,6 +480,20 @@ def compute_aquaculture_pl_summary_dict(
                     }
                 )
 
+    builtin_exp_lookup = {c for c, _ in AQUACULTURE_EXPENSE_CATEGORY_CHOICES}
+    nz_cat = [k for k, v in by_cat_dec.items() if v != Decimal("0")]
+    exp_cat_keys_ordered = [k for k, _ in AQUACULTURE_EXPENSE_CATEGORY_CHOICES if k in nz_cat] + sorted(
+        k for k in nz_cat if k not in builtin_exp_lookup
+    )
+    expenses_by_category_list = [
+        {
+            "category": c,
+            "label": aquaculture_expense_label(cid, c),
+            "amount": str(by_cat_dec.get(c, Decimal("0"))),
+        }
+        for c in exp_cat_keys_ordered
+    ]
+
     payload = {
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
@@ -480,15 +506,7 @@ def compute_aquaculture_pl_summary_dict(
         "fish_stock_ledger_note": FISH_STOCK_LEDGER_PL_NOTE,
         "ponds": rows,
         "expenses_by_pond": expenses_by_pond,
-        "expenses_by_category": [
-            {
-                "category": c,
-                "label": EXPENSE_CATEGORY_LABELS.get(c, c),
-                "amount": str(by_cat_dec.get(c, Decimal("0"))),
-            }
-            for c, _ in AQUACULTURE_EXPENSE_CATEGORY_CHOICES
-            if by_cat_dec.get(c, Decimal("0")) != 0
-        ],
+        "expenses_by_category": expenses_by_category_list,
         "totals": {
             "revenue": str(_money_q(total_rev)),
             "operating_expenses": str(_money_q(total_exp)),

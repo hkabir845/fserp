@@ -27,6 +27,8 @@ interface CycleRow {
 
 interface PlCostPerKgBlock {
   total_cost_per_kg?: string | null
+  transfer_cost_per_kg?: string | null
+  transfer_cost_basis_note?: string | null
   basis_note?: string
 }
 
@@ -274,14 +276,22 @@ export default function AquacultureFishTransfersPage() {
         const { data } = await api.get<{ ponds: PlPondRowBrief[] }>('/aquaculture/pl-summary/', { params })
         if (cancelled) return
         const row = Array.isArray(data?.ponds) ? data.ponds[0] : undefined
-        const raw = row?.cost_per_kg?.total_cost_per_kg
+        const cpk = row?.cost_per_kg
+        const raw =
+          cpk?.transfer_cost_per_kg != null && String(cpk.transfer_cost_per_kg).trim() !== ''
+            ? cpk.transfer_cost_per_kg
+            : cpk?.total_cost_per_kg
         const n = raw != null && String(raw).trim() !== '' ? Number(raw) : NaN
+        const hintParts = [
+          (cpk?.transfer_cost_basis_note || '').trim(),
+          (cpk?.basis_note || '').trim(),
+        ].filter(Boolean)
         if (Number.isFinite(n) && n >= 0) {
           setTransferPlCostPerKg(n)
-          setTransferPlBasisHint((row?.cost_per_kg?.basis_note || '').trim())
+          setTransferPlBasisHint(hintParts.join(' '))
         } else {
           setTransferPlCostPerKg(null)
-          setTransferPlBasisHint((row?.cost_per_kg?.basis_note || '').trim())
+          setTransferPlBasisHint(hintParts.join(' '))
         }
       } catch {
         if (!cancelled) {
@@ -342,16 +352,25 @@ export default function AquacultureFishTransfersPage() {
   }
 
   const openNew = () => {
-    const first = ponds[0]
+    const nursing = ponds.find((p) => p.pond_role === 'nursing')
+    const fromP = nursing ?? ponds[0]
+    const growOut = ponds.find(
+      (p) => p.pond_role === 'grow_out' && fromP && p.id !== fromP.id
+    )
     setEditingId(null)
     skipAutoCostLine.current = new Set()
-    setFromPondId(first ? String(first.id) : '')
+    setFromPondId(fromP ? String(fromP.id) : '')
     setFromCycleId('')
     setTransferDate(new Date().toISOString().slice(0, 10))
     setFishSpecies('tilapia')
     setFishSpeciesOther('')
     setMemo('')
-    setLineDrafts([emptyLine()])
+    setLineDrafts([
+      {
+        ...emptyLine(),
+        to_pond_id: growOut ? String(growOut.id) : '',
+      },
+    ])
     setModal(true)
   }
 
@@ -439,6 +458,12 @@ export default function AquacultureFishTransfersPage() {
           return
         }
         costOut = n.toFixed(2)
+      } else {
+        const pk = transferPlCostPerKgRef.current
+        if (pk != null && pk > 0) {
+          const auto = formatCostFromPerKg(w, pk)
+          if (auto) costOut = auto
+        }
       }
       const row: Record<string, unknown> = {
         to_pond_id: tp,
@@ -659,7 +684,15 @@ export default function AquacultureFishTransfersPage() {
                         <td className="px-4 py-3 text-right tabular-nums">{formatNumber(kg, 2)}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{formatNumber(heads, 0)}</td>
                         <td className="px-4 py-3 text-right tabular-nums">
-                          {cost > 0 ? `${sym}${formatNumber(cost, 2)}` : '—'}
+                          {cost > 0 ? (
+                            `${sym}${formatNumber(cost, 2)}`
+                          ) : kg > 0 ? (
+                            <span className="text-amber-700" title="Edit and save to fill from source pond P&L">
+                              Not set
+                            </span>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="inline-flex items-center justify-end gap-0.5">
@@ -812,8 +845,9 @@ export default function AquacultureFishTransfersPage() {
                     <span>Loading pond P&amp;L cost/kg for this transfer…</span>
                   ) : transferPlCostPerKg != null ? (
                     <span>
-                      Auto cost uses <strong className="font-medium text-slate-800">total cost/kg</strong> from the
-                      aquaculture P&amp;L for the source pond through this transfer date
+                      Auto cost uses <strong className="font-medium text-slate-800">cost/kg</strong> from the
+                      aquaculture P&amp;L for the source pond through this transfer date (harvest kg, or on-hand
+                      biological kg when the pond has not harvested yet)
                       {fromCycleId.trim() ? ' (scoped to the source production cycle)' : ' (calendar year to date)'}:{' '}
                       <span className="tabular-nums font-medium text-slate-800">
                         {sym}
@@ -823,8 +857,14 @@ export default function AquacultureFishTransfersPage() {
                     </span>
                   ) : (
                     <span>
-                      P&amp;L cost/kg is unavailable (no sale-kg basis in scope). Enter costs manually or adjust dates /
-                      cycle.
+                      Auto cost/kg is not available for this pond and date range. That usually means{' '}
+                      <strong className="font-medium text-slate-800">no pond costs are recorded yet</strong>{' '}
+                      (vendor bills, POS on account to the pond customer, payroll split, or pond expenses) and{' '}
+                      <strong className="font-medium text-slate-800">no biological kg basis</strong> (harvest/fingerling
+                      sales or positive on-hand fish kg from stocking and transfers).{' '}
+                      <strong className="font-medium text-slate-800">Sampling does not drive this number</strong> — it is
+                      for density advice only. Enter cost manually, or record feed/medicine/fry costs first, then reopen
+                      this form.
                     </span>
                   )}
                 </p>
@@ -939,11 +979,11 @@ export default function AquacultureFishTransfersPage() {
                           />
                         </label>
                         <label className="text-xs text-slate-600">
-                          Cost amount (optional)
+                          Cost amount (fry/feed/medicine cost/kg × kg)
                           <input
                             className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums"
                             inputMode="decimal"
-                            placeholder={transferPlCostPerKg != null ? 'Auto from P&L' : '0 = qty only'}
+                            placeholder={transferPlCostPerKg != null ? 'Filled when kg entered' : 'Enter kg first'}
                             value={ln.cost_amount}
                             onChange={(e) => {
                               const v = e.target.value

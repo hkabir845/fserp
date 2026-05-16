@@ -12,6 +12,10 @@ from api.utils.customer_display import customer_display_name
 from api.views.common import parse_json_body, require_company_id
 from api.services.coa_gl_defaults import ALLOWED_INCOME, parse_optional_chart_account_id
 from api.models import Invoice, InvoiceLine, Customer, ShiftSession
+from api.services.document_posting_lifecycle import (
+    body_has_material_invoice_change,
+    reconcile_invoice_after_material_edit,
+)
 from api.services.gl_posting import cleanup_invoice_posting_effects, sync_invoice_gl
 from api.services.invoice_station import (
     default_station_id_for_document,
@@ -225,6 +229,7 @@ def invoice_detail(request, invoice_id: int):
         if err:
             return err
         old_status = inv.status
+        material = body_has_material_invoice_change(body) and inv.status != "draft"
         inv.invoice_date = _parse_date(body.get("invoice_date")) or inv.invoice_date
         inv.due_date = _parse_date(body.get("due_date"))
         inv.subtotal = _decimal(body.get("subtotal"), inv.subtotal)
@@ -281,13 +286,24 @@ def invoice_detail(request, invoice_id: int):
             .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
             .first()
         )
-        sync_invoice_gl(
-            cid,
-            inv,
-            old_status=old_status,
-            payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
-            bank_account_id=body.get("bank_account_id"),
-        )
+        if not material:
+            sync_invoice_gl(
+                cid,
+                inv,
+                old_status=old_status,
+                payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
+                bank_account_id=body.get("bank_account_id"),
+            )
+        else:
+            ok_post, err_post = reconcile_invoice_after_material_edit(
+                cid,
+                inv,
+                old_status=old_status,
+                payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
+                bank_account_id=body.get("bank_account_id"),
+            )
+            if not ok_post:
+                return JsonResponse({"detail": err_post}, status=409)
         return JsonResponse(_invoice_to_json(inv, cid))
     if request.method == "DELETE":
         ok, err = cleanup_invoice_posting_effects(cid, inv)

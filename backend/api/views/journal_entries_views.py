@@ -12,6 +12,7 @@ from django.utils import timezone as django_timezone
 
 from api.models import JournalEntry, JournalEntryLine, ChartOfAccount
 from api.services.gl_posting import _gl_station_id
+from api.services.tenant_reporting_categories import fuel_station_reporting_category_for_journal
 
 
 def _serialize_date(d):
@@ -29,6 +30,7 @@ def _serialize_datetime(dt):
 def _line_to_json(line):
     acc = getattr(line, "account", None)
     lst = getattr(line, "station", None)
+    trc = getattr(line, "tenant_reporting_category", None)
     return {
         "id": line.id,
         "line_number": getattr(line, "line_number", 0),
@@ -45,7 +47,24 @@ def _line_to_json(line):
         "description": line.description or "",
         "station_id": getattr(line, "station_id", None),
         "station_name": (lst.station_name or "") if lst else "",
+        "tenant_reporting_category_id": getattr(line, "tenant_reporting_category_id", None),
+        "tenant_reporting_category_label": (
+            f"{trc.label} ({trc.code})" if trc else ""
+        ),
     }
+
+
+def _coerce_optional_tenant_reporting_category_id(company_id: int, raw) -> tuple[int | None, str | None]:
+    if raw in (None, "", 0, "0"):
+        return None, None
+    try:
+        i = int(raw)
+    except (TypeError, ValueError):
+        return None, "tenant_reporting_category_id must be an integer"
+    cat = fuel_station_reporting_category_for_journal(company_id, i)
+    if not cat:
+        return None, "tenant_reporting_category_id not found or not a fuel-station reporting category for this company"
+    return cat.id, None
 
 
 def _coerce_optional_station_id(company_id: int, raw) -> int | None:
@@ -59,14 +78,15 @@ def _coerce_optional_station_id(company_id: int, raw) -> int | None:
 
 
 def _manual_line_station_id(company_id: int, row: dict, entry_station_id: int | None) -> int | None:
+    """Line ``station_id`` in payload wins (including explicit null); else entry default."""
     if "station_id" in row:
-        return _coerce_optional_station_id(company_id, row.get("station_id"))
+        return _coerce_optional_station_id(company_id, row["station_id"])
     return entry_station_id
 
 
 def _entry_to_json(e):
     st = getattr(e, "station", None)
-    lines = list(e.lines.all().select_related("account").order_by("id"))
+    lines = list(e.lines.all().select_related("account", "tenant_reporting_category").order_by("id"))
     total_debit = sum(l.debit or 0 for l in lines)
     total_credit = sum(l.credit or 0 for l in lines)
     line_list = []
@@ -161,7 +181,7 @@ def _journal_entries_list(request):
     qs = (
         JournalEntry.objects.filter(company_id=request.company_id)
         .select_related("station")
-        .prefetch_related("lines", "lines__account", "lines__station")
+        .prefetch_related("lines", "lines__account", "lines__station", "lines__tenant_reporting_category")
         .order_by("-entry_date", "-id")
     )
     start = request.GET.get("start_date")
@@ -209,6 +229,11 @@ def journal_entry_create(request):
         if not amount:
             continue
         lsid = _manual_line_station_id(request.company_id, row, st_id)
+        trc_id, trc_err = _coerce_optional_tenant_reporting_category_id(
+            request.company_id, row.get("tenant_reporting_category_id")
+        )
+        if trc_err:
+            return JsonResponse({"detail": trc_err}, status=400)
         if debit_acc and ChartOfAccount.objects.filter(id=debit_acc, company_id=request.company_id).exists():
             JournalEntryLine.objects.create(
                 journal_entry=e,
@@ -217,6 +242,7 @@ def journal_entry_create(request):
                 credit=0,
                 description=row.get("description") or "",
                 station_id=lsid,
+                tenant_reporting_category_id=trc_id,
             )
         if credit_acc and ChartOfAccount.objects.filter(id=credit_acc, company_id=request.company_id).exists():
             JournalEntryLine.objects.create(
@@ -226,6 +252,7 @@ def journal_entry_create(request):
                 credit=amount,
                 description=row.get("description") or "",
                 station_id=lsid,
+                tenant_reporting_category_id=trc_id,
             )
     e.refresh_from_db()
     return JsonResponse(_entry_to_json(e), status=201)
@@ -238,7 +265,7 @@ def journal_entry_detail(request, entry_id: int):
     e = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
         .select_related("station")
-        .prefetch_related("lines", "lines__account", "lines__station")
+        .prefetch_related("lines", "lines__account", "lines__station", "lines__tenant_reporting_category")
         .first()
     )
     if not e:
@@ -265,6 +292,11 @@ def journal_entry_detail(request, entry_id: int):
                     credit_acc = row.get("credit_account_id")
                     amount = _decimal(row.get("amount"))
                     lsid = _manual_line_station_id(request.company_id, row, e.station_id)
+                    trc_id, trc_err = _coerce_optional_tenant_reporting_category_id(
+                        request.company_id, row.get("tenant_reporting_category_id")
+                    )
+                    if trc_err:
+                        return JsonResponse({"detail": trc_err}, status=400)
                     if amount and debit_acc and ChartOfAccount.objects.filter(id=debit_acc, company_id=request.company_id).exists():
                         JournalEntryLine.objects.create(
                             journal_entry=e,
@@ -273,6 +305,7 @@ def journal_entry_detail(request, entry_id: int):
                             credit=0,
                             description=row.get("description") or "",
                             station_id=lsid,
+                            tenant_reporting_category_id=trc_id,
                         )
                     if amount and credit_acc and ChartOfAccount.objects.filter(id=credit_acc, company_id=request.company_id).exists():
                         JournalEntryLine.objects.create(
@@ -282,6 +315,7 @@ def journal_entry_detail(request, entry_id: int):
                             credit=amount,
                             description=row.get("description") or "",
                             station_id=lsid,
+                            tenant_reporting_category_id=trc_id,
                         )
         e.refresh_from_db()
         return JsonResponse(_entry_to_json(e))
@@ -306,7 +340,7 @@ def journal_entry_post(request, entry_id: int):
         e_out = (
             JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
             .select_related("station")
-            .prefetch_related("lines", "lines__account", "lines__station")
+            .prefetch_related("lines", "lines__account", "lines__station", "lines__tenant_reporting_category")
             .first()
         )
         if not e_out:
@@ -326,7 +360,7 @@ def journal_entry_post(request, entry_id: int):
     e_out = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
         .select_related("station")
-        .prefetch_related("lines", "lines__account", "lines__station")
+        .prefetch_related("lines", "lines__account", "lines__station", "lines__tenant_reporting_category")
         .first()
     )
     if not e_out:
@@ -358,7 +392,7 @@ def journal_entry_unpost(request, entry_id: int):
     e = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
         .select_related("station")
-        .prefetch_related("lines", "lines__account", "lines__station")
+        .prefetch_related("lines", "lines__account", "lines__station", "lines__tenant_reporting_category")
         .first()
     )
     if not e:

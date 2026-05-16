@@ -20,9 +20,11 @@ def test_expense_categories_include_manual_create_flag(api_client, company_tenan
     fry = next((x for x in rows if x.get("id") == "fry_stocking"), None)
     feed = next((x for x in rows if x.get("id") == "feed_purchase"), None)
     lease = next((x for x in rows if x.get("id") == "lease"), None)
+    wage = next((x for x in rows if x.get("id") == "worker_salary"), None)
     assert fry is not None and fry.get("manual_create_allowed") is False
     assert feed is not None and feed.get("manual_create_allowed") is False
-    assert lease is not None and lease.get("manual_create_allowed") is True
+    assert lease is not None and lease.get("manual_create_allowed") is False
+    assert wage is not None and wage.get("manual_create_allowed") is False
 
 
 @pytest.mark.django_db
@@ -72,7 +74,7 @@ def test_post_pond_expense_rejects_feed_purchase(api_client, company_tenant, aut
 
 
 @pytest.mark.django_db
-def test_post_pond_expense_accepts_manual_category(api_client, company_tenant, auth_admin_headers):
+def test_post_pond_expense_rejects_lease_category(api_client, company_tenant, auth_admin_headers):
     Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
     pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P1", is_active=True)
     r = api_client.post(
@@ -80,16 +82,86 @@ def test_post_pond_expense_accepts_manual_category(api_client, company_tenant, a
         data=json.dumps(
             {
                 "pond_id": pond.id,
-                "expense_category": "electricity",
+                "expense_category": "lease",
                 "expense_date": "2026-05-01",
-                "amount": "2500.00",
-                "memo": "Pump run",
+                "amount": "100.00",
+                "memo": "should use landlords",
             }
         ),
         content_type="application/json",
         **auth_admin_headers,
     )
-    assert r.status_code == 201, r.content.decode()
+    assert r.status_code == 400
+    low = r.content.decode().lower()
+    assert "landlord" in low or "lease" in low
+
+
+@pytest.mark.django_db
+def test_post_pond_expense_rejects_worker_salary(api_client, company_tenant, auth_admin_headers):
+    Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P1", is_active=True)
+    r = api_client.post(
+        "/api/aquaculture/expenses/",
+        data=json.dumps(
+            {
+                "pond_id": pond.id,
+                "expense_category": "worker_salary",
+                "expense_date": "2026-05-01",
+                "amount": "100.00",
+                "memo": "should use payroll",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 400
+    low = r.content.decode().lower()
+    assert "payroll" in low or "wage" in low or "salary" in low
+
+
+@pytest.mark.django_db
+def test_put_pond_expense_allows_keeping_legacy_lease_category(api_client, company_tenant, auth_admin_headers):
+    Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P1", is_active=True)
+    x = AquacultureExpense.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        expense_category="lease",
+        expense_date=date(2026, 5, 1),
+        amount=Decimal("100.00"),
+        memo="legacy",
+    )
+    r = api_client.put(
+        f"/api/aquaculture/expenses/{x.id}/",
+        data=json.dumps({"memo": "updated only", "expense_category": "lease"}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    x.refresh_from_db()
+    assert x.memo == "updated only"
+
+
+@pytest.mark.django_db
+def test_post_pond_expense_rejects_all_manual_categories(api_client, company_tenant, auth_admin_headers):
+    Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P1", is_active=True)
+    for cat in ("repair_maintenance", "electricity"):
+        r = api_client.post(
+            "/api/aquaculture/expenses/",
+            data=json.dumps(
+                {
+                    "pond_id": pond.id,
+                    "expense_category": cat,
+                    "expense_date": "2026-05-10",
+                    "amount": "75.00",
+                }
+            ),
+            content_type="application/json",
+            **auth_admin_headers,
+        )
+        assert r.status_code == 400
+        assert "vendor bill" in r.content.decode().lower()
 
 
 @pytest.mark.django_db

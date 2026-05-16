@@ -338,6 +338,8 @@ export default function CashierPOSPage() {
   /** Shop stock / selling location for general lines (server also uses shift and fuel nozzle). */
   const [posStationId, setPosStationId] = useState<number | null>(null)
   const [posItems, setPosItems] = useState<POSItem[]>([])
+  /** Customers linked on Aquaculture → Ponds (shop sales must be on account / A/R). */
+  const [pondPosCustomerIds, setPondPosCustomerIds] = useState<Set<number>>(() => new Set())
 
   const [selectedNozzle, setSelectedNozzle] = useState<Nozzle | null>(null)
   const [selectedItem, setSelectedItem] = useState<POSItem | null>(null)
@@ -537,9 +539,21 @@ export default function CashierPOSPage() {
       return
     }
     setCustomerId(id)
+    if (pondPosCustomerIds.has(id)) {
+      setPaymentMethod("ON_ACCOUNT")
+      setAmountPaidNow("")
+      setDepositBankId("")
+    }
     lastAppliedCustomerQueryRef.current = raw
     router.replace("/cashier", { scroll: false })
-  }, [loading, customers, searchParams, router, toast])
+  }, [loading, customers, searchParams, router, toast, pondPosCustomerIds])
+
+  useEffect(() => {
+    if (customerId == null || !pondPosCustomerIds.has(Number(customerId))) return
+    setPaymentMethod("ON_ACCOUNT")
+    setAmountPaidNow("")
+    setDepositBankId("")
+  }, [customerId, pondPosCustomerIds])
 
   useEffect(() => {
     if (!printMenuOpen) return
@@ -622,7 +636,7 @@ export default function CashierPOSPage() {
       }
 
       const scope = getPosSaleScope()
-      const [nozzleRes, customerRes, vendorRes, companyRes, itemRes, tanksRes, banksRes, stationsRes] =
+      const [nozzleRes, customerRes, vendorRes, companyRes, itemRes, tanksRes, banksRes, stationsRes, pondsRes] =
         await Promise.all([
           scope !== "general" ? api.get("/nozzles/details/") : Promise.resolve({ data: [] }),
           api.get("/customers/"),
@@ -634,6 +648,9 @@ export default function CashierPOSPage() {
           scope !== "fuel" ? api.get("/tanks/") : Promise.resolve({ data: [] }),
           api.get("/bank-accounts/"),
           api.get("/stations/"),
+          scope !== "fuel"
+            ? api.get("/aquaculture/ponds/").catch(() => ({ data: [] }))
+            : Promise.resolve({ data: [] }),
         ])
 
       const banksRaw = Array.isArray(banksRes.data) ? banksRes.data : []
@@ -713,6 +730,14 @@ export default function CashierPOSPage() {
 
       setCustomers(Array.isArray(customerRes.data) ? customerRes.data : [])
 
+      const pondRows = Array.isArray(pondsRes.data) ? pondsRes.data : []
+      const pondCust = new Set<number>()
+      for (const p of pondRows as { pos_customer_id?: number | null }[]) {
+        const pc = p.pos_customer_id
+        if (pc != null && Number.isFinite(Number(pc))) pondCust.add(Number(pc))
+      }
+      setPondPosCustomerIds(pondCust)
+
       const rawVendors = Array.isArray(vendorRes.data) ? vendorRes.data : []
       setVendors(
         rawVendors
@@ -750,7 +775,7 @@ export default function CashierPOSPage() {
       const generalItems = itemsList.filter((item: POSItem) => {
         const itemPk = Number(item.id)
         const isNotLinkedToTank = !Number.isFinite(itemPk) || !tankProductIds.has(itemPk)
-        const allowedCategories = ["general", "feed", "service", "other"]
+        const allowedCategories = ["general", "feed", "service", "other", "medicine"]
         const cat = (item.pos_category || "").trim().toLowerCase()
         const hasAllowedCategory = allowedCategories.includes(cat)
         const isAvailable = item.is_pos_available !== false
@@ -895,6 +920,8 @@ export default function CashierPOSPage() {
   )
 
   const isOnAccount = paymentMethod === "ON_ACCOUNT"
+  const isPondPosCustomer =
+    customerId != null && pondPosCustomerIds.has(Number(customerId))
   const paymentMethodLabel =
     PAYMENT_LABELS[paymentMethod] ?? paymentMethod.replace(/_/g, " ")
 
@@ -2455,11 +2482,20 @@ export default function CashierPOSPage() {
                           <select
                             id="pos-customer-select"
                             value={customerId || ""}
-                            onChange={event =>
-                              setCustomerId(
-                                event.target.value ? Number(event.target.value) : null
-                              )
-                            }
+                            onChange={event => {
+                              const nextId = event.target.value
+                                ? Number(event.target.value)
+                                : null
+                              setCustomerId(nextId)
+                              if (
+                                nextId != null &&
+                                pondPosCustomerIds.has(Number(nextId))
+                              ) {
+                                setPaymentMethod("ON_ACCOUNT")
+                                setAmountPaidNow("")
+                                setDepositBankId("")
+                              }
+                            }}
                             className={`${selectClassName} ${
                               (isOnAccount || isSplitPayment) && !customerId
                                 ? "border-amber-500/80 bg-amber-50 dark:bg-amber-950/30"
@@ -2494,6 +2530,13 @@ export default function CashierPOSPage() {
                           >
                             Payment method
                           </label>
+                          {isPondPosCustomer ? (
+                            <p className="rounded-md border border-teal-200/80 bg-teal-50 px-3 py-2 text-xs text-teal-950 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100">
+                              <strong>Aquaculture pond customer:</strong> shop feed and medicine are always{" "}
+                              <strong>On account (A/R)</strong> so the pond is charged and costs hit pond P&amp;L.
+                              Collect cash later under <strong>Payments → Received</strong>.
+                            </p>
+                          ) : null}
                           <select
                             id="pos-payment-method"
                             value={paymentMethod}
@@ -2503,19 +2546,30 @@ export default function CashierPOSPage() {
                               if (v === "ON_ACCOUNT") setAmountPaidNow("")
                             }}
                             className={selectClassName}
+                            disabled={isPondPosCustomer}
                           >
-                            <option value="CASH">Cash</option>
-                            <option value="CARD">Card</option>
-                            <option value="TRANSFER">Bank Transfer</option>
-                            <option value="MOBILE_MONEY">Mobile Money</option>
-                            <option value="ON_ACCOUNT">
-                              On account (A/R) — charge to customer
-                            </option>
+                            {isPondPosCustomer ? (
+                              <option value="ON_ACCOUNT">
+                                On account (A/R) — aquaculture pond
+                              </option>
+                            ) : (
+                              <>
+                                <option value="CASH">Cash</option>
+                                <option value="CARD">Card</option>
+                                <option value="TRANSFER">Bank Transfer</option>
+                                <option value="MOBILE_MONEY">Mobile Money</option>
+                                <option value="ON_ACCOUNT">
+                                  On account (A/R) — charge to customer
+                                </option>
+                              </>
+                            )}
                           </select>
-                          <p className="text-xs text-muted-foreground">
-                            <strong className="text-foreground">Credit / charge sale:</strong> choose{" "}
-                            <strong>On account (A/R)</strong> here — not in the bank/till list below.
-                          </p>
+                          {!isPondPosCustomer ? (
+                            <p className="text-xs text-muted-foreground">
+                              <strong className="text-foreground">Credit / charge sale:</strong> choose{" "}
+                              <strong>On account (A/R)</strong> here — not in the bank/till list below.
+                            </p>
+                          ) : null}
                           {isOnAccount ? (
                             <p className="rounded-md border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
                               Posts to <strong>Accounts Receivable</strong>. Record cash,

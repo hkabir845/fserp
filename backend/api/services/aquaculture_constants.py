@@ -48,6 +48,7 @@ AQUACULTURE_EXPENSE_CATEGORY_CHOICES: tuple[tuple[str, str], ...] = (
     ),
     ("electricity", "Electricity"),
     ("equipment", "Equipment (aerators, nets, etc.)"),
+    ("repair_maintenance", "Repair & maintenance"),
     ("fisherman", "Fisherman bills"),
     ("transportation", "Transportation"),
     ("other", "Miscellaneous"),
@@ -57,20 +58,11 @@ EXPENSE_CATEGORY_CODES: frozenset[str] = frozenset(c for c, _ in AQUACULTURE_EXP
 
 EXPENSE_CATEGORY_LABELS: dict[str, str] = {c: label for c, label in AQUACULTURE_EXPENSE_CATEGORY_CHOICES}
 
-# POST/PUT /aquaculture/expenses/: categories operators may add or switch to. Excludes automatic / duplicate paths.
+# POST/PUT /aquaculture/expenses/: manual pond costs deprecated — use vendor bills (see aquaculture_bill_defaults).
 _MANUAL_AQUACULTURE_EXPENSE_EXCLUDED: frozenset[str] = frozenset(
-    {
-        "vendor_bill_pond",  # roll-up from posted AP (normalize_expense_category also rejects)
-        "fry_stocking",  # vendor bill: fish-type line + pond + kg + head count
-        "feed_purchase",  # Bills, POS on account, or shop-stock-issue — not plain "Add expense"
-        "medicine_purchase",  # same as feed_purchase
-        "feed_consumed",  # pond warehouse / feeding advice
-        "medicine_consumed",  # pond warehouse consumption
-    }
+    c for c, _ in AQUACULTURE_EXPENSE_CATEGORY_CHOICES
 )
-MANUAL_AQUACULTURE_EXPENSE_CATEGORY_CODES: frozenset[str] = frozenset(
-    c for c, _ in AQUACULTURE_EXPENSE_CATEGORY_CHOICES if c not in _MANUAL_AQUACULTURE_EXPENSE_EXCLUDED
-)
+MANUAL_AQUACULTURE_EXPENSE_CATEGORY_CODES: frozenset[str] = frozenset()
 
 
 def manual_aquaculture_expense_category_change_allowed(
@@ -99,6 +91,14 @@ def manual_aquaculture_expense_category_change_allowed(
             "Medicine consumption is recorded from the pond warehouse flow, not as a manual pond cost."
         ),
         "vendor_bill_pond": "This amount is derived from posted vendor bills with pond-tagged lines.",
+        "lease": (
+            "Lease cash paid to landlords belongs on Aquaculture → Landlords: use a bank/cash register, pond "
+            "allocation, and “applies to lease paid” so 6711 and pond lease_paid stay aligned—not a typed amount here."
+        ),
+        "worker_salary": (
+            "Staff wages belong in HR & payroll: create a payroll run, split net pay across ponds if needed, then "
+            "post to books—pond P&L picks up payroll allocations; do not duplicate as a manual pond cost."
+        ),
     }
     return False, detail_by_cat.get(
         new_category,
@@ -108,9 +108,13 @@ def manual_aquaculture_expense_category_change_allowed(
 # Optional longer copy for UIs (expense-categories API includes hint when present).
 EXPENSE_CATEGORY_EXTRA_HELP: dict[str, str] = {
     "lease": (
-        "Record cash paid to the landlord on the Landlords screen with a bank/cash register and pond: the system posts "
-        "Dr 6711 Aquaculture Expense — Lease & Pond Rights (pond + lease bucket) and Cr the register's G/L. "
-        "Manual aquaculture expenses in category lease also roll into the same pond lease bucket."
+        "Not offered on Add expense: record cash paid on Aquaculture → Landlords with a bank/cash register and pond "
+        "lines (optionally “applies to lease paid”). That posts Dr 6711 lease & pond rights (pond + lease bucket) and "
+        "Cr the register, and updates pond lease_paid so obligations stay in one place."
+    ),
+    "worker_salary": (
+        "Not offered on Add expense: use HR & payroll—payroll runs with optional pond allocations feed the labor bucket "
+        "on pond P&L when you post salary to the general ledger."
     ),
     "feed_purchase": (
         "Not offered on Add expense: use vendor Bills (pond-tagged lines), Cashier (POS) on account to the pond’s "
@@ -135,12 +139,19 @@ EXPENSE_CATEGORY_EXTRA_HELP: dict[str, str] = {
     ),
     "equipment": (
         "For inventoried equipment or supplies sold from your shop to a pond, prefer POS on account to the pond’s "
-        "customer. Use this category for direct cash capex or hire/repair that is not a POS inventory sale."
+        "customer. Use this category for durable equipment and tools purchased for the pond (not routine repairs). "
+        "Prefer Repair & maintenance for labour and materials to fix structures, pumps, wiring, or vehicles."
+    ),
+    "repair_maintenance": (
+        "Use for pond dike or yard repairs, pump or aerator service, electrical fixes, vehicle/boat engine work, "
+        "welding, plumbing, and other upkeep that keeps the site running. Capitalized major purchases may belong under "
+        "Equipment or your fixed-asset policy—describe clearly in Memo."
     ),
     "other": (
         "Use for feeding boats; electrical wire, fittings, and bulbs; security cameras; engines; aerators; nets; "
-        "road, yard, or dike repairs; bicycles (purchase or repair); casual labour; worker meals or site consumables; "
-        "and other pond operating costs that do not fit a named category above. Describe the payment clearly in Memo."
+        "casual labour; worker meals or site consumables; and other pond operating costs that do not fit a named "
+        "category above (prefer Repair & maintenance for paid repair work on dikes, pumps, or vehicles). "
+        "Describe the payment clearly in Memo."
     ),
 }
 # Display-only (pre-split DB rows); not in EXPENSE_CATEGORY_CODES — API rejects on create/update.
@@ -329,12 +340,50 @@ def fish_species_display_label(code: str | None, other: str | None) -> str:
     return base
 
 
-def coa_account_code_for_aquaculture_income_type(income_type: str) -> str:
+def coa_account_code_for_aquaculture_expense_category(
+    expense_category: str, company_id: int | None = None
+) -> str:
+    """
+    Chart account code for vendor bill expense debits when a line tags an aquaculture pond
+    (see aquaculture_coa_seed AQUACULTURE_COA_ROWS 6711–6725).
+    """
+    c = (expense_category or "other").strip()
+    if company_id is not None:
+        from api.services.tenant_reporting_categories import resolve_aquaculture_expense_to_builtin
+
+        c = resolve_aquaculture_expense_to_builtin(company_id, c)
+    mapping: dict[str, str] = {
+        "lease": "6711",
+        "worker_salary": "6712",
+        "soilcut": "6713",
+        "pond_preparation": "6714",
+        "fry_stocking": "6715",
+        "feed_purchase": "6716",
+        "feed_consumed": "6716",
+        "feed_medicine": "6716",
+        "electricity": "6717",
+        "equipment": "6718",
+        "repair_maintenance": "6718",
+        "fisherman": "6719",
+        "transportation": "6720",
+        "medicine_purchase": "6721",
+        "medicine_consumed": "6721",
+        "other": "6725",
+        "vendor_bill_pond": "6725",
+    }
+    return mapping.get(c, "6725")
+
+
+def coa_account_code_for_aquaculture_income_type(income_type: str, company_id: int | None = None) -> str:
     """
     Chart account code for invoice GL revenue when a pond sale is linked to an Invoice
     (see aquaculture_coa_seed AQUACULTURE_COA_ROWS 4240–4244).
     """
     it = (income_type or "fish_harvest_sale").strip()
+    if company_id is not None:
+        from api.services.tenant_reporting_categories import resolve_aquaculture_income_to_builtin
+
+        it = resolve_aquaculture_income_to_builtin(company_id, it)
     if it == "fish_harvest_sale":
         return "4240"
     if it == "fingerling_sale":

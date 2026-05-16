@@ -24,11 +24,8 @@ from api.models import (
     Invoice,
     InvoiceLine,
 )
-from api.services.aquaculture_constants import (
-    EXPENSE_CATEGORY_LABELS,
-    INCOME_TYPE_LABELS,
-    fish_species_display_label,
-)
+from api.services.aquaculture_constants import fish_species_display_label
+from api.services.tenant_reporting_categories import aquaculture_expense_label, aquaculture_income_label
 from api.services.reporting import _is_fuel_line
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.permission_service import user_may_access_aquaculture_api
@@ -181,7 +178,7 @@ def _report_fish_sales(company_id: int, start: date, end: date, request: HttpReq
                 "id": s.id,
                 "sale_date": s.sale_date.isoformat(),
                 "income_type": s.income_type,
-                "income_type_label": INCOME_TYPE_LABELS.get(s.income_type, s.income_type),
+                "income_type_label": aquaculture_income_label(company_id, s.income_type),
                 "fish_species": sp,
                 "fish_species_other": spo,
                 "fish_species_label": fish_species_display_label(sp, spo),
@@ -369,7 +366,7 @@ def _report_pond_sales_comprehensive(
     fish_by_income_type = [
         {
             "income_type": k,
-            "income_type_label": INCOME_TYPE_LABELS.get(k, k or "—"),
+            "income_type_label": aquaculture_income_label(company_id, k),
             "amount_bdt": float(_money_q(v["amount"])),
             "line_count": v["n"],
         }
@@ -439,7 +436,7 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
                 "id": e.id,
                 "expense_date": e.expense_date.isoformat(),
                 "expense_category": e.expense_category,
-                "expense_category_label": EXPENSE_CATEGORY_LABELS.get(e.expense_category, e.expense_category),
+                "expense_category_label": aquaculture_expense_label(company_id, e.expense_category),
                 "amount": str(e.amount),
                 "vendor_name": e.vendor_name or "",
                 "memo": (e.memo or "")[:200],

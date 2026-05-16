@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText } from 'lucide-react'
 import { useToast } from '@/components/Toast'
@@ -13,6 +14,23 @@ import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import {
+  applyAquacultureCategoryToBillLine,
+  billExpenseCategoriesFromApi,
+  findBillCategory,
+  isAquacultureOperatingCoaCode,
+  type AquacultureBillExpenseCategory,
+} from '@/lib/aquacultureBillLine'
+import {
+  applyFuelCategoryToBillLine,
+  billFuelCategoriesFromApi,
+  findFuelBillCategory,
+  type FuelStationBillExpenseCategory,
+} from '@/lib/fuelStationBillLine'
+import {
+  resolveReceiptStationIdForVendor,
+  vendorUsualReceivingSummary,
+} from '@/lib/vendorReceivingDefaults'
 
 /** Bill line inputs: fixed height so grid rows align across columns */
 const BILL_LINE_CTL =
@@ -38,6 +56,11 @@ interface BillLineItem {
   /** Optional: tag line to a pond/cycle for aquaculture P&L when the bill posts (GL). */
   aquaculture_pond_id?: number | '' | null
   aquaculture_production_cycle_id?: number | '' | null
+  /** Pond operating expense category (maps to 671x COA + cost bucket on post). */
+  aquaculture_expense_category?: string
+  aquaculture_cost_bucket?: string
+  /** Fuel-station P&L reporting category (built-in rollup or tenant-defined). */
+  fuel_station_expense_category?: string
 }
 
 interface AquaculturePondOption {
@@ -55,6 +78,7 @@ interface Station {
   id: number
   station_name: string
   station_number?: string
+  default_aquaculture_pond_id?: number | null
 }
 
 interface Bill {
@@ -161,6 +185,10 @@ interface Vendor {
   display_name: string
   is_active: boolean
   default_expense_account_id?: number | null
+  default_station_id?: number | null
+  default_station_name?: string | null
+  default_aquaculture_pond_id?: number | null
+  default_aquaculture_pond_name?: string | null
 }
 
 interface Item {
@@ -173,6 +201,8 @@ interface Item {
   pos_category?: string  // 'fuel', 'general', 'fish' (Fish Type), etc.
   quantity_on_hand?: number | string
   expense_account_id?: number | null
+  /** Fish / fry: pieces (heads) per 1 kg — Line on item form */
+  pieces_per_kg?: number | string | null
 }
 
 function isFishTypeItem(item: Item | undefined): boolean {
@@ -186,6 +216,17 @@ function validateFishTypeBillLines(lines: BillLineItem[], itemList: Item[]): str
     if (!line.item_id) continue
     const item = itemList.find((it) => it.id === line.item_id)
     if (!isFishTypeItem(item)) continue
+    if (itemPiecesPerKg(item)) {
+      const heads = parseFishHeadCount(line)
+      if (heads <= 0) {
+        return `Line ${i + 1} (${item?.name || 'Fish item'}): enter total fish (heads) greater than zero.`
+      }
+      const amt = Number(line.amount ?? 0)
+      if (!Number.isFinite(amt) || amt < 0) {
+        return `Line ${i + 1} (${item?.name || 'Fish item'}): enter a valid line Amount.`
+      }
+      continue
+    }
     const w = line.aquaculture_fish_weight_kg
     const c = line.aquaculture_fish_count
     const wn = w === undefined || w === '' || w === null ? NaN : Number(w)
@@ -203,6 +244,177 @@ function validateFishTypeBillLines(lines: BillLineItem[], itemList: Item[]): str
 
 function billLineRowAmount(quantity: number, unitCost: number): number {
   return quantity * unitCost
+}
+
+function itemPiecesPerKg(item: Item | undefined): number | null {
+  if (!item) return null
+  const raw = item.pieces_per_kg
+  if (raw === undefined || raw === null || raw === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function formatFishLinePcsPerKg(item: Item | undefined): string {
+  const pcs = itemPiecesPerKg(item)
+  return pcs != null ? formatNumber(pcs) : '—'
+}
+
+function fishItemOptionLabel(item: Item): string {
+  const base = `${item.name} (${item.item_number})`
+  if (!isFishTypeItem(item)) return base
+  const pcs = itemPiecesPerKg(item)
+  return pcs != null ? `${base} · Line ${formatNumber(pcs)} pcs/kg` : base
+}
+
+function FishBillLineDimensionRow({
+  line,
+  index,
+  lineItem,
+  fishLineAuto,
+  onFieldChange,
+}: {
+  line: BillLineItem
+  index: number
+  lineItem: Item | undefined
+  fishLineAuto: boolean
+  onFieldChange: (index: number, field: string, value: unknown) => void
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-gray-200 pt-2">
+      <div className="w-[7.5rem] shrink-0">
+        <label className="block text-xs font-medium text-gray-700 mb-1">Line (pcs/kg)</label>
+        <input
+          type="text"
+          readOnly
+          value={formatFishLinePcsPerKg(lineItem)}
+          title="From item catalog — Line (pieces per 1 kg)"
+          className="w-full px-2 py-1 text-sm border border-gray-200 rounded bg-gray-50 text-gray-800 tabular-nums"
+        />
+      </div>
+      <div className="w-[7.5rem] shrink-0">
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          Total fish (heads){fishLineAuto ? ' *' : ''}
+        </label>
+        <input
+          type="number"
+          min={1}
+          step={1}
+          value={
+            line.aquaculture_fish_count === undefined ||
+            line.aquaculture_fish_count === null ||
+            line.aquaculture_fish_count === ''
+              ? ''
+              : line.aquaculture_fish_count
+          }
+          onChange={(e) =>
+            onFieldChange(index, 'aquaculture_fish_count', e.target.value === '' ? '' : e.target.value)
+          }
+          className={
+            fishLineAuto
+              ? 'w-full px-2 py-1 text-sm border border-sky-300 rounded focus:ring-1 focus:ring-sky-500 bg-white tabular-nums'
+              : 'w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white'
+          }
+          placeholder="—"
+          title={fishLineAuto ? 'Fry/fingerling count from the vendor invoice' : undefined}
+        />
+      </div>
+      <div className="w-[7.5rem] shrink-0">
+        <label className="block text-xs font-medium text-gray-700 mb-1">Weight (kg)</label>
+        <input
+          type={fishLineAuto ? 'text' : 'number'}
+          readOnly={fishLineAuto}
+          tabIndex={fishLineAuto ? -1 : undefined}
+          min={fishLineAuto ? undefined : 0}
+          step={fishLineAuto ? undefined : '0.0001'}
+          value={
+            line.aquaculture_fish_weight_kg === undefined ||
+            line.aquaculture_fish_weight_kg === null ||
+            line.aquaculture_fish_weight_kg === ''
+              ? ''
+              : line.aquaculture_fish_weight_kg
+          }
+          onChange={
+            fishLineAuto
+              ? undefined
+              : (e) =>
+                  onFieldChange(index, 'aquaculture_fish_weight_kg', e.target.value === '' ? '' : e.target.value)
+          }
+          className={
+            fishLineAuto
+              ? 'w-full px-2 py-1 text-sm border border-gray-200 rounded bg-gray-50 text-gray-800 tabular-nums cursor-default'
+              : 'w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white'
+          }
+          placeholder="—"
+          title={fishLineAuto ? 'Heads ÷ Line (pcs/kg); also used as billing Qty (kg)' : undefined}
+        />
+      </div>
+      <p className="text-xs text-gray-500 flex-1 min-w-[12rem] pb-1">
+        {fishLineAuto ? (
+          <>
+            Enter <strong>total fish (heads)</strong> and line <strong>Amount</strong> (vendor total).{' '}
+            <strong>Qty (kg)</strong>, weight, and rate per kg fill from the item <strong>Line (pcs/kg)</strong>.
+          </>
+        ) : (
+          <>
+            Required for fish-type items: total weight (kg) and headcount. Set <strong>Line (pcs/kg)</strong> on the item
+            catalog to enable auto-fill from heads and Amount.
+          </>
+        )}
+      </p>
+    </div>
+  )
+}
+
+function roundBillMoney(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+function roundFishWeightKg(n: number): number {
+  return Math.round(n * 10000) / 10000
+}
+
+function parseFishHeadCount(line: BillLineItem): number {
+  const c = line.aquaculture_fish_count
+  if (c === undefined || c === '' || c === null) return 0
+  const n = parseInt(String(c), 10)
+  return Number.isInteger(n) && n > 0 ? n : 0
+}
+
+/** Fish fry lines with Line on item: user enters heads + Amount; kg and rate derive from pcs/kg. */
+function applyFishBillLineAutoCalc(
+  line: BillLineItem,
+  item: Item | undefined,
+  source: 'heads' | 'amount' | 'unit_cost'
+): BillLineItem {
+  const pcs = itemPiecesPerKg(item)
+  if (!pcs) return line
+  const next = { ...line }
+  const heads = parseFishHeadCount(next)
+  const amt = Number(next.amount ?? 0)
+
+  if (source === 'heads' || source === 'amount') {
+    if (heads > 0) {
+      const w = roundFishWeightKg(heads / pcs)
+      next.aquaculture_fish_weight_kg = w
+      next.quantity = w
+      next.aquaculture_fish_count = heads
+      if (w > 0 && amt >= 0) {
+        next.unit_cost = roundBillMoney(amt / w)
+      }
+    }
+    return next
+  }
+
+  if (source === 'unit_cost') {
+    const w = Number(next.quantity ?? 0)
+    const uc = Number(next.unit_cost ?? 0)
+    if (w > 0 && uc >= 0) {
+      next.amount = billLineRowAmount(w, uc)
+    }
+    return next
+  }
+
+  return next
 }
 
 function applyItemSelectionToBillLine(
@@ -241,6 +453,8 @@ function applyItemSelectionToBillLine(
   if (!isFishTypeItem(item)) {
     next.aquaculture_fish_weight_kg = undefined
     next.aquaculture_fish_count = undefined
+  } else if (itemPiecesPerKg(item) && parseFishHeadCount(next) > 0) {
+    return applyFishBillLineAutoCalc(next, item, 'heads')
   }
   return next
 }
@@ -287,6 +501,9 @@ function serializeBillLineForApi(line: BillLineItem, itemList: Item[]): Record<s
       const n = Number(r)
       return Number.isFinite(n) ? n : null
     })(),
+    aquaculture_cost_bucket: (line.aquaculture_cost_bucket || '').trim() || null,
+    aquaculture_expense_category: (line.aquaculture_expense_category || '').trim() || null,
+    fuel_station_expense_category: (line.fuel_station_expense_category || '').trim() || null,
   }
 }
 
@@ -416,8 +633,28 @@ interface ExpenseAccount {
   account_sub_type?: string
 }
 
+function newAquacultureBillLine(
+  pondId: number | '',
+  categoryId: string,
+  billCats: AquacultureBillExpenseCategory[]
+): BillLineItem {
+  const base: BillLineItem = {
+    line_number: 1,
+    description: '',
+    quantity: 1,
+    unit_cost: 0,
+    amount: 0,
+    tax_amount: 0,
+    aquaculture_pond_id: pondId,
+    aquaculture_production_cycle_id: '',
+    aquaculture_expense_category: categoryId,
+  }
+  return applyAquacultureCategoryToBillLine(base, findBillCategory(billCats, categoryId))
+}
+
 export default function BillsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const toast = useToast()
   const [bills, setBills] = useState<Bill[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
@@ -451,6 +688,12 @@ export default function BillsPage() {
   const [stations, setStations] = useState<Station[]>([])
   const [aquaculturePonds, setAquaculturePonds] = useState<AquaculturePondOption[]>([])
   const [productionCycles, setProductionCycles] = useState<ProductionCycleOption[]>([])
+  const [aquacultureBillCategories, setAquacultureBillCategories] = useState<
+    AquacultureBillExpenseCategory[]
+  >([])
+  const [fuelStationBillCategories, setFuelStationBillCategories] = useState<
+    FuelStationBillExpenseCategory[]
+  >([])
   const [formData, setFormData] = useState(() => {
     const billDate = new Date().toISOString().split('T')[0]
     const due = new Date(`${billDate}T12:00:00`)
@@ -472,6 +715,38 @@ export default function BillsPage() {
     const x = vendors.find((v) => v.id === vid)?.default_expense_account_id
     return x != null && x > 0 ? x : undefined
   }, [formData.vendor_id, vendors])
+
+  const selectedVendorReceivingHint = useMemo(() => {
+    if (!formData.vendor_id) return null
+    const v = vendors.find((x) => x.id === formData.vendor_id)
+    return v ? vendorUsualReceivingSummary(v) : null
+  }, [formData.vendor_id, vendors])
+
+  const handleFormVendorChange = (rawVendorId: string) => {
+    const vendor_id = parseInt(rawVendorId, 10) || 0
+    if (!vendor_id) {
+      setFormData((prev) => ({ ...prev, vendor_id: 0, receipt_station_id: '' }))
+      return
+    }
+    const vendor = vendors.find((v) => v.id === vendor_id)
+    const receipt_station_id = resolveReceiptStationIdForVendor(vendor, stations)
+    setFormData((prev) => ({ ...prev, vendor_id, receipt_station_id }))
+  }
+
+  const billExpenseCategories = useMemo(
+    () => billExpenseCategoriesFromApi(aquacultureBillCategories),
+    [aquacultureBillCategories]
+  )
+
+  const billFuelCategories = useMemo(
+    () => billFuelCategoriesFromApi(fuelStationBillCategories),
+    [fuelStationBillCategories]
+  )
+
+  const aquacultureCoaAccounts = useMemo(
+    () => expenseAccounts.filter((a) => isAquacultureOperatingCoaCode(a.account_code)),
+    [expenseAccounts]
+  )
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -622,20 +897,33 @@ export default function BillsPage() {
         const raw = Array.isArray(stationsRes.value.data) ? stationsRes.value.data : []
         setStations(
           raw
-            .map((s: { id?: unknown; station_name?: string; station_number?: string }) => ({
-              id: typeof s.id === 'number' ? s.id : Number(s.id),
-              station_name: String(s.station_name || '').trim() || 'Station',
-              station_number: s.station_number != null ? String(s.station_number) : undefined,
-            }))
+            .map(
+              (s: {
+                id?: unknown
+                station_name?: string
+                station_number?: string
+                default_aquaculture_pond_id?: unknown
+              }) => ({
+                id: typeof s.id === 'number' ? s.id : Number(s.id),
+                station_name: String(s.station_name || '').trim() || 'Station',
+                station_number: s.station_number != null ? String(s.station_number) : undefined,
+                default_aquaculture_pond_id:
+                  s.default_aquaculture_pond_id != null && s.default_aquaculture_pond_id !== ''
+                    ? Number(s.default_aquaculture_pond_id)
+                    : null,
+              }),
+            )
             .filter((s: Station) => Number.isFinite(s.id)),
         )
       } else {
         setStations([])
       }
 
-      const [pondsRes, cyclesRes] = await Promise.allSettled([
+      const [pondsRes, cyclesRes, aqCatRes, fsCatRes] = await Promise.allSettled([
         api.get('/aquaculture/ponds/'),
         api.get('/aquaculture/production-cycles/'),
+        api.get('/aquaculture/expense-categories/'),
+        api.get('/fuel-station/expense-categories/'),
       ])
       if (pondsRes.status === 'fulfilled' && Array.isArray(pondsRes.value.data)) {
         setAquaculturePonds(
@@ -661,6 +949,16 @@ export default function BillsPage() {
         )
       } else {
         setProductionCycles([])
+      }
+      if (aqCatRes.status === 'fulfilled' && Array.isArray(aqCatRes.value.data)) {
+        setAquacultureBillCategories(aqCatRes.value.data as AquacultureBillExpenseCategory[])
+      } else {
+        setAquacultureBillCategories([])
+      }
+      if (fsCatRes.status === 'fulfilled' && Array.isArray(fsCatRes.value.data)) {
+        setFuelStationBillCategories(fsCatRes.value.data as FuelStationBillExpenseCategory[])
+      } else {
+        setFuelStationBillCategories([])
       }
     } catch (error) {
       console.error('Error fetching reference data:', error)
@@ -691,6 +989,35 @@ export default function BillsPage() {
     void loadBills()
   }, [loadBills])
 
+  const openedBillFromUrl = useRef(false)
+  useEffect(() => {
+    if (loading || openedBillFromUrl.current) return
+    const wantNew = searchParams.get('new')
+    const pondRaw = searchParams.get('pond_id')
+    if (wantNew !== '1' && wantNew !== 'true' && !pondRaw) return
+    openedBillFromUrl.current = true
+    const pondId = pondRaw && /^\d+$/.test(pondRaw.trim()) ? parseInt(pondRaw.trim(), 10) : ''
+    const catRaw = searchParams.get('expense_category') || 'other'
+    const catId = findBillCategory(billExpenseCategories, catRaw)?.id || ''
+    const billDate = new Date().toISOString().split('T')[0]
+    const due = new Date(`${billDate}T12:00:00`)
+    due.setDate(due.getDate() + 30)
+    setFormData({
+      vendor_id: 0,
+      bill_date: billDate,
+      due_date: due.toISOString().split('T')[0],
+      vendor_reference: '',
+      memo: pondId !== '' ? 'Pond operating expense' : '',
+      receipt_station_id: '',
+      lines:
+        pondId !== '' && catId
+          ? [{ ...newAquacultureBillLine(pondId, catId, billExpenseCategories), line_number: 1 }]
+          : [],
+    })
+    setApproveBill(false)
+    setShowModal(true)
+  }, [loading, searchParams, billExpenseCategories])
+
   const calculateLineAmount = (quantity: number, unitCost: number) => {
     return quantity * unitCost
   }
@@ -703,26 +1030,39 @@ export default function BillsPage() {
   }
 
   const handleAddLine = () => {
+    const rawPond = searchParams.get('pond_id')
+    const rawCat = searchParams.get('expense_category') || 'other'
+    const pondPrefill: number | '' =
+      rawPond && /^\d+$/.test(rawPond.trim()) ? parseInt(rawPond.trim(), 10) : ''
+    const catPrefill = findBillCategory(billExpenseCategories, rawCat)?.id || ''
+    const lineNumber = formData.lines.length + 1
+    let newLine: BillLineItem
+    if (pondPrefill !== '' && catPrefill) {
+      newLine = {
+        ...newAquacultureBillLine(pondPrefill, catPrefill, billExpenseCategories),
+        line_number: lineNumber,
+      }
+    } else {
+      newLine = {
+        line_number: lineNumber,
+        description: '',
+        item_id: undefined,
+        expense_account_id: undefined,
+        tank_id: undefined,
+        quantity: 1,
+        unit_cost: 0,
+        amount: 0,
+        tax_amount: 0,
+        aquaculture_fish_weight_kg: undefined,
+        aquaculture_fish_count: undefined,
+        aquaculture_pond_id: pondPrefill,
+        aquaculture_production_cycle_id: '',
+        aquaculture_expense_category: catPrefill || undefined,
+      }
+    }
     setFormData({
       ...formData,
-      lines: [
-        ...formData.lines,
-        {
-          line_number: formData.lines.length + 1,
-          description: '',
-          item_id: undefined,
-          expense_account_id: undefined,
-          tank_id: undefined,
-          quantity: 1,
-          unit_cost: 0,
-          amount: 0,
-          tax_amount: 0,
-          aquaculture_fish_weight_kg: undefined,
-          aquaculture_fish_count: undefined,
-          aquaculture_pond_id: '',
-          aquaculture_production_cycle_id: '',
-        }
-      ]
+      lines: [...formData.lines, newLine],
     })
   }
 
@@ -739,6 +1079,12 @@ export default function BillsPage() {
       const pid = value === '' || value === undefined ? '' : parseInt(String(value), 10)
       const cleanPond = pid === '' || !Number.isFinite(pid) ? '' : pid
       newLines[index] = { ...newLines[index], aquaculture_pond_id: cleanPond }
+      if (cleanPond === '') {
+        newLines[index].aquaculture_expense_category = undefined
+        newLines[index].aquaculture_cost_bucket = undefined
+      } else {
+        newLines[index].fuel_station_expense_category = undefined
+      }
       const cycRaw = newLines[index].aquaculture_production_cycle_id
       if (cycRaw !== '' && cycRaw != null) {
         const cid = parseInt(String(cycRaw), 10)
@@ -749,6 +1095,20 @@ export default function BillsPage() {
           }
         }
       }
+      setFormData({ ...formData, lines: newLines })
+      return
+    }
+
+    if (field === 'aquaculture_expense_category') {
+      const cat = findBillCategory(billExpenseCategories, String(value))
+      newLines[index] = applyAquacultureCategoryToBillLine(newLines[index], cat)
+      setFormData({ ...formData, lines: newLines })
+      return
+    }
+
+    if (field === 'fuel_station_expense_category') {
+      const cat = findFuelBillCategory(billFuelCategories, String(value))
+      newLines[index] = applyFuelCategoryToBillLine(newLines[index], cat)
       setFormData({ ...formData, lines: newLines })
       return
     }
@@ -778,14 +1138,64 @@ export default function BillsPage() {
       }
     }
     
-    if (field === 'quantity' || field === 'unit_cost') {
-      const quantity =
-        field === 'quantity' ? parseFloat(value) || 0 : Number(newLines[index].quantity ?? 0)
-      const unitCost =
-        field === 'unit_cost' ? parseFloat(value) || 0 : Number(newLines[index].unit_cost ?? 0)
-      newLines[index].amount = calculateLineAmount(quantity, unitCost)
+    const lineItem = newLines[index].item_id
+      ? items.find((it) => it.id === newLines[index].item_id)
+      : undefined
+    const fishLine = isFishTypeItem(lineItem)
+
+    if (field === 'aquaculture_fish_weight_kg' && fishLine && itemPiecesPerKg(lineItem)) {
+      setFormData({ ...formData, lines: newLines })
+      return
     }
-    
+    if (field === 'aquaculture_fish_count') {
+      if (fishLine && itemPiecesPerKg(lineItem)) {
+        newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'heads')
+      } else if (fishLine) {
+        const cRaw = newLines[index].aquaculture_fish_count
+        const c =
+          cRaw === undefined || cRaw === '' || cRaw === null
+            ? NaN
+            : parseInt(String(cRaw), 10)
+        const pcs = itemPiecesPerKg(lineItem)
+        if (pcs != null && Number.isInteger(c) && c > 0) {
+          newLines[index].aquaculture_fish_weight_kg = roundFishWeightKg(c / pcs)
+        }
+      }
+    } else if (field === 'aquaculture_fish_weight_kg' && fishLine) {
+      const wRaw = newLines[index].aquaculture_fish_weight_kg
+      const w = wRaw === undefined || wRaw === '' || wRaw === null ? NaN : Number(wRaw)
+      if (Number.isFinite(w) && w > 0) {
+        const pcs = itemPiecesPerKg(lineItem)
+        newLines[index].aquaculture_fish_count =
+          pcs != null ? Math.max(1, Math.round(w * pcs)) : newLines[index].aquaculture_fish_count
+      }
+    } else if (field === 'amount') {
+      if (fishLine && itemPiecesPerKg(lineItem)) {
+        newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'amount')
+      } else {
+        const quantity = Number(newLines[index].quantity ?? 0)
+        const amount = parseFloat(value) || 0
+        newLines[index].amount = amount
+        if (quantity > 0) {
+          newLines[index].unit_cost = roundBillMoney(amount / quantity)
+        }
+      }
+    } else if (field === 'quantity' || field === 'unit_cost') {
+      if (fishLine && itemPiecesPerKg(lineItem)) {
+        if (field === 'quantity') {
+          setFormData({ ...formData, lines: newLines })
+          return
+        }
+        newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'unit_cost')
+      } else {
+        const quantity =
+          field === 'quantity' ? parseFloat(value) || 0 : Number(newLines[index].quantity ?? 0)
+        const unitCost =
+          field === 'unit_cost' ? parseFloat(value) || 0 : Number(newLines[index].unit_cost ?? 0)
+        newLines[index].amount = calculateLineAmount(quantity, unitCost)
+      }
+    }
+
     setFormData({ ...formData, lines: newLines })
   }
   
@@ -874,6 +1284,19 @@ export default function BillsPage() {
       toast.error(fishErr)
       return
     }
+    for (let i = 0; i < formData.lines.length; i++) {
+      const line = formData.lines[i]
+      const pond =
+        line.aquaculture_pond_id !== '' &&
+        line.aquaculture_pond_id != null &&
+        Number.isFinite(Number(line.aquaculture_pond_id))
+      if (pond && !line.item_id && !line.aquaculture_expense_category) {
+        toast.error(
+          `Line ${i + 1}: choose a pond expense category (or pick an inventory item for feed/medicine/fry).`
+        )
+        return
+      }
+    }
 
     try {
       await performCreate()
@@ -929,6 +1352,11 @@ export default function BillsPage() {
               String(line.aquaculture_production_cycle_id) !== ''
                 ? Number(line.aquaculture_production_cycle_id)
                 : '',
+            aquaculture_expense_category: line.aquaculture_expense_category || '',
+            aquaculture_cost_bucket: line.aquaculture_cost_bucket || '',
+            fuel_station_expense_category:
+              (line as BillLineItem & { fuel_station_expense_category?: string })
+                .fuel_station_expense_category || '',
           })) || []
         })
         setShowEditModal(true)
@@ -1017,6 +1445,19 @@ export default function BillsPage() {
     if (fishErrUpd) {
       toast.error(fishErrUpd)
       return
+    }
+    for (let i = 0; i < formData.lines.length; i++) {
+      const line = formData.lines[i]
+      const pond =
+        line.aquaculture_pond_id !== '' &&
+        line.aquaculture_pond_id != null &&
+        Number.isFinite(Number(line.aquaculture_pond_id))
+      if (pond && !line.item_id && !line.aquaculture_expense_category) {
+        toast.error(
+          `Line ${i + 1}: choose a pond expense category (or pick an inventory item for feed/medicine/fry).`
+        )
+        return
+      }
     }
 
     try {
@@ -1157,7 +1598,42 @@ export default function BillsPage() {
       <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Bills (Accounts Payable)</h1>
-          <p className="text-gray-600 mt-1">Track vendor bills and manage accounts payable</p>
+          <p className="text-gray-600 mt-1">
+            Record vendor purchases and operating expenses for filling stations, aquaculture, and general AP — then pay
+            from Payments.
+          </p>
+          <div className="mt-3 max-w-4xl rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+            <p className="font-semibold text-slate-900">How to record expenses on a bill</p>
+            <ul className="mt-2 list-disc space-y-1.5 pl-5 leading-relaxed">
+              <li>
+                <span className="font-medium text-slate-800">Filling station:</span> fuel lines — pick the fuel item and
+                receiving <span className="font-medium">tank</span>; shop stock — item + optional{' '}
+                <span className="font-medium">Receive shop stock at station</span>; station costs (utilities,
+                maintenance, etc.) — choose an <span className="font-medium">Expense account</span> and optional{' '}
+                <span className="font-medium">Station expense category</span> (no pond tag).
+              </li>
+              {aquaculturePonds.length > 0 ? (
+                <li>
+                  <span className="font-medium text-teal-900">Aquaculture:</span> tag{' '}
+                  <span className="font-medium">Pond (P&amp;L tag)</span>, then pick a{' '}
+                  <span className="font-medium">Pond expense category</span> (671x COA fills automatically). Feed,
+                  medicine, and fry usually use inventory <span className="font-medium">items</span>; fish-type items
+                  need kg and headcount. Lease and wages use Landlords and Payroll, not bills.
+                </li>
+              ) : null}
+              <li>
+                <span className="font-medium text-slate-800">Other / office:</span> pick an{' '}
+                <span className="font-medium">Expense account</span> on the line (leave pond unset).
+              </li>
+            </ul>
+            <p className="mt-2 text-xs text-slate-600">
+              Custom labels for aquaculture and fuel-station categories are set under{' '}
+              <Link href="/reporting-categories" className="font-medium text-blue-700 underline hover:text-blue-800">
+                Reporting categories
+              </Link>{' '}
+              (company admin). Built-in categories appear in the line pickers when you tag a pond or leave the pond unset.
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center justify-between mb-6">
@@ -1390,6 +1866,7 @@ export default function BillsPage() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tank</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pond</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Line (pcs/kg)</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Wt (kg)</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Fish #</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
@@ -1426,6 +1903,9 @@ export default function BillsPage() {
                                 ? productionCycles.find((c) => c.id === item.aquaculture_production_cycle_id)
                                     ?.name || `Cycle #${item.aquaculture_production_cycle_id}`
                                 : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
+                              {showFishCols ? formatFishLinePcsPerKg(rowItem) : '—'}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
                               {showFishCols && wkg != null && String(wkg) !== '' ? formatNumber(Number(wkg)) : '—'}
@@ -1525,7 +2005,7 @@ export default function BillsPage() {
                     <select
                       required
                       value={formData.vendor_id}
-                      onChange={(e) => setFormData({ ...formData, vendor_id: parseInt(e.target.value) })}
+                      onChange={(e) => handleFormVendorChange(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="0">Select Vendor</option>
@@ -1535,6 +2015,9 @@ export default function BillsPage() {
                         </option>
                       ))}
                     </select>
+                    {selectedVendorReceivingHint ? (
+                      <p className="mt-1 text-xs text-teal-800">{selectedVendorReceivingHint}</p>
+                    ) : null}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1573,7 +2056,7 @@ export default function BillsPage() {
                   </div>
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Receive shop stock at station
+                      Receipt station (this bill)
                     </label>
                     <select
                       value={formData.receipt_station_id === '' ? '' : String(formData.receipt_station_id)}
@@ -1595,11 +2078,11 @@ export default function BillsPage() {
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      Shop hub for <strong className="font-medium">non-fuel</strong> SKUs that use station bins (e.g.
-                      feed). <strong className="font-medium">Fish-type items</strong> (fry, etc.) do not use this
-                      dropdown: when you set <strong className="font-medium">Pond (P&amp;L tag)</strong> on the line,
-                      posted quantity goes to that pond&apos;s fish stock. Leave &quot;Not set&quot; if this bill is
-                      only fuel, only fish with a pond on each line, or other lines that skip shop bins.
+                      Pre-filled from the vendor&apos;s usual location when set; change for each delivery. Shop hub for{' '}
+                      <strong className="font-medium">non-fuel</strong> SKUs (e.g. feed).{' '}
+                      <strong className="font-medium">Fish-type items</strong> use{' '}
+                      <strong className="font-medium">Pond (P&amp;L tag)</strong> on the line instead. Leave not set for
+                      fuel-only bills or fish with a pond on every line.
                     </p>
                   </div>
                   <div className="col-span-2">
@@ -1657,6 +2140,7 @@ export default function BillsPage() {
                       const availableTanks = getTanksForItem(line.item_id)
                       const lineItem = line.item_id ? items.find((i) => i.id === line.item_id) : undefined
                       const showFishDims = isFishTypeItem(lineItem)
+                      const fishLineAuto = showFishDims && itemPiecesPerKg(lineItem) != null
                       const pondSel =
                         line.aquaculture_pond_id === '' || line.aquaculture_pond_id == null
                           ? ''
@@ -1710,7 +2194,7 @@ export default function BillsPage() {
                                 <optgroup label="Items">
                                   {items.map((item) => (
                                     <option key={`item-${item.id}`} value={item.id}>
-                                      {item.name} ({item.item_number})
+                                      {fishItemOptionLabel(item)}
                                     </option>
                                   ))}
                                 </optgroup>
@@ -1760,36 +2244,78 @@ export default function BillsPage() {
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[5.25rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Qty</label>
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                                {fishLineAuto ? 'Qty (kg)' : 'Qty'}
+                              </label>
                               <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={line.quantity}
-                                onChange={(e) => handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)}
-                                className={BILL_LINE_NUM}
+                                type={fishLineAuto ? 'text' : 'number'}
+                                readOnly={fishLineAuto}
+                                tabIndex={fishLineAuto ? -1 : undefined}
+                                step={fishLineAuto ? undefined : '0.01'}
+                                min={fishLineAuto ? undefined : 0}
+                                value={fishLineAuto && !line.quantity ? '' : line.quantity}
+                                onChange={
+                                  fishLineAuto
+                                    ? undefined
+                                    : (e) =>
+                                        handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)
+                                }
+                                className={
+                                  fishLineAuto
+                                    ? `${BILL_LINE_NUM} bg-gray-50 cursor-default border-gray-200`
+                                    : BILL_LINE_NUM
+                                }
+                                title={fishLineAuto ? 'Derived: heads ÷ Line (pcs/kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[5.25rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Unit</label>
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                                {fishLineAuto ? 'Rate (per kg)' : 'Unit'}
+                              </label>
                               <input
-                                type="number"
-                                step="0.01"
-                                min="0"
+                                type={fishLineAuto ? 'text' : 'number'}
+                                readOnly={fishLineAuto}
+                                tabIndex={fishLineAuto ? -1 : undefined}
+                                step={fishLineAuto ? undefined : '0.01'}
+                                min={fishLineAuto ? undefined : 0}
                                 value={line.unit_cost}
-                                onChange={(e) => handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)}
-                                className={BILL_LINE_NUM}
+                                onChange={
+                                  fishLineAuto
+                                    ? undefined
+                                    : (e) =>
+                                        handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)
+                                }
+                                className={
+                                  fishLineAuto
+                                    ? `${BILL_LINE_NUM} bg-gray-50 cursor-default border-gray-200`
+                                    : BILL_LINE_NUM
+                                }
+                                title={fishLineAuto ? 'Derived: Amount ÷ Qty (kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
                               <label className="block text-xs font-medium text-gray-700 mb-0.5">Amount</label>
-                              <input
-                                type="text"
-                                readOnly
-                                value={formatNumber(line.amount)}
-                                title={`${currencySymbol}${formatNumber(line.amount)}`}
-                                className={`${AMOUNT_READ_ONLY_INPUT_CLASS} min-h-[2.25rem] py-1.5`}
-                              />
+                              {fishLineAuto ? (
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={line.amount}
+                                  onChange={(e) =>
+                                    handleLineChange(index, 'amount', parseFloat(e.target.value) || 0)
+                                  }
+                                  className={BILL_LINE_NUM}
+                                  title="Vendor line total (BDT) — enter with total fish (heads)"
+                                />
+                              ) : (
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={formatNumber(line.amount)}
+                                  title={`${currencySymbol}${formatNumber(line.amount)}`}
+                                  className={`${AMOUNT_READ_ONLY_INPUT_CLASS} min-h-[2.25rem] py-1.5`}
+                                />
+                              )}
                             </div>
                             <div className="col-span-12 sm:col-span-3 lg:col-span-1 flex justify-end lg:justify-center pb-0.5">
                               <button
@@ -1808,61 +2334,13 @@ export default function BillsPage() {
                             </div>
                           </div>
                           {showFishDims ? (
-                            <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-gray-200 pt-2">
-                              <div className="w-[7.5rem] shrink-0">
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Weight (kg) *</label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.0001"
-                                  value={
-                                    line.aquaculture_fish_weight_kg === undefined ||
-                                    line.aquaculture_fish_weight_kg === null ||
-                                    line.aquaculture_fish_weight_kg === ''
-                                      ? ''
-                                      : line.aquaculture_fish_weight_kg
-                                  }
-                                  onChange={(e) =>
-                                    handleLineChange(
-                                      index,
-                                      'aquaculture_fish_weight_kg',
-                                      e.target.value === '' ? '' : e.target.value
-                                    )
-                                  }
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                                  placeholder="—"
-                                />
-                              </div>
-                              <div className="w-[7.5rem] shrink-0">
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Total fish (heads) *</label>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  step="1"
-                                  value={
-                                    line.aquaculture_fish_count === undefined ||
-                                    line.aquaculture_fish_count === null ||
-                                    line.aquaculture_fish_count === ''
-                                      ? ''
-                                      : line.aquaculture_fish_count
-                                  }
-                                  onChange={(e) =>
-                                    handleLineChange(
-                                      index,
-                                      'aquaculture_fish_count',
-                                      e.target.value === '' ? '' : e.target.value
-                                    )
-                                  }
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                                  placeholder="—"
-                                />
-                              </div>
-                              <p className="text-xs text-gray-500 flex-1 min-w-[12rem] pb-1">
-                                Required for fish-type items: total weight (kg) and headcount (separate from Qty × Unit
-                                for billing). When the line tags a pond, posted inventory uses this headcount (and kg for
-                                stock position), not the billing quantity alone.
-                              </p>
-                            </div>
+                            <FishBillLineDimensionRow
+                              line={line}
+                              index={index}
+                              lineItem={lineItem}
+                              fishLineAuto={fishLineAuto}
+                              onFieldChange={handleLineChange}
+                            />
                           ) : null}
                           {showAqTag ? (
                             <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-teal-200 pt-2">
@@ -1895,6 +2373,41 @@ export default function BillsPage() {
                                     )}
                                 </select>
                               </div>
+                              {pondSel !== '' && Number.isFinite(pondSel) && !line.item_id ? (
+                                <div className="min-w-[11rem] flex-1">
+                                  <label className="block text-xs font-medium text-teal-900 mb-1">
+                                    Pond expense category *
+                                  </label>
+                                  <select
+                                    required
+                                    value={line.aquaculture_expense_category || ''}
+                                    onChange={(e) =>
+                                      handleLineChange(index, 'aquaculture_expense_category', e.target.value)
+                                    }
+                                    className="w-full min-w-0 px-2 py-1 text-sm border border-teal-300 rounded focus:ring-1 focus:ring-teal-500 bg-teal-50/40"
+                                  >
+                                    <option value="">Select category…</option>
+                                    {billExpenseCategories.map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {line.expense_account_id ? (
+                                    <p className="mt-0.5 text-[11px] text-teal-800">
+                                      GL:{' '}
+                                      {formatCoaOptionLabel(
+                                        expenseAccounts.find((a) => a.id === line.expense_account_id) || {
+                                          id: 0,
+                                          account_code: '',
+                                          account_name: '—',
+                                          account_type: 'expense',
+                                        }
+                                      )}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ) : null}
                               <div className="min-w-[10rem] flex-1">
                                 <label className="block text-xs font-medium text-gray-700 mb-1">
                                   Production cycle (optional)
@@ -1926,9 +2439,38 @@ export default function BillsPage() {
                                 </select>
                               </div>
                               <p className="text-xs text-gray-500 flex-1 min-w-[14rem] pb-1">
-                                Tags P&amp;L to this pond when the bill posts. For <strong className="font-medium">fish-type</strong>{' '}
-                                SKUs, choose the nursing or grow-out pond here so fry post into that pond&apos;s
-                                warehouse and fish stock (headcount above), not only the shop receipt station.
+                                Tags P&amp;L to this pond when the bill posts. Choose an expense category to auto-fill
+                                the aquaculture chart account (671x). For <strong className="font-medium">fish-type</strong>{' '}
+                                SKUs, use fry stocking with kg and headcount; feed/medicine use inventory items.
+                              </p>
+                            </div>
+                          ) : null}
+                          {pondSel === '' && billFuelCategories.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-indigo-200 pt-2">
+                              <div className="min-w-[11rem] flex-1">
+                                <label className="block text-xs font-medium text-indigo-900 mb-1">
+                                  Station expense category
+                                </label>
+                                <select
+                                  value={line.fuel_station_expense_category || ''}
+                                  onChange={(e) =>
+                                    handleLineChange(index, 'fuel_station_expense_category', e.target.value)
+                                  }
+                                  className="w-full min-w-0 px-2 py-1 text-sm border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500 bg-indigo-50/40"
+                                >
+                                  <option value="">— Optional —</option>
+                                  {billFuelCategories.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.label}
+                                      {c.tenant_defined ? '' : ' (rollup)'}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <p className="text-xs text-gray-500 flex-1 min-w-[14rem] pb-1">
+                                Tags fuel-station P&amp;L when the bill posts (operating, utilities, maintenance, etc.).
+                                Pick an <strong className="font-medium">Expense account</strong> for the GL debit; category
+                                drives station reports.
                               </p>
                             </div>
                           ) : null}
@@ -1938,7 +2480,7 @@ export default function BillsPage() {
                   </div>
 
                   {formData.lines.length === 0 && (
-                    <p className="text-center text-gray-500 py-4">No line items added. Click "Add Line" to add items.</p>
+                    <p className="text-center text-gray-500 py-4">No line items added. Click &quot;Add Line&quot; to add items.</p>
                   )}
                 </div>
 
@@ -2120,7 +2662,7 @@ export default function BillsPage() {
                     <select
                       required
                       value={formData.vendor_id}
-                      onChange={(e) => setFormData({ ...formData, vendor_id: parseInt(e.target.value) })}
+                      onChange={(e) => handleFormVendorChange(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="0">Select Vendor</option>
@@ -2139,6 +2681,9 @@ export default function BillsPage() {
                         No active vendors found. Please create a vendor first or check if vendors are active.
                       </p>
                     )}
+                    {selectedVendorReceivingHint ? (
+                      <p className="mt-1 text-xs text-teal-800">{selectedVendorReceivingHint}</p>
+                    ) : null}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2177,7 +2722,7 @@ export default function BillsPage() {
                   </div>
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Receive shop stock at station
+                      Receipt station (this bill)
                     </label>
                     <select
                       value={formData.receipt_station_id === '' ? '' : String(formData.receipt_station_id)}
@@ -2199,11 +2744,11 @@ export default function BillsPage() {
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      Shop hub for <strong className="font-medium">non-fuel</strong> SKUs that use station bins (e.g.
-                      feed). <strong className="font-medium">Fish-type items</strong> (fry, etc.) do not use this
-                      dropdown: when you set <strong className="font-medium">Pond (P&amp;L tag)</strong> on the line,
-                      posted quantity goes to that pond&apos;s fish stock. Leave &quot;Not set&quot; if this bill is
-                      only fuel, only fish with a pond on each line, or other lines that skip shop bins.
+                      Pre-filled from the vendor&apos;s usual location when set; change for each delivery. Shop hub for{' '}
+                      <strong className="font-medium">non-fuel</strong> SKUs (e.g. feed).{' '}
+                      <strong className="font-medium">Fish-type items</strong> use{' '}
+                      <strong className="font-medium">Pond (P&amp;L tag)</strong> on the line instead. Leave not set for
+                      fuel-only bills or fish with a pond on every line.
                     </p>
                   </div>
                   <div className="col-span-2">
@@ -2247,6 +2792,7 @@ export default function BillsPage() {
                           : undefined
                       const lineItem = line.item_id ? items.find((i) => i.id === line.item_id) : undefined
                       const showFishDims = isFishTypeItem(lineItem)
+                      const fishLineAuto = showFishDims && itemPiecesPerKg(lineItem) != null
                       const pondSel =
                         line.aquaculture_pond_id === '' || line.aquaculture_pond_id == null
                           ? ''
@@ -2308,7 +2854,7 @@ export default function BillsPage() {
                                   ) : (
                                     items.map((item) => (
                                       <option key={`item-${item.id}`} value={item.id} data-type="item">
-                                        {item.name} ({item.item_number})
+                                        {fishItemOptionLabel(item)}
                                       </option>
                                     ))
                                   )}
@@ -2365,25 +2911,53 @@ export default function BillsPage() {
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5.25rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Qty</label>
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                                {fishLineAuto ? 'Qty (kg)' : 'Qty'}
+                              </label>
                               <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={line.quantity}
-                                onChange={(e) => handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)}
-                                className={BILL_LINE_NUM}
+                                type={fishLineAuto ? 'text' : 'number'}
+                                readOnly={fishLineAuto}
+                                tabIndex={fishLineAuto ? -1 : undefined}
+                                step={fishLineAuto ? undefined : '0.01'}
+                                min={fishLineAuto ? undefined : 0}
+                                value={fishLineAuto && !line.quantity ? '' : line.quantity}
+                                onChange={
+                                  fishLineAuto
+                                    ? undefined
+                                    : (e) =>
+                                        handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)
+                                }
+                                className={
+                                  fishLineAuto
+                                    ? `${BILL_LINE_NUM} bg-gray-50 cursor-default border-gray-200`
+                                    : BILL_LINE_NUM
+                                }
+                                title={fishLineAuto ? 'Derived: heads ÷ Line (pcs/kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5.25rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Rate</label>
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                                {fishLineAuto ? 'Rate (per kg)' : 'Rate'}
+                              </label>
                               <input
-                                type="number"
-                                step="0.01"
-                                min="0"
+                                type={fishLineAuto ? 'text' : 'number'}
+                                readOnly={fishLineAuto}
+                                tabIndex={fishLineAuto ? -1 : undefined}
+                                step={fishLineAuto ? undefined : '0.01'}
+                                min={fishLineAuto ? undefined : 0}
                                 value={line.unit_cost}
-                                onChange={(e) => handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)}
-                                className={BILL_LINE_NUM}
+                                onChange={
+                                  fishLineAuto
+                                    ? undefined
+                                    : (e) =>
+                                        handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)
+                                }
+                                className={
+                                  fishLineAuto
+                                    ? `${BILL_LINE_NUM} bg-gray-50 cursor-default border-gray-200`
+                                    : BILL_LINE_NUM
+                                }
+                                title={fishLineAuto ? 'Derived: Amount ÷ Qty (kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5rem]">
@@ -2399,14 +2973,28 @@ export default function BillsPage() {
                             </div>
                             <div className="col-span-6 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
                               <label className="block text-xs font-medium text-gray-700 mb-0.5">Amount</label>
-                              <input
-                                type="text"
-                                readOnly
-                                inputMode="decimal"
-                                value={formatNumber(Number(line.amount) || 0)}
-                                title={`${currencySymbol}${formatNumber(Number(line.amount) || 0)}`}
-                                className={`${AMOUNT_READ_ONLY_INPUT_CLASS} min-h-[2.25rem] py-1.5`}
-                              />
+                              {fishLineAuto ? (
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={line.amount}
+                                  onChange={(e) =>
+                                    handleLineChange(index, 'amount', parseFloat(e.target.value) || 0)
+                                  }
+                                  className={BILL_LINE_NUM}
+                                  title="Vendor line total (BDT) — enter with total fish (heads)"
+                                />
+                              ) : (
+                                <input
+                                  type="text"
+                                  readOnly
+                                  inputMode="decimal"
+                                  value={formatNumber(Number(line.amount) || 0)}
+                                  title={`${currencySymbol}${formatNumber(Number(line.amount) || 0)}`}
+                                  className={`${AMOUNT_READ_ONLY_INPUT_CLASS} min-h-[2.25rem] py-1.5`}
+                                />
+                              )}
                             </div>
                             <div className="col-span-6 sm:col-span-3 lg:col-span-1 flex justify-end lg:justify-center pb-0.5">
                               <button
@@ -2420,59 +3008,13 @@ export default function BillsPage() {
                             </div>
                           </div>
                           {showFishDims ? (
-                            <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-gray-200 pt-2">
-                              <div className="w-[7.5rem] shrink-0">
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Weight (kg) *</label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.0001"
-                                  value={
-                                    line.aquaculture_fish_weight_kg === undefined ||
-                                    line.aquaculture_fish_weight_kg === null ||
-                                    line.aquaculture_fish_weight_kg === ''
-                                      ? ''
-                                      : line.aquaculture_fish_weight_kg
-                                  }
-                                  onChange={(e) =>
-                                    handleLineChange(
-                                      index,
-                                      'aquaculture_fish_weight_kg',
-                                      e.target.value === '' ? '' : e.target.value
-                                    )
-                                  }
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
-                                  placeholder="—"
-                                />
-                              </div>
-                              <div className="w-[7.5rem] shrink-0">
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Total fish (heads) *</label>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  step="1"
-                                  value={
-                                    line.aquaculture_fish_count === undefined ||
-                                    line.aquaculture_fish_count === null ||
-                                    line.aquaculture_fish_count === ''
-                                      ? ''
-                                      : line.aquaculture_fish_count
-                                  }
-                                  onChange={(e) =>
-                                    handleLineChange(
-                                      index,
-                                      'aquaculture_fish_count',
-                                      e.target.value === '' ? '' : e.target.value
-                                    )
-                                  }
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
-                                  placeholder="—"
-                                />
-                              </div>
-                              <p className="text-xs text-gray-500 flex-1 min-w-[12rem] pb-1">
-                                Required for fish-type items: total weight (kg) and headcount (separate from Qty × Rate).
-                              </p>
-                            </div>
+                            <FishBillLineDimensionRow
+                              line={line}
+                              index={index}
+                              lineItem={lineItem}
+                              fishLineAuto={fishLineAuto}
+                              onFieldChange={handleLineChange}
+                            />
                           ) : null}
                           {showAqTag ? (
                             <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-teal-200 pt-2">
@@ -2505,6 +3047,41 @@ export default function BillsPage() {
                                     )}
                                 </select>
                               </div>
+                              {pondSel !== '' && Number.isFinite(pondSel) && !line.item_id ? (
+                                <div className="min-w-[11rem] flex-1">
+                                  <label className="block text-xs font-medium text-teal-900 mb-1">
+                                    Pond expense category *
+                                  </label>
+                                  <select
+                                    required
+                                    value={line.aquaculture_expense_category || ''}
+                                    onChange={(e) =>
+                                      handleLineChange(index, 'aquaculture_expense_category', e.target.value)
+                                    }
+                                    className="w-full min-w-0 px-2 py-1 text-sm border border-teal-300 rounded focus:ring-1 focus:ring-teal-500 bg-teal-50/40"
+                                  >
+                                    <option value="">Select category…</option>
+                                    {billExpenseCategories.map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {line.expense_account_id ? (
+                                    <p className="mt-0.5 text-[11px] text-teal-800">
+                                      GL:{' '}
+                                      {formatCoaOptionLabel(
+                                        expenseAccounts.find((a) => a.id === line.expense_account_id) || {
+                                          id: 0,
+                                          account_code: '',
+                                          account_name: '—',
+                                          account_type: 'expense',
+                                        }
+                                      )}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ) : null}
                               <div className="min-w-[10rem] flex-1">
                                 <label className="block text-xs font-medium text-gray-700 mb-1">
                                   Production cycle (optional)
@@ -2536,9 +3113,38 @@ export default function BillsPage() {
                                 </select>
                               </div>
                               <p className="text-xs text-gray-500 flex-1 min-w-[14rem] pb-1">
-                                Tags P&amp;L to this pond when the bill posts. For <strong className="font-medium">fish-type</strong>{' '}
-                                SKUs, choose the nursing or grow-out pond here so fry post into that pond&apos;s
-                                warehouse and fish stock (headcount above), not only the shop receipt station.
+                                Tags P&amp;L to this pond when the bill posts. Choose an expense category to auto-fill
+                                the aquaculture chart account (671x). For <strong className="font-medium">fish-type</strong>{' '}
+                                SKUs, use fry stocking with kg and headcount; feed/medicine use inventory items.
+                              </p>
+                            </div>
+                          ) : null}
+                          {pondSel === '' && billFuelCategories.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-indigo-200 pt-2">
+                              <div className="min-w-[11rem] flex-1">
+                                <label className="block text-xs font-medium text-indigo-900 mb-1">
+                                  Station expense category
+                                </label>
+                                <select
+                                  value={line.fuel_station_expense_category || ''}
+                                  onChange={(e) =>
+                                    handleLineChange(index, 'fuel_station_expense_category', e.target.value)
+                                  }
+                                  className="w-full min-w-0 px-2 py-1 text-sm border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500 bg-indigo-50/40"
+                                >
+                                  <option value="">— Optional —</option>
+                                  {billFuelCategories.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.label}
+                                      {c.tenant_defined ? '' : ' (rollup)'}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <p className="text-xs text-gray-500 flex-1 min-w-[14rem] pb-1">
+                                Tags fuel-station P&amp;L when the bill posts (operating, utilities, maintenance, etc.).
+                                Pick an <strong className="font-medium">Expense account</strong> for the GL debit; category
+                                drives station reports.
                               </p>
                             </div>
                           ) : null}

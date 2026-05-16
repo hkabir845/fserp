@@ -355,6 +355,16 @@ class Item(models.Model):
             "Inventory and POS quantities use `unit` (typically sack); this is for weight hints and reporting."
         ),
     )
+    pieces_per_kg = models.DecimalField(
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text=(
+            "Fish / fry only: how many pieces (heads) make one kilogram (pcs/kg). "
+            "Used on vendor bills to derive weight and headcount from quantity and amount."
+        ),
+    )
     category = models.CharField(
         max_length=100,
         default="General",
@@ -841,6 +851,59 @@ class BankDeposit(models.Model):
         ordering = ["-deposit_date", "-id"]
 
 
+class TenantReportingCategory(models.Model):
+    """
+    Tenant-defined labels/codes for reporting, merged with built-in Aquaculture categories
+    or used as tags (e.g. manual journal lines for fuel-station rollup).
+    """
+
+    APPLICATION_AQUACULTURE = "aquaculture"
+    APPLICATION_FUEL_STATION = "fuel_station"
+    APPLICATION_CHOICES = (
+        (APPLICATION_AQUACULTURE, "Aquaculture"),
+        (APPLICATION_FUEL_STATION, "Fuel station"),
+    )
+    KIND_EXPENSE = "expense"
+    KIND_INCOME = "income"
+    KIND_CHOICES = (
+        (KIND_EXPENSE, "Expense"),
+        (KIND_INCOME, "Income"),
+    )
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="tenant_reporting_categories"
+    )
+    application = models.CharField(max_length=32, choices=APPLICATION_CHOICES, db_index=True)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, db_index=True)
+    code = models.CharField(
+        max_length=64,
+        db_index=True,
+        help_text="Stable key stored on transactions (aquaculture) or shown in pickers.",
+    )
+    label = models.CharField(max_length=200)
+    maps_to_code = models.CharField(
+        max_length=64,
+        help_text="Built-in aquaculture code, or fuel-station rollup key, used for GL / bucket logic.",
+    )
+    is_active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "tenant_reporting_category"
+        ordering = ["application", "kind", "sort_order", "code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "application", "kind", "code"],
+                name="tenant_reporting_cat_company_app_kind_code_uniq",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.company_id}:{self.application}:{self.kind}:{self.code}"
+
+
 class JournalEntry(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="journal_entries")
     entry_number = models.CharField(max_length=64, blank=True)
@@ -899,6 +962,20 @@ class JournalEntryLine(models.Model):
         blank=True,
         db_index=True,
         help_text="Stable cost bucket code (e.g. feed, labor, biological_loss) for reporting joins.",
+    )
+    tenant_reporting_category = models.ForeignKey(
+        "TenantReportingCategory",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="journal_lines",
+        help_text="Optional tenant-defined fuel-station reporting tag on manual journal lines.",
+    )
+    fuel_station_expense_rollup = models.CharField(
+        max_length=64,
+        blank=True,
+        db_index=True,
+        help_text="Built-in fuel-station expense rollup when no tenant_reporting_category FK is set.",
     )
 
     class Meta:
@@ -1114,6 +1191,20 @@ class BillLine(models.Model):
         null=True,
         blank=True,
         help_text="For fish-type items: total headcount on this line (optional).",
+    )
+    fuel_station_expense_category = models.CharField(
+        max_length=64,
+        blank=True,
+        db_index=True,
+        help_text="Fuel-station expense rollup or tenant category code (station P&L on bills).",
+    )
+    tenant_reporting_category = models.ForeignKey(
+        "TenantReportingCategory",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bill_lines",
+        help_text="Resolved tenant fuel-station reporting row when fuel_station_expense_category is custom.",
     )
 
     class Meta:

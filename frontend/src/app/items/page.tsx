@@ -13,6 +13,15 @@ import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
+import {
+  type ItemGlSuggestContext,
+  suggestItemGlAccountIds,
+  suggestedCogsCoaCode,
+  suggestedExpenseCoaCode,
+  suggestedInventoryCoaCode,
+  suggestedRevenueCoaCode,
+  templateDefaultOptionLabel,
+} from '@/lib/itemGlDefaults'
 
 /** API returns decimals as strings; tanks-backed quantity is merged server-side. */
 function parseInventoryQty(raw: unknown): number {
@@ -63,6 +72,26 @@ interface ShopStationRow {
   station_id: number
   station_name: string
   quantity: number
+}
+
+/** Re-open edit: prefer a site that already holds stock (not always the first station in the list). */
+function pickDefaultShopStationRow(
+  rows: ShopStationRow[],
+  userPick: number | null
+): ShopStationRow | undefined {
+  if (!rows.length) return undefined
+  if (userPick != null) {
+    const picked = rows.find((r) => r.station_id === userPick)
+    if (picked) return picked
+  }
+  const withStock = rows.filter((r) => Number(r.quantity) > 0)
+  if (withStock.length === 1) return withStock[0]
+  if (withStock.length > 1) {
+    return withStock.reduce((best, r) =>
+      Number(r.quantity) > Number(best.quantity) ? r : best
+    )
+  }
+  return rows[0]
 }
 
 /** Per-pond fish SKU quantities when the company has aquaculture ponds. */
@@ -141,6 +170,8 @@ interface Item {
   image_url?: string
   /** Labeled kg per selling unit (e.g. kg per sack) when POS category is feed */
   content_weight_kg?: number | string | null
+  /** Fish / fry: pieces (heads) per 1 kg — shown as Line on forms */
+  pieces_per_kg?: number | string | null
   revenue_account_id?: number | null
   cogs_account_id?: number | null
   inventory_account_id?: number | null
@@ -198,6 +229,7 @@ type ItemFormData = {
   category: string
   image_url: string
   content_weight_kg: number | string
+  pieces_per_kg: number | string
   /** Optional GL overrides (empty string = use template defaults) */
   revenue_account_id: string
   cogs_account_id: string
@@ -242,6 +274,7 @@ export default function ItemsPage() {
     category: 'General',
     image_url: '',
     content_weight_kg: '',
+    pieces_per_kg: '',
     revenue_account_id: '',
     cogs_account_id: '',
     inventory_account_id: '',
@@ -315,6 +348,56 @@ export default function ItemsPage() {
     [coaAccounts]
   )
 
+  const itemGlCtx = useMemo<ItemGlSuggestContext>(
+    () => ({
+      pos_category: formData.pos_category,
+      item_type: formData.item_type,
+      category: formData.category,
+      unit: formData.unit,
+      name: formData.name,
+    }),
+    [
+      formData.pos_category,
+      formData.item_type,
+      formData.category,
+      formData.unit,
+      formData.name,
+    ]
+  )
+
+  const mergeItemGlSuggestions = useCallback(
+    (prev: ItemFormData, ctx: ItemGlSuggestContext): ItemFormData => {
+      const s = suggestItemGlAccountIds(ctx, coaAccounts)
+      return {
+        ...prev,
+        revenue_account_id: s.revenue_account_id,
+        cogs_account_id: s.cogs_account_id,
+        inventory_account_id: s.inventory_account_id,
+        expense_account_id: s.expense_account_id,
+      }
+    },
+    [coaAccounts]
+  )
+
+  const glSuggestionsBootstrappedRef = useRef(false)
+
+  /** Fill GL picks once when COA loads on a new item (all four fields still empty). */
+  useEffect(() => {
+    if (!showModal) {
+      glSuggestionsBootstrappedRef.current = false
+      return
+    }
+    if (coaAccounts.length === 0 || glSuggestionsBootstrappedRef.current) return
+    const allEmpty =
+      !formData.revenue_account_id &&
+      !formData.cogs_account_id &&
+      !formData.inventory_account_id &&
+      !formData.expense_account_id
+    glSuggestionsBootstrappedRef.current = true
+    if (!allEmpty) return
+    setFormData((prev) => mergeItemGlSuggestions(prev, itemGlCtx))
+  }, [showModal, coaAccounts, itemGlCtx, mergeItemGlSuggestions, formData.revenue_account_id, formData.cogs_account_id, formData.inventory_account_id, formData.expense_account_id])
+
   /**
    * Opening /items?edit=123 or ?new=1 must hydrate the modal once. The effect also depends on `items`,
    * which refreshes after saves and other updates — re-calling populateEditorFromItem/resetForm would
@@ -324,6 +407,9 @@ export default function ItemsPage() {
   const urlNewHydratedRef = useRef(false)
   /** List row aggregate QOH when opening edit — used if GET /items/:id fails while hydrating multi-site bins. */
   const itemEditAggregateQohRef = useRef(0)
+  /** Preserves shop-location dropdown when async stock hydration completes after user picks a site. */
+  const userPickedShopStationRef = useRef<number | null>(null)
+  const [moveShopStockToSelected, setMoveShopStockToSelected] = useState(false)
 
   /** Default must match SSR; hydrate from localStorage after mount to avoid hydration mismatch. */
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
@@ -423,10 +509,11 @@ export default function ItemsPage() {
    * multi-site bin rules as other inventory on the server (`item_uses_station_bins`).
    */
   useEffect(() => {
-    if (!showModal || !editingId) {
+    if (!showModal) {
       setShopStationRows([])
       setSelectedShopStationId(null)
       setShopStockLoading(false)
+      userPickedShopStationRef.current = null
       return
     }
     const pc = (formData.pos_category || '').toLowerCase()
@@ -480,17 +567,19 @@ export default function ItemsPage() {
         }
 
         let data: { location_stocks?: unknown; quantity_on_hand?: string | number } | null = null
-        try {
-          const r = await api.get(`/items/${editingId}/`, {
-            headers: { Authorization: `Bearer ${token}` },
-          })
-          data = r.data as { location_stocks?: unknown; quantity_on_hand?: string | number }
-        } catch {
-          data = null
+        if (editingId) {
+          try {
+            const r = await api.get(`/items/${editingId}/`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            data = r.data as { location_stocks?: unknown; quantity_on_hand?: string | number }
+          } catch {
+            data = null
+          }
         }
         if (cancel) return
 
-        if (!data) {
+        if (editingId && !data) {
           const qohFallback = itemEditAggregateQohRef.current
           const merged: ShopStationRow[] = active.map(
             (s: { id: number; station_name?: string }, idx: number) => ({
@@ -501,25 +590,28 @@ export default function ItemsPage() {
           )
           if (!cancel) {
             setShopStationRows(merged)
-            const firstId = merged[0]?.station_id ?? null
-            setSelectedShopStationId(firstId)
-            const firstQty = merged[0]?.quantity ?? 0
-            if (firstId != null) {
-              setFormData((prev) => ({ ...prev, quantity_on_hand: firstQty }))
+            const userPick = userPickedShopStationRef.current
+            const target = pickDefaultShopStationRow(merged, userPick)
+            const targetId = target?.station_id ?? null
+            setSelectedShopStationId(targetId)
+            const targetQty = target?.quantity ?? 0
+            if (targetId != null) {
+              setFormData((prev) => ({ ...prev, quantity_on_hand: targetQty }))
             }
             toast.warning(
-              'Could not load per-location stock for this product. Using total quantity on the first site — adjust the location dropdown if needed, then save.'
+              'Could not load per-location stock for this product. Using total quantity on the site with stock (or the first site) — adjust the location dropdown if needed, then save.'
             )
           }
           return
         }
 
-        const hasLocArray = Boolean(
-          data && 'location_stocks' in data && Array.isArray(data.location_stocks)
-        )
-        const loc = hasLocArray
-          ? (data.location_stocks as { station_id?: number; quantity?: string }[])
-          : []
+        const loc =
+          data &&
+          'location_stocks' in data &&
+          Array.isArray(data.location_stocks)
+            ? (data.location_stocks as { station_id?: number; quantity?: string }[])
+            : []
+        const hasLocArray = loc.length > 0
 
         const qtyByStation = new Map<number, number>()
         for (const row of loc) {
@@ -529,7 +621,9 @@ export default function ItemsPage() {
           qtyByStation.set(sid, Number.isFinite(q) ? q : 0)
         }
 
-        const qohTop = parseFloat(String(data?.quantity_on_hand ?? '0').replace(/,/g, ''))
+        const qohTop = editingId
+          ? parseFloat(String(data?.quantity_on_hand ?? '0').replace(/,/g, ''))
+          : Number(formData.quantity_on_hand) || 0
         const useFallbackSplit = !hasLocArray
 
         const merged: ShopStationRow[] = active.map(
@@ -537,19 +631,23 @@ export default function ItemsPage() {
             station_id: s.id,
             station_name: (s.station_name || `Station #${s.id}`).trim(),
             quantity: useFallbackSplit
-              ? idx === 0 && Number.isFinite(qohTop)
-                ? qohTop
-                : 0
+              ? !editingId
+                ? 0
+                : idx === 0 && Number.isFinite(qohTop)
+                  ? qohTop
+                  : 0
               : qtyByStation.get(s.id) ?? 0,
           })
         )
         if (!cancel) {
           setShopStationRows(merged)
-          const firstId = merged[0]?.station_id ?? null
-          setSelectedShopStationId(firstId)
-          const firstQty = merged[0]?.quantity ?? 0
-          if (firstId != null) {
-            setFormData((prev) => ({ ...prev, quantity_on_hand: firstQty }))
+          const userPick = userPickedShopStationRef.current
+          const target = pickDefaultShopStationRow(merged, userPick)
+          const targetId = target?.station_id ?? null
+          setSelectedShopStationId(targetId)
+          const targetQty = target?.quantity ?? 0
+          if (targetId != null && editingId) {
+            setFormData((prev) => ({ ...prev, quantity_on_hand: targetQty }))
           }
         }
       } catch {
@@ -568,6 +666,7 @@ export default function ItemsPage() {
     showModal,
     editingId,
     formData.pos_category,
+    formData.name,
     formData.item_type,
     fuelTanksLoading,
     fuelTanksForProduct.length,
@@ -859,12 +958,16 @@ export default function ItemsPage() {
         return
       }
       if (
-        editingId &&
         isInventory &&
         shopStationRows.length > 1 &&
-        selectedShopStationId == null
+        selectedShopStationId == null &&
+        (editingId || (Number(formData.quantity_on_hand) || 0) > 0)
       ) {
-        toast.error('Select which shop location to update before saving quantity.')
+        toast.error(
+          editingId
+            ? 'Select which shop location to update before saving quantity.'
+            : 'Select which shop location receives this starting stock.'
+        )
         return
       }
       if (
@@ -931,8 +1034,11 @@ export default function ItemsPage() {
       if (editingId && isInventory && fuelTanksForProduct.length > 1) {
         qtyPayload.tank_id = selectedFuelTankId
       }
-      if (editingId && isInventory && shopStationRows.length > 1 && selectedShopStationId != null) {
+      if (isInventory && shopStationRows.length > 1 && selectedShopStationId != null) {
         qtyPayload.station_id = selectedShopStationId
+        if (moveShopStockToSelected) {
+          qtyPayload.move_all_shop_stock = true
+        }
       }
       if (
         isInventory &&
@@ -977,6 +1083,14 @@ export default function ItemsPage() {
                   : formData.content_weight_kg
               )
             : null,
+          pieces_per_kg:
+            isFishPos &&
+            formData.pieces_per_kg !== '' &&
+            formData.pieces_per_kg != null &&
+            Number.isFinite(Number(formData.pieces_per_kg)) &&
+            Number(formData.pieces_per_kg) > 0
+              ? Number(formData.pieces_per_kg)
+              : null,
           revenue_account_id: optionalCoaIdFromForm(formData.revenue_account_id),
           cogs_account_id: optionalCoaIdFromForm(formData.cogs_account_id),
           inventory_account_id: optionalCoaIdFromForm(formData.inventory_account_id),
@@ -1045,6 +1159,12 @@ export default function ItemsPage() {
       image_url: (item as any).image_url || '',
       content_weight_kg: (() => {
         const raw = (item as Item & { content_weight_kg?: unknown }).content_weight_kg
+        if (raw == null || raw === '') return '' as const
+        const n = Number(raw)
+        return Number.isFinite(n) ? n : ('' as const)
+      })(),
+      pieces_per_kg: (() => {
+        const raw = (item as Item & { pieces_per_kg?: unknown }).pieces_per_kg
         if (raw == null || raw === '') return '' as const
         const n = Number(raw)
         return Number.isFinite(n) ? n : ('' as const)
@@ -1124,6 +1244,7 @@ export default function ItemsPage() {
       category: 'General',
       image_url: '',
       content_weight_kg: '',
+      pieces_per_kg: '',
       revenue_account_id: '',
       cogs_account_id: '',
       inventory_account_id: '',
@@ -1132,6 +1253,10 @@ export default function ItemsPage() {
     setImagePreview(null)
     setItemRefCode('')
     setEditingId(null)
+    setShopStationRows([])
+    setSelectedShopStationId(null)
+    setMoveShopStockToSelected(false)
+    userPickedShopStationRef.current = null
   }, [])
 
   useEffect(() => {
@@ -1931,7 +2056,12 @@ export default function ItemsPage() {
                     <select
                       required
                       value={formData.item_type}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, item_type: e.target.value as any }))}
+                      onChange={(e) => {
+                        const item_type = e.target.value as ItemFormData['item_type']
+                        setFormData((prev) =>
+                          mergeItemGlSuggestions({ ...prev, item_type }, { ...itemGlCtx, item_type })
+                        )
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="inventory">Inventory</option>
@@ -1987,13 +2117,18 @@ export default function ItemsPage() {
                       value={formData.pos_category}
                       onChange={(e) => {
                         const v = e.target.value
-                        setFormData((prev) => ({
-                          ...prev,
-                          pos_category: v,
-                          ...(v === 'feed' && prev.unit === 'piece' ? { unit: 'sack' } : {}),
-                          ...(v !== 'feed' ? { content_weight_kg: '' } : {}),
-                          ...(v === 'non_pos' || v === 'fish' ? { is_pos_available: false } : {}),
-                        }))
+                        setFormData((prev) => {
+                          const next = {
+                            ...prev,
+                            pos_category: v,
+                            ...(v === 'feed' && prev.unit === 'piece' ? { unit: 'sack' } : {}),
+                            ...(v !== 'feed' ? { content_weight_kg: '' } : {}),
+                            ...(v !== 'fish' ? { pieces_per_kg: '' } : {}),
+                            ...(v === 'non_pos' || v === 'fish' ? { is_pos_available: false } : {}),
+                            ...(v === 'fish' && prev.unit === 'piece' ? { unit: 'kg' } : {}),
+                          }
+                          return mergeItemGlSuggestions(next, { ...itemGlCtx, pos_category: v })
+                        })
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
@@ -2010,7 +2145,8 @@ export default function ItemsPage() {
                       </option>
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      General and feed items appear in the Cashier retail catalog. Fuel items use the Fuel tab and tanks.
+                      General, feed, and medicine items appear in the Cashier retail catalog. Fuel items use the Fuel tab
+                      and tanks.
                       Fish Type and Non-POS items are excluded from Cashier and per-station shop stock; use vendor bills to
                       record total weight (kg) and headcount on each fish line (both required), and Aquaculture flows to move
                       stock into ponds.
@@ -2088,6 +2224,46 @@ export default function ItemsPage() {
                             kg on hand.
                           </p>
                         )}
+                    </div>
+                  )}
+
+                  {isFishItemForm && (
+                    <div className="col-span-2 rounded-lg border border-sky-200 bg-sky-50/60 p-4 space-y-3">
+                      <h3 className="text-sm font-semibold text-sky-900">Fry / fish stocking line</h3>
+                      <p className="text-xs text-sky-900/80">
+                        <strong>Line</strong> is how many pieces (heads) make one kilogram (pcs/kg). On vendor bills,
+                        enter <strong>total fish (heads)</strong> and line <strong>Amount</strong> — the system fills
+                        Qty (kg), rate per kg, and weight automatically.
+                      </p>
+                      <div>
+                        <label className="block text-sm font-medium text-sky-950 mb-1">
+                          Line (pieces per 1 kg)
+                        </label>
+                        <input
+                          type="number"
+                          min="0.0001"
+                          step="0.0001"
+                          autoComplete="off"
+                          value={formData.pieces_per_kg === '' ? '' : formData.pieces_per_kg}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            if (raw === '') {
+                              setFormData((f) => ({ ...f, pieces_per_kg: '' }))
+                              return
+                            }
+                            const n = parseFloat(raw)
+                            setFormData((f) => ({
+                              ...f,
+                              pieces_per_kg: Number.isFinite(n) ? n : '',
+                            }))
+                          }}
+                          className="w-full max-w-xs px-3 py-2 border border-sky-300 rounded-lg focus:ring-2 focus:ring-sky-500 bg-white"
+                          placeholder="e.g. 400"
+                        />
+                        <p className="mt-1 text-xs text-sky-900/75">
+                          Example: 400 means about 400 fry per kg; 12.5 kg × 400 ≈ 5,000 heads.
+                        </p>
+                      </div>
                     </div>
                   )}
 
@@ -2220,6 +2396,7 @@ export default function ItemsPage() {
                             value={selectedShopStationId ?? ''}
                             onChange={(e) => {
                               const sid = e.target.value ? parseInt(e.target.value, 10) : null
+                              userPickedShopStationRef.current = sid
                               setSelectedShopStationId(sid)
                               const row = shopStationRows.find((r) => r.station_id === sid)
                               if (row) {
@@ -2242,9 +2419,28 @@ export default function ItemsPage() {
                             ))}
                           </select>
                           <p className="mt-1 text-xs text-gray-500">
-                            This company has multiple active stations. Stock is saved for the location you select; total
-                            on the item card is the sum across locations.
+                            Stock is saved for the location you select (when you reopen, the form opens on the site that
+                            already has quantity). Cashier only lists this product at a shop when that location has
+                            quantity on hand. To relocate stock from another site, check the box below.
                           </p>
+                          {shopStationRows.some(
+                            (r) =>
+                              r.station_id !== selectedShopStationId &&
+                              Number(r.quantity) > 0
+                          ) && (
+                            <label className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                              <input
+                                type="checkbox"
+                                className="mt-0.5 rounded border-amber-400"
+                                checked={moveShopStockToSelected}
+                                onChange={(e) => setMoveShopStockToSelected(e.target.checked)}
+                              />
+                              <span>
+                                <span className="font-medium">Move all stock to this location</span> — clears other
+                                shop bins so the product appears in POS only here (recommended when changing sites).
+                              </span>
+                            </label>
+                          )}
                         </div>
                       )}
                       {fuelTanksForProduct.length > 1 && (
@@ -2361,7 +2557,9 @@ export default function ItemsPage() {
                   <div className="col-span-2 border-t border-gray-200 pt-4 mt-2">
                     <h3 className="text-sm font-semibold text-gray-800 mb-1">Chart of accounts (optional)</h3>
                     <p className="text-xs text-gray-500 mb-3">
-                      When set, automatic journals use these accounts instead of fuel-station template codes (4100/4200/5100/1220/6900). Leave blank to keep defaults.
+                      Recommended accounts update when you change <strong className="font-medium">POS category</strong> or{' '}
+                      <strong className="font-medium">item type</strong> (fuel → 4100/5100/1200, shop → 4200/5120/1220,
+                      fish → 424x/1581). Leave on the recommended row to use the template; pick another account to override.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
@@ -2373,7 +2571,12 @@ export default function ItemsPage() {
                             setFormData((prev) => ({ ...prev, revenue_account_id: e.target.value }))
                           }
                         >
-                          <option value="">— Template default —</option>
+                          <option value="">
+                            {templateDefaultOptionLabel(
+                              suggestedRevenueCoaCode(itemGlCtx),
+                              coaAccounts
+                            )}
+                          </option>
                           {incomeCoaOptions.map((a) => (
                             <option key={a.id} value={a.id}>
                               {formatCoaOptionLabel(a)}
@@ -2390,7 +2593,9 @@ export default function ItemsPage() {
                             setFormData((prev) => ({ ...prev, cogs_account_id: e.target.value }))
                           }
                         >
-                          <option value="">— Template default —</option>
+                          <option value="">
+                            {templateDefaultOptionLabel(suggestedCogsCoaCode(itemGlCtx), coaAccounts)}
+                          </option>
                           {cogsCoaOptions.map((a) => (
                             <option key={a.id} value={a.id}>
                               {formatCoaOptionLabel(a)}
@@ -2407,7 +2612,12 @@ export default function ItemsPage() {
                             setFormData((prev) => ({ ...prev, inventory_account_id: e.target.value }))
                           }
                         >
-                          <option value="">— Template default —</option>
+                          <option value="">
+                            {templateDefaultOptionLabel(
+                              suggestedInventoryCoaCode(itemGlCtx),
+                              coaAccounts
+                            )}
+                          </option>
                           {assetCoaOptions.map((a) => (
                             <option key={a.id} value={a.id}>
                               {formatCoaOptionLabel(a)}
@@ -2426,7 +2636,12 @@ export default function ItemsPage() {
                             setFormData((prev) => ({ ...prev, expense_account_id: e.target.value }))
                           }
                         >
-                          <option value="">— Template default —</option>
+                          <option value="">
+                            {templateDefaultOptionLabel(
+                              suggestedExpenseCoaCode(itemGlCtx),
+                              coaAccounts
+                            )}
+                          </option>
                           {expenseCoaOptions.map((a) => (
                             <option key={a.id} value={a.id}>
                               {formatCoaOptionLabel(a)}

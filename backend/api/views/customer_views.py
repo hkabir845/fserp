@@ -2,7 +2,7 @@
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Q, Sum
+from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -13,6 +13,7 @@ from api.models import Customer
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.station_defaults import parse_optional_station_fk
 from api.services.contact_ledgers import build_customer_ledger, ledger_query_dates
+from api.services.payment_allocation import compute_customer_balance_due
 
 
 def _serialize_date(d):
@@ -21,7 +22,9 @@ def _serialize_date(d):
     return d.isoformat() if hasattr(d, "isoformat") else str(d)
 
 
-def _customer_to_json(c):
+def _customer_to_json(c, *, company_id: int | None = None):
+    cid = company_id if company_id is not None else c.company_id
+    balance = compute_customer_balance_due(int(cid), int(c.id))
     return {
         "id": c.id,
         "customer_number": c.customer_number or "",
@@ -40,7 +43,7 @@ def _customer_to_json(c):
         "bank_routing_number": c.bank_routing_number or "",
         "opening_balance": str(c.opening_balance),
         "opening_balance_date": _serialize_date(c.opening_balance_date),
-        "current_balance": str(c.current_balance),
+        "current_balance": str(balance),
         "is_active": c.is_active,
         "default_station_id": c.default_station_id,
         "default_station_name": (
@@ -107,14 +110,19 @@ def _customer_apply_sort(qs, request):
     return qs.order_by(*order)
 
 
-def _customer_list_stats(qs):
+def _customer_list_stats(qs, company_id: int):
     active = qs.filter(is_active=True).count()
-    bal = qs.aggregate(s=Sum("current_balance"))["s"] or Decimal("0")
-    recv = qs.filter(current_balance__gt=0).aggregate(s=Sum("current_balance"))["s"] or Decimal("0")
+    bal = Decimal("0")
+    recv = Decimal("0")
+    for c in qs:
+        b = compute_customer_balance_due(company_id, c.id)
+        bal += b
+        if b > 0:
+            recv += b
     return {
         "active_count": active,
-        "total_balance": str(bal),
-        "total_receivable": str(recv),
+        "total_balance": str(bal.quantize(Decimal("0.01"))),
+        "total_receivable": str(recv.quantize(Decimal("0.01"))),
     }
 
 
@@ -129,10 +137,10 @@ def customers_list(request):
         if wants_paged_response(request):
             skip, limit = parse_skip_limit(request, default_limit=50, max_limit=500)
             total = qs.count()
-            stats = _customer_list_stats(qs)
+            stats = _customer_list_stats(qs, int(request.company_id))
             page = qs[skip : skip + limit]
             return json_paged(
-                [_customer_to_json(c) for c in page],
+                [_customer_to_json(c, company_id=request.company_id) for c in page],
                 total=total,
                 skip=skip,
                 limit=limit,
@@ -141,7 +149,9 @@ def customers_list(request):
         skip = max(0, int(request.GET.get("skip", 0)))
         limit = max(1, int(request.GET.get("limit", 10000)))
         qs = qs[skip : skip + limit]
-        return JsonResponse([_customer_to_json(c) for c in qs], safe=False)
+        return JsonResponse(
+            [_customer_to_json(c, company_id=request.company_id) for c in qs], safe=False
+        )
     if request.method == "POST":
         body, err = parse_json_body(request)
         if err:
@@ -210,7 +220,7 @@ def customers_list(request):
             .select_related("default_station")
             .first()
         )
-        return JsonResponse(_customer_to_json(c2), status=201)
+        return JsonResponse(_customer_to_json(c2, company_id=request.company_id), status=201)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
 
@@ -233,7 +243,9 @@ def customers_add_dummy(request):
         )
         c.save()
         # Frontend expects an array (e.g. for "Added N dummy customers")
-        return JsonResponse([_customer_to_json(c)], status=201, safe=False)
+        return JsonResponse(
+            [_customer_to_json(c, company_id=request.company_id)], status=201, safe=False
+        )
     except Exception as e:
         return JsonResponse(
             {"detail": "Failed to add dummy customer", "error": str(e)},
@@ -253,7 +265,7 @@ def customer_detail(request, customer_id: int):
     if not c:
         return JsonResponse({"detail": "Customer not found"}, status=404)
     if request.method == "GET":
-        return JsonResponse(_customer_to_json(c))
+        return JsonResponse(_customer_to_json(c, company_id=request.company_id))
     if request.method == "PUT":
         body, err = parse_json_body(request)
         if err:
@@ -307,7 +319,7 @@ def customer_detail(request, customer_id: int):
             .select_related("default_station")
             .first()
         )
-        return JsonResponse(_customer_to_json(c))
+        return JsonResponse(_customer_to_json(c, company_id=request.company_id))
     if request.method == "DELETE":
         c.delete()
         return JsonResponse({"detail": "Deleted"}, status=200)

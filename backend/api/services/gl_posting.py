@@ -142,6 +142,36 @@ def _journal_line_aquaculture_kwargs(company_id: int, meta: dict | None) -> dict
     return out
 
 
+def _journal_line_fuel_station_kwargs(company_id: int, meta: dict | None) -> dict[str, Any]:
+    """Optional fuel-station reporting tag on journal lines (from vendor bills or manual entry)."""
+    if not meta:
+        return {}
+    from api.services.tenant_reporting_categories import (
+        FUEL_STATION_EXPENSE_MAP_CODES,
+        fuel_station_reporting_category_for_journal,
+    )
+
+    out: dict[str, Any] = {}
+    trc_id = meta.get("tenant_reporting_category_id")
+    if trc_id is not None:
+        try:
+            tid = int(trc_id)
+        except (TypeError, ValueError):
+            tid = 0
+        if tid > 0 and fuel_station_reporting_category_for_journal(company_id, tid):
+            out["tenant_reporting_category_id"] = tid
+    rollup = str(meta.get("fuel_station_expense_rollup") or "").strip()
+    if rollup and rollup in FUEL_STATION_EXPENSE_MAP_CODES:
+        out["fuel_station_expense_rollup"] = rollup[:64]
+    return out
+
+
+def _journal_line_bill_meta_kwargs(company_id: int, meta: dict | None) -> dict[str, Any]:
+    if not meta:
+        return {}
+    return {**_journal_line_aquaculture_kwargs(company_id, meta), **_journal_line_fuel_station_kwargs(company_id, meta)}
+
+
 def _unpack_gl_line(
     line: tuple,
 ) -> tuple[ChartOfAccount, Decimal, Decimal, str, Optional[int], bool]:
@@ -559,7 +589,7 @@ def _build_revenue_splits(company_id: int, inv: Invoice) -> dict[int, Decimal]:
     amounts: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     aq_sale = AquacultureFishSale.objects.filter(invoice_id=inv.id).only("income_type").first()
     if aq_sale is not None:
-        code = coa_account_code_for_aquaculture_income_type(aq_sale.income_type)
+        code = coa_account_code_for_aquaculture_income_type(aq_sale.income_type, company_id=company_id)
         acc = _coa(company_id, code)
         sub = inv.subtotal or Decimal("0")
         if acc and sub > 0:
@@ -651,7 +681,7 @@ def _create_posted_entry(
             else:
                 line_st = hdr
             aq_meta = meta_list[i] if i < len(meta_list) else None
-            aq_kw = _journal_line_aquaculture_kwargs(company_id, aq_meta)
+            aq_kw = _journal_line_bill_meta_kwargs(company_id, aq_meta)
             JournalEntryLine.objects.create(
                 journal_entry=je,
                 account=acc,
@@ -798,7 +828,9 @@ def post_aquaculture_shop_stock_issue_journal(
         aq_meta = {
             "pond_id": exp_row.pond_id,
             "production_cycle_id": exp_row.production_cycle_id,
-            "cost_bucket": aquaculture_expense_category_to_cost_bucket(exp_row.expense_category),
+            "cost_bucket": aquaculture_expense_category_to_cost_bucket(
+                exp_row.expense_category, company_id=company_id
+            ),
         }
     for (cogs_id, inv_id), amt in buckets.items():
         cogs = ChartOfAccount.objects.filter(
@@ -889,7 +921,9 @@ def post_aquaculture_pond_feed_consumption_journal(
         aq_meta = {
             "pond_id": exp_row.pond_id,
             "production_cycle_id": exp_row.production_cycle_id,
-            "cost_bucket": aquaculture_expense_category_to_cost_bucket(exp_row.expense_category),
+            "cost_bucket": aquaculture_expense_category_to_cost_bucket(
+                exp_row.expense_category, company_id=company_id
+            ),
         }
     for (cogs_id, inv_id), amt in buckets.items():
         cogs = ChartOfAccount.objects.filter(
@@ -1613,6 +1647,29 @@ def try_apply_bill_stock_receipt(
             Bill.objects.filter(pk=bill.pk).update(stock_receipt_applied=True)
 
 
+def _bill_line_fuel_station_meta(company_id: int, line: BillLine) -> Optional[dict]:
+    """Maps optional bill line fuel-station category to journal reporting tags."""
+    if getattr(line, "aquaculture_pond_id", None):
+        return None
+    trc_id = getattr(line, "tenant_reporting_category_id", None)
+    code = (getattr(line, "fuel_station_expense_category", None) or "").strip()
+    if not trc_id and not code:
+        return None
+    from api.services.tenant_reporting_categories import (
+        FUEL_STATION_EXPENSE_MAP_CODES,
+        fuel_station_reporting_category_for_journal,
+    )
+
+    meta: dict[str, Any] = {}
+    if trc_id and fuel_station_reporting_category_for_journal(company_id, int(trc_id)):
+        meta["tenant_reporting_category_id"] = int(trc_id)
+    elif code in FUEL_STATION_EXPENSE_MAP_CODES:
+        meta["fuel_station_expense_rollup"] = code
+    elif code:
+        meta["fuel_station_expense_rollup"] = code
+    return meta or None
+
+
 def _bill_line_aquaculture_meta(company_id: int, line: BillLine) -> Optional[dict]:
     """Maps optional bill line pond/cycle/bucket to journal line aquaculture costing (validated)."""
     if not getattr(line, "aquaculture_pond_id", None):
@@ -1695,13 +1752,19 @@ def _build_bill_journal_lines(
     vendor = Vendor.objects.filter(pk=bill.vendor_id).first() if bill.vendor_id else None
 
     lines_qs = BillLine.objects.filter(bill_id=bill.id).select_related(
-        "item", "aquaculture_pond", "aquaculture_production_cycle", "expense_account"
+        "item",
+        "aquaculture_pond",
+        "aquaculture_production_cycle",
+        "expense_account",
+        "tenant_reporting_category",
     )
     for line in lines_qs:
         amt = line.amount if line.amount is not None else Decimal("0")
         if amt <= 0:
             continue
-        meta = _bill_line_aquaculture_meta(company_id, line)
+        meta = _bill_line_aquaculture_meta(company_id, line) or _bill_line_fuel_station_meta(
+            company_id, line
+        )
         desc_base = (line.description or "").strip()
         memo = (
             f"{bill.bill_number} — {desc_base}"[:300] if desc_base else (bill.bill_number or "")[:300]
@@ -1860,14 +1923,21 @@ def _invoice_unrecord_shift_params(company_id: int, inv: Invoice) -> tuple[Decim
     return total, "card", None
 
 
-def cleanup_invoice_posting_effects(company_id: int, inv: Invoice) -> tuple[bool, str]:
+def rollback_invoice_posting_effects(
+    company_id: int,
+    inv: Invoice,
+    *,
+    purge_linked_payments: bool = False,
+) -> tuple[bool, str]:
     """
-    Before deleting an invoice (manual or POS): reverse subledger/shift/POS stock effects and remove
-    AUTO-INV-* journals. Customer payments that also apply to other invoices, or receipts already bank-deposited,
-    block deletion (same spirit as vendor bills). Aquaculture-linked revenue uses the same journals; pond
-    operating costs with inventory use ``cleanup_aquaculture_expense_posting_effects`` on expense delete.
+    Reverse invoice GL (AUTO-INV-*), POS/shift totals, and fuel/POS stock effects.
+
+    When ``purge_linked_payments`` is True (delete), linked customer receipts are reversed and removed
+    unless blocked by bank deposit or multi-invoice allocation. When False (material edit), payments
+    are left in place; callers must still pass ``assert_invoice_change_allowed`` first.
     """
     inv_id = int(inv.id)
+    action = "delete" if purge_linked_payments else "change"
     with transaction.atomic():
         locked = (
             Invoice.objects.select_for_update()
@@ -1891,14 +1961,14 @@ def cleanup_invoice_posting_effects(company_id: int, inv: Invoice) -> tuple[bool
             if getattr(p, "bank_deposit_id", None):
                 return (
                     False,
-                    "Cannot delete this invoice: a linked customer receipt was included in a bank deposit. "
+                    f"Cannot {action} this invoice: a linked customer receipt was included in a bank deposit. "
                     "Remove that receipt from the deposit first.",
                 )
             other = PaymentInvoiceAllocation.objects.filter(payment_id=p.id).exclude(invoice_id=inv_id)
             if other.exists():
                 return (
                     False,
-                    "Cannot delete this invoice while customer payments are applied to other invoices. "
+                    f"Cannot {action} this invoice while customer payments are applied to other invoices. "
                     "Remove or reallocate those payments in Payments first.",
                 )
 
@@ -1913,15 +1983,16 @@ def cleanup_invoice_posting_effects(company_id: int, inv: Invoice) -> tuple[bool
                 cash_tender_amount=shift_cash_tender,
             )
 
-        for p in sorted(pay_by_id.values(), key=lambda x: x.id):
-            ok_rev, rerr = reverse_payment_received_posting(company_id, p)
-            if not ok_rev:
-                return (
-                    False,
-                    (rerr or "Could not reverse a linked payment").strip()
-                    + " Remove the payment in Payments before deleting this invoice.",
-                )
-            p.delete()
+        if purge_linked_payments:
+            for p in sorted(pay_by_id.values(), key=lambda x: x.id):
+                ok_rev, rerr = reverse_payment_received_posting(company_id, p)
+                if not ok_rev:
+                    return (
+                        False,
+                        (rerr or "Could not reverse a linked payment").strip()
+                        + " Remove the payment in Payments before deleting this invoice.",
+                    )
+                p.delete()
 
         for line in (
             InvoiceLine.objects.filter(invoice_id=inv_id)
@@ -1998,6 +2069,15 @@ def cleanup_invoice_posting_effects(company_id: int, inv: Invoice) -> tuple[bool
         ).delete()
 
     return True, ""
+
+
+def cleanup_invoice_posting_effects(company_id: int, inv: Invoice) -> tuple[bool, str]:
+    """
+    Before deleting an invoice (manual or POS): full rollback including linked payments when safe.
+    Aquaculture pond sales use the same AUTO-INV journals; pond inventory expenses use
+    ``cleanup_aquaculture_expense_posting_effects``.
+    """
+    return rollback_invoice_posting_effects(company_id, inv, purge_linked_payments=True)
 
 
 def sync_posted_vendor_bill(

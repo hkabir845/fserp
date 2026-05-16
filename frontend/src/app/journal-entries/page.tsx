@@ -65,6 +65,20 @@ type LineForm = Omit<
   | 'station_id'
 > & { station_id?: number | '' }
 
+/** Resolve per-line site at save: line override, else entry default, else untagged. */
+function resolveJournalLineStationId(
+  lineStationId: number | '' | null | undefined,
+  entryStationId: number | '' | null | undefined
+): number | null {
+  if (lineStationId !== '' && lineStationId != null) {
+    return Number(lineStationId)
+  }
+  if (entryStationId !== '' && entryStationId != null) {
+    return Number(entryStationId)
+  }
+  return null
+}
+
 export default function JournalEntriesPage() {
   const router = useRouter()
   const toast = useToast()
@@ -392,23 +406,16 @@ export default function JournalEntriesPage() {
         entry_date: formData.entry_date,
         reference: formData.reference || null,
         description: formData.description || null,
-        lines: linesToSubmit.map((line) => {
-          const row: Record<string, unknown> = {
-            line_number: line.line_number,
-            description: line.description || null,
-            debit_account_id: line.debit_account_id || null,
-            credit_account_id: line.credit_account_id || null,
-            amount: Number(line.amount),
-          }
-          if (line.station_id !== '' && line.station_id != null) {
-            row.station_id = Number(line.station_id)
-          }
-          return row
-        }),
+        lines: linesToSubmit.map((line) => ({
+          line_number: line.line_number,
+          description: line.description || null,
+          debit_account_id: line.debit_account_id || null,
+          credit_account_id: line.credit_account_id || null,
+          amount: Number(line.amount),
+          station_id: resolveJournalLineStationId(line.station_id, formData.station_id),
+        })),
       }
-      if (formData.station_id !== '') {
-        body.station_id = Number(formData.station_id)
-      }
+      body.station_id = formData.station_id === '' ? null : Number(formData.station_id)
       await api.post('/journal-entries/', body)
       toast.success('Journal entry created successfully!')
       setShowModal(false)
@@ -426,20 +433,27 @@ export default function JournalEntriesPage() {
       return
     }
     setEditingEntry(entry)
+    const entryStationId =
+      entry.station_id != null && entry.station_id !== undefined ? Number(entry.station_id) : ''
     setFormData({
       entry_date: entry.entry_date.split('T')[0],
       reference: entry.reference || '',
       description: entry.description || '',
-      station_id: entry.station_id != null && entry.station_id !== undefined ? Number(entry.station_id) : '',
-      lines: entry.lines.map((line) => ({
-        line_number: line.line_number,
-        description: line.description || '',
-        debit_account_id: line.debit_account_id || null,
-        credit_account_id: line.credit_account_id || null,
-        amount: Number(line.amount),
-        station_id:
-          line.station_id != null && line.station_id !== undefined ? Number(line.station_id) : '',
-      })),
+      station_id: entryStationId,
+      lines: entry.lines.map((line) => {
+        const lineStationId =
+          line.station_id != null && line.station_id !== undefined ? Number(line.station_id) : ''
+        const matchesEntryDefault =
+          entryStationId !== '' && lineStationId !== '' && lineStationId === entryStationId
+        return {
+          line_number: line.line_number,
+          description: line.description || '',
+          debit_account_id: line.debit_account_id || null,
+          credit_account_id: line.credit_account_id || null,
+          amount: Number(line.amount),
+          station_id: matchesEntryDefault ? '' : lineStationId,
+        }
+      }),
     })
     setShowModal(true)
   }
@@ -467,19 +481,14 @@ export default function JournalEntriesPage() {
         entry_date: formData.entry_date,
         reference: formData.reference || null,
         description: formData.description || null,
-        lines: linesToSubmit.map((line) => {
-          const row: Record<string, unknown> = {
-            line_number: line.line_number,
-            description: line.description || null,
-            debit_account_id: line.debit_account_id || null,
-            credit_account_id: line.credit_account_id || null,
-            amount: Number(line.amount),
-          }
-          if (line.station_id !== '' && line.station_id != null) {
-            row.station_id = Number(line.station_id)
-          }
-          return row
-        }),
+        lines: linesToSubmit.map((line) => ({
+          line_number: line.line_number,
+          description: line.description || null,
+          debit_account_id: line.debit_account_id || null,
+          credit_account_id: line.credit_account_id || null,
+          amount: Number(line.amount),
+          station_id: resolveJournalLineStationId(line.station_id, formData.station_id),
+        })),
       }
       body.station_id = formData.station_id === '' ? null : Number(formData.station_id)
       await api.put(`/journal-entries/${editingEntry.id}/`, body)
@@ -1060,7 +1069,7 @@ export default function JournalEntriesPage() {
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Company-wide / untagged</option>
+                      <option value="">— Not set —</option>
                       {stations.map((s) => (
                         <option key={s.id} value={String(s.id)}>
                           {s.station_name}
@@ -1180,7 +1189,7 @@ export default function JournalEntriesPage() {
                                 }
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                               >
-                                <option value="">Use default</option>
+                                <option value="">— Not set —</option>
                                 {stations.map((s) => (
                                   <option key={s.id} value={String(s.id)}>
                                     {s.station_name}

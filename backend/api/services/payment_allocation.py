@@ -69,6 +69,8 @@ def invoice_open_amount(inv: Invoice, company_id: int) -> Decimal:
     """Remaining invoice total not covered by payment allocations."""
     if inv.status == "draft":
         return Decimal("0")
+    if inv.status == "paid":
+        return Decimal("0")
     total = inv.total or Decimal("0")
     paid = total_allocated_for_invoice(inv, company_id)
     return max(Decimal("0"), total - paid)
@@ -183,6 +185,30 @@ def refresh_invoices_touched_by_payment(company_id: int, payment_id: int) -> Non
         inv = Invoice.objects.filter(id=iid, company_id=company_id).first()
         if inv:
             refresh_invoice_from_allocations(inv, company_id)
+
+
+def compute_customer_balance_due(company_id: int, customer_id: int) -> Decimal:
+    """
+    Amount the customer owes (A/R): opening_balance plus unpaid invoice balances.
+    Paid invoices (including immediate cash POS) contribute zero open amount.
+    """
+    c = Customer.objects.filter(pk=customer_id, company_id=company_id).first()
+    if not c or _is_walkin_customer(c):
+        return Decimal("0")
+    owed = Decimal("0")
+    for inv in Invoice.objects.filter(company_id=company_id, customer_id=customer_id).exclude(
+        status="draft"
+    ):
+        owed += invoice_balance_due(inv, company_id)
+    opening = c.opening_balance or Decimal("0")
+    balance = opening + owed
+    if balance <= 0 and opening == 0:
+        stored = c.current_balance or Decimal("0")
+        if stored > 0:
+            return stored.quantize(Decimal("0.01"))
+    if balance < 0:
+        balance = Decimal("0")
+    return balance.quantize(Decimal("0.01"))
 
 
 def compute_vendor_balance_due(company_id: int, vendor_id: int) -> Decimal:

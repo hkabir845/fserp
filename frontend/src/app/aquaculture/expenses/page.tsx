@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BookOpen, Edit2, Package, Plus, RefreshCw, Store, Trash2 } from 'lucide-react'
+import { BookOpen, Edit2, FileText, Package, RefreshCw, Store, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -107,6 +107,7 @@ type CostMode = 'direct' | 'shared_equal' | 'shared_manual'
 
 export default function AquacultureExpensesPage() {
   const toast = useToast()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const [ponds, setPonds] = useState<Pond[]>([])
   const [cats, setCats] = useState<Cat[]>([])
@@ -600,7 +601,9 @@ export default function AquacultureExpensesPage() {
           <h1 id="aq-expenses-title" className="mt-1 text-xl font-bold tracking-tight text-slate-900">
             Pond costs
           </h1>
-          <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-slate-500">Operating expenses</p>
+          <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+            Record on vendor bills (posted to GL)
+          </p>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
             <span className="font-medium text-slate-800">Shop inventory (feed sacks, medicine SKUs):</span> ring them
             out on <Link href="/cashier" className="font-medium text-teal-800 underline">Cashier (POS)</Link> on account
@@ -613,8 +616,25 @@ export default function AquacultureExpensesPage() {
             in the pond are tracked under{' '}
             <Link href="/aquaculture/stock" className="font-medium text-teal-800 underline">Pond stock</Link> and{' '}
             <Link href="/aquaculture/sales" className="font-medium text-teal-800 underline">Pond &amp; fish sales</Link>, not here.{' '}
-            <span className="font-medium text-slate-800">This screen</span> is for operating costs paid in cash, shared
-            splits, and management categories (lease, power, labour, soil cut, pond prep, transport, etc.).{' '}
+            <span className="font-medium text-slate-800">Record new costs</span> on{' '}
+            <Link href="/bills" className="font-medium text-teal-800 underline">
+              Vendor bills
+            </Link>
+            : tag the pond, pick an expense category (chart account 671x is suggested), post the bill, then pay from{' '}
+            <Link href="/payments" className="font-medium text-teal-800 underline">
+              Payments
+            </Link>
+            .{' '}
+            <span className="font-medium text-slate-800">Lease payments to landlords</span> belong under{' '}
+            <Link href="/aquaculture/landlords" className="font-medium text-teal-800 underline">
+              Landlords
+            </Link>{' '}
+            (register + pond allocation).{' '}
+            <span className="font-medium text-slate-800">Payroll wages</span> belong in{' '}
+            <Link href="/payroll" className="font-medium text-teal-800 underline">
+              Payroll
+            </Link>{' '}
+            with optional pond splits when you post—avoid duplicating those amounts here.{' '}
             <span className="font-medium text-slate-800">Feed and medicine inventory</span> are not added with{' '}
             <span className="font-medium text-slate-800">Add expense</span>—use Bills, POS on account, or{' '}
             <span className="font-medium text-slate-800">Advanced: internal stock issue</span> below (sacks/kg there for
@@ -652,12 +672,18 @@ export default function AquacultureExpensesPage() {
           </button>
           <button
             type="button"
-            onClick={openNew}
+            onClick={() => {
+              const q = new URLSearchParams()
+              q.set('new', '1')
+              if (filterPond) q.set('pond_id', filterPond)
+              q.set('expense_category', 'other')
+              router.push(`/bills?${q.toString()}`)
+            }}
             disabled={loading || ponds.length === 0}
             className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Plus className="h-4 w-4" />
-            Add expense
+            <FileText className="h-4 w-4" />
+            Record vendor bill
           </button>
         </div>
       </div>
@@ -666,28 +692,15 @@ export default function AquacultureExpensesPage() {
         <div className="flex gap-2">
           <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-indigo-700" aria-hidden />
           <div>
-            <p className="font-semibold text-indigo-950">How this relates to accounting</p>
+            <p className="font-semibold text-indigo-950">Bills-first accounting</p>
             <p className="mt-1 leading-relaxed text-indigo-950/95">
-              <strong className="text-indigo-950">Add expense</strong> rows here are for{' '}
-              <strong className="text-indigo-950">pond management P&amp;L</strong> (category, pond, memo).               The category
-              list is limited to pond operating costs (not fry, feed/medicine purchases, consumption, or bill roll-ups).
-              This form does not pick chart-of-account
-              lines and does <strong className="text-indigo-950">not</strong> create{' '}
-              <strong className="text-indigo-950">Payments</strong> entries. For the general ledger—vendor AP, bank
-              outflows, COGS from stock—use{' '}
-              <Link href="/bills" className="font-medium text-indigo-900 underline decoration-indigo-400/60 underline-offset-2">
-                Bills
-              </Link>
-              {' '}(with pond tags on lines when needed),{' '}
-              <Link href="/payments" className="font-medium text-indigo-900 underline decoration-indigo-400/60 underline-offset-2">
-                Payments
-              </Link>
-              , <Link href="/cashier" className="font-medium text-indigo-900 underline decoration-indigo-400/60 underline-offset-2">Cashier</Link>,{' '}
-              <strong className="text-indigo-950">internal shop issue</strong> below, or{' '}
-              <Link href="/journal-entries" className="font-medium text-indigo-900 underline decoration-indigo-400/60 underline-offset-2">
-                Journal entries
-              </Link>
-              . Do not duplicate the same purchase as both a posted bill line and a manual line here.
+              New pond operating costs are recorded on <strong className="text-indigo-950">Vendor bills</strong> (pond tag
+              + expense category → automatic 671x chart account). After posting, use{' '}
+              <strong className="text-indigo-950">Payments</strong> for bank/cash. The table below shows{' '}
+              <strong className="text-indigo-950">legacy manual rows</strong> and automated shop/warehouse entries only —
+              do not add new manual lines here. Lease → <Link href="/aquaculture/landlords" className="underline">Landlords</Link>;
+              wages → <Link href="/payroll" className="underline">Payroll</Link>; feed/medicine stock → Bills,{' '}
+              <Link href="/cashier" className="underline">Cashier</Link>, or internal shop issue below.
             </p>
           </div>
         </div>

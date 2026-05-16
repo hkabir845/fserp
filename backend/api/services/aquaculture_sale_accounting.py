@@ -16,12 +16,12 @@ from django.db.models import Sum
 from api.models import AquacultureFishSale, ChartOfAccount, Customer, Invoice, InvoiceLine
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 from api.services.aquaculture_constants import (
-    INCOME_TYPE_LABELS,
     coa_account_code_for_aquaculture_income_type,
     fish_species_display_label,
 )
 from api.services.gl_posting import sync_invoice_gl
 from api.services.invoice_station import resolve_station_id_for_new_invoice
+from api.services.tenant_reporting_categories import aquaculture_income_label
 def _get_or_create_walkin_customer(company_id: int) -> Customer:
     c = Customer.objects.filter(
         company_id=company_id,
@@ -48,7 +48,7 @@ def _is_walkin_customer(cust: Customer | None) -> bool:
 
 def _build_sale_line_description(sale: AquacultureFishSale) -> str:
     pond = (sale.pond.name or "").strip() if getattr(sale, "pond_id", None) else ""
-    income_l = INCOME_TYPE_LABELS.get(sale.income_type, sale.income_type)
+    income_l = aquaculture_income_label(sale.company_id, sale.income_type)
     species = fish_species_display_label(sale.fish_species, sale.fish_species_other)
     parts = ["Aquaculture pond sale", income_l]
     if pond:
@@ -107,7 +107,7 @@ def finalize_aquaculture_fish_sale_to_invoice(
             return None, None, "total_amount must be greater than zero to post"
 
         ensure_aquaculture_chart_accounts(company_id)
-        rev_code = coa_account_code_for_aquaculture_income_type(sale.income_type)
+        rev_code = coa_account_code_for_aquaculture_income_type(sale.income_type, company_id=company_id)
         if not ChartOfAccount.objects.filter(
             company_id=company_id, account_code=rev_code, is_active=True
         ).exists():

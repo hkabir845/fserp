@@ -85,6 +85,36 @@ def user_admin(db, company_tenant):
 
 
 @pytest.fixture
+def user_accountant(db, company_tenant):
+    from api.models import User
+
+    u = User(
+        username="audit_accountant@test.com",
+        email="audit_accountant@test.com",
+        full_name="Audit Accountant",
+        role="accountant",
+        is_active=True,
+        company_id=company_tenant.id,
+    )
+    u.set_password("AuditTest#99")
+    u.save()
+    return u
+
+
+@pytest.fixture
+def auth_accountant_headers(api_client, user_accountant):
+    r = api_client.post(
+        "/api/auth/login/",
+        data=json.dumps({"username": user_accountant.username, "password": "AuditTest#99"}),
+        content_type="application/json",
+    )
+    assert r.status_code == 200, r.content.decode()
+    data = json.loads(r.content)
+    token = data["access_token"]
+    return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+
+@pytest.fixture
 def auth_super_headers(api_client, user_super):
     r = api_client.post(
         "/api/auth/login/",

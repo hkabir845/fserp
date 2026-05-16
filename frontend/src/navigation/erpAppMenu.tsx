@@ -25,6 +25,7 @@ import {
   Database,
   Shield,
   ArrowRightLeft,
+  Tags,
 } from 'lucide-react'
 
 import { getAquacultureMenuItemsFlatWithGroup } from '@/navigation/aquacultureNavConfig'
@@ -39,7 +40,7 @@ export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
   sales: 'sales customer vendor ar ap invoice bill payment receivable payable',
   inventory: 'inventory product item stock sku shop c-store',
   hr: 'hr human resources employee payroll staff',
-  management: 'management company settings subscription user roles access rbac tax admin backup restore',
+  management: 'management company settings subscription user roles access rbac tax admin backup restore reporting categories tenant labels',
   reports: 'reports analytics export print',
   aquaculture:
     'aquaculture dashboard pond cycle crop production fish farm biomass sampling feeding advice tilapia worldfish ration pl profit lease feed fry pos customer cashier inventory nursing transfer grow-out mortality stock ledger pond warehouse supplies medicine snake bird predation site gl fuel shop landlord rent lessor pond fish sales harvest revenue pond costs operating expenses',
@@ -128,6 +129,7 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   '/roles': ['app.roles'],
   '/tax': ['app.settings'],
   '/backup': ['app.backup'],
+  '/reporting-categories': ['app.settings'],
   '/reports': ['app.reports'],
   '/reports/analytics': ['app.reports'],
   '/aquaculture': ['app.aquaculture'],
@@ -216,6 +218,13 @@ export function getFsmsErpMenuItems(): ErpAppMenuItem[] {
     { href: '/users', label: 'Users', section: 'management', icon: Users, tileClass: tile('bg-zinc-100', 'text-zinc-600') },
     { href: '/roles', label: 'Roles & access', section: 'management', icon: Shield, tileClass: tile('bg-indigo-100', 'text-indigo-700') },
     { href: '/tax', label: 'Tax', section: 'management', icon: Receipt, tileClass: tile('bg-stone-100', 'text-stone-600') },
+    {
+      href: '/reporting-categories',
+      label: 'Reporting categories',
+      section: 'management',
+      icon: Tags,
+      tileClass: tile('bg-sky-100', 'text-sky-800'),
+    },
     { href: '/backup', label: 'Backup & Restore', section: 'management', icon: Database, tileClass: tile('bg-neutral-100', 'text-neutral-600') },
 
     { href: '/reports', label: 'Reports', section: 'reports', icon: BarChart3, tileClass: tile('bg-violet-100', 'text-violet-600') },

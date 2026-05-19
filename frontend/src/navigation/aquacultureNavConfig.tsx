@@ -71,7 +71,12 @@ export const AQUACULTURE_NAV_GROUPS: AquacultureNavGroup[] = [
     description: 'Sales, costs, and allocated P&L',
     items: [
       { href: '/aquaculture/sales', label: 'Pond & fish sales', icon: DollarSign },
-      { href: '/aquaculture/expenses', label: 'Pond costs', icon: Wallet },
+      {
+        href: '/aquaculture/expenses',
+        label: 'Pond costs (legacy)',
+        sidebarLabel: 'Pond costs',
+        icon: Wallet,
+      },
       {
         href: '/aquaculture/report',
         label: 'P&L: site & ponds',

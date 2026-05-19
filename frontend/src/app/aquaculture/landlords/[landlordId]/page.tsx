@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Landmark, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
+import { formatBankRegisterLabel, normalizeBankAccountsFromApi } from '@/lib/bankAccountDisplay'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
@@ -47,10 +48,11 @@ interface LedgerRow {
   journal_entry_number?: string
 }
 
-interface BankOpt {
+type BankOpt = {
   id: number
-  account_name: string
+  account_name?: string
   bank_name?: string
+  chart_account_code?: string | null
 }
 
 interface StationOpt {
@@ -197,7 +199,7 @@ export default function LandlordDetailPage() {
         const [b, s] = await Promise.all([api.get<unknown>('/bank-accounts/'), api.get<unknown>('/stations/')])
         const br = b.data
         const sr = s.data
-        setBanks(Array.isArray(br) ? (br as BankOpt[]) : [])
+        setBanks(normalizeBankAccountsFromApi(br))
         setStations(Array.isArray(sr) ? (sr as StationOpt[]) : [])
       } catch {
         setBanks([])
@@ -796,8 +798,7 @@ export default function LandlordDetailPage() {
                     <option value="">— subledger only, no journal —</option>
                     {banks.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {(b.account_name || '').trim() || `Register #${b.id}`}
-                        {b.bank_name ? ` — ${b.bank_name}` : ''}
+                        {formatBankRegisterLabel(b)}
                       </option>
                     ))}
                   </select>
@@ -1063,7 +1064,7 @@ export default function LandlordDetailPage() {
                       <option value="">— none —</option>
                       {banks.map((b) => (
                         <option key={b.id} value={b.id}>
-                          {(b.account_name || '').trim() || `Register #${b.id}`}
+                          {formatBankRegisterLabel(b)}
                         </option>
                       ))}
                     </select>

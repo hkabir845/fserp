@@ -97,6 +97,17 @@ interface AccountStatement {
   filter_station_id?: number
 }
 
+type StatementPeriodMode = 'all' | 'range'
+
+function formatStatementPeriodLabel(period: { start_date: string; end_date: string }): string {
+  const start = period.start_date?.trim()
+  const end = period.end_date?.trim()
+  if (start && end) {
+    return `${formatDateOnly(start)} – ${formatDateOnly(end)}`
+  }
+  return 'All dates'
+}
+
 // Account types
 const ACCOUNT_TYPES = [
   { value: 'asset', label: 'Asset' },
@@ -262,12 +273,10 @@ function mapStatementApiToView(
   }
 
   const periodObj = data.period as { start_date?: string; end_date?: string } | undefined
-  const start =
-    periodObj?.start_date ??
-    (data.start_date as string | null | undefined) ??
-    fallbackPeriod.start
-  const end =
-    periodObj?.end_date ?? (data.end_date as string | null | undefined) ?? fallbackPeriod.end
+  const apiStart = periodObj?.start_date ?? (data.start_date as string | null | undefined)
+  const apiEnd = periodObj?.end_date ?? (data.end_date as string | null | undefined)
+  const start = apiStart != null && String(apiStart).trim() !== '' ? String(apiStart) : fallbackPeriod.start
+  const end = apiEnd != null && String(apiEnd).trim() !== '' ? String(apiEnd) : fallbackPeriod.end
 
   const rawFid = data.filter_station_id
   const filterStationId =
@@ -363,6 +372,7 @@ export default function ChartOfAccountsPage() {
   const [statementPrintBranding, setStatementPrintBranding] = useState<PrintBranding | null>(null)
   const [statementStartDate, setStatementStartDate] = useState<string>('')
   const [statementEndDate, setStatementEndDate] = useState<string>('')
+  const [statementPeriodMode, setStatementPeriodMode] = useState<StatementPeriodMode>('range')
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
 
   /** Built-in fuel retail COA template (metadata from API). */
@@ -768,20 +778,27 @@ export default function ChartOfAccountsPage() {
     }
   }, [unlinkedBanks.length, selectedCompany?.id])
   
-  const fetchStatement = async (accountId: number) => {
+  const fetchStatement = async (accountId: number, periodMode = statementPeriodMode) => {
     try {
       setStatementLoading(true)
       setStatementAccountId(accountId)
-      
-      // Set default date range (current month)
-      const today = new Date()
-      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
-      const startDate = statementStartDate || firstDay.toISOString().split('T')[0]
-      const endDate = statementEndDate || today.toISOString().split('T')[0]
-      
+
+      let startDate = ''
+      let endDate = ''
+      if (periodMode === 'range') {
+        const today = new Date()
+        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+        startDate = statementStartDate || firstDay.toISOString().split('T')[0]
+        endDate = statementEndDate || today.toISOString().split('T')[0]
+        if (!statementStartDate) setStatementStartDate(startDate)
+        if (!statementEndDate) setStatementEndDate(endDate)
+      }
+
       const params = new URLSearchParams()
-      if (startDate) params.append('start_date', startDate)
-      if (endDate) params.append('end_date', endDate)
+      if (periodMode === 'range') {
+        if (startDate) params.append('start_date', startDate)
+        if (endDate) params.append('end_date', endDate)
+      }
       const reportStation =
         typeof window !== 'undefined'
           ? localStorage.getItem('fserp_report_station_id')?.trim()
@@ -795,13 +812,13 @@ export default function ChartOfAccountsPage() {
       if (branding) setStatementPrintBranding(branding)
       else setStatementPrintBranding(null)
       setStatement(
-        mapStatementApiToView(response.data, { start: startDate, end: endDate }, currencySymbol)
+        mapStatementApiToView(
+          response.data,
+          periodMode === 'range' ? { start: startDate, end: endDate } : { start: '', end: '' },
+          currencySymbol
+        )
       )
       setShowStatement(true)
-      
-      // Update date states if they were empty
-      if (!statementStartDate) setStatementStartDate(startDate)
-      if (!statementEndDate) setStatementEndDate(endDate)
     } catch (error: any) {
       console.error('Error fetching statement:', error)
       if (error.response?.status === 401) {
@@ -837,6 +854,13 @@ export default function ChartOfAccountsPage() {
   const handleStatementDateChange = async () => {
     if (statementAccountId) {
       await fetchStatement(statementAccountId)
+    }
+  }
+
+  const handleStatementPeriodModeChange = async (mode: StatementPeriodMode) => {
+    setStatementPeriodMode(mode)
+    if (statementAccountId) {
+      await fetchStatement(statementAccountId, mode)
     }
   }
 
@@ -1726,6 +1750,9 @@ export default function ChartOfAccountsPage() {
                     setStatement(null)
                     setStatementAccountId(null)
                     setStatementPrintBranding(null)
+                    setStatementPeriodMode('range')
+                    setStatementStartDate('')
+                    setStatementEndDate('')
                   }}
                   className="text-gray-400 hover:text-gray-600 p-2"
                   aria-label="Close"
@@ -1735,29 +1762,45 @@ export default function ChartOfAccountsPage() {
               </div>
             </div>
 
-            {/* Date Range Filter */}
+            {/* Period filter */}
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center space-x-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Report Period: Date Range
-                  </label>
-                  <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-end gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Report period</label>
+                  <select
+                    value={statementPeriodMode}
+                    onChange={(e) =>
+                      void handleStatementPeriodModeChange(e.target.value as StatementPeriodMode)
+                    }
+                    disabled={statementLoading}
+                    className="min-w-[10rem] px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All</option>
+                    <option value="range">Date range</option>
+                  </select>
+                </div>
+                {statementPeriodMode === 'range' ? (
+                <div className="flex-1 min-w-[16rem]">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Date range</label>
+                  <div className="flex flex-wrap items-center gap-2">
                     <input
                       type="date"
                       value={statementStartDate}
                       onChange={(e) => setStatementStartDate(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      max={statementEndDate || undefined}
+                      className="flex-1 min-w-[9rem] px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                     <span className="text-gray-500">to</span>
                     <input
                       type="date"
                       value={statementEndDate}
                       onChange={(e) => setStatementEndDate(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      min={statementStartDate || undefined}
+                      className="flex-1 min-w-[9rem] px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                     <button
-                      onClick={handleStatementDateChange}
+                      type="button"
+                      onClick={() => void handleStatementDateChange()}
                       disabled={statementLoading}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
                     >
@@ -1765,12 +1808,17 @@ export default function ChartOfAccountsPage() {
                     </button>
                   </div>
                 </div>
+                ) : (
+                  <p className="text-sm text-gray-600 pb-2">
+                    Showing all posted journal lines for this account (lifetime activity).
+                  </p>
+                )}
               </div>
               <div className="mt-4 grid grid-cols-4 gap-4 text-sm">
                 <div>
                   <span className="text-gray-600">Period:</span>
                   <p className="font-semibold">
-                    {formatDateOnly(statement.period.start_date)} - {formatDateOnly(statement.period.end_date)}
+                    {formatStatementPeriodLabel(statement.period)}
                   </p>
                 </div>
                 <div>

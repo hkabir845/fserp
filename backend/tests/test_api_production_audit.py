@@ -620,7 +620,7 @@ def test_invoice_put_and_delete(api_client: Client, auth_super_headers, company_
     assert json.loads(put_r.content)["total"] == "15.00"
 
     del_r = api_client.delete(f"/api/invoices/{inv_id}/", **h)
-    assert del_r.status_code == 200
+    assert del_r.status_code in (200, 204)
     gone = api_client.get(f"/api/invoices/{inv_id}/", **h)
     assert gone.status_code == 404
 

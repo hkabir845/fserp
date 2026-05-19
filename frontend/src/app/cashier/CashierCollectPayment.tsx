@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useCallback, useEffect, useState } from "react"
 import api from "@/lib/api"
+import { formatBankRegisterLabel } from "@/lib/bankAccountDisplay"
 import { useToast } from "@/components/Toast"
 import { formatNumber } from "@/utils/currency"
 import { Loader2, Wallet } from "lucide-react"
@@ -18,6 +19,7 @@ type BankRegister = {
   id: number
   account_name: string
   bank_name?: string
+  chart_account_code?: string | null
   chart_account_id?: number | null
   is_active?: boolean
 }
@@ -378,7 +380,7 @@ export function CashierCollectPayment({
               <option value="">Default cash / undeposited (GL rules)</option>
               {bankRegisters.map(b => (
                 <option key={b.id} value={b.id}>
-                  {[b.bank_name, b.account_name].filter(Boolean).join(" — ") || `Register #${b.id}`}
+                  {formatBankRegisterLabel(b)}
                 </option>
               ))}
             </select>

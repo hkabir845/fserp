@@ -10,6 +10,7 @@ import { getCurrencySymbol, formatNumber, formatAmountPlain } from '@/utils/curr
 import { formatDateOnly } from '@/utils/date'
 import { getApiBaseUrl } from '@/lib/api'
 import { isTenantAdminAquacultureUser } from '@/navigation/erpAppMenu'
+import { formatBankRegisterLabel } from '@/lib/bankAccountDisplay'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 
 interface PayrollRun {
@@ -70,6 +71,7 @@ interface BankAccountRow {
   id: number
   account_name: string
   bank_name: string
+  chart_account_code?: string | null
   chart_account_id: number | null
   is_active?: boolean
   is_equity_register?: boolean
@@ -1821,7 +1823,7 @@ export default function PayrollPage() {
                                 .filter((b) => b.chart_account_id)
                                 .map((b) => (
                                   <option key={`b-${b.id}`} value={`b:${b.id}`}>
-                                    {b.account_name} — {b.bank_name}
+                                    {formatBankRegisterLabel(b)}
                                   </option>
                                 ))}
                             </optgroup>
@@ -1832,7 +1834,7 @@ export default function PayrollPage() {
                                 .filter((b) => !b.chart_account_id)
                                 .map((b) => (
                                   <option key={`b-un-${b.id}`} value="" disabled>
-                                    {b.account_name} — {b.bank_name} (not linked)
+                                    {formatBankRegisterLabel(b)} (not linked)
                                   </option>
                                 ))}
                             </optgroup>
@@ -1841,7 +1843,7 @@ export default function PayrollPage() {
                             <optgroup label="Chart of accounts (bank &amp; cash)">
                               {glPayAccounts.map((a) => (
                                 <option key={`c-${a.id}`} value={`c:${a.id}`}>
-                                  {a.account_code} {a.account_name}
+                                  {formatCoaOptionLabel(a)}
                                 </option>
                               ))}
                             </optgroup>

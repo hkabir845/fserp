@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useCallback, useEffect, useState } from "react"
 import api from "@/lib/api"
+import { formatBankRegisterLabel } from "@/lib/bankAccountDisplay"
 import { useToast } from "@/components/Toast"
 import { formatNumber } from "@/utils/currency"
 import { Banknote, Loader2 } from "lucide-react"
@@ -18,6 +19,7 @@ type BankLine = {
   id: number
   account_name: string
   bank_name?: string
+  chart_account_code?: string | null
   chart_account_id?: number | null
   is_active?: boolean
   is_equity_register?: boolean
@@ -302,7 +304,7 @@ export function CashierPayBills({ vendors, currencySymbol, bankAccounts, onRecor
               <option value="">Choose register (required)</option>
               {payableBanks.map(b => (
                 <option key={b.id} value={b.id}>
-                  {[b.bank_name, b.account_name].filter(Boolean).join(" — ") || `Register #${b.id}`}
+                  {formatBankRegisterLabel(b)}
                 </option>
               ))}
             </select>

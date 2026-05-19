@@ -4,17 +4,15 @@ import { useEffect, useMemo, useState } from 'react'
 import api from '@/lib/api'
 import { AMOUNT_SLATE_EDITABLE_CLASS } from '@/utils/amountFieldStyles'
 import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
+import { formatBankAccountTitle, normalizeBankAccountsFromApi, type BankAccountLike } from '@/lib/bankAccountDisplay'
 import { getCurrencySymbol, formatAmountPlain, roundToDecimals } from '@/utils/currency'
 import { AlertCircle, Loader2, X } from 'lucide-react'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_ALLOCATE_GREEN_CLASS } from '@/utils/amountFieldStyles'
 
-interface BankAccount {
-  id: number
+type BankAccount = BankAccountLike & {
   account_name: string
   current_balance: number | string | null
-  opening_balance?: string | number | null
-  opening_balance_date?: string | null
 }
 
 type ContactSnapshot = {
@@ -22,30 +20,6 @@ type ContactSnapshot = {
   opening_balance: string
   opening_balance_date?: string | null
   current_balance: string
-}
-
-function normalizeBankAccountsFromApi(data: unknown): BankAccount[] {
-  let rows: unknown[] = []
-  if (Array.isArray(data)) rows = data
-  else if (data && typeof data === 'object') {
-    const o = data as Record<string, unknown>
-    if (Array.isArray(o.results)) rows = o.results
-    else if (Array.isArray(o.data)) rows = o.data
-  }
-  return rows
-    .filter((row): row is Record<string, unknown> => row != null && typeof row === 'object')
-    .map((r): BankAccount | null => {
-      const id = typeof r.id === 'number' ? r.id : Number(r.id)
-      if (!Number.isFinite(id)) return null
-      return {
-        id,
-        account_name: String(r.account_name ?? ''),
-        current_balance: r.current_balance as BankAccount['current_balance'],
-        opening_balance: r.opening_balance as string | number | null | undefined,
-        opening_balance_date: r.opening_balance_date as string | null | undefined,
-      }
-    })
-    .filter((a): a is BankAccount => a != null)
 }
 
 interface AllocationRow {
@@ -319,7 +293,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
         if (companyRes.data?.currency) {
           setCurrencySymbol(getCurrencySymbol(companyRes.data.currency))
         }
-        setBanks(normalizeBankAccountsFromApi(bankRes.data))
+        setBanks(normalizeBankAccountsFromApi(bankRes.data) as BankAccount[])
         const p = payRes.data
         setDetail(p)
         setPaymentDate((p.payment_date || '').split('T')[0])
@@ -651,7 +625,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                     <option value="">None (clearing / undeposited)</option>
                     {banks.map((b) => (
                       <option key={b.id} value={String(b.id)}>
-                        {b.account_name}
+                        {formatBankAccountTitle(b)}
                       </option>
                     ))}
                   </select>

@@ -10,6 +10,11 @@ import { getCurrencySymbol, formatNumber, roundToDecimals } from '@/utils/curren
 import { formatDateOnly, localDateISO } from '@/utils/date'
 import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_EDITABLE_FULL_BLUE_CLASS } from '@/utils/amountFieldStyles'
 import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
+import {
+  formatBankAccountWithBalances,
+  normalizeBankAccountsFromApi,
+  type BankAccountLike,
+} from '@/lib/bankAccountDisplay'
 
 interface OutstandingBill {
   id: number
@@ -194,43 +199,10 @@ function buildVendorPaymentMemo(v: Vendor): string {
   return lines.join('\n')
 }
 
-interface BankAccount {
-  id: number
+type BankAccount = BankAccountLike & {
   account_number: string
   account_name: string
   current_balance: number | string | null
-  opening_balance?: string | number
-  opening_balance_date?: string | null
-}
-
-function normalizeBankAccountsFromApi(data: unknown): BankAccount[] {
-  let rows: unknown[] = []
-  if (Array.isArray(data)) {
-    rows = data
-  } else if (data && typeof data === 'object') {
-    const o = data as Record<string, unknown>
-    if (Array.isArray(o.results)) rows = o.results
-    else if (Array.isArray(o.data)) rows = o.data
-  }
-
-  return rows
-    .filter((row): row is Record<string, unknown> => row != null && typeof row === 'object')
-    .map((r): BankAccount | null => {
-      const id = typeof r.id === 'number' ? r.id : Number(r.id)
-      if (!Number.isFinite(id)) return null
-      return {
-        id,
-        account_number: String(r.account_number ?? ''),
-        account_name: String(r.account_name ?? ''),
-        current_balance: r.current_balance as BankAccount['current_balance'],
-        opening_balance: r.opening_balance as string | number | undefined,
-        opening_balance_date:
-          r.opening_balance_date != null && r.opening_balance_date !== ''
-            ? String(r.opening_balance_date)
-            : null,
-      }
-    })
-    .filter((a): a is BankAccount => a != null)
 }
 
 interface PaymentAllocation {
@@ -244,7 +216,7 @@ function RecordPaymentMadeInner() {
   const searchParams = useSearchParams()
   const prefillApplied = useRef(false)
 
-  const formatBalance = (balance: number | string | null): string => {
+  const formatBalance = (balance: number | string | null | undefined): string => {
     const numericValue =
       typeof balance === 'number'
         ? balance
@@ -294,7 +266,7 @@ function RecordPaymentMadeInner() {
         ])
         setError('')
         setVendors(normalizeVendorsFromApi(vRes.data))
-        setBankAccounts(normalizeBankAccountsFromApi(bRes.data))
+        setBankAccounts(normalizeBankAccountsFromApi(bRes.data) as BankAccount[])
       } catch (e) {
         console.error('Error loading vendors / bank accounts:', e)
         setVendors([])
@@ -777,9 +749,7 @@ function RecordPaymentMadeInner() {
                     <option value="">Select Bank Account</option>
                     {bankAccounts.map((account) => (
                       <option key={account.id} value={String(account.id)}>
-                        {account.account_name} — Op. {currencySymbol}
-                        {formatBalance(account.opening_balance ?? 0)} | {currencySymbol}
-                        {formatBalance(account.current_balance)}
+                        {formatBankAccountWithBalances(account, currencySymbol, formatBalance)}
                       </option>
                     ))}
                   </select>

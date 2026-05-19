@@ -56,6 +56,11 @@ def _display_balance_for_bank(
 
 def _bank_to_json(b, journal_net_by_chart: Optional[Dict[int, Decimal]] = None):
     bal = _display_balance_for_bank(b, journal_net_by_chart)
+    chart_code = None
+    ca = getattr(b, "chart_account", None)
+    if ca is not None:
+        raw = str(getattr(ca, "account_code", "") or "").strip()
+        chart_code = raw or None
     return {
         "id": b.id,
         "account_name": b.account_name,
@@ -67,6 +72,7 @@ def _bank_to_json(b, journal_net_by_chart: Optional[Dict[int, Decimal]] = None):
         "current_balance": str(bal),
         "is_active": b.is_active,
         "chart_account_id": b.chart_account_id,
+        "chart_account_code": chart_code,
         "is_equity_register": bool(getattr(b, "is_equity_register", False)),
     }
 

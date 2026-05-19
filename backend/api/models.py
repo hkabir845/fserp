@@ -1192,6 +1192,14 @@ class BillLine(models.Model):
         blank=True,
         help_text="For fish-type items: total headcount on this line (optional).",
     )
+    receipt_station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bill_lines_receipt",
+        help_text="Optional per-line station for GL/stock when split across sites or overriding the bill header.",
+    )
     fuel_station_expense_category = models.CharField(
         max_length=64,
         blank=True,

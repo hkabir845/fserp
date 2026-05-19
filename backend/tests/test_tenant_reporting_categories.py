@@ -5,7 +5,8 @@ import json
 
 import pytest
 
-from api.models import AquacultureExpense, AquacultureFishSale, AquaculturePond, Company
+from api.models import AquacultureFishSale, AquaculturePond, Company, Vendor
+from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 
 
 @pytest.mark.django_db
@@ -37,7 +38,18 @@ def test_tenant_aquaculture_expense_category_end_to_end(api_client, company_tena
     assert sec.get("tenant_defined") is True
     assert sec.get("maps_to_code") == "electricity"
 
-    r2 = api_client.post(
+    ensure_aquaculture_chart_accounts(company_tenant.id)
+    vendor = Vendor.objects.filter(company_id=company_tenant.id).first()
+    if vendor is None:
+        vendor = Vendor.objects.create(
+            company_id=company_tenant.id,
+            company_name="Security Vendor",
+            display_name="Security Vendor",
+            vendor_number="V-SEC-1",
+            is_active=True,
+        )
+
+    blocked = api_client.post(
         "/api/aquaculture/expenses/",
         data=json.dumps(
             {
@@ -51,13 +63,35 @@ def test_tenant_aquaculture_expense_category_end_to_end(api_client, company_tena
         content_type="application/json",
         **auth_admin_headers,
     )
-    assert r2.status_code == 201
-    body = json.loads(r2.content.decode())
-    assert body.get("expense_category") == "site_security"
-    assert "Site security" in (body.get("expense_category_label") or "")
+    assert blocked.status_code == 400
+    assert "vendor bill" in blocked.content.decode().lower()
 
-    exp = AquacultureExpense.objects.get(pk=body["id"])
-    assert exp.expense_category == "site_security"
+    r2 = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor.id,
+                "bill_date": "2026-05-01",
+                "status": "open",
+                "lines": [
+                    {
+                        "description": "CCTV maintenance",
+                        "quantity": 1,
+                        "unit_cost": "50.00",
+                        "amount": "50.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_expense_category": "site_security",
+                    }
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r2.status_code == 201, r2.content.decode()
+    line = json.loads(r2.content.decode())["lines"][0]
+    assert line["aquaculture_cost_bucket"] == "electricity"
+    assert line["aquaculture_expense_category"] == "electricity"
 
 
 @pytest.mark.django_db

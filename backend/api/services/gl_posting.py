@@ -1555,12 +1555,12 @@ def receipt_inventory_from_posted_bill(
 
                     add_pond_stock(company_id, int(pond_id), item.id, qty)
                 else:
-                    st_id = bill.receipt_station_id
+                    st_id = _bill_line_receipt_station_id(line, bill)
                     if not st_id:
                         st_id = get_or_create_default_station(company_id).id
                     add_station_stock(company_id, st_id, item.id, qty)
             else:
-                st_id = bill.receipt_station_id
+                st_id = _bill_line_receipt_station_id(line, bill)
                 if not st_id:
                     st_id = get_or_create_default_station(company_id).id
                 add_station_stock(company_id, st_id, item.id, qty)
@@ -1595,12 +1595,12 @@ def reverse_receipt_inventory_from_posted_bill(bill: Bill) -> None:
 
                     add_pond_stock(company_id, int(pond_id), item.id, -qty)
                 else:
-                    st_id = bill.receipt_station_id
+                    st_id = _bill_line_receipt_station_id(line, bill)
                     if not st_id:
                         st_id = get_or_create_default_station(company_id).id
                     add_station_stock(company_id, st_id, item.id, -qty)
             else:
-                st_id = bill.receipt_station_id
+                st_id = _bill_line_receipt_station_id(line, bill)
                 if not st_id:
                     st_id = get_or_create_default_station(company_id).id
                 add_station_stock(company_id, st_id, item.id, -qty)
@@ -1645,6 +1645,15 @@ def try_apply_bill_stock_receipt(
         )
         if n > 0:
             Bill.objects.filter(pk=bill.pk).update(stock_receipt_applied=True)
+
+
+def _bill_line_receipt_station_id(line: BillLine, bill: Bill) -> Optional[int]:
+    """Per-line station override, else bill header station."""
+    lid = getattr(line, "receipt_station_id", None)
+    if lid:
+        return int(lid)
+    bid = getattr(bill, "receipt_station_id", None)
+    return int(bid) if bid else None
 
 
 def _bill_line_fuel_station_meta(company_id: int, line: BillLine) -> Optional[dict]:
@@ -1765,6 +1774,7 @@ def _build_bill_journal_lines(
         meta = _bill_line_aquaculture_meta(company_id, line) or _bill_line_fuel_station_meta(
             company_id, line
         )
+        line_st = _gl_station_id(company_id, _bill_line_receipt_station_id(line, bill))
         desc_base = (line.description or "").strip()
         memo = (
             f"{bill.bill_number} — {desc_base}"[:300] if desc_base else (bill.bill_number or "")[:300]
@@ -1772,47 +1782,49 @@ def _build_bill_journal_lines(
         item = line.item
         if not item:
             debit_acc = _bill_line_expense_debit_account(company_id, line, None, vendor, exp)
-            debit_rows.append((debit_acc, amt, memo, meta))
+            debit_rows.append((debit_acc, amt, memo, meta, line_st))
             continue
         if _item_receives_physical_stock(item):
             inv_acc = _inventory_account_for_item(company_id, item)
             if inv_acc:
-                debit_rows.append((inv_acc, amt, memo, meta))
+                debit_rows.append((inv_acc, amt, memo, meta, line_st))
             else:
                 debit_acc = _bill_line_expense_debit_account(company_id, line, item, vendor, exp)
-                debit_rows.append((debit_acc, amt, memo, meta))
+                debit_rows.append((debit_acc, amt, memo, meta, line_st))
         else:
             debit_acc = _bill_line_expense_debit_account(company_id, line, item, vendor, exp)
-            debit_rows.append((debit_acc, amt, memo, meta))
+            debit_rows.append((debit_acc, amt, memo, meta, line_st))
 
-    sum_lines = sum(am for _, am, _, _ in debit_rows if am > 0)
+    sum_lines = sum(am for row in debit_rows if (am := row[1]) > 0)
     if sum_lines < total:
-        debit_rows.append((exp, (total - sum_lines).quantize(Decimal("0.01")), memo_ap, None))
+        hdr_st = _gl_station_id(company_id, bill.receipt_station_id)
+        debit_rows.append((exp, (total - sum_lines).quantize(Decimal("0.01")), memo_ap, None, hdr_st))
         sum_lines = total
     elif sum_lines > total:
-        positive_rows = [(a, am, d, m) for a, am, d, m in debit_rows if am > 0]
+        positive_rows = [row for row in debit_rows if row[1] > 0]
         if not positive_rows:
             logger.warning("bill %s: no positive line amounts to scale", bill.id)
             return None
-        S = sum(am for _, am, _, _ in positive_rows)
+        S = sum(row[1] for row in positive_rows)
         factor = total / S
-        scaled: list[tuple[ChartOfAccount, Decimal, str, Optional[dict]]] = []
+        scaled: list[tuple] = []
         run = Decimal("0")
-        for j, (acc, amt, desc, meta) in enumerate(positive_rows):
+        for j, row in enumerate(positive_rows):
+            acc, amt, desc, meta, line_st = row
             if j == len(positive_rows) - 1:
                 na = (total - run).quantize(Decimal("0.01"))
             else:
                 na = (amt * factor).quantize(Decimal("0.01"))
-            scaled.append((acc, na, desc, meta))
+            scaled.append((acc, na, desc, meta, line_st))
             run += na
         debit_rows = scaled
-        sum_lines = sum(am for _, am, _, _ in debit_rows)
+        sum_lines = sum(row[1] for row in debit_rows)
 
     if sum_lines != total:
         diff = (total - sum_lines).quantize(Decimal("0.01"))
         if debit_rows and abs(diff) <= Decimal("0.02"):
-            acc, am, ds, mt = debit_rows[-1]
-            debit_rows[-1] = (acc, (am + diff).quantize(Decimal("0.01")), ds, mt)
+            acc, am, ds, mt, line_st = debit_rows[-1]
+            debit_rows[-1] = (acc, (am + diff).quantize(Decimal("0.01")), ds, mt, line_st)
         else:
             logger.warning(
                 "skip bill %s journal: debit sum %s != total %s",
@@ -1823,21 +1835,22 @@ def _build_bill_journal_lines(
             return None
 
     if not debit_rows:
-        debit_rows = [(exp, total, memo_ap, None)]
+        hdr_st = _gl_station_id(company_id, bill.receipt_station_id)
+        debit_rows = [(exp, total, memo_ap, None, hdr_st)]
 
     je_lines: list[tuple] = []
     aq_costing: list[Optional[dict]] = []
-    for acc, amt, desc, meta in debit_rows:
+    for acc, amt, desc, meta, line_st in debit_rows:
         if amt <= 0:
             continue
-        je_lines.append((acc, amt, Decimal("0"), desc))
+        je_lines.append((acc, amt, Decimal("0"), desc, line_st))
         aq_costing.append(meta)
 
     je_lines.append((ap, Decimal("0"), total, memo_ap))
     aq_costing.append(None)
 
-    td = sum(d for _, d, _, _ in je_lines)
-    tc = sum(c for _, _, c, _ in je_lines)
+    td = sum(_unpack_gl_line(x)[1] for x in je_lines)
+    tc = sum(_unpack_gl_line(x)[2] for x in je_lines)
     if td != tc or td <= 0:
         logger.warning(
             "skip bill %s journal: unbalanced (debit=%s credit=%s)",

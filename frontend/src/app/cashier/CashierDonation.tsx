@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import api from "@/lib/api"
+import { formatBankAccountTitle } from "@/lib/bankAccountDisplay"
 import { useToast } from "@/components/Toast"
 import { formatNumber } from "@/utils/currency"
 import { HeartHandshake, Loader2 } from "lucide-react"
@@ -15,6 +16,7 @@ type BankLine = {
   id: number
   account_name: string
   bank_name?: string
+  chart_account_code?: string | null
   chart_account_id?: number | null
   is_active?: boolean
   is_equity_register?: boolean
@@ -195,7 +197,7 @@ export function CashierDonation({ currencySymbol, bankAccounts, onRecorded }: Ca
               <option value="">Default — 1010 Cash on Hand (GL only)</option>
               {payableBanks.map(b => (
                 <option key={b.id} value={b.id}>
-                  {b.account_name}
+                  {formatBankAccountTitle(b)}
                   {b.chart_account_id == null ? " (no GL link — link in Bank accounts)" : ""}
                 </option>
               ))}

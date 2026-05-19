@@ -8,6 +8,7 @@ import { useToast } from "@/components/Toast"
 import { extractErrorMessage } from "@/utils/errorHandler"
 import Modal from "@/components/ui/Modal"
 import api, { getApiBaseUrl } from "@/lib/api"
+import { formatBankRegisterLabel } from "@/lib/bankAccountDisplay"
 import { useCompany } from "@/contexts/CompanyContext"
 import { getCurrencySymbol, formatNumber } from "@/utils/currency"
 import { formatDate } from "@/utils/date"
@@ -156,6 +157,7 @@ type BankRegister = {
   id: number
   account_name: string
   bank_name?: string
+  chart_account_code?: string | null
   chart_account_id?: number | null
   is_active?: boolean
   is_equity_register?: boolean
@@ -2647,8 +2649,7 @@ export default function CashierPOSPage() {
                               </option>
                               {bankRegisters.map(b => (
                                 <option key={b.id} value={b.id}>
-                                  {[b.bank_name, b.account_name].filter(Boolean).join(" — ") ||
-                                    `Register #${b.id}`}
+                                  {formatBankRegisterLabel(b)}
                                   {b.chart_account_id ? "" : " (link GL in Chart of Accounts)"}
                                 </option>
                               ))}

@@ -10,6 +10,11 @@ import { getCurrencySymbol, formatNumber, roundToDecimals } from '@/utils/curren
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_ALLOCATE_GREEN_CLASS, AMOUNT_EDITABLE_FULL_GREEN_CLASS } from '@/utils/amountFieldStyles'
 import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
+import {
+  formatBankAccountWithBalances,
+  normalizeBankAccountsFromApi,
+  type BankAccountLike,
+} from '@/lib/bankAccountDisplay'
 
 interface OutstandingInvoice {
   id: number
@@ -136,46 +141,13 @@ function normalizeCustomersFromApi(data: unknown): Customer[] {
     })
 }
 
-interface BankRegister {
-  id: number
+type BankRegister = BankAccountLike & {
   account_number: string
   account_name: string
   current_balance: number | string | null
-  opening_balance?: string | number
-  opening_balance_date?: string | null
 }
 
-function normalizeBankRegistersFromApi(data: unknown): BankRegister[] {
-  let rows: unknown[] = []
-  if (Array.isArray(data)) {
-    rows = data
-  } else if (data && typeof data === 'object') {
-    const o = data as Record<string, unknown>
-    if (Array.isArray(o.results)) rows = o.results
-    else if (Array.isArray(o.data)) rows = o.data
-  }
-
-  return rows
-    .filter((row): row is Record<string, unknown> => row != null && typeof row === 'object')
-    .map((r): BankRegister | null => {
-      const id = typeof r.id === 'number' ? r.id : Number(r.id)
-      if (!Number.isFinite(id)) return null
-      return {
-        id,
-        account_number: String(r.account_number ?? ''),
-        account_name: String(r.account_name ?? ''),
-        current_balance: r.current_balance as BankRegister['current_balance'],
-        opening_balance: r.opening_balance as string | number | undefined,
-        opening_balance_date:
-          r.opening_balance_date != null && r.opening_balance_date !== ''
-            ? String(r.opening_balance_date)
-            : null,
-      }
-    })
-    .filter((a): a is BankRegister => a != null)
-}
-
-function formatRegisterBalance(balance: number | string | null): string {
+function formatRegisterBalance(balance: number | string | null | undefined): string {
   const numericValue =
     typeof balance === 'number'
       ? balance
@@ -272,7 +244,7 @@ function RecordPaymentReceivedInner() {
           setError('Could not load customers. Check your connection and try again.')
         }
         if (bankR.status === 'fulfilled') {
-          setBankRegisters(normalizeBankRegistersFromApi(bankR.value.data))
+          setBankRegisters(normalizeBankAccountsFromApi(bankR.value.data) as BankRegister[])
         } else {
           console.error('Error loading bank registers:', bankR.reason)
           setBankRegisters([])
@@ -917,9 +889,7 @@ function RecordPaymentReceivedInner() {
                         <option value="">Select bank or cash register</option>
                         {bankRegisters.map((account) => (
                           <option key={account.id} value={String(account.id)}>
-                            {account.account_name} — Op. {currencySymbol}
-                            {formatRegisterBalance(account.opening_balance ?? 0)} | {currencySymbol}
-                            {formatRegisterBalance(account.current_balance)}
+                            {formatBankAccountWithBalances(account, currencySymbol, formatRegisterBalance)}
                           </option>
                         ))}
                       </select>

@@ -7,6 +7,7 @@ import { Plus, Edit2, Trash2, X, CheckCircle, XCircle, AlertCircle, ArrowRightLe
 import { useToast } from '@/components/Toast'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import api from '@/lib/api'
+import { formatBankAccountFundTransferOption } from '@/lib/bankAccountDisplay'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_FUND_TRANSFER_INPUT_CLASS } from '@/utils/amountFieldStyles'
@@ -35,6 +36,7 @@ interface BankAccount {
   account_name: string
   account_number: string
   bank_name: string
+  chart_account_code?: string | null
   current_balance: number | string
   is_active: boolean
   chart_account_id?: number
@@ -47,8 +49,7 @@ function renderTransferAccountOptions(accounts: BankAccount[], currencySymbol: s
   const equity = accounts.filter((a) => a.is_equity_register)
   const row = (b: BankAccount) => (
     <option key={b.id} value={b.id}>
-      {b.account_name} ({b.account_number}) · {b.bank_name} — {currencySymbol}
-      {formatNumber(Number(b.current_balance || 0))}
+      {formatBankAccountFundTransferOption(b, currencySymbol, (n) => formatNumber(n))}
     </option>
   )
   return (

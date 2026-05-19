@@ -5,6 +5,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import api from '@/lib/api'
+import {
+  formatBankAccountWithCurrentBalance,
+  normalizeBankAccountsFromApi,
+  type BankAccountLike,
+} from '@/lib/bankAccountDisplay'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import {
@@ -31,35 +36,10 @@ interface UndepositedPayment {
   memo: string | null
 }
 
-interface BankAccount {
-  id: number
+type BankAccount = BankAccountLike & {
   account_number: string
   account_name: string
   current_balance: number | string | null
-}
-
-function normalizeBankAccountsFromApi(data: unknown): BankAccount[] {
-  let rows: unknown[] = []
-  if (Array.isArray(data)) rows = data
-  else if (data && typeof data === 'object') {
-    const o = data as Record<string, unknown>
-    if (Array.isArray(o.results)) rows = o.results
-    else if (Array.isArray(o.data)) rows = o.data
-  }
-  return rows
-    .filter((row): row is Record<string, unknown> => row != null && typeof row === 'object')
-    .map((r) => {
-      const id = typeof r.id === 'number' ? r.id : Number(r.id)
-      if (!Number.isFinite(id)) return null
-      const bal = r.current_balance
-      return {
-        id,
-        account_number: String(r.account_number ?? ''),
-        account_name: String(r.account_name ?? ''),
-        current_balance: bal as BankAccount['current_balance'],
-      } satisfies BankAccount
-    })
-    .filter((a): a is BankAccount => a != null)
 }
 
 function parseBalance(balance: number | string | null | undefined): number {
@@ -118,7 +98,7 @@ export default function DepositsPage() {
 
   const loadBanks = useCallback(async () => {
     const res = await api.get('/bank-accounts/')
-    setBankAccounts(normalizeBankAccountsFromApi(res.data))
+    setBankAccounts(normalizeBankAccountsFromApi(res.data) as BankAccount[])
   }, [])
 
   useEffect(() => {
@@ -404,7 +384,9 @@ export default function DepositsPage() {
                       <option value="">Select bank account</option>
                       {bankAccounts.map((account) => (
                         <option key={account.id} value={String(account.id)}>
-                          {account.account_name} — {formatMoney(currencySymbol, parseBalance(account.current_balance))}
+                          {formatBankAccountWithCurrentBalance(account, currencySymbol, (bal) =>
+                            formatMoney(currencySymbol, parseBalance(bal))
+                          )}
                         </option>
                       ))}
                     </select>

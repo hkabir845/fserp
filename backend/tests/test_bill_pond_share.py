@@ -36,6 +36,7 @@ def test_bill_shared_equal_split_creates_one_line_per_pond(api_client, company_t
                 "vendor_id": vendor.id,
                 "bill_date": "2026-05-10",
                 "status": "draft",
+                "bill_purpose": "pond",
                 "lines": [
                     {
                         "description": "Shared lease",
@@ -44,7 +45,7 @@ def test_bill_shared_equal_split_creates_one_line_per_pond(api_client, company_t
                         "amount": "10000.00",
                         "aquaculture_cost_mode": "shared_equal",
                         "shared_equal_pond_ids": [p1.id, p2.id, p3.id],
-                        "aquaculture_expense_category": "lease",
+                        "aquaculture_expense_category": "electricity",
                     }
                 ],
             }
@@ -89,6 +90,7 @@ def test_bill_shared_manual_split_must_sum(api_client, company_tenant, auth_admi
             {
                 "vendor_id": vendor.id,
                 "bill_date": "2026-05-10",
+                "bill_purpose": "pond",
                 "lines": [
                     {
                         "description": "Electricity",

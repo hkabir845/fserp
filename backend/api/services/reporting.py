@@ -34,6 +34,33 @@ from api.models import (
     Vendor,
 )
 from api.services.gl_posting import item_inventory_unit_cost
+
+# Vendor bills included in purchase / movement reports (exclude draft and void).
+_BILL_LINE_POSTED_STATUSES = ("open", "paid", "partial", "overdue")
+
+
+def _bill_lines_in_period(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    require_item: bool = False,
+):
+    qs = BillLine.objects.filter(
+        bill__company_id=company_id,
+        bill__bill_date__gte=start,
+        bill__bill_date__lte=end,
+        bill__status__in=_BILL_LINE_POSTED_STATUSES,
+    )
+    if require_item:
+        qs = qs.filter(item_id__isnull=False)
+    return qs
+
+
+def _filter_bill_lines_for_station(qs, station_id: int):
+    return qs.filter(
+        Q(bill__receipt_station_id=station_id) | Q(receipt_station_id=station_id)
+    )
 from api.services.item_catalog import item_tracks_physical_stock
 from api.services.station_stock import get_station_stock, item_uses_station_bins, tanks_exist_for_item
 from api.services.coa_constants import (
@@ -2354,15 +2381,10 @@ def report_item_stock_movement(
         invoice__invoice_date__lte=end,
         item_id__isnull=False,
     )
-    bill_base = BillLine.objects.filter(
-        bill__company_id=company_id,
-        bill__bill_date__gte=start,
-        bill__bill_date__lte=end,
-        item_id__isnull=False,
-    )
+    bill_base = _bill_lines_in_period(company_id, start, end, require_item=True)
     if station_id is not None:
         inv_base = inv_base.filter(invoice__station_id=station_id)
-        bill_base = bill_base.filter(bill__receipt_station_id=station_id)
+        bill_base = _filter_bill_lines_for_station(bill_base, station_id)
     if category:
         inv_base = inv_base.filter(item__category=category)
         bill_base = bill_base.filter(item__category=category)
@@ -2598,14 +2620,9 @@ def report_item_purchases_by_category(
     Vendor bill line quantity and spend by item reporting category (lines with catalog items only).
     With ``station_id``, only lines on bills with that receiving site.
     """
-    base = BillLine.objects.filter(
-        bill__company_id=company_id,
-        bill__bill_date__gte=start,
-        bill__bill_date__lte=end,
-        item_id__isnull=False,
-    )
+    base = _bill_lines_in_period(company_id, start, end, require_item=True)
     if station_id is not None:
-        base = base.filter(bill__receipt_station_id=station_id)
+        base = _filter_bill_lines_for_station(base, station_id)
     agg = (
         base.annotate(
             rc=Coalesce(Trim("item__category"), Value("")),
@@ -2669,14 +2686,9 @@ def report_item_purchases_custom(
     Period purchases by SKU (vendor bills) with optional category and/or product filter.
     With ``station_id``, only bill lines for that receiving site.
     """
-    base = BillLine.objects.filter(
-        bill__company_id=company_id,
-        bill__bill_date__gte=start,
-        bill__bill_date__lte=end,
-        item_id__isnull=False,
-    )
+    base = _bill_lines_in_period(company_id, start, end, require_item=True)
     if station_id is not None:
-        base = base.filter(bill__receipt_station_id=station_id)
+        base = _filter_bill_lines_for_station(base, station_id)
     if item_ids:
         base = base.filter(item_id__in=item_ids)
     elif item_id is not None:
@@ -2770,14 +2782,9 @@ def report_item_purchase_velocity_analysis(
         period_days = 1
     pdd = Decimal(str(period_days))
 
-    bill_base = BillLine.objects.filter(
-        bill__company_id=company_id,
-        bill__bill_date__gte=start,
-        bill__bill_date__lte=end,
-        item_id__isnull=False,
-    )
+    bill_base = _bill_lines_in_period(company_id, start, end, require_item=True)
     if station_id is not None:
-        bill_base = bill_base.filter(bill__receipt_station_id=station_id)
+        bill_base = _filter_bill_lines_for_station(bill_base, station_id)
     if category:
         bill_base = bill_base.filter(item__category=category)
     if item_ids:

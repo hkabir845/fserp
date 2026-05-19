@@ -44,6 +44,12 @@ from api.views.common import parse_json_body, require_company_id
 from api.services.aquaculture_bill_defaults import (
     apply_aquaculture_expense_category_to_bill_line_row,
     expense_category_from_cost_bucket,
+    validate_and_apply_shared_pond_bill_line_category,
+)
+from api.services.bill_purpose_validation import (
+    infer_bill_purpose_from_parsed_lines,
+    parse_bill_purpose,
+    validate_parsed_lines_for_bill_purpose,
 )
 from api.services.fuel_station_bill_defaults import apply_fuel_station_category_to_bill_line_row
 from api.services.aquaculture_bill_pond_share import (
@@ -138,6 +144,9 @@ def _parse_bill_lines_from_body(
     """Parse request line rows into BillLine create kwargs (with optional pond-share expansion)."""
     parsed_lines: list[dict] = []
     for row in lines_body or []:
+        shared_err = validate_and_apply_shared_pond_bill_line_category(company_id, row)
+        if shared_err:
+            return [], JsonResponse({"detail": shared_err}, status=400)
         cat_err = apply_aquaculture_expense_category_to_bill_line_row(company_id, row)
         if cat_err:
             return [], JsonResponse({"detail": cat_err}, status=400)
@@ -186,6 +195,9 @@ def _parse_bill_lines_from_body(
             **aq_kw,
             **fish_kw,
         }
+        bucket = str(row.get("aquaculture_cost_bucket") or "").strip()[:40]
+        if bucket:
+            pl["aquaculture_cost_bucket"] = bucket
         pmode = bill_line_cost_mode(row)
         smode = station_bill_line_cost_mode(row)
         if pmode in ("shared_equal", "shared_manual") and smode in (
@@ -643,6 +655,14 @@ def bills_create(request):
     parsed_lines, parse_err = _parse_bill_lines_from_body(request.company_id, body.get("lines"))
     if parse_err:
         return parse_err
+    bill_purpose, purpose_err = parse_bill_purpose(body)
+    if purpose_err:
+        return JsonResponse({"detail": purpose_err}, status=400)
+    if "bill_purpose" not in body:
+        bill_purpose = infer_bill_purpose_from_parsed_lines(parsed_lines)
+    line_purpose_err = validate_parsed_lines_for_bill_purpose(bill_purpose, parsed_lines)
+    if line_purpose_err:
+        return JsonResponse({"detail": line_purpose_err}, status=400)
 
     try:
         with transaction.atomic():
@@ -794,6 +814,31 @@ def bill_detail(request, bill_id: int):
             )
             if parse_err:
                 return parse_err
+            bill_purpose, purpose_err = parse_bill_purpose(body)
+            if purpose_err:
+                return JsonResponse({"detail": purpose_err}, status=400)
+            if "bill_purpose" not in body:
+                bill_purpose = infer_bill_purpose_from_parsed_lines(parsed_lines)
+            line_purpose_err = validate_parsed_lines_for_bill_purpose(bill_purpose, parsed_lines)
+            if line_purpose_err:
+                return JsonResponse({"detail": line_purpose_err}, status=400)
+        elif "bill_purpose" in body:
+            bill_purpose, purpose_err = parse_bill_purpose(body)
+            if purpose_err:
+                return JsonResponse({"detail": purpose_err}, status=400)
+            existing_lines = [
+                {
+                    "aquaculture_pond_id": ln.aquaculture_pond_id,
+                    "fuel_station_expense_category": ln.fuel_station_expense_category,
+                    "receipt_station_id": ln.receipt_station_id,
+                }
+                for ln in b.lines.all()
+            ]
+            line_purpose_err = validate_parsed_lines_for_bill_purpose(
+                bill_purpose, existing_lines
+            )
+            if line_purpose_err:
+                return JsonResponse({"detail": line_purpose_err}, status=400)
         try:
             with transaction.atomic():
                 b.save()
@@ -838,7 +883,9 @@ def bill_detail(request, bill_id: int):
                     )
                     .first()
                 )
-                if bill_eligible_for_posting(b):
+                if (b.status or "").strip().lower() == "void":
+                    cleanup_vendor_bill_posting_effects(request.company_id, b)
+                elif bill_eligible_for_posting(b):
                     if material_bill:
                         reconcile_bill_after_material_edit(
                             request.company_id,

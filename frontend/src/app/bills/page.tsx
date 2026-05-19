@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText } from 'lucide-react'
+import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText, Ban } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
@@ -1618,6 +1618,7 @@ export default function BillsPage() {
       vendor_reference: formData.vendor_reference || null,
       memo: formData.memo || null,
       receipt_station_id: rsId,
+      bill_purpose: formData.bill_purpose,
       subtotal: subtotal,
       tax_amount: taxAmount,
       total_amount: total,
@@ -1800,6 +1801,7 @@ export default function BillsPage() {
       vendor_reference: formData.vendor_reference || null,
       memo: formData.memo || null,
       receipt_station_id: rsIdUpdate,
+      bill_purpose: formData.bill_purpose,
       subtotal: subtotal,
       tax_amount: taxAmount,
       total_amount: total,
@@ -1886,8 +1888,32 @@ export default function BillsPage() {
     }
   }
 
+  const handleVoidBill = async (billId: number, billNumber: string) => {
+    if (
+      !confirm(
+        `Void bill ${billNumber}? This reverses posted journal entries, vendor A/P, and stock receipts. The bill stays on file as Void (it is not deleted).`,
+      )
+    ) {
+      return
+    }
+    try {
+      await api.put(`/bills/${billId}`, { status: 'void' })
+      toast.success(`Bill ${billNumber} voided.`)
+      setShowViewModal(false)
+      setViewingBill(null)
+      void refreshAll()
+    } catch (error: unknown) {
+      console.error('Error voiding bill:', error)
+      toast.error(extractErrorMessage(error, 'Could not void the bill.'))
+    }
+  }
+
   const handleDelete = async (billId: number, billNumber: string) => {
-    if (!confirm(`Are you sure you want to delete bill ${billNumber}? This will reverse all effects (inventory, journal entries, payments) and cannot be undone.`)) {
+    if (
+      !confirm(
+        `Delete bill ${billNumber}? This removes the bill and reverses inventory and journal effects. Vendor payments allocated to this bill must be removed first.`,
+      )
+    ) {
       return
     }
 
@@ -1980,6 +2006,12 @@ export default function BillsPage() {
 
   /** Delete blocked when payments are allocated (backend returns 409). */
   const isBillDeleteDisabled = (bill: Bill) => billPaid(bill) > 0
+
+  const isBillVoidDisabled = (bill: Bill) => {
+    const s = billStatusNorm(bill.status)
+    if (s === 'void' || s === 'draft') return true
+    return billPaid(bill) > 0
+  }
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -2177,6 +2209,27 @@ export default function BillsPage() {
                             </button>
                             <button
                               type="button"
+                              onClick={() => void handleVoidBill(bill.id, bill.bill_number)}
+                              disabled={isBillVoidDisabled(bill)}
+                              className={`p-2 rounded-lg transition-colors ${
+                                isBillVoidDisabled(bill)
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-amber-700 hover:text-amber-800 hover:bg-amber-50'
+                              }`}
+                              title={
+                                isBillVoidDisabled(bill)
+                                  ? billStatusNorm(bill.status) === 'draft'
+                                    ? 'Delete draft bills instead of voiding'
+                                    : billPaid(bill) > 0
+                                      ? 'Cannot void: remove vendor payments first'
+                                      : 'Bill is already void'
+                                  : 'Void bill (reverse GL and stock)'
+                              }
+                            >
+                              <Ban className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleDelete(bill.id, bill.bill_number)}
                               disabled={isBillDeleteDisabled(bill)}
                               className={`p-2 rounded-lg transition-colors ${
@@ -2367,6 +2420,7 @@ export default function BillsPage() {
 
               <div className="mt-6 flex flex-wrap justify-end gap-2">
                 {canShowBillActions(viewingBill) && (
+                  <>
                   <button
                     type="button"
                     disabled={isBillEditDisabled(viewingBill)}
@@ -2388,6 +2442,28 @@ export default function BillsPage() {
                   >
                     Edit bill
                   </button>
+                    <button
+                      type="button"
+                      disabled={isBillVoidDisabled(viewingBill)}
+                      onClick={() => void handleVoidBill(viewingBill.id, viewingBill.bill_number)}
+                      className={`px-4 py-2 rounded-lg text-white ${
+                        isBillVoidDisabled(viewingBill)
+                          ? 'bg-gray-400 cursor-not-allowed'
+                          : 'bg-amber-600 hover:bg-amber-700'
+                      }`}
+                      title={
+                        isBillVoidDisabled(viewingBill)
+                          ? billStatusNorm(viewingBill.status) === 'draft'
+                            ? 'Delete draft bills instead of voiding'
+                            : billPaid(viewingBill) > 0
+                              ? 'Cannot void: remove vendor payments first'
+                              : 'Bill is already void'
+                          : 'Void bill (reverse GL and stock)'
+                      }
+                    >
+                      Void bill
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"

@@ -84,7 +84,7 @@ def reconcile_bill_after_material_edit(
     """Rollback AUTO-BILL / stock / vendor A/P bump, then re-post from current bill lines."""
     cleanup_vendor_bill_posting_effects(company_id, bill)
     bill.refresh_from_db()
-    if bill.status not in ("draft", "cancelled"):
+    if bill.status not in ("draft", "void"):
         sync_posted_vendor_bill(
             company_id,
             bill,
@@ -122,8 +122,11 @@ BILL_MATERIAL_BODY_KEYS = frozenset(
         "due_date",
         "vendor_id",
         "status",
+        "subtotal",
         "tax_amount",
         "tax_total",
+        "total",
+        "total_amount",
         "lines",
         "receipt_station_id",
     }

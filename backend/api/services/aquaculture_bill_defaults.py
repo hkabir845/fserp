@@ -77,6 +77,34 @@ def chart_account_id_for_aquaculture_expense_category(company_id: int, category:
     return int(acc.id) if acc else None
 
 
+def validate_and_apply_shared_pond_bill_line_category(company_id: int, row: dict) -> str | None:
+    """
+    Shared pond split rows carry aquaculture_expense_category without aquaculture_pond_id.
+    Normalize category, fill cost bucket, and default expense_account_id when applicable.
+    """
+    from api.services.aquaculture_bill_pond_share import bill_line_cost_mode
+
+    mode = bill_line_cost_mode(row)
+    if mode not in ("shared_equal", "shared_manual"):
+        return None
+    raw_cat = row.get("aquaculture_expense_category")
+    if raw_cat in (None, ""):
+        return "aquaculture_expense_category is required for shared pond split lines."
+    code, err = normalize_bill_expense_category(company_id, raw_cat)
+    if err:
+        return err
+    assert code is not None
+    if not str(row.get("aquaculture_cost_bucket") or "").strip():
+        row["aquaculture_cost_bucket"] = aquaculture_expense_category_to_cost_bucket(
+            code, company_id=company_id
+        )
+    if not row.get("item_id") and not row.get("expense_account_id"):
+        aid = chart_account_id_for_aquaculture_expense_category(company_id, code)
+        if aid:
+            row["expense_account_id"] = aid
+    return None
+
+
 def apply_aquaculture_expense_category_to_bill_line_row(company_id: int, row: dict) -> str | None:
     """
     When aquaculture_pond_id and aquaculture_expense_category are set, fill cost_bucket and

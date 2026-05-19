@@ -31,6 +31,16 @@ from api.services.employee_payroll_subledger import refresh_employee_balance
 from api.services.coa_gl_defaults import ALLOWED_SALARY_EXPENSE, parse_optional_chart_account_id
 from api.services.gl_posting import post_payroll_salary
 from api.services.station_defaults import parse_optional_station_fk
+from api.services.employee_pond_labor import (
+    LABOR_SCOPE_ALL_PONDS_EQUAL,
+    LABOR_SCOPE_ASSIGNED_POND,
+    LABOR_SCOPE_NOT_APPLICABLE,
+    VALID_LABOR_SCOPES,
+    employee_labor_scope,
+    aquaculture_labor_expense_account,
+    sync_payroll_pond_allocations_from_employees,
+    sync_single_employee_pond_allocations,
+)
 
 
 def _serialize_date(d):
@@ -107,6 +117,33 @@ def _validate_earning_parts_non_negative(
     return None
 
 
+def parse_aquaculture_labor_scope(raw) -> tuple[str, str | None]:
+    if raw is None or raw == "":
+        return LABOR_SCOPE_NOT_APPLICABLE, None
+    scope = str(raw).strip().lower()[:32]
+    if scope not in VALID_LABOR_SCOPES:
+        return (
+            LABOR_SCOPE_NOT_APPLICABLE,
+            f"aquaculture_labor_scope must be one of: {', '.join(sorted(VALID_LABOR_SCOPES))}",
+        )
+    return scope, None
+
+
+def parse_optional_aquaculture_pond_fk(company_id: int, raw) -> tuple[int | None, str | None]:
+    if raw is None or raw == "":
+        return None, None
+    try:
+        pid = int(raw)
+    except (TypeError, ValueError):
+        return None, "home_aquaculture_pond_id must be an integer or null"
+    if pid <= 0:
+        return None, None
+    pond = AquaculturePond.objects.filter(pk=pid, company_id=company_id, is_active=True).first()
+    if not pond:
+        return None, f"Aquaculture pond {pid} not found or inactive for this company"
+    return pid, None
+
+
 def _employee_to_json(e: Employee) -> dict:
     return {
         "id": e.id,
@@ -130,6 +167,22 @@ def _employee_to_json(e: Employee) -> dict:
             (e.home_station.station_name or "").strip()
             if getattr(e, "home_station_id", None) and getattr(e, "home_station", None)
             else ""
+        ),
+        "home_aquaculture_pond_id": getattr(e, "home_aquaculture_pond_id", None),
+        "home_aquaculture_pond_name": (
+            (e.home_aquaculture_pond.name or "").strip()
+            if getattr(e, "home_aquaculture_pond_id", None) and getattr(e, "home_aquaculture_pond", None)
+            else ""
+        ),
+        "aquaculture_labor_scope": employee_labor_scope(e),
+        "aquaculture_labor_scope_label": (
+            "All ponds (equal share)"
+            if employee_labor_scope(e) == LABOR_SCOPE_ALL_PONDS_EQUAL
+            else (
+                "Not applicable"
+                if employee_labor_scope(e) == LABOR_SCOPE_NOT_APPLICABLE
+                else "Single pond"
+            )
         ),
     }
 
@@ -162,7 +215,11 @@ def employee_next_code_suggested(request):
 def employees_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
-        qs = Employee.objects.filter(company_id=cid).select_related("home_station").order_by("id")
+        qs = (
+            Employee.objects.filter(company_id=cid)
+            .select_related("home_station", "home_aquaculture_pond")
+            .order_by("id")
+        )
         return JsonResponse([_employee_to_json(e) for e in qs], safe=False)
 
     body, err = parse_json_body(request)
@@ -178,6 +235,18 @@ def employees_list_or_create(request):
         hs_id, hs_err = parse_optional_station_fk(cid, body.get("home_station_id"))
         if hs_err:
             return JsonResponse({"detail": hs_err}, status=400)
+    hp_id = None
+    labor_scope = LABOR_SCOPE_NOT_APPLICABLE
+    if "aquaculture_labor_scope" in body:
+        labor_scope, ls_err = parse_aquaculture_labor_scope(body.get("aquaculture_labor_scope"))
+        if ls_err:
+            return JsonResponse({"detail": ls_err}, status=400)
+    if labor_scope in (LABOR_SCOPE_ALL_PONDS_EQUAL, LABOR_SCOPE_NOT_APPLICABLE):
+        hp_id = None
+    elif "home_aquaculture_pond_id" in body:
+        hp_id, hp_err = parse_optional_aquaculture_pond_fk(cid, body.get("home_aquaculture_pond_id"))
+        if hp_err:
+            return JsonResponse({"detail": hp_err}, status=400)
     ob = _decimal(body.get("opening_balance"), Decimal("0"))
     if code:
         if Employee.objects.filter(company_id=cid, employee_code__iexact=code[:64]).exists():
@@ -190,6 +259,8 @@ def employees_list_or_create(request):
             employee_code=code[:64],
             employee_number=code[:64],
             home_station_id=hs_id,
+            home_aquaculture_pond_id=hp_id,
+            aquaculture_labor_scope=labor_scope,
             first_name=fn[:100],
             last_name=(ln or "")[:100],
             email=(body.get("email") or "")[:150],
@@ -210,6 +281,8 @@ def employees_list_or_create(request):
             employee_code="",
             employee_number="",
             home_station_id=hs_id,
+            home_aquaculture_pond_id=hp_id,
+            aquaculture_labor_scope=labor_scope,
             first_name=fn[:100],
             last_name=(ln or "")[:100],
             email=(body.get("email") or "")[:150],
@@ -234,7 +307,7 @@ def employees_list_or_create(request):
         e.refresh_from_db()
     e = (
         Employee.objects.filter(pk=e.pk, company_id=cid)
-        .select_related("home_station")
+        .select_related("home_station", "home_aquaculture_pond")
         .first()
     )
     return JsonResponse(_employee_to_json(e), status=201)
@@ -248,7 +321,7 @@ def employee_detail(request, employee_id: int):
     cid = request.company_id
     e = (
         Employee.objects.filter(pk=employee_id, company_id=cid)
-        .select_related("home_station")
+        .select_related("home_station", "home_aquaculture_pond")
         .first()
     )
     if not e:
@@ -303,11 +376,25 @@ def employee_detail(request, employee_id: int):
             if hs_err:
                 return JsonResponse({"detail": hs_err}, status=400)
             e.home_station_id = hs_id
+        if "aquaculture_labor_scope" in body:
+            labor_scope, ls_err = parse_aquaculture_labor_scope(body.get("aquaculture_labor_scope"))
+            if ls_err:
+                return JsonResponse({"detail": ls_err}, status=400)
+            e.aquaculture_labor_scope = labor_scope
+            if labor_scope in (LABOR_SCOPE_ALL_PONDS_EQUAL, LABOR_SCOPE_NOT_APPLICABLE):
+                e.home_aquaculture_pond_id = None
+        if "home_aquaculture_pond_id" in body:
+            scope = employee_labor_scope(e)
+            if scope == LABOR_SCOPE_ASSIGNED_POND:
+                hp_id, hp_err = parse_optional_aquaculture_pond_fk(cid, body.get("home_aquaculture_pond_id"))
+                if hp_err:
+                    return JsonResponse({"detail": hp_err}, status=400)
+                e.home_aquaculture_pond_id = hp_id
         e.save()
         refresh_employee_balance(e.id)
         e = (
             Employee.objects.filter(pk=e.pk, company_id=cid)
-            .select_related("home_station")
+            .select_related("home_station", "home_aquaculture_pond")
             .first()
         )
         return JsonResponse(_employee_to_json(e))
@@ -459,7 +546,7 @@ def _validate_payroll_period(start: date | None, end: date | None, pay: date | N
 
 def _sync_payroll_pond_allocations(company_id: int, p: PayrollRun, body: dict) -> JsonResponse | None:
     """
-    Replace pond allocations for this payroll run. Sum of amounts must equal total_net (within 0.02).
+    Replace pond allocations for this payroll run. Sum of amounts must equal total_gross (within 0.02).
     """
     if "pond_allocations" not in body:
         return None
@@ -487,12 +574,12 @@ def _sync_payroll_pond_allocations(company_id: int, p: PayrollRun, body: dict) -
             return JsonResponse({"detail": "Allocation amount cannot be negative"}, status=400)
         entries.append((pid, _q_money(amt)))
         total += _q_money(amt)
-    net = _q_money(p.total_net or Decimal("0"))
-    if abs(total - net) > Decimal("0.02"):
+    gross = _q_money(p.total_gross or Decimal("0"))
+    if abs(total - gross) > Decimal("0.02"):
         return JsonResponse(
             {
                 "detail": (
-                    f"pond_allocations must sum to total_net ({net}); "
+                    f"pond_allocations must sum to total gross wages ({gross}); "
                     f"sum of submitted amounts is {total}."
                 )
             },
@@ -798,12 +885,23 @@ def payroll_from_employees(request, payroll_id: int):
     p.subledger_employee_id = None
     p.save()
     p.refresh_from_db()
+    pond_warnings: list[str] = []
+    co_aq = Company.objects.filter(pk=cid).only("aquaculture_enabled").first()
+    if co_aq and getattr(co_aq, "aquaculture_enabled", False):
+        _, pond_warnings = sync_payroll_pond_allocations_from_employees(cid, p)
+        labor_coa = aquaculture_labor_expense_account(cid)
+        if labor_coa and not p.salary_expense_account_id:
+            PayrollRun.objects.filter(pk=p.pk).update(salary_expense_account_id=labor_coa.id)
+            p.refresh_from_db()
     p = (
         PayrollRun.objects.filter(pk=p.id, company_id=cid)
-        .select_related("salary_journal")
+        .select_related("salary_journal", "salary_expense_account")
         .first()
     )
-    return JsonResponse(_payroll_run_to_json(p), status=200)
+    out = _payroll_run_to_json(p)
+    if pond_warnings:
+        out["pond_allocation_warnings"] = pond_warnings
+    return JsonResponse(out, status=200)
 
 
 @csrf_exempt
@@ -835,14 +933,10 @@ def payroll_from_one_employee(request, payroll_id: int):
 
     emp = (
         Employee.objects.filter(pk=eid, company_id=cid)
-        .only(
-            "id",
-            "is_active",
-            "salary",
-            "first_name",
-            "last_name",
-            "employee_number",
-            "employee_code",
+        .select_related(
+            "home_aquaculture_pond",
+            "home_station",
+            "home_station__default_aquaculture_pond",
         )
         .first()
     )
@@ -868,12 +962,55 @@ def payroll_from_one_employee(request, payroll_id: int):
     p.subledger_employee_id = eid
     p.save()
     p.refresh_from_db()
+    pond_warnings: list[str] = []
+    co_aq = Company.objects.filter(pk=cid).only("aquaculture_enabled").first()
+    if co_aq and getattr(co_aq, "aquaculture_enabled", False):
+        pond_warnings = sync_single_employee_pond_allocations(cid, p, emp)
+        labor_coa = aquaculture_labor_expense_account(cid)
+        if labor_coa and not p.salary_expense_account_id:
+            PayrollRun.objects.filter(pk=p.pk).update(salary_expense_account_id=labor_coa.id)
+            p.refresh_from_db()
     p = (
         PayrollRun.objects.filter(pk=p.id, company_id=cid)
-        .select_related("salary_journal")
+        .select_related("salary_journal", "salary_expense_account")
         .first()
     )
-    return JsonResponse(_payroll_run_to_json(p), status=200)
+    out = _payroll_run_to_json(p)
+    if pond_warnings:
+        out["pond_allocation_warnings"] = pond_warnings
+    return JsonResponse(out, status=200)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def payroll_pond_allocations_from_employees(request, payroll_id: int):
+    """
+    Rebuild pond wage splits from employee pond assignments (does not change payroll totals).
+    """
+    cid = request.company_id
+    p = PayrollRun.objects.filter(pk=payroll_id, company_id=cid).first()
+    if not p:
+        return JsonResponse({"detail": "Not found"}, status=404)
+    if p.salary_journal_id:
+        return JsonResponse({"detail": "Already posted. Pond splits are locked."}, status=400)
+    co_aq = Company.objects.filter(pk=cid).only("aquaculture_enabled").first()
+    if not co_aq or not getattr(co_aq, "aquaculture_enabled", False):
+        return JsonResponse(
+            {"detail": "Aquaculture is not enabled for this company."},
+            status=400,
+        )
+    _, pond_warnings = sync_payroll_pond_allocations_from_employees(cid, p)
+    p = (
+        PayrollRun.objects.filter(pk=p.id, company_id=cid)
+        .select_related("salary_journal", "salary_expense_account")
+        .first()
+    )
+    out = _payroll_run_to_json(p)
+    if pond_warnings:
+        out["pond_allocation_warnings"] = pond_warnings
+    return JsonResponse(out, status=200)
 
 
 @csrf_exempt

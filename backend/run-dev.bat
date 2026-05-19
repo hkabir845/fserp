@@ -2,17 +2,13 @@
 setlocal
 cd /d "%~dp0"
 
-if not exist "venv\Scripts\python.exe" (
-  echo Creating venv...
-  python -m venv venv
-  if errorlevel 1 exit /b 1
-)
-
-call "%~dp0venv\Scripts\activate.bat"
-python -m pip install -q -r requirements.txt
-if errorlevel 1 (
-  echo pip install failed.
+set "VENV_PY=%~dp0..\.venv\Scripts\python.exe"
+if not exist "%VENV_PY%" (
+  echo ERROR: Missing %VENV_PY%
+  echo Run from repo root: powershell -File scripts\dev-setup.ps1
   exit /b 1
 )
 
-python manage.py runserver %*
+node "%~dp0scripts\free-port-8000.mjs" 2>nul
+echo Starting Django on http://127.0.0.1:8000 ...
+"%VENV_PY%" manage.py runserver 127.0.0.1:8000 %*

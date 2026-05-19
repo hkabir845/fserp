@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
-import { Plus, Edit2, Trash2, Mail, Phone, X, User, Briefcase, DollarSign, MapPin, Building2, AlertTriangle, RefreshCw, Search, Filter, BookOpen, Grid3x3, List } from 'lucide-react'
+import { Plus, Edit2, Trash2, Mail, Phone, X, User, Briefcase, DollarSign, MapPin, Building2, AlertTriangle, RefreshCw, Search, Filter, BookOpen, Grid3x3, List, Droplets } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateLong } from '@/utils/date'
@@ -32,11 +32,48 @@ interface Employee {
   /** Primary work site (ops / reporting) */
   home_station_id?: number | null
   home_station_name?: string | null
+  /** Primary aquaculture pond (pond P&L / payroll labor attribution) */
+  home_aquaculture_pond_id?: number | null
+  home_aquaculture_pond_name?: string | null
+  aquaculture_labor_scope?: 'not_applicable' | 'assigned_pond' | 'all_ponds_equal'
+  aquaculture_labor_scope_label?: string
 }
+
+type AquacultureLaborScope = 'not_applicable' | 'assigned_pond' | 'all_ponds_equal'
 
 interface StationOption {
   id: number
   station_name: string
+  is_active?: boolean
+  operates_fuel_retail?: boolean
+  default_aquaculture_pond_id?: number | null
+}
+
+function parseLaborScope(raw: string | undefined | null): AquacultureLaborScope {
+  if (raw === 'all_ponds_equal' || raw === 'assigned_pond' || raw === 'not_applicable') {
+    return raw
+  }
+  return 'not_applicable'
+}
+
+function stationIsFuelForecourt(station: StationOption | undefined): boolean {
+  return station != null && station.operates_fuel_retail !== false
+}
+
+function laborScopeForStation(
+  stationId: string | number,
+  stations: StationOption[]
+): AquacultureLaborScope {
+  if (stationId === '' || stationId == null) return 'not_applicable'
+  const st = stations.find((s) => String(s.id) === String(stationId))
+  if (!st) return 'not_applicable'
+  if (stationIsFuelForecourt(st)) return 'not_applicable'
+  return 'assigned_pond'
+}
+
+interface PondOption {
+  id: number
+  name: string
   is_active?: boolean
 }
 
@@ -60,6 +97,8 @@ export default function EmployeesPage() {
   })
   const [empCodePickerNonce, setEmpCodePickerNonce] = useState(0)
   const [stations, setStations] = useState<StationOption[]>([])
+  const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
+  const [aquaculturePonds, setAquaculturePonds] = useState<PondOption[]>([])
   const [formData, setFormData] = useState({
     employee_code: '',
     first_name: '',
@@ -72,6 +111,8 @@ export default function EmployeesPage() {
     salary: '',
     is_active: true,
     home_station_id: '' as string | number,
+    home_aquaculture_pond_id: '' as string | number,
+    aquaculture_labor_scope: 'not_applicable' as AquacultureLaborScope,
   })
 
   useEffect(() => {
@@ -82,8 +123,37 @@ export default function EmployeesPage() {
     }
     fetchCompanyCurrency()
     fetchStations()
+    fetchAquacultureContext()
     fetchEmployees()
   }, [router])
+
+  const fetchAquacultureContext = async () => {
+    try {
+      const res = await api.get<{ aquaculture_enabled?: boolean }>('/companies/current/', { timeout: 8000 })
+      const enabled = Boolean(res.data?.aquaculture_enabled)
+      setAquacultureEnabled(enabled)
+      if (!enabled) {
+        setAquaculturePonds([])
+        return
+      }
+      const pr = await api.get<unknown[]>('/aquaculture/ponds/', { timeout: 8000 })
+      const rows = Array.isArray(pr.data) ? pr.data : []
+      const parsed: PondOption[] = []
+      for (const r of rows) {
+        const o = r as { id?: number; name?: string; is_active?: boolean }
+        if (typeof o.id !== 'number') continue
+        parsed.push({
+          id: o.id,
+          name: (o.name || `Pond ${o.id}`).trim() || `Pond ${o.id}`,
+          is_active: o.is_active,
+        })
+      }
+      setAquaculturePonds(parsed)
+    } catch {
+      setAquacultureEnabled(false)
+      setAquaculturePonds([])
+    }
+  }
 
   const fetchStations = async () => {
     try {
@@ -91,10 +161,22 @@ export default function EmployeesPage() {
       const rows = Array.isArray(res.data) ? res.data : []
       const parsed: StationOption[] = []
       for (const r of rows) {
-        const o = r as { id?: number; station_name?: string; is_active?: boolean }
+        const o = r as {
+          id?: number
+          station_name?: string
+          is_active?: boolean
+          operates_fuel_retail?: boolean
+          default_aquaculture_pond_id?: number | null
+        }
         if (typeof o.id !== 'number') continue
         if (o.is_active === false) continue
-        parsed.push({ id: o.id, station_name: o.station_name || `Site #${o.id}`, is_active: o.is_active })
+        parsed.push({
+          id: o.id,
+          station_name: o.station_name || `Site #${o.id}`,
+          is_active: o.is_active,
+          operates_fuel_retail: o.operates_fuel_retail,
+          default_aquaculture_pond_id: o.default_aquaculture_pond_id ?? null,
+        })
       }
       setStations(parsed)
     } catch {
@@ -137,91 +219,21 @@ export default function EmployeesPage() {
         return
       }
       
-      const apiUrl = getApiBaseUrl()
-      const origin = getBackendOrigin()
+      const response = await api.get('/employees/', { timeout: 15000 })
 
-      // First, check if backend is accessible
-      try {
-        const healthController = new AbortController()
-        const healthTimeout = setTimeout(() => healthController.abort(), 5000)
-
-        const healthEndpoints = [
-          `${origin}/health`,
-          `${origin}/`,
-        ]
-        
-        let healthCheckSuccess = false
-        for (const endpoint of healthEndpoints) {
-          try {
-            const healthCheck = await fetch(endpoint, {
-              method: 'GET',
-              mode: 'cors',
-              credentials: 'omit',
-              signal: healthController.signal
-            })
-            
-            if (healthCheck.ok) {
-              healthCheckSuccess = true
-              break
-            }
-          } catch {
-            // Try next endpoint
-            continue
-          }
-        }
-        clearTimeout(healthTimeout)
-        
-        if (!healthCheckSuccess) {
-          throw new Error('Backend health check failed')
-        }
-      } catch (healthError) {
-        console.error('Backend health check failed:', healthError)
-        let userMessage = `Cannot connect to backend server. Please ensure the backend is running on ${getBackendOrigin()}`
-        if (healthError instanceof Error && healthError.name === 'AbortError') {
-          userMessage = `Backend server is not responding. Please ensure it is running on ${getBackendOrigin()}`
-        }
-        setError(userMessage)
-        toast.error(userMessage)
-        setLoading(false)
-        return
-      }
-      
-      // Now fetch employees
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 10000)
-      
-      const response = await fetch(`${apiUrl}/employees/`, {
-        method: 'GET',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        mode: 'cors',
-        credentials: 'omit',
-        signal: controller.signal
-      })
-      clearTimeout(timeout)
-      
       if (response.status === 401) {
         localStorage.removeItem('access_token')
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return
       }
-      
-      if (response.ok) {
-        const data = await response.json()
+
+      const data = response.data
+      if (Array.isArray(data)) {
         setEmployees(data)
         setError(null)
-      } else if (response.status === 401 || response.status === 403) {
-        localStorage.removeItem('access_token')
-        router.push('/login')
-        return
       } else {
-        const errorText = await response.text()
-        console.error('Failed to load employees:', response.status, errorText)
-        const errorMsg = `Failed to load employees: ${response.status}`
+        const errorMsg = 'Failed to load employees: unexpected response'
         setError(errorMsg)
         toast.error(errorMsg)
       }
@@ -237,8 +249,10 @@ export default function EmployeesPage() {
       } else if (errorMessage.includes('CORS')) {
         userMessage = 'CORS error detected. Please check backend CORS configuration.'
       } else {
-        toast.error(`Error connecting to server: ${errorMessage}`)
+        userMessage = `Error connecting to server: ${errorMessage}`
       }
+      setError(userMessage)
+      toast.error(userMessage)
     } finally {
       setLoading(false)
     }
@@ -254,7 +268,8 @@ export default function EmployeesPage() {
           .includes(searchTerm.toLowerCase()) ||
         (emp.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (emp.phone || '').includes(searchTerm) ||
-        (emp.home_station_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+        (emp.home_station_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (emp.home_aquaculture_pond_name || '').toLowerCase().includes(searchTerm.toLowerCase())
 
       const matchesFilter =
         filterActive === 'all' ||
@@ -278,9 +293,16 @@ export default function EmployeesPage() {
       salary: '',
       is_active: true,
       home_station_id: '',
+      home_aquaculture_pond_id: '',
+      aquaculture_labor_scope: 'not_applicable',
     })
     setEditingId(null)
   }
+
+  const isSharedAcrossAllPonds = formData.aquaculture_labor_scope === 'all_ponds_equal'
+  const isPondLaborNotApplicable = formData.aquaculture_labor_scope === 'not_applicable'
+  const showPondProfitCenter = aquacultureEnabled && formData.aquaculture_labor_scope === 'assigned_pond'
+  const selectedStation = stations.find((s) => String(s.id) === String(formData.home_station_id))
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -315,6 +337,20 @@ export default function EmployeesPage() {
         }
       } else {
         body.home_station_id = null
+      }
+      if (aquacultureEnabled) {
+        body.aquaculture_labor_scope = formData.aquaculture_labor_scope
+        if (
+          formData.aquaculture_labor_scope === 'all_ponds_equal' ||
+          formData.aquaculture_labor_scope === 'not_applicable'
+        ) {
+          body.home_aquaculture_pond_id = null
+        } else if (formData.home_aquaculture_pond_id !== '' && formData.home_aquaculture_pond_id != null) {
+          const pid = parseInt(String(formData.home_aquaculture_pond_id), 10)
+          if (!Number.isNaN(pid)) body.home_aquaculture_pond_id = pid
+        } else {
+          body.home_aquaculture_pond_id = null
+        }
       }
       const response = await fetch(`${baseUrl}/employees/`, {
         method: 'POST',
@@ -360,6 +396,11 @@ export default function EmployeesPage() {
         employee.home_station_id != null && employee.home_station_id > 0
           ? String(employee.home_station_id)
           : '',
+      home_aquaculture_pond_id:
+        employee.home_aquaculture_pond_id != null && employee.home_aquaculture_pond_id > 0
+          ? String(employee.home_aquaculture_pond_id)
+          : '',
+      aquaculture_labor_scope: parseLaborScope(employee.aquaculture_labor_scope),
     })
     setShowModal(true)
   }
@@ -394,6 +435,17 @@ export default function EmployeesPage() {
             formData.home_station_id !== '' && formData.home_station_id != null
               ? parseInt(String(formData.home_station_id), 10)
               : null,
+          ...(aquacultureEnabled
+            ? {
+                aquaculture_labor_scope: formData.aquaculture_labor_scope,
+                home_aquaculture_pond_id:
+                  formData.aquaculture_labor_scope === 'assigned_pond' &&
+                  formData.home_aquaculture_pond_id !== '' &&
+                  formData.home_aquaculture_pond_id != null
+                    ? parseInt(String(formData.home_aquaculture_pond_id), 10)
+                    : null,
+              }
+            : {}),
         })
       })
 
@@ -504,7 +556,7 @@ export default function EmployeesPage() {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                         <input
                           type="text"
-                          placeholder="Search by name, code, email, phone, or work site…"
+                          placeholder="Search by name, code, email, phone, work site, or pond…"
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
                           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -631,6 +683,22 @@ export default function EmployeesPage() {
                                   : '—')}
                             </span>
                           </div>
+                          {aquacultureEnabled && (
+                            <div className="flex items-center space-x-2 text-sm">
+                              <Droplets className="h-4 w-4 text-teal-600 shrink-0" />
+                              <span className="text-gray-600">
+                                <span className="font-medium text-gray-700">Pond wages:</span>{' '}
+                                {employee.aquaculture_labor_scope === 'not_applicable'
+                                  ? 'Not applicable'
+                                  : employee.aquaculture_labor_scope === 'all_ponds_equal'
+                                    ? 'All ponds (equal share)'
+                                    : (employee.home_aquaculture_pond_name || '').trim() ||
+                                      (employee.home_aquaculture_pond_id
+                                        ? `Pond #${employee.home_aquaculture_pond_id}`
+                                        : '—')}
+                              </span>
+                            </div>
+                          )}
                           {employee.email && (
                             <div className="flex items-center space-x-2 text-sm text-gray-600">
                               <Mail className="h-4 w-4 text-gray-400 shrink-0" />
@@ -719,6 +787,11 @@ export default function EmployeesPage() {
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
                             Work site
                           </th>
+                          {aquacultureEnabled && (
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
+                              Pond
+                            </th>
+                          )}
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
                             Job / Dept
                           </th>
@@ -758,6 +831,29 @@ export default function EmployeesPage() {
                                 </span>
                               </span>
                             </td>
+                            {aquacultureEnabled && (
+                              <td className="px-4 py-3 text-sm text-gray-600 hidden md:table-cell max-w-[10rem]">
+                                <span className="inline-flex items-center gap-1">
+                                  <Droplets className="h-3.5 w-3.5 shrink-0 text-teal-600/90" />
+                                  <span
+                                    className="truncate"
+                                    title={
+                                      employee.aquaculture_labor_scope === 'not_applicable'
+                                        ? 'Not applicable (site payroll)'
+                                        : employee.aquaculture_labor_scope === 'all_ponds_equal'
+                                          ? 'All ponds (equal share)'
+                                          : employee.home_aquaculture_pond_name || ''
+                                    }
+                                  >
+                                    {employee.aquaculture_labor_scope === 'not_applicable'
+                                      ? 'N/A'
+                                      : employee.aquaculture_labor_scope === 'all_ponds_equal'
+                                        ? 'All ponds (equal)'
+                                        : (employee.home_aquaculture_pond_name || '').trim() || '—'}
+                                  </span>
+                                </span>
+                              </td>
+                            )}
                             <td className="px-4 py-3 text-sm text-gray-600 hidden lg:table-cell">
                               <div>{employee.position || employee.job_title || '—'}</div>
                               {employee.department && (
@@ -1029,25 +1125,138 @@ export default function EmployeesPage() {
                       </label>
                       <select
                         value={formData.home_station_id === '' ? '' : String(formData.home_station_id)}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const stationId = e.target.value === '' ? '' : e.target.value
+                          const nextScope =
+                            stationId === ''
+                              ? formData.aquaculture_labor_scope
+                              : laborScopeForStation(stationId, stations)
                           setFormData({
                             ...formData,
-                            home_station_id: e.target.value === '' ? '' : e.target.value,
+                            home_station_id: stationId,
+                            ...(aquacultureEnabled
+                              ? {
+                                  aquaculture_labor_scope:
+                                    stationId === ''
+                                      ? formData.aquaculture_labor_scope
+                                      : nextScope,
+                                  ...(nextScope !== 'assigned_pond'
+                                    ? { home_aquaculture_pond_id: '' }
+                                    : {}),
+                                }
+                              : {}),
                           })
-                        }
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                       >
                         <option value="">— Not set —</option>
                         {stations.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.station_name}
+                            {s.operates_fuel_retail === false ? ' (shop)' : ''}
                           </option>
                         ))}
                       </select>
                       <p className="mt-1 text-xs text-gray-500">
-                        Where this person primarily works (for rosters and site reporting).
+                        Operational work site (fuel forecourt, agro shop, or office). Used for rosters and
+                        site reporting — separate from pond profit-center payroll.
                       </p>
                     </div>
+                    {aquacultureEnabled && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Wage attribution (aquaculture)
+                        </label>
+                        <select
+                          value={formData.aquaculture_labor_scope}
+                          onChange={(e) => {
+                            const scope = e.target.value as AquacultureLaborScope
+                            setFormData({
+                              ...formData,
+                              aquaculture_labor_scope: scope,
+                              ...(scope !== 'assigned_pond' ? { home_aquaculture_pond_id: '' } : {}),
+                            })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+                        >
+                          <option value="not_applicable">
+                            — Not applicable — (fuel / shop / site payroll)
+                          </option>
+                          <option value="assigned_pond">Single pond — field / pond worker</option>
+                          <option value="all_ponds_equal">
+                            All ponds (equal share) — shared aquaculture manager
+                          </option>
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Controls whether payroll is split into aquaculture pond P&amp;L (account{' '}
+                          <span className="font-mono text-teal-800">6712</span>). Choose{' '}
+                          <span className="font-medium">Not applicable</span> for Main Station accountants,
+                          Premium Agro shop staff, and other non-pond roles.
+                        </p>
+                        {selectedStation && stationIsFuelForecourt(selectedStation) && (
+                          <p className="mt-1 text-xs text-amber-800">
+                            {selectedStation.station_name} is a fuel forecourt — pond wage attribution is
+                            usually not applicable.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {showPondProfitCenter && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 inline-flex items-center gap-1.5">
+                          <Droplets className="h-4 w-4 text-teal-600" />
+                          Aquaculture pond (profit center)
+                        </label>
+                        <select
+                          value={
+                            formData.home_aquaculture_pond_id === ''
+                              ? ''
+                              : String(formData.home_aquaculture_pond_id)
+                          }
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              home_aquaculture_pond_id: e.target.value === '' ? '' : e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+                        >
+                          <option value="">— Not assigned —</option>
+                          {aquaculturePonds.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                              {p.is_active === false ? ' (inactive)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Required for pond workers: wages post to{' '}
+                          <span className="font-mono text-teal-800">6712</span> on this profit center. For
+                          agro shops linked to a pond, you may leave blank only if the shop site has a default
+                          pond and this person&apos;s wages should follow that link.
+                        </p>
+                        {aquaculturePonds.length === 0 && (
+                          <p className="mt-1 text-xs text-amber-800">
+                            No ponds yet — add them under{' '}
+                            <Link href="/aquaculture/ponds" className="font-medium underline">
+                              Aquaculture → Ponds
+                            </Link>
+                            .
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {aquacultureEnabled && isSharedAcrossAllPonds && (
+                      <div className="rounded-lg border border-teal-200 bg-teal-50/80 px-3 py-2 text-xs text-teal-950 md:col-span-2">
+                        Salary will be divided equally across all active ponds when you run payroll.
+                      </div>
+                    )}
+                    {aquacultureEnabled && isPondLaborNotApplicable && (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 md:col-span-2">
+                        Wages stay on company / site payroll and are not allocated to aquaculture pond
+                        P&amp;L. Aquaculture pond stays not assigned.
+                      </div>
+                    )}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Hire Date

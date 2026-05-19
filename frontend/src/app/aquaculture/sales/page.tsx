@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { FileCheck, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
+import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
@@ -161,7 +162,7 @@ export default function AquacultureSalesPage() {
         api.get<IncomeTypeOpt[]>('/aquaculture/income-types/'),
         api.get<FishSpeciesOpt[]>('/aquaculture/fish-species/').catch(() => ({ data: [] })),
         api
-          .get<unknown>('/customers/', { params: { skip: 0, limit: 10000 } })
+          .get<unknown>('/customers/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } })
           .catch(() => ({ data: [] })),
       ])
       setCurrency(String(co.data?.currency || 'BDT').slice(0, 3))

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { ArrowLeft, AlertCircle, UserPlus } from 'lucide-react'
 import api from '@/lib/api'
+import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { getCurrencySymbol, formatNumber, roundToDecimals } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_ALLOCATE_GREEN_CLASS, AMOUNT_EDITABLE_FULL_GREEN_CLASS } from '@/utils/amountFieldStyles'
@@ -230,7 +231,7 @@ function RecordPaymentReceivedInner() {
           /* optional */
         }
         const settled = await Promise.allSettled([
-          api.get('/customers/', { params: { skip: 0, limit: 10000 } }),
+          api.get('/customers/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
           api.get('/bank-accounts/'),
         ])
         setError('')

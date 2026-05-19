@@ -672,6 +672,32 @@ class Employee(models.Model):
         related_name="employees_home",
         help_text="Primary work site for this employee (ops / labor cost reporting).",
     )
+    home_aquaculture_pond = models.ForeignKey(
+        "AquaculturePond",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="employees_home",
+        help_text=(
+            "Primary pond for pond-based labor: payroll and aquaculture P&L attribute "
+            "this employee's wages to this profit center."
+        ),
+    )
+    aquaculture_labor_scope = models.CharField(
+        max_length=32,
+        default="not_applicable",
+        db_index=True,
+        choices=(
+            ("not_applicable", "Not applicable (site / company payroll)"),
+            ("assigned_pond", "Single pond"),
+            ("all_ponds_equal", "Shared equally across all ponds"),
+        ),
+        help_text=(
+            "not_applicable: fuel forecourt, admin, shop staff — wages are not split to pond P&L. "
+            "assigned_pond: field / pond worker — wages to home pond (or shop site default when set). "
+            "all_ponds_equal: shared aquaculture managers — salary split evenly on all active ponds."
+        ),
+    )
     employee_number = models.CharField(max_length=64, blank=True)
     employee_code = models.CharField(max_length=64, blank=True)
     first_name = models.CharField(max_length=100)
@@ -2454,8 +2480,8 @@ class AquacultureFeedingAdvice(models.Model):
 
 class PayrollRunPondAllocation(models.Model):
     """
-    Split company payroll net pay across ponds (salary expense attribution).
-    Sum of amounts for a payroll run should match PayrollRun.total_net (enforced in API).
+    Attribute payroll wages to aquaculture ponds (pond P&L labor and GL 6712 splits).
+    Sum of amounts for a payroll run should match PayrollRun.total_gross (enforced in API).
     """
 
     payroll_run = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name="pond_allocations")

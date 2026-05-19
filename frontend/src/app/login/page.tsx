@@ -27,6 +27,19 @@ export default function LoginPage() {
     setMounted(true)
   }, [])
 
+  // Already signed in — skip login UI (replaces old client-only home redirect)
+  useEffect(() => {
+    if (!mounted || typeof window === 'undefined') return
+    try {
+      const token = localStorage.getItem('access_token')?.trim()
+      if (token && token !== 'undefined' && token !== 'null') {
+        router.replace('/apps')
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [mounted, router])
+
   // Test backend connection function (can be called manually)
   const testConnection = useCallback(async (showLoading = true) => {
     if (showLoading) {
@@ -100,7 +113,7 @@ export default function LoginPage() {
     
     // Check connection on mount and show UI feedback
     // This runs once to avoid console spam, but still shows the error message to user
-    testConnection(true).catch(() => {
+    testConnection(false).catch(() => {
       // Error already handled in testConnection
     })
   }, []) // Empty deps - only run once on mount

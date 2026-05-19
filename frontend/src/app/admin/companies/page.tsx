@@ -140,7 +140,7 @@ function CompaniesPageContent() {
   const searchParams = useSearchParams()
   const toast = useToast()
   useRequireSaasDashboardMode()
-  const { mode, selectedCompany } = useCompany()
+  const { mode, selectedCompany, isClientReady } = useCompany()
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   /** Set when GET /admin/companies/ fails so we do not imply the database has zero tenants. */
@@ -829,6 +829,10 @@ function CompaniesPageContent() {
       (code && code.includes(q))
     )
   })
+
+  if (!isClientReady) {
+    return <CompaniesPageFallback />
+  }
 
   if (mode !== 'saas_dashboard') {
     return (

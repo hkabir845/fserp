@@ -6,11 +6,14 @@
     "node": ">=20.9.0"
   },
   "scripts": {
-    "dev": "node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0",
-    "dev:turbo": "node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --turbo",
+    "kill:3000": "node scripts/free-port-3000.mjs",
+    "predev": "node scripts/free-port-3000.mjs",
+    "dev": "node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --turbo",
+    "dev:webpack": "node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --webpack",
     "clean:next": "node scripts/clean-next.mjs",
-    "dev:clean": "npm run clean:next && node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0",
+    "dev:clean": "npm run clean:next && node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --turbo",
     "build": "next build",
+    "prestart": "node scripts/free-port-3000.mjs",
     "start": "next start -p 3000",
     "lint": "eslint ."
   },

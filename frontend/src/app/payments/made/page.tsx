@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import EditPaymentModal from '../EditPaymentModal'
 import { confirmDeletePaymentDialog, deletePaymentRequest } from '../paymentMutations'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -143,7 +144,9 @@ export default function PaymentMadePage() {
         console.error('Error fetching company currency:', error)
       }
 
-      const response = await api.get('/vendors/', { params: { skip: 0, limit: 10000 } })
+      const response = await api.get('/vendors/', {
+        params: { skip: 0, limit: REFERENCE_FETCH_LIMIT },
+      })
       setVendors(response.data)
     } catch (error) {
       console.error('Error fetching vendors:', error)

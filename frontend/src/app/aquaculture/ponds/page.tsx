@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
+import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber } from '@/utils/currency'
@@ -452,7 +453,9 @@ export default function AquaculturePondsPage() {
   const loadCustomersForModal = useCallback(async () => {
     setCustomersLoading(true)
     try {
-      const { data } = await api.get<CustomerOpt[]>('/customers/', { params: { limit: 10000 } })
+      const { data } = await api.get<CustomerOpt[]>('/customers/', {
+        params: { limit: REFERENCE_FETCH_LIMIT },
+      })
       const fromApi = Array.isArray(data) ? data : []
       const byId = new Map<number, CustomerOpt>()
       for (const c of fromApi) byId.set(c.id, c)

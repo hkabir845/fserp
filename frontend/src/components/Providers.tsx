@@ -1,26 +1,35 @@
 'use client'
 
 import { ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import { ToastProvider } from './Toast'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { CompanyLocaleProvider } from '@/contexts/CompanyLocaleContext'
 import { FixedBanner } from './FixedBanner'
 import { PwaInstallBanner } from './PwaInstallBanner'
 import { AuthApiOriginGuard } from './AuthApiOriginGuard'
+import { DevEnvironmentBanner } from './DevEnvironmentBanner'
+import { isPublicAuthRoute } from '@/utils/publicAuthRoutes'
 
 export function Providers({ children }: { children: ReactNode }) {
-  // Simple, safe rendering - no try-catch that might hide errors
-  // If there's an error, it will show in console so we can fix it
+  const pathname = usePathname()
+  const isPublic = isPublicAuthRoute(pathname)
+
   return (
     <ToastProvider>
       <AuthApiOriginGuard>
-        <CompanyProvider>
-          <CompanyLocaleProvider>
-            <FixedBanner />
-            <PwaInstallBanner />
-            {children}
-          </CompanyLocaleProvider>
-        </CompanyProvider>
+        <DevEnvironmentBanner />
+        {isPublic ? (
+          children
+        ) : (
+          <CompanyProvider>
+            <CompanyLocaleProvider>
+              <FixedBanner />
+              <PwaInstallBanner />
+              {children}
+            </CompanyLocaleProvider>
+          </CompanyProvider>
+        )}
       </AuthApiOriginGuard>
     </ToastProvider>
   )

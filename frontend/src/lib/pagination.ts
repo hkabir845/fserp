@@ -18,6 +18,9 @@ export function isOffsetPagedPayload(x: unknown): x is OffsetPaged<unknown> {
 
 export const OFFSET_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const
 
+/** Max rows for dropdown/reference fetches (vendors, customers, items). */
+export const REFERENCE_FETCH_LIMIT = 500
+
 export function offsetListParams(opts: {
   page: number
   pageSize: number

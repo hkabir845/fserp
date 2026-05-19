@@ -6,8 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText } from 'lucide-react'
 import { useToast } from '@/components/Toast'
-import api, { getApiBaseUrl } from '@/lib/api'
-import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
+import api from '@/lib/api'
+import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -967,6 +967,8 @@ export default function BillsPage() {
   const [expenseAccounts, setExpenseAccounts] = useState<ExpenseAccount[]>([])
   const [tanks, setTanks] = useState<Tank[]>([])  // All tanks for the company
   const [loading, setLoading] = useState(true)
+  const [referenceLoading, setReferenceLoading] = useState(false)
+  const referenceReadyRef = useRef(false)
   const [listPage, setListPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const [billsTotal, setBillsTotal] = useState(0)
@@ -1071,31 +1073,6 @@ export default function BillsPage() {
     setListPage(1)
   }, [debouncedSearch, pageSize, statusFilter])
 
-  // Fetch vendors when modal opens if not already loaded
-  useEffect(() => {
-    if (showModal && vendors.length === 0 && !loading) {
-      const fetchVendorsOnly = async () => {
-        try {
-          const token = localStorage.getItem('access_token')
-          const baseUrl = getApiBaseUrl()
-          const response = await fetch(`${baseUrl}/vendors/`, {
-            headers: { Authorization: `Bearer ${token}` }
-          })
-          if (response.ok) {
-            const vendorsData = await response.json()
-            setVendors(vendorsData.filter((v: Vendor) => v.is_active))
-          } else {
-            console.error('❌ Failed to load vendors:', response.status)
-            toast.error('Failed to load vendors')
-          }
-        } catch (error) {
-          console.error('❌ Error fetching vendors:', error)
-        }
-      }
-      fetchVendorsOnly()
-    }
-  }, [showModal, vendors.length, loading])
-
   const loadBills = useCallback(async () => {
     try {
       const params = offsetListParams({
@@ -1127,20 +1104,22 @@ export default function BillsPage() {
     }
   }, [debouncedSearch, listPage, pageSize, statusFilter, toast])
 
-  const loadReference = useCallback(async () => {
+  const loadCompanyCurrency = useCallback(async () => {
     try {
-      try {
-        const companyRes = await api.get('/companies/current')
-        if (companyRes.data?.currency) {
-          setCurrencySymbol(getCurrencySymbol(companyRes.data.currency))
-        }
-      } catch (error) {
-        console.error('Error fetching company currency:', error)
+      const companyRes = await api.get('/companies/current', { timeout: 8000 })
+      if (companyRes.data?.currency) {
+        setCurrencySymbol(getCurrencySymbol(companyRes.data.currency))
       }
+    } catch (error) {
+      console.error('Error fetching company currency:', error)
+    }
+  }, [])
 
+  const loadBillReferenceData = useCallback(async () => {
+    try {
       const [vendorsRes, itemsRes, accountsRes, tanksRes, stationsRes] = await Promise.allSettled([
-        api.get('/vendors/', { params: { skip: 0, limit: 10000 } }),
-        api.get('/items/', { params: { skip: 0, limit: 10000 } }),
+        api.get('/vendors/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
+        api.get('/items/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
         api.get('/chart-of-accounts/'),
         api.get('/tanks/'),
         api.get('/stations/'),
@@ -1266,28 +1245,45 @@ export default function BillsPage() {
       } else {
         setFuelStationBillCategories([])
       }
+      referenceReadyRef.current = true
     } catch (error) {
       console.error('Error fetching reference data:', error)
       toast.error('Error connecting to server')
     }
   }, [toast])
 
+  const ensureBillReferenceData = useCallback(async () => {
+    if (referenceReadyRef.current) return
+    setReferenceLoading(true)
+    try {
+      await loadBillReferenceData()
+    } finally {
+      setReferenceLoading(false)
+    }
+  }, [loadBillReferenceData])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
+    referenceReadyRef.current = false
     try {
-      await loadReference()
+      await Promise.all([loadCompanyCurrency(), loadBillReferenceData()])
       await loadBills()
     } finally {
       setLoading(false)
     }
-  }, [loadReference, loadBills])
+  }, [loadCompanyCurrency, loadBillReferenceData, loadBills])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
     if (!token) return
     setLoading(true)
-    void loadReference().finally(() => setLoading(false))
-  }, [router, loadReference])
+    void loadCompanyCurrency().finally(() => setLoading(false))
+  }, [router, loadCompanyCurrency])
+
+  useEffect(() => {
+    if (!showModal && !showEditModal) return
+    void ensureBillReferenceData()
+  }, [showModal, showEditModal, ensureBillReferenceData])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -1297,33 +1293,38 @@ export default function BillsPage() {
 
   const openedBillFromUrl = useRef(false)
   useEffect(() => {
-    if (loading || openedBillFromUrl.current) return
+    if (openedBillFromUrl.current) return
     const wantNew = searchParams.get('new')
     const pondRaw = searchParams.get('pond_id')
     if (wantNew !== '1' && wantNew !== 'true' && !pondRaw) return
-    openedBillFromUrl.current = true
-    const pondId = pondRaw && /^\d+$/.test(pondRaw.trim()) ? parseInt(pondRaw.trim(), 10) : ''
-    const catRaw = searchParams.get('expense_category') || 'other'
-    const catId = findBillCategory(billExpenseCategories, catRaw)?.id || ''
-    const billDate = new Date().toISOString().split('T')[0]
-    const due = new Date(`${billDate}T12:00:00`)
-    due.setDate(due.getDate() + 30)
-    setFormData({
-      vendor_id: 0,
-      bill_date: billDate,
-      due_date: due.toISOString().split('T')[0],
-      vendor_reference: '',
-      memo: pondId !== '' ? 'Pond operating expense' : '',
-      receipt_station_id: '',
-      bill_purpose: pondId !== '' ? ('pond' as BillPurpose) : ('station' as BillPurpose),
-      lines:
-        pondId !== '' && catId
-          ? [{ ...newAquacultureBillLine(pondId, catId, billExpenseCategories), line_number: 1 }]
-          : [],
-    })
-    setApproveBill(false)
-    setShowModal(true)
-  }, [loading, searchParams, billExpenseCategories])
+
+    void (async () => {
+      await ensureBillReferenceData()
+      if (openedBillFromUrl.current) return
+      openedBillFromUrl.current = true
+      const pondId = pondRaw && /^\d+$/.test(pondRaw.trim()) ? parseInt(pondRaw.trim(), 10) : ''
+      const catRaw = searchParams.get('expense_category') || 'other'
+      const catId = findBillCategory(billExpenseCategories, catRaw)?.id || ''
+      const billDate = new Date().toISOString().split('T')[0]
+      const due = new Date(`${billDate}T12:00:00`)
+      due.setDate(due.getDate() + 30)
+      setFormData({
+        vendor_id: 0,
+        bill_date: billDate,
+        due_date: due.toISOString().split('T')[0],
+        vendor_reference: '',
+        memo: pondId !== '' ? 'Pond operating expense' : '',
+        receipt_station_id: '',
+        bill_purpose: pondId !== '' ? ('pond' as BillPurpose) : ('station' as BillPurpose),
+        lines:
+          pondId !== '' && catId
+            ? [{ ...newAquacultureBillLine(pondId, catId, billExpenseCategories), line_number: 1 }]
+            : [],
+      })
+      setApproveBill(false)
+      setShowModal(true)
+    })()
+  }, [searchParams, billExpenseCategories, ensureBillReferenceData])
 
   const calculateLineAmount = (quantity: number, unitCost: number) => {
     return quantity * unitCost
@@ -2927,6 +2928,9 @@ export default function BillsPage() {
             <div className="bg-white rounded-lg app-modal-pad max-w-7xl w-full max-h-[90vh] overflow-y-auto my-8">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Add New Bill</h2>
+                {referenceLoading ? (
+                  <span className="text-sm font-normal text-gray-500">Loading form data…</span>
+                ) : null}
                 <button
                   onClick={handleCloseModal}
                   className="text-gray-400 hover:text-gray-600"
@@ -2935,7 +2939,7 @@ export default function BillsPage() {
                 </button>
               </div>
 
-              <form onSubmit={handleCreate}>
+              <form onSubmit={handleCreate} className={referenceLoading ? 'pointer-events-none opacity-60' : undefined}>
                 <div className="grid grid-cols-2 gap-4 mb-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">

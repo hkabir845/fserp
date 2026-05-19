@@ -8,7 +8,7 @@ import { CompanyProvider } from '@/contexts/CompanyContext'
 import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, Users, UserCheck, DollarSign, X, Mail, Phone, ArrowUpDown, ArrowUp, ArrowDown, Download, BookOpen, Building2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiDocsUrl, getBackendOrigin } from '@/lib/api'
-import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
+import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { isConnectionError } from '@/utils/connectionError'
@@ -951,7 +951,7 @@ export default function CustomersPage() {
                             const { data } = await api.get<Customer[]>('/customers/', {
                               params: {
                                 skip: 0,
-                                limit: 10000,
+                                limit: REFERENCE_FETCH_LIMIT,
                                 ...(debouncedSearch.trim() ? { q: debouncedSearch.trim() } : {}),
                                 sort: sortField || 'id',
                                 dir: sortDirection,

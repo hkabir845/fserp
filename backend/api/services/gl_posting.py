@@ -45,6 +45,7 @@ from api.models import (
     Payment,
     PaymentInvoiceAllocation,
     PayrollRun,
+    PayrollRunPondAllocation,
     Station,
     Tank,
     TankDip,
@@ -248,6 +249,7 @@ CODE_INV_SHOP = "1220"
 CODE_AQ_LEASE_EXPENSE = "6711"
 # Payroll (fuel_station template; optional — posting skips if 6400 missing)
 CODE_SALARY_EXP = "6400"
+CODE_AQUACULTURE_LABOR_EXP = "6712"
 CODE_SALARY_PAYABLE = "2200"
 CODE_STAT_DED = "2210"
 
@@ -2443,10 +2445,32 @@ def post_payroll_salary(
         ).first()
         if expense and normalize_chart_account_type(expense.account_type) != "expense":
             expense = None
-    if not expense:
-        expense = _coa(company_id, CODE_SALARY_EXP)
-    if not expense:
+    pond_alloc_rows = list(
+        PayrollRunPondAllocation.objects.filter(payroll_run_id=pr.id)
+        .select_related("pond")
+        .order_by("pond_id")
+    )
+    alloc_gross = sum((r.amount or Decimal("0")) for r in pond_alloc_rows).quantize(Decimal("0.01"))
+    company_gross = max(gross - alloc_gross, Decimal("0")).quantize(Decimal("0.01"))
+    split_by_pond = bool(pond_alloc_rows) and alloc_gross > 0
+    if split_by_pond and alloc_gross > gross + Decimal("0.02"):
+        return None, f"Pond allocations ({alloc_gross}) exceed payroll gross ({gross})."
+    split_mixed_entities = split_by_pond and company_gross > Decimal("0.02")
+    split_full_pond = split_by_pond and not split_mixed_entities and abs(alloc_gross - gross) <= Decimal("0.02")
+
+    pond_exp = _coa(company_id, CODE_AQUACULTURE_LABOR_EXP)
+    company_exp = _coa(company_id, CODE_SALARY_EXP)
+    if split_by_pond and not pond_exp:
+        return None, f"Add chart account {CODE_AQUACULTURE_LABOR_EXP} (pond labor) for aquaculture wage splits."
+
+    if split_full_pond and not getattr(pr, "salary_expense_account_id", None) and pond_exp:
+        expense = pond_exp
+    elif not expense:
+        expense = company_exp or pond_exp
+    if not expense and not split_by_pond:
         return None, f"Add chart account {CODE_SALARY_EXP} (Salaries & Wages) or pick a salary expense account."
+    if split_mixed_entities and not company_exp:
+        return None, f"Add chart account {CODE_SALARY_EXP} for site / company payroll (non-pond wages)."
 
     pay_account, pay_err = _payroll_net_pay_credit_account(
         company_id, bank_account_id, pay_from_chart_account_id
@@ -2466,16 +2490,44 @@ def post_payroll_salary(
         sync_payroll_run_to_employee_ledgers(company_id, pr)
         return je, ""
 
-    lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = [
-        (expense, gross, Decimal("0"), f"Gross pay — {ref}"),
-    ]
+    lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = []
+    aq_costing: list[Optional[dict]] = []
+    if split_by_pond:
+        pond_debit_account = pond_exp or expense
+        for row in pond_alloc_rows:
+            amt = (row.amount or Decimal("0")).quantize(Decimal("0.01"))
+            if amt <= 0:
+                continue
+            pname = (row.pond.name if row.pond else "").strip() or f"Pond #{row.pond_id}"
+            lines.append(
+                (pond_debit_account, amt, Decimal("0"), f"Pond labor — {pname} — {ref}"),
+            )
+            aq_costing.append(
+                {"pond_id": row.pond_id, "cost_bucket": "worker_salary"},
+            )
+        if split_mixed_entities:
+            site_exp = company_exp or expense
+            if not site_exp:
+                return None, f"Add chart account {CODE_SALARY_EXP} for site / company payroll."
+            lines.append(
+                (site_exp, company_gross, Decimal("0"), f"Site / company payroll — {ref}"),
+            )
+            aq_costing.append(None)
+    else:
+        if not expense:
+            return None, f"Add chart account {CODE_SALARY_EXP} (Salaries & Wages) or pick a salary expense account."
+        lines.append((expense, gross, Decimal("0"), f"Gross pay — {ref}"))
+        aq_costing.append(None)
+
     if ded > 0:
         dacc = _payroll_deduction_credit_account(company_id)
         if not dacc:
             return None, "Deductions account not configured"
         lines.append((dacc, Decimal("0"), ded, f"Deductions / withholdings — {ref}"))
+        aq_costing.append(None)
 
     lines.append((pay_account, Decimal("0"), net, f"Net pay — {ref}"))
+    aq_costing.append(None)
 
     pr_st = _gl_station_id(company_id, pr.station_id)
     je = _create_posted_entry(
@@ -2485,6 +2537,7 @@ def post_payroll_salary(
         f"Salary pay {pr.payroll_number or en}",
         lines,
         gl_station_id=pr_st,
+        aquaculture_line_costing=aq_costing if split_by_pond and pond_exp else None,
     )
     if not je:
         return None, "Failed to post journal (unbalanced or invalid)"

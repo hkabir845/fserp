@@ -111,7 +111,10 @@ const nextConfig = {
   // If the app is at a subpath (e.g. example.com/app), set basePath: '/app'.
   // Only set assetPrefix when using a CDN for static assets.
   experimental: {
-    optimizePackageImports: ['lucide-react'],
+    // lucide tree-shaking slows first dev compile on a large app; keep for production builds.
+    ...(process.env.NODE_ENV === 'production'
+      ? { optimizePackageImports: ['lucide-react'] }
+      : {}),
   },
   // Next.js 16+ defaults to Turbopack for `next build`; a custom `webpack` hook without a
   // Turbopack equivalent triggers a hard error. Dev fast-refresh is fine without disabling minimize.

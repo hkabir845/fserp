@@ -6,7 +6,11 @@ import type { NextRequest } from 'next/server'
  * break with 404 / wrong MIME (see next.config.mjs comment).
  * Next.js 16+: use `src/proxy.ts` with a `proxy` export (replaces deprecated middleware).
  */
-export function proxy(_request: NextRequest) {
+export function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname === '/') {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
   const res = NextResponse.next()
   res.headers.set('X-Frame-Options', 'SAMEORIGIN')
   res.headers.set('X-Content-Type-Options', 'nosniff')

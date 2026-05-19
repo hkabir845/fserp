@@ -35,6 +35,7 @@ interface PayrollRun {
   created_at: string
   updated_at: string
   pond_allocations?: { pond_id: number; pond_name?: string; amount: string }[]
+  pond_allocation_warnings?: string[]
   salary_expense_account_id?: number | null
   salary_expense_account_code?: string | null
   salary_expense_account_name?: string | null
@@ -190,6 +191,16 @@ export default function PayrollPage() {
       setAquacultureOpsUnlocked(false)
     }
   }, [])
+
+  const showPondAllocationWarnings = useCallback(
+    (data: PayrollRun) => {
+      const w = data.pond_allocation_warnings
+      if (Array.isArray(w) && w.length > 0) {
+        toast.error(w.slice(0, 4).join(' · ') + (w.length > 4 ? ` (+${w.length - 4} more)` : ''))
+      }
+    },
+    [toast]
+  )
 
   const applyPayrollResponseToDetailState = useCallback((data: PayrollRun) => {
     setSelectedPayroll(data)
@@ -740,10 +751,7 @@ export default function PayrollPage() {
       }
       if (nRaw !== '') body.total_net = Number(nRaw)
       if (aquacultureEnabled && aquacultureOpsUnlocked && !selectedPayroll.is_salary_posted) {
-        const net =
-          nRaw !== ''
-            ? Number(nRaw)
-            : detailComputedGross - parseMoneyInput(detailAmounts.d)
+        const gross = detailComputedGross
         const alloc = pondAllocDraft
           .filter((row) => row.pond_id && String(row.amount).trim() !== '')
           .map((row) => ({
@@ -751,14 +759,14 @@ export default function PayrollPage() {
             amount: String(parseMoneyInput(row.amount)),
           }))
         const sumAlloc = alloc.reduce((s, x) => s + parseMoneyInput(x.amount), 0)
-        if (Math.abs(sumAlloc - net) > 0.02) {
+        if (alloc.length > 0 && Math.abs(sumAlloc - gross) > 0.02) {
           toast.error(
-            `Pond allocations must sum to total net (${formatNumber(net)}). Current sum: ${formatNumber(sumAlloc)}.`
+            `Pond wage splits must sum to total gross (${formatNumber(gross)}). Current sum: ${formatNumber(sumAlloc)}.`
           )
           setAmountSaving(false)
           return
         }
-        body.pond_allocations = alloc
+        if (alloc.length > 0) body.pond_allocations = alloc
       }
       const response = await fetch(`${baseUrl}/payroll/${selectedPayroll.id}/`, {
         method: 'PUT',
@@ -788,6 +796,41 @@ export default function PayrollPage() {
     }
   }
 
+  const fillPondAllocFromEmployees = async () => {
+    if (!selectedPayroll || selectedPayroll.is_salary_posted) return
+    setActionLoading(true)
+    try {
+      const token = localStorage.getItem('access_token')
+      const baseUrl = getApiBaseUrl()
+      const response = await fetch(
+        `${baseUrl}/payroll/${selectedPayroll.id}/pond-allocations-from-employees/`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({}),
+        }
+      )
+      if (response.ok) {
+        const data = (await response.json()) as PayrollRun
+        applyPayrollResponseToDetailState(data)
+        showPondAllocationWarnings(data)
+        toast.success('Pond wage splits updated from employee pond assignments')
+      } else {
+        const err = await response.json()
+        toast.error(err.detail || 'Failed')
+      }
+    } catch (e) {
+      console.error(e)
+      toast.error('Request failed')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const runFromEmployees = async () => {
     if (!selectedPayroll || selectedPayroll.is_salary_posted) return
     setActionLoading(true)
@@ -809,8 +852,11 @@ export default function PayrollPage() {
       if (response.ok) {
         const data = (await response.json()) as PayrollRun
         applyPayrollResponseToDetailState(data)
+        showPondAllocationWarnings(data)
         fetchPayrolls()
-        toast.success('Totals set from active employee salaries (same period sum)')
+        toast.success(
+          'Totals and pond wage splits set from active employees (assign ponds on each employee first).'
+        )
       } else {
         const err = await response.json()
         toast.error(err.detail || 'Failed')
@@ -848,8 +894,9 @@ export default function PayrollPage() {
       if (response.ok) {
         const data = (await response.json()) as PayrollRun
         applyPayrollResponseToDetailState(data)
+        showPondAllocationWarnings(data)
         fetchPayrolls()
-        toast.success('Gross and net set from that employee. Add optional notes (name, period) before posting.')
+        toast.success('Gross and net set from that employee. Pond split applied when a pond is assigned.')
       } else {
         const err = await response.json()
         toast.error(err.detail || 'Failed')
@@ -1431,7 +1478,7 @@ export default function PayrollPage() {
                   Array.isArray(selectedPayroll.pond_allocations) &&
                   selectedPayroll.pond_allocations.length > 0 && (
                     <div className="mb-6 rounded-lg border border-teal-100 bg-teal-50/60 px-4 py-3">
-                      <h3 className="text-sm font-semibold text-teal-900">Net pay — pond split (recorded)</h3>
+                      <h3 className="text-sm font-semibold text-teal-900">Wages by pond (recorded)</h3>
                       <ul className="mt-2 space-y-1 text-sm text-teal-950">
                         {selectedPayroll.pond_allocations.map((row) => (
                           <li key={row.pond_id} className="flex justify-between gap-4 tabular-nums">
@@ -1613,10 +1660,11 @@ export default function PayrollPage() {
                       </div>
                       {aquacultureEnabled && aquacultureOpsUnlocked && !selectedPayroll.is_salary_posted && (
                         <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50/50 p-3">
-                          <p className="text-sm font-medium text-teal-900">Split net pay across ponds (Aquaculture)</p>
+                          <p className="text-sm font-medium text-teal-900">Attribute wages to ponds (Aquaculture P&amp;L)</p>
                           <p className="mt-1 text-xs text-teal-900/80">
-                            Sum of amounts must equal total net pay (same as saved amounts). Saved together with{' '}
-                            <strong>Save amounts</strong>.
+                            Sum must equal <strong>total gross</strong> wages. Each employee&apos;s salary counts on
+                            their assigned pond (account <span className="font-mono">6712</span> when posted). Saved
+                            with <strong>Save amounts</strong>.
                           </p>
                           {aquaculturePonds.length === 0 && (
                             <p className="mt-2 text-xs text-amber-900">
@@ -1696,16 +1744,12 @@ export default function PayrollPage() {
                                 type="button"
                                 className="text-xs font-medium text-teal-800 hover:underline"
                                 onClick={() => {
-                                  const nRaw = detailAmounts.n.trim()
-                                  const net =
-                                    nRaw !== ''
-                                      ? Number(nRaw)
-                                      : detailComputedGross - parseMoneyInput(detailAmounts.d)
-                                  if (!Number.isFinite(net) || net < 0) {
-                                    toast.error('Set a valid net pay first')
+                                  const gross = detailComputedGross
+                                  if (!Number.isFinite(gross) || gross < 0) {
+                                    toast.error('Set valid gross wages first')
                                     return
                                   }
-                                  const each = net / aquaculturePonds.length
+                                  const each = gross / aquaculturePonds.length
                                   setPondAllocDraft(
                                     aquaculturePonds.map((p) => ({
                                       pond_id: String(p.id),
@@ -1714,9 +1758,17 @@ export default function PayrollPage() {
                                   )
                                 }}
                               >
-                                Distribute net equally
+                                Distribute gross equally
                               </button>
                             ) : null}
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-teal-800 hover:underline"
+                              onClick={fillPondAllocFromEmployees}
+                              disabled={actionLoading}
+                            >
+                              Fill from employee ponds
+                            </button>
                           </div>
                         </div>
                       )}

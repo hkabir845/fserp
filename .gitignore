@@ -2,6 +2,7 @@
 backend/venv/
 backend/.env
 backend/.env.*
+backend/env/.env
 backend/*.sqlite3
 db.sqlite3
 **/db.sqlite3

@@ -402,6 +402,10 @@ urlpatterns = [
     path("employees/<int:employee_id>/", hr_views.employee_detail),
     path("payroll/", hr_views.payroll_list_or_create),
     path("payroll/<int:payroll_id>/from-employees/", hr_views.payroll_from_employees),
+    path(
+        "payroll/<int:payroll_id>/pond-allocations-from-employees/",
+        hr_views.payroll_pond_allocations_from_employees,
+    ),
     path("payroll/<int:payroll_id>/from-one-employee/", hr_views.payroll_from_one_employee),
     path("payroll/<int:payroll_id>/post-to-books/", hr_views.payroll_post_to_books),
     path("payroll/<int:payroll_id>/", hr_views.payroll_detail),

@@ -15,6 +15,8 @@ interface CompanyContextType {
   isMasterCompany: boolean
   mode: 'fsms_erp' | 'saas_dashboard'
   setMode: (mode: 'fsms_erp' | 'saas_dashboard') => void
+  /** False during SSR and first client paint — avoids hydration mismatch with localStorage. */
+  isClientReady: boolean
 }
 
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined)
@@ -120,6 +122,7 @@ export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children })
         isMasterCompany,
         mode,
         setMode,
+        isClientReady: mounted,
       }}
     >
       {children}

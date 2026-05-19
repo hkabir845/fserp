@@ -6,7 +6,7 @@ import { ErrorFilter } from '@/components/ErrorFilter'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { SuppressWarnings } from '@/components/SuppressWarnings'
 
-const inter = Inter({ 
+const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
   preload: true,
@@ -48,7 +48,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} min-h-screen min-h-[100dvh] bg-gray-50 antialiased`} suppressHydrationWarning>
+      <body
+        className={`${inter.className} min-h-screen min-h-[100dvh] bg-gray-50 antialiased`}
+        suppressHydrationWarning
+      >
         <noscript>
           <div style={{ padding: '2rem', textAlign: 'center', background: '#f3f4f6' }}>
             Please enable JavaScript to run this app.

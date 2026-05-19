@@ -7,7 +7,8 @@ import Link from "next/link"
 import { useToast } from "@/components/Toast"
 import { extractErrorMessage } from "@/utils/errorHandler"
 import Modal from "@/components/ui/Modal"
-import api, { getApiBaseUrl } from "@/lib/api"
+import api, { getApiBaseUrl } from '@/lib/api'
+import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { formatBankRegisterLabel } from "@/lib/bankAccountDisplay"
 import { useCompany } from "@/contexts/CompanyContext"
 import { getCurrencySymbol, formatNumber } from "@/utils/currency"
@@ -642,7 +643,7 @@ export default function CashierPOSPage() {
         await Promise.all([
           scope !== "general" ? api.get("/nozzles/details/") : Promise.resolve({ data: [] }),
           api.get("/customers/"),
-          api.get("/vendors/", { params: { skip: 0, limit: 10000 } }),
+          api.get('/vendors/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
           api.get("/companies/current/"),
           scope !== "fuel"
             ? api.get("/items/", { params: { pos_only: "true", location_stocks: "true" } })

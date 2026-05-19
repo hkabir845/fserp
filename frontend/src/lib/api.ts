@@ -205,12 +205,18 @@ export function clearAuthIfApiOriginMismatch(): boolean {
   }
 }
 
+function apiTimeoutMs(): number {
+  const raw = process.env.NEXT_PUBLIC_API_TIMEOUT
+  const n = raw != null ? Number.parseInt(String(raw).trim(), 10) : NaN
+  return Number.isFinite(n) && n > 0 ? n : 30000
+}
+
 const api = axios.create({
   baseURL: getApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000, // 30 second timeout
+  timeout: apiTimeoutMs(),
 })
 
 /**

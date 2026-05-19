@@ -2,8 +2,10 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-if (-not (Test-Path "venv\Scripts\python.exe")) {
-    Write-Host "ERROR: Virtual environment not found. Run setup.bat first." -ForegroundColor Red
+$venvPy = Join-Path (Split-Path $PSScriptRoot -Parent) ".venv\Scripts\python.exe"
+if (-not (Test-Path $venvPy)) {
+    Write-Host "ERROR: Virtual environment not found at $venvPy" -ForegroundColor Red
+    Write-Host "Run: powershell -File scripts\dev-setup.ps1" -ForegroundColor Yellow
     exit 1
 }
 if (-not (Test-Path ".env")) {
@@ -14,4 +16,4 @@ if (-not (Test-Path ".env")) {
 Write-Host "Starting Django on http://127.0.0.1:8000 ..." -ForegroundColor Green
 Write-Host "API docs: http://127.0.0.1:8000/api/docs" -ForegroundColor Cyan
 Write-Host "Press Ctrl+C to stop." -ForegroundColor Yellow
-& ".\venv\Scripts\python.exe" manage.py runserver 127.0.0.1:8000
+& $venvPy manage.py runserver 127.0.0.1:8000

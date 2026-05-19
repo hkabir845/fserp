@@ -1,67 +1,35 @@
-# Filling Station ERP - Frontend
+# FSERP frontend
 
-Next.js **16** frontend for Filling Station ERP (see `package.json` / `npm ls next`).
+## Local development
 
-**Production:** see [`../DEPLOYMENT.md`](../DEPLOYMENT.md) and set non-loopback `NEXT_PUBLIC_*` URLs in `.env.production`.
+1. **Backend (one instance)** — from repo root:
+   ```bat
+   backend\run-dev.bat
+   ```
+   Stops any process already on port 8000, then starts Django at `http://127.0.0.1:8000`.
 
-## Quick Start
+2. **Frontend** — from this folder:
+   ```bat
+   npm run dev
+   ```
+   Uses **Turbopack** (faster than Webpack on this large app). First visit to each route still compiles on demand (often 10–60s); reloads are much faster.
 
-1. Install dependencies:
-```bash
-npm install
-```
+3. **Clean restart** (if `.next` is corrupted on Windows):
+   ```bat
+   npm run clean:next
+   npm run dev
+   ```
 
-2. Configure environment in [`.env`](.env) (defaults target `https://localhost:8000` for the Django API and Next on port 3000). For production, set `NEXT_PUBLIC_*` to your API/UI hosts (see commented block in `.env`). Note: `.env.local` overrides `.env` if present.
+## Scripts
 
-3. Run development server:
-```bash
-npm run dev
-```
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` | Turbopack dev server on port 3000 |
+| `npm run dev:webpack` | Webpack dev (slower; fallback) |
+| `npm run restart-dev.bat` | Kill :3000, delete `.next`, start dev |
+| `backend\run-dev.bat` | Kill :8000 duplicates, start Django |
 
-Open `http://localhost:3000`
+## Environment
 
-## Project Structure
-
-```
-frontend/
-├── .env                 # Env vars (dev + production; see comments inside)
-├── src/
-│   ├── app/             # Next.js App Router pages
-│   ├── components/      # React components
-│   ├── lib/             # Utilities (API, WebSocket)
-│   └── types/           # TypeScript types
-├── public/              # Static files
-├── package.json
-├── tsconfig.json
-└── tailwind.config.ts
-```
-
-## Build for Production
-
-Set `NEXT_PUBLIC_*` in [`.env`](.env) to your production API/UI hosts (see commented block in that file), then:
-
-```bash
-npm run build
-npm start
-```
-
-If you previously used `.env.local` or `.env.production`, remove them and rely on `.env` only. Close any editor holding old `frontend/.env.example` / `env.local.example` files so they can be deleted from disk if they still appear.
-
-## Key Features
-
-- **Real-time Updates:** WebSocket integration
-- **Live Invoice Preview:** Instant calculations
-- **Responsive Design:** Works on all devices
-- **TypeScript:** Full type safety
-- **Tailwind CSS:** Modern styling
-
-
-
-
-
-
-
-
-
-
-
+- `frontend/.env.development` — local API (`http://localhost:8000`), 15s API timeout
+- Do not put loopback URLs in `.env.local` for production builds (see `next.config.mjs`)

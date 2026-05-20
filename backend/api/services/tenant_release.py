@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 # (company_id,) -> None; must be safe to run multiple times for the same tenant/release.
 TENANT_RELEASE_HOOKS: list[Callable[[int], Any]] = []
 
+# Register idempotent backfills (Aquaculture Data Bank, COA, org shell, payroll, etc.)
+from api.services.tenant_release_hooks import TENANT_RELEASE_HOOKS as _REGISTERED_RELEASE_HOOKS  # noqa: E402
+
+TENANT_RELEASE_HOOKS.extend(_REGISTERED_RELEASE_HOOKS)
+
+
+def release_hook_catalog() -> list[dict[str, str]]:
+    from api.services.tenant_release_hooks import release_hook_catalog as _catalog
+
+    return _catalog()
+
 # (company_id, from_release, to_release) -> None; optional reverse of forward hooks — keep empty if not needed.
 TENANT_RELEASE_ROLLBACK_HOOKS: list[Callable[[int, str, str], Any]] = []
 
@@ -89,6 +100,8 @@ def apply_platform_release(company: Company, target: str | None = None) -> dict[
         ]
     )
     messages.append("Tenant release tag updated.")
+    if TENANT_RELEASE_HOOKS:
+        messages.append(f"Ran {len(TENANT_RELEASE_HOOKS)} tenant upgrade hook(s).")
 
     logger.info(
         "platform release applied company_id=%s release=%s",

@@ -11,6 +11,7 @@ import {
   Pill,
   DollarSign,
   Wallet,
+  Archive,
 } from 'lucide-react'
 
 export type AquacultureNavItem = {
@@ -77,6 +78,19 @@ export const AQUACULTURE_NAV_GROUPS: AquacultureNavGroup[] = [
         label: 'Financing & loan repayment',
         sidebarLabel: 'Financing',
         icon: Wallet,
+      },
+    ],
+  },
+  {
+    id: 'archive',
+    label: 'Archive',
+    description: 'Year close: archive operational data, keep pond structure, start next season',
+    items: [
+      {
+        href: '/aquaculture/data-bank',
+        label: 'Data Bank',
+        sidebarLabel: 'Data Bank',
+        icon: Archive,
       },
     ],
   },

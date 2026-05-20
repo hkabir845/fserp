@@ -15,7 +15,12 @@ from api.models import User, Company, Customer, Vendor, Station, Invoice
 from api.services.master_push import preview_master_push, run_master_push, run_master_rollback
 from api.services.company_code import resolved_company_code
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_station_operational_data
-from api.services.tenant_release import apply_platform_release, get_target_release, rollback_platform_release
+from api.services.tenant_release import (
+    apply_platform_release,
+    get_target_release,
+    release_hook_catalog,
+    rollback_platform_release,
+)
 from api.services.tenant_upgrade_audit import (
     compute_fleet_release_summary,
     list_recent_release_events,
@@ -444,8 +449,10 @@ def admin_platform_release(request):
                 "Deploy backend and frontend; run Django migrations on the server.",
                 "Set FSERP_APP_VERSION at deploy so target_release matches the build you shipped.",
                 "Validate on Master Filling Station, then use Preview (dry-run) before Apply release to all tenants.",
+                "Apply release runs tenant upgrade hooks (COA, Aquaculture, Data Bank prep, payroll, bank registers) on each company.",
                 "Use per-tenant Apply upgrade for canary tenants first; check Audit history for accountability.",
             ],
+            "tenant_upgrade_hooks": release_hook_catalog(),
             "hint": (
                 "Test on Master Filling Station, then apply the same release tag to each tenant "
                 "when ready — no automatic all-tenant upgrade."

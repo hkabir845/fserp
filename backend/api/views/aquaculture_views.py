@@ -114,6 +114,14 @@ from api.services.tenant_reporting_categories import (
     normalize_income_type_for_company,
     resolve_aquaculture_expense_to_builtin,
 )
+from api.services.aquaculture_data_bank_service import (
+    assert_ponds_writable,
+    effective_pl_start_for_pond,
+    filter_live_pond_queryset,
+    pond_live_data_after_date,
+    pond_lock_summary,
+    pond_write_blocked_detail,
+)
 from api.services.aquaculture_constants import (
     AQUACULTURE_FISH_SPECIES_CHOICES,
     AQUACULTURE_POND_ROLE_CHOICES,
@@ -535,6 +543,28 @@ def _pond_for_company(company_id: int, pond_id: int) -> AquaculturePond | None:
     return AquaculturePond.objects.filter(pk=pond_id, company_id=company_id).first()
 
 
+def _pond_write_lock_response(
+    company_id: int,
+    pond_id: int,
+    transaction_date: date | None = None,
+):
+    detail = pond_write_blocked_detail(company_id, pond_id, transaction_date)
+    if detail:
+        return JsonResponse({"detail": detail, "code": "pond_data_locked"}, status=409)
+    return None
+
+
+def _ponds_write_lock_response(
+    company_id: int,
+    pond_ids: list[int],
+    transaction_date: date | None = None,
+):
+    detail = assert_ponds_writable(company_id, pond_ids, transaction_date)
+    if detail:
+        return JsonResponse({"detail": detail, "code": "pond_data_locked"}, status=409)
+    return None
+
+
 _POND_AUTO_CODE = re.compile(r"^[pP](\d+)$")
 
 
@@ -608,6 +638,7 @@ def _fetch_tilapia_stock_row_for_pond(company_id: int, pond_id: int) -> dict | N
         pond_id=pond_id,
         fish_species_filter="tilapia",
         include_inactive_ponds=True,
+        entries_after_date=pond_live_data_after_date(company_id, pond_id),
     )
     return rows[0] if rows else None
 
@@ -689,6 +720,7 @@ def _pond_to_json(
         "updated_at": p.updated_at.isoformat() if p.updated_at else "",
         "landlord_pond_shares": landlord_shares if landlord_shares is not None else [],
         "lease_payment_status": _pond_lease_payment_status_payload(p, lease),
+        "data_bank_lock": pond_lock_summary(p.company_id, p.id),
     }
     if tilapia_load:
         out.update(tilapia_load)
@@ -752,7 +784,9 @@ def aquaculture_production_cycles_list_or_create(request):
         qs = AquacultureProductionCycle.objects.filter(company_id=cid).select_related("pond")
         pid = request.GET.get("pond_id")
         if pid and str(pid).strip().isdigit():
-            qs = qs.filter(pond_id=int(pid))
+            p_int = int(pid)
+            qs = qs.filter(pond_id=p_int)
+            qs = filter_live_pond_queryset(qs, cid, p_int, "start_date")
         qs = qs.order_by("pond_id", "sort_order", "-start_date", "id")
         return JsonResponse([_cycle_to_json(c) for c in qs], safe=False)
 
@@ -766,10 +800,13 @@ def aquaculture_production_cycles_list_or_create(request):
     pond = _pond_for_company(cid, pond_id)
     if not pond:
         return JsonResponse({"detail": "Pond not found"}, status=404)
+    sd = _parse_date(body.get("start_date"))
+    lock_err = _pond_write_lock_response(cid, pond_id, sd)
+    if lock_err:
+        return lock_err
     name = (body.get("name") or "").strip()
     if not name:
         return JsonResponse({"detail": "name is required"}, status=400)
-    sd = _parse_date(body.get("start_date"))
     if not sd:
         return JsonResponse({"detail": "start_date is required (YYYY-MM-DD)"}, status=400)
     ed = _parse_date(body.get("end_date")) if body.get("end_date") else None
@@ -806,6 +843,9 @@ def aquaculture_production_cycle_detail(request, cycle_id: int):
     if request.method == "GET":
         return JsonResponse(_cycle_to_json(c))
     if request.method == "PUT":
+        lock_err = _pond_write_lock_response(cid, c.pond_id, c.start_date)
+        if lock_err:
+            return lock_err
         body, e = parse_json_body(request)
         if e:
             return e
@@ -844,6 +884,9 @@ def aquaculture_production_cycle_detail(request, cycle_id: int):
             c.notes = str(body.get("notes") or "")[:5000]
         c.save()
         return JsonResponse(_cycle_to_json(c))
+    lock_err = _pond_write_lock_response(cid, c.pond_id, c.start_date)
+    if lock_err:
+        return lock_err
     c.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
 
@@ -868,6 +911,13 @@ def aquaculture_ponds_list_or_create(request):
             cid, fish_species_filter="tilapia", include_inactive_ponds=True
         )
         by_pid = {r["pond_id"]: r for r in tilapia_rows}
+        for p in qs:
+            if pond_live_data_after_date(cid, p.id) is not None:
+                live_row = _fetch_tilapia_stock_row_for_pond(cid, p.id)
+                if live_row:
+                    by_pid[p.id] = live_row
+                elif p.id in by_pid:
+                    del by_pid[p.id]
         return JsonResponse(
             [
                 _pond_to_json(
@@ -980,6 +1030,9 @@ def aquaculture_pond_detail(request, pond_id: int):
             )
         )
     if request.method == "PUT":
+        lock_err = _pond_write_lock_response(cid, pond_id)
+        if lock_err:
+            return lock_err
         body, e = parse_json_body(request)
         if e:
             return e
@@ -1052,6 +1105,9 @@ def aquaculture_pond_detail(request, pond_id: int):
                 landlord_shares=[_landlord_pond_share_json(sh) for sh in p.landlord_pond_shares.all()],
             )
         )
+    lock_err = _pond_write_lock_response(cid, pond_id)
+    if lock_err:
+        return lock_err
     on_pond_deleted(company_id=cid, pond=p)
     p.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
@@ -1118,6 +1174,7 @@ def aquaculture_expenses_list_or_create(request):
         if pid and str(pid).strip().isdigit():
             p_int = int(pid)
             qs = qs.filter(Q(pond_id=p_int) | Q(pond_shares__pond_id=p_int)).distinct()
+            qs = filter_live_pond_queryset(qs, cid, p_int, "expense_date")
         qs = qs.order_by("-expense_date", "-id")[:500]
         return JsonResponse([_expense_to_json(x) for x in qs], safe=False)
 
@@ -1176,6 +1233,9 @@ def aquaculture_shop_stock_issue(request):
         pond_id = int(raw_pid)
     except (TypeError, ValueError):
         return JsonResponse({"detail": "station_id and pond_id must be integers"}, status=400)
+    lock_err = _pond_write_lock_response(cid, pond_id, ed)
+    if lock_err:
+        return lock_err
     cycle_raw = body.get("production_cycle_id")
     cycle_id: int | None
     if cycle_raw in (None, ""):
@@ -1291,6 +1351,9 @@ def aquaculture_pond_warehouse_transfer(request):
         pond_id = int(raw_pid)
     except (TypeError, ValueError):
         return JsonResponse({"detail": "station_id and pond_id must be integers"}, status=400)
+    lock_err = _pond_write_lock_response(cid, pond_id)
+    if lock_err:
+        return lock_err
     items = body.get("items")
     if not isinstance(items, list):
         return JsonResponse({"detail": "items must be an array of { item_id, quantity }"}, status=400)
@@ -1345,6 +1408,10 @@ def aquaculture_pond_warehouse_consume(request):
     pond = AquaculturePond.objects.filter(pk=pond_id, company_id=cid).first()
     if not pond:
         return JsonResponse({"detail": "Pond not found"}, status=404)
+    ed_consume = _parse_date(body.get("expense_date"))
+    lock_err = _pond_write_lock_response(cid, pond_id, ed_consume)
+    if lock_err:
+        return lock_err
 
     raw_iid = body.get("item_id")
     if raw_iid in (None, ""):
@@ -1749,7 +1816,9 @@ def aquaculture_sales_list_or_create(request):
         )
         pid = request.GET.get("pond_id")
         if pid and str(pid).strip().isdigit():
-            qs = qs.filter(pond_id=int(pid))
+            p_int = int(pid)
+            qs = qs.filter(pond_id=p_int)
+            qs = filter_live_pond_queryset(qs, cid, p_int, "sale_date")
         qs = qs.order_by("-sale_date", "-id")[:500]
         return JsonResponse([_sale_to_json(s) for s in qs], safe=False)
 
@@ -1763,6 +1832,10 @@ def aquaculture_sales_list_or_create(request):
     pond = _pond_for_company(cid, pond_id)
     if not pond:
         return JsonResponse({"detail": "Pond not found"}, status=404)
+    sd = _parse_date(body.get("sale_date"))
+    lock_err = _pond_write_lock_response(cid, pond_id, sd)
+    if lock_err:
+        return lock_err
     it, ierr = normalize_income_type_for_company(cid, body.get("income_type"))
     if ierr or not it:
         return JsonResponse({"detail": ierr or "Invalid income_type"}, status=400)
@@ -1778,7 +1851,6 @@ def aquaculture_sales_list_or_create(request):
             return JsonResponse({"detail": "Production cycle not found"}, status=404)
         if cycle_obj.pond_id != pond.id:
             return JsonResponse({"detail": "production_cycle_id does not belong to the selected pond"}, status=400)
-    sd = _parse_date(body.get("sale_date"))
     if not sd:
         return JsonResponse({"detail": "sale_date is required (YYYY-MM-DD)"}, status=400)
     wk = _decimal(body.get("weight_kg"))
@@ -1854,6 +1926,9 @@ def aquaculture_sale_detail(request, sale_id: int):
     if request.method == "GET":
         return JsonResponse(_sale_to_json(s))
     if request.method == "PUT":
+        lock_err = _pond_write_lock_response(cid, s.pond_id, s.sale_date)
+        if lock_err:
+            return lock_err
         body, e = parse_json_body(request)
         if e:
             return e
@@ -1964,6 +2039,9 @@ def aquaculture_sale_detail(request, sale_id: int):
             "pond", "production_cycle", "invoice"
         ).first()
         return JsonResponse(_sale_to_json(s))
+    lock_err = _pond_write_lock_response(cid, s.pond_id, s.sale_date)
+    if lock_err:
+        return lock_err
     with transaction.atomic():
         ok_del, err_del = cleanup_aquaculture_fish_sale_effects(cid, s)
         if not ok_del:
@@ -1987,6 +2065,11 @@ def aquaculture_sale_finalize(request, sale_id: int):
         return e
     from api.services.aquaculture_sale_accounting import finalize_aquaculture_fish_sale_to_invoice
 
+    sale_pre = AquacultureFishSale.objects.filter(pk=sale_id, company_id=cid).first()
+    if sale_pre:
+        lock_err = _pond_write_lock_response(cid, sale_pre.pond_id, sale_pre.sale_date)
+        if lock_err:
+            return lock_err
     sale, inv_dict, msg = finalize_aquaculture_fish_sale_to_invoice(cid, sale_id, body or {})
     if msg:
         return JsonResponse({"detail": msg}, status=400)
@@ -2048,7 +2131,9 @@ def aquaculture_samples_list_or_create(request):
         qs = AquacultureBiomassSample.objects.filter(company_id=cid).select_related("pond", "production_cycle")
         pid = request.GET.get("pond_id")
         if pid and str(pid).strip().isdigit():
-            qs = qs.filter(pond_id=int(pid))
+            p_int = int(pid)
+            qs = qs.filter(pond_id=p_int)
+            qs = filter_live_pond_queryset(qs, cid, p_int, "sample_date")
         qs = qs.order_by("-sample_date", "-id")[:200]
         return JsonResponse([_sample_to_json(b) for b in qs], safe=False)
 
@@ -2063,6 +2148,9 @@ def aquaculture_samples_list_or_create(request):
     if not pond:
         return JsonResponse({"detail": "Pond not found"}, status=404)
     sd = _parse_date(body.get("sample_date"))
+    lock_err = _pond_write_lock_response(cid, pond_id, sd)
+    if lock_err:
+        return lock_err
     if not sd:
         return JsonResponse({"detail": "sample_date is required (YYYY-MM-DD)"}, status=400)
     efc = body.get("estimated_fish_count")
@@ -2152,6 +2240,9 @@ def aquaculture_sample_detail(request, sample_id: int):
     if request.method == "GET":
         return JsonResponse(_sample_to_json(b))
     if request.method == "PUT":
+        lock_err = _pond_write_lock_response(cid, b.pond_id, b.sample_date)
+        if lock_err:
+            return lock_err
         body, e = parse_json_body(request)
         if e:
             return e
@@ -2243,6 +2334,9 @@ def aquaculture_sample_detail(request, sample_id: int):
         b.save()
         b = AquacultureBiomassSample.objects.filter(pk=b.pk).select_related("pond", "production_cycle").first()
         return JsonResponse(_sample_to_json(b))
+    lock_err = _pond_write_lock_response(cid, b.pond_id, b.sample_date)
+    if lock_err:
+        return lock_err
     b.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
 
@@ -2323,13 +2417,22 @@ def aquaculture_fish_stock_position(request):
             return JsonResponse({"detail": "production_cycle_id does not belong to pond_id"}, status=400)
     species_raw = (request.GET.get("fish_species") or "").strip()
     species_filter = species_raw if species_raw else None
+    entries_after = pond_live_data_after_date(cid, pond_id) if pond_id is not None else None
     rows = compute_fish_stock_position_rows(
-        cid, pond_id=pond_id, production_cycle_id=cy_id, fish_species_filter=species_filter
+        cid,
+        pond_id=pond_id,
+        production_cycle_id=cy_id,
+        fish_species_filter=species_filter,
+        entries_after_date=entries_after,
     )
     payload: dict = {"rows": rows}
     if str(request.GET.get("breakdown", "")).lower() in ("1", "true", "yes", "cycle_species"):
         payload["breakdown_rows"] = compute_fish_stock_position_breakdown_rows(
-            cid, pond_id=pond_id, production_cycle_id=cy_id, fish_species_filter=species_filter
+            cid,
+            pond_id=pond_id,
+            production_cycle_id=cy_id,
+            fish_species_filter=species_filter,
+            entries_after_date=entries_after,
         )
     return JsonResponse(payload)
 
@@ -2508,6 +2611,7 @@ def aquaculture_fish_stock_ledger_list_or_create(request):
             if not _pond_for_company(cid, pond_id_int):
                 return JsonResponse({"detail": "pond not found"}, status=404)
             qs = qs.filter(pond_id=pond_id_int)
+            qs = filter_live_pond_queryset(qs, cid, pond_id_int, "entry_date")
         cy_id = None
         raw_c = request.GET.get("production_cycle_id")
         if raw_c and str(raw_c).strip().isdigit():
@@ -2564,6 +2668,9 @@ def aquaculture_fish_stock_ledger_list_or_create(request):
     if not pond:
         return JsonResponse({"detail": "Pond not found"}, status=404)
     ed = _parse_date(body.get("entry_date"))
+    lock_err = _pond_write_lock_response(cid, pond_id, ed)
+    if lock_err:
+        return lock_err
     if not ed:
         return JsonResponse({"detail": "entry_date is required (YYYY-MM-DD)"}, status=400)
     kind, kerr = normalize_stock_ledger_entry_kind(body.get("entry_kind"))
@@ -2713,6 +2820,9 @@ def aquaculture_fish_stock_ledger_detail(request, ledger_id: int):
     if request.method == "GET":
         return JsonResponse(_stock_ledger_to_json(led))
     if request.method == "DELETE":
+        lock_err = _pond_write_lock_response(cid, led.pond_id, led.entry_date)
+        if lock_err:
+            return lock_err
         with transaction.atomic():
             led = (
                 AquacultureFishStockLedger.objects.select_for_update()
@@ -2864,6 +2974,26 @@ def aquaculture_pl_summary(request):
         pond_filter_id = scoped_cycle.pond_id
 
     include_cycle_breakdown = str(request.GET.get("include_cycle_breakdown", "")).lower() in ("1", "true", "yes")
+
+    if pond_filter_id is not None:
+        start = effective_pl_start_for_pond(cid, pond_filter_id, start)
+        if start > end:
+            return JsonResponse(
+                {
+                    "start_date": start.isoformat(),
+                    "end_date": end.isoformat(),
+                    "ponds": [],
+                    "expenses_by_category": [],
+                    "totals": {
+                        "revenue": "0.00",
+                        "operating_expenses": "0.00",
+                        "payroll_allocated": "0.00",
+                        "total_costs": "0.00",
+                        "profit": "0.00",
+                    },
+                    "data_bank_live_only": True,
+                }
+            )
 
     payload = compute_aquaculture_pl_summary_dict(
         cid,
@@ -3248,10 +3378,14 @@ def aquaculture_fish_pond_transfers(request):
         )
         fp = request.GET.get("from_pond_id")
         if fp and str(fp).strip().isdigit():
-            qs = qs.filter(from_pond_id=int(fp))
+            fp_int = int(fp)
+            qs = qs.filter(from_pond_id=fp_int)
+            qs = filter_live_pond_queryset(qs, cid, fp_int, "transfer_date")
         tp = request.GET.get("to_pond_id")
         if tp and str(tp).strip().isdigit():
-            qs = qs.filter(lines__to_pond_id=int(tp)).distinct()
+            tp_int = int(tp)
+            qs = qs.filter(lines__to_pond_id=tp_int).distinct()
+            qs = filter_live_pond_queryset(qs, cid, tp_int, "transfer_date")
         ordered_ids = list(qs.values_list("pk", flat=True)[:300])
         xfer_qs = AquacultureFishPondTransfer.objects.filter(pk__in=ordered_ids).select_related(
             "from_pond", "from_production_cycle"
@@ -3277,6 +3411,10 @@ def aquaculture_fish_pond_transfers(request):
     if err:
         return err
     assert data is not None
+    pond_ids = [data["from_pond"].id] + [ln.to_pond_id for ln in data["line_models"]]
+    lock_err = _ponds_write_lock_response(cid, pond_ids, data["td"])
+    if lock_err:
+        return lock_err
 
     with transaction.atomic():
         xfer = AquacultureFishPondTransfer(
@@ -3340,6 +3478,10 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
         if err:
             return err
         assert data is not None
+        pond_ids = [data["from_pond"].id] + [ln.to_pond_id for ln in data["line_models"]]
+        lock_err = _ponds_write_lock_response(cid, pond_ids, data["td"])
+        if lock_err:
+            return lock_err
         with transaction.atomic():
             t.from_pond = data["from_pond"]
             t.from_production_cycle = data["from_cycle_obj"]
@@ -3364,6 +3506,10 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
                 "transfer": _fish_transfer_to_json(t),
             }
         )
+    pond_ids = [t.from_pond_id] + list(t.lines.values_list("to_pond_id", flat=True))
+    lock_err = _ponds_write_lock_response(cid, pond_ids, t.transfer_date)
+    if lock_err:
+        return lock_err
     t.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
 
@@ -3508,6 +3654,9 @@ def aquaculture_feeding_advice_generate(request):
     if not pond:
         return JsonResponse({"detail": "Pond not found"}, status=404)
     td = _parse_date(body.get("target_date")) or django_timezone.localdate()
+    lock_err = _pond_write_lock_response(cid, pond_id, td)
+    if lock_err:
+        return lock_err
     cy_id: int | None = None
     raw_cy = body.get("production_cycle_id")
     if raw_cy not in (None, ""):
@@ -3579,8 +3728,14 @@ def aquaculture_feeding_advice_detail(request, advice_id: int):
                 {"detail": "Only cancelled feeding advice can be deleted. Cancel a draft first, or leave other records for audit."},
                 status=400,
             )
+        lock_err = _pond_write_lock_response(cid, a.pond_id, a.target_date)
+        if lock_err:
+            return lock_err
         a.delete()
         return JsonResponse({"detail": "Deleted", "id": advice_id}, status=200)
+    lock_err = _pond_write_lock_response(cid, a.pond_id, a.target_date)
+    if lock_err:
+        return lock_err
     body, e = parse_json_body(request)
     if e:
         return e
@@ -3637,6 +3792,9 @@ def aquaculture_feeding_advice_approve(request, advice_id: int):
         return JsonResponse({"detail": "Not found"}, status=404)
     if a.status != AquacultureFeedingAdvice.STATUS_PENDING_REVIEW:
         return JsonResponse({"detail": "Only pending advice can be approved"}, status=400)
+    lock_err = _pond_write_lock_response(cid, a.pond_id, a.target_date)
+    if lock_err:
+        return lock_err
     eff = effective_advice_text(a.ai_advice_text or "", a.edited_advice_text or "")
     if not eff.strip():
         return JsonResponse({"detail": "Advice text is empty"}, status=400)
@@ -3664,6 +3822,9 @@ def aquaculture_feeding_advice_cancel(request, advice_id: int):
         return JsonResponse({"detail": "Not found"}, status=404)
     if a.status != AquacultureFeedingAdvice.STATUS_PENDING_REVIEW:
         return JsonResponse({"detail": "Only pending advice can be cancelled"}, status=400)
+    lock_err = _pond_write_lock_response(cid, a.pond_id, a.target_date)
+    if lock_err:
+        return lock_err
     a.status = AquacultureFeedingAdvice.STATUS_CANCELLED
     a.save()
     a = _feeding_advice_for_company(cid, advice_id)
@@ -3696,6 +3857,9 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
             return JsonResponse({"detail": "Not found"}, status=404)
         if a.status != AquacultureFeedingAdvice.STATUS_APPROVED:
             return JsonResponse({"detail": "Only approved advice can be applied"}, status=400)
+        lock_err = _pond_write_lock_response(cid, a.pond_id, a.target_date)
+        if lock_err:
+            return lock_err
 
         raw_kg = body.get("feed_weight_kg")
         if raw_kg in (None, ""):
@@ -4558,6 +4722,10 @@ def aquaculture_landlord_ledger_create(request, landlord_id: int):
                 return line_err
             assert signed is not None
             lines.append((pond_id_alloc, signed, applies_flag, lease_paid_delta))
+        pond_ids_alloc = [p for p, _, _, _ in lines if p is not None]
+        lock_err = _ponds_write_lock_response(cid, pond_ids_alloc, ed)
+        if lock_err:
+            return lock_err
         try:
             with transaction.atomic():
                 for pond_id_alloc, signed, applies_flag, lease_paid_delta in lines:
@@ -4611,6 +4779,10 @@ def aquaculture_landlord_ledger_create(request, landlord_id: int):
     if line_err:
         return line_err
     assert signed is not None
+    if pond_id is not None:
+        lock_err = _pond_write_lock_response(cid, pond_id, ed)
+        if lock_err:
+            return lock_err
 
     try:
         with transaction.atomic():

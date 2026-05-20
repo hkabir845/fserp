@@ -6,6 +6,7 @@ from django.urls import path
 from fsms.release_info import health_payload, version_payload
 
 from api.views import (
+    aquaculture_data_bank_views,
     aquaculture_financing_views,
     aquaculture_views,
     system_views,
@@ -81,7 +82,7 @@ def api_docs(request):
             "/api/aquaculture/feeding-advice/", "/api/aquaculture/pond-profit-transfers/",
             "/api/aquaculture/financing/", "/api/aquaculture/financing/repayment-worksheet/",
             "/api/aquaculture/financing/repayment-apply/", "/api/aquaculture/financing/allocations/",
-            "/api/aquaculture/landlords/",
+            "/api/aquaculture/landlords/", "/api/aquaculture/data-bank/",
             "/api/shifts/", "/api/tank-dips", "/api/taxes/",             "/api/reports/<id>",
             "/api/company/backup/", "/api/company/restore/",
             "/api/admin/companies/<id>/backup/", "/api/admin/companies/<id>/restore/",
@@ -514,4 +515,29 @@ urlpatterns = [
     path("aquaculture/feeding-advice/<int:advice_id>/approve/", aquaculture_views.aquaculture_feeding_advice_approve),
     path("aquaculture/feeding-advice/<int:advice_id>/cancel/", aquaculture_views.aquaculture_feeding_advice_cancel),
     path("aquaculture/feeding-advice/<int:advice_id>/apply/", aquaculture_views.aquaculture_feeding_advice_apply),
+    path("aquaculture/data-bank/", aquaculture_data_bank_views.aquaculture_data_bank_list),
+    path(
+        "aquaculture/data-bank/preview-pond-close/",
+        aquaculture_data_bank_views.aquaculture_data_bank_preview_pond_close,
+    ),
+    path(
+        "aquaculture/data-bank/close-pond/",
+        aquaculture_data_bank_views.aquaculture_data_bank_close_pond,
+    ),
+    path(
+        "aquaculture/data-bank/preview-station-close/",
+        aquaculture_data_bank_views.aquaculture_data_bank_preview_station_close,
+    ),
+    path(
+        "aquaculture/data-bank/close-station/",
+        aquaculture_data_bank_views.aquaculture_data_bank_close_station,
+    ),
+    path(
+        "aquaculture/data-bank/closes/<int:close_id>/reopen/",
+        aquaculture_data_bank_views.aquaculture_data_bank_reopen_close,
+    ),
+    path(
+        "aquaculture/data-bank/closes/<int:close_id>/relock/",
+        aquaculture_data_bank_views.aquaculture_data_bank_relock_close,
+    ),
 ]

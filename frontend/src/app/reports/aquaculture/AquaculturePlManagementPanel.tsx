@@ -2,10 +2,13 @@
 
 import Link from 'next/link'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { Archive, RefreshCw } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
+import { parseArchivePlSearchParams } from '@/lib/aquacultureDataBankArchive'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { formatDateOnly } from '@/utils/date'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 
@@ -150,10 +153,15 @@ type AquaculturePlManagementPanelProps = {
 
 export function AquaculturePlManagementPanel({ embedInReports = false }: AquaculturePlManagementPanelProps) {
   const toast = useToast()
+  const searchParams = useSearchParams()
+  const archiveFromUrl = useMemo(
+    () => (embedInReports ? parseArchivePlSearchParams(searchParams) : null),
+    [embedInReports, searchParams]
+  )
   const { start: defaultStart, end: defaultEnd } = monthStartEnd()
-  const [start, setStart] = useState(defaultStart)
-  const [end, setEnd] = useState(defaultEnd)
-  const [pondId, setPondId] = useState('')
+  const [start, setStart] = useState(archiveFromUrl?.start ?? defaultStart)
+  const [end, setEnd] = useState(archiveFromUrl?.end ?? defaultEnd)
+  const [pondId, setPondId] = useState(archiveFromUrl?.pondId ?? '')
   const [cycleId, setCycleId] = useState('')
   const [includeCycleBreakdown, setIncludeCycleBreakdown] = useState(false)
   const [cycles, setCycles] = useState<CycleOpt[]>([])
@@ -186,14 +194,29 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
   const [fuelLoading, setFuelLoading] = useState(false)
   const [canViewFuelGlReports, setCanViewFuelGlReports] = useState(true)
 
+  useEffect(() => {
+    if (!archiveFromUrl) return
+    setPlScope('ponds')
+    setStart(archiveFromUrl.start)
+    setEnd(archiveFromUrl.end)
+    if (archiveFromUrl.pondId) setPondId(archiveFromUrl.pondId)
+  }, [archiveFromUrl])
+
   const activePonds = useMemo(() => ponds.filter((p) => p.is_active !== false), [ponds])
+  const pondsForScope = useMemo(() => {
+    if (!archiveFromUrl?.pondId) return activePonds
+    const archived = ponds.find((p) => String(p.id) === archiveFromUrl.pondId)
+    if (!archived) return activePonds
+    if (activePonds.some((p) => String(p.id) === archiveFromUrl.pondId)) return activePonds
+    return [...activePonds, archived]
+  }, [activePonds, archiveFromUrl, ponds])
   const activeCoa = useMemo(() => accounts.filter((a) => a.is_active !== false), [accounts])
 
   useEffect(() => {
-    if (pondId && !activePonds.some((p) => String(p.id) === pondId)) {
+    if (pondId && !pondsForScope.some((p) => String(p.id) === pondId)) {
       setPondId('')
     }
-  }, [activePonds, pondId])
+  }, [pondsForScope, pondId])
 
   useEffect(() => {
     if (!pondId) {
@@ -447,6 +470,32 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
           : 'mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6'
       }
     >
+      {archiveFromUrl ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+          <div className="flex flex-wrap items-start gap-2">
+            <Archive className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-amber-950">
+                Data Bank archive
+                {archiveFromUrl.label ? `: ${archiveFromUrl.label}` : ''}
+              </p>
+              <p className="mt-1 text-amber-900/90">
+                Read-only view for {formatDateOnly(archiveFromUrl.start)} –{' '}
+                {formatDateOnly(archiveFromUrl.end)}
+                {archiveFromUrl.pondId ? ' · one pond selected' : ' · all ponds in range'}.
+                Operational data for this period is locked; adjust dates only to compare other periods.
+              </p>
+            </div>
+            <Link
+              href="/aquaculture/data-bank"
+              className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-teal-900 hover:bg-amber-50"
+            >
+              Back to Data Bank
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Profit and loss scope">
         <button
           type="button"
@@ -639,10 +688,11 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
             }}
             aria-label="Limit report to a single active pond"
           >
-            <option value="">All active ponds</option>
-            {activePonds.map((p) => (
+            <option value="">{archiveFromUrl ? 'All ponds in archive range' : 'All active ponds'}</option>
+            {pondsForScope.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
+                {p.is_active === false ? ' (inactive)' : ''}
               </option>
             ))}
           </select>

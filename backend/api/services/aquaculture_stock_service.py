@@ -4,6 +4,7 @@ Fish count / weight position from transfers, sales, stock ledger, and latest sam
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 
 from api.models import (
@@ -70,6 +71,7 @@ def compute_fish_stock_position_rows(
     production_cycle_id: int | None = None,
     fish_species_filter: str | None = None,
     include_inactive_ponds: bool = False,
+    entries_after_date: date | None = None,
 ) -> list[dict]:
     """
     Per-pond running totals: transfers in/out, posted vendor fry (pond-tagged fish lines),
@@ -98,6 +100,8 @@ def compute_fish_stock_position_rows(
     lines_in = AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).select_related(
         "transfer", "to_pond"
     )
+    if entries_after_date is not None:
+        lines_in = lines_in.filter(transfer__transfer_date__gt=entries_after_date)
     for ln in lines_in:
         tp = ln.to_pond_id
         if pond_id is not None and tp != pond_id:
@@ -113,6 +117,8 @@ def compute_fish_stock_position_rows(
             in_map_c[tp] += int(ln.fish_count)
 
     lines_out = AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).select_related("transfer")
+    if entries_after_date is not None:
+        lines_out = lines_out.filter(transfer__transfer_date__gt=entries_after_date)
     for ln in lines_out:
         fp = ln.transfer.from_pond_id
         if pond_id is not None and fp != pond_id:
@@ -132,9 +138,11 @@ def compute_fish_stock_position_rows(
         sale_q = sale_q.filter(pond_id=pond_id)
     if cy_id is not None:
         sale_q = sale_q.filter(production_cycle_id=cy_id)
+    if entries_after_date is not None:
+        sale_q = sale_q.filter(sale_date__gt=entries_after_date)
 
     sale_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
-    for s in sale_q.only("pond_id", "weight_kg", "fish_count", "income_type", "fish_species"):
+    for s in sale_q.only("pond_id", "weight_kg", "fish_count", "income_type", "fish_species", "sale_date"):
         if income_type_is_non_biological_for_company(cid, getattr(s, "income_type", None) or ""):
             continue
         if species_filter_code is not None:
@@ -151,6 +159,8 @@ def compute_fish_stock_position_rows(
         ledger_q = ledger_q.filter(pond_id=pond_id)
     if cy_id is not None:
         ledger_q = ledger_q.filter(production_cycle_id=cy_id)
+    if entries_after_date is not None:
+        ledger_q = ledger_q.filter(entry_date__gt=entries_after_date)
 
     ledger_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
     for row in ledger_q.only("pond_id", "weight_kg_delta", "fish_count_delta", "fish_species"):
@@ -179,6 +189,8 @@ def compute_fish_stock_position_rows(
         bl_q = bl_q.filter(aquaculture_pond_id=pond_id)
     if cy_id is not None:
         bl_q = bl_q.filter(aquaculture_production_cycle_id=cy_id)
+    if entries_after_date is not None:
+        bl_q = bl_q.filter(bill__bill_date__gt=entries_after_date)
     for ln in bl_q:
         it = ln.item
         if not it or not _vendor_bill_fish_matches_species_filter(it, species_filter_code):
@@ -200,6 +212,8 @@ def compute_fish_stock_position_rows(
             qs = qs.filter(production_cycle_id=cy_id)
         if species_filter_code is not None:
             qs = qs.filter(fish_species=species_filter_code)
+        if entries_after_date is not None:
+            qs = qs.filter(sample_date__gt=entries_after_date)
         s = qs.order_by("-sample_date", "-id").first()
         if s:
             latest_sample[p.id] = s
@@ -337,6 +351,7 @@ def compute_fish_stock_position_breakdown_rows(
     production_cycle_id: int | None = None,
     fish_species_filter: str | None = None,
     include_inactive_ponds: bool = False,
+    entries_after_date: date | None = None,
 ) -> list[dict]:
     """
     Per (pond, production cycle, fish species) implied net and components.
@@ -380,6 +395,8 @@ def compute_fish_stock_position_breakdown_rows(
         return cy_id is None or cycle == cy_id
 
     lines_in = AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).select_related("transfer")
+    if entries_after_date is not None:
+        lines_in = lines_in.filter(transfer__transfer_date__gt=entries_after_date)
     for ln in lines_in:
         tp = ln.to_pond_id
         if tp not in pond_by_id:
@@ -397,6 +414,8 @@ def compute_fish_stock_position_breakdown_rows(
             in_map_c[key] += int(ln.fish_count)
 
     lines_out = AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).select_related("transfer")
+    if entries_after_date is not None:
+        lines_out = lines_out.filter(transfer__transfer_date__gt=entries_after_date)
     for ln in lines_out:
         fp = ln.transfer.from_pond_id
         if fp not in pond_by_id:
@@ -418,6 +437,8 @@ def compute_fish_stock_position_breakdown_rows(
         sale_q = sale_q.filter(pond_id=pond_id)
     if cy_id is not None:
         sale_q = sale_q.filter(production_cycle_id=cy_id)
+    if entries_after_date is not None:
+        sale_q = sale_q.filter(sale_date__gt=entries_after_date)
     for s in sale_q.only(
         "pond_id", "production_cycle_id", "weight_kg", "fish_count", "income_type", "fish_species"
     ):
@@ -442,6 +463,8 @@ def compute_fish_stock_position_breakdown_rows(
         ledger_q = ledger_q.filter(pond_id=pond_id)
     if cy_id is not None:
         ledger_q = ledger_q.filter(production_cycle_id=cy_id)
+    if entries_after_date is not None:
+        ledger_q = ledger_q.filter(entry_date__gt=entries_after_date)
     for row in ledger_q.only(
         "pond_id", "production_cycle_id", "weight_kg_delta", "fish_count_delta", "fish_species"
     ):
@@ -473,6 +496,8 @@ def compute_fish_stock_position_breakdown_rows(
         bl_q = bl_q.filter(aquaculture_pond_id=pond_id)
     if cy_id is not None:
         bl_q = bl_q.filter(aquaculture_production_cycle_id=cy_id)
+    if entries_after_date is not None:
+        bl_q = bl_q.filter(bill__bill_date__gt=entries_after_date)
     for ln in bl_q:
         pid = ln.aquaculture_pond_id
         if pid is None or pid not in pond_by_id:

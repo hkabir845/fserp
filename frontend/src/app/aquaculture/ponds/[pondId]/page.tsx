@@ -5,10 +5,12 @@ import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft,
+  Archive,
   CalendarRange,
   Fish,
   Gauge,
   Landmark,
+  Lock,
   RefreshCw,
   Scale,
   Sprout,
@@ -16,6 +18,7 @@ import {
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { aquacultureArchivePlReportHref } from '@/lib/aquacultureDataBankArchive'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 
@@ -137,6 +140,14 @@ interface PondDetail {
     paid_total: string
     outstanding: string | null
   }
+  data_bank_lock?: {
+    close_id: number
+    period_label: string
+    period_start: string
+    period_end: string
+    is_data_locked: boolean
+    reference_access_enabled: boolean
+  } | null
 }
 
 interface IncomeSlice {
@@ -620,6 +631,18 @@ export default function PondDetailViewPage() {
       : null
 
   const plRow = pl?.ponds?.[0] ?? null
+  const dataBankLock = pond?.data_bank_lock
+  const periodClosed = dataBankLock?.is_data_locked === true
+  const archiveHref =
+    periodClosed && dataBankLock
+      ? aquacultureArchivePlReportHref({
+          pondId: pondIdNum,
+          periodStart: dataBankLock.period_start,
+          periodEnd: dataBankLock.period_end,
+          label: dataBankLock.period_label,
+          closeId: dataBankLock.close_id,
+        })
+      : null
 
   if (!Number.isFinite(pondIdNum)) {
     return (
@@ -661,6 +684,33 @@ export default function PondDetailViewPage() {
           Refresh
         </button>
       </div>
+
+      {periodClosed && dataBankLock ? (
+        <section className="mb-6 rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-950">
+          <div className="flex flex-wrap items-start gap-2">
+            <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-800" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-amber-950">
+                Period closed — {dataBankLock.period_label}
+              </p>
+              <p className="mt-1 leading-relaxed">
+                Operational data through {formatDateOnly(dataBankLock.period_end)} is archived
+                (read-only). Pond structure below is unchanged. Start the next season with dates{' '}
+                <strong className="font-medium">after</strong> {formatDateOnly(dataBankLock.period_end)}.
+              </p>
+              {archiveHref ? (
+                <Link
+                  href={archiveHref}
+                  className="mt-2 inline-flex items-center gap-1 font-medium text-teal-800 underline hover:text-teal-950"
+                >
+                  <Archive className="h-4 w-4" />
+                  View archived P&amp;L
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {Number.isFinite(pondIdNum) ? (
         <div className="mb-6 flex flex-wrap gap-x-5 gap-y-2 border-b border-slate-200 pb-4 text-sm">

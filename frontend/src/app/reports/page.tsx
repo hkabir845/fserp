@@ -1203,6 +1203,17 @@ export default function ReportsPage() {
     if (deepLinkReportKeyRef.current === linkKey) return
     if (reportParam === 'aquaculture-pl-management' || reportParam === 'analytics-kpi') {
       deepLinkReportKeyRef.current = linkKey
+      const archiveStart = (searchParams.get('start_date') || '').trim().slice(0, 10)
+      const archiveEnd = (searchParams.get('end_date') || '').trim().slice(0, 10)
+      if (
+        reportParam === 'aquaculture-pl-management' &&
+        /^\d{4}-\d{2}-\d{2}$/.test(archiveStart) &&
+        /^\d{4}-\d{2}-\d{2}$/.test(archiveEnd)
+      ) {
+        setDateRange({ startDate: archiveStart, endDate: archiveEnd })
+        const archivePond = (searchParams.get('pond_id') || '').trim()
+        if (/^\d+$/.test(archivePond)) setAquaculturePondId(archivePond)
+      }
       void fetchReport(reportParam as ReportType)
     }
   }, [searchParams, reportRbacHydrated, fetchReport])

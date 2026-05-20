@@ -188,6 +188,7 @@ function CompaniesPageContent() {
     }
     release_notes?: string
     upgrade_playbook?: string[]
+    tenant_upgrade_hooks?: { name: string; summary: string }[]
   } | null>(null)
   const [upgradeAuditEvents, setUpgradeAuditEvents] = useState<
     {
@@ -274,6 +275,12 @@ function CompaniesPageContent() {
             : undefined,
           upgrade_playbook: Array.isArray(releaseRes.data.upgrade_playbook)
             ? releaseRes.data.upgrade_playbook.map(String)
+            : undefined,
+          tenant_upgrade_hooks: Array.isArray(releaseRes.data.tenant_upgrade_hooks)
+            ? releaseRes.data.tenant_upgrade_hooks.map((h: { name?: string; summary?: string }) => ({
+                name: String(h.name ?? ''),
+                summary: String(h.summary ?? ''),
+              }))
             : undefined,
         })
       }
@@ -893,6 +900,11 @@ function CompaniesPageContent() {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-red-900">Could not load companies from the API</p>
                   <p className="mt-1 text-sm text-red-800/95">{companiesFetchError}</p>
+                  <p className="mt-2 text-sm text-red-900/90">
+                    Start Django on port 8000 (from the repo: <code className="rounded bg-red-100/80 px-1">backend\run-dev.bat</code>
+                    ), keep this page on <code className="rounded bg-red-100/80 px-1">http://localhost:3000</code>, sign in as{' '}
+                    <strong>super_admin</strong>, then click Retry.
+                  </p>
                   <p className="mt-2 font-mono text-xs text-red-900/80 break-all">
                     API origin in use: {getBackendOrigin()}
                   </p>
@@ -908,6 +920,65 @@ function CompaniesPageContent() {
               </div>
             </div>
           )}
+
+          {/* Companies list first — visible without scrolling past maintenance panels */}
+          {!loading && companies.length > 0 && (
+            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm font-semibold text-slate-900">
+                Loaded companies ({filteredCompanies.length}
+                {companySearch.trim() ? ` of ${companies.length}` : ''})
+              </p>
+              <ul className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                {[...filteredCompanies]
+                  .sort((a, b) => {
+                    if (a.is_master === 'true' && b.is_master !== 'true') return -1
+                    if (a.is_master !== 'true' && b.is_master === 'true') return 1
+                    return a.name.localeCompare(b.name)
+                  })
+                  .map((c) => (
+                    <li key={c.id}>
+                      <a
+                        href={`#company-card-${c.id}`}
+                        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:border-blue-300 hover:bg-blue-50"
+                      >
+                        {c.is_master === 'true' ? (
+                          <Crown className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+                        ) : (
+                          <Building2 className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                        )}
+                        <span className="truncate">{c.name}</span>
+                        {c.company_code ? (
+                          <span className="shrink-0 font-mono text-xs text-slate-500">{c.company_code}</span>
+                        ) : null}
+                      </a>
+                    </li>
+                  ))}
+              </ul>
+              {filteredCompanies.length === 0 && companySearch.trim() ? (
+                <button
+                  type="button"
+                  className="mt-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+                  onClick={() => setCompanySearch('')}
+                >
+                  Clear search to show all {companies.length} companies
+                </button>
+              ) : null}
+            </div>
+          )}
+
+          {!loading && companies.length === 0 && !companiesFetchError ? (
+            <div className="mb-6 rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center">
+              <Building2 className="mx-auto mb-3 h-10 w-10 text-slate-400" />
+              <p className="text-slate-700">No companies in this database.</p>
+              <button
+                type="button"
+                onClick={handleCreateCompany}
+                className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Create company
+              </button>
+            </div>
+          ) : null}
           
           {/* Info Banner */}
           <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -952,7 +1023,8 @@ function CompaniesPageContent() {
                     <p>
                       <strong>Code rollout (no Master data):</strong> after you deploy backend/frontend and run migrations, use{' '}
                       <strong>Apply release to all tenants</strong> below to set every tenant&apos;s platform release tag to the
-                      current server target and run upgrade hooks. This does <strong>not</strong> copy chart of accounts, products, or settings from Master.
+                      current server target and run tenant upgrade hooks (COA, Aquaculture / Data Bank prep, payroll, bank registers).
+                      This does <strong>not</strong> copy chart of accounts, products, or settings from Master unless you use Admin → Master push with sync options.
                     </p>
                     <p>
                       Or use <strong>Apply upgrade</strong> on each company card for one tenant at a time. Set{' '}
@@ -1043,6 +1115,21 @@ function CompaniesPageContent() {
                     <li key={i}>{step}</li>
                   ))}
                 </ol>
+              ) : null}
+              {platformInfo.tenant_upgrade_hooks && platformInfo.tenant_upgrade_hooks.length > 0 ? (
+                <div className="mt-3 border-t border-slate-100 pt-3">
+                  <p className="text-xs font-medium text-slate-800">
+                    Tenant upgrade hooks (run on each Apply release)
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                    {platformInfo.tenant_upgrade_hooks.map((h) => (
+                      <li key={h.name}>
+                        <span className="font-mono text-[11px] text-slate-500">{h.name}</span>
+                        {h.summary ? ` — ${h.summary}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
             </div>
           )}
@@ -1139,7 +1226,11 @@ function CompaniesPageContent() {
                   const capacityUsers = company.capacity_usage?.users
                   
                   return (
-                    <div key={company.id} className={`bg-white rounded-xl shadow-lg border-2 ${statusColor} transition-all hover:shadow-xl`}>
+                    <div
+                      id={`company-card-${company.id}`}
+                      key={company.id}
+                      className={`bg-white rounded-xl shadow-lg border-2 ${statusColor} transition-all hover:shadow-xl scroll-mt-4`}
+                    >
                       <div className="p-6">
                         {/* Header Row */}
                         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

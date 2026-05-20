@@ -184,8 +184,31 @@ export function extractErrorMessage(error: any, fallback: string = 'An error occ
  * Chrome bug noise: an extension's onMessage returned true (async) but never called
  * sendResponse — surfaces as an unhandled promise rejection on the page, not app code.
  */
-const CHROME_ASYNC_MESSAGE_CHANNEL_NOISE =
+export const CHROME_ASYNC_MESSAGE_CHANNEL_NOISE =
   /message channel closed before a response was received|listener indicated an asynchronous response/i
+
+/** Promise rejection from a broken extension onMessage handler — not app code. */
+export function isBenignExtensionRejection(reason: unknown): boolean {
+  if (reason == null) return false
+  if (typeof reason === 'string') return CHROME_ASYNC_MESSAGE_CHANNEL_NOISE.test(reason)
+  if (reason instanceof Error) {
+    return (
+      CHROME_ASYNC_MESSAGE_CHANNEL_NOISE.test(reason.message) ||
+      CHROME_ASYNC_MESSAGE_CHANNEL_NOISE.test(String(reason))
+    )
+  }
+  if (typeof reason === 'object' && 'message' in reason) {
+    const msg = (reason as { message?: unknown }).message
+    if (typeof msg === 'string' && CHROME_ASYNC_MESSAGE_CHANNEL_NOISE.test(msg)) return true
+  }
+  try {
+    return CHROME_ASYNC_MESSAGE_CHANNEL_NOISE.test(String(reason))
+  } catch {
+    return false
+  }
+}
+
+let consoleErrorFilterInitialized = false
 
 /**
  * Check if an error is from a browser extension
@@ -260,6 +283,22 @@ export function initConsoleErrorFilter(): void {
   if (typeof window === 'undefined') {
     return
   }
+  if (consoleErrorFilterInitialized) {
+    return
+  }
+  consoleErrorFilterInitialized = true
+
+  // Register first so extension noise is suppressed before other handlers run
+  window.addEventListener(
+    'unhandledrejection',
+    (event) => {
+      if (isBenignExtensionRejection(event.reason)) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+      }
+    },
+    { capture: true }
+  )
 
   // Store original console methods
   const originalError = console.error.bind(console)
@@ -342,6 +381,14 @@ export function initConsoleErrorFilter(): void {
     if (args.length > 0 && argsLookLikeExtensionNoise(args)) {
       return
     }
+    const message = args.map((a) => String(a)).join(' ')
+    if (
+      message.includes('was preloaded using link preload but not used') ||
+      message.includes('preloaded using link preload but not used within') ||
+      message.includes('Dashboard loading timeout')
+    ) {
+      return
+    }
     const allExtensionWarnings = args.length > 0 && args.every(arg => checkExtensionError(arg))
     if (!allExtensionWarnings) {
       originalWarn(...args)
@@ -400,13 +447,13 @@ export function initConsoleErrorFilter(): void {
     }
   }, true) // Use capture phase to catch early
 
-  // Intercept unhandled promise rejections
+  // Intercept unhandled promise rejections (extension + connection noise)
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason
-    
-    // Suppress extension errors
-    if (isExtensionError(reason)) {
+
+    if (isBenignExtensionRejection(reason) || isExtensionError(reason)) {
       event.preventDefault()
+      event.stopImmediatePropagation()
       return
     }
     

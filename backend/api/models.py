@@ -2534,6 +2534,60 @@ class AquacultureFeedingAdvice(models.Model):
         ]
 
 
+class AquacultureDataBankPondClose(models.Model):
+    """
+    Per-pond fiscal year close: archives operational data for the period; pond structure
+    (Site & lease) is unchanged. Farmers record the next season with dates after period_end.
+    Admin may reopen for read-only reference in Data Bank.
+    """
+
+    STATUS_CLOSED = "closed"
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_data_bank_pond_closes")
+    pond = models.ForeignKey(
+        AquaculturePond,
+        on_delete=models.CASCADE,
+        related_name="data_bank_closes",
+    )
+    label = models.CharField(max_length=120, help_text="Display label, e.g. Pond A — FY 2025.")
+    period_start = models.DateField()
+    period_end = models.DateField(help_text="Year-end / close date chosen for this pond.")
+    status = models.CharField(max_length=16, default=STATUS_CLOSED, db_index=True)
+    is_data_locked = models.BooleanField(
+        default=True,
+        help_text="When true, operational writes for this pond are blocked.",
+    )
+    reference_access_enabled = models.BooleanField(
+        default=False,
+        help_text="Admin reopened this close in Data Bank for historical reference (read-only).",
+    )
+    closed_at = models.DateTimeField(auto_now_add=True)
+    closed_by_user_id = models.IntegerField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    reopened_at = models.DateTimeField(null=True, blank=True)
+    reopened_by_user_id = models.IntegerField(null=True, blank=True)
+    reopen_reason = models.TextField(blank=True)
+    relocked_at = models.DateTimeField(null=True, blank=True)
+    relocked_by_user_id = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = "aquaculture_data_bank_pond_close"
+        ordering = ["-period_end", "-id"]
+        indexes = [
+            models.Index(fields=["company", "pond", "period_end"]),
+            models.Index(fields=["pond", "is_data_locked"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pond", "period_end"],
+                name="uq_aquaculture_data_bank_pond_close_pond_end",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.label} ({self.period_start} – {self.period_end})"
+
+
 class PayrollRunPondAllocation(models.Model):
     """
     Attribute payroll wages to aquaculture ponds (pond P&L labor and GL 6712 splits).

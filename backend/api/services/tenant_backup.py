@@ -6,6 +6,9 @@ tenant in FK-safe order (PROTECT chains), then reloads from the bundle.
 
 Schema v2 includes full ERP + aquaculture + inventory stock/transfer coverage.
 Schema v1 backups restore but omit aquaculture/stock modules (legacy).
+
+PasswordResetToken rows are intentionally excluded from backups (single-use secrets).
+Tenant delete/restore purges any pending reset tokens for that company's users.
 """
 from __future__ import annotations
 
@@ -23,6 +26,11 @@ from django.utils.duration import duration_iso_string
 from django.utils.functional import Promise
 
 logger = logging.getLogger(__name__)
+
+from api.utils.password_reset_tokens import (
+    delete_password_reset_tokens_for_user_ids,
+    purge_password_reset_tokens_for_company,
+)
 
 from api.models import (
     AquacultureBiomassSample,
@@ -256,6 +264,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     tenant_user_ids = _tenant_user_ids(cid)
     if tenant_user_ids:
         BroadcastRead.objects.filter(user_id__in=tenant_user_ids).delete()
+        delete_password_reset_tokens_for_user_ids(tenant_user_ids)
 
     # --- Documents that PROTECT stations, items, COA, or loans ---
     AquacultureFinancingAllocation.objects.filter(company_id=cid).delete()
@@ -596,6 +605,8 @@ def restore_bundle(
         delete_tenant_company_data(target_company_id)
         for obj in serializers.deserialize("python", records):
             obj.save()
+        # Belt-and-suspenders: never leave pre-restore reset links/OTPs valid after reload.
+        purge_password_reset_tokens_for_company(target_company_id)
 
     result: dict[str, Any] = {
         "ok": True,

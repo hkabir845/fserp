@@ -45,6 +45,7 @@ npm run build
 - **Schema v1** backups still restore but may omit aquaculture/stock; the API returns a warning when restoring v1 files.
 - Large tenants: the frontend uses a **15-minute** Axios timeout for backup/restore; nginx/proxy timeouts should allow the same (or higher).
 - Automated tests: `tests/test_password_reset_and_backup.py`, `tests/test_tenant_backup_full.py`, `tests/test_delete_tenant_company.py`.
+- **Password reset tokens** are not stored in tenant backups (security). Tenant delete/restore purges pending tokens. Schedule `python manage.py purge_password_reset_tokens` (e.g. daily cron) to remove expired and aged used rows.
 
 ## 4. Server environment (`backend/.env` or process manager)
 

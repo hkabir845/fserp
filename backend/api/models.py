@@ -254,6 +254,10 @@ class PasswordResetToken(models.Model):
 
     class Meta:
         db_table = "password_reset_token"
+        indexes = [
+            models.Index(fields=["user", "used_at"]),
+            models.Index(fields=["expires_at"]),
+        ]
 
 
 # ---------------------------------------------------------------------------

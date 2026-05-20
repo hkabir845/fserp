@@ -91,6 +91,7 @@ const AQUACULTURE_TILE_BY_HREF: Record<string, string> = {
   '/aquaculture/feeding': tile('bg-amber-100', 'text-amber-800'),
   '/aquaculture/medicine': tile('bg-violet-100', 'text-violet-800'),
   '/aquaculture/financing': tile('bg-emerald-100', 'text-emerald-800'),
+  '/aquaculture/data-bank': tile('bg-amber-100', 'text-amber-900'),
   '/aquaculture/report': tile('bg-indigo-100', 'text-indigo-700'),
   '/reports?report=aquaculture-pl-management&category=aquaculture': tile('bg-indigo-100', 'text-indigo-700'),
 }
@@ -149,13 +150,20 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   '/aquaculture/stock': ['app.aquaculture'],
   '/aquaculture/landlords': ['app.aquaculture'],
   '/aquaculture/financing': ['app.aquaculture'],
+  '/aquaculture/data-bank': ['app.aquaculture'],
 }
 
 function menuItemAllowedByPermissions(href: string, perms: string[]): boolean {
   if (perms.includes(PERM_WILDCARD)) return true
   const anyOf = HREF_REQUIRED_PERMISSIONS[href]
-  if (!anyOf?.length) return false
-  return anyOf.some((k) => perms.includes(k))
+  if (anyOf?.length) {
+    return anyOf.some((k) => perms.includes(k))
+  }
+  // Aquaculture sub-routes (e.g. Data Bank) share app.aquaculture when not listed explicitly.
+  if (href.startsWith('/aquaculture') && perms.includes('app.aquaculture')) {
+    return true
+  }
+  return false
 }
 
 /**

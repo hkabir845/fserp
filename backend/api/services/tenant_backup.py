@@ -3,6 +3,9 @@ Tenant-scoped backup (export) and restore (full replace) for FSERP.
 
 Uses Django's serialization format (python/json compatible). Restore clears the
 tenant in FK-safe order (PROTECT chains), then reloads from the bundle.
+
+Schema v2 includes full ERP + aquaculture + inventory stock/transfer coverage.
+Schema v1 backups restore but omit aquaculture/stock modules (legacy).
 """
 from __future__ import annotations
 
@@ -10,12 +13,12 @@ import json
 import logging
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
-from typing import Any
+from typing import Any, Iterable
 from uuid import UUID
 
 from django.core import serializers
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q, QuerySet
 from django.utils.duration import duration_iso_string
 from django.utils.functional import Promise
 
@@ -24,30 +27,43 @@ logger = logging.getLogger(__name__)
 from api.models import (
     AquacultureBiomassSample,
     AquacultureExpense,
+    AquacultureExpenseInventoryLine,
+    AquacultureExpensePondShare,
+    AquacultureFeedingAdvice,
+    AquacultureFinancingAllocation,
     AquacultureFishPondTransfer,
+    AquacultureFishPondTransferLine,
     AquacultureFishSale,
     AquacultureFishStockLedger,
+    AquacultureLandlord,
+    AquacultureLandlordLedgerEntry,
+    AquacultureLandlordPondShare,
     AquaculturePond,
     AquaculturePondProfitTransfer,
     AquacultureProductionCycle,
-    Broadcast,
-    BroadcastRead,
     BankAccount,
     BankDeposit,
     Bill,
     BillLine,
+    Broadcast,
+    BroadcastRead,
     ChartOfAccount,
     Company,
+    CompanyRole,
     Contract,
     Customer,
     Dispenser,
     Employee,
     EmployeeLedgerEntry,
     FundTransfer,
+    InventoryTransfer,
+    InventoryTransferLine,
     Invoice,
     InvoiceLine,
     Island,
     Item,
+    ItemPondStock,
+    ItemStationStock,
     JournalEntry,
     JournalEntryLine,
     Loan,
@@ -62,6 +78,8 @@ from api.models import (
     PaymentInvoiceAllocation,
     PayrollRun,
     PayrollRunPondAllocation,
+    PondWarehouseStockReceipt,
+    PondWarehouseStockReceiptLine,
     ShiftSession,
     ShiftTemplate,
     Station,
@@ -71,21 +89,90 @@ from api.models import (
     Tax,
     TaxRate,
     TenantPlatformReleaseEvent,
+    TenantReportingCategory,
     User,
     Vendor,
 )
 
-BACKUP_SCHEMA_VERSION = 1
+BACKUP_SCHEMA_VERSION = 2
+SUPPORTED_BACKUP_SCHEMA_VERSIONS = frozenset({1, 2})
 RESTORE_CONFIRM_PHRASE = "DELETE_ALL_TENANT_DATA"
+
+# Django app labels present in every serialized record (for coverage checks / tests).
+EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
+    "api.company",
+    "api.contract",
+    "api.companyrole",
+    "api.tenantplatformreleaseevent",
+    "api.user",
+    "api.broadcast",
+    "api.broadcastread",
+    "api.chartofaccount",
+    "api.tenantreportingcategory",
+    "api.station",
+    "api.item",
+    "api.customer",
+    "api.vendor",
+    "api.employee",
+    "api.tax",
+    "api.shifttemplate",
+    "api.payrollrun",
+    "api.payrollrunpondallocation",
+    "api.loancounterparty",
+    "api.bankaccount",
+    "api.subscriptionledgerinvoice",
+    "api.bankdeposit",
+    "api.aquaculturepond",
+    "api.aquaculturelandlord",
+    "api.aquacultureproductioncycle",
+    "api.itemstationstock",
+    "api.itempondstock",
+    "api.aquaculturelandlordpondshare",
+    "api.tank",
+    "api.island",
+    "api.dispenser",
+    "api.meter",
+    "api.nozzle",
+    "api.journalentry",
+    "api.fundtransfer",
+    "api.shiftsession",
+    "api.inventorytransfer",
+    "api.inventorytransferline",
+    "api.pondwarehousestockreceipt",
+    "api.pondwarehousestockreceiptline",
+    "api.invoice",
+    "api.invoiceline",
+    "api.bill",
+    "api.billline",
+    "api.payment",
+    "api.paymentinvoiceallocation",
+    "api.paymentbillallocation",
+    "api.tankdip",
+    "api.loan",
+    "api.loandisbursement",
+    "api.loanrepayment",
+    "api.loaninterestaccrual",
+    "api.journalentryline",
+    "api.aquacultureexpense",
+    "api.aquacultureexpenseinventoryline",
+    "api.aquacultureexpensepondshare",
+    "api.aquaculturefishsale",
+    "api.aquaculturebiomasssample",
+    "api.aquaculturefishpondtransfer",
+    "api.aquaculturefishpondtransferline",
+    "api.aquaculturefishstockledger",
+    "api.aquaculturepondprofittransfer",
+    "api.aquaculturefinancingallocation",
+    "api.aquaculturefeedingadvice",
+    "api.aquaculturelandlordledgerentry",
+    "api.taxrate",
+    "api.employeeledgerentry",
+)
 
 
 def _sanitize_for_json(obj: Any) -> Any:
     """
     Recursively convert the bundle to JSON-safe primitives (dict/list/str/number/bool/null).
-
-    Using only ``json.dumps`` + ``JSONEncoder.default`` is fragile: nested ``datetime`` values
-    can still surface as "Object of type datetime is not JSON serializable" depending on
-    Python/Django versions and deployment. Pre-sanitizing the tree removes that class of failure.
     """
     if obj is None:
         return None
@@ -129,12 +216,24 @@ def _sanitize_for_json(obj: Any) -> Any:
     return str(obj)
 
 
+def _tenant_user_ids(company_id: int) -> list[int]:
+    return list(User.objects.filter(company_id=company_id).values_list("id", flat=True))
+
+
+def _tenant_broadcast_reads_qs(company_id: int) -> QuerySet[BroadcastRead]:
+    user_ids = _tenant_user_ids(company_id)
+    if not user_ids:
+        return BroadcastRead.objects.none()
+    return BroadcastRead.objects.filter(user_id__in=user_ids)
+
+
 def delete_tenant_company_data(company_id: int) -> None:
     """
     Remove all ERP rows for a company in FK-safe order (PROTECT chains break Company.delete()).
     """
     cid = company_id
 
+    # --- Deepest children (lines, allocations, rates) ---
     TaxRate.objects.filter(tax__company_id=cid).delete()
     EmployeeLedgerEntry.objects.filter(employee__company_id=cid).delete()
     PaymentInvoiceAllocation.objects.filter(payment__company_id=cid).delete()
@@ -145,6 +244,32 @@ def delete_tenant_company_data(company_id: int) -> None:
     LoanInterestAccrual.objects.filter(loan__company_id=cid).delete()
     LoanRepayment.objects.filter(loan__company_id=cid).delete()
     LoanDisbursement.objects.filter(loan__company_id=cid).delete()
+    PondWarehouseStockReceiptLine.objects.filter(receipt__company_id=cid).delete()
+    InventoryTransferLine.objects.filter(transfer__company_id=cid).delete()
+    AquacultureExpenseInventoryLine.objects.filter(expense__company_id=cid).delete()
+    AquacultureExpensePondShare.objects.filter(expense__company_id=cid).delete()
+    AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).delete()
+    AquacultureLandlordLedgerEntry.objects.filter(landlord__company_id=cid).delete()
+    AquacultureLandlordPondShare.objects.filter(landlord__company_id=cid).delete()
+    PayrollRunPondAllocation.objects.filter(payroll_run__company_id=cid).delete()
+
+    tenant_user_ids = _tenant_user_ids(cid)
+    if tenant_user_ids:
+        BroadcastRead.objects.filter(user_id__in=tenant_user_ids).delete()
+
+    # --- Documents that PROTECT stations, items, COA, or loans ---
+    AquacultureFinancingAllocation.objects.filter(company_id=cid).delete()
+    PondWarehouseStockReceipt.objects.filter(company_id=cid).delete()
+    InventoryTransfer.objects.filter(company_id=cid).delete()
+    BankDeposit.objects.filter(company_id=cid).delete()
+    AquacultureFeedingAdvice.objects.filter(company_id=cid).delete()
+    AquaculturePondProfitTransfer.objects.filter(company_id=cid).delete()
+    AquacultureBiomassSample.objects.filter(company_id=cid).delete()
+    AquacultureFishSale.objects.filter(company_id=cid).delete()
+    AquacultureFishPondTransfer.objects.filter(company_id=cid).delete()
+    AquacultureFishStockLedger.objects.filter(company_id=cid).delete()
+    AquacultureExpense.objects.filter(company_id=cid).delete()
+    AquacultureProductionCycle.objects.filter(company_id=cid).delete()
 
     while Loan.objects.filter(company_id=cid).exists():
         leaf = (
@@ -168,23 +293,17 @@ def delete_tenant_company_data(company_id: int) -> None:
     Dispenser.objects.filter(company_id=cid).delete()
     Island.objects.filter(company_id=cid).delete()
     Tank.objects.filter(company_id=cid).delete()
-    BankDeposit.objects.filter(company_id=cid).delete()
     SubscriptionLedgerInvoice.objects.filter(company_id=cid).delete()
     BankAccount.objects.filter(company_id=cid).delete()
     LoanCounterparty.objects.filter(company_id=cid).delete()
-    PayrollRunPondAllocation.objects.filter(payroll_run__company_id=cid).delete()
     PayrollRun.objects.filter(company_id=cid).delete()
     ShiftTemplate.objects.filter(company_id=cid).delete()
     Tax.objects.filter(company_id=cid).delete()
     Employee.objects.filter(company_id=cid).delete()
-    AquaculturePondProfitTransfer.objects.filter(company_id=cid).delete()
-    AquacultureExpense.objects.filter(company_id=cid).delete()
-    AquacultureBiomassSample.objects.filter(company_id=cid).delete()
-    AquacultureFishSale.objects.filter(company_id=cid).delete()
-    AquacultureFishPondTransfer.objects.filter(company_id=cid).delete()
-    AquacultureFishStockLedger.objects.filter(company_id=cid).delete()
-    AquacultureProductionCycle.objects.filter(company_id=cid).delete()
+    ItemStationStock.objects.filter(company_id=cid).delete()
+    ItemPondStock.objects.filter(company_id=cid).delete()
     AquaculturePond.objects.filter(company_id=cid).delete()
+    AquacultureLandlord.objects.filter(company_id=cid).delete()
     Vendor.objects.filter(company_id=cid).delete()
     Customer.objects.filter(company_id=cid).delete()
     Station.objects.filter(company_id=cid).delete()
@@ -200,17 +319,11 @@ def delete_tenant_company_data(company_id: int) -> None:
             raise ValueError("Chart of accounts could not be cleared (unexpected cycle).")
         leaf.delete()
 
-    # Tenant-targeted broadcasts (IntegerField, not FK — must delete explicitly)
     Broadcast.objects.filter(company_id=cid).delete()
-
-    # user_id is not a ForeignKey; remove read receipts for this tenant (incl. global broadcasts).
-    tenant_user_ids = list(User.objects.filter(company_id=cid).values_list("id", flat=True))
-    if tenant_user_ids:
-        BroadcastRead.objects.filter(user_id__in=tenant_user_ids).delete()
-
     User.objects.filter(company_id=cid).delete()
     Contract.objects.filter(company_id=cid).delete()
-    # Explicit: audit rows (Company CASCADE would also remove these)
+    CompanyRole.objects.filter(company_id=cid).delete()
+    TenantReportingCategory.objects.filter(company_id=cid).delete()
     TenantPlatformReleaseEvent.objects.filter(company_id=cid).delete()
     Company.objects.filter(pk=cid).delete()
 
@@ -225,13 +338,6 @@ def delete_station_operational_data(
     Remove forecourt / operations data for a single station within a tenant.
 
     Does **not** delete company-wide accounting (invoices, payments, GL, customers, items, etc.).
-    Invoices linked to shift sessions for this station keep existing rows; ``Invoice.shift_session``
-    is set NULL when shift sessions are removed.
-
-    Deletes in FK-safe order: shifts → dips → nozzles → meters → dispensers → islands → tanks →
-    optionally the station row.
-
-    Returns approximate row counts deleted per group (best-effort for observability).
     """
     cid = company_id
     sid = station_id
@@ -246,7 +352,11 @@ def delete_station_operational_data(
         n, _ = qs.delete()
         counts[label] = counts.get(label, 0) + int(n)
 
-    # Shift sessions (Invoice.shift_session is SET_NULL)
+    InventoryTransfer.objects.filter(company_id=cid).filter(
+        Q(from_station_id=sid) | Q(to_station_id=sid)
+    ).delete()
+    PondWarehouseStockReceipt.objects.filter(company_id=cid, from_station_id=sid).delete()
+
     _del("shift_sessions", ShiftSession.objects.filter(company_id=cid, station_id=sid))
     _del("tank_dips", TankDip.objects.filter(company_id=cid, tank__station_id=sid))
     _del("nozzles", Nozzle.objects.filter(company_id=cid, tank__station_id=sid))
@@ -254,6 +364,7 @@ def delete_station_operational_data(
     _del("dispensers", Dispenser.objects.filter(company_id=cid, island__station_id=sid))
     _del("islands", Island.objects.filter(company_id=cid, station_id=sid))
     _del("tanks", Tank.objects.filter(company_id=cid, station_id=sid))
+    ItemStationStock.objects.filter(company_id=cid, station_id=sid).delete()
 
     if remove_station_record:
         _del("stations", Station.objects.filter(pk=sid, company_id=cid))
@@ -299,8 +410,106 @@ def _topo_loans(company_id: int) -> list[Loan]:
     return ordered
 
 
-def _serialize_many(records: list[dict[str, Any]], iterable) -> None:
+def _serialize_many(records: list[dict[str, Any]], iterable: Iterable) -> None:
     records.extend(serializers.serialize("python", iterable))
+
+
+def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> None:
+    """Serialize all tenant tables in FK-safe order for restore."""
+    cid = company_id
+
+    _serialize_many(records, Company.objects.filter(pk=cid))
+    _serialize_many(records, Contract.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, CompanyRole.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, TenantPlatformReleaseEvent.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, User.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Broadcast.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, _tenant_broadcast_reads_qs(cid).order_by("id"))
+    _serialize_many(records, _topo_chart_accounts(cid))
+    _serialize_many(records, TenantReportingCategory.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Station.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Item.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Customer.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Vendor.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Employee.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Tax.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, ShiftTemplate.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, PayrollRun.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, PayrollRunPondAllocation.objects.filter(payroll_run__company_id=cid).order_by("id"))
+    _serialize_many(records, LoanCounterparty.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, BankAccount.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records, SubscriptionLedgerInvoice.objects.filter(company_id=cid).order_by("id")
+    )
+    _serialize_many(records, BankDeposit.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquaculturePond.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquacultureLandlord.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquacultureProductionCycle.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, ItemStationStock.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, ItemPondStock.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquacultureLandlordPondShare.objects.filter(landlord__company_id=cid).order_by("id"))
+    _serialize_many(records, Tank.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Island.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Dispenser.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Meter.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Nozzle.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, JournalEntry.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, FundTransfer.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, ShiftSession.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, InventoryTransfer.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, InventoryTransferLine.objects.filter(transfer__company_id=cid).order_by("id"))
+    _serialize_many(records, PondWarehouseStockReceipt.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records, PondWarehouseStockReceiptLine.objects.filter(receipt__company_id=cid).order_by("id")
+    )
+    _serialize_many(records, Invoice.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Bill.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, Payment.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, TankDip.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, _topo_loans(cid))
+    _serialize_many(records, LoanDisbursement.objects.filter(loan__company_id=cid).order_by("id"))
+    _serialize_many(records, LoanRepayment.objects.filter(loan__company_id=cid).order_by("id"))
+    _serialize_many(
+        records, LoanInterestAccrual.objects.filter(loan__company_id=cid).order_by("id")
+    )
+    _serialize_many(
+        records,
+        JournalEntryLine.objects.filter(journal_entry__company_id=cid).order_by("id"),
+    )
+    _serialize_many(records, InvoiceLine.objects.filter(invoice__company_id=cid).order_by("id"))
+    _serialize_many(records, BillLine.objects.filter(bill__company_id=cid).order_by("id"))
+    _serialize_many(
+        records,
+        PaymentInvoiceAllocation.objects.filter(payment__company_id=cid).order_by("id"),
+    )
+    _serialize_many(
+        records, PaymentBillAllocation.objects.filter(payment__company_id=cid).order_by("id")
+    )
+    _serialize_many(records, AquacultureExpense.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records, AquacultureExpenseInventoryLine.objects.filter(expense__company_id=cid).order_by("id")
+    )
+    _serialize_many(
+        records, AquacultureExpensePondShare.objects.filter(expense__company_id=cid).order_by("id")
+    )
+    _serialize_many(records, AquacultureFishSale.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquacultureBiomassSample.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquacultureFishPondTransfer.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records, AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).order_by("id")
+    )
+    _serialize_many(records, AquacultureFishStockLedger.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquaculturePondProfitTransfer.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquacultureFinancingAllocation.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquacultureFeedingAdvice.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records, AquacultureLandlordLedgerEntry.objects.filter(landlord__company_id=cid).order_by("id")
+    )
+    _serialize_many(
+        records,
+        EmployeeLedgerEntry.objects.filter(employee__company_id=cid).order_by("id"),
+    )
+    _serialize_many(records, TaxRate.objects.filter(tax__company_id=cid).order_by("id"))
 
 
 def build_backup_bundle(company_id: int) -> dict[str, Any]:
@@ -310,66 +519,16 @@ def build_backup_bundle(company_id: int) -> dict[str, Any]:
         raise ValueError("Company not found.")
 
     records: list[dict[str, Any]] = []
+    _append_tenant_records(records, company_id)
 
-    _serialize_many(records, Company.objects.filter(pk=company_id))
-    _serialize_many(records, Contract.objects.filter(company_id=company_id))
-    _serialize_many(records, User.objects.filter(company_id=company_id))
-    # Tenant-targeted broadcasts (company_id set); read receipts reference broadcast PK — order matters for restore.
-    _serialize_many(records, Broadcast.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(
-        records, BroadcastRead.objects.filter(broadcast__company_id=company_id).order_by("id")
-    )
-    _serialize_many(records, _topo_chart_accounts(company_id))
-    _serialize_many(records, Station.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Item.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Customer.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Vendor.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Employee.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Tax.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, ShiftTemplate.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, PayrollRun.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, LoanCounterparty.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, BankAccount.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(
-        records, SubscriptionLedgerInvoice.objects.filter(company_id=company_id).order_by("id")
-    )
-    _serialize_many(records, BankDeposit.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Tank.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Island.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Dispenser.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Meter.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Nozzle.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, JournalEntry.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, FundTransfer.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, ShiftSession.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Invoice.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Bill.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, Payment.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, TankDip.objects.filter(company_id=company_id).order_by("id"))
-    _serialize_many(records, _topo_loans(company_id))
-    _serialize_many(records, LoanDisbursement.objects.filter(loan__company_id=company_id).order_by("id"))
-    _serialize_many(records, LoanRepayment.objects.filter(loan__company_id=company_id).order_by("id"))
-    _serialize_many(
-        records, LoanInterestAccrual.objects.filter(loan__company_id=company_id).order_by("id")
-    )
-    _serialize_many(
-        records,
-        JournalEntryLine.objects.filter(journal_entry__company_id=company_id).order_by("id"),
-    )
-    _serialize_many(records, InvoiceLine.objects.filter(invoice__company_id=company_id).order_by("id"))
-    _serialize_many(records, BillLine.objects.filter(bill__company_id=company_id).order_by("id"))
-    _serialize_many(
-        records,
-        PaymentInvoiceAllocation.objects.filter(payment__company_id=company_id).order_by("id"),
-    )
-    _serialize_many(
-        records, PaymentBillAllocation.objects.filter(payment__company_id=company_id).order_by("id")
-    )
-    _serialize_many(
-        records,
-        EmployeeLedgerEntry.objects.filter(employee__company_id=company_id).order_by("id"),
-    )
-    _serialize_many(records, TaxRate.objects.filter(tax__company_id=company_id).order_by("id"))
+    model_labels = sorted({r["model"] for r in records})
+    missing = [m for m in EXPECTED_BACKUP_MODELS if m not in model_labels]
+    if missing:
+        logger.warning(
+            "backup company_id=%s missing serialized models (empty tenant?): %s",
+            company_id,
+            ", ".join(missing),
+        )
 
     return {
         "schema_version": BACKUP_SCHEMA_VERSION,
@@ -378,6 +537,7 @@ def build_backup_bundle(company_id: int) -> dict[str, Any]:
         "company_name": company.name,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "records": records,
+        "model_labels": model_labels,
     }
 
 
@@ -395,8 +555,12 @@ def _parse_bundle(raw: bytes | str) -> dict[str, Any]:
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError("Backup file is not a JSON object.")
-    if int(data.get("schema_version") or 0) != BACKUP_SCHEMA_VERSION:
-        raise ValueError("Unsupported or missing backup schema_version.")
+    schema = int(data.get("schema_version") or 0)
+    if schema not in SUPPORTED_BACKUP_SCHEMA_VERSIONS:
+        raise ValueError(
+            f"Unsupported backup schema_version={schema}. "
+            f"Supported: {sorted(SUPPORTED_BACKUP_SCHEMA_VERSIONS)}."
+        )
     records = data.get("records")
     if not isinstance(records, list):
         raise ValueError("Backup is missing records array.")
@@ -426,14 +590,22 @@ def restore_bundle(
             f"Backup is for company_id={cid}; cannot restore into company_id={target_company_id}."
         )
 
+    schema = int(data.get("schema_version") or 0)
     records = data["records"]
     with transaction.atomic():
         delete_tenant_company_data(target_company_id)
         for obj in serializers.deserialize("python", records):
             obj.save()
 
-    return {
+    result: dict[str, Any] = {
         "ok": True,
         "company_id": target_company_id,
         "restored_objects": len(records),
+        "schema_version": schema,
     }
+    if schema < BACKUP_SCHEMA_VERSION:
+        result["warning"] = (
+            "Backup uses an older schema; aquaculture, inventory transfers, and stock tables "
+            "may not have been included in this file."
+        )
+    return result

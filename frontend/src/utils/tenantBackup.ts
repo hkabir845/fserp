@@ -133,6 +133,8 @@ export interface BackupPreviewPayload {
   exported_at: string
   record_count: number
   schema_version: number
+  model_count?: number
+  model_labels?: string[]
 }
 
 export async function fetchBackupPreviewForAdminCompany(api: AxiosInstance, companyId: number) {

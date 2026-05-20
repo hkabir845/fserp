@@ -8,6 +8,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from api.models import Company
 from api.services.tenant_backup import (
+    BACKUP_SCHEMA_VERSION,
     RESTORE_CONFIRM_PHRASE,
     backup_bundle_json_bytes,
     build_backup_bundle,
@@ -67,7 +68,7 @@ def company_backup_download(request):
     resp = HttpResponse(payload, content_type="application/json; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{name}"'
     resp["X-Backup-Company-Id"] = str(cid)
-    resp["X-Backup-Schema-Version"] = "1"
+    resp["X-Backup-Schema-Version"] = str(BACKUP_SCHEMA_VERSION)
     resp["X-FSERP-Backup-Json"] = "sanitize-v1"
     resp["Cache-Control"] = "no-store"
     return resp
@@ -135,6 +136,8 @@ def admin_company_backup_preview(request, company_id: int):
             "exported_at": bundle["exported_at"],
             "record_count": len(bundle["records"]),
             "schema_version": bundle["schema_version"],
+            "model_count": len(bundle.get("model_labels") or []),
+            "model_labels": bundle.get("model_labels") or [],
         }
     )
 
@@ -163,7 +166,7 @@ def admin_company_backup_download(request, company_id: int):
     resp = HttpResponse(payload, content_type="application/json; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{name}"'
     resp["X-Backup-Company-Id"] = str(company_id)
-    resp["X-Backup-Schema-Version"] = "1"
+    resp["X-Backup-Schema-Version"] = str(BACKUP_SCHEMA_VERSION)
     resp["X-FSERP-Backup-Json"] = "sanitize-v1"
     resp["Cache-Control"] = "no-store"
     return resp

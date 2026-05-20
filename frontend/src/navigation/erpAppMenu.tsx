@@ -90,6 +90,7 @@ const AQUACULTURE_TILE_BY_HREF: Record<string, string> = {
   '/aquaculture/sampling': tile('bg-lime-100', 'text-lime-800'),
   '/aquaculture/feeding': tile('bg-amber-100', 'text-amber-800'),
   '/aquaculture/medicine': tile('bg-violet-100', 'text-violet-800'),
+  '/aquaculture/financing': tile('bg-emerald-100', 'text-emerald-800'),
   '/aquaculture/report': tile('bg-indigo-100', 'text-indigo-700'),
   '/reports?report=aquaculture-pl-management&category=aquaculture': tile('bg-indigo-100', 'text-indigo-700'),
 }
@@ -147,6 +148,7 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   '/aquaculture/transfers': ['app.aquaculture'],
   '/aquaculture/stock': ['app.aquaculture'],
   '/aquaculture/landlords': ['app.aquaculture'],
+  '/aquaculture/financing': ['app.aquaculture'],
 }
 
 function menuItemAllowedByPermissions(href: string, perms: string[]): boolean {

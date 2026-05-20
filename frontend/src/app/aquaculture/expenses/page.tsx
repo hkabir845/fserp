@@ -9,6 +9,11 @@ import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
+import {
+  aquacultureExpenseDeleteConfirmMessage,
+  aquacultureExpenseEditAllowed,
+  aquacultureExpenseEditBlockedReason,
+} from '@/lib/aquacultureExpensePolicy'
 
 interface Pond {
   id: number
@@ -488,7 +493,7 @@ export default function AquacultureExpensesPage() {
   }
 
   const remove = async (r: ExpenseRow) => {
-    if (!window.confirm('Delete this expense?')) return
+    if (!window.confirm(aquacultureExpenseDeleteConfirmMessage(r))) return
     try {
       await api.delete(`/aquaculture/expenses/${r.id}/`)
       toast.success('Deleted')
@@ -1023,17 +1028,32 @@ export default function AquacultureExpensesPage() {
                   </td>
                   <td className="px-3 py-2 max-w-[140px] truncate text-slate-600">{r.vendor_name || '—'}</td>
                   <td className="px-3 py-2">
+                    {aquacultureExpenseEditAllowed(r) ? (
+                      <button
+                        type="button"
+                        className="text-blue-600 hover:underline mr-2"
+                        onClick={() => openEdit(r)}
+                        title="Edit expense"
+                        aria-label="Edit expense"
+                      >
+                        <Edit2 className="h-4 w-4 inline" aria-hidden />
+                      </button>
+                    ) : (
+                      <span
+                        className="mr-2 inline-block text-slate-400"
+                        title={aquacultureExpenseEditBlockedReason(r)}
+                      >
+                        <Edit2 className="h-4 w-4 inline opacity-40" aria-hidden />
+                      </span>
+                    )}
                     <button
                       type="button"
-                      className="text-blue-600 hover:underline mr-2"
-                      onClick={() => openEdit(r)}
-                      title="Edit expense"
-                      aria-label="Edit expense"
+                      className="text-red-600 hover:underline"
+                      title="Delete expense"
+                      aria-label="Delete expense"
+                      onClick={() => void remove(r)}
                     >
-                      <Edit2 className="h-4 w-4 inline" aria-hidden />
-                    </button>
-                    <button type="button" className="text-red-600 hover:underline" onClick={() => void remove(r)}>
-                      <Trash2 className="h-4 w-4 inline" />
+                      <Trash2 className="h-4 w-4 inline" aria-hidden />
                     </button>
                   </td>
                 </tr>

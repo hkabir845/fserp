@@ -2,7 +2,7 @@
 
 import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useCompany } from '@/contexts/CompanyContext'
 import { 
@@ -19,6 +19,14 @@ import { escapeHtml, printDocument } from '@/utils/printDocument'
 import type { PrintBranding } from '@/utils/printBranding'
 import { loadPrintBranding } from '@/utils/printBranding'
 import { FinancialAnalyticsPanel } from './analytics/FinancialAnalyticsPanel'
+import { AquaculturePlManagementPanel } from './aquaculture/AquaculturePlManagementPanel'
+import {
+  formatPondScopeKey,
+  isPersistedReportSiteScopeKey,
+  isValidReportSiteScopeKey,
+  parseReportSiteScopeKey,
+} from './reportSiteScope'
+import { EXTRA_FINANCIAL_REPORT_IDS, renderExtraFinancialReport } from '@/components/reports/ExtraFinancialReportPanels'
 
 type ItemScopeTableProps = {
   reportType: ReportType
@@ -40,6 +48,14 @@ type ReportType =
   | 'income-statement'
   | 'customer-balances'
   | 'vendor-balances'
+  | 'ar-aging'
+  | 'ap-aging'
+  | 'cash-flow'
+  | 'expense-detail'
+  | 'stations-financial-summary'
+  | 'entities-pl-summary'
+  | 'entities-balance-sheet-summary'
+  | 'entities-trial-balance-summary'
   | 'liabilities-detail'
   | 'loan-receivable-gl'
   | 'loan-payable-gl'
@@ -71,6 +87,7 @@ type ReportType =
   | 'aquaculture-production-cycles'
   | 'aquaculture-profit-transfers'
   | 'aquaculture-fish-transfers'
+  | 'aquaculture-pl-management'
 
 const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [
   'item-sales-custom',
@@ -100,7 +117,7 @@ const reports: ReportCard[] = [
   {
     id: 'balance-sheet',
     title: 'Balance Sheet',
-    description: 'Assets, Liabilities, and Equity',
+    description: 'Assets, liabilities, and equity as of period end — optional site filter',
     icon: FileText,
     category: 'financial'
   },
@@ -114,16 +131,72 @@ const reports: ReportCard[] = [
   {
     id: 'customer-balances',
     title: 'Customer Balances',
-    description: 'Accounts Receivable aging',
+    description: 'Current A/R balance per customer (subledger snapshot)',
+    icon: Users,
+    category: 'financial'
+  },
+  {
+    id: 'ar-aging',
+    title: 'Accounts Receivable Aging',
+    description: 'Open invoices by customer in 30/60/90+ day buckets as of period end',
     icon: Users,
     category: 'financial'
   },
   {
     id: 'vendor-balances',
     title: 'Vendor Balances',
-    description: 'Accounts Payable summary',
+    description: 'Current A/P balance per vendor (subledger snapshot)',
     icon: Users,
     category: 'financial'
+  },
+  {
+    id: 'ap-aging',
+    title: 'Accounts Payable Aging',
+    description: 'Open vendor bills by vendor in 30/60/90+ day buckets as of period end',
+    icon: Users,
+    category: 'financial'
+  },
+  {
+    id: 'cash-flow',
+    title: 'Cash Flow Summary',
+    description: 'Company bank accounts plus cash flow by every station, pond, and head office (clear site filter)',
+    icon: Banknote,
+    category: 'financial'
+  },
+  {
+    id: 'expense-detail',
+    title: 'Expense Detail (GL)',
+    description: 'Posted expense accounts for the period — optional site filter',
+    icon: DollarSign,
+    category: 'financial'
+  },
+  {
+    id: 'entities-pl-summary',
+    title: 'All Entities — P&L',
+    description: 'Income, COGS, expenses, and net income for every station, pond, and head office',
+    icon: TrendingUp,
+    category: 'financial',
+  },
+  {
+    id: 'entities-balance-sheet-summary',
+    title: 'All Entities — Balance Sheet',
+    description: 'Assets, liabilities, and equity as of period end for every station, pond, and head office',
+    icon: FileText,
+    category: 'financial',
+  },
+  {
+    id: 'entities-trial-balance-summary',
+    title: 'All Entities — Trial Balance',
+    description: 'Posted debits and credits in the period for every station, pond, and head office',
+    icon: BarChart3,
+    category: 'financial',
+  },
+  {
+    id: 'stations-financial-summary',
+    title: 'All Stations — P&L Summary',
+    description: 'Income, COGS, expenses, and net income per station only (legacy view)',
+    icon: MapPin,
+    category: 'financial',
   },
   {
     id: 'liabilities-detail',
@@ -274,7 +347,7 @@ const reports: ReportCard[] = [
     id: 'analytics-kpi',
     title: 'Analytics & KPIs',
     description:
-      'Charts and comparisons for sales, COGS, expenses, purchases, and net income — same workspace as the dedicated analytics view.',
+      'Charts for company, every station, and every pond — sales, COGS, expenses, net income, and aquaculture register totals (clear site filter for entity breakdowns).',
     icon: TrendingUp,
     category: 'analytical',
   },
@@ -293,7 +366,15 @@ const reports: ReportCard[] = [
     category: 'analytical'
   },
 
-  // Aquaculture (BDT): sales / revenue reports first, then P&L and operations
+  // Aquaculture (BDT): management P&L hub, then sales / revenue registers, then operations
+  {
+    id: 'aquaculture-pl-management',
+    title: 'Aquaculture — P&L: site & ponds',
+    description:
+      'Management P&L by pond (revenue, costs, profit transfers) plus optional fuel-site posted GL income statement',
+    icon: BarChart3,
+    category: 'aquaculture',
+  },
   {
     id: 'aquaculture-fish-sales',
     title: 'Aquaculture — Pond sales register',
@@ -312,7 +393,8 @@ const reports: ReportCard[] = [
   {
     id: 'aquaculture-pond-pl',
     title: 'Aquaculture — Pond P&L',
-    description: 'Pond-wise revenue, operating costs, payroll allocation, and net profit for the period',
+    description:
+      'One row per pond (leave pond filter empty) or drill into a single pond — revenue, costs, and profit',
     icon: Fish,
     category: 'aquaculture',
   },
@@ -366,6 +448,7 @@ const SUMMARY_EXCLUDED_REPORTS: ReportType[] = [
 
 /** All aquaculture module reports (for Mix tab, permission gating, company module flag). */
 const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
+  'aquaculture-pl-management',
   'aquaculture-pond-pl',
   'aquaculture-fish-sales',
   'aquaculture-pond-sales-comprehensive',
@@ -383,10 +466,19 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'income-statement',
   'customer-balances',
   'vendor-balances',
+  'ar-aging',
+  'ap-aging',
+  'cash-flow',
+  'expense-detail',
+  'entities-pl-summary',
+  'entities-balance-sheet-summary',
+  'entities-trial-balance-summary',
+  'stations-financial-summary',
   'daily-summary',
   'fuel-sales',
   'sales-by-station',
   'shift-summary',
+  'aquaculture-pl-management',
   'aquaculture-fish-sales',
   'aquaculture-pond-sales-comprehensive',
   'aquaculture-pond-pl',
@@ -397,10 +489,20 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'aquaculture-fish-transfers',
 ] as const
 
+/** Aquaculture reports also listed under Analytical (ponds + sales KPIs). */
+const ANALYTICAL_POND_REPORT_IDS: readonly ReportType[] = [
+  'aquaculture-pond-pl',
+  'aquaculture-fish-sales',
+  'aquaculture-pond-sales-comprehensive',
+] as const
+
 /** Reports that accept optional `station_id` (all sites when empty; home-station users are always scoped in API). */
 const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'trial-balance',
+  'balance-sheet',
   'income-statement',
+  'cash-flow',
+  'expense-detail',
   'liabilities-detail',
   'loan-receivable-gl',
   'loan-payable-gl',
@@ -428,7 +530,10 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
 /** Subset of station-scoped reports where amounts come from posted GL lines (not invoice subledgers). */
 const REPORTS_GL_STATION_SCOPED = new Set<ReportType>([
   'trial-balance',
+  'balance-sheet',
   'income-statement',
+  'cash-flow',
+  'expense-detail',
   'liabilities-detail',
   'loan-receivable-gl',
   'loan-payable-gl',
@@ -446,6 +551,14 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'loans-borrow-and-lent',
   'customer-balances',
   'vendor-balances',
+  'ar-aging',
+  'ap-aging',
+  'cash-flow',
+  'expense-detail',
+  'entities-pl-summary',
+  'entities-balance-sheet-summary',
+  'entities-trial-balance-summary',
+  'stations-financial-summary',
   'daily-summary',
   'shift-summary',
   'sales-by-nozzle',
@@ -531,6 +644,7 @@ function getReportSiteScopeDisplay(
 
 export default function ReportsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { selectedCompany } = useCompany()
   /** Legal / display name for print & CSV — from API (same tenant as reports). */
   const [reportCompanyLabel, setReportCompanyLabel] = useState('')
@@ -737,9 +851,9 @@ export default function ReportsPage() {
         }))
         setReportStationList(mapped)
         const saved = localStorage.getItem('fserp_report_station_id')?.trim() || ''
-        if (saved && /^\d+$/.test(saved)) {
-          const sid = Number(saved)
-          if (!mapped.some((s) => s.id === sid)) {
+        if (saved && isPersistedReportSiteScopeKey(saved)) {
+          const scope = parseReportSiteScopeKey(saved)
+          if (scope.kind === 'station' && !mapped.some((s) => s.id === scope.id)) {
             try {
               localStorage.removeItem('fserp_report_station_id')
             } catch {
@@ -760,9 +874,24 @@ export default function ReportsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const saved = localStorage.getItem('fserp_report_station_id')?.trim() || ''
-    if (saved && /^\d+$/.test(saved)) setReportStationId(saved)
+    if (saved && isPersistedReportSiteScopeKey(saved)) setReportStationId(saved)
     else setReportStationId('')
   }, [selectedCompany?.id])
+
+  useEffect(() => {
+    if (!reportStationId || !isPersistedReportSiteScopeKey(reportStationId)) return
+    if (
+      isValidReportSiteScopeKey(reportStationId, reportStationList, aquaculturePonds)
+    ) {
+      return
+    }
+    setReportStationId('')
+    try {
+      localStorage.removeItem('fserp_report_station_id')
+    } catch {
+      /* ignore */
+    }
+  }, [reportStationId, reportStationList, aquaculturePonds])
 
   useEffect(() => {
     let cancelled = false
@@ -813,7 +942,7 @@ export default function ReportsPage() {
   const persistReportStation = useCallback((id: string) => {
     setReportStationId(id)
     try {
-      if (id && /^\d+$/.test(id)) {
+      if (id && isPersistedReportSiteScopeKey(id)) {
         localStorage.setItem('fserp_report_station_id', id)
       } else {
         localStorage.removeItem('fserp_report_station_id')
@@ -822,6 +951,8 @@ export default function ReportsPage() {
       /* ignore */
     }
   }, [])
+
+  const showPondsInSiteScope = showAquacultureReports && aquaculturePonds.length > 0
 
   const reportSiteScope = useMemo(
     () =>
@@ -888,6 +1019,12 @@ export default function ReportsPage() {
         .filter((r) => mixSet.has(r.id))
         .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
     }
+    if (filterCategory === 'analytical') {
+      const pondExtra = new Set<ReportType>(ANALYTICAL_POND_REPORT_IDS)
+      return roleFilteredReports.filter(
+        (r) => r.category === 'analytical' || pondExtra.has(r.id),
+      )
+    }
     return roleFilteredReports.filter((r) => r.category === filterCategory)
   }
   
@@ -906,6 +1043,19 @@ export default function ReportsPage() {
       }
       setSelectedReport('analytics-kpi')
       setReportData({ _analytics: true as const })
+      setLoading(false)
+      return
+    }
+
+    if (reportId === 'aquaculture-pl-management') {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+      if (!token) {
+        alert('Your session has expired. Please log in again.')
+        router.push('/login')
+        return
+      }
+      setSelectedReport('aquaculture-pl-management')
+      setReportData({ _aquaculturePlManagement: true as const })
       setLoading(false)
       return
     }
@@ -950,8 +1100,11 @@ export default function ReportsPage() {
       } catch {
         /* ignore */
       }
-      if (homeId == null && reportStationId && /^\d+$/.test(reportStationId)) {
-        params.station_id = reportStationId
+      if (homeId == null && reportStationId) {
+        const scope = parseReportSiteScopeKey(reportStationId)
+        if (scope.kind === 'station') {
+          params.station_id = String(scope.id)
+        }
       }
     }
 
@@ -1028,12 +1181,48 @@ export default function ReportsPage() {
     aquacultureIncludeCycleBreakdown,
   ])
 
+  const deepLinkReportKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!reportRbacHydrated) return
+    const reportParam = searchParams.get('report')
+    if (!reportParam) return
+    const cat = searchParams.get('category')
+    if (
+      cat === 'aquaculture' ||
+      cat === 'mix' ||
+      cat === 'all' ||
+      cat === 'financial' ||
+      cat === 'analytical' ||
+      cat === 'operational' ||
+      cat === 'inventory'
+    ) {
+      setFilterCategory(cat)
+    }
+    const linkKey = `${reportParam}|${cat ?? ''}`
+    if (deepLinkReportKeyRef.current === linkKey) return
+    if (reportParam === 'aquaculture-pl-management' || reportParam === 'analytics-kpi') {
+      deepLinkReportKeyRef.current = linkKey
+      void fetchReport(reportParam as ReportType)
+    }
+  }, [searchParams, reportRbacHydrated, fetchReport])
+
   const onReportStationSelectChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const v = e.target.value
       persistReportStation(v)
-      if (selectedReport && REPORTS_STATION_SCOPED.has(selectedReport)) {
-        void fetchReport(selectedReport)
+      if (
+        selectedReport &&
+        (REPORTS_STATION_SCOPED.has(selectedReport) ||
+          selectedReport === 'analytics-kpi' ||
+          selectedReport === 'aquaculture-pl-management')
+      ) {
+        if (selectedReport === 'analytics-kpi') {
+          setReportData({ _analytics: true as const })
+        } else if (selectedReport === 'aquaculture-pl-management') {
+          setReportData({ _aquaculturePlManagement: true as const })
+        } else {
+          void fetchReport(selectedReport)
+        }
       }
     },
     [persistReportStation, selectedReport, fetchReport]
@@ -1042,9 +1231,9 @@ export default function ReportsPage() {
   // Debounced date change handler for all period-based reports
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
-  const handleReportDateChange = useCallback((field: 'startDate' | 'endDate', value: string, reportId?: ReportType) => {
+  const handleReportDateChange = useCallback((field: 'startDate' | 'endDate', value: string, reportId?: string) => {
     // All reports now use date range
-    const targetReportId = reportId || selectedReport
+    const targetReportId = (reportId || selectedReport) as ReportType
     
     const newDateRange = {
       startDate: field === 'startDate' ? value : dateRange.startDate,
@@ -1893,6 +2082,24 @@ export default function ReportsPage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
             <p className="text-gray-600 mt-1">Generate comprehensive business and operational reports</p>
+            <div className="mt-3 max-w-4xl rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">Financial coverage by site and pond</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>
+                  <span className="font-medium">Each station / pond (GL):</span> Run{' '}
+                  <span className="font-medium">All Entities — P&amp;L</span>, <span className="font-medium">Balance Sheet</span>, and <span className="font-medium">Trial Balance</span> for every site and pond; or use Income Statement / Balance Sheet / Trial Balance with a site filter for one station&apos;s account detail.
+                </li>
+                <li>
+                  <span className="font-medium">Each pond (management):</span> Aquaculture — Pond P&amp;L (one row per pond when no pond filter), plus sales, expense, and operations registers with optional pond filter.
+                </li>
+                <li>
+                  <span className="font-medium">Receivables / payables:</span> Customer or Vendor Balances (current snapshot) and AR/AP Aging (open documents in day buckets).
+                </li>
+                <li>
+                  <span className="font-medium">Cash flow (all entities):</span> Cash Flow Summary with site filter cleared shows every station, every pond, and head-office/unassigned rows.
+                </li>
+              </ul>
+            </div>
           </div>
 
           {/* Category Filters - Hide for cashiers */}
@@ -1975,7 +2182,7 @@ export default function ReportsPage() {
 
           {userRole != null &&
             userRole !== 'operator' &&
-            reportStationList.length > 0 && (
+            (reportStationList.length > 0 || showPondsInSiteScope) && (
               <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-2 text-sm text-slate-600">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -1985,8 +2192,8 @@ export default function ReportsPage() {
                       <p className="text-slate-500">Your login is limited to your assigned site; totals match that location.</p>
                     ) : (
                       <p className="text-slate-500">
-                        <strong>All</strong> includes every station. Pick a site to filter shift, fuel, tank, inventory,
-                        trial balance, and P&amp;L (posted lines tagged to that site).
+                        <strong>All</strong> includes every station and pond. Pick a station for fuel, inventory, and
+                        site-tagged GL reports; pick a pond for Analytics &amp; KPIs (pond-tagged GL).
                       </p>
                     )}
                   </div>
@@ -1999,17 +2206,30 @@ export default function ReportsPage() {
                       </label>
                       <select
                         id="report-station-scope"
-                        aria-label="Filter reports by site or all sites"
+                        aria-label="Filter reports by station, pond, or all sites"
                         value={reportStationId}
                         onChange={onReportStationSelectChange}
                         className="min-w-[16rem] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                       >
                         <option value="">All</option>
-                        {reportStationList.map((s) => (
-                          <option key={s.id} value={String(s.id)}>
-                            {s.station_name}
-                          </option>
-                        ))}
+                        {reportStationList.length > 0 ? (
+                          <optgroup label="Stations">
+                            {reportStationList.map((s) => (
+                              <option key={s.id} value={String(s.id)}>
+                                {s.station_name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : null}
+                        {showPondsInSiteScope ? (
+                          <optgroup label="Ponds">
+                            {aquaculturePonds.map((p) => (
+                              <option key={`pond-${p.id}`} value={formatPondScopeKey(p.id)}>
+                                {p.name || `Pond ${p.id}`}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : null}
                       </select>
                     </div>
                     <p className="text-xs text-slate-500 sm:text-right">
@@ -2076,6 +2296,13 @@ export default function ReportsPage() {
                 ) : selectedReport === 'analytics-kpi' && reportData && '_analytics' in reportData && reportData._analytics ? (
                   <div className="w-full min-w-0 p-0">
                     <FinancialAnalyticsPanel embedInReports reportStationKey={reportStationId} />
+                  </div>
+                ) : selectedReport === 'aquaculture-pl-management' &&
+                  reportData &&
+                  '_aquaculturePlManagement' in reportData &&
+                  reportData._aquaculturePlManagement ? (
+                  <div className="w-full min-w-0 p-0">
+                    <AquaculturePlManagementPanel embedInReports />
                   </div>
                 ) : selectedReport && reportData ? (
                   <div className="p-6">
@@ -2363,7 +2590,7 @@ function renderPeriodFilter(
   period: { start_date?: string; end_date?: string },
   dateRange?: { startDate: string; endDate: string },
   reportType?: ReportType,
-  onDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: ReportType) => void,
+  onDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: string) => void,
   description?: string
 ) {
   const currentStartDate = period?.start_date
@@ -2419,7 +2646,7 @@ function renderDateFilter(
   date: string | undefined,
   dateRange?: { startDate: string; endDate: string },
   reportType?: ReportType,
-  onDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: ReportType) => void,
+  onDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: string) => void,
   label?: string,
   description?: string
 ) {
@@ -2579,13 +2806,31 @@ function renderReportTable(
   dateRange?: { startDate: string; endDate: string },
   setDateRange?: (range: { startDate: string; endDate: string }) => void,
   fetchReport?: (reportId: ReportType) => Promise<void>,
-  handleReportDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: ReportType) => void,
+  handleReportDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: string) => void,
   itemScope?: ItemScopeTableProps
 ) {
   const period = data?.period || {}
   const hasPeriod =
     REPORTS_WITH_PERIOD.has(reportType) &&
     (period.start_date || period.end_date || dateRange?.startDate || dateRange?.endDate)
+
+  if (EXTRA_FINANCIAL_REPORT_IDS.includes(reportType as (typeof EXTRA_FINANCIAL_REPORT_IDS)[number])) {
+    const extra = renderExtraFinancialReport(reportType, data, {
+      hasPeriod,
+      renderPeriodFilter: (props) =>
+        renderPeriodFilter(
+          props.period,
+          dateRange,
+          reportType,
+          handleReportDateChange,
+          props.hint,
+        ),
+      period,
+      dateRange,
+      handleReportDateChange,
+    })
+    if (extra) return extra
+  }
   
   // Meter Readings - Check this first to ensure it's caught
   if (reportType === 'meter-readings' && data && (data.meters || data.summary || data.period)) {

@@ -127,7 +127,7 @@ export function suggestItemGlAccountIds(
   }
 }
 
-export function recommendedCoaLabel(
+function recommendedCoaLabel(
   code: string,
   coaOptions: CoaPickForItemDefault[]
 ): string {

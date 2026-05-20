@@ -8,9 +8,9 @@ import {
   Fish,
   Gauge,
   Sparkles,
+  Pill,
   DollarSign,
   Wallet,
-  BarChart3,
 } from 'lucide-react'
 
 export type AquacultureNavItem = {
@@ -63,6 +63,7 @@ export const AQUACULTURE_NAV_GROUPS: AquacultureNavGroup[] = [
       { href: '/aquaculture/stock', label: 'Pond stock', sidebarLabel: 'Pond stock', icon: Fish },
       { href: '/aquaculture/sampling', label: 'Biomass sampling', icon: Gauge },
       { href: '/aquaculture/feeding', label: 'Feeding advice', icon: Sparkles },
+      { href: '/aquaculture/medicine', label: 'Medicine & treatments', icon: Pill },
     ],
   },
   {
@@ -72,16 +73,10 @@ export const AQUACULTURE_NAV_GROUPS: AquacultureNavGroup[] = [
     items: [
       { href: '/aquaculture/sales', label: 'Pond & fish sales', icon: DollarSign },
       {
-        href: '/aquaculture/expenses',
-        label: 'Pond costs (legacy)',
-        sidebarLabel: 'Pond costs',
+        href: '/aquaculture/financing',
+        label: 'Financing & loan repayment',
+        sidebarLabel: 'Financing',
         icon: Wallet,
-      },
-      {
-        href: '/aquaculture/report',
-        label: 'P&L: site & ponds',
-        sidebarLabel: 'P&L: fuel site & ponds',
-        icon: BarChart3,
       },
     ],
   },

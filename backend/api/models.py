@@ -1633,6 +1633,13 @@ class Loan(models.Model):
         help_text="Annual interest % (0 for zero-interest); required on every loan.",
     )
     term_months = models.PositiveSmallIntegerField(null=True, blank=True)
+    aquaculture_financing = models.BooleanField(
+        default=False,
+        help_text=(
+            "Whole-aquaculture working-capital loan; shown on Aquaculture → Financing with pond "
+            "allocation and repayment worksheet."
+        ),
+    )
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1640,6 +1647,51 @@ class Loan(models.Model):
     class Meta:
         db_table = "loan"
         unique_together = [["company", "loan_no"]]
+
+
+class AquacultureFinancingAllocation(models.Model):
+    """
+    Management allocation of aquaculture loan funds to ponds (use) or pond contribution toward repayment.
+    Does not replace GL; complements loan disburse/repay and pond P&L.
+    """
+
+    KIND_USE = "use"
+    KIND_REPAYMENT = "repayment"
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="aquaculture_financing_allocations"
+    )
+    loan = models.ForeignKey(Loan, on_delete=models.CASCADE, related_name="aquaculture_financing_allocations")
+    pond = models.ForeignKey(
+        "AquaculturePond", on_delete=models.CASCADE, related_name="financing_allocations"
+    )
+    allocation_date = models.DateField(db_index=True)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    allocation_kind = models.CharField(max_length=16, default=KIND_USE)
+    disbursement = models.ForeignKey(
+        "LoanDisbursement",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_financing_allocations",
+    )
+    profit_transfer = models.ForeignKey(
+        "AquaculturePondProfitTransfer",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="financing_allocations",
+    )
+    memo = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "aquaculture_financing_allocation"
+        ordering = ["-allocation_date", "-id"]
+        indexes = [
+            models.Index(fields=["company", "loan", "allocation_date"]),
+            models.Index(fields=["company", "pond", "allocation_date"]),
+        ]
 
 
 class LoanDisbursement(models.Model):

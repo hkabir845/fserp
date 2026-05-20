@@ -9,9 +9,11 @@ import pytest
 
 from api.models import (
     AquacultureExpense,
+    AquacultureExpenseInventoryLine,
     AquacultureFeedingAdvice,
     AquaculturePond,
     Company,
+    Item,
     JournalEntry,
 )
 
@@ -104,6 +106,43 @@ def test_consumption_ledger_links_feeding_advice(api_client, company_tenant, aut
     assert rows[0]["source"] == "feeding_advice"
     assert rows[0]["feeding_advice_id"] == advice.id
     assert rows[0]["feeding_advice_target_date"] == "2026-05-07"
+
+
+@pytest.mark.django_db
+def test_consumption_ledger_includes_inventory_line(api_client, company_tenant, auth_admin_headers):
+    _enable(company_tenant)
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="P4", is_active=True)
+    item = Item.objects.create(
+        company_id=cid,
+        name="Oxy-Med 500ml",
+        item_type="inventory",
+        pos_category="medicine",
+        unit="bottle",
+        is_active=True,
+    )
+    exp = AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_category="medicine_consumed",
+        expense_date=date(2026, 5, 8),
+        amount=Decimal("450.00"),
+        memo="Treatment dose",
+    )
+    AquacultureExpenseInventoryLine.objects.create(expense=exp, item=item, quantity=Decimal("3.0000"))
+
+    r = api_client.get(
+        f"/api/aquaculture/pond-warehouse-consumption-ledger/?pond_id={pond.id}&kind=medicine",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    rows = json.loads(r.content.decode())["rows"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["item_id"] == item.id
+    assert row["item_name"] == "Oxy-Med 500ml"
+    assert row["quantity"] == "3.0000"
+    assert row["unit"] == "bottle"
 
 
 @pytest.mark.django_db

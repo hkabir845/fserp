@@ -34,8 +34,6 @@ Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATC
 
 Endpoints: auth (login, refresh), companies/current, admin/stats, admin/companies, admin/users, dashboard/stats, broadcasts, and stub lists for customers, tanks, items, nozzles (empty until you add full CRUD).
 
-**Obsolete scripts:** Scripts in the backend root that imported from the removed `app` package (e.g. `init_database.py`, `create_tenant_companies.py`, `create_super_admin.py`, `diagnose_login.py`, and others) will raise `ImportError` if run. Use Django management commands and the API instead.
-
 **Built-in demo tenant (FS-000001):** After `python manage.py migrate`, the backend ensures **Master Filling Station** exists with company code **FS-000001** (not `FS-FS-000001` — the human-facing code is exactly `FS-000001`). It loads the fuel-station chart of accounts (if empty), convenience **products and services** for Cashier → General, and the **fuel station / nozzle** demo graph. Re-run or repair anytime: `python manage.py ensure_master_template`. For a richer sandbox (posted GL, vendors, sample P&amp;L), run `python manage.py seed_master_full_demo`. To disable auto-bootstrap (tests, or an empty staging DB), set **`FSERP_SKIP_MASTER_BOOTSTRAP=1`**.
 
 **First run:** Create a super_admin user. The demo company is created by **migrate** (or use `create_default_company` only when the database has **no** companies yet):

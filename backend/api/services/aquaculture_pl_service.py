@@ -112,6 +112,8 @@ def compute_aquaculture_pl_summary_dict(
         return q
 
     def _dexp_q(pond_id: int):
+        from api.services.aquaculture_pl_expense_sum import aquaculture_expenses_for_pl_direct_sum
+
         q = AquacultureExpense.objects.filter(
             company_id=cid,
             pond_id=pond_id,
@@ -120,7 +122,7 @@ def compute_aquaculture_pl_summary_dict(
         )
         if cycle_filter_id is not None:
             q = q.filter(production_cycle_id=cycle_filter_id)
-        return q
+        return aquaculture_expenses_for_pl_direct_sum(q)
 
     scope_note = None
     if cycle_filter_id is not None:

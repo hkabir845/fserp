@@ -328,6 +328,7 @@ def _loan_json(lo: Loan):
         "is_islamic_financing": loan_uses_islamic_terminology(lo),
         "station_id": lo.station_id,
         "station_name": (getattr(getattr(lo, "station", None), "station_name", None) or "") or "",
+        "aquaculture_financing": bool(getattr(lo, "aquaculture_financing", False)),
     }
     if lo.product_type == Loan.PRODUCT_ISLAMIC_FACILITY:
         used, committed, n_deals = _facility_child_metrics(lo)
@@ -854,6 +855,7 @@ def loans_list_or_create(request):
                 product_type=pt,
                 parent_loan=parent_obj,
                 deal_reference=deal_ref,
+                aquaculture_financing=bool(body.get("aquaculture_financing", False)),
             )
             base = f"LN-{lo.id:05d}"
             candidate = base
@@ -930,7 +932,15 @@ def loan_detail(request, loan_id: int):
         if lo.status == "closed":
             # Closing a loan is only a status flag — no GL is posted. Allow reopening and
             # cosmetic updates without touching principal/interest structure.
-            allowed_keys = {"status", "title", "notes", "maturity_date", "station_id", "station"}
+            allowed_keys = {
+                "status",
+                "title",
+                "notes",
+                "maturity_date",
+                "station_id",
+                "station",
+                "aquaculture_financing",
+            }
             if not set(body.keys()) <= allowed_keys:
                 return JsonResponse(
                     {
@@ -945,6 +955,8 @@ def loan_detail(request, loan_id: int):
                 lo.title = (body.get("title") or "")[:200]
             if "notes" in body:
                 lo.notes = body.get("notes") or ""
+            if "aquaculture_financing" in body:
+                lo.aquaculture_financing = bool(body.get("aquaculture_financing"))
             if "maturity_date" in body:
                 lo.maturity_date = _parse_date(body.get("maturity_date"))
             if "status" in body:
@@ -1137,6 +1149,8 @@ def loan_detail(request, loan_id: int):
             lo.status = (body.get("status") or lo.status).strip()[:24]
         if "notes" in body:
             lo.notes = body.get("notes") or ""
+        if "aquaculture_financing" in body:
+            lo.aquaculture_financing = bool(body.get("aquaculture_financing"))
         if "maturity_date" in body:
             lo.maturity_date = _parse_date(body.get("maturity_date"))
         if lo.product_type == Loan.PRODUCT_ISLAMIC_DEAL and not lo.parent_loan_id:

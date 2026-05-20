@@ -66,12 +66,3 @@ export async function loadPrintBranding(
 
   return { companyName, companyAddress, stationName }
 }
-
-export function setPreferredPrintStationId(id: number | null): void {
-  if (typeof window === 'undefined') return
-  if (id == null) {
-    localStorage.removeItem(STORAGE_STATION_ID)
-  } else {
-    localStorage.setItem(STORAGE_STATION_ID, String(id))
-  }
-}

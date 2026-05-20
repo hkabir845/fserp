@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
+import { useCompany } from '@/contexts/CompanyContext'
 import {
   Building2,
   Plus,
@@ -140,7 +140,7 @@ function CompaniesPageContent() {
   const searchParams = useSearchParams()
   const toast = useToast()
   useRequireSaasDashboardMode()
-  const { mode, selectedCompany, isClientReady } = useCompany()
+  const { selectedCompany, isClientReady } = useCompany()
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   /** Set when GET /admin/companies/ fails so we do not imply the database has zero tenants. */
@@ -233,10 +233,26 @@ function CompaniesPageContent() {
   }, [searchParams])
 
   useEffect(() => {
-    if (mode === 'saas_dashboard') {
-      fetchCompanies()
-    }
-  }, [mode])
+    if (!isClientReady) return
+    void fetchCompanies()
+  }, [isClientReady])
+
+  function normalizeCompaniesPayload(data: unknown): Company[] {
+    const raw = Array.isArray(data) ? data : (data as { results?: unknown })?.results
+    if (!Array.isArray(raw)) return []
+    return raw.map((c: Record<string, unknown>) => ({
+      ...(c as unknown as Company),
+      company_code:
+        c.company_code != null && String(c.company_code).trim() !== ''
+          ? String(c.company_code)
+          : undefined,
+      is_master:
+        c.is_master === true || String(c.is_master || '').toLowerCase() === 'true'
+          ? 'true'
+          : 'false',
+      release_can_rollback: Boolean(c.release_can_rollback),
+    }))
+  }
 
   const fetchCompanies = async () => {
     setCompaniesFetchError(null)
@@ -264,18 +280,11 @@ function CompaniesPageContent() {
       if (auditRes.data?.events) {
         setUpgradeAuditEvents(auditRes.data.events)
       }
-      if (companiesRes.data) {
-        const companiesWithMaster = companiesRes.data.map((c: any) => ({
-          ...c,
-          company_code: c.company_code != null && String(c.company_code).trim() !== '' ? String(c.company_code) : undefined,
-          is_master:
-            c.is_master === true || String(c.is_master || '').toLowerCase() === 'true'
-              ? 'true'
-              : 'false',
-          release_can_rollback: Boolean(c.release_can_rollback),
-        }))
-        setCompanies(companiesWithMaster)
-        setCompaniesFetchError(null)
+      const list = normalizeCompaniesPayload(companiesRes.data)
+      setCompanies(list)
+      setCompaniesFetchError(null)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('adminCountsUpdated'))
       }
     } catch (error: any) {
       safeLogError('Error fetching companies:', error)
@@ -834,19 +843,6 @@ function CompaniesPageContent() {
     return <CompaniesPageFallback />
   }
 
-  if (mode !== 'saas_dashboard') {
-    return (
-      <div className="flex h-screen bg-gray-100 page-with-sidebar">
-        <Sidebar />
-        <div className="flex min-h-0 flex-1 overflow-y-auto p-4 sm:p-8">
-          <div className="bg-white rounded-lg shadow app-modal-pad text-center">
-            <p className="text-gray-600">Please switch to SaaS Dashboard mode to manage companies.</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
@@ -854,7 +850,12 @@ function CompaniesPageContent() {
         <div className="w-full min-w-0 p-4 sm:p-6 lg:p-8">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-gray-900 sm:text-xl">All Companies</h2>
+              <h2 className="text-lg font-bold text-gray-900 sm:text-xl">
+                All Companies
+                {!loading && companies.length > 0 ? (
+                  <span className="ml-2 text-base font-semibold text-gray-500">({companies.length})</span>
+                ) : null}
+              </h2>
               <p className="mt-1 max-w-2xl text-xs text-gray-600 sm:text-sm">
                 Under <strong className="font-medium text-gray-800">Tenant modules</strong>, check{' '}
                 <strong className="font-medium text-gray-800">License Aquaculture</strong> so the tenant Admin can turn
@@ -2382,11 +2383,9 @@ function CompaniesPageFallback() {
 
 export default function CompaniesPage() {
   return (
-    <CompanyProvider>
-      <Suspense fallback={<CompaniesPageFallback />}>
-        <CompaniesPageContent />
-      </Suspense>
-    </CompanyProvider>
+    <Suspense fallback={<CompaniesPageFallback />}>
+      <CompaniesPageContent />
+    </Suspense>
   )
 }
 

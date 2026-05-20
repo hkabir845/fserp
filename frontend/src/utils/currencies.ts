@@ -329,22 +329,3 @@ export const getCurrenciesByCountry = (): Currency[] => {
   )
 }
 
-/**
- * Get currency by code
- */
-export const getCurrencyByCode = (code: string): Currency | undefined => {
-  return CURRENCIES.find(c => c.code === code.toUpperCase())
-}
-
-/**
- * Get currencies by country name (fuzzy search)
- */
-export const searchCurrenciesByCountry = (searchTerm: string): Currency[] => {
-  const term = searchTerm.toLowerCase()
-  return CURRENCIES.filter(c => 
-    c.country.toLowerCase().includes(term) ||
-    c.name.toLowerCase().includes(term) ||
-    c.code.toLowerCase().includes(term)
-  )
-}
-

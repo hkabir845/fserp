@@ -14,6 +14,8 @@ from django.db.models.functions import Coalesce, Trim
 from django.utils import timezone
 
 from api.models import (
+    AquacultureFishSale,
+    AquaculturePond,
     Bill,
     BillLine,
     ChartOfAccount,
@@ -29,11 +31,13 @@ from api.models import (
     Nozzle,
     Payment,
     ShiftSession,
+    Station,
     Tank,
     TankDip,
     Vendor,
 )
 from api.services.gl_posting import item_inventory_unit_cost
+from api.services.payment_allocation import bill_open_amount, invoice_open_amount
 
 # Vendor bills included in purchase / movement reports (exclude draft and void).
 _BILL_LINE_POSTED_STATUSES = ("open", "paid", "partial", "overdue")
@@ -123,6 +127,24 @@ def _je_lines_base(company_id: int, station_id: int | None = None):
     if station_id is not None:
         qs = qs.filter(station_id=station_id)
     return qs
+
+
+def _je_lines_pond(company_id: int, pond_id: int):
+    return JournalEntryLine.objects.filter(
+        journal_entry__company_id=company_id,
+        journal_entry__is_posted=True,
+        aquaculture_pond_id=pond_id,
+    )
+
+
+def _je_lines_unscoped_dims(company_id: int):
+    """Posted lines with no station and no pond tag (company-wide / head office slice)."""
+    return JournalEntryLine.objects.filter(
+        journal_entry__company_id=company_id,
+        journal_entry__is_posted=True,
+        station_id__isnull=True,
+        aquaculture_pond_id__isnull=True,
+    )
 
 
 def report_trial_balance(
@@ -827,6 +849,34 @@ def _period_income_statement_totals(
     }
 
 
+def _period_income_statement_totals_pond(
+    company_id: int, start: date, end: date, pond_id: int
+) -> dict[str, Decimal]:
+    """P&L totals for [start, end] from posted journal lines tagged to one aquaculture pond."""
+    line_qs = _je_lines_pond(company_id, pond_id)
+    ti = tcogs = te = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        t = normalize_chart_account_type(coa.account_type)
+        if t not in ("income", "cost_of_goods_sold", "expense"):
+            continue
+        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
+        if t == "income":
+            ti += amt
+        elif t == "cost_of_goods_sold":
+            tcogs += amt
+        else:
+            te += amt
+    gross = ti - tcogs
+    net = gross - te
+    return {
+        "income": ti,
+        "cogs": tcogs,
+        "expenses": te,
+        "gross_profit": gross,
+        "net_income": net,
+    }
+
+
 def _sum_invoice_totals(company_id: int, start: date, end: date) -> Decimal:
     r = Invoice.objects.filter(
         company_id=company_id,
@@ -1050,6 +1100,1055 @@ def report_vendor_balances(company_id: int, start: date, end: date) -> dict[str,
         "accounting_note": (
             "Subledger current_balance per vendor. total_ap is the sum of positive balances owed to vendors; "
             "negative balances may indicate vendor credits."
+        ),
+    }
+
+
+_AGING_BUCKET_KEYS = ("current", "days_1_30", "days_31_60", "days_61_90", "days_over_90")
+
+
+def _empty_aging_buckets() -> dict[str, Decimal]:
+    return {k: Decimal("0") for k in _AGING_BUCKET_KEYS}
+
+
+def _aging_bucket_key(days_past_due: int) -> str:
+    if days_past_due <= 0:
+        return "current"
+    if days_past_due <= 30:
+        return "days_1_30"
+    if days_past_due <= 60:
+        return "days_31_60"
+    if days_past_due <= 90:
+        return "days_61_90"
+    return "days_over_90"
+
+
+def _aging_row_from_buckets(buckets: dict[str, Decimal]) -> dict[str, Any]:
+    total = sum(buckets.values(), start=Decimal("0"))
+    out = {k: _f(buckets[k]) for k in _AGING_BUCKET_KEYS}
+    out["total"] = _f(total)
+    return out
+
+
+def report_ar_aging(company_id: int, start: date, end: date) -> dict[str, Any]:
+    """Open invoice balances by customer, bucketed by days past due as of period end."""
+    _ = start
+    as_of = end
+    customers_out: list[dict[str, Any]] = []
+    totals = _empty_aging_buckets()
+
+    for c in Customer.objects.filter(company_id=company_id, is_active=True).order_by(
+        "display_name", "company_name"
+    ):
+        buckets = _empty_aging_buckets()
+        documents: list[dict[str, Any]] = []
+        for inv in (
+            Invoice.objects.filter(company_id=company_id, customer_id=c.id)
+            .exclude(status__in=("draft", "paid", "void"))
+            .order_by("due_date", "invoice_date", "id")
+        ):
+            open_amt = invoice_open_amount(inv, company_id)
+            if open_amt <= 0:
+                continue
+            due = inv.due_date or inv.invoice_date
+            days_past = (as_of - due).days
+            bucket = _aging_bucket_key(days_past)
+            buckets[bucket] += open_amt
+            totals[bucket] += open_amt
+            documents.append(
+                {
+                    "document_type": "invoice",
+                    "document_number": inv.invoice_number,
+                    "document_date": inv.invoice_date.isoformat(),
+                    "due_date": due.isoformat() if due else None,
+                    "days_past_due": days_past,
+                    "bucket": bucket,
+                    "amount": _f(open_amt),
+                    "status": inv.status,
+                }
+            )
+        if sum(buckets.values(), start=Decimal("0")) <= 0:
+            continue
+        row = {
+            "customer_number": c.customer_number or "",
+            "display_name": c.display_name or c.company_name or "",
+            "company_name": c.company_name or "",
+            **_aging_row_from_buckets(buckets),
+            "documents": documents,
+        }
+        customers_out.append(row)
+
+    return {
+        "report_id": "ar-aging",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "as_of_date": as_of.isoformat(),
+        "customers": customers_out,
+        "totals": _aging_row_from_buckets(totals),
+        "accounting_note": (
+            "Aging uses open invoice balances (total minus payment allocations) as of the end date. "
+            "Days past due = end date minus due date (or invoice date when due date is blank). "
+            "Customer opening balances without invoices are not aged here — see Customer Balances."
+        ),
+    }
+
+
+def report_ap_aging(company_id: int, start: date, end: date) -> dict[str, Any]:
+    """Open vendor bill balances by vendor, bucketed by days past due as of period end."""
+    _ = start
+    as_of = end
+    vendors_out: list[dict[str, Any]] = []
+    totals = _empty_aging_buckets()
+
+    for v in Vendor.objects.filter(company_id=company_id, is_active=True).order_by(
+        "company_name", "display_name"
+    ):
+        buckets = _empty_aging_buckets()
+        documents: list[dict[str, Any]] = []
+        for bill in (
+            Bill.objects.filter(company_id=company_id, vendor_id=v.id)
+            .exclude(status__in=("draft", "paid", "void"))
+            .order_by("due_date", "bill_date", "id")
+        ):
+            open_amt = bill_open_amount(bill, company_id)
+            if open_amt <= 0:
+                continue
+            due = bill.due_date or bill.bill_date
+            days_past = (as_of - due).days
+            bucket = _aging_bucket_key(days_past)
+            buckets[bucket] += open_amt
+            totals[bucket] += open_amt
+            documents.append(
+                {
+                    "document_type": "bill",
+                    "document_number": bill.bill_number,
+                    "document_date": bill.bill_date.isoformat(),
+                    "due_date": due.isoformat() if due else None,
+                    "days_past_due": days_past,
+                    "bucket": bucket,
+                    "amount": _f(open_amt),
+                    "status": bill.status,
+                }
+            )
+        if sum(buckets.values(), start=Decimal("0")) <= 0:
+            continue
+        vendors_out.append(
+            {
+                "vendor_number": v.vendor_number or "",
+                "display_name": v.display_name or v.company_name or "",
+                "company_name": v.company_name or "",
+                **_aging_row_from_buckets(buckets),
+                "documents": documents,
+            }
+        )
+
+    return {
+        "report_id": "ap-aging",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "as_of_date": as_of.isoformat(),
+        "vendors": vendors_out,
+        "totals": _aging_row_from_buckets(totals),
+        "accounting_note": (
+            "Aging uses open bill balances (total minus vendor payment allocations) as of the end date. "
+            "Days past due = end date minus due date (or bill date when due date is blank)."
+        ),
+    }
+
+
+def report_expense_detail(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
+    """Operating and other expense accounts from posted GL activity (P&L expense section only)."""
+    exp_rows: list[dict[str, Any]] = []
+    te = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        if normalize_chart_account_type(coa.account_type) != "expense":
+            continue
+        amt = _period_pl_amount(coa, company_id, start, end, station_id)
+        if amt == 0:
+            continue
+        display_name = coa.account_name
+        if not coa.is_active:
+            display_name = f"{display_name} (inactive)"
+        exp_rows.append(
+            {
+                "account_code": coa.account_code,
+                "account_name": display_name,
+                "balance": _f(amt),
+            }
+        )
+        te += amt
+    note = (
+        "Posted journal activity on expense-type chart accounts in the date range "
+        "(same basis as the Income Statement expense section)."
+    )
+    if station_id is not None:
+        note += " Site filter: only journal lines tagged with this station_id."
+    out: dict[str, Any] = {
+        "report_id": "expense-detail",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "expenses": {"accounts": exp_rows, "total": _f(te)},
+        "accounting_note": note,
+    }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
+
+
+def _bank_cash_balance_as_of(
+    coa: ChartOfAccount, company_id: int, as_of: date, station_id: int | None
+) -> Decimal:
+    if station_id is not None:
+        return _balance_sheet_balance_from_site_activity(coa, company_id, as_of, station_id)
+    return _ending_balance(coa, company_id, as_of)
+
+
+def _bank_slice_balance_as_of(
+    coa: ChartOfAccount, company_id: int, as_of: date, line_qs
+) -> Decimal:
+    """Bank register balance from a filtered journal-line queryset (pond or unscoped slice)."""
+    agg = line_qs.filter(
+        account_id=coa.id,
+        journal_entry__entry_date__lte=as_of,
+    ).aggregate(
+        td=Coalesce(Sum("debit"), Decimal("0")),
+        tc=Coalesce(Sum("credit"), Decimal("0")),
+    )
+    return agg["td"] - agg["tc"]
+
+
+def _bank_period_flow(
+    coa: ChartOfAccount, company_id: int, start: date, end: date, station_id: int | None
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """Return beginning, deposits (debits), withdrawals (credits), ending for a bank register account."""
+    day_before = start - timedelta(days=1)
+    beginning = _bank_cash_balance_as_of(coa, company_id, day_before, station_id)
+    agg = (
+        _je_lines_base(company_id, station_id)
+        .filter(
+            account_id=coa.id,
+            journal_entry__entry_date__gte=start,
+            journal_entry__entry_date__lte=end,
+        )
+        .aggregate(
+            td=Coalesce(Sum("debit"), Decimal("0")),
+            tc=Coalesce(Sum("credit"), Decimal("0")),
+        )
+    )
+    deposits = agg["td"]
+    withdrawals = agg["tc"]
+    ending = _bank_cash_balance_as_of(coa, company_id, end, station_id)
+    return beginning, deposits, withdrawals, ending
+
+
+def _bank_period_flow_lines(
+    coa: ChartOfAccount,
+    company_id: int,
+    start: date,
+    end: date,
+    line_qs,
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    day_before = start - timedelta(days=1)
+    beginning = _bank_slice_balance_as_of(coa, company_id, day_before, line_qs)
+    agg = line_qs.filter(
+        account_id=coa.id,
+        journal_entry__entry_date__gte=start,
+        journal_entry__entry_date__lte=end,
+    ).aggregate(
+        td=Coalesce(Sum("debit"), Decimal("0")),
+        tc=Coalesce(Sum("credit"), Decimal("0")),
+    )
+    deposits = agg["td"]
+    withdrawals = agg["tc"]
+    ending = _bank_slice_balance_as_of(coa, company_id, end, line_qs)
+    return beginning, deposits, withdrawals, ending
+
+
+def _period_pl_amount_lines(
+    coa: ChartOfAccount, company_id: int, start: date, end: date, line_qs
+) -> Decimal:
+    agg = line_qs.filter(
+        account_id=coa.id,
+        journal_entry__entry_date__gte=start,
+        journal_entry__entry_date__lte=end,
+    ).aggregate(
+        td=Coalesce(Sum("debit"), Decimal("0")),
+        tc=Coalesce(Sum("credit"), Decimal("0")),
+    )
+    d, c = agg["td"], agg["tc"]
+    if is_pl_credit_normal_type(coa.account_type):
+        return c - d
+    return d - c
+
+
+def _period_net_income_from_lines(company_id: int, start: date, end: date, line_qs) -> Decimal:
+    net = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        t = normalize_chart_account_type(coa.account_type)
+        if t not in ("income", "cost_of_goods_sold", "expense"):
+            continue
+        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
+        if t == "income":
+            net += amt
+        else:
+            net -= amt
+    return net
+
+
+def _summarize_bank_accounts_for_scope(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    station_id: int | None = None,
+    pond_id: int | None = None,
+    unscoped_dims: bool = False,
+) -> dict[str, Decimal]:
+    begin_total = end_total = period_in = period_out = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        if normalize_chart_account_type(coa.account_type) != "bank_account":
+            continue
+        if pond_id is not None:
+            b0, dep, wit, bend = _bank_period_flow_lines(
+                coa, company_id, start, end, _je_lines_pond(company_id, pond_id)
+            )
+        elif unscoped_dims:
+            b0, dep, wit, bend = _bank_period_flow_lines(
+                coa, company_id, start, end, _je_lines_unscoped_dims(company_id)
+            )
+        else:
+            b0, dep, wit, bend = _bank_period_flow(coa, company_id, start, end, station_id)
+        if b0 == 0 and dep == 0 and wit == 0 and bend == 0:
+            continue
+        begin_total += b0
+        end_total += bend
+        period_in += dep
+        period_out += wit
+    return {
+        "beginning": begin_total,
+        "ending": end_total,
+        "deposits": period_in,
+        "withdrawals": period_out,
+        "net_change": end_total - begin_total,
+    }
+
+
+def _cash_flow_entity_row(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    entity_type: str,
+    entity_id: int | None,
+    entity_name: str,
+    station_id: int | None = None,
+    pond_id: int | None = None,
+    unscoped_dims: bool = False,
+) -> dict[str, Any]:
+    if pond_id is not None:
+        line_qs = _je_lines_pond(company_id, pond_id)
+        net_income = _period_net_income_from_lines(company_id, start, end, line_qs)
+        pay_recv = _d(
+            AquacultureFishSale.objects.filter(
+                company_id=company_id,
+                pond_id=pond_id,
+                sale_date__gte=start,
+                sale_date__lte=end,
+            ).aggregate(t=Coalesce(Sum("total_amount"), Decimal("0")))["t"]
+        )
+        pay_made = Decimal("0")
+    elif unscoped_dims:
+        line_qs = _je_lines_unscoped_dims(company_id)
+        net_income = _period_net_income_from_lines(company_id, start, end, line_qs)
+        pay_recv = _d(
+            Payment.objects.filter(
+                company_id=company_id,
+                payment_type=Payment.PAYMENT_TYPE_RECEIVED,
+                payment_date__gte=start,
+                payment_date__lte=end,
+                station_id__isnull=True,
+            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
+        )
+        pay_made = _d(
+            Payment.objects.filter(
+                company_id=company_id,
+                payment_type=Payment.PAYMENT_TYPE_MADE,
+                payment_date__gte=start,
+                payment_date__lte=end,
+                station_id__isnull=True,
+            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
+        )
+    else:
+        net_income = _period_income_statement_totals(company_id, start, end, station_id)["net_income"]
+        pay_q = Payment.objects.filter(
+            company_id=company_id,
+            payment_date__gte=start,
+            payment_date__lte=end,
+        )
+        if station_id is not None:
+            pay_q = pay_q.filter(station_id=station_id)
+        pay_recv = _d(
+            pay_q.filter(payment_type=Payment.PAYMENT_TYPE_RECEIVED).aggregate(
+                t=Coalesce(Sum("amount"), Decimal("0"))
+            )["t"]
+        )
+        pay_made = _d(
+            pay_q.filter(payment_type=Payment.PAYMENT_TYPE_MADE).aggregate(
+                t=Coalesce(Sum("amount"), Decimal("0"))
+            )["t"]
+        )
+
+    cash = _summarize_bank_accounts_for_scope(
+        company_id,
+        start,
+        end,
+        station_id=station_id,
+        pond_id=pond_id,
+        unscoped_dims=unscoped_dims,
+    )
+    row: dict[str, Any] = {
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "entity_name": entity_name,
+        "net_income": _f(net_income),
+        "customer_payments_received": _f(pay_recv),
+        "vendor_payments_made": _f(pay_made),
+        "beginning_cash": _f(cash["beginning"]),
+        "ending_cash": _f(cash["ending"]),
+        "net_change_in_cash": _f(cash["net_change"]),
+        "total_deposits": _f(cash["deposits"]),
+        "total_withdrawals": _f(cash["withdrawals"]),
+    }
+    if pond_id is not None:
+        row["aquaculture_sales_in_period"] = _f(pay_recv)
+    return row
+
+
+def report_cash_flow(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
+    """
+    Cash flow summary: bank register activity, customer/vendor payments, and P&L net income.
+    When not site-filtered, includes by_station, by_pond, and unscoped (head office) entity rows.
+    """
+    pl = _period_income_statement_totals(company_id, start, end, station_id)
+    pay_recv = _d(
+        Payment.objects.filter(
+            company_id=company_id,
+            payment_type=Payment.PAYMENT_TYPE_RECEIVED,
+            payment_date__gte=start,
+            payment_date__lte=end,
+        ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
+    )
+    pay_made = _d(
+        Payment.objects.filter(
+            company_id=company_id,
+            payment_type=Payment.PAYMENT_TYPE_MADE,
+            payment_date__gte=start,
+            payment_date__lte=end,
+        ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
+    )
+
+    bank_rows: list[dict[str, Any]] = []
+    begin_total = end_total = period_in = period_out = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        if normalize_chart_account_type(coa.account_type) != "bank_account":
+            continue
+        b0, dep, wit, bend = _bank_period_flow(coa, company_id, start, end, station_id)
+        if b0 == 0 and dep == 0 and wit == 0 and bend == 0:
+            continue
+        nm = coa.account_name
+        if not coa.is_active:
+            nm = f"{nm} (inactive)"
+        bank_rows.append(
+            {
+                "account_code": coa.account_code,
+                "account_name": nm,
+                "beginning_balance": _f(b0),
+                "deposits": _f(dep),
+                "withdrawals": _f(wit),
+                "ending_balance": _f(bend),
+                "net_change": _f(bend - b0),
+            }
+        )
+        begin_total += b0
+        end_total += bend
+        period_in += dep
+        period_out += wit
+
+    net_bank_change = end_total - begin_total
+    out_cf: dict[str, Any] = {
+        "report_id": "cash-flow",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "operating": {
+            "net_income": _f(pl["net_income"]),
+            "customer_payments_received": _f(pay_recv),
+            "vendor_payments_made": _f(pay_made),
+        },
+        "bank_accounts": bank_rows,
+        "cash_summary": {
+            "beginning_cash": _f(begin_total),
+            "ending_cash": _f(end_total),
+            "net_change_in_cash": _f(net_bank_change),
+            "total_deposits": _f(period_in),
+            "total_withdrawals": _f(period_out),
+        },
+        "accounting_note": (
+            "Bank accounts use chart type bank_account from posted journals. "
+            "Payment totals are from the Payments module. "
+            "When viewing all entities, each station uses GL lines tagged to that site; "
+            "each pond uses pond-tagged GL bank activity plus registered pond sales (BDT) as cash-in proxy; "
+            "Unscoped is GL and payments without a station tag."
+        ),
+    }
+    if station_id is not None:
+        out_cf["filter_station_id"] = station_id
+        out_cf["accounting_note"] = (
+            out_cf["accounting_note"]
+            + " Site filter: company header and bank detail for this station only."
+        )
+    else:
+        by_station: list[dict[str, Any]] = []
+        for st in Station.objects.filter(company_id=company_id, is_active=True).order_by(
+            "station_name", "id"
+        ):
+            row = _cash_flow_entity_row(
+                company_id,
+                start,
+                end,
+                entity_type="station",
+                entity_id=st.id,
+                entity_name=(st.station_name or "").strip() or f"Station #{st.id}",
+                station_id=st.id,
+            )
+            by_station.append(row)
+        by_pond: list[dict[str, Any]] = []
+        for pond in AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by(
+            "sort_order", "name", "id"
+        ):
+            row = _cash_flow_entity_row(
+                company_id,
+                start,
+                end,
+                entity_type="pond",
+                entity_id=pond.id,
+                entity_name=(pond.name or "").strip() or f"Pond #{pond.id}",
+                pond_id=pond.id,
+            )
+            by_pond.append(row)
+        unscoped = _cash_flow_entity_row(
+            company_id,
+            start,
+            end,
+            entity_type="unscoped",
+            entity_id=None,
+            entity_name="Head office / unassigned (no site or pond tag)",
+            unscoped_dims=True,
+        )
+        out_cf["by_station"] = by_station
+        out_cf["by_pond"] = by_pond
+        out_cf["unscoped"] = unscoped
+        out_cf["entities"] = by_station + by_pond + [unscoped]
+    return out_cf
+
+
+def _cumulative_net_income_lines_through(company_id: int, as_of: date, line_qs) -> Decimal:
+    """Cumulative P&L through ``as_of`` on a filtered journal-line queryset (pond or unscoped slice)."""
+    ni = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        t = normalize_chart_account_type(coa.account_type)
+        if t not in ("income", "cost_of_goods_sold", "expense"):
+            continue
+        agg = line_qs.filter(
+            account_id=coa.id,
+            journal_entry__entry_date__lte=as_of,
+        ).aggregate(
+            td=Coalesce(Sum("debit"), Decimal("0")),
+            tc=Coalesce(Sum("credit"), Decimal("0")),
+        )
+        d, c = agg["td"], agg["tc"]
+        if is_pl_credit_normal_type(coa.account_type):
+            bal = c - d
+        else:
+            bal = d - c
+        if t == "income":
+            ni += bal
+        else:
+            ni -= bal
+    return ni
+
+
+def _bs_totals_from_line_qs(company_id: int, as_of: date, line_qs) -> dict[str, Decimal]:
+    """Balance sheet side totals from posted lines only (no chart opening balances)."""
+    ta = tl = te_plain = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        bucket = _balance_sheet_bucket_for_coa(coa)
+        if not bucket:
+            continue
+        agg = line_qs.filter(
+            account_id=coa.id,
+            journal_entry__entry_date__lte=as_of,
+        ).aggregate(
+            td=Coalesce(Sum("debit"), Decimal("0")),
+            tc=Coalesce(Sum("credit"), Decimal("0")),
+        )
+        d, c = agg["td"], agg["tc"]
+        if bucket == "asset":
+            bal = d - c
+        else:
+            bal = c - d
+        if bal == 0:
+            continue
+        if bucket == "asset":
+            ta += bal
+        elif bucket == "liability":
+            tl += bal
+        else:
+            te_plain += bal
+    ni_cum = _cumulative_net_income_lines_through(company_id, as_of, line_qs)
+    te_total = te_plain + ni_cum
+    return {
+        "total_assets": ta,
+        "total_liabilities": tl,
+        "total_equity": te_total,
+        "total_liabilities_and_equity": tl + te_total,
+        "cumulative_net_income_in_equity": ni_cum,
+    }
+
+
+def _bs_totals_station(company_id: int, as_of: date, station_id: int) -> dict[str, Decimal]:
+    ta = tl = te_plain = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        bucket = _balance_sheet_bucket_for_coa(coa)
+        if not bucket:
+            continue
+        bal = _balance_sheet_balance_from_site_activity(coa, company_id, as_of, station_id)
+        if bal == 0:
+            continue
+        if bucket == "asset":
+            ta += bal
+        elif bucket == "liability":
+            tl += bal
+        else:
+            te_plain += bal
+    ni_cum = _cumulative_net_income_site_through(company_id, as_of, station_id)
+    te_total = te_plain + ni_cum
+    return {
+        "total_assets": ta,
+        "total_liabilities": tl,
+        "total_equity": te_total,
+        "total_liabilities_and_equity": tl + te_total,
+        "cumulative_net_income_in_equity": ni_cum,
+    }
+
+
+def _bs_totals_company(company_id: int, as_of: date) -> dict[str, Decimal]:
+    ta = tl = te_plain = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        bucket = _balance_sheet_bucket_for_coa(coa)
+        if not bucket:
+            continue
+        bal = _ending_balance(coa, company_id, as_of)
+        if bal == 0:
+            continue
+        if bucket == "asset":
+            ta += bal
+        elif bucket == "liability":
+            tl += bal
+        else:
+            te_plain += bal
+    ni_cum = _cumulative_net_income_through(company_id, as_of)
+    te_total = te_plain + ni_cum
+    return {
+        "total_assets": ta,
+        "total_liabilities": tl,
+        "total_equity": te_total,
+        "total_liabilities_and_equity": tl + te_total,
+        "cumulative_net_income_in_equity": ni_cum,
+    }
+
+
+def _trial_balance_period_totals(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    station_id: int | None = None,
+    pond_id: int | None = None,
+    unscoped_dims: bool = False,
+) -> tuple[Decimal, Decimal]:
+    if pond_id is not None:
+        qs = _je_lines_pond(company_id, pond_id)
+    elif unscoped_dims:
+        qs = _je_lines_unscoped_dims(company_id)
+    else:
+        qs = _je_lines_base(company_id, station_id)
+    agg = qs.filter(
+        journal_entry__entry_date__gte=start,
+        journal_entry__entry_date__lte=end,
+    ).aggregate(
+        td=Coalesce(Sum("debit"), Decimal("0")),
+        tc=Coalesce(Sum("credit"), Decimal("0")),
+    )
+    return agg["td"], agg["tc"]
+
+
+def _entity_financial_summary_row(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    entity_type: str,
+    entity_id: int | None,
+    entity_name: str,
+    station_id: int | None = None,
+    pond_id: int | None = None,
+    unscoped_dims: bool = False,
+) -> dict[str, Any]:
+    if pond_id is not None:
+        line_qs = _je_lines_pond(company_id, pond_id)
+        pl_net = _period_net_income_from_lines(company_id, start, end, line_qs)
+        pl = {
+            "income": Decimal("0"),
+            "cogs": Decimal("0"),
+            "expenses": Decimal("0"),
+            "gross_profit": Decimal("0"),
+            "net_income": pl_net,
+        }
+        for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+            t = normalize_chart_account_type(coa.account_type)
+            if t not in ("income", "cost_of_goods_sold", "expense"):
+                continue
+            amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
+            if t == "income":
+                pl["income"] += amt
+            elif t == "cost_of_goods_sold":
+                pl["cogs"] += amt
+            else:
+                pl["expenses"] += amt
+        pl["gross_profit"] = pl["income"] - pl["cogs"]
+        bs = _bs_totals_from_line_qs(company_id, end, line_qs)
+        td, tc = _trial_balance_period_totals(
+            company_id, start, end, pond_id=pond_id
+        )
+    elif unscoped_dims:
+        line_qs = _je_lines_unscoped_dims(company_id)
+        pl_net = _period_net_income_from_lines(company_id, start, end, line_qs)
+        pl = {"income": Decimal("0"), "cogs": Decimal("0"), "expenses": Decimal("0"), "gross_profit": Decimal("0"), "net_income": pl_net}
+        for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+            t = normalize_chart_account_type(coa.account_type)
+            if t not in ("income", "cost_of_goods_sold", "expense"):
+                continue
+            amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
+            if t == "income":
+                pl["income"] += amt
+            elif t == "cost_of_goods_sold":
+                pl["cogs"] += amt
+            else:
+                pl["expenses"] += amt
+        pl["gross_profit"] = pl["income"] - pl["cogs"]
+        bs = _bs_totals_from_line_qs(company_id, end, line_qs)
+        td, tc = _trial_balance_period_totals(
+            company_id, start, end, unscoped_dims=True
+        )
+    elif station_id is not None:
+        pl = _period_income_statement_totals(company_id, start, end, station_id)
+        bs = _bs_totals_station(company_id, end, station_id)
+        td, tc = _trial_balance_period_totals(
+            company_id, start, end, station_id=station_id
+        )
+    else:
+        pl = _period_income_statement_totals(company_id, start, end, None)
+        bs = _bs_totals_company(company_id, end)
+        td, tc = _trial_balance_period_totals(company_id, start, end, station_id=None)
+
+    row: dict[str, Any] = {
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "entity_name": entity_name,
+        "income": _f(pl["income"]),
+        "cost_of_goods_sold": _f(pl["cogs"]),
+        "expenses": _f(pl["expenses"]),
+        "gross_profit": _f(pl["gross_profit"]),
+        "net_income": _f(pl["net_income"]),
+        "total_assets": _f(bs["total_assets"]),
+        "total_liabilities": _f(bs["total_liabilities"]),
+        "total_equity": _f(bs["total_equity"]),
+        "total_liabilities_and_equity": _f(bs["total_liabilities_and_equity"]),
+        "trial_balance_debit": _f(td),
+        "trial_balance_credit": _f(tc),
+        "trial_balance_balanced": abs(td - tc) <= Decimal("0.02"),
+    }
+    if station_id is not None:
+        row["station_id"] = station_id
+        row["station_name"] = entity_name
+    if pond_id is not None:
+        row["pond_id"] = pond_id
+        row["pond_name"] = entity_name
+        from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
+
+        mgmt = compute_aquaculture_pl_summary_dict(
+            company_id, start, end, pond_id, None, None, False
+        )
+        ponds = mgmt.get("ponds") or []
+        if ponds:
+            p0 = ponds[0]
+            row["management_revenue_bdt"] = _f(_d(p0.get("revenue")))
+            row["management_profit_bdt"] = _f(_d(p0.get("profit")))
+    return row
+
+
+def _collect_all_entity_financial_rows(
+    company_id: int, start: date, end: date
+) -> dict[str, Any]:
+    """Build full financial rows for every station, pond, unscoped slice, and company total."""
+    by_station: list[dict[str, Any]] = []
+    for st in Station.objects.filter(company_id=company_id, is_active=True).order_by(
+        "station_name", "id"
+    ):
+        by_station.append(
+            _entity_financial_summary_row(
+                company_id,
+                start,
+                end,
+                entity_type="station",
+                entity_id=st.id,
+                entity_name=(st.station_name or "").strip() or f"Station #{st.id}",
+                station_id=st.id,
+            )
+        )
+
+    by_pond: list[dict[str, Any]] = []
+    for pond in AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by(
+        "sort_order", "name", "id"
+    ):
+        by_pond.append(
+            _entity_financial_summary_row(
+                company_id,
+                start,
+                end,
+                entity_type="pond",
+                entity_id=pond.id,
+                entity_name=(pond.name or "").strip() or f"Pond #{pond.id}",
+                pond_id=pond.id,
+            )
+        )
+
+    unscoped = _entity_financial_summary_row(
+        company_id,
+        start,
+        end,
+        entity_type="unscoped",
+        entity_id=None,
+        entity_name="Head office / unassigned (no site or pond tag)",
+        unscoped_dims=True,
+    )
+    company_total = _entity_financial_summary_row(
+        company_id,
+        start,
+        end,
+        entity_type="company",
+        entity_id=None,
+        entity_name="Company total (all GL)",
+    )
+    return {
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "balance_sheet_as_of": end.isoformat(),
+        "by_station": by_station,
+        "by_pond": by_pond,
+        "unscoped": unscoped,
+        "company_total": company_total,
+    }
+
+
+_ENTITY_SCOPE_NOTE = (
+    "Station rows use GL lines tagged to that site; pond rows use pond-tagged lines; "
+    "head office uses lines with no site or pond tag. Company total is all GL. "
+    "For account-level detail, run Income Statement, Balance Sheet, or Trial Balance with a site filter."
+)
+
+
+def _entity_pl_row(row: dict[str, Any]) -> dict[str, Any]:
+    out = {
+        "entity_type": row["entity_type"],
+        "entity_id": row.get("entity_id"),
+        "entity_name": row["entity_name"],
+        "income": row["income"],
+        "cost_of_goods_sold": row["cost_of_goods_sold"],
+        "expenses": row["expenses"],
+        "gross_profit": row["gross_profit"],
+        "net_income": row["net_income"],
+    }
+    if row.get("station_id") is not None:
+        out["station_id"] = row["station_id"]
+        out["station_name"] = row.get("station_name")
+    if row.get("pond_id") is not None:
+        out["pond_id"] = row["pond_id"]
+        out["pond_name"] = row.get("pond_name")
+        if "management_revenue_bdt" in row:
+            out["management_revenue_bdt"] = row["management_revenue_bdt"]
+        if "management_profit_bdt" in row:
+            out["management_profit_bdt"] = row["management_profit_bdt"]
+    return out
+
+
+def _entity_bs_row(row: dict[str, Any]) -> dict[str, Any]:
+    out = {
+        "entity_type": row["entity_type"],
+        "entity_id": row.get("entity_id"),
+        "entity_name": row["entity_name"],
+        "total_assets": row["total_assets"],
+        "total_liabilities": row["total_liabilities"],
+        "total_equity": row["total_equity"],
+        "total_liabilities_and_equity": row["total_liabilities_and_equity"],
+    }
+    if row.get("station_id") is not None:
+        out["station_id"] = row["station_id"]
+        out["station_name"] = row.get("station_name")
+    if row.get("pond_id") is not None:
+        out["pond_id"] = row["pond_id"]
+        out["pond_name"] = row.get("pond_name")
+    return out
+
+
+def _entity_tb_row(row: dict[str, Any]) -> dict[str, Any]:
+    out = {
+        "entity_type": row["entity_type"],
+        "entity_id": row.get("entity_id"),
+        "entity_name": row["entity_name"],
+        "trial_balance_debit": row["trial_balance_debit"],
+        "trial_balance_credit": row["trial_balance_credit"],
+        "trial_balance_balanced": row["trial_balance_balanced"],
+    }
+    if row.get("station_id") is not None:
+        out["station_id"] = row["station_id"]
+        out["station_name"] = row.get("station_name")
+    if row.get("pond_id") is not None:
+        out["pond_id"] = row["pond_id"]
+        out["pond_name"] = row.get("pond_name")
+    return out
+
+
+def _entity_report_payload(
+    report_id: str,
+    bundle: dict[str, Any],
+    row_mapper,
+    *,
+    accounting_note: str,
+) -> dict[str, Any]:
+    co = bundle["company_total"]
+    return {
+        "report_id": report_id,
+        "period": bundle["period"],
+        "balance_sheet_as_of": bundle.get("balance_sheet_as_of"),
+        "by_station": [row_mapper(r) for r in bundle["by_station"]],
+        "by_pond": [row_mapper(r) for r in bundle["by_pond"]],
+        "unscoped": row_mapper(bundle["unscoped"]),
+        "company_total": row_mapper(co),
+        "accounting_note": accounting_note,
+    }
+
+
+def report_entities_pl_summary(company_id: int, start: date, end: date) -> dict[str, Any]:
+    """P&L per station, pond, head office, and company total."""
+    bundle = _collect_all_entity_financial_rows(company_id, start, end)
+    return _entity_report_payload(
+        "entities-pl-summary",
+        bundle,
+        _entity_pl_row,
+        accounting_note=(
+            "Posted journal P&L for the date range. "
+            + _ENTITY_SCOPE_NOTE
+            + " Pond management_revenue_bdt / management_profit_bdt are aquaculture register totals (BDT)."
+        ),
+    )
+
+
+def report_entities_balance_sheet_summary(
+    company_id: int, start: date, end: date
+) -> dict[str, Any]:
+    """Balance sheet totals per station, pond, head office, and company (as of period end)."""
+    bundle = _collect_all_entity_financial_rows(company_id, start, end)
+    return _entity_report_payload(
+        "entities-balance-sheet-summary",
+        bundle,
+        _entity_bs_row,
+        accounting_note=(
+            "Balances as of the period end date. Station/pond/unscoped slices exclude chart opening balances "
+            "(posted tagged lines only). Company total includes openings and full chart. "
+            + _ENTITY_SCOPE_NOTE
+        ),
+    )
+
+
+def report_entities_trial_balance_summary(
+    company_id: int, start: date, end: date
+) -> dict[str, Any]:
+    """Trial balance period activity per station, pond, head office, and company."""
+    bundle = _collect_all_entity_financial_rows(company_id, start, end)
+    return _entity_report_payload(
+        "entities-trial-balance-summary",
+        bundle,
+        _entity_tb_row,
+        accounting_note=(
+            "Posted debits and credits in the date range only (not opening balances). "
+            + _ENTITY_SCOPE_NOTE
+        ),
+    )
+
+
+def report_entities_financial_summary(
+    company_id: int, start: date, end: date
+) -> dict[str, Any]:
+    """Combined P&L + BS + TB (legacy); prefer the three separate entity reports."""
+    bundle = _collect_all_entity_financial_rows(company_id, start, end)
+    return {
+        "report_id": "entities-financial-summary",
+        "period": bundle["period"],
+        "balance_sheet_as_of": bundle["balance_sheet_as_of"],
+        "by_station": bundle["by_station"],
+        "by_pond": bundle["by_pond"],
+        "unscoped": bundle["unscoped"],
+        "company_total": bundle["company_total"],
+        "entities": bundle["by_station"] + bundle["by_pond"] + [bundle["unscoped"]],
+        "accounting_note": (
+            "Combined view. For separate reports use: All Entities — P&L, "
+            "All Entities — Balance Sheet, and All Entities — Trial Balance."
+        ),
+    }
+
+
+def report_stations_financial_summary(
+    company_id: int, start: date, end: date
+) -> dict[str, Any]:
+    """Legacy P&L-only view (stations). See entities-pl-summary for all entities."""
+    full = report_entities_financial_summary(company_id, start, end)
+    rows = [
+        {
+            "station_id": r["station_id"],
+            "station_name": r["station_name"],
+            "income": r["income"],
+            "cost_of_goods_sold": r["cost_of_goods_sold"],
+            "expenses": r["expenses"],
+            "gross_profit": r["gross_profit"],
+            "net_income": r["net_income"],
+        }
+        for r in full["by_station"]
+    ]
+    co = full["company_total"]
+    return {
+        "report_id": "stations-financial-summary",
+        "period": full["period"],
+        "stations": rows,
+        "company_total": {
+            "income": co["income"],
+            "cost_of_goods_sold": co["cost_of_goods_sold"],
+            "expenses": co["expenses"],
+            "gross_profit": co["gross_profit"],
+            "net_income": co["net_income"],
+        },
+        "accounting_note": (
+            "P&L only. For balance sheet and trial balance per station and pond, run "
+            "All Entities — Balance Sheet and All Entities — Trial Balance."
         ),
     }
 
@@ -2905,17 +4004,110 @@ def report_item_purchase_velocity_analysis(
     return out_pvel
 
 
+def _financial_analytics_entity_row(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    entity_type: str,
+    entity_id: int,
+    entity_name: str,
+    station_id: int | None = None,
+    pond_id: int | None = None,
+) -> dict[str, Any]:
+    """Compact KPI row for financial-analytics station/pond comparison charts."""
+    row: dict[str, Any] = {
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "entity_name": entity_name,
+        "document_sales": 0.0,
+        "pl_income": 0.0,
+        "pl_cogs": 0.0,
+        "pl_expenses": 0.0,
+        "gross_profit": 0.0,
+        "net_income": 0.0,
+    }
+    if pond_id is not None:
+        row["pond_id"] = pond_id
+        row["pond_name"] = entity_name
+        line_qs = _je_lines_pond(company_id, pond_id)
+        pl = {
+            "income": Decimal("0"),
+            "cogs": Decimal("0"),
+            "expenses": Decimal("0"),
+            "gross_profit": Decimal("0"),
+            "net_income": _period_net_income_from_lines(company_id, start, end, line_qs),
+        }
+        for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+            t = normalize_chart_account_type(coa.account_type)
+            if t not in ("income", "cost_of_goods_sold", "expense"):
+                continue
+            amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
+            if t == "income":
+                pl["income"] += amt
+            elif t == "cost_of_goods_sold":
+                pl["cogs"] += amt
+            else:
+                pl["expenses"] += amt
+        pl["gross_profit"] = pl["income"] - pl["cogs"]
+        doc_sales = _d(
+            AquacultureFishSale.objects.filter(
+                company_id=company_id,
+                pond_id=pond_id,
+                sale_date__gte=start,
+                sale_date__lte=end,
+            ).aggregate(t=Coalesce(Sum("total_amount"), Decimal("0")))["t"]
+        )
+        from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
+
+        mgmt = compute_aquaculture_pl_summary_dict(
+            company_id, start, end, pond_id, None, None, False
+        )
+        ponds = mgmt.get("ponds") or []
+        if ponds:
+            p0 = ponds[0]
+            row["management_revenue_bdt"] = _f(_d(p0.get("revenue")))
+            row["management_profit_bdt"] = _f(_d(p0.get("profit")))
+    else:
+        row["station_id"] = station_id
+        row["station_name"] = entity_name
+        pl = _period_income_statement_totals(company_id, start, end, station_id)
+        inv_q = Invoice.objects.filter(
+            company_id=company_id,
+            invoice_date__gte=start,
+            invoice_date__lte=end,
+            station_id=station_id,
+        ).exclude(status="draft")
+        doc_sales = _d(inv_q.aggregate(t=Coalesce(Sum("total"), Decimal("0")))["t"])
+
+    row["document_sales"] = _f(doc_sales)
+    row["pl_income"] = _f(pl["income"])
+    row["pl_cogs"] = _f(pl["cogs"])
+    row["pl_expenses"] = _f(pl["expenses"])
+    row["gross_profit"] = _f(pl["gross_profit"])
+    row["net_income"] = _f(pl["net_income"])
+    return row
+
+
 def report_financial_analytics(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     """
     KPIs and monthly buckets: invoice sales and bill purchases (subledger documents) vs
     P&L from posted journals (income, COGS, operating expenses) for the same sub-periods.
+    When not site-filtered, includes by_station and by_pond comparison rows for charts.
     """
     if start > end:
         start, end = end, start
 
-    pl = _period_income_statement_totals(company_id, start, end, station_id)
+    if pond_id is not None:
+        pl = _period_income_statement_totals_pond(company_id, start, end, pond_id)
+    else:
+        pl = _period_income_statement_totals(company_id, start, end, station_id)
     sales = _sum_invoice_totals(company_id, start, end)
     purchases = _sum_bill_totals(company_id, start, end)
     op_exp = pl["expenses"]  # operating and other P&L expense types
@@ -3000,7 +4192,10 @@ def report_financial_analytics(
         months = months[:36]
     timeseries: list[dict[str, Any]] = []
     for seg_s, seg_e, label in months:
-        pl_m = _period_income_statement_totals(company_id, seg_s, seg_e, station_id)
+        if pond_id is not None:
+            pl_m = _period_income_statement_totals_pond(company_id, seg_s, seg_e, pond_id)
+        else:
+            pl_m = _period_income_statement_totals(company_id, seg_s, seg_e, station_id)
         timeseries.append(
             {
                 "label": label,
@@ -3059,11 +4254,92 @@ def report_financial_analytics(
             "Trend uses calendar months (partial first/last months are clipped to your selected range)."
         ),
     }
-    if station_id is not None:
+    if pond_id is not None:
+        pond = AquaculturePond.objects.filter(
+            pk=pond_id, company_id=company_id, is_active=True
+        ).only("name").first()
+        pname = (pond.name or "").strip() if pond else f"Pond #{pond_id}"
+        out_fa["filter_pond_id"] = pond_id
+        out_fa["filter_pond_name"] = pname
+        row = _financial_analytics_entity_row(
+            company_id,
+            start,
+            end,
+            entity_type="pond",
+            entity_id=pond_id,
+            entity_name=pname,
+            pond_id=pond_id,
+        )
+        out_fa["pond_scope"] = row
+        doc_sales = _d(row.get("document_sales"))
+        out_fa["aquaculture_summary"] = {
+            "active_ponds": 1,
+            "total_pond_sales_bdt": _f(doc_sales),
+            "total_management_revenue_bdt": _f(_d(row.get("management_revenue_bdt"))),
+            "total_management_profit_bdt": _f(_d(row.get("management_profit_bdt"))),
+        }
+        out_fa["accounting_note"] = (
+            out_fa["accounting_note"]
+            + f" Pond filter ({pname}): P&L amounts (including timeseries pl_* and net income) use posted journal lines "
+            "tagged to this pond only. Invoice/bill/payment KPIs remain company-wide totals. "
+            "Station and pond comparison charts are hidden while a pond is selected."
+        )
+    elif station_id is not None:
         out_fa["filter_station_id"] = station_id
         out_fa["accounting_note"] = (
             out_fa["accounting_note"]
             + " Site filter: P&L amounts (including timeseries pl_* and net income) use journal lines for this station only; "
-            "invoice/bill/payment KPIs remain company-wide totals."
+            "invoice/bill/payment KPIs remain company-wide totals. Entity comparison charts are hidden while a site is selected."
         )
+    else:
+        by_station: list[dict[str, Any]] = []
+        for st in Station.objects.filter(company_id=company_id, is_active=True).order_by(
+            "station_name", "id"
+        ):
+            name = (st.station_name or "").strip() or f"Station #{st.id}"
+            by_station.append(
+                _financial_analytics_entity_row(
+                    company_id,
+                    start,
+                    end,
+                    entity_type="station",
+                    entity_id=st.id,
+                    entity_name=name,
+                    station_id=st.id,
+                )
+            )
+        by_pond: list[dict[str, Any]] = []
+        for pond in AquaculturePond.objects.filter(
+            company_id=company_id, is_active=True
+        ).order_by("sort_order", "name", "id"):
+            name = (pond.name or "").strip() or f"Pond #{pond.id}"
+            by_pond.append(
+                _financial_analytics_entity_row(
+                    company_id,
+                    start,
+                    end,
+                    entity_type="pond",
+                    entity_id=pond.id,
+                    entity_name=name,
+                    pond_id=pond.id,
+                )
+            )
+        out_fa["by_station"] = by_station
+        out_fa["by_pond"] = by_pond
+        mgmt_rev = sum(_d(r.get("management_revenue_bdt")) for r in by_pond)
+        mgmt_profit = sum(_d(r.get("management_profit_bdt")) for r in by_pond)
+        pond_doc_sales = sum(_d(r.get("document_sales")) for r in by_pond)
+        out_fa["aquaculture_summary"] = {
+            "active_ponds": len(by_pond),
+            "total_pond_sales_bdt": _f(pond_doc_sales),
+            "total_management_revenue_bdt": _f(mgmt_rev),
+            "total_management_profit_bdt": _f(mgmt_profit),
+        }
+        if by_pond:
+            out_fa["accounting_note"] = (
+                out_fa["accounting_note"]
+                + " Station rows use site-tagged GL and non-draft invoices for that site. "
+                "Pond rows use pond-tagged GL; document_sales is registered fish/sack sales (BDT); "
+                "management_* fields are aquaculture pond P&L register totals (may differ from GL)."
+            )
     return out_fa

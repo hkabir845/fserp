@@ -328,6 +328,8 @@ def pond_bucket_amounts_for_period(
         b = aquaculture_expense_category_to_cost_bucket(category, company_id=company_id)
         out[b] += _money_q(amount)
 
+    from api.services.aquaculture_pl_expense_sum import aquaculture_expenses_for_pl_direct_sum
+
     q = AquacultureExpense.objects.filter(
         company_id=company_id,
         pond_id=pond_id,
@@ -336,6 +338,7 @@ def pond_bucket_amounts_for_period(
     )
     if cycle_filter_id is not None:
         q = q.filter(production_cycle_id=cycle_filter_id)
+    q = aquaculture_expenses_for_pl_direct_sum(q)
     for row in q.values("expense_category").annotate(s=Sum("amount")):
         amt = _money_q(Decimal(str(row["s"] or 0)))
         if amt != 0:

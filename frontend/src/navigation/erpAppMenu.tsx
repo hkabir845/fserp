@@ -89,7 +89,9 @@ const AQUACULTURE_TILE_BY_HREF: Record<string, string> = {
   '/aquaculture/stock': tile('bg-teal-100', 'text-teal-800'),
   '/aquaculture/sampling': tile('bg-lime-100', 'text-lime-800'),
   '/aquaculture/feeding': tile('bg-amber-100', 'text-amber-800'),
+  '/aquaculture/medicine': tile('bg-violet-100', 'text-violet-800'),
   '/aquaculture/report': tile('bg-indigo-100', 'text-indigo-700'),
+  '/reports?report=aquaculture-pl-management&category=aquaculture': tile('bg-indigo-100', 'text-indigo-700'),
 }
 
 const PERM_WILDCARD = '*'
@@ -138,7 +140,9 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   '/aquaculture/sales': ['app.aquaculture'],
   '/aquaculture/sampling': ['app.aquaculture'],
   '/aquaculture/feeding': ['app.aquaculture'],
+  '/aquaculture/medicine': ['app.aquaculture'],
   '/aquaculture/report': ['app.aquaculture'],
+  '/reports?report=aquaculture-pl-management&category=aquaculture': ['app.aquaculture', 'app.reports'],
   '/aquaculture/cycles': ['app.aquaculture'],
   '/aquaculture/transfers': ['app.aquaculture'],
   '/aquaculture/stock': ['app.aquaculture'],

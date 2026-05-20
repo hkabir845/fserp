@@ -1,17 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
+  Bot,
   Check,
   CheckCircle2,
-  ChevronRight,
+  ChevronDown,
   ClipboardList,
-  Gauge,
-  HelpCircle,
   List,
+  Gauge,
   MapPin,
   RefreshCw,
   Search,
@@ -25,6 +25,32 @@ import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { getCurrencySymbol } from '@/utils/currency'
+import {
+  AdvicePlanCard,
+  AdviceRichText,
+  FeedingInsightHero,
+  MealPlanTable,
+  PageTipsAside,
+  PipelineStatCard,
+  StatusFilterTabs,
+  WorkflowRail,
+} from './FeedingUi'
+import {
+  type AdviceStatusFilter,
+  type FeedingAdviceRow,
+  SACK_SIZE_OPTIONS_KG,
+  buildMealPlanRows,
+  feedInventoryQtyFromKgForEstimate,
+  feedKgToSackLabel,
+  isoToday,
+  isAllowedSackKg,
+  kgStrFromSacks,
+  rowSackKg,
+  sacksStrFromKg,
+  snapshotFeedingSchedule,
+  snapshotWorldfish,
+  statusPill,
+} from './feedingUtils'
 
 interface Pond {
   id: number
@@ -34,147 +60,6 @@ interface Pond {
 interface CycleRow {
   id: number
   name: string
-}
-
-/** Commercial sack sizes for translating kg → sacks for field teams. */
-const SACK_SIZE_OPTIONS_KG = [25, 20, 10] as const
-
-type AdviceStatusFilter = 'all' | 'pending_review' | 'approved' | 'applied' | 'cancelled'
-
-const STATUS_TABS: { id: AdviceStatusFilter; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'pending_review', label: 'Needs review' },
-  { id: 'approved', label: 'Approved' },
-  { id: 'applied', label: 'Applied' },
-  { id: 'cancelled', label: 'Cancelled' },
-]
-
-interface FeedingAdviceRow {
-  id: number
-  pond_id: number
-  pond_name: string
-  pond_default_feed_item_id?: number | null
-  pond_default_feed_item_name?: string
-  production_cycle_id: number | null
-  production_cycle_name: string
-  target_date: string
-  status: string
-  status_label: string
-  pond_status_snapshot: Record<string, unknown>
-  ai_advice_text: string
-  edited_advice_text: string
-  effective_advice_text: string
-  suggested_feed_kg: string | null
-  sack_size_kg?: number | null
-  approved_at: string | null
-  approved_by_display: string
-  applied_feed_kg: string | null
-  applied_at: string | null
-  applied_by_display: string
-  linked_expense_id: number | null
-  created_by_display: string
-  created_at: string
-}
-
-function isoToday(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-/** Minimal **bold** rendering for advisory text (matches backend markdown-ish style). */
-function AdviceRichText({ text }: { text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*|_[^_]+_)/g)
-  return (
-    <span className="block whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-      {parts.map((p, i) => {
-        if (p.startsWith('**') && p.endsWith('**')) {
-          return (
-            <strong key={i} className="font-semibold text-slate-900">
-              {p.slice(2, -2)}
-            </strong>
-          )
-        }
-        if (p.startsWith('_') && p.endsWith('_') && p.length > 2) {
-          return (
-            <em key={i} className="text-slate-600">
-              {p.slice(1, -1)}
-            </em>
-          )
-        }
-        return <span key={i}>{p}</span>
-      })}
-    </span>
-  )
-}
-
-function stripMarkdownBold(s: string): string {
-  return s
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .trim()
-}
-
-function isAllowedSackKg(n: number | null | undefined): n is (typeof SACK_SIZE_OPTIONS_KG)[number] {
-  return n != null && (SACK_SIZE_OPTIONS_KG as readonly number[]).includes(n)
-}
-
-/** Sack count from a kg cell string; whole sacks (nearest integer). */
-function kgCellToSackCount(kgCell: string, sackKg: number): string {
-  if (kgCell === '—') return '—'
-  const n = Number.parseFloat(kgCell)
-  if (!Number.isFinite(n) || n <= 0) return '—'
-  return String(Math.round(n / sackKg))
-}
-
-function totalKgToSackSummary(totalKgStr: string | null, sackKg: number | null): string | null {
-  if (totalKgStr == null || sackKg == null || sackKg <= 0) return null
-  const n = Number.parseFloat(totalKgStr)
-  if (!Number.isFinite(n) || n <= 0) return null
-  const sacks = Math.round(n / sackKg)
-  return `≈ ${sacks} sacks (${sackKg} kg/sack)`
-}
-
-function feedKgToSackLabel(kgStr: string | null | undefined, sackKg: number | null): string | null {
-  if (kgStr == null || String(kgStr).trim() === '' || !isAllowedSackKg(sackKg)) return null
-  return totalKgToSackSummary(String(kgStr).trim(), sackKg)
-}
-
-/** Stored sack size or 25 kg default for crew-facing sack counts. */
-function rowSackKg(r: FeedingAdviceRow | null): (typeof SACK_SIZE_OPTIONS_KG)[number] {
-  if (!r) return 25
-  return isAllowedSackKg(r.sack_size_kg) ? r.sack_size_kg : 25
-}
-
-function sacksStrFromKg(kgStr: string, sackKg: number): string {
-  const n = Number.parseFloat(kgStr)
-  if (!Number.isFinite(n) || n < 0) return ''
-  if (n === 0) return '0'
-  return String(Math.round(n / sackKg))
-}
-
-function kgStrFromSacks(sacksStr: string, sackKg: number): string {
-  const n = Number.parseFloat(sacksStr)
-  if (!Number.isFinite(n) || n < 0) return ''
-  const sacks = Math.round(n)
-  return (sacks * sackKg).toFixed(2)
-}
-
-/** Match backend feed_inventory_qty_from_kg for purchase estimates on this page. */
-function feedInventoryQtyFromKgForEstimate(
-  appliedKg: number,
-  unit: string,
-  contentWeightKg: string | null | undefined,
-  sackSizeKg: number,
-): number | null {
-  const unitL = (unit || '').trim().toLowerCase()
-  if (unitL === 'kg' || unitL === 'kilogram' || unitL === 'kilograms') {
-    return appliedKg
-  }
-  let kgPer = contentWeightKg != null ? Number.parseFloat(String(contentWeightKg)) : Number.NaN
-  if (!Number.isFinite(kgPer) || kgPer <= 0) {
-    kgPer = sackSizeKg > 0 ? sackSizeKg : 25
-  }
-  if (kgPer <= 0) return null
-  return appliedKg / kgPer
 }
 
 interface PondWarehouseItemRow {
@@ -188,281 +73,20 @@ interface PondWarehouseItemRow {
   unit_cost: string
 }
 
-interface MealPlanRow {
-  mealIndex: number
-  timePlain: string
-  kg: string
-}
-
-/** Build per-meal table rows from snapshot + suggested total; split evenly if only total kg is known. */
-function buildMealPlanRows(
-  selected: FeedingAdviceRow | null,
-  schedule: Record<string, unknown> | null,
-  timeLines: string[],
-): { rows: MealPlanRow[]; totalKg: string | null } {
-  if (!selected) return { rows: [], totalKg: null }
-
-  let perMeal: string[] = []
-  if (schedule && Array.isArray(schedule.per_meal_feed_kg_approx)) {
-    perMeal = (schedule.per_meal_feed_kg_approx as unknown[])
-      .map((x) => String(x).trim())
-      .filter((x) => x !== '')
-  }
-
-  const freq =
-    typeof schedule?.frequency_meals_per_day === 'number' && schedule.frequency_meals_per_day > 0
-      ? schedule.frequency_meals_per_day
-      : 0
-
-  const totalFromApi =
-    schedule?.daily_feed_amount_kg != null && String(schedule.daily_feed_amount_kg).trim() !== ''
-      ? String(schedule.daily_feed_amount_kg).trim()
-      : selected.suggested_feed_kg
-
-  const totalNum = totalFromApi != null ? Number.parseFloat(String(totalFromApi)) : NaN
-
-  let nRows = Math.max(perMeal.length, timeLines.length, freq)
-  if (perMeal.length === 0 && Number.isFinite(totalNum) && totalNum > 0 && nRows === 0) {
-    nRows = 2
-  }
-  if (nRows === 0 && totalFromApi != null && Number.isFinite(totalNum) && totalNum > 0) {
-    nRows = 1
-    perMeal = [totalNum.toFixed(2)]
-  } else if (perMeal.length === 0 && Number.isFinite(totalNum) && totalNum > 0 && nRows > 0) {
-    const each = (totalNum / nRows).toFixed(2)
-    perMeal = Array.from({ length: nRows }, () => each)
-  }
-
-  nRows = Math.max(nRows, perMeal.length, timeLines.length)
-  if (nRows === 0) {
-    return { rows: [], totalKg: null }
-  }
-
-  const rows: MealPlanRow[] = []
-  for (let i = 0; i < nRows; i++) {
-    const rawT = timeLines[i]
-    rows.push({
-      mealIndex: i + 1,
-      timePlain:
-        rawT != null && String(rawT).trim() !== '' ? stripMarkdownBold(String(rawT)) : '—',
-      kg: perMeal[i] != null ? perMeal[i] : '—',
-    })
-  }
-
-  let totalKg: string | null = null
-  if (perMeal.length > 0) {
-    const sum = perMeal.reduce((acc, x) => acc + (Number.parseFloat(x) || 0), 0)
-    if (sum > 0) totalKg = sum.toFixed(2)
-  }
-  if (totalKg == null && totalFromApi != null) {
-    const t = Number.parseFloat(String(totalFromApi))
-    if (Number.isFinite(t) && t > 0) totalKg = t.toFixed(2)
-  }
-
-  return { rows, totalKg }
-}
-
-function statusPill(status: string) {
-  const base = 'inline-flex rounded-full px-2 py-0.5 text-xs font-medium'
-  if (status === 'pending_review') return `${base} bg-amber-100 text-amber-900`
-  if (status === 'approved') return `${base} bg-sky-100 text-sky-900`
-  if (status === 'applied') return `${base} bg-emerald-100 text-emerald-900`
-  if (status === 'cancelled') return `${base} bg-slate-200 text-slate-700`
-  return `${base} bg-slate-100 text-slate-800`
-}
-
-function snapshotWorldfish(snap: Record<string, unknown> | undefined): Record<string, unknown> | null {
-  if (!snap || typeof snap !== 'object') return null
-  const w = snap.worldfish
-  return w && typeof w === 'object' ? (w as Record<string, unknown>) : null
-}
-
-function snapshotFeedingHeuristic(snap: Record<string, unknown> | undefined): Record<string, unknown> | null {
-  if (!snap || typeof snap !== 'object') return null
-  const h = snap.feeding_heuristic
-  return h && typeof h === 'object' ? (h as Record<string, unknown>) : null
-}
-
-function snapshotFeedingSchedule(snap: Record<string, unknown> | undefined): Record<string, unknown> | null {
-  if (!snap || typeof snap !== 'object') return null
-  const fs = snap.feeding_schedule
-  return fs && typeof fs === 'object' ? (fs as Record<string, unknown>) : null
-}
-
-/** Short label for “how often” in the list (avoid overflowing the table). */
-function mealsPerDayShort(snap: Record<string, unknown> | undefined): string | null {
-  const sched = snapshotFeedingSchedule(snap)
-  const raw =
-    (sched?.times_per_day as string | undefined) ||
-    (snapshotWorldfish(snap)?.meals_hint as string | undefined)
-  if (raw == null || String(raw).trim() === '') return null
-  const s = String(raw).trim()
-  return s.length > 26 ? `${s.slice(0, 24)}…` : s
-}
-
-/** Compact dose line for list rows: kg target and/or % BW/day from snapshot. */
-function feedingDoseListLabel(r: FeedingAdviceRow): string {
-  const snap = r.pond_status_snapshot as Record<string, unknown> | undefined
-  const wf = snapshotWorldfish(snap)
-  const heur = snapshotFeedingHeuristic(snap)
-  const pctRaw =
-    (heur?.body_weight_percent_per_day as string | undefined) ??
-    (wf?.chosen_bw_pct_per_day as string | undefined)
-  const pct = pctRaw != null && String(pctRaw).trim() !== '' ? String(pctRaw).trim() : null
-  const meals = mealsPerDayShort(snap)
-
-  const sackKg = rowSackKg(r)
-
-  if (r.status === 'applied' && r.applied_feed_kg) {
-    const sk = feedKgToSackLabel(r.applied_feed_kg, sackKg)
-    const base = sk ? `${r.applied_feed_kg} kg applied (${sk})` : `${r.applied_feed_kg} kg applied`
-    const mid = pct ? `${base} · ${pct}% BW/d` : base
-    return meals ? `${mid} · ${meals}` : mid
-  }
-  if (r.suggested_feed_kg) {
-    const sk = feedKgToSackLabel(r.suggested_feed_kg, sackKg)
-    const base = sk ? `${r.suggested_feed_kg} kg (${sk})` : `${r.suggested_feed_kg} kg`
-    const mid = pct ? `${base} · ${pct}% BW/d` : base
-    return meals ? `${mid} · ${meals}` : mid
-  }
-  if (pct) {
-    const mid = `${pct}% BW/d`
-    return meals ? `${mid} · ${meals}` : mid
-  }
-  return meals ?? '—'
-}
-
-function PipelineStatCard(props: {
-  title: string
-  value: string | number
-  sub: string
-  icon: ComponentType<{ className?: string; strokeWidth?: number | string }>
-  tone: 'amber' | 'sky' | 'emerald' | 'slate'
-}) {
-  const { title, value, sub, icon: Icon, tone } = props
-  const ring =
-    tone === 'amber'
-      ? 'ring-amber-500/15'
-      : tone === 'sky'
-        ? 'ring-sky-500/15'
-        : tone === 'emerald'
-          ? 'ring-emerald-500/15'
-          : 'ring-slate-200/80'
-  const iconBg =
-    tone === 'amber'
-      ? 'bg-amber-50 text-amber-800'
-      : tone === 'sky'
-        ? 'bg-sky-50 text-sky-800'
-        : tone === 'emerald'
-          ? 'bg-emerald-50 text-emerald-800'
-          : 'bg-slate-100 text-slate-700'
-  return (
-    <div className={`rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ${ring}`}>
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{title}</p>
-        <div className={`rounded-lg p-1.5 ${iconBg}`}>
-          <Icon className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-        </div>
-      </div>
-      <p className="mt-2 text-xl font-bold tabular-nums tracking-tight text-slate-900">{value}</p>
-      <p className="mt-1 text-xs leading-relaxed text-slate-500">{sub}</p>
-    </div>
-  )
-}
-
-/** Short horizontal guide so new users know the page flow before scrolling. */
-function PageFlowStrip() {
-  const steps = [
-    { n: 1, title: 'Generate', sub: 'Pick pond & date' },
-    { n: 2, title: 'Review', sub: 'Edit kg / text' },
-    { n: 3, title: 'Approve', sub: 'Locks the plan' },
-    { n: 4, title: 'Apply', sub: 'Stock or expense' },
-  ] as const
-  return (
-    <div
-      className="rounded-2xl border border-teal-100 bg-gradient-to-r from-teal-50/80 via-white to-slate-50/90 p-4 shadow-sm ring-1 ring-teal-500/10"
-      aria-label="How feeding advice works on this page"
-    >
-      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-teal-900">
-        <HelpCircle className="h-4 w-4 shrink-0 text-teal-700" aria-hidden />
-        Workflow on this page
-      </div>
-      <ol className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:divide-x lg:divide-teal-100">
-        {steps.map((s) => (
-          <li key={s.n} className="flex min-w-0 gap-3 lg:px-3 first:lg:pl-0 last:lg:pr-0">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white shadow-sm">
-              {s.n}
-            </span>
-            <div className="min-w-0 pt-0.5">
-              <p className="text-sm font-semibold text-slate-900">{s.title}</p>
-              <p className="text-xs leading-snug text-slate-600">{s.sub}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </div>
-  )
-}
-
-function WorkflowRail({ status }: { status: string }) {
-  if (status === 'cancelled') {
-    return (
-      <div
-        className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-100/80 px-3 py-2.5"
-        aria-label="Advice cancelled"
-      >
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-600 px-2.5 py-1 text-xs font-semibold text-white">
-          <XCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          Cancelled (not executed)
-        </span>
-      </div>
-    )
-  }
-  const order = ['pending_review', 'approved', 'applied'] as const
-  const idx = order.indexOf(status as (typeof order)[number])
-  const labels = ['Draft · review', 'Approved', 'Applied to pond'] as const
-  return (
-    <div
-      className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/90 px-3 py-2.5"
-      role="list"
-      aria-label="Advice workflow"
-    >
-      {labels.map((label, i) => {
-        const done = idx > i
-        const current = idx === i
-        return (
-          <div key={label} className="flex items-center gap-2" role="listitem">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                done
-                  ? 'bg-emerald-100 text-emerald-900'
-                  : current
-                    ? 'bg-teal-600 text-white shadow-sm'
-                    : 'bg-white text-slate-500 ring-1 ring-slate-200'
-              }`}
-            >
-              {done ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
-              {label}
-            </span>
-            {i < labels.length - 1 ? <ChevronRight className="h-3.5 w-3.5 text-slate-300" aria-hidden /> : null}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 export default function AquacultureFeedingPage() {
   const toast = useToast()
+  const searchRef = useRef<HTMLInputElement>(null)
   const [ponds, setPonds] = useState<Pond[]>([])
   const [cycles, setCycles] = useState<CycleRow[]>([])
   const [rows, setRows] = useState<FeedingAdviceRow[]>([])
   const [filterPond, setFilterPond] = useState('')
   const [filterStatus, setFilterStatus] = useState<AdviceStatusFilter>('all')
+  const [todayOnly, setTodayOnly] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [currency, setCurrency] = useState('BDT')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<FeedingAdviceRow | null>(null)
+  const [showAdvancedGen, setShowAdvancedGen] = useState(false)
 
   const [genPond, setGenPond] = useState('')
   const [genCycle, setGenCycle] = useState('')
@@ -491,6 +115,7 @@ export default function AquacultureFeedingPage() {
   const [applyMemo, setApplyMemo] = useState('')
   const [applyBusy, setApplyBusy] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteLinkedExpenseBusy, setDeleteLinkedExpenseBusy] = useState(false)
 
   const loadPonds = useCallback(async () => {
     try {
@@ -514,8 +139,7 @@ export default function AquacultureFeedingPage() {
       setRows(list)
       setSelected((prev) => {
         if (!prev) return null
-        const found = list.find((x) => x.id === prev.id)
-        return found ?? null
+        return list.find((x) => x.id === prev.id) ?? null
       })
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not load feeding advice'))
@@ -585,9 +209,7 @@ export default function AquacultureFeedingPage() {
       setApplyConsumePond(false)
       return
     }
-    if (!selected || selected.status !== 'approved') {
-      return
-    }
+    if (!selected || selected.status !== 'approved') return
     if (selected.pond_default_feed_item_id) {
       setApplyConsumePond(true)
       return
@@ -620,9 +242,7 @@ export default function AquacultureFeedingPage() {
         const { data } = await api.get<{ items?: PondWarehouseItemRow[] }>(
           `/aquaculture/ponds/${pid}/warehouse-stock/`,
         )
-        if (!cancelled) {
-          setPondWhStock(Array.isArray(data?.items) ? data.items : [])
-        }
+        if (!cancelled) setPondWhStock(Array.isArray(data?.items) ? data.items : [])
       } catch {
         if (!cancelled) setPondWhStock([])
       } finally {
@@ -634,17 +254,21 @@ export default function AquacultureFeedingPage() {
     }
   }, [selected?.id, selected?.status, selected?.pond_id])
 
+  const todayIso = isoToday()
+
   const displayRows = useMemo(() => {
+    let list = rows
+    if (todayOnly) list = list.filter((r) => r.target_date === todayIso)
     const q = searchQuery.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter(
+    if (!q) return list
+    return list.filter(
       (r) =>
         r.pond_name.toLowerCase().includes(q) ||
         (r.production_cycle_name || '').toLowerCase().includes(q) ||
         r.status_label.toLowerCase().includes(q) ||
         String(r.id).includes(q),
     )
-  }, [rows, searchQuery])
+  }, [rows, searchQuery, todayOnly, todayIso])
 
   const pipelineStats = useMemo(() => {
     const pending = rows.filter((r) => r.status === 'pending_review').length
@@ -671,8 +295,10 @@ export default function AquacultureFeedingPage() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && selected) {
-        setSelected(null)
+      if (e.key === 'Escape' && selected) setSelected(null)
+      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault()
+        searchRef.current?.focus()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -684,11 +310,6 @@ export default function AquacultureFeedingPage() {
   const worldfishBlock = useMemo(() => {
     const snap = selected?.pond_status_snapshot as Record<string, unknown> | undefined
     return snapshotWorldfish(snap)
-  }, [selected])
-
-  const feedingHeuristicBlock = useMemo(() => {
-    const snap = selected?.pond_status_snapshot as Record<string, unknown> | undefined
-    return snapshotFeedingHeuristic(snap)
   }, [selected])
 
   const feedingScheduleBlock = useMemo(() => {
@@ -719,13 +340,22 @@ export default function AquacultureFeedingPage() {
     return rowSackKg(selected)
   }, [editSackSize, selected])
 
+  const mealsLabel = useMemo(() => {
+    const raw =
+      feedingScheduleBlock?.times_per_day ?? worldfishBlock?.meals_hint
+    return raw != null ? String(raw) : null
+  }, [feedingScheduleBlock, worldfishBlock])
+
+  const weatherLabel = useMemo(() => {
+    const raw = feedingScheduleBlock?.weather_condition_label
+    return raw != null && String(raw).trim() !== '' ? String(raw) : null
+  }, [feedingScheduleBlock])
+
   const purchaseAmountEstimateLabel = useMemo(() => {
     if (!applyCreateExp || applyManualPurchaseAmount) return null
     const kgStr = applyKg.trim() || selected?.suggested_feed_kg?.trim() || ''
     const kg = Number.parseFloat(kgStr)
-    if (!Number.isFinite(kg) || kg <= 0) {
-      return 'Set feed weight (kg) to see an estimate.'
-    }
+    if (!Number.isFinite(kg) || kg <= 0) return 'Set feed weight (kg) to see an estimate.'
     const pickId =
       applyFeedItemId.trim() !== ''
         ? Number.parseInt(applyFeedItemId, 10)
@@ -735,14 +365,14 @@ export default function AquacultureFeedingPage() {
     }
     const row = pondWhStock.find((r) => r.item_id === pickId)
     if (!row) {
-      return 'Amount is computed on apply from the item’s inventory cost (or unit price) × quantity for this kg.'
+      return 'Amount is computed on apply from the item’s inventory cost × quantity for this kg.'
     }
     const uc = Number.parseFloat(row.unit_cost)
     const qty = feedInventoryQtyFromKgForEstimate(kg, row.unit, row.content_weight_kg, sackKgForDisplay)
     if (qty != null && Number.isFinite(uc) && uc > 0) {
-      return `${sym}${(qty * uc).toFixed(2)} (inventory unit cost × qty — same rule as the server)`
+      return `${sym}${(qty * uc).toFixed(2)} (inventory unit cost × qty)`
     }
-    return 'Check the item’s unit, content weight, and cost — the server will still try to compute on apply.'
+    return 'Check the item’s unit, content weight, and cost.'
   }, [
     applyCreateExp,
     applyFeedItemId,
@@ -817,7 +447,7 @@ export default function AquacultureFeedingPage() {
 
   const sackSelect = (
     <label className="block text-xs font-medium text-slate-700">
-      Sack size (kg per sack)
+      Sack size (kg)
       <select
         className="mt-1 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
         value={editSackSize}
@@ -829,9 +459,6 @@ export default function AquacultureFeedingPage() {
           </option>
         ))}
       </select>
-      <span className="mt-1 block text-[11px] font-normal text-slate-500">
-        Workers apply feed by sack count; kg stays the system of record.
-      </span>
     </label>
   )
 
@@ -858,7 +485,7 @@ export default function AquacultureFeedingPage() {
         body.water_temp_c = t
       }
       const { data } = await api.post<FeedingAdviceRow>('/aquaculture/feeding-advice/generate/', body)
-      toast.success('Advice generated — review and edit if needed')
+      toast.success('Daily plan ready — review and approve')
       await loadList()
       setSelected(data)
     } catch (e) {
@@ -908,7 +535,7 @@ export default function AquacultureFeedingPage() {
     if (!selected || selected.status !== 'pending_review') return
     try {
       const { data } = await api.post<FeedingAdviceRow>(`/aquaculture/feeding-advice/${selected.id}/approve/`, {})
-      toast.success('Approved')
+      toast.success('Approved — ready to apply in the field')
       setSelected(data)
       void loadList()
     } catch (e) {
@@ -918,10 +545,10 @@ export default function AquacultureFeedingPage() {
 
   const cancelAdvice = async () => {
     if (!selected || selected.status !== 'pending_review') return
-    if (!window.confirm('Cancel this draft advice?')) return
+    if (!window.confirm('Cancel this draft?')) return
     try {
       const { data } = await api.post<FeedingAdviceRow>(`/aquaculture/feeding-advice/${selected.id}/cancel/`, {})
-      toast.success('Cancelled — you can delete the record below if you do not need it for audit.')
+      toast.success('Cancelled')
       setSelected(data)
       void loadList()
     } catch (e) {
@@ -931,11 +558,11 @@ export default function AquacultureFeedingPage() {
 
   const deleteCancelled = async () => {
     if (!selected || selected.status !== 'cancelled') return
-    if (!window.confirm('Permanently delete this cancelled feeding advice? This cannot be undone.')) return
+    if (!window.confirm('Permanently delete this record?')) return
     setDeleteBusy(true)
     try {
       await api.delete(`/aquaculture/feeding-advice/${selected.id}/`)
-      toast.success('Record deleted')
+      toast.success('Deleted')
       setSelected(null)
       void loadList()
     } catch (e) {
@@ -945,19 +572,63 @@ export default function AquacultureFeedingPage() {
     }
   }
 
+  const deleteLinkedExpense = async () => {
+    if (!selected?.linked_expense_id) return
+    const cat = selected.linked_expense_category || ''
+    const isConsume = cat === 'feed_consumed'
+    const msg = isConsume
+      ? 'Delete the linked feed consumption expense? Pond warehouse stock will be restored and the COGS journal will be reversed. The feeding advice will stay marked as applied (for audit).'
+      : cat === 'feed_purchase'
+        ? 'Delete the linked feed purchase expense? Pond warehouse quantity will not change (it was never reduced). The feeding advice will stay marked as applied.'
+        : 'Delete the linked expense? The feeding advice will stay marked as applied.'
+    if (!window.confirm(msg)) return
+    setDeleteLinkedExpenseBusy(true)
+    try {
+      await api.delete(`/aquaculture/expenses/${selected.linked_expense_id}/`)
+      toast.success(isConsume ? 'Expense deleted — pond stock restored' : 'Expense deleted')
+      const pondIdToRefresh = selected.pond_id
+      const adviceId = selected.id
+      void loadList()
+      try {
+        const { data: fresh } = await api.get<FeedingAdviceRow>(`/aquaculture/feeding-advice/${adviceId}/`)
+        setSelected(fresh)
+      } catch {
+        setSelected((prev) =>
+          prev
+            ? {
+                ...prev,
+                linked_expense_id: null,
+                linked_expense_category: '',
+              }
+            : null,
+        )
+      }
+      try {
+        const { data: wh } = await api.get<{ items?: PondWarehouseItemRow[] }>(
+          `/aquaculture/ponds/${pondIdToRefresh}/warehouse-stock/`,
+        )
+        setPondWhStock(Array.isArray(wh?.items) ? wh.items : [])
+      } catch {
+        /* ignore */
+      }
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Could not delete expense'))
+    } finally {
+      setDeleteLinkedExpenseBusy(false)
+    }
+  }
+
   const apply = async () => {
     if (!selected || selected.status !== 'approved') return
     if (!applyCreateExp && applyConsumePond) {
       if (!selected.pond_default_feed_item_id && !applyFeedItemId.trim()) {
-        toast.error('Select a feed product from the pond warehouse, or set the pond default feed on the pond page.')
+        toast.error('Select feed from pond warehouse or set pond default feed.')
         return
       }
     }
     if (applyCreateExp && !applyManualPurchaseAmount) {
       if (!selected.pond_default_feed_item_id && !applyFeedItemId.trim()) {
-        toast.error(
-          'Choose a feed product for automatic costing, set the pond default feed, or enable “Override purchase amount”.',
-        )
+        toast.error('Choose a feed product or enable override amount.')
         return
       }
     }
@@ -976,9 +647,7 @@ export default function AquacultureFeedingPage() {
           }
           body.amount = amt
         }
-        if (applyFeedItemId.trim() !== '') {
-          body.feed_item_id = Number.parseInt(applyFeedItemId, 10)
-        }
+        if (applyFeedItemId.trim() !== '') body.feed_item_id = Number.parseInt(applyFeedItemId, 10)
         body.vendor_name = applyVendor.trim() || 'Feed supplier'
         body.memo = applyMemo.trim() || `Feed applied (advice #${selected.id})`
         body.expense_date = selected.target_date
@@ -990,34 +659,54 @@ export default function AquacultureFeedingPage() {
         }
       }
       const pondIdToRefresh = selected.pond_id
-      const { data } = await api.post<FeedingAdviceRow & { created_expense?: unknown }>(
-        `/aquaculture/feeding-advice/${selected.id}/apply/`,
-        body,
-      )
-      const consumedWh =
-        !applyCreateExp &&
-        applyConsumePond &&
-        (!!selected.pond_default_feed_item_id || applyFeedItemId.trim() !== '')
-      toast.success(
-        applyCreateExp
-          ? 'Applied and expense recorded'
-          : consumedWh
-            ? 'Applied — pond warehouse stock updated'
-            : 'Marked as applied',
-      )
+      const feedItemIdForStock =
+        applyFeedItemId.trim() !== ''
+          ? Number.parseInt(applyFeedItemId, 10)
+          : selected.pond_default_feed_item_id ?? null
+      const { data } = await api.post<
+        FeedingAdviceRow & { created_expense?: { expense_category?: string; feed_sack_count?: string | null } }
+      >(`/aquaculture/feeding-advice/${selected.id}/apply/`, body)
       setSelected(data)
       void loadList()
-      if (!applyCreateExp && applyConsumePond) {
-        void (async () => {
-          try {
-            const { data: wh } = await api.get<{ items?: PondWarehouseItemRow[] }>(
-              `/aquaculture/ponds/${pondIdToRefresh}/warehouse-stock/`,
-            )
-            setPondWhStock(Array.isArray(wh?.items) ? wh.items : [])
-          } catch {
-            /* ignore */
-          }
-        })()
+
+      let whItems: PondWarehouseItemRow[] = []
+      try {
+        const { data: wh } = await api.get<{ items?: PondWarehouseItemRow[] }>(
+          `/aquaculture/ponds/${pondIdToRefresh}/warehouse-stock/`,
+        )
+        whItems = Array.isArray(wh?.items) ? wh.items : []
+        setPondWhStock(whItems)
+      } catch {
+        /* ignore */
+      }
+
+      const expCat =
+        data.created_expense?.expense_category?.trim() ||
+        data.linked_expense_category?.trim() ||
+        (applyCreateExp ? 'feed_purchase' : applyConsumePond ? 'feed_consumed' : '')
+
+      if (expCat === 'feed_purchase') {
+        toast.error(
+          'Applied, but pond warehouse was not reduced — you used “Record feed purchase expense”. To deduct sacks from pond on-hand, apply again with only “Consume pond warehouse” checked (or delete the purchase expense first).',
+          9000,
+        )
+      } else if (expCat === 'feed_consumed') {
+        const stockRow =
+          feedItemIdForStock != null && Number.isFinite(feedItemIdForStock)
+            ? whItems.find((r) => r.item_id === feedItemIdForStock)
+            : undefined
+        const sacksLabel = applySacks.trim() || data.created_expense?.feed_sack_count || ''
+        if (stockRow) {
+          toast.success(
+            `Applied — ${sacksLabel ? `${sacksLabel} sack(s) consumed. ` : ''}Pond warehouse now shows ${stockRow.quantity} ${stockRow.unit} on hand.`,
+          )
+        } else {
+          toast.success('Applied — feed deducted from pond warehouse (COGS posted).')
+        }
+      } else if (!applyCreateExp && !applyConsumePond) {
+        toast.success('Applied — field record only (no pond stock or expense was changed).')
+      } else {
+        toast.success('Applied to pond')
       }
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Apply failed'))
@@ -1026,1078 +715,727 @@ export default function AquacultureFeedingPage() {
     }
   }
 
+  const pendingPonds = useMemo(() => {
+    const ids = new Set(
+      rows.filter((r) => r.status === 'pending_review' && r.target_date === todayIso).map((r) => r.pond_id),
+    )
+    return ponds.filter((p) => ids.has(p.id)).slice(0, 4)
+  }, [rows, ponds, todayIso])
+
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mb-5">
-        <Link
-          href="/aquaculture"
-          className="inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:text-teal-950"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Aquaculture overview
-        </Link>
-      </div>
+    <div className="mx-auto max-w-[1440px] px-4 py-5 pb-24 sm:px-6 lg:px-8 lg:pb-8">
+      <Link
+        href="/aquaculture"
+        className="inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:text-teal-950"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        Aquaculture
+      </Link>
 
-      <div className="flex flex-col gap-4 border-b border-slate-200/90 pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-teal-700">Aquaculture · Operations</p>
-          <h1 className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
-              <UtensilsCrossed className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-            </span>
-            Feeding advice
-            <span className="text-base font-semibold text-slate-500 sm:text-lg">Nile tilapia</span>
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-            Daily feed targets from pond biomass and stocking. Use the steps below: create a plan, adjust kg or sacks if
-            needed, approve, then apply so warehouse stock or a purchase expense stays accurate.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <Link
-            href="/aquaculture/sampling"
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-          >
-            <Gauge className="h-3.5 w-3.5 text-teal-700" aria-hidden />
-            Sampling
-          </Link>
-          <Link
-            href="/aquaculture/ponds"
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-          >
-            <MapPin className="h-3.5 w-3.5 text-teal-700" aria-hidden />
-            Ponds
-          </Link>
-          <button
-            type="button"
-            onClick={() => void loadList()}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden />
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-6">
-        <PageFlowStrip />
-      </div>
-
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <PipelineStatCard
-          title="Needs review"
-          value={pipelineStats.pending}
-          sub="Draft plans awaiting approval"
-          icon={ClipboardList}
-          tone="amber"
-        />
-        <PipelineStatCard
-          title="Approved"
-          value={pipelineStats.approved}
-          sub="Ready to apply in the field"
-          icon={Sparkles}
-          tone="sky"
-        />
-        <PipelineStatCard
-          title="Applied"
-          value={pipelineStats.applied}
-          sub="Executed plans (this list view)"
-          icon={CheckCircle2}
-          tone="emerald"
-        />
-        <PipelineStatCard
-          title="In view"
-          value={pipelineStats.total}
-          sub={
-            filterStatus === 'all' && !filterPond
-              ? 'Up to 200 most recent records'
-              : 'Matching current filters'
-          }
-          icon={List}
-          tone="slate"
-        />
-      </div>
-
-      <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm lg:flex-row lg:flex-wrap lg:items-end lg:justify-between">
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter by status">
-          {STATUS_TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={filterStatus === t.id}
-              onClick={() => setFilterStatus(t.id)}
-              className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition outline-none ring-teal-600/20 focus-visible:ring-2 ${
-                filterStatus === t.id
-                  ? 'bg-teal-700 text-white shadow-sm'
-                  : 'bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              <span className="tabular-nums">{t.label}</span>
-              <span
-                className={`ml-1.5 tabular-nums opacity-90 ${
-                  filterStatus === t.id ? 'text-white/90' : 'text-slate-500'
-                }`}
-              >
-                ({statusTabCounts[t.id]})
-              </span>
-            </button>
-          ))}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-end sm:justify-end">
-          <label className="block text-xs font-medium text-slate-600 sm:min-w-[10rem]">
-            Pond
-            <select
-              className="mt-1 block w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm text-slate-900 outline-none ring-teal-600/15 focus:border-teal-500 focus:ring-2"
-              value={filterPond}
-              onChange={(e) => setFilterPond(e.target.value)}
-            >
-              <option value="">All ponds</option>
-              {ponds.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block min-w-0 flex-1 text-xs font-medium text-slate-600 sm:max-w-xs">
-            <span className="flex items-center gap-1">
-              <Search className="h-3 w-3 text-slate-400" aria-hidden />
-              Search this page
-            </span>
-            <input
-              type="search"
-              placeholder="Pond, cycle, status…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 outline-none ring-teal-600/15 placeholder:text-slate-400 focus:border-teal-500 focus:ring-2"
-              autoComplete="off"
-            />
-          </label>
-        </div>
-      </div>
-
-      <p className="mt-3 text-xs text-slate-500">
-        Press <kbd className="rounded border border-slate-200 bg-slate-100 px-1 font-mono text-[10px]">Esc</kbd> to clear
-        the selected plan. Cancelled rows can be deleted for a clean list.
-      </p>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-5 lg:items-start">
-        <section className="rounded-2xl border border-teal-200/60 bg-white p-5 shadow-sm ring-1 ring-teal-500/10 lg:col-span-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
-                <Sparkles className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold text-slate-900">Start here: generate a daily plan</h2>
-                <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                  Chooses ration from tilapia stock in the pond (and optional cycle). After it appears in the table,
-                  select the row to review, approve, and apply.
-                </p>
-              </div>
-            </div>
+      {/* Hero */}
+      <header className="mt-4 overflow-hidden rounded-2xl border border-teal-200/60 bg-gradient-to-br from-slate-900 via-teal-950 to-emerald-950 p-5 text-white shadow-xl sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-teal-200">
+              <Bot className="h-3.5 w-3.5" aria-hidden />
+              AI feeding advisor
+            </p>
+            <h1 className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl">
+              <UtensilsCrossed className="h-7 w-7 text-teal-300" strokeWidth={1.75} aria-hidden />
+              Daily feed plans
+            </h1>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-teal-100/90">
+              WorldFish-based rations from pond biomass. Generate → review → approve → apply to warehouse or expense.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
             <Link
               href="/aquaculture/sampling"
-              className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold backdrop-blur hover:bg-white/20"
             >
-              Biomass sampling
+              <Gauge className="h-3.5 w-3.5" aria-hidden />
+              Sampling
             </Link>
+            <Link
+              href="/aquaculture/ponds"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold backdrop-blur hover:bg-white/20"
+            >
+              <MapPin className="h-3.5 w-3.5" aria-hidden />
+              Ponds
+            </Link>
+            <button
+              type="button"
+              onClick={() => void loadList()}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-teal-900 hover:bg-teal-50 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden />
+              Refresh
+            </button>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="block text-xs font-medium text-slate-600">
-              Pond
+        </div>
+
+        <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <PipelineStatCard
+            title="Needs review"
+            value={pipelineStats.pending}
+            sub="Draft plans"
+            icon={Sparkles}
+            tone="amber"
+            active={filterStatus === 'pending_review'}
+            onClick={() => setFilterStatus('pending_review')}
+          />
+          <PipelineStatCard
+            title="Approved"
+            value={pipelineStats.approved}
+            sub="Ready to apply"
+            icon={ClipboardList}
+            tone="sky"
+            active={filterStatus === 'approved'}
+            onClick={() => setFilterStatus('approved')}
+          />
+          <PipelineStatCard
+            title="Applied"
+            value={pipelineStats.applied}
+            sub="Executed"
+            icon={CheckCircle2}
+            tone="emerald"
+            active={filterStatus === 'applied'}
+            onClick={() => setFilterStatus('applied')}
+          />
+          <PipelineStatCard
+            title="All plans"
+            value={pipelineStats.total}
+            sub="Recent records"
+            icon={List}
+            tone="slate"
+            active={filterStatus === 'all'}
+            onClick={() => setFilterStatus('all')}
+          />
+        </div>
+      </header>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-12 lg:items-start">
+        {/* Left: generate + list */}
+        <div className="space-y-4 lg:col-span-5 xl:col-span-5">
+          <section className="rounded-2xl border border-teal-200/70 bg-white p-4 shadow-sm ring-1 ring-teal-500/10">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <Sparkles className="h-4 w-4 text-teal-600" aria-hidden />
+              New daily plan
+            </h2>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-medium text-slate-600 sm:col-span-2">
+                Pond
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm"
+                  value={genPond}
+                  onChange={(e) => setGenPond(e.target.value)}
+                >
+                  <option value="">Select pond…</option>
+                  {ponds.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {pendingPonds.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 sm:col-span-2">
+                  <span className="w-full text-[10px] font-medium uppercase text-slate-500">Today needs review</span>
+                  {pendingPonds.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setGenPond(String(p.id))}
+                      className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100"
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <label className="block text-xs font-medium text-slate-600">
+                Date
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm"
+                  value={genDate}
+                  onChange={(e) => setGenDate(e.target.value)}
+                />
+              </label>
+              <label className="block text-xs font-medium text-slate-600">
+                Sack size
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm"
+                  value={genSackKg}
+                  onChange={(e) => {
+                    const v = Number.parseInt(e.target.value, 10)
+                    if (isAllowedSackKg(v)) setGenSackKg(v)
+                  }}
+                >
+                  {SACK_SIZE_OPTIONS_KG.map((kg) => (
+                    <option key={kg} value={kg}>
+                      {kg} kg
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <button
+              type="button"
+              className="mt-2 flex w-full items-center justify-center gap-1 text-xs font-medium text-teal-800"
+              onClick={() => setShowAdvancedGen((v) => !v)}
+            >
+              Advanced options
+              <ChevronDown className={`h-3.5 w-3.5 transition ${showAdvancedGen ? 'rotate-180' : ''}`} aria-hidden />
+            </button>
+            {showAdvancedGen ? (
+              <div className="mt-2 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
+                <label className="block text-xs font-medium text-slate-600 sm:col-span-2">
+                  Production cycle
+                  <select
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm disabled:opacity-50"
+                    value={genCycle}
+                    onChange={(e) => setGenCycle(e.target.value)}
+                    disabled={!genPond}
+                  >
+                    <option value="">All movements</option>
+                    {cycles.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs font-medium text-slate-600 sm:col-span-2">
+                  Water °C (optional)
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="e.g. 28"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm"
+                    value={genTemp}
+                    onChange={(e) => setGenTemp(e.target.value)}
+                  />
+                </label>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              disabled={genBusy || !genPond}
+              onClick={() => void generate()}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden />
+              {genBusy ? 'Generating…' : 'Generate AI plan'}
+            </button>
+          </section>
+
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-3 shadow-sm">
+            <StatusFilterTabs
+              filterStatus={filterStatus}
+              statusTabCounts={statusTabCounts}
+              onChange={setFilterStatus}
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
               <select
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm outline-none ring-teal-600/15 focus:border-teal-500 focus:ring-2"
-                value={genPond}
-                onChange={(e) => setGenPond(e.target.value)}
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-1.5 text-xs"
+                value={filterPond}
+                onChange={(e) => setFilterPond(e.target.value)}
               >
-                <option value="">Select pond…</option>
+                <option value="">All ponds</option>
                 {ponds.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="block text-xs font-medium text-slate-600">
-              Production cycle (optional)
-              <select
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm outline-none ring-teal-600/15 focus:border-teal-500 focus:ring-2 disabled:opacity-50"
-                value={genCycle}
-                onChange={(e) => setGenCycle(e.target.value)}
-                disabled={!genPond}
+              <button
+                type="button"
+                onClick={() => setTodayOnly((v) => !v)}
+                className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
+                  todayOnly ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700'
+                }`}
               >
-                <option value="">All movements (no cycle filter)</option>
-                {cycles.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-xs font-medium text-slate-600">
-              Target date
-              <input
-                type="date"
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm outline-none ring-teal-600/15 focus:border-teal-500 focus:ring-2"
-                value={genDate}
-                onChange={(e) => setGenDate(e.target.value)}
-              />
-            </label>
-            <label className="block text-xs font-medium text-slate-600">
-              Water temperature °C (optional)
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="e.g. 28 — meal timing"
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm outline-none ring-teal-600/15 placeholder:text-slate-400 focus:border-teal-500 focus:ring-2"
-                value={genTemp}
-                onChange={(e) => setGenTemp(e.target.value)}
-              />
-            </label>
-            <label className="block text-xs font-medium text-slate-600 sm:col-span-2">
-              Sack size for crew instructions (10 / 20 / 25 kg)
-              <select
-                className="mt-1 w-full max-w-xs rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm outline-none ring-teal-600/15 focus:border-teal-500 focus:ring-2"
-                value={genSackKg}
-                onChange={(e) => {
-                  const v = Number.parseInt(e.target.value, 10)
-                  if (isAllowedSackKg(v)) setGenSackKg(v)
-                }}
-              >
-                {SACK_SIZE_OPTIONS_KG.map((kg) => (
-                  <option key={kg} value={kg}>
-                    {kg} kg per sack
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <button
-            type="button"
-            disabled={genBusy || !genPond}
-            onClick={() => void generate()}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Sparkles className="h-4 w-4" aria-hidden />
-            {genBusy ? 'Generating…' : 'Generate advice'}
-          </button>
-        </section>
-
-        <aside className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-4 text-sm text-slate-700 lg:col-span-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tips</h3>
-          <ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-slate-600">
-            <li>
-              Recent{' '}
-              <Link href="/aquaculture/sampling" className="font-medium text-teal-800 underline">
-                sampling
-              </Link>{' '}
-              improves kg/day and mean weight in the snapshot.
-            </li>
-            <li>Optional °C aligns meal frequency and times with hot or cold water.</li>
-            <li>Sack counts are for the pond crew; kilograms remain the stored amount.</li>
-          </ul>
-          <details className="mt-4 rounded-lg border border-slate-200 bg-white/90 p-3 text-xs">
-            <summary className="cursor-pointer font-semibold text-slate-800 outline-none ring-teal-600/20 focus-visible:ring-2">
-              WorldFish tables &amp; archive
-            </summary>
-            <p className="mt-2 leading-relaxed text-slate-600">
-              Ration (% body weight) and meals follow published Nile tilapia grow-out guidance (often referenced near
-              ~28&nbsp;°C). See the{' '}
-              <a
-                href="https://digitalarchive.worldfishcenter.org/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-teal-800 underline decoration-teal-500/40 hover:decoration-teal-800"
-              >
-                WorldFish digital archive
-              </a>
-              . Each plan stores the parameters used under{' '}
-              <code className="rounded bg-slate-100 px-1 ring-1 ring-slate-200">worldfish</code> in the row snapshot.
-            </p>
-          </details>
-        </aside>
-      </div>
-
-      {loading ? (
-        <div className="mt-10 flex justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
-        </div>
-      ) : (
-        <>
-        <div className="mt-4 grid gap-6 lg:grid-cols-5">
-          <div className="lg:col-span-2">
-            <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
-              <table className="min-w-full text-left text-sm">
-                <caption className="border-b border-slate-100 bg-slate-50/80 px-3 py-2.5 text-left text-xs font-medium text-slate-600">
-                  <span className="block">Daily plans · newest first (server limit 200)</span>
-                  {rows.length > 0 ? (
-                    <span className="mt-1 block font-normal text-slate-500">
-                      Showing {displayRows.length} of {rows.length}
-                      {searchQuery.trim() || filterPond || filterStatus !== 'all'
-                        ? ' · filters or search active'
-                        : ''}
-                    </span>
-                  ) : null}
-                </caption>
-                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2.5 sm:px-4">Date</th>
-                    <th className="px-3 py-2.5 sm:px-4">Pond</th>
-                    <th className="hidden px-3 py-2.5 sm:table-cell sm:px-4">Cycle</th>
-                    <th className="px-3 py-2.5 sm:px-4">Dose</th>
-                    <th className="px-3 py-2.5 sm:px-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
-                        <p className="font-medium text-slate-700">No feeding advice yet</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Use <strong className="font-medium text-slate-700">Generate</strong> above after choosing a pond.
-                          Accurate kg/day needs recent{' '}
-                          <Link href="/aquaculture/sampling" className="text-teal-800 underline">
-                            biomass sampling
-                          </Link>
-                          .
-                        </p>
-                      </td>
-                    </tr>
-                  ) : displayRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
-                        No rows match your search.{' '}
-                        <button
-                          type="button"
-                          className="font-medium text-teal-800 underline"
-                          onClick={() => setSearchQuery('')}
-                        >
-                          Clear search
-                        </button>
-                      </td>
-                    </tr>
-                  ) : (
-                    displayRows.map((r) => (
-                      <tr
-                        key={r.id}
-                        tabIndex={0}
-                        aria-selected={selected?.id === r.id}
-                        className={`cursor-pointer border-b border-slate-100 outline-none transition hover:bg-slate-50 focus-visible:bg-teal-50/80 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500/30 ${
-                          selected?.id === r.id ? 'bg-teal-50/60' : ''
-                        }`}
-                        onClick={() => setSelected(r)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            setSelected(r)
-                          }
-                        }}
-                      >
-                        <td className="px-3 py-2.5 whitespace-nowrap tabular-nums text-slate-800 sm:px-4">
-                          {formatDateOnly(r.target_date)}
-                        </td>
-                        <td className="px-3 py-2.5 sm:px-4">
-                          <span className="font-medium text-slate-900">{r.pond_name}</span>
-                          <ChevronRight className="ml-1 inline h-3 w-3 text-slate-400 lg:hidden" aria-hidden />
-                        </td>
-                        <td className="hidden max-w-[8rem] truncate px-3 py-2.5 text-xs text-slate-600 sm:table-cell sm:px-4">
-                          {r.production_cycle_name?.trim() ? r.production_cycle_name : '—'}
-                        </td>
-                        <td className="max-w-[9rem] px-3 py-2 text-xs leading-snug text-slate-700 sm:max-w-none sm:px-4 sm:text-sm">
-                          {feedingDoseListLabel(r)}
-                        </td>
-                        <td className="px-3 py-2.5 sm:px-4">
-                          <span className={statusPill(r.status)}>{r.status_label}</span>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                Today
+              </button>
             </div>
+            <label className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-1.5">
+              <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+              <input
+                ref={searchRef}
+                type="search"
+                placeholder="Search… (press /)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+                autoComplete="off"
+              />
+            </label>
           </div>
 
-          <div className="lg:col-span-3">
-            {!selected ? (
-              <div className="rounded-2xl border border-dashed border-slate-300/90 bg-white px-4 py-14 text-center">
-                <p className="text-sm font-medium text-slate-700">No plan selected</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                  Click a row in the table on the left, or use <strong className="font-medium text-slate-700">Generate</strong>{' '}
-                  above to create a new daily plan.
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <div className="h-9 w-9 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-600">
+              <p className="font-medium text-slate-800">No plans yet</p>
+              <p className="mt-1 text-xs">Generate your first daily plan above.</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-sm font-semibold text-slate-900">Daily plans</h2>
+                <p className="text-xs text-slate-500">
+                  {displayRows.length} of {rows.length}
+                  {todayOnly || searchQuery || filterPond || filterStatus !== 'all' ? ' · filtered' : ''}
                 </p>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-900">
-                      <Link
-                        href={`/aquaculture/ponds/${selected.pond_id}`}
-                        className="text-teal-900 hover:underline"
-                      >
-                        {selected.pond_name}
-                      </Link>
-                      <span className="font-normal text-slate-500"> · </span>
-                      {formatDateOnly(selected.target_date)}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {selected.production_cycle_name ? `Cycle: ${selected.production_cycle_name} · ` : ''}
-                      Created {selected.created_by_display ? `by ${selected.created_by_display} · ` : ''}
-                      {formatDateOnly(selected.created_at)}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link
-                      href={`/aquaculture/ponds/${selected.pond_id}`}
-                      className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 sm:inline-flex"
+              <div className="max-h-[min(70vh,720px)] space-y-2.5 overflow-y-auto pr-0.5">
+                {displayRows.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                    No matches.{' '}
+                    <button
+                      type="button"
+                      className="font-medium text-teal-800 underline"
+                      onClick={() => {
+                        setSearchQuery('')
+                        setTodayOnly(false)
+                      }}
                     >
-                      Pond setup
-                      <ArrowRight className="h-3 w-3" aria-hidden />
-                    </Link>
-                    {selected.status === 'cancelled' && (
+                      Clear filters
+                    </button>
+                  </p>
+                ) : (
+                  displayRows.map((r) => (
+                    <AdvicePlanCard
+                      key={r.id}
+                      row={r}
+                      selected={selected?.id === r.id}
+                      onSelect={() => setSelected(r)}
+                    />
+                  ))
+                )}
+              </div>
+            </>
+          )}
+
+          <div className="hidden lg:block">
+            <PageTipsAside />
+          </div>
+        </div>
+
+        {/* Right: detail */}
+        <div className="lg:col-span-7 xl:col-span-7">
+          {!selected ? (
+            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/80 px-6 py-16 text-center">
+              <Bot className="h-12 w-12 text-slate-300" aria-hidden />
+              <p className="mt-4 text-sm font-semibold text-slate-800">Select a plan</p>
+              <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
+                Pick a row from the list or generate a new AI daily plan for a pond.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4 lg:sticky lg:top-4">
+              <FeedingInsightHero row={selected} weatherLabel={weatherLabel} mealsLabel={mealsLabel} />
+
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <div className="min-w-0 text-xs text-slate-500">
+                  <Link href={`/aquaculture/ponds/${selected.pond_id}`} className="font-semibold text-teal-900 hover:underline">
+                    {selected.pond_name}
+                  </Link>
+                  {selected.production_cycle_name ? ` · ${selected.production_cycle_name}` : ''}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={`/aquaculture/ponds/${selected.pond_id}`}
+                    className="hidden items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 sm:inline-flex"
+                  >
+                    Pond <ArrowRight className="h-3 w-3" aria-hidden />
+                  </Link>
+                  {selected.status === 'cancelled' ? (
+                    <button
+                      type="button"
+                      disabled={deleteBusy}
+                      onClick={() => void deleteCancelled()}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      Delete
+                    </button>
+                  ) : null}
+                  <span className={statusPill(selected.status)}>{selected.status_label}</span>
+                </div>
+              </div>
+
+              <WorkflowRail status={selected.status} />
+
+              {selectedHiddenBySearch ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                  Hidden by filters — clear search or filters to see this row in the list.
+                </p>
+              ) : null}
+
+              {mealPlan.rows.length > 0 ? (
+                <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-slate-900">Meal schedule</h3>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Per-meal kg and sacks ({sackKgForDisplay} kg/sack)
+                  </p>
+                  <div className="mt-3">
+                    <MealPlanTable
+                      rows={mealPlan.rows}
+                      totalKg={mealPlan.totalKg}
+                      sackKg={sackKgForDisplay}
+                      appliedKg={selected.status === 'applied' ? selected.applied_feed_kg : null}
+                    />
+                  </div>
+                  {feedingScheduleBlock?.per_meal_amount_summary != null ? (
+                    <p className="mt-2 text-xs text-slate-600">
+                      <AdviceRichText text={String(feedingScheduleBlock.per_meal_amount_summary)} />
+                    </p>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {feedingScheduleBullets.length > 0 ? (
+                <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <h3 className="text-xs font-semibold uppercase text-slate-500">Pond notes</h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-700">
+                    {feedingScheduleBullets.map((b, i) => (
+                      <li key={i}>
+                        <AdviceRichText text={b} />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              <details className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-600">AI narrative (full text)</summary>
+                <div className="mt-2 max-h-40 overflow-y-auto rounded-lg bg-slate-50 p-3">
+                  <AdviceRichText text={selected.effective_advice_text || selected.ai_advice_text} />
+                </div>
+              </details>
+
+              {worldfishBlock ? (
+                <details className="rounded-xl border border-teal-100 bg-teal-50/40 p-3 text-xs">
+                  <summary className="cursor-pointer font-semibold text-teal-950">WorldFish parameters</summary>
+                  <dl className="mt-2 grid gap-1 sm:grid-cols-2">
+                    {worldfishBlock.worldfish_stage != null && (
+                      <>
+                        <dt className="text-slate-500">Stage</dt>
+                        <dd>{String(worldfishBlock.worldfish_stage)}</dd>
+                      </>
+                    )}
+                    {worldfishBlock.mean_fish_weight_g != null && (
+                      <>
+                        <dt className="text-slate-500">Mean weight</dt>
+                        <dd>{String(worldfishBlock.mean_fish_weight_g)} g</dd>
+                      </>
+                    )}
+                    <dt className="text-slate-500">% BW / day</dt>
+                    <dd>{String(worldfishBlock.chosen_bw_pct_per_day)}%</dd>
+                  </dl>
+                </details>
+              ) : null}
+
+              {selected.status === 'pending_review' && (
+                <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-slate-900">Review & approve</h3>
+                  <textarea
+                    className="mt-2 min-h-[100px] w-full rounded-lg border border-slate-300 p-3 text-sm"
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    placeholder="Optional manager notes…"
+                  />
+                  <div className="mt-3">{sackSelect}</div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="block text-xs font-medium text-slate-700">
+                      kg / day
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        value={editKg}
+                        onChange={(e) => onEditKgChange(e.target.value)}
+                      />
+                    </label>
+                    <label className="block text-xs font-medium text-slate-700">
+                      Sacks
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        value={editSacks}
+                        onChange={(e) => onEditSacksChange(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={saveBusy}
+                      onClick={() => void saveEdits()}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    >
+                      {saveBusy ? 'Saving…' : 'Save draft'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void approve()}
+                      className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white"
+                    >
+                      <Check className="h-4 w-4" aria-hidden />
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void cancelAdvice()}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900"
+                    >
+                      <XCircle className="h-4 w-4" aria-hidden />
+                      Cancel
+                    </button>
+                  </div>
+                </section>
+              )}
+
+              {selected.status === 'approved' && (
+                <section className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-emerald-950">Apply in field</h3>
+                  <p className="mt-1 text-xs text-emerald-900/90">
+                    Consume pond warehouse stock or record a feed purchase expense.
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="block text-xs font-medium text-slate-700">
+                      kg
+                      <input
+                        type="text"
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        value={applyKg}
+                        onChange={(e) => onApplyKgChange(e.target.value)}
+                      />
+                    </label>
+                    <label className="block text-xs font-medium text-slate-700">
+                      Sacks
+                      <input
+                        type="text"
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        value={applySacks}
+                        onChange={(e) => onApplySacksChange(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <label className="mt-3 block text-xs font-medium text-slate-700">
+                    Feed product
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      value={applyFeedItemId}
+                      onChange={(e) => setApplyFeedItemId(e.target.value)}
+                    >
+                      <option value="">
+                        {selected.pond_default_feed_item_id
+                          ? `Default: ${selected.pond_default_feed_item_name || 'feed'}`
+                          : 'Choose warehouse item…'}
+                      </option>
+                      {pondWhStock.map((row) => (
+                        <option key={row.item_id} value={String(row.item_id)}>
+                          {row.item_name} ({row.quantity} {row.unit})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="mt-2 flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={applyConsumePond && !applyCreateExp}
+                      disabled={applyCreateExp}
+                      onChange={(e) => setApplyConsumePond(e.target.checked)}
+                    />
+                    <span>
+                      <span className="font-medium text-slate-900">Consume pond warehouse</span>
+                      <span className="block text-xs font-normal text-slate-600">
+                        Reduces sacks on hand at this pond (recommended when using transferred feed).
+                      </span>
+                    </span>
+                  </label>
+                  <label className="mt-2 flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={applyCreateExp}
+                      onChange={(e) => {
+                        setApplyCreateExp(e.target.checked)
+                        if (e.target.checked) setApplyConsumePond(false)
+                      }}
+                    />
+                    <span>
+                      <span className="font-medium text-slate-900">Record feed purchase expense</span>
+                      <span className="block text-xs font-normal text-slate-600">
+                        Shop/cost entry only — does <strong>not</strong> change pond warehouse quantity.
+                      </span>
+                    </span>
+                  </label>
+                  {applyCreateExp ? (
+                    <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                      Pond warehouse will stay at the current on-hand figure (e.g. 50 sacks) with this option. Use
+                      “Consume pond warehouse” to deduct applied feed from the pond.
+                    </p>
+                  ) : !applyConsumePond ? (
+                    <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                      Neither stock nor purchase expense will be recorded — only the feeding advice status changes.
+                    </p>
+                  ) : null}
+                  {applyCreateExp && (
+                    <div className="mt-3 space-y-2">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={applyManualPurchaseAmount}
+                          onChange={(e) => setApplyManualPurchaseAmount(e.target.checked)}
+                        />
+                        Override amount
+                      </label>
+                      {purchaseAmountEstimateLabel && !applyManualPurchaseAmount ? (
+                        <p className="rounded-lg border bg-white px-3 py-2 text-xs">{purchaseAmountEstimateLabel}</p>
+                      ) : null}
+                      {applyManualPurchaseAmount ? (
+                        <input
+                          type="text"
+                          placeholder={`Amount (${sym})`}
+                          className="w-full rounded-lg border px-3 py-2 text-sm"
+                          value={applyAmount}
+                          onChange={(e) => setApplyAmount(e.target.value)}
+                        />
+                      ) : null}
+                      <input
+                        type="text"
+                        placeholder="Vendor"
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                        value={applyVendor}
+                        onChange={(e) => setApplyVendor(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={applyBusy || applyPlanBlockedByWarehouseLoad}
+                    onClick={() => void apply()}
+                    className="mt-4 w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white disabled:opacity-50 sm:w-auto sm:px-6"
+                  >
+                    {applyBusy ? 'Applying…' : applyPlanBlockedByWarehouseLoad ? 'Loading stock…' : 'Apply plan'}
+                  </button>
+                  {(selected.status === 'approved' || selected.status === 'applied') && (
+                    <div className="mt-4 border-t border-emerald-200/80 pt-3">
+                      {sackSelect}
                       <button
                         type="button"
-                        disabled={deleteBusy}
-                        onClick={() => void deleteCancelled()}
+                        disabled={sackSaveBusy}
+                        onClick={() => void saveSackSizeOnly()}
+                        className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                      >
+                        {sackSaveBusy ? 'Saving…' : 'Save sack size'}
+                      </button>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {selected.status === 'applied' && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <p>
+                    Applied <strong>{selected.applied_feed_kg ?? '—'} kg</strong>
+                    {feedKgToSackLabel(selected.applied_feed_kg, sackKgForDisplay)
+                      ? ` (${feedKgToSackLabel(selected.applied_feed_kg, sackKgForDisplay)})`
+                      : ''}
+                    {selected.applied_by_display ? ` · ${selected.applied_by_display}` : ''}
+                    {selected.applied_at ? ` · ${formatDateOnly(selected.applied_at)}` : ''}
+                  </p>
+                  {selected.linked_expense_category === 'feed_consumed' ? (
+                    <p className="mt-1 text-xs font-medium text-emerald-800">
+                      Pond warehouse stock was reduced (feed consumed).
+                    </p>
+                  ) : selected.linked_expense_category === 'feed_purchase' ? (
+                    <p className="mt-1 text-xs font-medium text-amber-900">
+                      Purchase expense only — pond warehouse on-hand was not reduced. Apply again with “Consume pond
+                      warehouse” to deduct sacks.
+                    </p>
+                  ) : !selected.linked_expense_id ? (
+                    <p className="mt-1 text-xs text-slate-600">No linked expense / stock movement.</p>
+                  ) : null}
+                  <p className="mt-2 text-xs text-slate-600">
+                    Applied feeding advice cannot be deleted (audit trail). To undo accounting or stock, delete the
+                    linked expense below — or cancel only works on drafts before apply.
+                  </p>
+                  {selected.linked_expense_id ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/aquaculture/expenses?pond_id=${selected.pond_id}`}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
+                      >
+                        Open expenses for {selected.pond_name}
+                        <ArrowRight className="h-3 w-3" aria-hidden />
+                      </Link>
+                      <button
+                        type="button"
+                        disabled={deleteLinkedExpenseBusy}
+                        onClick={() => void deleteLinkedExpense()}
                         className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-900 hover:bg-red-100 disabled:opacity-50"
                       >
                         <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                        {deleteBusy ? 'Deleting…' : 'Delete record'}
+                        {deleteLinkedExpenseBusy
+                          ? 'Deleting…'
+                          : `Delete linked expense #${selected.linked_expense_id}`}
                       </button>
-                    )}
-                    <span className={statusPill(selected.status)}>{selected.status_label}</span>
-                  </div>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Linked expense already removed. You can record a new apply with the correct options if needed.
+                    </p>
+                  )}
                 </div>
-
-                <WorkflowRail status={selected.status} />
-                {selectedHiddenBySearch ? (
-                  <div
-                    className="rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2.5 text-xs text-amber-950"
-                    role="status"
-                  >
-                    This plan is not visible in the table because it does not match your search — clear search to
-                    highlight the row.
-                  </div>
-                ) : null}
-
-                {(selected.suggested_feed_kg ||
-                  selected.applied_feed_kg ||
-                  feedingHeuristicBlock ||
-                  worldfishBlock ||
-                  feedingScheduleBlock) && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <h3 className="text-sm font-semibold text-slate-900">Feeding dose</h3>
-                    <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-relaxed text-slate-600">
-                      <li>
-                        <span className="font-medium text-slate-800">Kg/day</span>, meal count, and suggested times use
-                        pond load, fish stage, and optional <span className="font-medium text-slate-800">water °C</span>{' '}
-                        as the weather signal.
-                      </li>
-                      <li>Re-run <strong className="font-medium text-slate-800">Generate</strong> after major sampling or weather changes.</li>
-                      <li>
-                        <span className="font-medium text-slate-800">Sack size</span> only converts kg for crews; kg stays
-                        the system of record.
-                      </li>
-                    </ul>
-
-                    {(feedingScheduleBlock?.times_per_day != null &&
-                      String(feedingScheduleBlock.times_per_day).trim() !== '') ||
-                    (worldfishBlock?.meals_hint != null && String(worldfishBlock.meals_hint).trim() !== '') ? (
-                      <div className="mt-4 space-y-4 rounded-lg border border-teal-100 bg-teal-50/60 p-3">
-                        {feedingScheduleBlock?.weather_condition_label != null &&
-                          String(feedingScheduleBlock.weather_condition_label).trim() !== '' && (
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-wide text-teal-900">
-                                Weather (water)
-                              </p>
-                              <p className="mt-1 text-sm text-slate-800">
-                                {String(feedingScheduleBlock.weather_condition_label)}
-                              </p>
-                            </div>
-                          )}
-
-                        {mealPlan.rows.length > 0 && (
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-teal-900">
-                              Daily feed plan
-                            </p>
-                            <p className="mt-1 text-xs text-slate-600">
-                              Per-meal kg (equal split when only a daily total is known) and suggested clock windows.
-                              <>
-                                {' '}
-                                Sack counts use{' '}
-                                <strong className="font-medium text-slate-800">{sackKgForDisplay} kg</strong> per sack.
-                              </>
-                            </p>
-                            <div className="mt-2 overflow-x-auto rounded-lg border border-teal-200/80 bg-white">
-                              <table className="min-w-full text-left text-sm">
-                                <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-600">
-                                  <tr>
-                                    <th className="px-3 py-2">Meal</th>
-                                    <th className="px-3 py-2">Suggested time</th>
-                                    <th className="px-3 py-2 text-right">Feed (kg)</th>
-                                    <th className="px-3 py-2 text-right">Sacks</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {mealPlan.rows.map((r) => (
-                                    <tr key={r.mealIndex} className="border-b border-slate-100">
-                                      <td className="px-3 py-2 font-medium text-slate-900">{r.mealIndex}</td>
-                                      <td className="max-w-[14rem] px-3 py-2 text-xs text-slate-700 sm:max-w-none sm:text-sm">
-                                        {r.timePlain}
-                                      </td>
-                                      <td className="px-3 py-2 text-right font-medium tabular-nums text-slate-900">
-                                        {r.kg}
-                                      </td>
-                                      <td className="px-3 py-2 text-right tabular-nums text-slate-800">
-                                        {kgCellToSackCount(r.kg, sackKgForDisplay)}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                                <tfoot className="border-t border-slate-200 bg-teal-50/50">
-                                  <tr>
-                                    <td colSpan={2} className="px-3 py-2 text-right text-xs font-semibold text-slate-700">
-                                      Total feed (plan)
-                                    </td>
-                                    <td className="px-3 py-2 text-right text-sm font-bold tabular-nums text-teal-950">
-                                      {mealPlan.totalKg != null ? `${mealPlan.totalKg} kg` : '—'}
-                                    </td>
-                                    <td className="px-3 py-2 text-right text-sm font-bold tabular-nums text-teal-950">
-                                      {mealPlan.totalKg != null
-                                        ? kgCellToSackCount(mealPlan.totalKg, sackKgForDisplay)
-                                        : '—'}
-                                    </td>
-                                  </tr>
-                                  {selected.status === 'applied' && selected.applied_feed_kg && (
-                                    <tr>
-                                      <td colSpan={2} className="px-3 py-2 text-right text-xs font-medium text-slate-600">
-                                        Applied (actual)
-                                      </td>
-                                      <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-emerald-800">
-                                        {selected.applied_feed_kg} kg
-                                      </td>
-                                      <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-emerald-800">
-                                        {kgCellToSackCount(String(selected.applied_feed_kg), sackKgForDisplay)}
-                                      </td>
-                                    </tr>
-                                  )}
-                                </tfoot>
-                              </table>
-                            </div>
-                            {feedingScheduleBlock?.per_meal_amount_summary != null &&
-                              String(feedingScheduleBlock.per_meal_amount_summary).trim() !== '' && (
-                                <p className="mt-2 text-xs text-slate-600">
-                                  <AdviceRichText
-                                    text={String(feedingScheduleBlock.per_meal_amount_summary)}
-                                  />
-                                </p>
-                              )}
-                          </div>
-                        )}
-
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-teal-900">
-                            Frequency (meals / day)
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">
-                            {String(
-                              feedingScheduleBlock?.times_per_day ??
-                                worldfishBlock?.meals_hint ??
-                                '—',
-                            )}
-                          </p>
-                          {feedingScheduleBlock?.frequency_meals_per_day != null &&
-                            typeof feedingScheduleBlock.frequency_meals_per_day === 'number' && (
-                              <p className="mt-0.5 text-xs text-slate-600">
-                                Planned split: <strong>{feedingScheduleBlock.frequency_meals_per_day}</strong> feeds
-                                (for kg and clock windows below).
-                              </p>
-                            )}
-                          {feedingScheduleBlock?.extension_table_meals_hint != null &&
-                            String(feedingScheduleBlock.extension_table_meals_hint).trim() !== '' &&
-                            String(feedingScheduleBlock.extension_table_meals_hint) !==
-                              String(feedingScheduleBlock.times_per_day) && (
-                              <p className="mt-1 text-xs text-slate-600">
-                                Extension table baseline:{' '}
-                                <span className="font-medium text-slate-800">
-                                  {String(feedingScheduleBlock.extension_table_meals_hint)}
-                                </span>
-                              </p>
-                            )}
-                        </div>
-
-                        {recommendedFeedingTimes.length > 0 && mealPlan.rows.length === 0 && (
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-teal-900">
-                              Feeding times (by weather)
-                            </p>
-                            <p className="mt-1 text-xs text-slate-600">
-                              Illustrative clock windows — adjust to your sunrise, cloud cover, and farm routine.
-                            </p>
-                            <ul className="mt-2 list-disc space-y-2 pl-4 text-xs leading-relaxed text-slate-800">
-                              {recommendedFeedingTimes.map((line, i) => (
-                                <li key={i}>
-                                  <AdviceRichText text={line} />
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        {feedingScheduleBullets.length > 0 && (
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-                              Pond &amp; fish notes
-                            </p>
-                            <ul className="mt-2 list-disc space-y-2 pl-4 text-xs leading-relaxed text-slate-700">
-                              {feedingScheduleBullets.map((b, i) => (
-                                <li key={i}>
-                                  <AdviceRichText text={b} />
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {!feedingScheduleBlock && Boolean(worldfishBlock?.meals_hint) && (
-                          <p className="text-xs text-slate-600">
-                            Re-generate this advice to capture weather-based **amount**, **frequency**, and **feeding
-                            times**.
-                          </p>
-                        )}
-                      </div>
-                    ) : null}
-
-                    <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-                      {selected.status === 'applied' && selected.applied_feed_kg ? (
-                        <>
-                          <dt className="text-slate-500">Applied feed</dt>
-                          <dd className="font-medium text-slate-900">
-                            {selected.applied_feed_kg} kg
-                            {feedKgToSackLabel(selected.applied_feed_kg, sackKgForDisplay) && (
-                              <span className="mt-0.5 block text-xs font-normal text-slate-600">
-                                {feedKgToSackLabel(selected.applied_feed_kg, sackKgForDisplay)}
-                              </span>
-                            )}
-                          </dd>
-                        </>
-                      ) : null}
-                      {selected.suggested_feed_kg ? (
-                        <>
-                          <dt className="text-slate-500">
-                            {selected.status === 'applied' ? 'Planned dose (suggested)' : 'Suggested daily feed'}
-                          </dt>
-                          <dd className="font-medium text-slate-900">
-                            {selected.suggested_feed_kg} kg
-                            {feedKgToSackLabel(selected.suggested_feed_kg, sackKgForDisplay) && (
-                              <span className="mt-0.5 block text-xs font-normal text-slate-600">
-                                {feedKgToSackLabel(selected.suggested_feed_kg, sackKgForDisplay)}
-                              </span>
-                            )}
-                          </dd>
-                        </>
-                      ) : selected.status !== 'applied' ? (
-                        <>
-                          <dt className="text-slate-500">Suggested daily feed</dt>
-                          <dd className="text-slate-600">— (add sampling or biomass to estimate kg)</dd>
-                        </>
-                      ) : null}
-                      {(feedingHeuristicBlock?.body_weight_percent_per_day != null ||
-                        worldfishBlock?.chosen_bw_pct_per_day != null) && (
-                        <>
-                          <dt className="text-slate-500">Feeding rate</dt>
-                          <dd className="font-medium text-slate-900">
-                            {String(
-                              feedingHeuristicBlock?.body_weight_percent_per_day ??
-                                worldfishBlock?.chosen_bw_pct_per_day,
-                            )}
-                            % of body weight / day
-                          </dd>
-                        </>
-                      )}
-                      {feedingScheduleBlock?.factors != null &&
-                        typeof feedingScheduleBlock.factors === 'object' &&
-                        feedingScheduleBlock.factors !== null && (
-                          <>
-                            <dt className="text-slate-500">Snapshot factors</dt>
-                            <dd className="text-xs text-slate-700">
-                              {(() => {
-                                const f = feedingScheduleBlock.factors as Record<string, unknown>
-                                const bits: string[] = []
-                                if (f.water_temp_c != null) bits.push(`water ${f.water_temp_c}°C`)
-                                if (f.pond_load_label) bits.push(`pond: ${String(f.pond_load_label)}`)
-                                else if (f.pond_load_level) bits.push(`load: ${String(f.pond_load_level)}`)
-                                if (f.fish_stage) bits.push(`stage: ${String(f.fish_stage)}`)
-                                return bits.length > 0 ? bits.join(' · ') : '—'
-                              })()}
-                            </dd>
-                          </>
-                        )}
-                      {worldfishBlock?.meals_hint != null &&
-                        String(worldfishBlock.meals_hint).trim() !== '' &&
-                        feedingScheduleBlock == null && (
-                          <>
-                            <dt className="text-slate-500">Meals (extension table)</dt>
-                            <dd className="text-slate-800">{String(worldfishBlock.meals_hint)}</dd>
-                          </>
-                        )}
-                      {worldfishBlock?.feed_form_hint != null &&
-                        String(worldfishBlock.feed_form_hint).trim() !== '' && (
-                          <>
-                            <dt className="text-slate-500">Pellet / form</dt>
-                            <dd className="text-slate-800">{String(worldfishBlock.feed_form_hint)}</dd>
-                          </>
-                        )}
-                    </dl>
-
-                    {(selected.status === 'approved' || selected.status === 'applied') && (
-                      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
-                        <p className="text-xs font-semibold text-slate-800">Sack size for field teams</p>
-                        <p className="mt-0.5 text-[11px] text-slate-600">
-                          Saved on this advice record. Workers see sack counts in the table above when set.
-                        </p>
-                        <div className="mt-2 flex flex-wrap items-end gap-3">
-                          <div className="min-w-[12rem] flex-1">{sackSelect}</div>
-                          <button
-                            type="button"
-                            disabled={sackSaveBusy}
-                            onClick={() => void saveSackSizeOnly()}
-                            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-                          >
-                            {sackSaveBusy ? 'Saving…' : 'Save sack size'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {worldfishBlock && (
-                  <details className="rounded-xl border border-teal-100 bg-teal-50/50 p-4 text-xs text-slate-700">
-                    <summary className="cursor-pointer list-none font-semibold text-teal-950 outline-none ring-teal-600/25 focus-visible:ring-2 [&::-webkit-details-marker]:hidden">
-                      <span className="inline-flex items-center gap-1">
-                        WorldFish parameters (snapshot)
-                        <span className="text-[11px] font-normal text-slate-500">— tap to expand</span>
-                      </span>
-                    </summary>
-                    <dl className="mt-3 grid gap-1 sm:grid-cols-2">
-                      {worldfishBlock.worldfish_stage != null && (
-                        <>
-                          <dt className="text-slate-500">Stage</dt>
-                          <dd className="font-medium">{String(worldfishBlock.worldfish_stage)}</dd>
-                        </>
-                      )}
-                      {worldfishBlock.mean_fish_weight_g != null && (
-                        <>
-                          <dt className="text-slate-500">Mean weight</dt>
-                          <dd className="font-medium">{String(worldfishBlock.mean_fish_weight_g)} g</dd>
-                        </>
-                      )}
-                      <dt className="text-slate-500">% BW / day (chosen)</dt>
-                      <dd className="font-medium">{String(worldfishBlock.chosen_bw_pct_per_day)}%</dd>
-                      <dt className="text-slate-500">Temperature note</dt>
-                      <dd>{String(worldfishBlock.temperature_note || '—')}</dd>
-                    </dl>
-                  </details>
-                )}
-
-                <details className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-wide text-slate-500 outline-none ring-teal-600/20 focus-visible:ring-2 [&::-webkit-details-marker]:hidden">
-                    <span className="inline-flex items-center gap-1">
-                      Original (AI-style) wording
-                      <span className="text-[11px] font-normal normal-case text-slate-500">— optional detail</span>
-                    </span>
-                  </summary>
-                  <div className="mt-2 max-h-48 overflow-y-auto rounded-lg bg-slate-50 p-3">
-                    <AdviceRichText text={selected.ai_advice_text} />
-                  </div>
-                </details>
-
-                {selected.status === 'pending_review' && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <label className="text-xs font-medium text-slate-700">Editable advice (optional override)</label>
-                    <textarea
-                      className="mt-2 min-h-[160px] w-full rounded-lg border border-slate-300 p-3 text-sm"
-                      value={editText}
-                      onChange={(e) => setEditText(e.target.value)}
-                      placeholder="Leave blank to use the original text. Or paste your manager notes here."
-                    />
-                    <div className="mt-3">{sackSelect}</div>
-                    <div className="mt-3 grid max-w-xl gap-3 sm:grid-cols-2">
-                      <label className="block text-xs font-medium text-slate-700">
-                        Daily feed (kg)
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                          value={editKg}
-                          onChange={(e) => onEditKgChange(e.target.value)}
-                        />
-                      </label>
-                      <label className="block text-xs font-medium text-slate-700">
-                        Daily feed (sacks)
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                          value={editSacks}
-                          onChange={(e) => onEditSacksChange(e.target.value)}
-                          placeholder="e.g. 4"
-                        />
-                      </label>
-                    </div>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Kg and sacks stay in sync using the sack size above; both are saved with the draft.
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={saveBusy}
-                        onClick={() => void saveEdits()}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                      >
-                        Save draft
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void approve()}
-                        className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white"
-                      >
-                        <Check className="h-4 w-4" />
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void cancelAdvice()}
-                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900"
-                      >
-                        <XCircle className="h-4 w-4" />
-                        Cancel draft
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {selected.status !== 'pending_review' && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Effective advice</p>
-                    <div className="mt-2">
-                      <AdviceRichText text={selected.effective_advice_text} />
-                    </div>
-                    {selected.suggested_feed_kg && (
-                      <p className="mt-3 text-sm text-slate-600">
-                        Feeding dose: <strong>{selected.suggested_feed_kg} kg</strong> / day
-                        {feedKgToSackLabel(selected.suggested_feed_kg, sackKgForDisplay) && (
-                          <>
-                            {' '}
-                            <span className="text-slate-700">
-                              ({feedKgToSackLabel(selected.suggested_feed_kg, sackKgForDisplay)})
-                            </span>
-                          </>
-                        )}
-                      </p>
-                    )}
-                    {selected.status === 'approved' && (
-                      <p className="mt-1 text-xs text-slate-500">
-                        Approved
-                        {selected.approved_by_display ? ` by ${selected.approved_by_display}` : ''}
-                        {selected.approved_at ? ` · ${formatDateOnly(selected.approved_at)}` : ''}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {selected.status === 'approved' && (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 shadow-sm">
-                    <h3 className="text-sm font-semibold text-emerald-950">Apply</h3>
-                    <p className="mt-1 text-xs text-emerald-900/90">
-                      Marks the plan as executed. Draw feed from the <strong>pond warehouse</strong> (pick the SKU below
-                      or use the pond default) so COGS / inventory posts at average cost. Or record a{' '}
-                      <strong>feed purchase</strong> expense (cash / off-system buy)—not both.
-                    </p>
-                    <p className="mt-2 rounded-lg border border-emerald-200/90 bg-white/70 px-3 py-2 text-[11px] leading-relaxed text-emerald-950">
-                      <strong className="font-semibold">Important:</strong> consuming here updates stock on{' '}
-                      <strong>this pond’s warehouse</strong> (see Aquaculture → pond, or Inventory → Stock by station →
-                      pond warehouse table). It does <strong>not</strong> reduce the quantity shown for a{' '}
-                      <strong>shop site</strong> such as Mynuddin — move feed to the pond first, then apply.
-                    </p>
-                    <div className="mt-3 grid max-w-xl gap-3 sm:grid-cols-2">
-                      <label className="block text-xs font-medium text-slate-700">
-                        Feed weight (kg)
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                          value={applyKg}
-                          onChange={(e) => onApplyKgChange(e.target.value)}
-                        />
-                      </label>
-                      <label className="block text-xs font-medium text-slate-700">
-                        Feed (sacks)
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                          value={applySacks}
-                          onChange={(e) => onApplySacksChange(e.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      <label className="block text-xs font-medium text-slate-700">
-                        Feed product (pond warehouse)
-                        {whStockLoading ? (
-                          <span className="ml-2 font-normal text-slate-500">Loading stock…</span>
-                        ) : null}
-                        <select
-                          className="mt-1 w-full max-w-md rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                          value={applyFeedItemId}
-                          onChange={(e) => setApplyFeedItemId(e.target.value)}
-                        >
-                          <option value="">
-                            {selected.pond_default_feed_item_id
-                              ? `Pond default — ${selected.pond_default_feed_item_name?.trim() || `Item #${selected.pond_default_feed_item_id}`}`
-                              : 'Choose a product in stock…'}
-                          </option>
-                          {pondWhStock.map((row) => (
-                            <option key={row.item_id} value={String(row.item_id)}>
-                              {row.item_name} ({row.quantity} {row.unit})
-                            </option>
-                          ))}
-                        </select>
-                        <span className="mt-1 block text-[11px] font-normal text-slate-500">
-                          On-hand lines come from this pond’s warehouse. Empty selection uses the pond default when set.
-                        </span>
-                      </label>
-                    </div>
-                    <label
-                      className={`mt-3 flex items-center gap-2 text-sm text-slate-800 ${applyCreateExp ? 'opacity-50' : ''}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={applyConsumePond && !applyCreateExp}
-                        disabled={
-                          applyCreateExp ||
-                          (!selected.pond_default_feed_item_id && pondWhStock.length === 0)
-                        }
-                        onChange={(e) => setApplyConsumePond(e.target.checked)}
-                      />
-                      Consume from pond warehouse
-                      {!selected.pond_default_feed_item_id && pondWhStock.length === 0 ? (
-                        <span className="text-xs font-normal text-amber-700">
-                          — transfer stock to this pond or set a default feed
-                        </span>
-                      ) : null}
-                    </label>
-                    <label className="mt-2 flex items-center gap-2 text-sm text-slate-800">
-                      <input
-                        type="checkbox"
-                        checked={applyCreateExp}
-                        onChange={(e) => setApplyCreateExp(e.target.checked)}
-                      />
-                      Create aquaculture expense (feed purchase)
-                    </label>
-                    {applyCreateExp && (
-                      <div className="mt-3 space-y-3">
-                        <label className="flex items-center gap-2 text-sm text-slate-800">
-                          <input
-                            type="checkbox"
-                            checked={applyManualPurchaseAmount}
-                            onChange={(e) => setApplyManualPurchaseAmount(e.target.checked)}
-                          />
-                          Override purchase amount
-                        </label>
-                        {purchaseAmountEstimateLabel != null && !applyManualPurchaseAmount ? (
-                          <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-700">
-                            <span className="font-semibold text-slate-800">System amount: </span>
-                            {purchaseAmountEstimateLabel}
-                          </p>
-                        ) : null}
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          {applyManualPurchaseAmount ? (
-                            <label className="block text-xs text-slate-600">
-                              Amount ({sym})
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                                value={applyAmount}
-                                onChange={(e) => setApplyAmount(e.target.value)}
-                              />
-                            </label>
-                          ) : null}
-                          <label
-                            className={`block text-xs text-slate-600 ${applyManualPurchaseAmount ? '' : 'sm:col-span-2'}`}
-                          >
-                            Vendor
-                            <input
-                              type="text"
-                              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                              value={applyVendor}
-                              onChange={(e) => setApplyVendor(e.target.value)}
-                            />
-                          </label>
-                          <label className="col-span-full block text-xs text-slate-600">
-                            Memo
-                            <input
-                              type="text"
-                              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                              value={applyMemo}
-                              onChange={(e) => setApplyMemo(e.target.value)}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      disabled={applyBusy || applyPlanBlockedByWarehouseLoad}
-                      title={
-                        applyPlanBlockedByWarehouseLoad
-                          ? 'Wait for pond warehouse stock to finish loading, or set a default feed on the pond.'
-                          : undefined
-                      }
-                      onClick={() => void apply()}
-                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                    >
-                      {applyBusy ? 'Applying…' : applyPlanBlockedByWarehouseLoad ? 'Loading pond stock…' : 'Apply plan'}
-                    </button>
-                  </div>
-                )}
-
-                {selected.status === 'applied' && (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                    Applied{' '}
-                    {selected.applied_feed_kg ? (
-                      <strong>
-                        {selected.applied_feed_kg} kg
-                        {feedKgToSackLabel(selected.applied_feed_kg, sackKgForDisplay) && (
-                          <span className="ml-1 font-normal text-slate-600">
-                            ({feedKgToSackLabel(selected.applied_feed_kg, sackKgForDisplay)})
-                          </span>
-                        )}
-                      </strong>
-                    ) : (
-                      <span className="text-slate-500">—</span>
-                    )}
-                    {selected.applied_by_display ? ` · ${selected.applied_by_display}` : ''}
-                    {selected.applied_at ? ` · ${formatDateOnly(selected.applied_at)}` : ''}
-                    {selected.linked_expense_id ? (
-                      <span className="ml-2">
-                        · Expense #{selected.linked_expense_id}
-                      </span>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
-        </>
-      )}
+      </div>
+
+      {/* Mobile sticky actions */}
+      {selected?.status === 'pending_review' ? (
+        <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-slate-200 bg-white/95 p-3 backdrop-blur lg:hidden">
+          <button
+            type="button"
+            onClick={() => void saveEdits()}
+            disabled={saveBusy}
+            className="flex-1 rounded-lg border border-slate-300 py-2.5 text-sm font-medium"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => void approve()}
+            className="flex-1 rounded-lg bg-sky-600 py-2.5 text-sm font-semibold text-white"
+          >
+            Approve
+          </button>
+        </div>
+      ) : null}
+      {selected?.status === 'approved' ? (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 p-3 backdrop-blur lg:hidden">
+          <button
+            type="button"
+            disabled={applyBusy || applyPlanBlockedByWarehouseLoad}
+            onClick={() => void apply()}
+            className="w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {applyBusy ? 'Applying…' : 'Apply plan'}
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
+
+
+

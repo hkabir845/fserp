@@ -2,7 +2,7 @@
  * Offset pagination helpers aligned with Django list views using `paged=1`, `skip`, `limit`.
  */
 
-export type OffsetPaged<T> = {
+type OffsetPaged<T> = {
   count: number
   skip: number
   limit: number

@@ -521,7 +521,13 @@ export default function AquacultureOverviewPage() {
         {pl ? (
           <>
             {' '}
-            · P&amp;L matches <Link href="/aquaculture/report" className="text-teal-800 underline decoration-teal-600/30">report</Link>{' '}
+            · P&amp;L matches{' '}
+            <Link
+              href="/reports?report=aquaculture-pl-management&category=aquaculture"
+              className="text-teal-800 underline decoration-teal-600/30"
+            >
+              report
+            </Link>{' '}
             scope
           </>
         ) : null}
@@ -774,7 +780,7 @@ export default function AquacultureOverviewPage() {
             <h2 className="text-sm font-semibold text-slate-900">Pond P&amp;L summary</h2>
           </div>
           <Link
-            href="/aquaculture/report"
+            href="/reports?report=aquaculture-pl-management&category=aquaculture"
             className="inline-flex items-center gap-1 text-xs font-medium text-teal-800 hover:text-teal-950"
           >
             Full report

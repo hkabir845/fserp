@@ -29,6 +29,9 @@ import {
   MapPin,
   type LucideIcon,
 } from 'lucide-react'
+import { EntityAnalyticsBreakdown } from './EntityAnalyticsBreakdown'
+import type { AquacultureAnalyticsSummary, EntityAnalyticsRow } from './analyticsEntityTypes'
+import { parseReportSiteScopeKey } from '../reportSiteScope'
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -235,7 +238,13 @@ export function FinancialAnalyticsPanel({
   const [timeseries, setTimeseries] = useState<TsRow[]>([])
   const [note, setNote] = useState<string | null>(null)
   const [filterGlStationId, setFilterGlStationId] = useState<number | null>(null)
+  const [filterGlPondId, setFilterGlPondId] = useState<number | null>(null)
+  const [filterGlPondName, setFilterGlPondName] = useState<string | null>(null)
   const [stationList, setStationList] = useState<{ id: number; station_name: string }[]>([])
+  const [pondList, setPondList] = useState<{ id: number; name: string }[]>([])
+  const [byStation, setByStation] = useState<EntityAnalyticsRow[]>([])
+  const [byPond, setByPond] = useState<EntityAnalyticsRow[]>([])
+  const [aquacultureSummary, setAquacultureSummary] = useState<AquacultureAnalyticsSummary | null>(null)
   const [profitChartView, setProfitChartView] = useState<ChartView>('bar')
 
   useEffect(() => {
@@ -281,7 +290,39 @@ export function FinancialAnalyticsPanel({
     }
   }, [selectedCompany?.id])
 
+  useEffect(() => {
+    let c = true
+    api
+      .get<{ id: number; name: string }[]>('/aquaculture/ponds/')
+      .then((r) => {
+        if (!c || !Array.isArray(r.data)) return
+        setPondList(
+          r.data.map((p) => ({
+            id: p.id,
+            name: (p.name || `Pond ${p.id}`).trim(),
+          }))
+        )
+      })
+      .catch(() => {
+        if (c) setPondList([])
+      })
+    return () => {
+      c = false
+    }
+  }, [selectedCompany?.id])
+
   const glSiteBanner = useMemo(() => {
+    if (filterGlPondId != null && filterGlPondId > 0) {
+      const name =
+        filterGlPondName?.trim() ||
+        pondList.find((p) => p.id === filterGlPondId)?.name?.trim() ||
+        `Pond #${filterGlPondId}`
+      return {
+        headline: `P&L from general ledger: ${name}`,
+        detail:
+          'Income, COGS, and expense figures in KPIs and charts use posted journal lines tagged to this pond only. Invoice, bill, and payment totals in KPIs remain company-wide.',
+      }
+    }
     if (filterGlStationId != null && filterGlStationId > 0) {
       const name =
         stationList.find((s) => s.id === filterGlStationId)?.station_name?.trim() ||
@@ -293,11 +334,11 @@ export function FinancialAnalyticsPanel({
       }
     }
     return {
-      headline: 'P&L from general ledger: All sites',
+      headline: 'P&L from general ledger: All sites & ponds',
       detail:
-        'Posted activity includes every site. Choose a site under Reports → Site scope (top of the report list) to focus one location, or ask your admin if your login is tied to a single site.',
+        'Posted activity includes every site and pond-tagged GL. Clear the site filter on Reports to see station and pond comparison charts below. Choose a station or pond to focus one location.',
     }
-  }, [filterGlStationId, stationList])
+  }, [filterGlStationId, filterGlPondId, filterGlPondName, stationList, pondList])
 
   const load = useCallback(async () => {
     const span = daysInclusiveIso(startDate, endDate)
@@ -309,9 +350,14 @@ export function FinancialAnalyticsPanel({
     setLoading(true)
     setError(null)
     try {
-      const res = await api.get('/reports/financial-analytics/', {
-        params: { start_date: startDate, end_date: endDate },
-      })
+      const scope = parseReportSiteScopeKey(reportStationKey)
+      const params: { start_date: string; end_date: string; station_id?: number; pond_id?: number } = {
+        start_date: startDate,
+        end_date: endDate,
+      }
+      if (scope.kind === 'station') params.station_id = scope.id
+      if (scope.kind === 'pond') params.pond_id = scope.id
+      const res = await api.get('/reports/financial-analytics/', { params })
       if (res.data?.kpis) {
         setKpi(res.data.kpis as KpiExtended)
       } else {
@@ -321,6 +367,12 @@ export function FinancialAnalyticsPanel({
       const fid =
         typeof rawFid === 'number' && Number.isFinite(rawFid) && rawFid > 0 ? Math.floor(rawFid) : null
       setFilterGlStationId(fid)
+      const rawPid = (res.data as { filter_pond_id?: unknown })?.filter_pond_id
+      const pid =
+        typeof rawPid === 'number' && Number.isFinite(rawPid) && rawPid > 0 ? Math.floor(rawPid) : null
+      setFilterGlPondId(pid)
+      const rawPname = (res.data as { filter_pond_name?: unknown })?.filter_pond_name
+      setFilterGlPondName(typeof rawPname === 'string' && rawPname.trim() ? rawPname.trim() : null)
       if (res.data?.profit_mix?.components) {
         setProfitMix(res.data.profit_mix as ProfitMix)
       } else {
@@ -328,12 +380,21 @@ export function FinancialAnalyticsPanel({
       }
       setTimeseries(Array.isArray(res.data?.timeseries) ? res.data.timeseries : [])
       setNote(typeof res.data?.accounting_note === 'string' ? res.data.accounting_note : null)
+      setByStation(Array.isArray(res.data?.by_station) ? (res.data.by_station as EntityAnalyticsRow[]) : [])
+      setByPond(Array.isArray(res.data?.by_pond) ? (res.data.by_pond as EntityAnalyticsRow[]) : [])
+      const aq = res.data?.aquaculture_summary as AquacultureAnalyticsSummary | undefined
+      setAquacultureSummary(aq && typeof aq.active_ponds === 'number' ? aq : null)
     } catch {
       setError('Could not load analytics. Check permissions and try again.')
       setKpi(null)
       setProfitMix(null)
       setTimeseries([])
       setFilterGlStationId(null)
+      setFilterGlPondId(null)
+      setFilterGlPondName(null)
+      setByStation([])
+      setByPond([])
+      setAquacultureSummary(null)
     } finally {
       setLoading(false)
     }
@@ -405,6 +466,9 @@ export function FinancialAnalyticsPanel({
     }))
   }, [kpi])
 
+  const showEntityBreakdowns =
+    filterGlStationId == null && filterGlPondId == null && (byStation.length > 0 || byPond.length > 0)
+
   const fiveWayRadialRows = useMemo(() => {
     if (!kpi) return []
     const vals = FIVE_WAY_SERIES.map((s) => Math.abs(kpi[s.dataKey]))
@@ -449,9 +513,14 @@ export function FinancialAnalyticsPanel({
     const payload = {
       period: { start_date: startDate, end_date: endDate },
       filter_station_id: filterGlStationId,
+      filter_pond_id: filterGlPondId,
+      filter_pond_name: filterGlPondName,
       kpis: kpi,
       profit_mix: profitMix,
       timeseries,
+      by_station: byStation,
+      by_pond: byPond,
+      aquaculture_summary: aquacultureSummary,
       accounting_note: note,
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
@@ -461,7 +530,20 @@ export function FinancialAnalyticsPanel({
     a.download = `financial-analytics-${startDate}_${endDate}.json`
     a.click()
     URL.revokeObjectURL(url)
-  }, [startDate, endDate, kpi, profitMix, timeseries, note, filterGlStationId])
+  }, [
+    startDate,
+    endDate,
+    kpi,
+    profitMix,
+    timeseries,
+    note,
+    filterGlStationId,
+    filterGlPondId,
+    filterGlPondName,
+    byStation,
+    byPond,
+    aquacultureSummary,
+  ])
 
   const downloadAnalyticsCsv = useCallback(() => {
     const lines: string[] = []
@@ -472,6 +554,10 @@ export function FinancialAnalyticsPanel({
     lines.push(`GL site scope detail,${escapeCsvCell(glSiteBanner.detail)}`)
     if (filterGlStationId != null && filterGlStationId > 0) {
       lines.push(`filter_station_id,${filterGlStationId}`)
+    }
+    if (filterGlPondId != null && filterGlPondId > 0) {
+      lines.push(`filter_pond_id,${filterGlPondId}`)
+      if (filterGlPondName) lines.push(`filter_pond_name,${escapeCsvCell(filterGlPondName)}`)
     }
     lines.push('')
     lines.push('KPIs')
@@ -498,6 +584,48 @@ export function FinancialAnalyticsPanel({
       }
     } else {
       lines.push('(no profit mix data)')
+    }
+    if (byStation.length > 0) {
+      lines.push('')
+      lines.push('By station')
+      lines.push(
+        'Station,Document sales,P&L income,COGS,P&L expenses,Gross profit,Net income'
+      )
+      for (const row of byStation) {
+        lines.push(
+          [
+            escapeCsvCell(row.entity_name),
+            row.document_sales,
+            row.pl_income,
+            row.pl_cogs,
+            row.pl_expenses,
+            row.gross_profit,
+            row.net_income,
+          ].join(',')
+        )
+      }
+    }
+    if (byPond.length > 0) {
+      lines.push('')
+      lines.push('By pond')
+      lines.push(
+        'Pond,Pond sales (register),Mgmt revenue BDT,Mgmt profit BDT,P&L income,COGS,P&L expenses,Gross profit,Net income (GL)'
+      )
+      for (const row of byPond) {
+        lines.push(
+          [
+            escapeCsvCell(row.entity_name),
+            row.document_sales,
+            row.management_revenue_bdt ?? '',
+            row.management_profit_bdt ?? '',
+            row.pl_income,
+            row.pl_cogs,
+            row.pl_expenses,
+            row.gross_profit,
+            row.net_income,
+          ].join(',')
+        )
+      }
     }
     lines.push('')
     lines.push('Time series')
@@ -533,7 +661,20 @@ export function FinancialAnalyticsPanel({
     a.download = `financial-analytics-${startDate}_${endDate}.csv`
     a.click()
     URL.revokeObjectURL(url)
-  }, [startDate, endDate, kpi, profitMix, timeseries, note, glSiteBanner, filterGlStationId])
+  }, [
+    startDate,
+    endDate,
+    kpi,
+    profitMix,
+    timeseries,
+    note,
+    glSiteBanner,
+    filterGlStationId,
+    filterGlPondId,
+    filterGlPondName,
+    byStation,
+    byPond,
+  ])
 
   return (
     <div
@@ -766,6 +907,16 @@ export function FinancialAnalyticsPanel({
                   iconClass="bg-violet-600"
                 />
               </div>
+
+              {showEntityBreakdowns ? (
+                <EntityAnalyticsBreakdown
+                  byStation={byStation}
+                  byPond={byPond}
+                  aquacultureSummary={aquacultureSummary}
+                  daysSelected={daysSelected}
+                  fmt={fmt}
+                />
+              ) : null}
 
               <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-200/50 md:p-6">
                 <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">

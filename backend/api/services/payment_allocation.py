@@ -238,6 +238,15 @@ def total_allocated_to_bill(company_id: int, bill_id: int) -> Decimal:
     return s or Decimal("0")
 
 
+def bill_open_amount(bill: Bill, company_id: int) -> Decimal:
+    """Remaining bill total not covered by vendor payment allocations."""
+    if bill.status in ("draft", "paid", "void"):
+        return Decimal("0")
+    total = bill.total or Decimal("0")
+    paid = total_allocated_to_bill(company_id, bill.id)
+    return max(Decimal("0"), total - paid)
+
+
 def total_allocated_to_bill_excluding_payment(
     company_id: int, bill_id: int, exclude_payment_id: int
 ) -> Decimal:

@@ -98,6 +98,8 @@ def admin_companies(request):
     result = []
     for c in qs:
         user_count = User.objects.filter(company_id=c.id, is_active=True).count()
+        station_count = Station.objects.filter(company_id=c.id, is_active=True).count()
+        customer_count = Customer.objects.filter(company_id=c.id).count()
         current_release = (getattr(c, "platform_release", None) or "").strip()
         release_behind = current_release != target_release
         applied = getattr(c, "platform_release_applied_at", None)
@@ -118,8 +120,8 @@ def admin_companies(request):
             "is_master": getattr(c, "is_master", "false") or "false",
             "created_at": c.created_at.isoformat() if c.created_at else None,
             "user_count": user_count,
-            "station_count": 0,
-            "customer_count": 0,
+            "station_count": station_count,
+            "customer_count": customer_count,
             "contact_person": getattr(c, "contact_person", "") or "",
             "payment_type": getattr(c, "payment_type", "") or "",
             "payment_start_date": c.payment_start_date.isoformat() if getattr(c, "payment_start_date", None) and c.payment_start_date else None,

@@ -1,4 +1,5 @@
 @echo off
 chcp 65001 >nul
-python comprehensive_system_test.py
-
+cd /d "%~dp0"
+python -m pytest tests/ -q --tb=short
+pause

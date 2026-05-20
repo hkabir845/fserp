@@ -9,7 +9,6 @@ import {
   Fish,
   Gauge,
   Landmark,
-  Package,
   RefreshCw,
   Scale,
   Sprout,
@@ -369,15 +368,6 @@ export default function PondDetailViewPage() {
   const [inventoryItems, setInventoryItems] = useState<ItemPickRow[]>([])
   const [defaultFeedSel, setDefaultFeedSel] = useState('')
   const [defaultFeedSaving, setDefaultFeedSaving] = useState(false)
-  const [defaultMedSel, setDefaultMedSel] = useState('')
-  const [defaultMedSaving, setDefaultMedSaving] = useState(false)
-  const [medItemSel, setMedItemSel] = useState('')
-  const [medQty, setMedQty] = useState('')
-  const [medDate, setMedDate] = useState(() => iso(new Date()))
-  const [medCycleId, setMedCycleId] = useState('')
-  const [medMemo, setMedMemo] = useState('')
-  const [medSaving, setMedSaving] = useState(false)
-
   const load = useCallback(async () => {
     if (!Number.isFinite(pondIdNum)) return
     setLoading(true)
@@ -496,39 +486,6 @@ export default function PondDetailViewPage() {
     else setDefaultFeedSel('')
   }, [pond?.default_feed_item_id])
 
-  useEffect(() => {
-    if (pond?.default_medicine_item_id != null) {
-      setDefaultMedSel(String(pond.default_medicine_item_id))
-      setMedItemSel(String(pond.default_medicine_item_id))
-    } else {
-      setDefaultMedSel('')
-      setMedItemSel('')
-    }
-  }, [pond?.default_medicine_item_id])
-
-  const saveDefaultMedicine = useCallback(async () => {
-    if (!Number.isFinite(pondIdNum)) return
-    setDefaultMedSaving(true)
-    try {
-      const body =
-        defaultMedSel === ''
-          ? { default_medicine_item_id: null }
-          : { default_medicine_item_id: Number.parseInt(defaultMedSel, 10) }
-      if (defaultMedSel !== '' && !Number.isFinite(body.default_medicine_item_id as number)) {
-        toast.error('Pick a valid medicine product')
-        setDefaultMedSaving(false)
-        return
-      }
-      await api.put(`/aquaculture/ponds/${pondIdNum}/`, body)
-      toast.success('Default medicine product saved')
-      void load()
-    } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not save'))
-    } finally {
-      setDefaultMedSaving(false)
-    }
-  }, [pondIdNum, defaultMedSel, load, toast])
-
   const saveDefaultFeed = useCallback(async () => {
     if (!Number.isFinite(pondIdNum)) return
     setDefaultFeedSaving(true)
@@ -551,47 +508,6 @@ export default function PondDetailViewPage() {
       setDefaultFeedSaving(false)
     }
   }, [pondIdNum, defaultFeedSel, load, toast])
-
-  const recordMedicineConsumed = useCallback(async () => {
-    if (!Number.isFinite(pondIdNum)) return
-    const iid =
-      medItemSel.trim() === ''
-        ? NaN
-        : Number.parseInt(medItemSel.trim(), 10)
-    if (!Number.isFinite(iid) || iid <= 0) {
-      toast.error('Select a medicine SKU')
-      return
-    }
-    const q = medQty.trim() === '' ? NaN : Number(medQty.replace(/,/g, ''))
-    if (!Number.isFinite(q) || q <= 0) {
-      toast.error('Enter quantity used (inventory units, e.g. bottles or vials)')
-      return
-    }
-    setMedSaving(true)
-    try {
-      const body: Record<string, unknown> = {
-        pond_id: pondIdNum,
-        item_id: iid,
-        quantity: String(q),
-        expense_category: 'medicine_consumed',
-        expense_date: medDate,
-        memo: medMemo.trim() || undefined,
-      }
-      if (medCycleId.trim() !== '') {
-        const c = Number.parseInt(medCycleId.trim(), 10)
-        if (Number.isFinite(c)) body.production_cycle_id = c
-      }
-      await api.post(`/aquaculture/pond-warehouse-consume/`, body)
-      toast.success('Medicine consumption recorded (COGS / inventory posted)')
-      setMedQty('')
-      setMedMemo('')
-      void load()
-    } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not record medicine use'))
-    } finally {
-      setMedSaving(false)
-    }
-  }, [pondIdNum, medItemSel, medQty, medDate, medCycleId, medMemo, load, toast])
 
   const sym = getCurrencySymbol(currency)
 
@@ -646,7 +562,10 @@ export default function PondDetailViewPage() {
   )
 
   const feedKgRecorded = useMemo(
-    () => expensesInPeriod.reduce((a, e) => a + parseNum(e.feed_weight_kg ?? undefined), 0),
+    () =>
+      expensesInPeriod
+        .filter((e) => e.expense_category === 'feed_consumed')
+        .reduce((a, e) => a + parseNum(e.feed_weight_kg ?? undefined), 0),
     [expensesInPeriod],
   )
 
@@ -1087,7 +1006,17 @@ export default function PondDetailViewPage() {
                 <p className="text-xs font-semibold text-slate-800">Recent pond warehouse use</p>
                 <p className="mt-0.5 text-[11px] leading-relaxed text-slate-600">
                   Feed or medicine <strong className="font-medium text-slate-800">consumed</strong> at this pond
-                  (including from <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline">feeding advice apply</Link>
+                  (including from{' '}
+                  <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline">
+                    feeding advice apply
+                  </Link>{' '}
+                  and{' '}
+                  <Link
+                    href={`/aquaculture/medicine?pond_id=${pondIdNum}`}
+                    className="font-medium text-violet-800 underline"
+                  >
+                    medicine events
+                  </Link>
                   ). Shown from the latest pond expenses — not filtered by the dashboard period above. Click{' '}
                   <strong className="font-medium text-slate-800">Refresh stock</strong> after applying advice on another
                   tab so quantities match the server.
@@ -1149,110 +1078,16 @@ export default function PondDetailViewPage() {
                 {defaultFeedSaving ? 'Saving…' : 'Save default feed'}
               </button>
             </div>
-            <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
-              <label className="block min-w-[220px] text-xs font-medium text-slate-700">
-                Default medicine SKU (pond consume shortcut)
-                <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
-                  value={defaultMedSel}
-                  onChange={(e) => setDefaultMedSel(e.target.value)}
-                >
-                  <option value="">None</option>
-                  {inventoryItems.map((it) => (
-                    <option key={it.id} value={it.id}>
-                      {it.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                disabled={defaultMedSaving}
-                onClick={() => void saveDefaultMedicine()}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {defaultMedSaving ? 'Saving…' : 'Save default medicine'}
-              </button>
-            </div>
-            <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50/80 p-4">
-              <h3 className="flex items-center gap-2 text-xs font-semibold text-slate-800">
-                <Package className="h-4 w-4 text-slate-500" aria-hidden />
-                Record medicine used (pond warehouse)
-              </h3>
-              <p className="mt-1 text-xs text-slate-600">
-                Same accounting as feed consumed: average-cost COGS and inventory reduction. Quantity is in the product&apos;s
-                stock unit (e.g. bottle, vial, kg).
+            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-violet-100 bg-violet-50/80 px-3 py-2.5">
+              <p className="text-xs text-violet-950">
+                Record treatments and default medicine SKU on the dedicated page.
               </p>
-              <div className="mt-3 flex flex-wrap items-end gap-3">
-                <label className="block min-w-[200px] text-xs font-medium text-slate-700">
-                  Product
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
-                    value={medItemSel}
-                    onChange={(e) => setMedItemSel(e.target.value)}
-                  >
-                    <option value="">Select…</option>
-                    {inventoryItems.map((it) => (
-                      <option key={it.id} value={it.id}>
-                        {it.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block min-w-[100px] text-xs font-medium text-slate-700">
-                  Quantity
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm tabular-nums"
-                    value={medQty}
-                    onChange={(e) => setMedQty(e.target.value)}
-                    placeholder="0"
-                  />
-                </label>
-                <label className="block min-w-[140px] text-xs font-medium text-slate-700">
-                  Date
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
-                    value={medDate}
-                    onChange={(e) => setMedDate(e.target.value)}
-                  />
-                </label>
-                <label className="block min-w-[180px] text-xs font-medium text-slate-700">
-                  Production cycle (optional)
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
-                    value={medCycleId}
-                    onChange={(e) => setMedCycleId(e.target.value)}
-                  >
-                    <option value="">—</option>
-                    {cycles.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <label className="mt-3 block text-xs font-medium text-slate-700">
-                Memo (optional)
-                <input
-                  type="text"
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
-                  value={medMemo}
-                  onChange={(e) => setMedMemo(e.target.value)}
-                  placeholder="e.g. Day 3 treatment"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={medSaving}
-                onClick={() => void recordMedicineConsumed()}
-                className="mt-3 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+              <Link
+                href={`/aquaculture/medicine?pond_id=${pondIdNum}`}
+                className="inline-flex items-center gap-1 rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800"
               >
-                {medSaving ? 'Recording…' : 'Record medicine consumption'}
-              </button>
+                Medicine events →
+              </Link>
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[360px] text-left text-sm">

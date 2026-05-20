@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
@@ -10,112 +10,18 @@ import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
-import { roundDecimalInputString } from '@/utils/inputDecimals'
-
-interface Pond {
-  id: number
-  name: string
-}
-interface IncomeTypeOpt {
-  id: string
-  label: string
-  tenant_defined?: boolean
-  maps_to_code?: string | null
-  non_biological_sale?: boolean
-}
-interface FishSpeciesOpt {
-  id: string
-  label: string
-}
-interface CycleRow {
-  id: number
-  name: string
-}
-interface SaleRow {
-  id: number
-  pond_id: number
-  pond_name: string
-  production_cycle_id?: number | null
-  production_cycle_name?: string
-  income_type?: string
-  income_type_label?: string
-  fish_species?: string
-  fish_species_other?: string
-  fish_species_label?: string
-  sale_date: string
-  weight_kg: string
-  fish_count: number | null
-  total_amount: string
-  buyer_name: string
-  memo: string
-  invoice_id?: number | null
-  invoice_number?: string | null
-  accounting_posted?: boolean
-}
-
-/** Matches backend NON_BIOLOGICAL_POND_SALE_INCOME_TYPES — not counted as fish leaving the pond. */
-const NON_BIOLOGICAL_INCOME_TYPES = new Set([
-  'empty_feed_sack_sale',
-  'used_material_sale',
-  'rejected_material_sale',
-  'used_equipment_sale',
-])
-
-function isNonFishSaleIncome(incomeType: string | undefined, types: IncomeTypeOpt[]): boolean {
-  if (!incomeType) return false
-  const row = types.find((t) => t.id === incomeType)
-  if (row && typeof row.non_biological_sale === 'boolean') return row.non_biological_sale
-  return NON_BIOLOGICAL_INCOME_TYPES.has(incomeType)
-}
-
-/** Fish per kg (pcs/kg) from harvest sale weight and head count. */
-function fishPerKg(weightKg: number, fishCount: number | null | undefined): number | null {
-  if (fishCount == null || fishCount <= 0 || !Number.isFinite(weightKg) || weightKg <= 0) return null
-  return fishCount / weightKg
-}
-
-interface CustomerSuggestion {
-  id: number
-  display_name?: string | null
-  company_name?: string | null
-  first_name?: string | null
-  is_active?: boolean
-}
-
-function customerPickLabel(c: CustomerSuggestion): string {
-  const d = (c.display_name || '').trim()
-  if (d) return d
-  const co = (c.company_name || '').trim()
-  if (co) return co
-  const f = (c.first_name || '').trim()
-  if (f) return f
-  return `Customer #${c.id}`
-}
-
-function normalizeCustomersFromApi(data: unknown): CustomerSuggestion[] {
-  let rows: unknown[] = []
-  if (Array.isArray(data)) rows = data
-  else if (data && typeof data === 'object') {
-    const o = data as Record<string, unknown>
-    if (Array.isArray(o.results)) rows = o.results
-  }
-  return rows
-    .filter((row): row is Record<string, unknown> => row != null && typeof row === 'object')
-    .flatMap((r) => {
-      const id = typeof r.id === 'number' ? r.id : Number(r.id)
-      if (!Number.isFinite(id)) return []
-      if (r.is_active === false) return []
-      return [
-        {
-          id,
-          display_name: r.display_name != null ? String(r.display_name) : null,
-          company_name: r.company_name != null ? String(r.company_name) : null,
-          first_name: r.first_name != null ? String(r.first_name) : null,
-          is_active: r.is_active !== false,
-        },
-      ]
-    })
-}
+import { AquacultureSaleFormModal } from './AquacultureSaleFormModal'
+import {
+  type CustomerSuggestion,
+  type FishSpeciesOpt,
+  type IncomeTypeOpt,
+  type Pond,
+  type SaleRow,
+  customerPickLabel,
+  fishPerKg,
+  isNonFishSaleIncome,
+  normalizeCustomersFromApi,
+} from './aquacultureSaleShared'
 
 export default function AquacultureSalesPage() {
   const toast = useToast()
@@ -123,7 +29,6 @@ export default function AquacultureSalesPage() {
   const [ponds, setPonds] = useState<Pond[]>([])
   const [incomeTypes, setIncomeTypes] = useState<IncomeTypeOpt[]>([])
   const [fishSpecies, setFishSpecies] = useState<FishSpeciesOpt[]>([])
-  const [cycles, setCycles] = useState<CycleRow[]>([])
   const [rows, setRows] = useState<SaleRow[]>([])
   const [loading, setLoading] = useState(true)
   const [currency, setCurrency] = useState('BDT')
@@ -137,23 +42,6 @@ export default function AquacultureSalesPage() {
   const [finalizeCustomerId, setFinalizeCustomerId] = useState('')
   const [finalizePaymentMethod, setFinalizePaymentMethod] = useState('cash')
   const [finalizeDueDate, setFinalizeDueDate] = useState('')
-  const [form, setForm] = useState({
-    pond_id: '',
-    production_cycle_id: '',
-    income_type: 'fish_harvest_sale',
-    fish_species: 'tilapia',
-    fish_species_other: '',
-    sale_date: '',
-    weight_kg: '',
-    fish_per_kg: '',
-    fish_count: '',
-    sale_price_per_kg: '',
-    total_amount: '',
-    buyer_name: '',
-    memo: '',
-  })
-  const nonFishForm = isNonFishSaleIncome(form.income_type, incomeTypes)
-
   const loadPonds = useCallback(async () => {
     try {
       const [co, pRes, iRes, spRes, custRes] = await Promise.all([
@@ -174,50 +62,6 @@ export default function AquacultureSalesPage() {
       toast.error(extractErrorMessage(e, 'Could not load ponds'))
     }
   }, [toast])
-
-  useEffect(() => {
-    const pid = form.pond_id
-    if (!modal || !pid) {
-      setCycles([])
-      return
-    }
-    void (async () => {
-      try {
-        const { data } = await api.get<CycleRow[]>('/aquaculture/production-cycles/', { params: { pond_id: pid } })
-        setCycles(Array.isArray(data) ? data : [])
-      } catch {
-        setCycles([])
-      }
-    })()
-  }, [modal, form.pond_id])
-
-  /** Heads = weight (kg) × fish per kg; synced whenever weight or density changes (fish lines only). */
-  useEffect(() => {
-    if (!modal || nonFishForm) return
-    const fpkTrim = form.fish_per_kg.trim()
-    const wn = Number(form.weight_kg)
-    if (fpkTrim === '' || !Number.isFinite(wn) || wn <= 0) {
-      setForm((f) => (f.fish_count === '' ? f : { ...f, fish_count: '' }))
-      return
-    }
-    const fpkn = Number(fpkTrim)
-    if (!Number.isFinite(fpkn) || fpkn <= 0) return
-    const heads = Math.round(wn * fpkn)
-    const next = heads > 0 ? String(heads) : ''
-    setForm((f) => (f.fish_count === next ? f : { ...f, fish_count: next }))
-  }, [modal, nonFishForm, form.weight_kg, form.fish_per_kg])
-
-  /** Total = quantity (kg or units in weight field) × sale / unit price when price is set. */
-  useEffect(() => {
-    if (!modal) return
-    const pTrim = String(form.sale_price_per_kg).trim()
-    if (pTrim === '') return
-    const q = Number(String(form.weight_kg).trim())
-    const p = Number(pTrim.replace(/,/g, ''))
-    if (!Number.isFinite(q) || q <= 0 || !Number.isFinite(p) || p < 0) return
-    const next = roundDecimalInputString(String(q * p), 2)
-    setForm((f) => (f.total_amount === next ? f : { ...f, total_amount: next }))
-  }, [modal, form.weight_kg, form.sale_price_per_kg])
 
   const loadRows = useCallback(async () => {
     setLoading(true)
@@ -248,51 +92,9 @@ export default function AquacultureSalesPage() {
   }, [loadRows])
 
   const sym = getCurrencySymbol(currency)
-  const draftWeightKg = Number(form.weight_kg)
-  const draftFishPerKgInput = Number(String(form.fish_per_kg).trim())
-  const draftFishCount =
-    form.fish_count.trim() === '' ? null : parseInt(form.fish_count.trim(), 10)
-  /** Shown on harvest lines: explicit fish/kg input, or implied from stored heads ÷ weight when editing. */
-  const draftFishPerKgForHint =
-    !nonFishForm && form.income_type === 'fish_harvest_sale'
-      ? Number.isFinite(draftFishPerKgInput) && draftFishPerKgInput > 0
-        ? draftFishPerKgInput
-        : draftFishCount != null &&
-            Number.isFinite(draftFishCount) &&
-            draftFishCount > 0 &&
-            Number.isFinite(draftWeightKg) &&
-            draftWeightKg > 0
-          ? fishPerKg(draftWeightKg, draftFishCount)
-          : null
-      : null
-  const speciesOptionsForFish = (fishSpecies.length ? fishSpecies : [{ id: 'tilapia', label: 'Tilapia' }]).filter(
-    (s) => s.id !== 'not_applicable'
-  )
 
   const openNew = () => {
     setEditing(null)
-    const today = new Date().toISOString().slice(0, 10)
-    const defaultPond =
-      filterPond && ponds.some((p) => String(p.id) === filterPond)
-        ? filterPond
-        : ponds[0]
-          ? String(ponds[0].id)
-          : ''
-    setForm({
-      pond_id: defaultPond,
-      production_cycle_id: '',
-      income_type: 'fish_harvest_sale',
-      fish_species: 'tilapia',
-      fish_species_other: '',
-      sale_date: today,
-      weight_kg: '',
-      fish_per_kg: '',
-      fish_count: '',
-      sale_price_per_kg: '',
-      total_amount: '',
-      buyer_name: '',
-      memo: '',
-    })
     setModal(true)
   }
 
@@ -302,115 +104,7 @@ export default function AquacultureSalesPage() {
       return
     }
     setEditing(r)
-    const wk = Number(r.weight_kg)
-    const taNum = Number(r.total_amount)
-    const derivedSalePrice =
-      Number.isFinite(wk) && wk > 0 && Number.isFinite(taNum) && taNum >= 0
-        ? roundDecimalInputString(String(taNum / wk), 4)
-        : ''
-    const derivedPerKg =
-      r.fish_count != null && r.fish_count > 0 && Number.isFinite(wk) && wk > 0
-        ? fishPerKg(wk, r.fish_count)
-        : null
-    setForm({
-      pond_id: String(r.pond_id),
-      production_cycle_id: r.production_cycle_id != null ? String(r.production_cycle_id) : '',
-      income_type: r.income_type || 'fish_harvest_sale',
-      fish_species: r.fish_species || 'tilapia',
-      fish_species_other: r.fish_species_other || '',
-      sale_date: r.sale_date.slice(0, 10),
-      weight_kg: r.weight_kg,
-      fish_per_kg: derivedPerKg != null ? String(derivedPerKg) : '',
-      fish_count: r.fish_count != null ? String(r.fish_count) : '',
-      sale_price_per_kg: derivedSalePrice,
-      total_amount: r.total_amount,
-      buyer_name: r.buyer_name || '',
-      memo: r.memo || '',
-    })
     setModal(true)
-  }
-
-  const save = async () => {
-    if (!form.pond_id || !form.sale_date) {
-      toast.error('Pond and sale date are required')
-      return
-    }
-    const wk = Number(form.weight_kg)
-    const nonFish = isNonFishSaleIncome(form.income_type, incomeTypes)
-    if (!Number.isFinite(wk) || wk <= 0) {
-      toast.error(nonFish ? 'Quantity must be a positive number' : 'Weight (kg) must be a positive number')
-      return
-    }
-    const pTrim = form.sale_price_per_kg.trim().replace(/,/g, '')
-    let ta: number
-    if (pTrim !== '') {
-      const price = Number(pTrim)
-      if (!Number.isFinite(price) || price < 0) {
-        toast.error(nonFish ? 'Unit price must be zero or a positive number' : 'Sale price per kg must be zero or a positive number')
-        return
-      }
-      ta = Math.round(wk * price * 100) / 100
-    } else {
-      ta = Number(form.total_amount)
-    }
-    if (!Number.isFinite(ta) || ta < 0) {
-      toast.error(pTrim !== '' ? 'Total could not be calculated — check quantity and price' : 'Total amount must be zero or positive')
-      return
-    }
-    if (pTrim === '' && form.total_amount.trim() === '') {
-      toast.error('Enter price per kg or unit price (total is calculated) or type a total amount')
-      return
-    }
-    const payload: Record<string, unknown> = {
-      pond_id: parseInt(form.pond_id, 10),
-      sale_date: form.sale_date,
-      weight_kg: wk,
-      total_amount: ta,
-      income_type: form.income_type,
-      fish_species: nonFish ? 'not_applicable' : form.fish_species,
-      buyer_name: form.buyer_name.trim(),
-      memo: form.memo.trim(),
-    }
-    if (!nonFish && form.fish_species === 'other') {
-      payload.fish_species_other = form.fish_species_other.trim()
-    }
-    if (form.production_cycle_id) {
-      payload.production_cycle_id = parseInt(form.production_cycle_id, 10)
-    }
-    if (!nonFish) {
-      const fpkTrim = form.fish_per_kg.trim()
-      const fpkn = Number(fpkTrim)
-      if (fpkTrim === '' || !Number.isFinite(fpkn) || fpkn <= 0) {
-        toast.error('Fish per kg (pieces per kg) is required and must be a positive number')
-        return
-      }
-      if (form.fish_count.trim() === '') {
-        toast.error('Total fish (heads) could not be calculated — check weight and fish per kg')
-        return
-      }
-      const n = parseInt(form.fish_count, 10)
-      if (!Number.isFinite(n) || n <= 0) {
-        toast.error('Fish count must be a positive integer')
-        return
-      }
-      payload.fish_count = n
-    }
-    if (nonFish) {
-      payload.fish_count = null
-    }
-    try {
-      if (editing) {
-        await api.put(`/aquaculture/sales/${editing.id}/`, payload)
-        toast.success('Updated')
-      } else {
-        await api.post('/aquaculture/sales/', payload)
-        toast.success('Saved')
-      }
-      setModal(false)
-      void loadRows()
-    } catch (e) {
-      toast.error(extractErrorMessage(e, 'Save failed'))
-    }
   }
 
   const remove = async (r: SaleRow) => {
@@ -480,7 +174,7 @@ export default function AquacultureSalesPage() {
 
   return (
     <div className="w-full min-w-0 px-4 py-6 sm:px-6 lg:px-8">
-      <datalist id="aquaculture-customer-suggestions">
+      <datalist id="aq-sale-customer-suggestions">
         {customers.map((c) => (
           <option key={c.id} value={customerPickLabel(c)} />
         ))}
@@ -501,15 +195,16 @@ export default function AquacultureSalesPage() {
             Pond &amp; fish sales
           </h1>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Biological harvest and pond revenue by species (separate lines for different prices), plus pond-side income such
+            Record one buyer visit with multiple lines — different species, or the same species from different production
+            cycles (size and price). Plus pond-side income such
             as empty feed sacks and sales of used or scrap materials. Use{' '}
             <Link href="/cashier" className="font-medium text-teal-800 underline">
               Cashier
             </Link>{' '}
-            for packaged retail over the counter—this screen is the operational record for fish leaving ponds (kg, head)
+            for packaged retail over the counterâ€”this screen is the operational record for fish leaving ponds (kg, head)
             and aquaculture revenue. Use income type to classify each line; feed purchases stay on Expenses. Use{' '}
             <strong className="font-medium text-slate-800">Record to books</strong> on a row to create the invoice and GL
-            entry (aquaculture revenue 4240–4244, cash or A/R).
+            entry (aquaculture revenue 4240â€“4244, cash or A/R).
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -539,7 +234,7 @@ export default function AquacultureSalesPage() {
             className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
-            Add sale
+            Record sale
           </button>
         </div>
       </div>
@@ -625,23 +320,23 @@ export default function AquacultureSalesPage() {
                 <tr key={r.id} className="border-b border-slate-100">
                   <td className="px-2 py-2 whitespace-nowrap align-top">{formatDateOnly(r.sale_date)}</td>
                   <td className="min-w-0 break-words px-2 py-2 align-top text-slate-800">{r.pond_name}</td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-600">{r.production_cycle_name || '—'}</td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-700">{r.income_type_label || r.income_type || '—'}</td>
+                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-600">{r.production_cycle_name || 'â€”'}</td>
+                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-700">{r.income_type_label || r.income_type || 'â€”'}</td>
                   <td className="min-w-0 break-words px-2 py-2 align-top text-slate-700">
-                    {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? '—' : r.fish_species_label || '—'}
+                    {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? 'â€”' : r.fish_species_label || 'â€”'}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums align-top">{formatNumber(Number(r.weight_kg))}</td>
                   <td className="px-2 py-2 text-right tabular-nums align-top">
-                    {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? '—' : (r.fish_count ?? '—')}
+                    {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? 'â€”' : (r.fish_count ?? 'â€”')}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums align-top text-slate-600">
-                    {rowFishPerKg != null ? formatNumber(rowFishPerKg) : '—'}
+                    {rowFishPerKg != null ? formatNumber(rowFishPerKg) : 'â€”'}
                   </td>
                   <td className="px-2 py-2 text-right font-medium tabular-nums align-top">
                     {sym}
                     {formatNumber(Number(r.total_amount))}
                   </td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top">{r.buyer_name || '—'}</td>
+                  <td className="min-w-0 break-words px-2 py-2 align-top">{r.buyer_name || 'â€”'}</td>
                   <td className="min-w-0 px-2 py-2 align-top text-xs">
                     {r.accounting_posted && r.invoice_number ? (
                       <span className="inline-flex flex-col gap-0.5 break-words">
@@ -657,7 +352,7 @@ export default function AquacultureSalesPage() {
                         </Link>
                       </span>
                     ) : (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-slate-400">â€”</span>
                     )}
                   </td>
                   <td className="min-w-0 px-2 py-2 align-top">
@@ -706,268 +401,18 @@ export default function AquacultureSalesPage() {
         </div>
       )}
 
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold">{editing ? 'Edit sale' : 'New sale'}</h2>
-            <div className="mt-4 space-y-5">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where &amp; what</p>
-                <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                  <label className="block text-sm font-medium text-slate-700 sm:col-span-1">
-                    Pond <span className="text-red-600">*</span>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                      value={form.pond_id}
-                      onChange={(e) => setForm((f) => ({ ...f, pond_id: e.target.value, production_cycle_id: '' }))}
-                    >
-                      {ponds.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-sm font-medium text-slate-700 sm:col-span-1">
-                    Production cycle
-                    <span className="block text-xs font-normal text-slate-500">Optional</span>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                      value={form.production_cycle_id}
-                      onChange={(e) => setForm((f) => ({ ...f, production_cycle_id: e.target.value }))}
-                    >
-                      <option value="">None</option>
-                      {cycles.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <label className="mt-3 block text-sm font-medium text-slate-700">
-                  Income type
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                    value={form.income_type}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      setForm((f) => ({
-                        ...f,
-                        income_type: v,
-                        fish_species: isNonFishSaleIncome(v, incomeTypes)
-                          ? 'not_applicable'
-                          : f.fish_species === 'not_applicable'
-                            ? 'tilapia'
-                            : f.fish_species,
-                        fish_species_other: isNonFishSaleIncome(v, incomeTypes) ? '' : f.fish_species_other,
-                        fish_per_kg: isNonFishSaleIncome(v, incomeTypes) ? '' : f.fish_per_kg,
-                        fish_count: isNonFishSaleIncome(v, incomeTypes) ? '' : f.fish_count,
-                      }))
-                    }}
-                  >
-                    {incomeTypes.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {nonFishForm ? (
-                  <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
-                    Enter quantity in the weight/quantity field (e.g. sacks, pieces, or kg). This line does not reduce
-                    biological fish stock.
-                  </p>
-                ) : null}
-                {!nonFishForm ? (
-                  <label className="mt-3 block text-sm font-medium text-slate-700">
-                    Fish species
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                      value={form.fish_species}
-                      onChange={(e) =>
-                        setForm((f) => ({
-                          ...f,
-                          fish_species: e.target.value,
-                          fish_species_other: e.target.value === 'other' ? f.fish_species_other : '',
-                        }))
-                      }
-                    >
-                      {speciesOptionsForFish.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                {!nonFishForm && form.fish_species === 'other' ? (
-                  <label className="mt-3 block text-sm font-medium text-slate-700">
-                    Other species name
-                    <input
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                      placeholder="e.g. local name"
-                      value={form.fish_species_other}
-                      onChange={(e) => setForm((f) => ({ ...f, fish_species_other: e.target.value }))}
-                    />
-                  </label>
-                ) : null}
-              </div>
-
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">When &amp; amounts</p>
-                <label className="mt-2 block text-sm font-medium text-slate-700">
-                  Sale date <span className="text-red-600">*</span>
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                    value={form.sale_date}
-                    onChange={(e) => setForm((f) => ({ ...f, sale_date: e.target.value }))}
-                  />
-                </label>
-                {!nonFishForm ? (
-                  <>
-                    <p className="mt-4 text-xs font-medium text-slate-600">Fish quantity</p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      Enter total weight and how many fish pieces are in one kilogram. Heads = weight (kg) × fish per
-                      kg (rounded to whole fish).
-                    </p>
-                    <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                      <label className="block text-sm font-medium text-slate-700">
-                        Total weight (kg) <span className="text-red-600">*</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.0001"
-                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                          value={form.weight_kg}
-                          onChange={(e) => setForm((f) => ({ ...f, weight_kg: e.target.value }))}
-                        />
-                      </label>
-                      <label className="block text-sm font-medium text-slate-700">
-                        Fish per kg <span className="text-red-600">*</span>
-                        <span className="block text-xs font-normal text-slate-500">Pieces per 1 kg</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.0001"
-                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                          value={form.fish_per_kg}
-                          onChange={(e) => setForm((f) => ({ ...f, fish_per_kg: e.target.value }))}
-                          placeholder="e.g. 8"
-                        />
-                      </label>
-                    </div>
-                    <label className="mt-3 block text-sm font-medium text-slate-700">
-                      Total fish (heads)
-                      <input
-                        type="text"
-                        readOnly
-                        tabIndex={-1}
-                        aria-live="polite"
-                        className="mt-1 w-full cursor-default rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800 tabular-nums"
-                        value={form.fish_count || '—'}
-                        placeholder="—"
-                      />
-                      {form.income_type === 'fish_harvest_sale' && draftFishPerKgForHint != null ? (
-                        <span className="mt-1 block text-xs font-normal leading-relaxed text-slate-500">
-                          Harvest lines use this density for biomass sampling (same sale date):{' '}
-                          <span className="font-medium text-slate-700">{formatNumber(draftFishPerKgForHint)} fish/kg</span>
-                        </span>
-                      ) : null}
-                    </label>
-                  </>
-                ) : (
-                  <label className="mt-3 block text-sm font-medium text-slate-700">
-                    Quantity (sacks, pieces, or kg) <span className="text-red-600">*</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.0001"
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                      value={form.weight_kg}
-                      onChange={(e) => setForm((f) => ({ ...f, weight_kg: e.target.value }))}
-                    />
-                  </label>
-                )}
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <label className="block text-sm font-medium text-slate-700">
-                    {nonFishForm ? <>Unit price ({sym})</> : <>Sale price per kg ({sym})</>}
-                    <span className="block text-xs font-normal text-slate-500">
-                      {nonFishForm
-                        ? 'Multiplied by the quantity above (per sack, piece, or kg as entered).'
-                        : 'Multiplied by total weight (kg). Leave empty to type total manually.'}
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.0001"
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                      value={form.sale_price_per_kg}
-                      onChange={(e) => setForm((f) => ({ ...f, sale_price_per_kg: e.target.value }))}
-                      placeholder={nonFishForm ? 'e.g. price per unit' : 'e.g. 120'}
-                    />
-                  </label>
-                  <label className="block text-sm font-medium text-slate-700">
-                    Total amount ({sym}) <span className="text-red-600">*</span>
-                    <span className="block text-xs font-normal text-slate-500">
-                      {form.sale_price_per_kg.trim() !== ''
-                        ? 'Auto: quantity × price'
-                        : 'Enter price left, or type total here'}
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      readOnly={form.sale_price_per_kg.trim() !== ''}
-                      tabIndex={form.sale_price_per_kg.trim() !== '' ? -1 : undefined}
-                      className={`mt-1 w-full rounded-lg border px-3 py-2 tabular-nums ${
-                        form.sale_price_per_kg.trim() !== ''
-                          ? 'cursor-default border-slate-200 bg-slate-50 text-slate-800'
-                          : 'border-slate-300 bg-white'
-                      }`}
-                      value={form.total_amount}
-                      onChange={(e) => setForm((f) => ({ ...f, total_amount: e.target.value }))}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Buyer &amp; notes</p>
-                <label className="mt-2 block text-sm font-medium text-slate-700">
-                  Buyer / customer
-                  <input
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                    list="aquaculture-customer-suggestions"
-                    autoComplete="off"
-                    placeholder={customers.length ? 'Pick from list or type a name' : 'Type buyer name'}
-                    value={form.buyer_name}
-                    onChange={(e) => setForm((f) => ({ ...f, buyer_name: e.target.value }))}
-                  />
-                </label>
-                <label className="mt-3 block text-sm font-medium text-slate-700">
-                  Memo
-                  <textarea
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                    rows={2}
-                    value={form.memo}
-                    onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))}
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setModal(false)} className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100">
-                Cancel
-              </button>
-              <button type="button" onClick={() => void save()} className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white">
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AquacultureSaleFormModal
+        open={modal}
+        editing={editing}
+        ponds={ponds}
+        incomeTypes={incomeTypes}
+        fishSpecies={fishSpecies}
+        customers={customers}
+        currency={currency}
+        defaultPondId={filterPond}
+        onClose={() => setModal(false)}
+        onSaved={() => void loadRows()}
+      />
 
       {finalizeRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -1050,7 +495,7 @@ export default function AquacultureSalesPage() {
                     onChange={(e) => setFinalizeCustomerId(e.target.value)}
                     required
                   >
-                    <option value="">Select customer…</option>
+                    <option value="">Select customerâ€¦</option>
                     {creditCustomerOptions.map((c) => (
                       <option key={c.id} value={c.id}>
                         {customerPickLabel(c)}
@@ -1058,7 +503,7 @@ export default function AquacultureSalesPage() {
                     ))}
                   </select>
                   <span className="mt-1 block text-xs text-slate-500">
-                    Or link the pond to a POS customer under Ponds — it will be used if you leave this empty (on
+                    Or link the pond to a POS customer under Ponds â€” it will be used if you leave this empty (on
                     account only).
                   </span>
                 </label>

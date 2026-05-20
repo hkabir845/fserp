@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 
 from api.models import (
+    AquacultureBiomassSample,
     AquacultureExpense,
     AquacultureExpenseInventoryLine,
     AquacultureFishSale,
@@ -126,6 +127,35 @@ def test_cleanup_fish_sale_deletes_linked_invoice(company_tenant):
     assert ok, err
     assert not Invoice.objects.filter(pk=inv_id).exists()
     assert not JournalEntry.objects.filter(entry_number=f"AUTO-INV-{inv_id}-SALE").exists()
+
+
+@pytest.mark.django_db
+def test_create_fish_harvest_sale_via_api_syncs_biomass_sample(
+    api_client, company_tenant, auth_admin_headers
+):
+    """POST harvest sale must not 500 — biomass sync calls apply_aquaculture_biomass_sample_extrapolation."""
+    _enable_aq(company_tenant)
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="Sale-API", is_active=True)
+    r = api_client.post(
+        "/api/aquaculture/sales/",
+        data=json.dumps(
+            {
+                "pond_id": pond.id,
+                "income_type": "fish_harvest_sale",
+                "fish_species": "tilapia",
+                "sale_date": "2026-05-19",
+                "weight_kg": "4000",
+                "fish_count": 12000,
+                "total_amount": "640000.00",
+                "buyer_name": "Rajon",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    sale_id = json.loads(r.content.decode())["id"]
+    assert AquacultureBiomassSample.objects.filter(source_fish_sale_id=sale_id).exists()
 
 
 @pytest.mark.django_db

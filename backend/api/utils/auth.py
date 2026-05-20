@@ -80,13 +80,13 @@ def auth_required(view_func):
             request.api_user = user
             return view_func(request, *args, **kwargs)
         except Exception as e:
-            logger.exception("auth_required wrapper failed")
+            logger.exception("auth_required view failed after authentication")
             if getattr(settings, "DEBUG", False):
                 return JsonResponse(
-                    {"detail": "Authentication or request failed", "error": str(e)},
+                    {"detail": "Request failed", "error": str(e)},
                     status=500,
                 )
-            return JsonResponse({"detail": "Authentication or request failed"}, status=500)
+            return JsonResponse({"detail": "Request failed"}, status=500)
     return wrapped
 
 

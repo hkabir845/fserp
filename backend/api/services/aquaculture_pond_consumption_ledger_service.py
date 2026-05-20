@@ -66,6 +66,7 @@ def compute_pond_warehouse_consumption_rows(
             pond_id__isnull=False,
         )
         .select_related("pond", "production_cycle", "source_station")
+        .prefetch_related("inventory_lines__item")
     )
     if pond_id is not None:
         qs = qs.filter(pond_id=pond_id)
@@ -120,6 +121,18 @@ def compute_pond_warehouse_consumption_rows(
         source_doc = (
             f"Feeding advice #{adv.id}" if adv else f"Pond consumption #{x.id}"
         )
+        inv_lines = list(x.inventory_lines.all())
+        item_id: int | None = None
+        item_name = ""
+        quantity: str | None = None
+        unit = ""
+        if inv_lines:
+            first = inv_lines[0]
+            item_id = first.item_id
+            if getattr(first, "item", None):
+                item_name = (first.item.name or "").strip()
+                unit = (first.item.unit or "").strip() or "unit"
+            quantity = str(_d(first.quantity))
         rows.append(
             {
                 "id": x.id,
@@ -130,6 +143,10 @@ def compute_pond_warehouse_consumption_rows(
                 "pond_name": pond_names.get(x.pond_id, ""),
                 "production_cycle_id": x.production_cycle_id,
                 "production_cycle_name": cy_name,
+                "item_id": item_id,
+                "item_name": item_name,
+                "quantity": quantity,
+                "unit": unit,
                 "amount": str(_d(x.amount)),
                 "feed_weight_kg": str(x.feed_weight_kg) if x.feed_weight_kg is not None else None,
                 "feed_sack_count": (

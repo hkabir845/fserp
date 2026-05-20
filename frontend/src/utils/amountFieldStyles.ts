@@ -7,9 +7,6 @@
 export const AMOUNT_READ_ONLY_INPUT_CLASS =
   'w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded bg-gray-50 text-right tabular-nums font-medium'
 
-/** Flex row wrapper for a read-only Amount column */
-export const AMOUNT_LINE_COL_CLASS = 'min-w-[9rem] w-[min(100%,11rem)] sm:w-44 shrink-0'
-
 /** Primary payment amount (full width in grid) — blue focus */
 export const AMOUNT_EDITABLE_FULL_BLUE_CLASS =
   'w-full min-w-[9rem] px-3 py-2 border border-gray-300 rounded-md text-right tabular-nums font-medium focus:outline-none focus:ring-2 focus:ring-blue-500'

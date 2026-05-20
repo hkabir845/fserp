@@ -2,11 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft,
   BarChart3,
   Beaker,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   Fish,
   ListOrdered,
@@ -15,6 +17,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Trash2,
   Undo2,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
@@ -22,6 +25,8 @@ import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
+import { aquacultureExpenseDeleteConfirmMessage } from '@/lib/aquacultureExpensePolicy'
+import { AquacultureStockLedgerFormModal } from './AquacultureStockLedgerFormModal'
 
 const iconAction =
   'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent text-slate-600 transition-colors hover:border-slate-200 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:pointer-events-none disabled:opacity-40'
@@ -66,6 +71,10 @@ interface PositionRow {
   latest_sample_estimated_fish_count: number | null
   latest_sample_estimated_total_weight_kg: string | null
   latest_sample_fish_species_label?: string | null
+  production_cycle_id?: number | null
+  production_cycle_name?: string | null
+  fish_species?: string
+  fish_species_label?: string
   stock_density_kg_per_decimal?: string | null
   stock_density_kg_per_1000_cu_ft?: string | null
   load_level?: string
@@ -200,17 +209,136 @@ function warehouseShelfLabel(pos: string | undefined): string {
   return WH_POS_GROUP_LABEL[k] || k.replace(/_/g, ' ')
 }
 
+type DetailLedgerRow = MovementRow & {
+  running_fish_count: number
+  running_weight_kg: number
+}
+
+function breakdownRowKey(r: PositionRow): string {
+  return `${r.pond_id}:${r.production_cycle_id ?? 'none'}:${r.fish_species ?? ''}`
+}
+
+function movementMatchesBreakdown(m: MovementRow, r: PositionRow): boolean {
+  const cycleMatch =
+    r.production_cycle_id == null
+      ? m.production_cycle_id == null
+      : m.production_cycle_id === r.production_cycle_id
+  if (!cycleMatch) return false
+  const sp = (r.fish_species || '').trim().toLowerCase()
+  if (!sp) return true
+  const msp = (m.fish_species || '').trim().toLowerCase()
+  if (msp === sp) return true
+  if (!msp && m.source === 'vendor_bill') {
+    const label = (m.fish_species_label || '').toLowerCase()
+    return label.includes(sp) || (sp === 'tilapia' && !label.includes('pangas') && !label.includes('basa'))
+  }
+  return false
+}
+
+function withRunningBalance(rows: MovementRow[]): DetailLedgerRow[] {
+  const asc = [...rows].sort((a, b) => {
+    const d = a.entry_date.localeCompare(b.entry_date)
+    if (d !== 0) return d
+    return a.source_id - b.source_id
+  })
+  let heads = 0
+  let kg = 0
+  const withBal: DetailLedgerRow[] = asc.map((r) => {
+    heads += r.fish_count_delta
+    kg += Number(r.weight_kg_delta)
+    return { ...r, running_fish_count: heads, running_weight_kg: kg }
+  })
+  return withBal.reverse()
+}
+
+function StockPositionMetricCells({ r }: { r: PositionRow }) {
+  const netC = r.implied_net_fish_count
+  const samp = r.latest_sample_estimated_fish_count
+  const diff = samp != null && netC != null ? samp - netC : null
+  const vol =
+    r.water_volume_cu_ft != null && r.water_volume_cu_ft !== ''
+      ? `${formatNumber(Number(r.water_volume_cu_ft), 0)} cu ft`
+      : '—'
+  const densityLine =
+    r.stock_density_kg_per_decimal != null && r.stock_density_kg_per_decimal !== ''
+      ? `${formatNumber(Number(r.stock_density_kg_per_decimal), 2)} kg/dec`
+      : null
+  const volDensity =
+    r.stock_density_kg_per_1000_cu_ft != null && r.stock_density_kg_per_1000_cu_ft !== ''
+      ? `${formatNumber(Number(r.stock_density_kg_per_1000_cu_ft), 2)} kg/1k cu ft`
+      : null
+  const loadBadges: Record<string, string> = {
+    understocked: 'bg-sky-50 text-sky-900',
+    moderate: 'bg-emerald-50 text-emerald-900',
+    full: 'bg-amber-50 text-amber-900',
+    high_risk: 'bg-rose-50 text-rose-900',
+    unknown: 'bg-slate-50 text-slate-700',
+  }
+  const ll = r.load_level || 'unknown'
+  const badgeClass = loadBadges[ll] || loadBadges.unknown
+  return (
+    <>
+      <td className="py-2 pr-4 tabular-nums text-slate-700">{vol}</td>
+      <td className="py-2 pr-4 tabular-nums">
+        <div>{formatNumber(Number(r.implied_net_weight_kg), 2)} kg</div>
+        <div className="text-xs font-normal text-slate-500">
+          {formatNumber(r.implied_net_fish_count, 0)} fish (est.)
+        </div>
+      </td>
+      <td className="py-2 pr-4 tabular-nums text-slate-700">
+        <div>{formatNumber(Number(r.ledger_weight_kg_delta), 2)} kg</div>
+        <div className="text-xs font-normal text-slate-500">
+          {formatNumber(r.ledger_fish_count_delta, 0)} fish Δ
+        </div>
+      </td>
+      <td className="py-2 pr-4 text-slate-700">
+        <div className="flex flex-col gap-1">
+          <span className="flex flex-wrap items-center gap-2">
+            {r.load_level_label ? (
+              <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${badgeClass}`}>
+                {r.load_level_label}
+              </span>
+            ) : null}
+            {densityLine ? (
+              <span className="tabular-nums text-sm">{densityLine}</span>
+            ) : (
+              <span className="text-xs text-slate-500">Set water area and depth on pond</span>
+            )}
+          </span>
+          {volDensity ? <span className="tabular-nums text-xs text-slate-500">{volDensity}</span> : null}
+          {r.advice_summary ? (
+            <span className="text-xs leading-snug text-slate-600">{r.advice_summary}</span>
+          ) : null}
+        </div>
+      </td>
+      <td className="py-2 pr-4 text-slate-600">
+        {r.latest_sample_date ? formatDateOnly(r.latest_sample_date) : '—'}
+        {r.latest_sample_estimated_fish_count != null
+          ? ` · ~${formatNumber(r.latest_sample_estimated_fish_count, 0)} fish`
+          : ''}
+        {r.latest_sample_fish_species_label ? ` · ${r.latest_sample_fish_species_label}` : ''}
+      </td>
+      <td className="py-2 text-slate-600">
+        {diff == null ? '—' : `${diff > 0 ? '+' : ''}${formatNumber(diff, 0)} vs implied net`}
+      </td>
+    </>
+  )
+}
+
 function AquacultureStockPageContent() {
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
   const toast = useToast()
   const [ponds, setPonds] = useState<Pond[]>([])
-  const [cycles, setCycles] = useState<CycleRow[]>([])
   const [posCycles, setPosCycles] = useState<CycleRow[]>([])
   const [ref, setRef] = useState<ReferencePayload | null>(null)
   const [fishSpecies, setFishSpecies] = useState<RefOpt[]>([])
   const [position, setPosition] = useState<PositionRow[]>([])
+  const [positionBreakdown, setPositionBreakdown] = useState<PositionRow[]>([])
+  const [expandedBreakdownKey, setExpandedBreakdownKey] = useState<string | null>(null)
+  const [breakdownDetail, setBreakdownDetail] = useState<Record<string, DetailLedgerRow[]>>({})
+  const [breakdownDetailLoading, setBreakdownDetailLoading] = useState<string | null>(null)
   const [rows, setRows] = useState<LedgerRow[]>([])
   const [ledgerListMeta, setLedgerListMeta] = useState<{
     total_row_count: number
@@ -250,27 +378,12 @@ function AquacultureStockPageContent() {
   const [movQuery, setMovQuery] = useState('')
   const [consumption, setConsumption] = useState<ConsumptionRow[]>([])
   const [consumptionLoading, setConsumptionLoading] = useState(false)
+  const [consumptionDeleteBusyId, setConsumptionDeleteBusyId] = useState<number | null>(null)
   const [conPond, setConPond] = useState('')
   const [conKind, setConKind] = useState<'' | 'feed' | 'medicine'>('')
   const [conFrom, setConFrom] = useState('')
   const [conTo, setConTo] = useState('')
   const [conQuery, setConQuery] = useState('')
-  const [form, setForm] = useState({
-    pond_id: '',
-    production_cycle_id: '',
-    entry_kind: 'loss',
-    loss_reason: 'mortality',
-    fish_species: 'tilapia',
-    fish_species_other: '',
-    entry_date: '',
-    fish_removed: '',
-    kg_removed: '',
-    adj_fish_count: '',
-    adj_weight_kg: '',
-    book_value: '',
-    post_to_books: false,
-    memo: '',
-  })
 
   const replaceFishSpeciesQuery = useCallback(
     (speciesCode: string) => {
@@ -304,12 +417,18 @@ function AquacultureStockPageContent() {
   const loadPosition = useCallback(async () => {
     setPositionLoading(true)
     try {
-      const params: Record<string, string> = {}
+      const params: Record<string, string> = { breakdown: '1' }
       if (posPond) params.pond_id = posPond
       if (posCycle) params.production_cycle_id = posCycle
       if (posSpecies) params.fish_species = posSpecies
-      const { data } = await api.get<{ rows: PositionRow[] }>('/aquaculture/fish-stock-position/', { params })
+      const { data } = await api.get<{ rows: PositionRow[]; breakdown_rows?: PositionRow[] }>(
+        '/aquaculture/fish-stock-position/',
+        { params },
+      )
       setPosition(Array.isArray(data?.rows) ? data.rows : [])
+      setPositionBreakdown(Array.isArray(data?.breakdown_rows) ? data.breakdown_rows : [])
+      setExpandedBreakdownKey(null)
+      setBreakdownDetail({})
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not load stock position'))
     } finally {
@@ -380,6 +499,33 @@ function AquacultureStockPageContent() {
     }
   }, [toast, movPond, movSource, movFrom, movTo, posSpecies, posCycle])
 
+  const toggleBreakdownDetail = useCallback(
+    async (r: PositionRow) => {
+      const key = breakdownRowKey(r)
+      if (expandedBreakdownKey === key) {
+        setExpandedBreakdownKey(null)
+        return
+      }
+      setExpandedBreakdownKey(key)
+      if (breakdownDetail[key]?.length) return
+      setBreakdownDetailLoading(key)
+      try {
+        const params: Record<string, string> = { limit: '2000' }
+        params.pond_id = String(r.pond_id)
+        if (r.production_cycle_id != null) params.production_cycle_id = String(r.production_cycle_id)
+        if (r.fish_species) params.fish_species = r.fish_species
+        const { data } = await api.get<MovementsResponse>('/aquaculture/fish-biomass-ledger/', { params })
+        const list = (Array.isArray(data?.rows) ? data.rows : []).filter((m) => movementMatchesBreakdown(m, r))
+        setBreakdownDetail((prev) => ({ ...prev, [key]: withRunningBalance(list) }))
+      } catch (e) {
+        toast.error(extractErrorMessage(e, 'Could not load detail ledger'))
+      } finally {
+        setBreakdownDetailLoading(null)
+      }
+    },
+    [expandedBreakdownKey, breakdownDetail, toast],
+  )
+
   const loadConsumption = useCallback(async () => {
     setConsumptionLoading(true)
     try {
@@ -400,6 +546,28 @@ function AquacultureStockPageContent() {
       setConsumptionLoading(false)
     }
   }, [toast, conPond, conKind, conFrom, conTo])
+
+  const deleteConsumptionRow = async (r: ConsumptionRow) => {
+    const cat = r.kind === 'feed' ? 'feed_consumed' : 'medicine_consumed'
+    if (
+      !window.confirm(
+        aquacultureExpenseDeleteConfirmMessage({ expense_category: cat, source_station_id: null }),
+      )
+    ) {
+      return
+    }
+    setConsumptionDeleteBusyId(r.id)
+    try {
+      await api.delete(`/aquaculture/expenses/${r.id}/`)
+      toast.success(r.kind === 'feed' ? 'Feed consumption deleted — stock restored' : 'Medicine consumption deleted')
+      void loadConsumption()
+      if (mainTab === 'warehouse' && whSubTab === 'on_hand') void loadWarehouseMatrix()
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Could not delete'))
+    } finally {
+      setConsumptionDeleteBusyId(null)
+    }
+  }
 
   const loadWarehouseMatrix = useCallback(async () => {
     setWhLoading(true)
@@ -629,158 +797,21 @@ function AquacultureStockPageContent() {
     })()
   }, [posPond])
 
-  useEffect(() => {
-    const pid = form.pond_id
-    if (!modal || !pid) {
-      setCycles([])
-      return
-    }
-    void (async () => {
-      try {
-        const { data } = await api.get<CycleRow[]>('/aquaculture/production-cycles/', { params: { pond_id: pid } })
-        setCycles(Array.isArray(data) ? data : [])
-      } catch {
-        setCycles([])
-      }
-    })()
-  }, [modal, form.pond_id])
-
   const sym = getCurrencySymbol(currency)
-  const stockEntryGlLinked = Boolean(editingRow?.journal_entry_id)
-  const disField = 'disabled:cursor-not-allowed disabled:bg-slate-50'
-  const bookPostingLocked = Boolean(editingRow)
 
   const openNew = () => {
-    const today = new Date().toISOString().slice(0, 10)
     setEditingRow(null)
-    setForm({
-      pond_id: ponds[0] ? String(ponds[0].id) : '',
-      production_cycle_id: '',
-      entry_kind: 'loss',
-      loss_reason: 'mortality',
-      fish_species: 'tilapia',
-      fish_species_other: '',
-      entry_date: today,
-      fish_removed: '',
-      kg_removed: '',
-      adj_fish_count: '',
-      adj_weight_kg: '',
-      book_value: '',
-      post_to_books: false,
-      memo: '',
-    })
     setModal(true)
   }
 
   const openEdit = (r: LedgerRow) => {
-    const loss = r.entry_kind === 'loss'
-    const fcd = r.fish_count_delta
-    const wkd = Number(r.weight_kg_delta)
     setEditingRow(r)
-    setForm({
-      pond_id: String(r.pond_id),
-      production_cycle_id: r.production_cycle_id != null ? String(r.production_cycle_id) : '',
-      entry_kind: r.entry_kind,
-      loss_reason: (r.loss_reason || 'mortality').trim() || 'mortality',
-      fish_species: (r.fish_species || 'tilapia').trim() || 'tilapia',
-      fish_species_other: (r.fish_species_other || '').trim(),
-      entry_date: r.entry_date.slice(0, 10),
-      fish_removed: loss && fcd < 0 ? String(Math.abs(fcd)) : '',
-      kg_removed: loss && wkd < 0 ? String(Math.abs(wkd)) : '',
-      adj_fish_count: !loss && fcd !== 0 ? String(fcd) : '',
-      adj_weight_kg: !loss && wkd !== 0 ? String(wkd) : '',
-      book_value: r.book_value || '',
-      post_to_books: r.post_to_books,
-      memo: r.memo || '',
-    })
     setModal(true)
   }
 
-  const buildLedgerBody = (): Record<string, unknown> | null => {
-    const pond_id = parseInt(form.pond_id, 10)
-    if (!Number.isFinite(pond_id)) {
-      toast.error('Select a pond')
-      return null
-    }
-    let fish_count_delta = 0
-    let weight_kg_delta = 0
-    if (form.entry_kind === 'loss') {
-      const hr = parseInt(form.fish_removed, 10)
-      if (!Number.isFinite(hr) || hr <= 0) {
-        toast.error('Enter fish removed (heads) as a positive number')
-        return null
-      }
-      fish_count_delta = -Math.abs(hr)
-      const kg = Number(String(form.kg_removed).replace(/,/g, ''))
-      if (!Number.isFinite(kg) || kg <= 0) {
-        toast.error('Enter weight removed (kg) as a number greater than zero')
-        return null
-      }
-      weight_kg_delta = -Math.abs(kg)
-    } else {
-      if (form.adj_fish_count.trim() === '') {
-        toast.error('Fish count change is required (use negative for fewer fish)')
-        return null
-      }
-      fish_count_delta = parseInt(form.adj_fish_count, 10)
-      if (!Number.isFinite(fish_count_delta) || fish_count_delta === 0) {
-        toast.error('Fish count adjustment must be a non-zero integer')
-        return null
-      }
-      if (form.adj_weight_kg.trim() === '') {
-        toast.error('Weight change (kg) is required (use negative for less biomass)')
-        return null
-      }
-      weight_kg_delta = Number(String(form.adj_weight_kg).replace(/,/g, ''))
-      if (!Number.isFinite(weight_kg_delta) || weight_kg_delta === 0) {
-        toast.error('Weight adjustment must be a non-zero number')
-        return null
-      }
-    }
-    const body: Record<string, unknown> = {
-      pond_id,
-      entry_date: form.entry_date,
-      entry_kind: form.entry_kind,
-      loss_reason: form.entry_kind === 'loss' ? form.loss_reason : '',
-      fish_species: form.fish_species,
-      fish_species_other: form.fish_species_other,
-      fish_count_delta,
-      weight_kg_delta,
-      book_value: form.book_value.trim() === '' ? '0' : form.book_value,
-      post_to_books: form.post_to_books,
-      memo: form.memo,
-    }
-    if (form.production_cycle_id) body.production_cycle_id = parseInt(form.production_cycle_id, 10)
-    else body.production_cycle_id = null
-    return body
-  }
-
-  const submit = async () => {
-    try {
-      if (editingRow?.journal_entry_id) {
-        await api.put(`/aquaculture/fish-stock-ledger/${editingRow.id}/`, { memo: form.memo })
-        toast.success('Memo updated')
-        setModal(false)
-        setEditingRow(null)
-        void loadRows()
-        return
-      }
-      const body = buildLedgerBody()
-      if (!body) return
-      if (editingRow) {
-        await api.put(`/aquaculture/fish-stock-ledger/${editingRow.id}/`, body)
-        toast.success('Updated')
-      } else {
-        await api.post('/aquaculture/fish-stock-ledger/', body)
-        toast.success('Saved')
-      }
-      setModal(false)
-      setEditingRow(null)
-      void loadRows()
-      void loadPosition()
-    } catch (e) {
-      toast.error(extractErrorMessage(e, 'Save failed'))
-    }
+  const closeLedgerModal = () => {
+    setModal(false)
+    setEditingRow(null)
   }
 
   const executeRollback = async () => {
@@ -1267,6 +1298,147 @@ function AquacultureStockPageContent() {
                           {diff == null ? '—' : `${diff > 0 ? '+' : ''}${formatNumber(diff, 0)} vs implied net`}
                         </td>
                       </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
+
+      <section className="mb-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-900">By species &amp; production cycle</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          One row per pond, production cycle, and species. Expand a row for the chronological detail ledger with
+          running head count, weight, and remaining balance after each movement.
+        </p>
+        <div className="mt-4 overflow-x-auto">
+          {positionLoading ? (
+            <p className="py-6 text-center text-sm text-slate-500">Loading breakdown…</p>
+          ) : (
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                  <th className="w-8 py-2 pr-2" aria-label="Expand" />
+                  <th className="py-2 pr-3">Pond</th>
+                  <th className="py-2 pr-3">Cycle</th>
+                  <th className="py-2 pr-3">Species</th>
+                  <th className="py-2 pr-4">Water vol.</th>
+                  <th className="py-2 pr-4">Net fish / kg</th>
+                  <th className="py-2 pr-4">Manual ledger Δ</th>
+                  <th className="py-2 pr-4">Density / load</th>
+                  <th className="py-2 pr-4">Latest sample</th>
+                  <th className="py-2">Sample vs net</th>
+                </tr>
+              </thead>
+              <tbody>
+                {positionBreakdown.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="py-8 text-center text-slate-500">
+                      No cycle × species buckets for this filter yet.
+                    </td>
+                  </tr>
+                ) : (
+                  positionBreakdown.map((r) => {
+                    const key = breakdownRowKey(r)
+                    const open = expandedBreakdownKey === key
+                    const detail = breakdownDetail[key] ?? []
+                    const detailBusy = breakdownDetailLoading === key
+                    return (
+                      <Fragment key={key}>
+                        <tr className="border-b border-slate-100 transition-colors hover:bg-slate-50/80">
+                          <td className="py-2 pr-2">
+                            <button
+                              type="button"
+                              onClick={() => void toggleBreakdownDetail(r)}
+                              className={iconAction}
+                              aria-expanded={open}
+                              aria-label={open ? 'Hide detail ledger' : 'Show detail ledger'}
+                            >
+                              {open ? (
+                                <ChevronDown className="h-4 w-4" aria-hidden />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" aria-hidden />
+                              )}
+                            </button>
+                          </td>
+                          <td className="py-2 pr-3 font-medium text-slate-800">
+                            <Link
+                              href={`/aquaculture/ponds/${r.pond_id}`}
+                              className="text-teal-800 hover:text-teal-950 hover:underline"
+                            >
+                              {r.pond_name}
+                            </Link>
+                          </td>
+                          <td className="py-2 pr-3 text-slate-700">
+                            {r.production_cycle_name?.trim() || (
+                              <span className="text-slate-400">— No cycle</span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3 text-slate-700">{r.fish_species_label || r.fish_species || '—'}</td>
+                          <StockPositionMetricCells r={r} />
+                        </tr>
+                        {open ? (
+                          <tr key={`${key}-detail`} className="border-b border-slate-100 bg-slate-50/60">
+                            <td colSpan={10} className="px-3 py-3">
+                              {detailBusy ? (
+                                <p className="text-xs text-slate-500">Loading detail ledger…</p>
+                              ) : detail.length === 0 ? (
+                                <p className="text-xs text-slate-500">No movements in this bucket.</p>
+                              ) : (
+                                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                  <table className="min-w-full text-left text-xs">
+                                    <thead>
+                                      <tr className="border-b border-slate-200 text-[10px] uppercase text-slate-500">
+                                        <th className="px-2 py-2">Date</th>
+                                        <th className="px-2 py-2">Source</th>
+                                        <th className="px-2 py-2 text-right">Heads Δ</th>
+                                        <th className="px-2 py-2 text-right">Weight Δ (kg)</th>
+                                        <th className="px-2 py-2 text-right">Running heads</th>
+                                        <th className="px-2 py-2 text-right">Running kg</th>
+                                        <th className="px-2 py-2">Memo</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {detail.map((d, i) => (
+                                        <tr
+                                          key={`${d.source}-${d.source_id}-${d.entry_date}-${i}`}
+                                          className="border-b border-slate-50"
+                                        >
+                                          <td className="px-2 py-1.5 tabular-nums text-slate-700">
+                                            {formatDateOnly(d.entry_date)}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-slate-700">{d.source_label}</td>
+                                          <td className="px-2 py-1.5 text-right tabular-nums">
+                                            {d.fish_count_delta > 0 ? '+' : ''}
+                                            {formatNumber(d.fish_count_delta, 0)}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-right tabular-nums">
+                                            {formatNumber(Number(d.weight_kg_delta), 2)}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-right tabular-nums font-medium text-slate-800">
+                                            {formatNumber(d.running_fish_count, 0)}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-right tabular-nums font-medium text-slate-800">
+                                            {formatNumber(d.running_weight_kg, 2)}
+                                          </td>
+                                          <td
+                                            className="max-w-[14rem] truncate px-2 py-1.5 text-slate-600"
+                                            title={d.memo}
+                                          >
+                                            {d.memo || d.source_doc || '—'}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
                     )
                   })
                 )}
@@ -1967,12 +2139,13 @@ function AquacultureStockPageContent() {
                         <th className="px-3 py-2.5 text-right">COGS</th>
                         <th className="px-3 py-2.5">GL</th>
                         <th className="min-w-[8rem] px-3 py-2.5">Memo</th>
+                        <th className="w-[4rem] px-2 py-2.5 text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredConsumption.length === 0 ? (
                         <tr>
-                          <td colSpan={9} className="px-3 py-10 text-center text-slate-500">
+                          <td colSpan={10} className="px-3 py-10 text-center text-slate-500">
                             {consumption.length === 0
                               ? 'No feed or medicine has been consumed for this filter yet. Apply feeding advice or use pond-warehouse consume.'
                               : 'No rows match your search.'}
@@ -2049,6 +2222,18 @@ function AquacultureStockPageContent() {
                               >
                                 {memoShort || '—'}
                               </td>
+                              <td className="px-2 py-2 text-center">
+                                <button
+                                  type="button"
+                                  disabled={consumptionDeleteBusyId === r.id}
+                                  onClick={() => void deleteConsumptionRow(r)}
+                                  className={iconActionDanger}
+                                  title="Delete and reverse stock / COGS"
+                                  aria-label={`Delete ${r.kind_label} on ${r.pond_name}`}
+                                >
+                                  <Trash2 className="h-4 w-4" aria-hidden />
+                                </button>
+                              </td>
                             </tr>
                           )
                         })
@@ -2070,7 +2255,7 @@ function AquacultureStockPageContent() {
                             {sym}
                             {formatNumber(consumptionTotals.amount, 2)}
                           </td>
-                          <td colSpan={2} />
+                          <td colSpan={3} />
                         </tr>
                       </tfoot>
                     ) : null}
@@ -2082,223 +2267,22 @@ function AquacultureStockPageContent() {
         </div>
       ) : null}
 
-      {modal ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
-            <h3 className="text-lg font-semibold text-slate-900">
-              {editingRow ? 'Edit stock ledger entry' : 'Stock ledger entry'}
-            </h3>
-            {editingRow?.journal_entry_id ? (
-              <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                This row is linked to the general ledger. Only the memo can be edited. To reverse biological deltas and
-                remove the automatic fish-stock journal together, use{' '}
-                <strong className="font-medium">Rollback</strong> in the ledger table.
-              </p>
-            ) : null}
-            {editingRow && !editingRow.journal_entry_id ? (
-              <p className="mt-2 text-xs text-slate-500">
-                Book value and “post journal” are fixed after the row is created. To change GL posting, roll back this
-                row and add a new one.
-              </p>
-            ) : null}
-            <div className="mt-4 space-y-3">
-              <label className="block text-xs font-medium text-slate-600">
-                Pond
-                <select
-                  value={form.pond_id}
-                  onChange={(e) => setForm((f) => ({ ...f, pond_id: e.target.value }))}
-                  disabled={stockEntryGlLinked}
-                  className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                >
-                  {ponds.map((p) => (
-                    <option key={p.id} value={String(p.id)}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-medium text-slate-600">
-                Production cycle (optional)
-                <select
-                  value={form.production_cycle_id}
-                  onChange={(e) => setForm((f) => ({ ...f, production_cycle_id: e.target.value }))}
-                  disabled={stockEntryGlLinked}
-                  className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                >
-                  <option value="">Not specified</option>
-                  {cycles.map((c) => (
-                    <option key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-medium text-slate-600">
-                Entry kind
-                <select
-                  value={form.entry_kind}
-                  onChange={(e) => setForm((f) => ({ ...f, entry_kind: e.target.value }))}
-                  disabled={stockEntryGlLinked}
-                  className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                >
-                  {(ref?.entry_kind ?? [
-                    { id: 'loss', label: 'Loss' },
-                    { id: 'adjustment', label: 'Adjustment' },
-                  ]).map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {form.entry_kind === 'loss' ? (
-                <label className="block text-xs font-medium text-slate-600">
-                  Loss reason
-                  <select
-                    value={form.loss_reason}
-                    onChange={(e) => setForm((f) => ({ ...f, loss_reason: e.target.value }))}
-                    disabled={stockEntryGlLinked}
-                    className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                  >
-                    {(ref?.loss_reason ?? []).map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              <label className="block text-xs font-medium text-slate-600">
-                Species
-                <select
-                  value={form.fish_species}
-                  onChange={(e) => setForm((f) => ({ ...f, fish_species: e.target.value }))}
-                  disabled={stockEntryGlLinked}
-                  className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                >
-                  {fishSpecies.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {form.fish_species === 'other' ? (
-                <label className="block text-xs font-medium text-slate-600">
-                  Species name
-                  <input
-                    value={form.fish_species_other}
-                    onChange={(e) => setForm((f) => ({ ...f, fish_species_other: e.target.value }))}
-                    disabled={stockEntryGlLinked}
-                    className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                  />
-                </label>
-              ) : null}
-              <label className="block text-xs font-medium text-slate-600">
-                Date
-                <input
-                  type="date"
-                  value={form.entry_date}
-                  onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))}
-                  disabled={stockEntryGlLinked}
-                  className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                />
-              </label>
-              {form.entry_kind === 'loss' ? (
-                <>
-                  <label className="block text-xs font-medium text-slate-600">
-                    Fish removed (heads) *
-                    <input
-                      value={form.fish_removed}
-                      onChange={(e) => setForm((f) => ({ ...f, fish_removed: e.target.value }))}
-                      disabled={stockEntryGlLinked}
-                      className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                      inputMode="numeric"
-                    />
-                  </label>
-                  <label className="block text-xs font-medium text-slate-600">
-                    Weight removed (kg) *
-                    <input
-                      value={form.kg_removed}
-                      onChange={(e) => setForm((f) => ({ ...f, kg_removed: e.target.value }))}
-                      disabled={stockEntryGlLinked}
-                      className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                    />
-                  </label>
-                </>
-              ) : (
-                <>
-                  <label className="block text-xs font-medium text-slate-600">
-                    Δ Fish count * (negative = fewer, positive = more)
-                    <input
-                      value={form.adj_fish_count}
-                      onChange={(e) => setForm((f) => ({ ...f, adj_fish_count: e.target.value }))}
-                      disabled={stockEntryGlLinked}
-                      className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                    />
-                  </label>
-                  <label className="block text-xs font-medium text-slate-600">
-                    Δ Weight (kg) *
-                    <input
-                      value={form.adj_weight_kg}
-                      onChange={(e) => setForm((f) => ({ ...f, adj_weight_kg: e.target.value }))}
-                      disabled={stockEntryGlLinked}
-                      className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                    />
-                  </label>
-                </>
-              )}
-              <label className="block text-xs font-medium text-slate-600">
-                Book value ({sym}) for GL (optional)
-                <input
-                  value={form.book_value}
-                  onChange={(e) => setForm((f) => ({ ...f, book_value: e.target.value }))}
-                  disabled={bookPostingLocked}
-                  className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm ${disField}`}
-                  placeholder="0"
-                />
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={form.post_to_books}
-                  onChange={(e) => setForm((f) => ({ ...f, post_to_books: e.target.checked }))}
-                  disabled={bookPostingLocked}
-                />
-                Post journal (requires book value &amp; COA 1581 / 6726 / 4244)
-              </label>
-              <label className="block text-xs font-medium text-slate-600">
-                Memo
-                <textarea
-                  value={form.memo}
-                  onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))}
-                  rows={2}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                />
-              </label>
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setModal(false)
-                  setEditingRow(null)
-                }}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void submit()}
-                className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800"
-              >
-                {editingRow?.journal_entry_id ? 'Save memo' : editingRow ? 'Save changes' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <AquacultureStockLedgerFormModal
+        open={modal}
+        editing={editingRow}
+        ponds={ponds}
+        refData={ref}
+        fishSpecies={fishSpecies}
+        currency={currency}
+        defaultPondId={posPond || undefined}
+        defaultCycleId={posCycle || undefined}
+        defaultSpecies={posSpecies || undefined}
+        onClose={closeLedgerModal}
+        onSaved={() => {
+          void loadRows()
+          void loadPosition()
+        }}
+      />
 
       {rollbackTarget ? (
         <div

@@ -46,7 +46,10 @@ from api.services.aquaculture_transfer_cost import (
     resolve_auto_transfer_line_cost,
 )
 from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
-from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
+from api.services.aquaculture_stock_service import (
+    compute_fish_stock_position_breakdown_rows,
+    compute_fish_stock_position_rows,
+)
 from api.services.aquaculture_fish_biomass_ledger_service import (
     SOURCE_LABELS as FISH_BIOMASS_LEDGER_SOURCE_LABELS,
     compute_fish_biomass_ledger_rows,
@@ -89,6 +92,8 @@ from api.services.aquaculture_pond_pos_customer import (
     sync_auto_pos_customer_from_pond,
 )
 from api.services.aquaculture_sale_biomass_sync import sync_biomass_sample_from_fish_sale
+from api.services.aquaculture_biomass_sample_reference_service import last_biomass_sample_reference_for_ledger
+from api.services.aquaculture_sale_reference_service import last_fish_sale_reference_for_ledger
 from api.services.aquaculture_pond_stock_service import (
     consume_pond_feed_on_advice_apply,
     consume_pond_warehouse_stock,
@@ -1646,6 +1651,90 @@ def _sale_to_json(s: AquacultureFishSale) -> dict:
 
 
 @csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def aquaculture_fish_sale_last_reference(request):
+    """Latest biological sale for pond + production cycle + species (stock ledger book value hint)."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    pond_id, e = _parse_optional_int(request.GET.get("pond_id"), name="pond_id")
+    if e:
+        return e
+    if pond_id is None:
+        return JsonResponse({"detail": "pond_id is required"}, status=400)
+    if not _pond_for_company(cid, pond_id):
+        return JsonResponse({"detail": "pond not found"}, status=404)
+    cy_id, e = _parse_optional_int(request.GET.get("production_cycle_id"), name="production_cycle_id")
+    if e:
+        return e
+    if cy_id is not None:
+        cy = AquacultureProductionCycle.objects.filter(pk=cy_id, company_id=cid).first()
+        if not cy:
+            return JsonResponse({"detail": "production_cycle not found"}, status=404)
+        if cy.pond_id != pond_id:
+            return JsonResponse({"detail": "production_cycle_id does not belong to pond_id"}, status=400)
+    species_raw = (request.GET.get("fish_species") or "").strip()
+    if not species_raw:
+        return JsonResponse({"detail": "fish_species is required"}, status=400)
+    other = (request.GET.get("fish_species_other") or "").strip()
+    ref = last_fish_sale_reference_for_ledger(
+        cid,
+        pond_id=pond_id,
+        production_cycle_id=cy_id,
+        fish_species=species_raw,
+        fish_species_other=other or None,
+    )
+    if not ref:
+        return JsonResponse({"found": False})
+    return JsonResponse({"found": True, **ref})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def aquaculture_biomass_sample_last_reference(request):
+    """Latest biomass sample for pond + production cycle + species (stock ledger quantity hints)."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    pond_id, e = _parse_optional_int(request.GET.get("pond_id"), name="pond_id")
+    if e:
+        return e
+    if pond_id is None:
+        return JsonResponse({"detail": "pond_id is required"}, status=400)
+    if not _pond_for_company(cid, pond_id):
+        return JsonResponse({"detail": "pond not found"}, status=404)
+    cy_id, e = _parse_optional_int(request.GET.get("production_cycle_id"), name="production_cycle_id")
+    if e:
+        return e
+    if cy_id is not None:
+        cy = AquacultureProductionCycle.objects.filter(pk=cy_id, company_id=cid).first()
+        if not cy:
+            return JsonResponse({"detail": "production_cycle not found"}, status=404)
+        if cy.pond_id != pond_id:
+            return JsonResponse({"detail": "production_cycle_id does not belong to pond_id"}, status=400)
+    species_raw = (request.GET.get("fish_species") or "").strip()
+    if not species_raw:
+        return JsonResponse({"detail": "fish_species is required"}, status=400)
+    other = (request.GET.get("fish_species_other") or "").strip()
+    ref = last_biomass_sample_reference_for_ledger(
+        cid,
+        pond_id=pond_id,
+        production_cycle_id=cy_id,
+        fish_species=species_raw,
+        fish_species_other=other or None,
+    )
+    if not ref:
+        return JsonResponse({"found": False})
+    return JsonResponse({"found": True, **ref})
+
+
+@csrf_exempt
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
@@ -2237,7 +2326,12 @@ def aquaculture_fish_stock_position(request):
     rows = compute_fish_stock_position_rows(
         cid, pond_id=pond_id, production_cycle_id=cy_id, fish_species_filter=species_filter
     )
-    return JsonResponse({"rows": rows})
+    payload: dict = {"rows": rows}
+    if str(request.GET.get("breakdown", "")).lower() in ("1", "true", "yes", "cycle_species"):
+        payload["breakdown_rows"] = compute_fish_stock_position_breakdown_rows(
+            cid, pond_id=pond_id, production_cycle_id=cy_id, fish_species_filter=species_filter
+        )
+    return JsonResponse(payload)
 
 
 def _parse_optional_int(raw, *, name: str) -> tuple[int | None, JsonResponse | None]:
@@ -3360,6 +3454,11 @@ def _feeding_advice_to_json(a: AquacultureFeedingAdvice) -> dict:
         "applied_at": a.applied_at.isoformat() if a.applied_at else None,
         "applied_by_display": _user_display(getattr(a, "applied_by", None)),
         "linked_expense_id": a.linked_expense_id,
+        "linked_expense_category": (
+            (a.linked_expense.expense_category or "").strip()
+            if getattr(a, "linked_expense_id", None) and getattr(a, "linked_expense", None)
+            else ""
+        ),
         "created_by_display": _user_display(getattr(a, "created_by", None)),
         "created_at": a.created_at.isoformat() if a.created_at else "",
         "updated_at": a.updated_at.isoformat() if a.updated_at else "",
@@ -3376,7 +3475,7 @@ def aquaculture_feeding_advice_list(request):
         return err
     cid = request.company_id
     qs = AquacultureFeedingAdvice.objects.filter(company_id=cid).select_related(
-        "pond", "pond__default_feed_item", "production_cycle"
+        "pond", "pond__default_feed_item", "production_cycle", "linked_expense"
     )
     pid = request.GET.get("pond_id")
     if pid and str(pid).strip().isdigit():

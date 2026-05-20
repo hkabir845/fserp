@@ -129,6 +129,7 @@ interface LoanRow {
   /** Optional GL segment: auto-posted loan journals tag this station when set */
   station_id?: number | null
   station_name?: string | null
+  aquaculture_financing?: boolean
 }
 
 function loanUsesIslamicTerminology(
@@ -165,6 +166,8 @@ type LoanFormState = {
   term_months: string
   /** Active site for GL tagging on disburse / repay / accrual; '' = none */
   station_id: string | number
+  /** Whole-aquaculture working capital; shows on Aquaculture → Financing */
+  aquaculture_financing: boolean
 }
 
 function emptyLoanForm(): LoanFormState {
@@ -191,6 +194,7 @@ function emptyLoanForm(): LoanFormState {
     start_date: '',
     annual_interest_rate: '0',
     term_months: '',
+    aquaculture_financing: false,
   }
 }
 
@@ -1068,6 +1072,7 @@ export default function LoansPage() {
         counterparty_role_type?: string
         station_id?: number | null
         station_name?: string | null
+        aquaculture_financing?: boolean
       }
       const hasActivity =
         (Array.isArray(d.disbursements) && d.disbursements.length > 0) ||
@@ -1110,6 +1115,7 @@ export default function LoansPage() {
         term_months: d.term_months != null ? String(d.term_months) : '',
         station_id:
           d.station_id != null && d.station_id > 0 ? String(d.station_id) : '',
+        aquaculture_financing: Boolean(d.aquaculture_financing),
       })
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
@@ -1193,6 +1199,7 @@ export default function LoansPage() {
           status: loanForm.status,
           maturity_date: loanForm.maturity_date.trim() || null,
           station_id: loanStationIdForApi(loanForm.station_id),
+          aquaculture_financing: loanForm.aquaculture_financing,
         }
         const payload = restrictedEdit
           ? base
@@ -1294,6 +1301,8 @@ export default function LoansPage() {
         annual_interest_rate: createStoredAnnual,
         term_months: termParsed,
         ...(newStationId != null ? { station_id: newStationId } : {}),
+        aquaculture_financing:
+          loanForm.direction === 'borrowed' ? loanForm.aquaculture_financing : false,
       })
       toast.success('Loan created')
       closeLoanModal()
@@ -3746,6 +3755,26 @@ export default function LoansPage() {
                       this does not repost existing entries.
                     </p>
                   </div>
+                  {loanForm.direction === 'borrowed' ? (
+                    <div className="rounded-lg border border-teal-100 bg-teal-50/50 p-3">
+                      <label className="flex items-start gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-gray-300"
+                          checked={loanForm.aquaculture_financing}
+                          onChange={(e) =>
+                            setLoanForm({ ...loanForm, aquaculture_financing: e.target.checked })
+                          }
+                        />
+                        <span>
+                          <strong>Aquaculture working capital (all ponds)</strong>
+                          <span className="block text-xs text-gray-600 mt-0.5">
+                            Appears under Aquaculture → Financing for pond allocation and P&amp;L repayment worksheet.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  ) : null}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                     <textarea

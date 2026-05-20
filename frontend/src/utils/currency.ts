@@ -232,14 +232,6 @@ export function formatAmountPlain(
   return rounded.toFixed(d)
 }
 
-/** Money and quantity display: thousands separators + fraction digits (default 2). */
-export function formatAmount(
-  amount: number | string | null | undefined,
-  decimals: number = 2
-): string {
-  return formatNumber(amount, decimals)
-}
-
 /**
  * Format number with thousand separators (commas).
  * App standard for fractional quantities and money is two fraction digits (`decimals` default 2).
@@ -299,28 +291,5 @@ export function formatCurrency(
   } else {
     return `${formattedAmount} ${code}`
   }
-}
-
-/**
- * Get all supported currencies
- * @returns Array of currency objects with code, name, and symbol
- */
-export function getAllCurrencies(): Array<{ code: string; name: string; symbol: string }> {
-  return Object.keys(CURRENCY_MAP).map((code) => ({
-    code,
-    name: getCurrencyName(code),
-    symbol: getCurrencySymbol(code),
-  }))
-}
-
-/**
- * Get currency options for dropdowns
- * @returns Array of currency options with value and label
- */
-export function getCurrencyOptions(): Array<{ value: string; label: string }> {
-  return Object.keys(CURRENCY_MAP).map((code) => ({
-    value: code,
-    label: `${code} - ${getCurrencyName(code)} (${getCurrencySymbol(code)})`,
-  }))
 }
 

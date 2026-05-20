@@ -6,6 +6,7 @@ from django.urls import path
 from fsms.release_info import health_payload, version_payload
 
 from api.views import (
+    aquaculture_financing_views,
     aquaculture_views,
     system_views,
     auth_views,
@@ -78,6 +79,8 @@ def api_docs(request):
             "/api/aquaculture/samples/", "/api/aquaculture/pl-summary/", "/api/aquaculture/expense-categories/",
             "/api/aquaculture/income-types/", "/api/aquaculture/fish-species/", "/api/aquaculture/production-cycles/",
             "/api/aquaculture/feeding-advice/", "/api/aquaculture/pond-profit-transfers/",
+            "/api/aquaculture/financing/", "/api/aquaculture/financing/repayment-worksheet/",
+            "/api/aquaculture/financing/repayment-apply/", "/api/aquaculture/financing/allocations/",
             "/api/aquaculture/landlords/",
             "/api/shifts/", "/api/tank-dips", "/api/taxes/",             "/api/reports/<id>",
             "/api/company/backup/", "/api/company/restore/",
@@ -453,15 +456,36 @@ urlpatterns = [
     path("aquaculture/expenses/", aquaculture_views.aquaculture_expenses_list_or_create),
     path("aquaculture/shop-stock-issue/", aquaculture_views.aquaculture_shop_stock_issue),
     path("aquaculture/expenses/<int:expense_id>/", aquaculture_views.aquaculture_expense_detail),
+    path(
+        "aquaculture/fish-sales/last-reference/",
+        aquaculture_views.aquaculture_fish_sale_last_reference,
+    ),
     path("aquaculture/sales/", aquaculture_views.aquaculture_sales_list_or_create),
     path(
         "aquaculture/sales/<int:sale_id>/finalize/",
         aquaculture_views.aquaculture_sale_finalize,
     ),
     path("aquaculture/sales/<int:sale_id>/", aquaculture_views.aquaculture_sale_detail),
+    path(
+        "aquaculture/biomass-samples/last-reference/",
+        aquaculture_views.aquaculture_biomass_sample_last_reference,
+    ),
     path("aquaculture/samples/", aquaculture_views.aquaculture_samples_list_or_create),
     path("aquaculture/samples/<int:sample_id>/", aquaculture_views.aquaculture_sample_detail),
     path("aquaculture/pl-summary/", aquaculture_views.aquaculture_pl_summary),
+    path("aquaculture/financing/", aquaculture_financing_views.aquaculture_financing_overview),
+    path(
+        "aquaculture/financing/repayment-worksheet/",
+        aquaculture_financing_views.aquaculture_financing_repayment_worksheet,
+    ),
+    path(
+        "aquaculture/financing/repayment-apply/",
+        aquaculture_financing_views.aquaculture_financing_repayment_apply,
+    ),
+    path(
+        "aquaculture/financing/allocations/",
+        aquaculture_financing_views.aquaculture_financing_allocations,
+    ),
     path(
         "aquaculture/pond-profit-transfers/",
         aquaculture_views.aquaculture_pond_profit_transfers,

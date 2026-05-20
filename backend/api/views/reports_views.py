@@ -7,11 +7,20 @@ from api.services.permission_service import can_access_report, resolve_user_perm
 from api.services.reporting import (
     parse_report_dates,
     report_balance_sheet,
+    report_ap_aging,
+    report_ar_aging,
+    report_cash_flow,
     report_customer_balances,
     report_daily_summary,
+    report_expense_detail,
     report_fuel_sales,
     report_financial_analytics,
     report_income_statement,
+    report_entities_balance_sheet_summary,
+    report_entities_financial_summary,
+    report_entities_pl_summary,
+    report_entities_trial_balance_summary,
+    report_stations_financial_summary,
     report_inventory_sku_valuation,
     report_item_master_by_category,
     report_item_purchases_by_category,
@@ -49,6 +58,15 @@ _REPORT_HANDLERS = {
     "loans-borrow-and-lent": report_loans_borrow_and_lent,
     "customer-balances": report_customer_balances,
     "vendor-balances": report_vendor_balances,
+    "ar-aging": report_ar_aging,
+    "ap-aging": report_ap_aging,
+    "cash-flow": report_cash_flow,
+    "expense-detail": report_expense_detail,
+    "entities-pl-summary": report_entities_pl_summary,
+    "entities-balance-sheet-summary": report_entities_balance_sheet_summary,
+    "entities-trial-balance-summary": report_entities_trial_balance_summary,
+    "entities-financial-summary": report_entities_financial_summary,
+    "stations-financial-summary": report_stations_financial_summary,
     "fuel-sales": report_fuel_sales,
     "tank-inventory": report_tank_inventory,
     "shift-summary": report_shift_summary,
@@ -122,6 +140,8 @@ GL_STATION_AWARE_REPORTS = frozenset(
         "loan-receivable-gl",
         "loan-payable-gl",
         "loans-borrow-and-lent",
+        "cash-flow",
+        "expense-detail",
     }
 )
 
@@ -134,6 +154,7 @@ AQUACULTURE_REPORT_IDS = frozenset(
         "aquaculture-sampling",
         "aquaculture-production-cycles",
         "aquaculture-profit-transfers",
+        "aquaculture-fish-transfers",
     }
 )
 
@@ -233,7 +254,35 @@ def report_by_id(request, report_id: str):
             },
             status=404,
         )
-    if report_id in STATION_SCOPED_REPORTS:
+    if report_id == "financial-analytics":
+        from api.models import AquaculturePond
+
+        raw_pond = (request.GET.get("pond_id") or "").strip()
+        pond_id: int | None = None
+        if raw_pond and raw_pond.lower() not in ("0", "all", "none"):
+            try:
+                pond_id = int(raw_pond)
+            except (TypeError, ValueError):
+                return JsonResponse(
+                    {"detail": "pond_id must be a positive integer, or omit for all ponds."},
+                    status=400,
+                )
+            if pond_id <= 0:
+                pond_id = None
+            elif not AquaculturePond.objects.filter(
+                pk=pond_id, company_id=cid, is_active=True
+            ).exists():
+                return JsonResponse(
+                    {"detail": "Unknown or inactive pond_id for this company."},
+                    status=400,
+                )
+        st_id: int | None = None
+        if pond_id is None:
+            st_id, st_err = effective_report_station_id(request, cid)
+            if st_err:
+                return st_err
+        payload = report_financial_analytics(cid, start, end, st_id, pond_id)
+    elif report_id in STATION_SCOPED_REPORTS:
         st_id, st_err = effective_report_station_id(request, cid)
         if st_err:
             return st_err

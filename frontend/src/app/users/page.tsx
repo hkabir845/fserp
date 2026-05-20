@@ -10,7 +10,7 @@ import { Plus, Edit2, Trash2, Shield, User, X, Eye, EyeOff, Grid3x3, List, Ban, 
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl } from '@/lib/api'
 import { formatDate } from '@/utils/date'
-import { getRoleDisplayName } from '@/utils/rbac'
+import { getRoleBadgeColor, getRoleDisplayName } from '@/utils/rbac'
 
 interface SystemUser {
   id: number
@@ -688,21 +688,6 @@ export default function UsersPage() {
     } catch (error) {
       console.error('Error deleting user:', error)
       toast.error('Error connecting to server')
-    }
-  }
-
-  const getRoleBadgeColor = (role: string) => {
-    switch (role.toLowerCase()) {
-      case 'admin':
-        return 'bg-red-100 text-red-800'
-      case 'accountant':
-        return 'bg-blue-100 text-blue-800'
-      case 'cashier':
-        return 'bg-green-100 text-green-800'
-      case 'operator':
-        return 'bg-teal-100 text-teal-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
     }
   }
 

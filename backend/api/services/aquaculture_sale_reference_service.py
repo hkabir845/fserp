@@ -1,0 +1,86 @@
+"""Look up prior fish sales to suggest stock-ledger book values."""
+from __future__ import annotations
+
+from decimal import ROUND_HALF_UP, Decimal
+
+from api.models import AquacultureFishSale
+from api.services.aquaculture_constants import fish_species_display_label, normalize_fish_species
+from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
+
+
+def _price_per_kg(weight_kg, total_amount) -> Decimal | None:
+    w = Decimal(str(weight_kg))
+    if w <= 0:
+        return None
+    t = Decimal(str(total_amount))
+    if t < 0:
+        return None
+    return (t / w).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
+def last_fish_sale_reference_for_ledger(
+    company_id: int,
+    *,
+    pond_id: int,
+    production_cycle_id: int | None,
+    fish_species: str,
+    fish_species_other: str | None = None,
+) -> dict | None:
+    """
+    Most recent biological fish harvest sale for pond + cycle + species.
+    production_cycle_id None matches sales with no cycle tagged.
+    """
+    cid = company_id
+    sp_code, _ = normalize_fish_species(fish_species)
+    qs = AquacultureFishSale.objects.filter(company_id=cid, pond_id=pond_id, fish_species=sp_code)
+    if production_cycle_id is not None:
+        qs = qs.filter(production_cycle_id=production_cycle_id)
+    else:
+        qs = qs.filter(production_cycle_id__isnull=True)
+    if sp_code == "other" and fish_species_other and str(fish_species_other).strip():
+        qs = qs.filter(fish_species_other__iexact=str(fish_species_other).strip())
+
+    sale = (
+        qs.select_related("pond", "production_cycle", "invoice")
+        .order_by("-sale_date", "-id")
+        .first()
+    )
+    if not sale:
+        return None
+    if income_type_is_non_biological_for_company(cid, getattr(sale, "income_type", None) or ""):
+        return None
+    ppk = _price_per_kg(sale.weight_kg, sale.total_amount)
+    if ppk is None:
+        return None
+
+    cname = ""
+    if sale.production_cycle_id and getattr(sale, "production_cycle", None):
+        cname = (sale.production_cycle.name or "").strip()
+    spo = getattr(sale, "fish_species_other", None) or ""
+    return {
+        "sale_id": sale.id,
+        "sale_date": sale.sale_date.isoformat(),
+        "pond_id": sale.pond_id,
+        "production_cycle_id": sale.production_cycle_id,
+        "production_cycle_name": cname,
+        "fish_species": sp_code,
+        "fish_species_label": fish_species_display_label(sp_code, spo),
+        "weight_kg": str(sale.weight_kg),
+        "fish_count": sale.fish_count,
+        "total_amount": str(sale.total_amount),
+        "price_per_kg": str(ppk.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "buyer_name": (sale.buyer_name or "").strip(),
+    }
+
+
+def suggest_ledger_book_value_from_sale(*, price_per_kg: str | Decimal, weight_kg: str | Decimal | float) -> str | None:
+    """Book value = |weight| × last sale price/kg (2 dp)."""
+    try:
+        p = Decimal(str(price_per_kg))
+        w = abs(Decimal(str(weight_kg)))
+    except Exception:
+        return None
+    if p <= 0 or w <= 0:
+        return None
+    amt = (w * p).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return str(amt)

@@ -54,9 +54,6 @@ export function getPosHomeStationId(): number | null {
   }
 }
 
-/**
- * Get current user role from localStorage
- */
 /** Effective permission keys from login (optional). When absent, UI falls back to role-based rules. */
 export function getCurrentUserPermissions(): string[] | null {
   if (typeof window === 'undefined') return null
@@ -112,96 +109,12 @@ export function getCurrentUserRole(): UserRole | null {
   }
 }
 
-/**
- * Check if current user has one of the required roles
- */
-export function hasRole(requiredRoles: UserRole | UserRole[]): boolean {
-  const userRole = getCurrentUserRole()
-  if (!userRole) return false
-
-  const roles = Array.isArray(requiredRoles) ? requiredRoles : [requiredRoles]
-  return roles.includes(userRole)
-}
-
-/**
- * Check if current user is Super Admin
- */
-export function isSuperAdmin(): boolean {
-  return hasRole('super_admin')
-}
-
-/**
- * Check if current user is Admin (including Super Admin)
- */
-export function isAdmin(): boolean {
-  return hasRole(['super_admin', 'admin'])
-}
-
-/**
- * Check if current user is Accountant (including Admin and Super Admin)
- */
-export function isAccountant(): boolean {
-  return hasRole(['super_admin', 'admin', 'accountant'])
-}
-
-/**
- * Check if current user is Cashier
- */
-export function isCashier(): boolean {
-  return hasRole('cashier')
-}
-
 /** Register staff limited to New sale + Donation on POS (not full cashier tools). */
 export function isLimitedPosRegisterUser(): boolean {
-  return hasRole('operator')
+  const role = getCurrentUserRole()
+  return role === 'operator'
 }
 
-/**
- * Check if user can access management features
- */
-export function canManageUsers(): boolean {
-  return hasRole(['super_admin', 'admin'])
-}
-
-/**
- * Check if user can access accounting features
- */
-export function canAccessAccounting(): boolean {
-  return hasRole(['super_admin', 'admin', 'accountant'])
-}
-
-/**
- * Check if user can manage stations/hardware
- */
-export function canManageStations(): boolean {
-  return hasRole(['super_admin', 'admin'])
-}
-
-/**
- * Check if user can create/edit invoices
- */
-export function canManageInvoices(): boolean {
-  return hasRole(['super_admin', 'admin', 'accountant'])
-}
-
-/**
- * Check if user can access POS
- */
-export function canAccessPOS(): boolean {
-  return hasRole(['super_admin', 'admin', 'accountant', 'cashier', 'operator'])
-}
-
-/**
- * Check if user can view reports
- */
-export function canViewReports(): boolean {
-  // All roles can view reports (with different permissions)
-  return hasRole(['super_admin', 'admin', 'accountant', 'cashier'])
-}
-
-/**
- * Get role display name
- */
 export function getRoleDisplayName(role: UserRole | string | null): string {
   if (!role) return 'Unknown'
 
@@ -210,15 +123,12 @@ export function getRoleDisplayName(role: UserRole | string | null): string {
     admin: 'Admin',
     accountant: 'Accountant',
     cashier: 'Cashier',
-    operator: 'Operator'
+    operator: 'Operator',
   }
 
   return roleMap[role.toLowerCase()] || role
 }
 
-/**
- * Get role badge color class
- */
 export function getRoleBadgeColor(role: UserRole | string | null): string {
   if (!role) return 'bg-gray-100 text-gray-800'
 
@@ -227,9 +137,8 @@ export function getRoleBadgeColor(role: UserRole | string | null): string {
     admin: 'bg-blue-100 text-blue-800',
     accountant: 'bg-green-100 text-green-800',
     cashier: 'bg-orange-100 text-orange-800',
-    operator: 'bg-teal-100 text-teal-800'
+    operator: 'bg-teal-100 text-teal-800',
   }
 
   return colorMap[role.toLowerCase()] || 'bg-gray-100 text-gray-800'
 }
-

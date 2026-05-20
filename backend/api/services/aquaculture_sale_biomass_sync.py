@@ -4,6 +4,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from api.models import AquacultureBiomassSample, AquacultureFishSale
+from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
 from api.services.tenant_reporting_categories import resolve_aquaculture_income_to_builtin
 
 

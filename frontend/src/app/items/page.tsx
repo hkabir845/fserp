@@ -22,6 +22,7 @@ import {
   suggestedRevenueCoaCode,
   templateDefaultOptionLabel,
 } from '@/lib/itemGlDefaults'
+import { formatStockUnitLong, suggestMedicineStockUnit } from '@/lib/aquacultureMedicineUnits'
 
 /** API returns decimals as strings; tanks-backed quantity is merged server-side. */
 function parseInventoryQty(raw: unknown): number {
@@ -1494,6 +1495,7 @@ export default function ItemsPage() {
   }
 
   const isFeedItemForm = (formData.pos_category || '').toLowerCase() === 'feed'
+  const isMedicineItemForm = (formData.pos_category || '').toLowerCase() === 'medicine'
   const isNonPosForm = (formData.pos_category || '').toLowerCase() === 'non_pos'
   const isFishItemForm = (formData.pos_category || '').toLowerCase() === 'fish'
 
@@ -2103,9 +2105,11 @@ export default function ItemsPage() {
                     <p className="mt-1 text-xs text-gray-500">
                       {isFeedItemForm
                         ? 'For sack-packed feed, choose Sack — stock and POS quantity are counted in sacks.'
-                        : isFishItemForm
-                          ? 'Fry and fingerlings are often sold or stocked by piece (head count); grow-out may use kg. Vendor bills for fish still require both total weight (kg) and headcount on each line.'
-                          : 'Select the unit of measure for this item'}
+                        : isMedicineItemForm
+                          ? 'Lime, salt, and pond chemicals are usually kg or bag; liquids use liter or bottle. This unit is used when recording treatments at the pond.'
+                          : isFishItemForm
+                            ? 'Fry and fingerlings are often sold or stocked by piece (head count); grow-out may use kg. Vendor bills for fish still require both total weight (kg) and headcount on each line.'
+                            : 'Select the unit of measure for this item'}
                     </p>
                   </div>
 
@@ -2122,6 +2126,9 @@ export default function ItemsPage() {
                             ...prev,
                             pos_category: v,
                             ...(v === 'feed' && prev.unit === 'piece' ? { unit: 'sack' } : {}),
+                            ...(v === 'medicine' && (prev.unit === 'piece' || prev.unit === 'each')
+                              ? { unit: suggestMedicineStockUnit(prev.name, prev.category) }
+                              : {}),
                             ...(v !== 'feed' ? { content_weight_kg: '' } : {}),
                             ...(v !== 'fish' ? { pieces_per_kg: '' } : {}),
                             ...(v === 'non_pos' || v === 'fish' ? { is_pos_available: false } : {}),
@@ -2134,6 +2141,9 @@ export default function ItemsPage() {
                     >
                       <option value="general">General (For POS General Items Tab)</option>
                       <option value="feed">Feed (sack sales — General POS tab)</option>
+                      <option value="medicine">
+                        Medicine & treatment (lime, chemicals — kg, bag, L, bottle; aquaculture)
+                      </option>
                       <option value="fuel">Fuel (For POS Fuel Tab - Linked to Tanks)</option>
                       <option value="service">Service</option>
                       <option value="other">Other</option>
@@ -2152,6 +2162,53 @@ export default function ItemsPage() {
                       stock into ponds.
                     </p>
                   </div>
+
+                  {isMedicineItemForm && (
+                    <div className="col-span-2 rounded-lg border border-violet-200 bg-violet-50/60 p-4 space-y-3">
+                      <h3 className="text-sm font-semibold text-violet-950">Medicine / pond treatment unit</h3>
+                      <p className="text-xs text-violet-950/85">
+                        Stock and pond treatments count in the unit you choose above. Lime and most pond powders are
+                        usually <strong className="font-medium">kg</strong> (or <strong className="font-medium">bag</strong>{' '}
+                        if pre-packed). Liquids use <strong className="font-medium">liter</strong> or{' '}
+                        <strong className="font-medium">bottle</strong>.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {['kg', 'bag', 'sack', 'liter', 'bottle', 'vial'].map((u) => (
+                          <button
+                            key={u}
+                            type="button"
+                            className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
+                              formData.unit === u
+                                ? 'border-violet-500 bg-violet-600 text-white'
+                                : 'border-violet-300 bg-white text-violet-900 hover:bg-violet-100/80'
+                            }`}
+                            onClick={() => setFormData((prev) => ({ ...prev, unit: u }))}
+                          >
+                            {formatStockUnitLong(u)}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className="rounded-md border border-dashed border-violet-300 bg-white px-2.5 py-1 text-xs text-violet-800 hover:bg-violet-50"
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              unit: suggestMedicineStockUnit(prev.name, prev.category),
+                            }))
+                          }
+                        >
+                          Suggest from name
+                        </button>
+                      </div>
+                      <p className="text-xs text-violet-900/75">
+                        Current: <strong>{formatStockUnitLong(formData.unit)}</strong> — used on{' '}
+                        <Link href="/aquaculture/medicine" className="font-medium underline">
+                          Aquaculture → Medicine
+                        </Link>{' '}
+                        when recording treatments.
+                      </p>
+                    </div>
+                  )}
 
                   {isFeedItemForm && (
                     <div className="col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">

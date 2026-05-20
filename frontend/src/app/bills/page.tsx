@@ -688,7 +688,10 @@ function BillPondAllocationFields({
       ) : mode === 'shared_equal' ? (
         <div className="rounded-lg border border-teal-100 bg-white p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-medium text-teal-900">Select at least two ponds (equal split of line amount)</p>
+            <p className="text-xs font-medium text-teal-900">
+              Select at least two ponds (equal split of line amount). Use for shared feed, medicine, or utilities
+              charged on one bill.
+            </p>
             <button
               type="button"
               className="text-xs font-medium text-teal-700 hover:text-teal-900 underline"
@@ -700,7 +703,7 @@ function BillPondAllocationFields({
                 )
               }
             >
-              All ponds
+              All active ponds
             </button>
           </div>
           <ul className="mt-2 max-h-36 space-y-1 overflow-y-auto">

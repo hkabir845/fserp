@@ -13,11 +13,6 @@ export const FALLBACK_BACKEND_ORIGIN = 'https://api.mahasoftcorporation.com'
 
 const DEFAULT_BACKEND_ORIGIN = FALLBACK_BACKEND_ORIGIN
 
-/** Default UI origin for help text; `next dev` sets `NEXT_PUBLIC_APP_ORIGIN` via `.env.development`. */
-export const FALLBACK_FRONTEND_ORIGIN =
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_APP_ORIGIN?.trim()) ||
-  'https://mahasoftcorporation.com'
-
 /**
  * `runserver` is HTTP-only. If env still has `https://localhost` / loopback, the browser throws
  * net::ERR_SSL_PROTOCOL_ERROR — force http. Set `NEXT_PUBLIC_API_FORCE_HTTPS_LOCAL=true` if you terminate TLS locally.
@@ -407,7 +402,7 @@ api.interceptors.request.use(
             /* ignore */
           }
         }
-        if (sid && /^\d+$/.test(sid) && !hasHome) {
+        if (sid && /^\d+$/.test(sid) && !/^p:\d+$/.test(sid) && !hasHome) {
           config.headers['X-Selected-Station-Id'] = sid
         }
       } catch {

@@ -1,6 +1,6 @@
 'use client'
 
-import { MapPin, Fish, TrendingUp, Percent } from 'lucide-react'
+import { MapPin, Fish, TrendingUp, Percent, type LucideIcon } from 'lucide-react'
 import {
   ResponsiveContainer,
   BarChart,
@@ -28,7 +28,7 @@ function AnalyticsKpiCard({
   title: string
   value: string
   subtitle?: string
-  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>
+  icon: LucideIcon
   iconClass: string
 }) {
   return (

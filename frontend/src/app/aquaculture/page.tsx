@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   ArrowRight,
   CalendarRange,
@@ -16,6 +16,7 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
+  type LucideIcon,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -916,7 +917,7 @@ function KpiCard(props: {
   title: string
   value: string
   sub: string
-  icon: ComponentType<{ className?: string; strokeWidth?: number | string }>
+  icon: LucideIcon
   accent: 'positive' | 'negative' | 'neutral'
 }) {
   const { title, value, sub, icon: Icon, accent } = props

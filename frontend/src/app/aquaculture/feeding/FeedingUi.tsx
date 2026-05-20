@@ -1,8 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import type { ComponentType } from 'react'
-import { Bot, CheckCircle2, ChevronRight, HelpCircle, XCircle } from 'lucide-react'
+import { Bot, CheckCircle2, ChevronRight, HelpCircle, XCircle, type LucideIcon } from 'lucide-react'
 import { formatDateOnly } from '@/utils/date'
 import {
   type AdviceStatusFilter,
@@ -47,7 +46,7 @@ export function PipelineStatCard(props: {
   title: string
   value: string | number
   sub: string
-  icon: ComponentType<{ className?: string; strokeWidth?: number | string }>
+  icon: LucideIcon
   tone: 'amber' | 'sky' | 'emerald' | 'slate'
   onClick?: () => void
   active?: boolean
@@ -91,7 +90,7 @@ function StatInner(props: {
   title: string
   value: string | number
   sub: string
-  Icon: ComponentType<{ className?: string; strokeWidth?: number | string }>
+  Icon: LucideIcon
   iconBg: string
 }) {
   const { title, value, sub, Icon, iconBg } = props

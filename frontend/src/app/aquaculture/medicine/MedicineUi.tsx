@@ -1,7 +1,6 @@
 'use client'
 
-import type { ComponentType } from 'react'
-import { AlertTriangle, HelpCircle, Lock, Pencil, Pill, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, HelpCircle, Lock, Pencil, Pill, Plus, Trash2, type LucideIcon } from 'lucide-react'
 import type { MedicineProductLine } from './medicineUtils'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
@@ -16,7 +15,7 @@ export function MedicineStatCard(props: {
   title: string
   value: string | number
   sub: string
-  icon: ComponentType<{ className?: string; strokeWidth?: number | string }>
+  icon: LucideIcon
   tone?: 'violet' | 'slate' | 'amber'
 }) {
   const { title, value, sub, icon: Icon, tone = 'violet' } = props

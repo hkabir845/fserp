@@ -10,6 +10,7 @@ import {
   BarChart3, Calendar, Download, Filter, RefreshCw, Printer,
   Gauge, Droplet,   ClipboardList, Layers, ShoppingCart, MapPin, Fish, Store,
   Scale, Landmark, Banknote, BookOpen, CreditCard,
+  type LucideIcon,
 } from 'lucide-react'
 import { canViewInventorySkuReport, hasPermission } from '@/utils/rbac'
 import api from '@/lib/api'
@@ -101,7 +102,7 @@ interface ReportCard {
   id: ReportType
   title: string
   description: string
-  icon: React.ElementType
+  icon: LucideIcon
   category: 'financial' | 'operational' | 'analytical' | 'inventory' | 'aquaculture'
 }
 

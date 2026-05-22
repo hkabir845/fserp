@@ -28,6 +28,7 @@ interface Employee {
   salary?: number
   current_balance?: string | number
   opening_balance?: string | number
+  opening_balance_date?: string | null
   is_active: boolean
   /** Primary work site (ops / reporting) */
   home_station_id?: number | null
@@ -109,6 +110,8 @@ export default function EmployeesPage() {
     job_title: '',
     department: '',
     salary: '',
+    opening_balance: 0,
+    opening_balance_date: new Date().toISOString().split('T')[0],
     is_active: true,
     home_station_id: '' as string | number,
     home_aquaculture_pond_id: '' as string | number,
@@ -291,6 +294,8 @@ export default function EmployeesPage() {
       job_title: '',
       department: '',
       salary: '',
+      opening_balance: 0,
+      opening_balance_date: new Date().toISOString().split('T')[0],
       is_active: true,
       home_station_id: '',
       home_aquaculture_pond_id: '',
@@ -325,6 +330,8 @@ export default function EmployeesPage() {
         job_title: formData.job_title || null,
         department: formData.department || null,
         salary: formData.salary ? parseFloat(formData.salary) : null,
+        opening_balance: formData.opening_balance,
+        opening_balance_date: formData.opening_balance_date || null,
         is_active: formData.is_active,
       }
       if (code) {
@@ -391,6 +398,10 @@ export default function EmployeesPage() {
       job_title: employee.position || employee.job_title || '',
       department: employee.department || '',
       salary: employee.salary ? employee.salary.toString() : '',
+      opening_balance: Number(employee.opening_balance ?? employee.current_balance ?? 0),
+      opening_balance_date: employee.opening_balance_date
+        ? employee.opening_balance_date.split('T')[0]
+        : new Date().toISOString().split('T')[0],
       is_active: employee.is_active,
       home_station_id:
         employee.home_station_id != null && employee.home_station_id > 0
@@ -430,6 +441,8 @@ export default function EmployeesPage() {
           job_title: formData.job_title || null,
           department: formData.department || null,
           salary: formData.salary ? parseFloat(formData.salary) : null,
+          opening_balance: formData.opening_balance,
+          opening_balance_date: formData.opening_balance_date || null,
           is_active: formData.is_active,
           home_station_id:
             formData.home_station_id !== '' && formData.home_station_id != null
@@ -1295,7 +1308,49 @@ export default function EmployeesPage() {
                         />
                       </div>
                     </div>
-                    <div className="flex items-center">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Opening balance ({currencySymbol})
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                          {currencySymbol}
+                        </span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={formData.opening_balance}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              opening_balance: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {editingId
+                          ? 'Update opening balance if needed'
+                          : 'Starting net payable to this employee (positive) or advance owed by employee (negative)'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Opening balance as of
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.opening_balance_date}
+                        onChange={(e) =>
+                          setFormData({ ...formData, opening_balance_date: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">Date shown on the employee ledger opening line</p>
+                    </div>
+                    <div className="flex items-center md:col-span-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
                           type="checkbox"

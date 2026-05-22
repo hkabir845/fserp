@@ -151,7 +151,8 @@ export default function AppsPage() {
       ),
       aquacultureEnabled,
       userRole,
-      isSuperAdmin
+      isSuperAdmin,
+      userPermissions
     )
   }, [userRole, userPermissions, isSuperAdmin, mode, fsmsErpMenuItems, saasMenuItems, aquacultureEnabled])
 

@@ -21,6 +21,13 @@ interface ShiftTemplate {
   is_active: boolean
 }
 
+function inferCrossMidnight(start: string, end: string): boolean {
+  const s = toHhMmString(start)
+  const e = toHhMmString(end)
+  if (!s || !e) return false
+  return e < s
+}
+
 /** API omits is_active — treat as active. Backend has no is_cross_midnight; infer for display only. */
 function normalizeTemplates(data: unknown): ShiftTemplate[] {
   if (!Array.isArray(data)) return []
@@ -32,7 +39,7 @@ function normalizeTemplates(data: unknown): ShiftTemplate[] {
       name: String(raw.name || 'Shift'),
       start_time: start || null,
       end_time: end || null,
-      is_cross_midnight: Boolean(raw.is_cross_midnight),
+      is_cross_midnight: Boolean(raw.is_cross_midnight) || inferCrossMidnight(start, end),
       is_active: raw.is_active !== false,
     }
   })
@@ -123,6 +130,7 @@ export default function ShiftManagementPage() {
   /** All sessions (open + last closed), newest first – from GET /shifts/ */
   const [sessionHistory, setSessionHistory] = useState<ShiftSession[]>([])
   const [templates, setTemplates] = useState<ShiftTemplate[]>([])
+  const [seeding247, setSeeding247] = useState(false)
   const [stations, setStations] = useState<Station[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<number | null>(null)
   const [selectedStation, setSelectedStation] = useState<number | null>(null)
@@ -463,6 +471,41 @@ export default function ShiftManagementPage() {
   const handleCreateTemplate = () => {
     resetTemplateForm()
     setShowTemplateModal(true)
+  }
+
+  const handleSeedStandard247 = async () => {
+    if (
+      !confirm(
+        'Add the three standard 24/7 shift templates?\n\n• Day Shift (06:00–14:00)\n• Evening Shift (14:00–22:00)\n• Night Shift (22:00–06:00)\n\nExisting templates with the same names are left unchanged.',
+      )
+    ) {
+      return
+    }
+    setSeeding247(true)
+    try {
+      const res = await api.post<{
+        created_count: number
+        created: { name: string }[]
+        skipped: string[]
+        templates?: unknown
+      }>('/shifts/templates/seed-standard-247/')
+      const n = res.data?.created_count ?? 0
+      if (n > 0) {
+        toast.success(`Added ${n} standard template${n === 1 ? '' : 's'}`)
+      } else {
+        toast.success('All three 24/7 templates already exist')
+      }
+      if (Array.isArray(res.data?.templates)) {
+        setTemplates(normalizeTemplates(res.data.templates))
+      } else {
+        await loadData()
+      }
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } }
+      toast.error(err.response?.data?.detail || 'Could not add standard templates')
+    } finally {
+      setSeeding247(false)
+    }
   }
 
   const handleDeleteTemplate = async (template: ShiftTemplate) => {
@@ -1061,20 +1104,33 @@ export default function ShiftManagementPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-gray-900">Shift templates</h2>
             {canManageTemplates && (
-              <button
-                type="button"
-                onClick={handleCreateTemplate}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Plus className="h-5 w-5" />
-                <span>New template</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSeedStandard247()}
+                  disabled={seeding247}
+                  className="flex items-center space-x-2 px-4 py-2 border border-violet-300 bg-violet-50 text-violet-900 rounded-lg hover:bg-violet-100 transition-colors disabled:opacity-50"
+                >
+                  <Clock className="h-5 w-5" />
+                  <span>{seeding247 ? 'Adding…' : 'Add 24/7 standard (×3)'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateTemplate}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="h-5 w-5" />
+                  <span>New template</span>
+                </button>
+              </div>
             )}
           </div>
           {templates.length === 0 ? (
             <p className="text-gray-500 text-center py-8">
               No templates defined for this company.{' '}
-              {canManageTemplates ? 'Click “New template” to add Morning / Evening shifts.' : 'Ask an administrator to add templates.'}
+              {canManageTemplates
+                ? 'Click “Add 24/7 standard (×3)” for Day / Evening / Night shifts, or “New template” for a custom window.'
+                : 'Ask an administrator to add templates.'}
             </p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

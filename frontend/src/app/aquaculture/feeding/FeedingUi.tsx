@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { Bot, CheckCircle2, ChevronRight, HelpCircle, XCircle, type LucideIcon } from 'lucide-react'
 import { formatDateOnly } from '@/utils/date'
@@ -159,13 +160,17 @@ export function FeedingInsightHero({
   row,
   weatherLabel,
   mealsLabel,
+  feedKgOverride,
 }: {
   row: FeedingAdviceRow
   weatherLabel?: string | null
   mealsLabel?: string | null
+  /** When set (e.g. apply-in-field kg), shown instead of suggested/applied on the hero. */
+  feedKgOverride?: string | null
 }) {
   const sackKg = rowSackKg(row)
-  const kg = primaryFeedKg(row)
+  const override = feedKgOverride?.trim()
+  const kg = override || primaryFeedKg(row)
   const pct = bwPercentFromRow(row)
   const sackLabel = kg ? feedKgToSackLabel(kg, sackKg) : null
 
@@ -321,6 +326,79 @@ export function AdvicePlanCard(props: {
         Open full plan →
       </p>
     </button>
+  )
+}
+
+export function FeedingDoseEditor(props: {
+  kg: string
+  sacks: string
+  sackKg: number
+  suggestedKg: string | null
+  onKgChange: (v: string) => void
+  onSacksChange: (v: string) => void
+  onUseSuggested: () => void
+  sackSelect: ReactNode
+  hint?: string
+  footer?: ReactNode
+}) {
+  const { kg, sacks, sackKg, suggestedKg, onKgChange, onSacksChange, onUseSuggested, sackSelect, hint, footer } =
+    props
+  const suggested = suggestedKg?.trim() ?? ''
+  const showReset =
+    suggested !== '' &&
+    kg.trim() !== '' &&
+    (Math.abs((Number.parseFloat(kg) || 0) - (Number.parseFloat(suggested) || 0)) >= 0.005 ||
+      sacks.trim() !== '')
+
+  return (
+    <section className="rounded-xl border border-teal-200/80 bg-teal-50/40 p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-teal-950">Daily feed amount</h3>
+      <p className="mt-1 text-xs leading-relaxed text-teal-900/90">
+        {hint ??
+          'Accept the AI suggested total or enter your own kg (or sacks). Per-meal amounts below keep the same split ratio.'}
+      </p>
+      <div className="mt-3">{sackSelect}</div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="block text-xs font-medium text-slate-700">
+          Total kg / day
+          <input
+            type="text"
+            inputMode="decimal"
+            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            value={kg}
+            onChange={(e) => onKgChange(e.target.value)}
+          />
+        </label>
+        <label className="block text-xs font-medium text-slate-700">
+          Sacks ({sackKg} kg/sack)
+          <input
+            type="text"
+            inputMode="numeric"
+            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            value={sacks}
+            onChange={(e) => onSacksChange(e.target.value)}
+          />
+        </label>
+      </div>
+      {suggested ? (
+        <p className="mt-2 text-xs text-slate-600">
+          AI suggested: <strong className="tabular-nums text-slate-900">{suggested} kg</strong>
+          {feedKgToSackLabel(suggested, sackKg) ? ` (${feedKgToSackLabel(suggested, sackKg)})` : ''}
+        </p>
+      ) : null}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {showReset ? (
+          <button
+            type="button"
+            onClick={onUseSuggested}
+            className="rounded-lg border border-teal-300 bg-white px-3 py-1.5 text-xs font-medium text-teal-900 hover:bg-teal-50"
+          >
+            Use suggested dose
+          </button>
+        ) : null}
+        {footer}
+      </div>
+    </section>
   )
 }
 

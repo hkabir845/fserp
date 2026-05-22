@@ -1,12 +1,15 @@
 """Customers API: list, create, get, update, delete, add-dummy (company-scoped)."""
+import sys
 from datetime import date
 from decimal import Decimal
 
+from django.conf import settings
 from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from api.utils.auth import auth_required
+from api.services.permission_service import normalize_role_key
+from api.utils.auth import auth_required, user_is_super_admin
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
 from api.views.common import parse_json_body, require_company_id
 from api.models import Customer
@@ -230,6 +233,14 @@ def customers_list(request):
 def customers_add_dummy(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
+    if not settings.DEBUG and "pytest" not in sys.modules:
+        return JsonResponse(
+            {"detail": "Dummy customer seeding is disabled in production."},
+            status=403,
+        )
+    user = getattr(request, "api_user", None)
+    if not user_is_super_admin(user) and normalize_role_key(getattr(user, "role", None)) != "admin":
+        return JsonResponse({"detail": "Admin access required."}, status=403)
     try:
         company_id = request.company_id
         count = Customer.objects.filter(company_id=company_id).count()

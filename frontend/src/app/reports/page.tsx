@@ -12,7 +12,12 @@ import {
   Scale, Landmark, Banknote, BookOpen, CreditCard,
   type LucideIcon,
 } from 'lucide-react'
-import { canViewInventorySkuReport, hasPermission } from '@/utils/rbac'
+import {
+  canAccessReport,
+  canViewInventorySkuReport,
+  getCurrentUserPermissions,
+  hasPermission,
+} from '@/utils/rbac'
 import api from '@/lib/api'
 import { formatDate, formatDateOnly, formatDateRange, localDateISO, toDateInputValue } from '@/utils/date'
 import { formatAmountPlain, formatCurrency, formatNumber } from '@/utils/formatting'
@@ -88,6 +93,13 @@ type ReportType =
   | 'aquaculture-production-cycles'
   | 'aquaculture-profit-transfers'
   | 'aquaculture-fish-transfers'
+  | 'aquaculture-pond-feed-stock'
+  | 'aquaculture-pond-medicine-stock'
+  | 'aquaculture-pond-supplies-stock'
+  | 'aquaculture-fish-stock-position'
+  | 'aquaculture-shop-station-stock'
+  | 'aquaculture-equipment-assets'
+  | 'aquaculture-pond-total-inventory'
   | 'aquaculture-pl-management'
 
 const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [
@@ -434,6 +446,57 @@ const reports: ReportCard[] = [
     icon: Fish,
     category: 'aquaculture',
   },
+  {
+    id: 'aquaculture-pond-total-inventory',
+    title: 'Aquaculture — Pond total inventory & value',
+    description:
+      'Complete per-pond value: warehouse feed, medicine, supplies, live fish, fry SKU, and equipment/assets (BDT)',
+    icon: Scale,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-pond-feed-stock',
+    title: 'Aquaculture — Pond feed stock',
+    description: 'On-hand feed in each pond warehouse with quantity and inventory value (snapshot)',
+    icon: Package,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-pond-medicine-stock',
+    title: 'Aquaculture — Pond medicine stock',
+    description: 'On-hand medicine and pond-care products at ponds with quantities and value',
+    icon: Package,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-pond-supplies-stock',
+    title: 'Aquaculture — Pond supplies stock',
+    description: 'Other inventoried materials at pond warehouses (nets, tools, general supplies)',
+    icon: Package,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-fish-stock-position',
+    title: 'Aquaculture — Fish stock by pond',
+    description: 'Biological fish position per pond from transfers, fry bills, sales, samples, and ledger',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-shop-station-stock',
+    title: 'Aquaculture — Shop / station inventory',
+    description: 'Feed, medicine, fry SKUs, and supplies on hand at shop stations before transfer to ponds',
+    icon: Store,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-equipment-assets',
+    title: 'Aquaculture — Equipment & assets',
+    description:
+      'Aerators, boats, nets, tools, and similar purchases (equipment, repair, miscellaneous expenses)',
+    icon: Layers,
+    category: 'aquaculture',
+  },
 ]
 
 const SUMMARY_EXCLUDED_REPORTS: ReportType[] = [
@@ -458,6 +521,13 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
   'aquaculture-fish-transfers',
+  'aquaculture-pond-feed-stock',
+  'aquaculture-pond-medicine-stock',
+  'aquaculture-pond-supplies-stock',
+  'aquaculture-fish-stock-position',
+  'aquaculture-shop-station-stock',
+  'aquaculture-equipment-assets',
+  'aquaculture-pond-total-inventory',
 ])
 
 /** Mix — Fuel & Aquaculture: core GL + fuel ops + every aquaculture report (when role allows). */
@@ -488,6 +558,13 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
   'aquaculture-fish-transfers',
+  'aquaculture-pond-feed-stock',
+  'aquaculture-pond-medicine-stock',
+  'aquaculture-pond-supplies-stock',
+  'aquaculture-fish-stock-position',
+  'aquaculture-shop-station-stock',
+  'aquaculture-equipment-assets',
+  'aquaculture-pond-total-inventory',
 ] as const
 
 /** Aquaculture reports also listed under Analytical (ponds + sales KPIs). */
@@ -526,6 +603,7 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'item-stock-movement',
   'item-velocity-analysis',
   'item-purchase-velocity-analysis',
+  'aquaculture-shop-station-stock',
 ])
 
 /** Subset of station-scoped reports where amounts come from posted GL lines (not invoice subledgers). */
@@ -586,6 +664,13 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
   'aquaculture-fish-transfers',
+  'aquaculture-pond-feed-stock',
+  'aquaculture-pond-medicine-stock',
+  'aquaculture-pond-supplies-stock',
+  'aquaculture-fish-stock-position',
+  'aquaculture-shop-station-stock',
+  'aquaculture-equipment-assets',
+  'aquaculture-pond-total-inventory',
 ])
 
 /** In-report + export label for which site(s) a station-scoped report covers. */
@@ -932,7 +1017,9 @@ export default function ReportsPage() {
     }
   }, [aquaculturePondId, selectedReport])
 
-  const showAquacultureReports = companyAquacultureEnabled !== false && hasPermission('app.aquaculture')
+  const showAquacultureReports =
+    companyAquacultureEnabled !== false &&
+    (hasPermission('app.aquaculture') || hasPermission('app.aquaculture.report_pl'))
 
   useEffect(() => {
     if (!showAquacultureReports && filterCategory === 'aquaculture') {
@@ -972,9 +1059,13 @@ export default function ReportsPage() {
   // Filter reports based on user role and category
   const getFilteredReports = () => {
     let roleFilteredReports = reports
-    
-    // First filter by role
-    if (userRole === 'cashier') {
+
+    if (reportRbacHydrated && getCurrentUserPermissions() != null) {
+      roleFilteredReports = roleFilteredReports.filter((report) => canAccessReport(report.id))
+    }
+
+    // First filter by role (legacy sessions without explicit permissions)
+    if (userRole === 'cashier' && getCurrentUserPermissions() == null) {
       // Cashiers see only: Sales and Stock reports
       roleFilteredReports = reports.filter(report => 
         report.id === 'fuel-sales' ||
@@ -6686,6 +6777,7 @@ function renderReportTable(
   if (
     (reportType === 'aquaculture-fish-sales' ||
       reportType === 'aquaculture-expenses' ||
+      reportType === 'aquaculture-equipment-assets' ||
       reportType === 'aquaculture-sampling' ||
       reportType === 'aquaculture-profit-transfers') &&
     data &&
@@ -6705,8 +6797,14 @@ function renderReportTable(
             'Rows are filtered by transaction date within this range.'
           )}
         <p className="text-sm font-medium text-slate-700">
-          All amounts in <strong>BDT</strong> where applicable.
+          {reportType === 'aquaculture-equipment-assets'
+            ? 'Equipment, repair, and miscellaneous pond asset purchases in the period — amounts in '
+            : 'All amounts in '}
+          <strong>BDT</strong> where applicable.
         </p>
+        {reportType === 'aquaculture-equipment-assets' && data.accounting_note ? (
+          <p className="text-xs text-slate-600">{data.accounting_note}</p>
+        ) : null}
         {groups.map((g: any) => (
           <div key={`${reportType}-g-${g.pond_id ?? 's'}`} className="rounded-lg border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-100 bg-cyan-50/80 px-4 py-2">
@@ -6726,13 +6824,13 @@ function renderReportTable(
                     </tr>
                   </thead>
                 ) : null}
-                {reportType === 'aquaculture-expenses' ? (
+                {reportType === 'aquaculture-expenses' || reportType === 'aquaculture-equipment-assets' ? (
                   <thead>
                     <tr className="border-b text-left text-xs text-gray-500">
                       <th className="px-2 py-1">Date</th>
                       <th className="px-2 py-1">Category</th>
                       <th className="px-2 py-1 text-right">Amount (BDT)</th>
-                      <th className="px-2 py-1">Vendor</th>
+                      <th className="px-2 py-1">Vendor / memo</th>
                     </tr>
                   </thead>
                 ) : null}
@@ -6770,7 +6868,7 @@ function renderReportTable(
                           <td className="px-2 py-1.5 text-gray-600">{ln.buyer_name || '—'}</td>
                         </>
                       ) : null}
-                      {reportType === 'aquaculture-expenses' ? (
+                      {reportType === 'aquaculture-expenses' || reportType === 'aquaculture-equipment-assets' ? (
                         <>
                           <td className="px-2 py-1.5 whitespace-nowrap">{ln.expense_date}</td>
                           <td className="px-2 py-1.5">{ln.expense_category_label}</td>
@@ -6812,7 +6910,7 @@ function renderReportTable(
                       <td />
                     </tr>
                   ) : null}
-                  {reportType === 'aquaculture-expenses' ? (
+                  {reportType === 'aquaculture-expenses' || reportType === 'aquaculture-equipment-assets' ? (
                     <tr>
                       <td colSpan={2} className="px-2 py-2 text-right text-xs font-semibold text-slate-800">
                         Sub-total — {g.pond_name}
@@ -6855,7 +6953,7 @@ function renderReportTable(
             <span className="tabular-nums">
               {reportType === 'aquaculture-fish-sales'
                 ? aqBdt(totals.total_amount)
-                : reportType === 'aquaculture-expenses'
+                : reportType === 'aquaculture-expenses' || reportType === 'aquaculture-equipment-assets'
                   ? aqBdt(totals.total_amount)
                   : reportType === 'aquaculture-profit-transfers'
                     ? aqBdt(totals.total_amount)
@@ -6933,6 +7031,383 @@ function renderReportTable(
           <span className="float-right tabular-nums">
             {Number(totals.total_weight_kg ?? 0).toLocaleString()} kg · {aqBdt(totals.total_cost_amount)}
           </span>
+        </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'aquaculture-pond-total-inventory' && data && Array.isArray(data.groups)) {
+    const period = data.period || {}
+    const groups: any[] = data.groups
+    const totals = data.totals || {}
+    const asOf = data.as_of_date || period.end_date || ''
+    const sectionOrder = [
+      'feed',
+      'medicine',
+      'supplies',
+      'fish_sku',
+      'biological_fish',
+      'equipment_assets',
+    ]
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Combined pond inventory and asset value as of the report end date.'
+          )}
+        <p className="text-sm font-medium text-slate-700">
+          Total stock and value per pond as of <strong>{asOf}</strong> — warehouse, live fish, and deployed equipment (
+          <strong>BDT</strong>).
+        </p>
+        {data.accounting_note ? (
+          <p className="text-xs text-slate-600">{data.accounting_note}</p>
+        ) : null}
+        {groups.map((g: any) => {
+          const st = g.subtotals || {}
+          const lines: any[] = g.lines || []
+          const bySection: Record<string, any[]> = {}
+          for (const ln of lines) {
+            const sk = ln.section || 'supplies'
+            if (!bySection[sk]) bySection[sk] = []
+            bySection[sk].push(ln)
+          }
+          return (
+            <div key={`ptotal-${g.pond_id}`} className="rounded-lg border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-100 bg-teal-50/90 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-lg font-bold text-teal-950">{g.pond_name}</h4>
+                <span className="text-base font-bold tabular-nums text-teal-900">
+                  Total: {aqBdt(st.total_bdt)}
+                </span>
+              </div>
+              <div className="grid gap-2 border-b border-gray-100 bg-slate-50/80 px-4 py-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <span className="text-gray-500">Feed</span>{' '}
+                  <span className="font-semibold tabular-nums">{aqBdt(st.feed_bdt)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Medicine</span>{' '}
+                  <span className="font-semibold tabular-nums">{aqBdt(st.medicine_bdt)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Supplies & materials</span>{' '}
+                  <span className="font-semibold tabular-nums">{aqBdt(st.supplies_bdt)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Fish / fry SKU (warehouse)</span>{' '}
+                  <span className="font-semibold tabular-nums">{aqBdt(st.fish_sku_bdt)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Live fish (biological)</span>{' '}
+                  <span className="font-semibold tabular-nums">{aqBdt(st.biological_fish_bdt)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Equipment & assets</span>{' '}
+                  <span className="font-semibold tabular-nums">{aqBdt(st.equipment_assets_bdt)}</span>
+                </div>
+              </div>
+              <div className="space-y-4 p-3">
+                {sectionOrder.map((sk) => {
+                  const secLines = bySection[sk]
+                  if (!secLines?.length) return null
+                  const label = secLines[0]?.section_label || sk
+                  return (
+                    <div key={`${g.pond_id}-${sk}`}>
+                      <h5 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        {label}
+                      </h5>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="border-b text-left text-xs text-gray-500">
+                              <th className="px-2 py-1">Item / description</th>
+                              <th className="px-2 py-1 text-right">Qty</th>
+                              <th className="px-2 py-1">Unit</th>
+                              <th className="px-2 py-1 text-right">Value (BDT)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {secLines.map((ln: any, idx: number) => (
+                              <tr key={`${sk}-${ln.item_id ?? ln.id ?? idx}`}>
+                                <td className="px-2 py-1.5">
+                                  <span className="font-medium">{ln.item_name}</span>
+                                  {ln.vendor_name ? (
+                                    <span className="block text-xs text-gray-500">
+                                      {ln.expense_date ? `${ln.expense_date} · ` : ''}
+                                      {ln.vendor_name}
+                                      {ln.memo ? ` — ${ln.memo}` : ''}
+                                    </span>
+                                  ) : null}
+                                  {ln.valuation_note ? (
+                                    <span className="block text-xs text-gray-500">{ln.valuation_note}</span>
+                                  ) : null}
+                                </td>
+                                <td className="px-2 py-1.5 text-right tabular-nums">
+                                  {ln.implied_net_fish_count != null
+                                    ? `${Number(ln.quantity).toLocaleString()} kg / ${ln.implied_net_fish_count.toLocaleString()} fish`
+                                    : Number(ln.quantity).toLocaleString()}
+                                </td>
+                                <td className="px-2 py-1.5 text-gray-600">
+                                  {ln.cost_per_kg ? `${ln.unit} @ ${ln.cost_per_kg}/kg` : ln.unit}
+                                </td>
+                                <td className="px-2 py-1.5 text-right tabular-nums font-medium">
+                                  {aqBdt(ln.value_bdt)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+        <div className="rounded-lg border-2 border-teal-400 bg-teal-50 px-4 py-4">
+          <div className="flex flex-wrap justify-between gap-2 text-base font-bold text-teal-950">
+            <span>Grand total — all ponds</span>
+            <span className="tabular-nums">{aqBdt(totals.grand_total_bdt)}</span>
+          </div>
+          <p className="mt-1 text-xs text-teal-800">{totals.pond_count ?? groups.length} pond(s) in report</p>
+        </div>
+      </div>
+    )
+  }
+
+  const AQUACULTURE_POND_STOCK_REPORTS = new Set([
+    'aquaculture-pond-feed-stock',
+    'aquaculture-pond-medicine-stock',
+    'aquaculture-pond-supplies-stock',
+  ])
+  if (AQUACULTURE_POND_STOCK_REPORTS.has(reportType) && data && Array.isArray(data.groups)) {
+    const period = data.period || {}
+    const groups: any[] = data.groups
+    const totals = data.totals || {}
+    const summary = data.summary || {}
+    const asOf = data.as_of_date || period.end_date || ''
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'On-hand pond warehouse quantities as of the report end date.'
+          )}
+        <p className="text-sm font-medium text-slate-700">
+          {summary.stock_kind_label || 'Pond warehouse'} — snapshot as of <strong>{asOf}</strong>. Values in{' '}
+          <strong>BDT</strong> at average unit cost.
+        </p>
+        {data.accounting_note ? (
+          <p className="text-xs text-slate-600">{data.accounting_note}</p>
+        ) : null}
+        {groups.length === 0 ? (
+          <p className="text-sm text-slate-600">No on-hand stock for the selected pond filter.</p>
+        ) : (
+          groups.map((g: any) => (
+            <div key={`pstock-${g.pond_id}`} className="rounded-lg border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-100 bg-cyan-50/80 px-4 py-2">
+                <h4 className="font-semibold text-cyan-950">{g.pond_name}</h4>
+              </div>
+              <div className="overflow-x-auto p-2">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-gray-500">
+                      <th className="px-2 py-1">Item</th>
+                      <th className="px-2 py-1">Category</th>
+                      <th className="px-2 py-1 text-right">Qty</th>
+                      <th className="px-2 py-1">Unit</th>
+                      <th className="px-2 py-1 text-right">Value (BDT)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {(g.lines || []).map((ln: any) => (
+                      <tr key={ln.item_id}>
+                        <td className="px-2 py-1.5 font-medium">{ln.item_name}</td>
+                        <td className="px-2 py-1.5 text-gray-600">{ln.reporting_category || '—'}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{Number(ln.quantity).toLocaleString()}</td>
+                        <td className="px-2 py-1.5 text-gray-600">{ln.unit}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.extended_value)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-50">
+                    <tr>
+                      <td colSpan={4} className="px-2 py-2 text-right text-xs font-semibold text-slate-800">
+                        Sub-total — {g.pond_name}
+                      </td>
+                      <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
+                        {aqBdt(g.subtotal_value)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          ))
+        )}
+        <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
+          <span>Total — all ponds</span>
+          <span className="float-right tabular-nums">{aqBdt(totals.total_value)}</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'aquaculture-fish-stock-position' && data && Array.isArray(data.groups)) {
+    const period = data.period || {}
+    const groups: any[] = data.groups
+    const totals = data.totals || {}
+    const asOf = data.as_of_date || period.end_date || ''
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Biological fish position computed as of the report end date.'
+          )}
+        <p className="text-sm font-medium text-slate-700">
+          Fish stock by pond as of <strong>{asOf}</strong> (kg and head count from movements and latest sample).
+        </p>
+        {data.accounting_note ? (
+          <p className="text-xs text-slate-600">{data.accounting_note}</p>
+        ) : null}
+        {groups.map((g: any) => {
+          const ln = (g.lines || [])[0] || {}
+          return (
+            <div key={`fishpos-${g.pond_id}`} className="rounded-lg border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-100 bg-cyan-50/80 px-4 py-2 flex flex-wrap justify-between gap-2">
+                <h4 className="font-semibold text-cyan-950">{g.pond_name}</h4>
+                <span className="text-sm tabular-nums text-cyan-900">
+                  {Number(ln.implied_net_weight_kg ?? 0).toLocaleString()} kg ·{' '}
+                  {(ln.implied_net_fish_count ?? 0).toLocaleString()} fish
+                </span>
+              </div>
+              <div className="overflow-x-auto p-2 text-sm">
+                <table className="min-w-full">
+                  <tbody className="divide-y divide-gray-100">
+                    <tr>
+                      <td className="px-2 py-1 text-gray-500">Transfers in (kg)</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{ln.transfer_in_weight_kg}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-gray-500">Transfers out (kg)</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{ln.transfer_out_weight_kg}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-gray-500">Vendor fry in (kg / count)</td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {ln.vendor_bill_in_weight_kg} / {ln.vendor_bill_in_fish_count ?? '—'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-gray-500">Sales (kg / count)</td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {ln.sale_weight_kg} / {ln.sale_fish_count ?? '—'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-gray-500">Latest sample</td>
+                      <td className="px-2 py-1 text-right">
+                        {ln.latest_sample_date
+                          ? `${ln.latest_sample_date} · ${ln.latest_sample_fish_species_label || ''}`
+                          : '—'}
+                      </td>
+                    </tr>
+                    {ln.stocking_advice_message ? (
+                      <tr>
+                        <td className="px-2 py-1 text-gray-500">Stocking note</td>
+                        <td className="px-2 py-1 text-right text-gray-700">{ln.stocking_advice_message}</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        })}
+        <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
+          Total implied weight: {Number(totals.total_implied_weight_kg ?? 0).toLocaleString()} kg · Fish count:{' '}
+          {(totals.total_implied_fish_count ?? 0).toLocaleString()}
+        </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'aquaculture-shop-station-stock' && data && Array.isArray(data.groups)) {
+    const period = data.period || {}
+    const groups: any[] = data.groups
+    const totals = data.totals || {}
+    const asOf = data.as_of_date || period.end_date || ''
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Shop bin quantities as of the report end date; optional site filter applies.'
+          )}
+        <p className="text-sm font-medium text-slate-700">
+          Station / shop inventory as of <strong>{asOf}</strong> — feed, medicine, fry SKUs, and supplies in{' '}
+          <strong>BDT</strong>.
+        </p>
+        {data.accounting_note ? (
+          <p className="text-xs text-slate-600">{data.accounting_note}</p>
+        ) : null}
+        {groups.map((g: any) => (
+          <div key={`shop-${g.station_id}`} className="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-100 bg-cyan-50/80 px-4 py-2">
+              <h4 className="font-semibold text-cyan-950">{g.station_name}</h4>
+            </div>
+            <div className="overflow-x-auto p-2">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-gray-500">
+                    <th className="px-2 py-1">Item</th>
+                    <th className="px-2 py-1">Type</th>
+                    <th className="px-2 py-1 text-right">Qty</th>
+                    <th className="px-2 py-1">Unit</th>
+                    <th className="px-2 py-1 text-right">Value (BDT)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(g.lines || []).map((ln: any) => (
+                    <tr key={`${g.station_id}-${ln.item_id}`}>
+                      <td className="px-2 py-1.5 font-medium">{ln.item_name}</td>
+                      <td className="px-2 py-1.5 text-gray-600">{ln.stock_kind_label || ln.stock_kind}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{Number(ln.quantity).toLocaleString()}</td>
+                      <td className="px-2 py-1.5 text-gray-600">{ln.unit}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.extended_value)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50">
+                  <tr>
+                    <td colSpan={4} className="px-2 py-2 text-right text-xs font-semibold text-slate-800">
+                      Sub-total — {g.station_name}
+                    </td>
+                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
+                      {aqBdt(g.subtotal_value)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        ))}
+        <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
+          Total value: {aqBdt(totals.total_value)}
         </div>
       </div>
     )

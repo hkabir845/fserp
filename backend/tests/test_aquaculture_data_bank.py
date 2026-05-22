@@ -15,6 +15,7 @@ from api.services.aquaculture_data_bank_service import (
     pond_write_blocked_detail,
     preview_station_close,
     reopen_close_for_reference,
+    unlock_pond_close,
 )
 
 
@@ -80,6 +81,42 @@ def test_different_ponds_different_period_ends(api_client, company_tenant, auth_
         )
     )
     assert ends == {date(2025, 3, 31), date(2025, 12, 31)}
+
+
+@pytest.mark.django_db
+def test_unlock_pond_close_restores_writes(api_client, company_tenant, auth_admin_headers):
+    company_tenant.__class__.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="Unlock Me", is_active=True)
+    close, err = close_pond(
+        company_id=company_tenant.id,
+        pond_id=pond.id,
+        period_end=date(2025, 6, 30),
+        period_start=date(2024, 7, 1),
+        user=None,
+    )
+    assert err is None
+    assert pond_write_blocked_detail(company_tenant.id, pond.id, date(2025, 1, 1)) is not None
+
+    r_unlock = api_client.post(
+        f"/api/aquaculture/data-bank/closes/{close.id}/unlock/",
+        data="{}",
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r_unlock.status_code == 200, r_unlock.content.decode()
+    close.refresh_from_db()
+    assert close.is_data_locked is False
+    assert pond_write_blocked_detail(company_tenant.id, pond.id, date(2025, 1, 1)) is None
+
+    r_cycle = api_client.post(
+        "/api/aquaculture/production-cycles/",
+        data=json.dumps({"pond_id": pond.id, "name": "After unlock", "start_date": "2025-01-01"}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r_cycle.status_code == 201, r_cycle.content.decode()
 
 
 @pytest.mark.django_db

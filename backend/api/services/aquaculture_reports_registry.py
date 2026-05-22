@@ -23,8 +23,15 @@ from api.models import (
     Company,
     Invoice,
     InvoiceLine,
+    Item,
+    ItemStationStock,
+    Station,
 )
 from api.services.aquaculture_constants import fish_species_display_label
+from api.services.aquaculture_pond_stock_service import pond_warehouse_stock_matrix
+from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
+from api.services.gl_posting import item_inventory_unit_cost
+from api.services.station_stock import item_uses_station_bins
 from api.services.tenant_reporting_categories import aquaculture_expense_label, aquaculture_income_label
 from api.services.reporting import _is_fuel_line
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
@@ -108,7 +115,615 @@ def build_aquaculture_report(
         return _report_profit_transfers(company_id, start, end, request)
     if report_id == "aquaculture-fish-transfers":
         return _report_fish_transfers(company_id, start, end, request)
+    if report_id == "aquaculture-pond-feed-stock":
+        return _report_pond_warehouse_stock(company_id, end, request, stock_kind="feed")
+    if report_id == "aquaculture-pond-medicine-stock":
+        return _report_pond_warehouse_stock(company_id, end, request, stock_kind="medicine")
+    if report_id == "aquaculture-pond-supplies-stock":
+        return _report_pond_warehouse_stock(company_id, end, request, stock_kind="supplies")
+    if report_id == "aquaculture-fish-stock-position":
+        return _report_fish_stock_position(company_id, end, request)
+    if report_id == "aquaculture-shop-station-stock":
+        return _report_shop_station_stock(company_id, end, request)
+    if report_id == "aquaculture-equipment-assets":
+        return _report_equipment_assets(company_id, start, end, request)
+    if report_id == "aquaculture-pond-total-inventory":
+        return _report_pond_total_inventory(company_id, end, request)
     return JsonResponse({"detail": "Unknown aquaculture report"}, status=404)
+
+
+def _classify_item_stock_kind(item: Item | None) -> str:
+    """feed | medicine | fish | supplies — for pond warehouse and shop stock reports."""
+    if not item:
+        return "supplies"
+    pc = (getattr(item, "pos_category", None) or "").strip().lower()
+    if pc == "feed":
+        return "feed"
+    if pc == "medicine":
+        return "medicine"
+    if pc == "fish":
+        return "fish"
+    cat = (getattr(item, "category", None) or "").strip().lower()
+    name = (getattr(item, "name", None) or "").strip().lower()
+    blob = f"{cat} {name}"
+    if "medicine" in blob or "vaccin" in blob or "veterinar" in blob:
+        return "medicine"
+    if "fuel" in pc or "fuel" in cat:
+        return "fuel"
+    return "supplies"
+
+
+def _is_fuel_item(item: Item | None) -> bool:
+    if not item:
+        return False
+    pc = (getattr(item, "pos_category", None) or "").strip().lower()
+    cat = (getattr(item, "category", None) or "").strip().lower()
+    return "fuel" in pc or "fuel" in cat
+
+
+def _report_pond_warehouse_stock(
+    company_id: int, as_of: date, request: HttpRequest, *, stock_kind: str
+) -> dict[str, Any] | JsonResponse:
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    matrix = pond_warehouse_stock_matrix(company_id, pond_id=pond_filter_id)
+    by_pond: dict[int, list[dict]] = defaultdict(list)
+    pond_names: dict[int, str] = {}
+    grand_qty = Decimal("0")
+    grand_val = Decimal("0")
+    grand_lines = 0
+    for row in matrix:
+        item_id = int(row["item_id"])
+        it = Item.objects.filter(pk=item_id, company_id=company_id).first()
+        kind = _classify_item_stock_kind(it)
+        if kind == "fish":
+            continue
+        if kind != stock_kind:
+            continue
+        pid = int(row["pond_id"])
+        qty = _decimal(row["quantity"])
+        uc = _decimal(row.get("unit_cost") or "0")
+        ext = _money_q(qty * uc)
+        grand_qty += qty
+        grand_val += ext
+        grand_lines += 1
+        pond_names[pid] = row.get("pond_name") or f"Pond #{pid}"
+        line = {
+            "item_id": item_id,
+            "item_name": row.get("item_name") or "",
+            "unit": row.get("unit") or "unit",
+            "quantity": row.get("quantity") or "0",
+            "unit_cost": row.get("unit_cost") or "0",
+            "extended_value": str(ext),
+            "reporting_category": row.get("reporting_category") or "",
+            "pos_category": row.get("pos_category") or "",
+            "content_weight_kg": row.get("content_weight_kg"),
+        }
+        by_pond[pid].append(line)
+
+    groups: list[dict[str, Any]] = []
+    for pid in sorted(by_pond.keys(), key=lambda x: (pond_names.get(x, ""), x)):
+        lines = by_pond[pid]
+        sub_qty = sum((_decimal(l["quantity"]) for l in lines), Decimal("0"))
+        sub_val = _money_q(sum((_decimal(l["extended_value"]) for l in lines), Decimal("0")))
+        groups.append(
+            {
+                "pond_id": pid,
+                "pond_name": pond_names.get(pid, f"Pond #{pid}"),
+                "lines": lines,
+                "subtotal_quantity": str(sub_qty),
+                "subtotal_value": str(sub_val),
+                "line_count": len(lines),
+            }
+        )
+
+    kind_labels = {
+        "feed": "Feed",
+        "medicine": "Medicine",
+        "supplies": "Supplies & other pond warehouse",
+    }
+    summary = {
+        "stock_kind": stock_kind,
+        "stock_kind_label": kind_labels.get(stock_kind, stock_kind),
+        "as_of_date": as_of.isoformat(),
+        "line_count": grand_lines,
+        "pond_group_count": len(groups),
+        "total_quantity": float(grand_qty),
+        "total_value_bdt": float(_money_q(grand_val)),
+    }
+    return {
+        "period": {"start_date": as_of.isoformat(), "end_date": as_of.isoformat()},
+        "as_of_date": as_of.isoformat(),
+        "currency_code": BDT,
+        "summary": summary,
+        "groups": groups,
+        "totals": {
+            "line_count": grand_lines,
+            "total_quantity": str(grand_qty),
+            "total_value": str(_money_q(grand_val)),
+        },
+        "accounting_note": (
+            "On-hand quantities in each pond warehouse (ItemPondStock). "
+            "Values use average inventory unit cost. Snapshot as of the report end date."
+        ),
+    }
+
+
+def _report_fish_stock_position(
+    company_id: int, as_of: date, request: HttpRequest
+) -> dict[str, Any] | JsonResponse:
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    rows = compute_fish_stock_position_rows(
+        company_id,
+        pond_id=pond_filter_id,
+        include_inactive_ponds=False,
+    )
+    groups: list[dict[str, Any]] = []
+    total_kg = Decimal("0")
+    total_count = 0
+    for r in rows:
+        kg = _decimal(r.get("implied_net_weight_kg") or "0")
+        cnt = int(r.get("implied_net_fish_count") or 0)
+        total_kg += kg
+        total_count += cnt
+        groups.append(
+            {
+                "pond_id": r.get("pond_id"),
+                "pond_name": r.get("pond_name") or "",
+                "lines": [
+                    {
+                        "pond_role": r.get("pond_role"),
+                        "implied_net_weight_kg": r.get("implied_net_weight_kg"),
+                        "implied_net_fish_count": r.get("implied_net_fish_count"),
+                        "transfer_in_weight_kg": r.get("transfer_in_weight_kg"),
+                        "transfer_out_weight_kg": r.get("transfer_out_weight_kg"),
+                        "vendor_bill_in_weight_kg": r.get("vendor_bill_in_weight_kg"),
+                        "vendor_bill_in_fish_count": r.get("vendor_bill_in_fish_count"),
+                        "sale_weight_kg": r.get("sale_weight_kg"),
+                        "sale_fish_count": r.get("sale_fish_count"),
+                        "ledger_weight_kg_delta": r.get("ledger_weight_kg_delta"),
+                        "ledger_fish_count_delta": r.get("ledger_fish_count_delta"),
+                        "latest_sample_date": r.get("latest_sample_date"),
+                        "latest_sample_estimated_fish_count": r.get("latest_sample_estimated_fish_count"),
+                        "latest_sample_estimated_total_weight_kg": r.get(
+                            "latest_sample_estimated_total_weight_kg"
+                        ),
+                        "latest_sample_fish_species_label": r.get("latest_sample_fish_species_label"),
+                        "stocking_advice_status": r.get("stocking_advice_status"),
+                        "stocking_advice_message": r.get("stocking_advice_message"),
+                    }
+                ],
+                "subtotal_weight_kg": str(_money_q(kg)),
+                "subtotal_fish_count": cnt,
+            }
+        )
+
+    summary = {
+        "as_of_date": as_of.isoformat(),
+        "pond_count": len(groups),
+        "total_implied_weight_kg": float(_money_q(total_kg)),
+        "total_implied_fish_count": total_count,
+    }
+    return {
+        "period": {"start_date": as_of.isoformat(), "end_date": as_of.isoformat()},
+        "as_of_date": as_of.isoformat(),
+        "currency_code": BDT,
+        "summary": summary,
+        "groups": groups,
+        "totals": {
+            "pond_count": len(groups),
+            "total_implied_weight_kg": str(_money_q(total_kg)),
+            "total_implied_fish_count": total_count,
+        },
+        "accounting_note": (
+            "Biological fish position per pond from transfers, vendor fry bills, sales, stock ledger, "
+            "and latest biomass sample. Not the same as inventoried fry SKUs in the pond warehouse."
+        ),
+    }
+
+
+def _report_shop_station_stock(
+    company_id: int, as_of: date, request: HttpRequest
+) -> dict[str, Any] | JsonResponse:
+    st_raw = (request.GET.get("station_id") or "").strip()
+    station_filter: int | None = None
+    if st_raw.isdigit():
+        station_filter = int(st_raw)
+        if not Station.objects.filter(pk=station_filter, company_id=company_id, is_active=True).exists():
+            return JsonResponse({"detail": "Station not found"}, status=404)
+
+    qs = (
+        ItemStationStock.objects.filter(company_id=company_id)
+        .select_related("item", "station")
+        .order_by("station__station_name", "item__name", "item_id")
+    )
+    if station_filter is not None:
+        qs = qs.filter(station_id=station_filter)
+
+    by_station: dict[int, list[dict]] = defaultdict(list)
+    station_names: dict[int, str] = {}
+    grand_val = Decimal("0")
+    grand_lines = 0
+    for row in qs:
+        q = row.quantity if row.quantity is not None else Decimal("0")
+        if q <= 0:
+            continue
+        it = row.item
+        if not it or not item_uses_station_bins(company_id, it):
+            continue
+        if _is_fuel_item(it):
+            continue
+        kind = _classify_item_stock_kind(it)
+        if kind == "fish":
+            pass
+        uc = item_inventory_unit_cost(it)
+        ext = _money_q(q * uc)
+        grand_val += ext
+        grand_lines += 1
+        sid = int(row.station_id)
+        st = row.station
+        station_names[sid] = (st.station_name or f"Station #{sid}").strip() if st else f"Station #{sid}"
+        by_station[sid].append(
+            {
+                "item_id": it.id,
+                "item_name": (it.name or "").strip(),
+                "item_number": (it.item_number or "").strip(),
+                "unit": (it.unit or "").strip() or "unit",
+                "quantity": str(q),
+                "unit_cost": str(uc.quantize(Decimal("0.0001"))),
+                "extended_value": str(ext),
+                "stock_kind": kind,
+                "stock_kind_label": {
+                    "feed": "Feed",
+                    "medicine": "Medicine",
+                    "fish": "Fish / fry SKU",
+                    "supplies": "Shop supplies",
+                }.get(kind, kind),
+                "pos_category": (it.pos_category or "").strip(),
+                "reporting_category": (it.category or "").strip() or "General",
+            }
+        )
+
+    groups: list[dict[str, Any]] = []
+    for sid in sorted(by_station.keys(), key=lambda x: (station_names.get(x, ""), x)):
+        lines = by_station[sid]
+        sub_val = _money_q(sum((_decimal(l["extended_value"]) for l in lines), Decimal("0")))
+        groups.append(
+            {
+                "station_id": sid,
+                "station_name": station_names.get(sid, f"Station #{sid}"),
+                "lines": lines,
+                "subtotal_value": str(sub_val),
+                "line_count": len(lines),
+            }
+        )
+
+    summary = {
+        "as_of_date": as_of.isoformat(),
+        "line_count": grand_lines,
+        "station_group_count": len(groups),
+        "total_value_bdt": float(_money_q(grand_val)),
+    }
+    return {
+        "period": {"start_date": as_of.isoformat(), "end_date": as_of.isoformat()},
+        "as_of_date": as_of.isoformat(),
+        "currency_code": BDT,
+        "summary": summary,
+        "groups": groups,
+        "totals": {"line_count": grand_lines, "total_value": str(_money_q(grand_val))},
+        "accounting_note": (
+            "Shop / station bin on-hand (ItemStationStock) for SKUs tracked per station — feed, medicine, "
+            "fish fry SKUs, and general supplies. Excludes motor fuel. Transfer to ponds via pond warehouse transfer."
+        ),
+    }
+
+
+_EQUIPMENT_ASSET_CATEGORIES = frozenset({"equipment", "repair_maintenance", "miscellaneous"})
+
+_POND_INVENTORY_SECTION_LABELS: dict[str, str] = {
+    "feed": "Pond warehouse — Feed",
+    "medicine": "Pond warehouse — Medicine",
+    "supplies": "Pond warehouse — Supplies & materials (nets, wire, pumps, tools, etc.)",
+    "fish_sku": "Pond warehouse — Fish / fry SKU",
+    "biological_fish": "Live fish — biological stock",
+    "equipment_assets": "Equipment & site assets (historical purchases)",
+}
+
+
+def _biological_fish_inventory_value(
+    company_id: int, pond_id: int, as_of: date
+) -> tuple[Decimal, dict[str, Any]]:
+    from api.services.aquaculture_transfer_cost import lookup_transfer_cost_per_kg
+
+    rows = compute_fish_stock_position_rows(company_id, pond_id=pond_id, include_inactive_ponds=False)
+    if not rows:
+        return Decimal("0"), {"implied_net_weight_kg": "0", "implied_net_fish_count": 0}
+    row = rows[0]
+    kg = _decimal(row.get("implied_net_weight_kg") or "0")
+    count = int(row.get("implied_net_fish_count") or 0)
+    active_cycle = (
+        AquacultureProductionCycle.objects.filter(
+            company_id=company_id, pond_id=pond_id, is_active=True
+        )
+        .order_by("-start_date", "-id")
+        .first()
+    )
+    per_kg, note = lookup_transfer_cost_per_kg(
+        company_id=company_id,
+        from_pond_id=pond_id,
+        transfer_date=as_of,
+        from_cycle=active_cycle,
+        line_weight_kg=kg if kg > 0 else None,
+    )
+    value = _money_q(kg * per_kg) if per_kg is not None and kg > 0 else Decimal("0")
+    return value, {
+        "implied_net_weight_kg": str(kg),
+        "implied_net_fish_count": count,
+        "cost_per_kg": str(per_kg) if per_kg is not None else None,
+        "valuation_note": note or "",
+        "production_cycle_name": (active_cycle.name or "").strip() if active_cycle else "",
+        "value_bdt": str(value),
+    }
+
+
+def _pond_equipment_assets_through_date(company_id: int, pond_id: int, as_of: date) -> tuple[Decimal, list[dict]]:
+    qs = (
+        AquacultureExpense.objects.filter(
+            company_id=company_id,
+            pond_id=pond_id,
+            expense_date__lte=as_of,
+            expense_category__in=_EQUIPMENT_ASSET_CATEGORIES,
+        )
+        .order_by("-expense_date", "-id")
+    )
+    lines: list[dict] = []
+    total = Decimal("0")
+    for e in qs:
+        amt = e.amount or Decimal("0")
+        total += amt
+        lines.append(
+            {
+                "id": e.id,
+                "expense_date": e.expense_date.isoformat(),
+                "expense_category_label": aquaculture_expense_label(company_id, e.expense_category),
+                "amount": str(amt),
+                "vendor_name": e.vendor_name or "",
+                "memo": (e.memo or "")[:200],
+            }
+        )
+    return _money_q(total), lines
+
+
+def _report_pond_total_inventory(
+    company_id: int, as_of: date, request: HttpRequest
+) -> dict[str, Any] | JsonResponse:
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+
+    ponds = AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by(
+        "sort_order", "name", "id"
+    )
+    if pond_filter_id is not None:
+        ponds = ponds.filter(pk=pond_filter_id)
+
+    matrix = pond_warehouse_stock_matrix(company_id, pond_id=pond_filter_id)
+    warehouse_by_pond: dict[int, list[dict]] = defaultdict(list)
+    for row in matrix:
+        item_id = int(row["item_id"])
+        it = Item.objects.filter(pk=item_id, company_id=company_id).first()
+        kind = _classify_item_stock_kind(it)
+        if kind == "fuel":
+            continue
+        pid = int(row["pond_id"])
+        qty = _decimal(row["quantity"])
+        uc = _decimal(row.get("unit_cost") or "0")
+        ext = _money_q(qty * uc)
+        warehouse_by_pond[pid].append(
+            {
+                "section": kind if kind != "fish" else "fish_sku",
+                "section_label": _POND_INVENTORY_SECTION_LABELS.get(
+                    kind if kind != "fish" else "fish_sku", kind
+                ),
+                "item_id": item_id,
+                "item_name": row.get("item_name") or "",
+                "unit": row.get("unit") or "unit",
+                "quantity": row.get("quantity") or "0",
+                "unit_cost": row.get("unit_cost") or "0",
+                "value_bdt": str(ext),
+                "reporting_category": row.get("reporting_category") or "",
+            }
+        )
+
+    groups: list[dict[str, Any]] = []
+    grand_total = Decimal("0")
+
+    for pond in ponds:
+        pid = pond.id
+        pname = (pond.name or "").strip() or f"Pond #{pid}"
+        lines: list[dict[str, Any]] = []
+        subtotals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+
+        for wh in sorted(
+            warehouse_by_pond.get(pid, []),
+            key=lambda x: (x.get("section") or "", x.get("item_name") or ""),
+        ):
+            lines.append({**wh, "line_type": "warehouse_item"})
+            sec = wh.get("section") or "supplies"
+            subtotals[sec] += _decimal(wh.get("value_bdt"))
+
+        fish_val, fish_meta = _biological_fish_inventory_value(company_id, pid, as_of)
+        if fish_val > 0 or _decimal(fish_meta.get("implied_net_weight_kg") or "0") > 0:
+            lines.append(
+                {
+                    "line_type": "biological_fish",
+                    "section": "biological_fish",
+                    "section_label": _POND_INVENTORY_SECTION_LABELS["biological_fish"],
+                    "item_name": "Implied live fish biomass",
+                    "quantity": fish_meta.get("implied_net_weight_kg") or "0",
+                    "unit": "kg",
+                    "implied_net_fish_count": fish_meta.get("implied_net_fish_count"),
+                    "cost_per_kg": fish_meta.get("cost_per_kg"),
+                    "valuation_note": fish_meta.get("valuation_note") or "",
+                    "production_cycle_name": fish_meta.get("production_cycle_name") or "",
+                    "value_bdt": str(fish_val),
+                }
+            )
+            subtotals["biological_fish"] += fish_val
+
+        equip_total, equip_lines = _pond_equipment_assets_through_date(company_id, pid, as_of)
+        if equip_total > 0 or equip_lines:
+            for el in equip_lines:
+                lines.append(
+                    {
+                        "line_type": "equipment_expense",
+                        "section": "equipment_assets",
+                        "section_label": _POND_INVENTORY_SECTION_LABELS["equipment_assets"],
+                        "item_name": el.get("expense_category_label") or "Asset purchase",
+                        "expense_date": el.get("expense_date"),
+                        "vendor_name": el.get("vendor_name") or "",
+                        "memo": el.get("memo") or "",
+                        "quantity": "1",
+                        "unit": "purchase",
+                        "value_bdt": el.get("amount") or "0",
+                    }
+                )
+            subtotals["equipment_assets"] += equip_total
+
+        pond_total = _money_q(
+            sum(subtotals.values(), Decimal("0"))
+        )
+        grand_total += pond_total
+
+        groups.append(
+            {
+                "pond_id": pid,
+                "pond_name": pname,
+                "lines": lines,
+                "subtotals": {
+                    "feed_bdt": str(_money_q(subtotals.get("feed", Decimal("0")))),
+                    "medicine_bdt": str(_money_q(subtotals.get("medicine", Decimal("0")))),
+                    "supplies_bdt": str(_money_q(subtotals.get("supplies", Decimal("0")))),
+                    "fish_sku_bdt": str(_money_q(subtotals.get("fish_sku", Decimal("0")))),
+                    "biological_fish_bdt": str(_money_q(subtotals.get("biological_fish", Decimal("0")))),
+                    "equipment_assets_bdt": str(_money_q(subtotals.get("equipment_assets", Decimal("0")))),
+                    "total_bdt": str(pond_total),
+                },
+                "line_count": len(lines),
+            }
+        )
+
+    summary = {
+        "as_of_date": as_of.isoformat(),
+        "pond_count": len(groups),
+        "grand_total_bdt": float(_money_q(grand_total)),
+    }
+    return {
+        "period": {"start_date": as_of.isoformat(), "end_date": as_of.isoformat()},
+        "as_of_date": as_of.isoformat(),
+        "currency_code": BDT,
+        "summary": summary,
+        "groups": groups,
+        "totals": {"grand_total_bdt": str(_money_q(grand_total)), "pond_count": len(groups)},
+        "accounting_note": (
+            "Per-pond total inventory and asset value as of the report end date. "
+            "Pond warehouse lines use on-hand quantity × average unit cost. "
+            "Live fish uses implied biomass kg × production cost per kg (same basis as inter-pond transfers). "
+            "Equipment & site assets are cumulative equipment, repair, and miscellaneous pond expenses through "
+            "that date (expensed purchases — aerators, boats, nets, tools, wire, pumps, etc.). "
+            "Shop station stock is not included until transferred to the pond."
+        ),
+    }
+
+
+def _report_equipment_assets(
+    company_id: int, start: date, end: date, request: HttpRequest
+) -> dict[str, Any] | JsonResponse:
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    qs = (
+        AquacultureExpense.objects.filter(
+            company_id=company_id,
+            expense_date__gte=start,
+            expense_date__lte=end,
+            expense_category__in=_EQUIPMENT_ASSET_CATEGORIES,
+        )
+        .select_related("pond", "production_cycle", "source_station")
+        .order_by("pond_id", "expense_date", "id")
+    )
+    if pond_filter_id is not None:
+        qs = qs.filter(pond_id=pond_filter_id)
+
+    by_pond: dict[int | None, list[dict]] = defaultdict(list)
+    pond_names: dict[int | None, str] = {}
+    grand = Decimal("0")
+
+    for e in qs:
+        if e.pond_id is None:
+            pname = "Shared / company"
+            pid: int | None = None
+        else:
+            pid = e.pond_id
+            pname = (e.pond.name or "").strip() if e.pond else f"Pond #{e.pond_id}"
+        pond_names[pid] = pname
+        amt = e.amount or Decimal("0")
+        grand += amt
+        by_pond[pid].append(
+            {
+                "id": e.id,
+                "expense_date": e.expense_date.isoformat(),
+                "expense_category": e.expense_category,
+                "expense_category_label": aquaculture_expense_label(company_id, e.expense_category),
+                "amount": str(amt),
+                "vendor_name": e.vendor_name or "",
+                "memo": (e.memo or "")[:300],
+                "production_cycle_name": (e.production_cycle.name or "").strip()
+                if e.production_cycle_id
+                else "",
+                "source_station_name": (e.source_station.station_name or "").strip()
+                if getattr(e, "source_station_id", None) and getattr(e, "source_station", None)
+                else "",
+            }
+        )
+
+    groups: list[dict[str, Any]] = []
+    for pid in sorted(
+        by_pond.keys(),
+        key=lambda x: (0 if x is None else 1, pond_names.get(x, ""), x or 0),
+    ):
+        lines = by_pond[pid]
+        sub = _money_q(sum((_decimal(l["amount"]) for l in lines), Decimal("0")))
+        groups.append(
+            {
+                "pond_id": pid,
+                "pond_name": pond_names.get(pid, "Shared / company"),
+                "lines": lines,
+                "subtotal_amount": str(sub),
+                "line_count": len(lines),
+            }
+        )
+
+    summary = {
+        "total_amount_bdt": float(_money_q(grand)),
+        "line_count": sum(len(g["lines"]) for g in groups),
+        "pond_group_count": len(groups),
+    }
+    return {
+        "period": _period_block(start, end),
+        "currency_code": BDT,
+        "summary": summary,
+        "groups": groups,
+        "totals": {"total_amount": str(_money_q(grand)), "line_count": summary["line_count"]},
+        "accounting_note": (
+            "Operating purchases for equipment, repair & maintenance, and miscellaneous pond assets "
+            "(aerators, boats, nets, tools, cameras, wire, etc.). There is no separate fixed-asset register; "
+            "use this register with vendor bills and pond expenses for durable goods."
+        ),
+    }
 
 
 def _report_pond_pl(company_id: int, start: date, end: date, request: HttpRequest) -> dict[str, Any]:

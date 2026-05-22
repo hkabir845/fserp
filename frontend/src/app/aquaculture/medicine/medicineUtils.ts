@@ -39,7 +39,7 @@ export const DOSE_UNITS = [
   { id: 'mg_l', label: 'mg/L' },
   { id: 'kg_m3', label: 'kg per m³ pond water' },
   { id: 'g_m3', label: 'g per m³ pond water' },
-  { id: 'kg_ha', label: 'kg per hectare' },
+  { id: 'kg_decimal', label: 'kg per decimal (water area)' },
   { id: 'kg_pond', label: 'kg total (whole pond)' },
   { id: 'g_ton', label: 'g per ton fish biomass' },
   { id: 'g_kg_fish', label: 'g per kg fish' },
@@ -192,9 +192,25 @@ function idFromLabel<T extends { id: string; label: string }>(
   return hit?.id ?? ''
 }
 
+const LEGACY_HA_TO_DECIMAL = 0.01 * 0.404686
+
 function parseDoseToFields(dose: string): { doseAmount: string; doseUnit: DoseUnitId | '' } {
   const d = dose.trim()
   if (!d) return { doseAmount: '', doseUnit: '' }
+  const legacyHa = d.match(/^([\d.,]+)\s*(?:kg\s*\/?\s*ha|kg per hectare)\b/i)
+  if (legacyHa) {
+    const haRate = Number.parseFloat(legacyHa[1].replace(/,/g, ''))
+    if (Number.isFinite(haRate) && haRate > 0) {
+      const perDec = haRate * LEGACY_HA_TO_DECIMAL
+      const doseAmount =
+        perDec >= 10
+          ? String(Math.round(perDec))
+          : perDec >= 1
+            ? perDec.toFixed(2)
+            : perDec.toFixed(3)
+      return { doseAmount, doseUnit: 'kg_decimal' }
+    }
+  }
   for (const u of [...DOSE_UNITS].sort((a, b) => b.label.length - a.label.length)) {
     const lbl = u.label
     if (d.endsWith(lbl)) {
@@ -266,11 +282,29 @@ export function rebuildMemoForLedgerRow(
   })
 }
 
-export function isMedicineItem(row: { pos_category?: string; category?: string; name?: string }): boolean {
+export function isBuiltinMedicineSku(itemNumber: string | undefined | null): boolean {
+  return /^AQ-MED-/i.test((itemNumber || '').trim())
+}
+
+export function isMedicineItem(row: {
+  pos_category?: string
+  category?: string
+  name?: string
+  item_number?: string
+}): boolean {
+  if (isBuiltinMedicineSku(row.item_number)) return true
   const cat = (row.pos_category || '').toLowerCase()
   if (cat === 'medicine') return true
   const rc = (row.category || '').toLowerCase()
-  if (rc.includes('medicine') || rc.includes('treatment')) return true
+  if (rc.includes('medicine') || rc.includes('treatment') || rc.includes('pond care')) return true
+  const name = (row.name || '').toLowerCase()
+  if (
+    /lime|chuna|formalin|permanganate|copper sulphate|copper sulfate|oxytetracycline|terramycin|probiotic|zeolite|dolomite|malachite|methylene/.test(
+      name,
+    )
+  ) {
+    return true
+  }
   return false
 }
 

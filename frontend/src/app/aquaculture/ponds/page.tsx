@@ -45,6 +45,8 @@ interface Pond {
   notes: string
   pond_role?: string
   pond_role_label?: string
+  warehouse_group_id?: number | null
+  warehouse_group_name?: string
   pos_customer_id?: number | null
   pos_customer_display?: string | null
   pos_customer_auto_managed?: boolean
@@ -291,6 +293,7 @@ const emptyForm = () => ({
   is_active: true,
   notes: '',
   pond_role: 'grow_out',
+  warehouse_group_id: '',
   pos_customer_id: '',
   leasing_area_decimal: '',
   water_area_decimal: '',
@@ -387,6 +390,7 @@ export default function AquaculturePondsPage() {
   const [customersLoading, setCustomersLoading] = useState(false)
   const [provisioningCustomers, setProvisioningCustomers] = useState(false)
   const [skipAutoPosCustomer, setSkipAutoPosCustomer] = useState(false)
+  const [warehouseGroups, setWarehouseGroups] = useState<{ id: number; name: string }[]>([])
 
   const pondsMissingPosCustomer = useMemo(
     () => ponds.filter((p) => !p.pos_customer_id),
@@ -449,6 +453,21 @@ export default function AquaculturePondsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { data } = await api.get<{ id: number; name: string }[]>('/aquaculture/warehouse-groups/')
+        setWarehouseGroups(
+          (Array.isArray(data) ? data : [])
+            .filter((g) => g && typeof g.id === 'number')
+            .map((g) => ({ id: g.id, name: String(g.name || '') })),
+        )
+      } catch {
+        setWarehouseGroups([])
+      }
+    })()
+  }, [])
 
   const loadCustomersForModal = useCallback(async () => {
     setCustomersLoading(true)
@@ -532,6 +551,8 @@ export default function AquaculturePondsPage() {
       is_active: p.is_active,
       notes: p.notes || '',
       pond_role: p.pond_role || 'grow_out',
+      warehouse_group_id:
+        p.warehouse_group_id != null ? String(p.warehouse_group_id) : '',
       pos_customer_id: p.pos_customer_id != null ? String(p.pos_customer_id) : '',
       leasing_area_decimal: p.leasing_area_decimal ?? '',
       water_area_decimal: p.water_area_decimal ?? '',
@@ -574,6 +595,16 @@ export default function AquaculturePondsPage() {
         payload.pos_customer_id = cid
       } else {
         payload.pos_customer_id = null
+      }
+      if (form.warehouse_group_id.trim()) {
+        const gid = parseInt(form.warehouse_group_id, 10)
+        if (!Number.isFinite(gid)) {
+          toast.error('Invalid shared warehouse group')
+          return
+        }
+        payload.warehouse_group_id = gid
+      } else {
+        payload.warehouse_group_id = null
       }
       if (!editing && skipAutoPosCustomer) {
         payload.skip_auto_pos_customer = true
@@ -1316,6 +1347,25 @@ export default function AquaculturePondsPage() {
                 </select>
                 <span className="mt-1 block text-xs font-normal text-slate-500">
                   Used for filters and nursing → grow-out transfers (management only; does not post GL by itself).
+                </span>
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                Shared warehouse group
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  value={form.warehouse_group_id}
+                  onChange={(e) => setForm((f) => ({ ...f, warehouse_group_id: e.target.value }))}
+                >
+                  <option value="">None — private pond warehouse</option>
+                  {warehouseGroups.map((g) => (
+                    <option key={g.id} value={String(g.id)}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  Ponds on the same physical feed/medicine shed (e.g. Ashari-1 and Ashari-2). Create groups under{' '}
+                  <strong>Stock → Feed &amp; supplies</strong>. Reallocate with Move between ponds.
                 </span>
               </label>
 

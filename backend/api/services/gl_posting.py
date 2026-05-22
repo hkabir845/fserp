@@ -2450,7 +2450,15 @@ def post_payroll_salary(
         .select_related("pond")
         .order_by("pond_id")
     )
-    alloc_gross = sum((r.amount or Decimal("0")) for r in pond_alloc_rows).quantize(Decimal("0.01"))
+    alloc_gross = Decimal("0")
+    for row in pond_alloc_rows:
+        amt = row.amount
+        if amt is None:
+            continue
+        if not isinstance(amt, Decimal):
+            amt = Decimal(str(amt))
+        alloc_gross += amt
+    alloc_gross = alloc_gross.quantize(Decimal("0.01"))
     company_gross = max(gross - alloc_gross, Decimal("0")).quantize(Decimal("0.01"))
     split_by_pond = bool(pond_alloc_rows) and alloc_gross > 0
     if split_by_pond and alloc_gross > gross + Decimal("0.02"):

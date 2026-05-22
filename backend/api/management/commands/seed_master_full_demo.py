@@ -18,7 +18,7 @@ Usage:
 """
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date
 from decimal import Decimal
 
 from django.core.management import call_command
@@ -29,7 +29,6 @@ from api.models import (
     ChartOfAccount,
     Company,
     JournalEntry,
-    ShiftTemplate,
     Tank,
     TankDip,
     Tax,
@@ -445,22 +444,13 @@ class Command(BaseCommand):
         )
 
     def _seed_shift_templates(self, cid: int) -> None:
-        # Same-calendar-day windows (avoids ambiguous overnight parsing in UIs)
-        templates = [
-            ("Morning Shift", time(6, 0), time(14, 0)),
-            ("Evening Shift", time(14, 0), time(22, 0)),
-            ("Late Evening", time(22, 0), time(23, 45)),
-        ]
-        for name, st, et in templates:
-            t, created = ShiftTemplate.objects.get_or_create(
-                company_id=cid,
-                name=name,
-                defaults={"start_time": st, "end_time": et},
-            )
-            if created:
-                self.stdout.write(f"  + Shift template: {name}")
-            else:
-                self.stdout.write(f"  . Shift template: {name}")
+        from api.services.shift_template_defaults import seed_standard_24_7_shift_templates
+
+        result = seed_standard_24_7_shift_templates(cid)
+        for row in result["created"]:
+            self.stdout.write(f"  + Shift template: {row['name']}")
+        for name in result["skipped"]:
+            self.stdout.write(f"  . Shift template: {name}")
 
     def _seed_tank_dips(self, cid: int) -> None:
         tanks = list(Tank.objects.filter(company_id=cid, is_active=True))

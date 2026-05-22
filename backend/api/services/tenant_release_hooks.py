@@ -24,6 +24,7 @@ from api.chart_templates.fuel_station import (
 )
 from api.models import AquacultureExpense, AquaculturePond, ChartOfAccount, Company, Organization
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
+from api.services.aquaculture_medicine_catalog_seed import ensure_aquaculture_medicine_catalog_items
 from api.services.aquaculture_pond_pos_customer import (
     maybe_provision_auto_pos_customer,
     sync_aquaculture_customer_default_stations,
@@ -113,6 +114,12 @@ def hook_aquaculture_module(company_id: int) -> None:
     ensure_aquaculture_chart_accounts(company_id)
     _ensure_aquaculture_medicine_coa(company_id)
     _sync_aquaculture_expense_category_labels(company_id)
+    try:
+        ensure_aquaculture_medicine_catalog_items(company_id)
+    except Exception:
+        logger.exception(
+            "release hook medicine catalog seed failed company=%s", company_id
+        )
 
 
 def hook_aquaculture_pond_pos_customers(company_id: int) -> None:

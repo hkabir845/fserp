@@ -497,6 +497,40 @@ def reopen_close_for_reference(
     return close, None
 
 
+def unlock_pond_close(
+    *,
+    company_id: int,
+    close_id: int,
+    user,
+) -> tuple[AquacultureDataBankPondClose | None, str | None]:
+    """
+    Remove the operational write lock for a pond close (e.g. test year close).
+    The close record stays in history; pond structure was never locked.
+    """
+    close = (
+        AquacultureDataBankPondClose.objects.filter(pk=close_id, company_id=company_id)
+        .select_related("pond")
+        .first()
+    )
+    if not close:
+        return None, "Pond close record not found."
+    if not close.is_data_locked and not close.reference_access_enabled:
+        return close, None
+    close.is_data_locked = False
+    close.reference_access_enabled = False
+    close.relocked_at = timezone.now()
+    close.relocked_by_user_id = _actor_user_id(user)
+    close.save(
+        update_fields=[
+            "is_data_locked",
+            "reference_access_enabled",
+            "relocked_at",
+            "relocked_by_user_id",
+        ]
+    )
+    return close, None
+
+
 def relock_close(
     *,
     company_id: int,

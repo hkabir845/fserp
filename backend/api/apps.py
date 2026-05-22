@@ -8,4 +8,4 @@ class ApiConfig(AppConfig):
     def ready(self):
         # Register post_migrate handler for built-in Master demo tenant (FS-000001).
         import api.signals  # noqa: F401
-        import fsms.checks  # noqa: F401  # deploy checks (LocMem + multi-worker)
+        import api.checks  # noqa: F401  # deploy checks (fserp.W001–W004)

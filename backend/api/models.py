@@ -496,6 +496,49 @@ class PondWarehouseStockReceiptLine(models.Model):
         db_table = "pond_warehouse_stock_receipt_line"
 
 
+class PondWarehouseInterPondTransfer(models.Model):
+    """
+    Reallocate feed/medicine between pond warehouses (no GL; company inventory unchanged).
+    When both ponds share a warehouse group, moves allocation within the shared pool.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="pond_warehouse_inter_pond_transfers")
+    from_pond = models.ForeignKey(
+        "AquaculturePond",
+        on_delete=models.CASCADE,
+        related_name="warehouse_transfers_out",
+    )
+    to_pond = models.ForeignKey(
+        "AquaculturePond",
+        on_delete=models.CASCADE,
+        related_name="warehouse_transfers_in",
+    )
+    transfer_number = models.CharField(max_length=64, blank=True)
+    memo = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "pond_warehouse_inter_pond_transfer"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["company", "from_pond", "created_at"]),
+            models.Index(fields=["company", "to_pond", "created_at"]),
+        ]
+
+
+class PondWarehouseInterPondTransferLine(models.Model):
+    transfer = models.ForeignKey(
+        PondWarehouseInterPondTransfer,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name="pond_warehouse_inter_pond_transfer_lines")
+    quantity = models.DecimalField(max_digits=14, decimal_places=4)
+
+    class Meta:
+        db_table = "pond_warehouse_inter_pond_transfer_line"
+
+
 class Tank(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="tanks")
     station = models.ForeignKey(Station, on_delete=models.CASCADE, related_name="tanks")
@@ -1773,6 +1816,31 @@ class LoanInterestAccrual(models.Model):
 # ---------------------------------------------------------------------------
 
 
+class AquacultureWarehouseGroup(models.Model):
+    """
+    Shared physical feed/medicine store for multiple ponds (e.g. Ashari-1 + Ashari-2 on one canal shed).
+    Member ponds keep per-pond ItemPondStock rows as allocations; pool on hand = sum of member allocations.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_warehouse_groups")
+    name = models.CharField(max_length=200)
+    code = models.CharField(max_length=64, blank=True)
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_warehouse_group"
+        ordering = ["name", "id"]
+        indexes = [
+            models.Index(fields=["company", "is_active"]),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class AquaculturePond(models.Model):
     """Fish pond / profit center within a company."""
 
@@ -1851,6 +1919,17 @@ class AquaculturePond(models.Model):
         db_index=True,
         help_text="grow_out | nursing | broodstock | other — for filters and transfer workflows (management only).",
     )
+    warehouse_group = models.ForeignKey(
+        AquacultureWarehouseGroup,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="ponds",
+        help_text=(
+            "When set, this pond's pond-warehouse balance is an allocation from a shared physical store. "
+            "Use pond-to-pond warehouse transfer to reallocate between members."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1875,6 +1954,33 @@ class AquacultureLandlord(models.Model):
     email = models.EmailField(blank=True)
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    opening_balance = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        default=0,
+        help_text="Subledger opening: positive = rent owed to landlord; negative = credit or prepaid.",
+    )
+    opening_balance_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="As-of date for the opening balance adjustment in the landlord ledger.",
+    )
+    opening_balance_ledger_entry = models.ForeignKey(
+        "AquacultureLandlordLedgerEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="landlord_opening_for",
+        help_text="AUTO adjustment row created from opening_balance (reference OPENING).",
+    )
+    opening_balance_journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_landlord_openings",
+        help_text="AUTO-LL-OB-{landlord id} when opening balance is posted to the G/L.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -30,7 +30,9 @@ export default function Sidebar() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userPermissions, setUserPermissions] = useState<string[] | null>(null)
-  const { selectedCompany, setSelectedCompany, isSaaSDashboard, isMasterCompany, mode, setMode } = useCompany()
+  const { selectedCompany, setSelectedCompany, isSaaSDashboard, isMasterCompany, mode, setMode, isClientReady } =
+    useCompany()
+  const [navSessionReady, setNavSessionReady] = useState(false)
   const [companiesCount, setCompaniesCount] = useState<number>(0)
   const [usersCount, setUsersCount] = useState<number>(0)
 
@@ -133,27 +135,30 @@ export default function Sidebar() {
     }
   }
   
-  // Get user role from localStorage
+  // Session role/permissions from localStorage — after mount only (matches SSR placeholder nav).
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window === 'undefined') return
+    try {
       const userStr = localStorage.getItem('user')
       if (userStr && userStr !== 'undefined' && userStr !== 'null') {
-        try {
-          const parsedUser = JSON.parse(userStr)
-          if (parsedUser && typeof parsedUser === 'object') {
-            setUserRole(parsedUser.role?.toLowerCase() || null)
-            setUserPermissions(
-              Array.isArray((parsedUser as { permissions?: unknown }).permissions)
-                ? (parsedUser as { permissions: string[] }).permissions
-                : null
-            )
-          }
-        } catch (error) {
-          console.error('Error parsing user data:', error)
+        const parsedUser = JSON.parse(userStr)
+        if (parsedUser && typeof parsedUser === 'object') {
+          setUserRole(parsedUser.role?.toLowerCase() || null)
+          setUserPermissions(
+            Array.isArray((parsedUser as { permissions?: unknown }).permissions)
+              ? (parsedUser as { permissions: string[] }).permissions
+              : null
+          )
         }
       }
+    } catch (error) {
+      console.error('Error parsing user data:', error)
+    } finally {
+      setNavSessionReady(true)
     }
   }, [])
+
+  const navReady = isClientReady && navSessionReady
   
   // Fetch counts for SaaS dashboard menu items (stop polling if backend is unreachable)
   const backendUnreachableRef = useRef(false)
@@ -455,7 +460,8 @@ export default function Sidebar() {
         ),
         aquacultureEnabled,
         userRole,
-        isSuperAdmin
+        isSuperAdmin,
+        userPermissions
       ),
     [userRole, userPermissions, isSuperAdmin, mode, fsmsErpMenuItems, saasMenuItems, aquacultureEnabled]
   )
@@ -543,7 +549,7 @@ export default function Sidebar() {
       </div>
 
       {/* Tab System - Only for Super Admin */}
-      {isSuperAdmin && (
+      {navReady && isSuperAdmin && (
         <div className="border-b border-gray-800 bg-gradient-to-b from-gray-850 to-gray-900">
           {/* Tabs — stack labels on very narrow screens */}
           <div className="flex flex-col gap-1 bg-gray-800/30 p-1 sm:flex-row sm:rounded-t-lg">
@@ -681,7 +687,11 @@ export default function Sidebar() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900 sm:px-4">
-        {sectionsForNav.length === 0 ? (
+        {!navReady ? (
+          <div className="py-8 text-center text-sm text-gray-500" aria-busy="true">
+            Loading menu…
+          </div>
+        ) : sectionsForNav.length === 0 ? (
           <div className="py-8 text-center text-gray-400">
             {navSearchQuery.trim() ? (
               <>

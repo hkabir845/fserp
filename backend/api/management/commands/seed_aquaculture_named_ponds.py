@@ -9,7 +9,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Max
 
-from api.models import AquacultureFishStockLedger, AquaculturePond, Company
+from api.models import AquacultureFishStockLedger, AquaculturePond, AquacultureWarehouseGroup, Company
 from api.services.aquaculture_pond_pos_customer import maybe_provision_auto_pos_customer
 
 STOCK_MEMO_TAG = "[POND-DEMO-STOCK]"
@@ -223,6 +223,8 @@ class Command(BaseCommand):
             if with_stock:
                 self._ensure_demo_stock_row(cid, pond_for_stock, spec)
 
+        self._ensure_ashari_shared_warehouse_group(cid)
+
         self.stdout.write(
             self.style.NOTICE(
                 f"Done. company_id={cid} created={created} skipped_new={skipped_new} backfilled={backfilled} "
@@ -254,3 +256,27 @@ class Command(BaseCommand):
             ),
         )
         self.stdout.write(self.style.NOTICE(f"  + Demo tilapia stock row for {pond.name!r}"))
+
+    def _ensure_ashari_shared_warehouse_group(self, company_id: int) -> None:
+        grp = AquacultureWarehouseGroup.objects.filter(company_id=company_id, code__iexact="ASHARI-WH").first()
+        created = False
+        if not grp:
+            grp = AquacultureWarehouseGroup.objects.create(
+                company_id=company_id,
+                name="Ashari shared shed",
+                code="ASHARI-WH",
+                notes="Canal-bund feed/medicine store for Ashari-1 and Ashari-2 (demo).",
+                is_active=True,
+            )
+            created = True
+        linked = 0
+        for pname in ("Ashari-1", "Ashari-2"):
+            p = AquaculturePond.objects.filter(company_id=company_id, name__iexact=pname).first()
+            if p and p.warehouse_group_id != grp.id:
+                p.warehouse_group_id = grp.id
+                p.save(update_fields=["warehouse_group_id", "updated_at"])
+                linked += 1
+        if created:
+            self.stdout.write(self.style.SUCCESS(f"Created shared warehouse group {grp.name!r}"))
+        if linked:
+            self.stdout.write(self.style.NOTICE(f"  Linked {linked} Ashari pond(s) to {grp.name!r}"))

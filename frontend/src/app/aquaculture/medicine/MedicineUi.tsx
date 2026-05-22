@@ -10,6 +10,7 @@ import {
   quantityPlaceholderForUnit,
 } from '@/lib/aquacultureMedicineUnits'
 import { parseTreatmentMemo } from './medicineUtils'
+import { MedicineProductSelect } from './MedicineProductSelect'
 
 export function MedicineStatCard(props: {
   title: string
@@ -51,7 +52,7 @@ export function MedicineTipsAside() {
       <ul className="mt-3 space-y-2 text-xs leading-relaxed text-slate-700">
         <li>
           <strong className="text-slate-900">1.</strong> In Items, set each SKU&apos;s unit (e.g. Lime → kg). Move stock to
-          the pond warehouse (Inventory → move to pond).
+          the pond warehouse (Aquaculture → Stock → Add stock, or Inventory → move to pond).
         </li>
         <li>
           <strong className="text-slate-900">2.</strong> Selecting a pond fills water volume from pond setup (water area
@@ -185,7 +186,13 @@ export function MedicineTreatmentDeleteDialog(props: {
 
 export function MedicineProductLinesEditor(props: {
   lines: MedicineProductLine[]
-  medicineCatalog: { id: number; name: string; unit?: string }[]
+  medicineCatalog: {
+    id: number
+    name: string
+    unit?: string
+    category?: string
+    item_number?: string
+  }[]
   stockByItemId: Map<number, { quantity: string; unit: string }>
   whLoading: boolean
   inputCls: string
@@ -193,6 +200,8 @@ export function MedicineProductLinesEditor(props: {
   onChangeLine: (id: string, patch: Partial<MedicineProductLine>) => void
   onAddLine: () => void
   onRemoveLine: (id: string) => void
+  /** Fired when user picks a product — parent can apply dose suggestions. */
+  onItemSelect?: (lineId: string, itemId: string) => void
 }) {
   const {
     lines,
@@ -204,6 +213,7 @@ export function MedicineProductLinesEditor(props: {
     onChangeLine,
     onAddLine,
     onRemoveLine,
+    onItemSelect,
   } = props
 
   return (
@@ -213,7 +223,7 @@ export function MedicineProductLinesEditor(props: {
         <button
           type="button"
           onClick={onAddLine}
-          className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-xs font-medium text-violet-900 hover:bg-violet-100"
+          className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-900 hover:bg-teal-100"
         >
           <Plus className="h-3.5 w-3.5" aria-hidden />
           Add another medicine
@@ -250,23 +260,18 @@ export function MedicineProductLinesEditor(props: {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className={`${labelCls} sm:col-span-2`}>
                 Medicine product <span className="text-red-600">*</span>
-                <select
-                  className={inputCls}
+                <MedicineProductSelect
+                  items={medicineCatalog}
                   value={line.itemId}
-                  onChange={(e) => onChangeLine(line.id, { itemId: e.target.value })}
-                >
-                  <option value="">Select product…</option>
-                  {medicineCatalog.map((it) => (
-                    <option key={it.id} value={it.id}>
-                      {productOptionLabel(it.name, it.unit)}
-                    </option>
-                  ))}
-                </select>
+                  className={inputCls}
+                  onChange={(itemId) => onChangeLine(line.id, { itemId })}
+                  onPick={(itemId) => onItemSelect?.(line.id, itemId)}
+                />
               </label>
               <label className={labelCls}>
                 Quantity used
                 {line.itemId ? (
-                  <span className="font-normal text-violet-800">
+                  <span className="font-normal text-teal-800">
                     {' '}
                     ({stockUnit}) <span className="text-red-600">*</span>
                   </span>
@@ -321,12 +326,12 @@ export function MedicineHistoryTable(props: {
   rows: MedicineHistoryRow[]
   currency: string
   loading: boolean
-  formHidden?: boolean
+  showPondColumn?: boolean
   busyRowId?: number | null
   onEdit?: (row: MedicineHistoryRow) => void
   onDelete?: (row: MedicineHistoryRow) => void
 }) {
-  const { rows, currency, loading, formHidden, busyRowId, onEdit, onDelete } = props
+  const { rows, currency, loading, showPondColumn, busyRowId, onEdit, onDelete } = props
   const sym = getCurrencySymbol(currency)
   const showActions = Boolean(onEdit || onDelete)
 
@@ -346,9 +351,8 @@ export function MedicineHistoryTable(props: {
         <Pill className="h-8 w-8 text-slate-300" aria-hidden />
         <p className="mt-3 text-sm font-medium text-slate-700">No treatments recorded yet</p>
         <p className="mt-1 max-w-sm text-xs text-slate-500">
-          {formHidden
-            ? 'Use “Record new treatment” to log the first medicine application for this pond.'
-            : 'Use the form below to log the first medicine application for this pond.'}
+          Use <span className="font-medium text-slate-700">New treatment entry</span> to log the first medicine
+          application.
         </p>
       </div>
     )
@@ -360,6 +364,7 @@ export function MedicineHistoryTable(props: {
         <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-3 py-2.5">Date</th>
+            {showPondColumn ? <th className="px-3 py-2.5">Pond</th> : null}
             <th className="px-3 py-2.5">Product</th>
             <th className="px-3 py-2.5 text-right">Qty used</th>
             <th className="min-w-[11rem] px-3 py-2.5">Treatment</th>
@@ -373,10 +378,15 @@ export function MedicineHistoryTable(props: {
             const editable = canEditMedicineHistoryRow(r)
             const busy = busyRowId === r.id
             return (
-            <tr key={r.id} className="border-t border-slate-100 hover:bg-violet-50/30">
+            <tr key={r.id} className="border-t border-slate-100 hover:bg-teal-50/30">
               <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-slate-800">
                 {formatDateOnly(r.entry_date)}
               </td>
+              {showPondColumn ? (
+                <td className="max-w-[8rem] px-3 py-2.5 font-medium text-slate-800 break-words">
+                  {r.pond_name?.trim() || '—'}
+                </td>
+              ) : null}
               <td className="max-w-[10rem] px-3 py-2.5 font-medium text-slate-900 break-words">
                 {r.item_name?.trim() || '—'}
               </td>
@@ -411,7 +421,7 @@ export function MedicineHistoryTable(props: {
                           onClick={() => onEdit(r)}
                           title="Edit treatment details"
                           aria-label={`Edit treatment on ${formatDateOnly(r.entry_date)}`}
-                          className="rounded-lg p-2 text-slate-500 transition hover:bg-violet-100 hover:text-violet-800 disabled:opacity-40"
+                          className="rounded-lg p-2 text-slate-500 transition hover:bg-teal-100 hover:text-teal-800 disabled:opacity-40"
                         >
                           <Pencil className="h-4 w-4" aria-hidden />
                         </button>

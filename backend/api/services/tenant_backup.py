@@ -49,6 +49,9 @@ from api.models import (
     AquaculturePond,
     AquaculturePondProfitTransfer,
     AquacultureProductionCycle,
+    AquacultureWarehouseGroup,
+    PondWarehouseInterPondTransfer,
+    PondWarehouseInterPondTransferLine,
     BankAccount,
     BankDeposit,
     Bill,
@@ -253,6 +256,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     LoanRepayment.objects.filter(loan__company_id=cid).delete()
     LoanDisbursement.objects.filter(loan__company_id=cid).delete()
     PondWarehouseStockReceiptLine.objects.filter(receipt__company_id=cid).delete()
+    PondWarehouseInterPondTransferLine.objects.filter(transfer__company_id=cid).delete()
     InventoryTransferLine.objects.filter(transfer__company_id=cid).delete()
     AquacultureExpenseInventoryLine.objects.filter(expense__company_id=cid).delete()
     AquacultureExpensePondShare.objects.filter(expense__company_id=cid).delete()
@@ -269,6 +273,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     # --- Documents that PROTECT stations, items, COA, or loans ---
     AquacultureFinancingAllocation.objects.filter(company_id=cid).delete()
     PondWarehouseStockReceipt.objects.filter(company_id=cid).delete()
+    PondWarehouseInterPondTransfer.objects.filter(company_id=cid).delete()
     InventoryTransfer.objects.filter(company_id=cid).delete()
     BankDeposit.objects.filter(company_id=cid).delete()
     AquacultureFeedingAdvice.objects.filter(company_id=cid).delete()
@@ -312,6 +317,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     ItemStationStock.objects.filter(company_id=cid).delete()
     ItemPondStock.objects.filter(company_id=cid).delete()
     AquaculturePond.objects.filter(company_id=cid).delete()
+    AquacultureWarehouseGroup.objects.filter(company_id=cid).delete()
     AquacultureLandlord.objects.filter(company_id=cid).delete()
     Vendor.objects.filter(company_id=cid).delete()
     Customer.objects.filter(company_id=cid).delete()
@@ -451,6 +457,7 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
         records, SubscriptionLedgerInvoice.objects.filter(company_id=cid).order_by("id")
     )
     _serialize_many(records, BankDeposit.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquacultureWarehouseGroup.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, AquaculturePond.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, AquacultureLandlord.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, AquacultureProductionCycle.objects.filter(company_id=cid).order_by("id"))
@@ -470,6 +477,11 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
     _serialize_many(records, PondWarehouseStockReceipt.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(
         records, PondWarehouseStockReceiptLine.objects.filter(receipt__company_id=cid).order_by("id")
+    )
+    _serialize_many(records, PondWarehouseInterPondTransfer.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records,
+        PondWarehouseInterPondTransferLine.objects.filter(transfer__company_id=cid).order_by("id"),
     )
     _serialize_many(records, Invoice.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, Bill.objects.filter(company_id=cid).order_by("id"))

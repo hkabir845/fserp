@@ -262,7 +262,7 @@ Filter by **company**, date range, and (where applicable) **station** or **pond*
 1. **Ponds** and **landlords** (lease contracts).
 2. **Production cycles** per pond/crop.
 3. Stock fry via **vendor bills** (fish lines: pond, kg, head count).
-4. Transfer feed/medicine: shop → **pond warehouse** (`/aquaculture/stock`).
+4. Transfer feed/medicine: shop → **pond warehouse** — **Aquaculture → Stock → Feed & supplies → Add stock**, or **Inventory → Move to pond warehouse**. Ponds that share one physical shed (e.g. Ashari-1 and Ashari-2): create a **shared warehouse group** on that stock tab, assign both ponds under **Ponds**, then use **Move between ponds** to reallocate feed/medicine without GL.
 5. **Feeding advice** — generate → approve → apply (draws warehouse, posts expense/COGS).
 6. **Biomass sampling** and **mortality** on stock ledger.
 7. **Inter-pond transfers** (nursing → grow-out) with optional cost allocation.

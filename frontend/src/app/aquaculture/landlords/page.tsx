@@ -3,16 +3,29 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarRange, Droplets, Landmark, Plus, RefreshCw } from 'lucide-react'
+import {
+  CalendarRange,
+  Droplets,
+  Eye,
+  Landmark,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Wallet,
+} from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
-
-interface PondOpt {
-  id: number
-  name: string
-}
+import { LandlordFormModal } from './LandlordFormModal'
+import { LandlordLedgerEntryModal } from './LandlordLedgerEntryModal'
+import {
+  parseMoney,
+  statusClass,
+  statusLabel,
+  type PondOpt,
+} from './landlordShared'
 
 interface LandlordRow {
   id: number
@@ -36,24 +49,19 @@ interface LandlordRow {
   remaining_contract_excludes_open_ended: boolean
 }
 
-function statusLabel(s: string): string {
-  if (s === 'payable') return 'We owe'
-  if (s === 'credit') return 'Credit / prepaid'
-  return 'Clear'
-}
-
-function statusClass(s: string): string {
-  if (s === 'payable') return 'bg-amber-100 text-amber-900'
-  if (s === 'credit') return 'bg-sky-100 text-sky-900'
-  return 'bg-emerald-100 text-emerald-800'
-}
-
-function parseMoney(s: string): number {
-  const n = Number(String(s).replace(/,/g, ''))
-  return Number.isFinite(n) ? n : 0
-}
-
 type PeriodMode = 'all' | 'year'
+
+type FormModalState = null | { mode: 'create' } | { mode: 'edit'; id: number }
+type PayModalState = null | { id: number; name: string }
+
+function iconBtnClass(variant: 'default' | 'danger' = 'default') {
+  const base =
+    'inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500/40'
+  if (variant === 'danger') {
+    return `${base} border-transparent text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-800`
+  }
+  return `${base} border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-teal-900`
+}
 
 export default function AquacultureLandlordsPage() {
   const toast = useToast()
@@ -61,8 +69,8 @@ export default function AquacultureLandlordsPage() {
   const [rows, setRows] = useState<LandlordRow[]>([])
   const [ponds, setPonds] = useState<PondOpt[]>([])
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState(false)
-  const [name, setName] = useState('')
+  const [formModal, setFormModal] = useState<FormModalState>(null)
+  const [payModal, setPayModal] = useState<PayModalState>(null)
   const [currency, setCurrency] = useState('BDT')
   const cy = new Date().getFullYear()
   const [periodMode, setPeriodMode] = useState<PeriodMode>('all')
@@ -98,9 +106,7 @@ export default function AquacultureLandlordsPage() {
       } else {
         params.set('year', 'all')
       }
-      if (pondId) {
-        params.set('pond_id', pondId)
-      }
+      if (pondId) params.set('pond_id', pondId)
       const { data } = await api.get<LandlordRow[]>(`/aquaculture/landlords/?${params.toString()}`)
       setRows(Array.isArray(data) ? data : [])
     } catch (e) {
@@ -123,7 +129,6 @@ export default function AquacultureLandlordsPage() {
   }, [load])
 
   const metricsAsOf = rows[0]?.metrics_as_of ?? new Date().toISOString().slice(0, 10)
-
   const uniqueLandlordIds = useMemo(() => new Set(rows.map((r) => r.id)), [rows])
 
   const totals = useMemo(() => {
@@ -157,23 +162,27 @@ export default function AquacultureLandlordsPage() {
     return `calendar year ${year}`
   }, [periodMode, year])
 
-  const create = async () => {
-    const n = name.trim()
-    if (!n) {
-      toast.error('Name is required')
+  const deleteLandlord = async (id: number, name: string) => {
+    if (
+      !globalThis.confirm(
+        `Delete landlord “${name}” and all ledger history? This cannot be undone.`,
+      )
+    ) {
       return
     }
     try {
-      const { data } = await api.post<{ id: number }>('/aquaculture/landlords/', {
-        name: n,
-      })
-      toast.success('Landlord created')
-      setModal(false)
-      setName('')
+      await api.delete(`/aquaculture/landlords/${id}/`)
+      toast.success('Landlord deleted')
       void load()
-      if (data?.id) router.push(`/aquaculture/landlords/${data.id}`)
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not create'))
+      toast.error(extractErrorMessage(e, 'Could not delete'))
+    }
+  }
+
+  const handleFormSuccess = (id: number) => {
+    void load()
+    if (formModal?.mode === 'create') {
+      router.push(`/aquaculture/landlords/${id}`)
     }
   }
 
@@ -186,9 +195,10 @@ export default function AquacultureLandlordsPage() {
             Landlords & lease obligations
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Pond-level view of land shares, rent recognized and paid in the selected period, and the estimated lease
-            still payable through each contract&apos;s end date (prorated on a 365-day year). Open-ended leases are
-            omitted from the remainder column.
+            Pond-level lease metrics for the selected period. Use{' '}
+            <span className="font-medium text-slate-800">View</span> for the full ledger,{' '}
+            <span className="font-medium text-slate-800">Edit</span> for profile and pond shares, and{' '}
+            <span className="font-medium text-slate-800">Pay</span> to record a payment without leaving the list.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -243,10 +253,7 @@ export default function AquacultureLandlordsPage() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setName('')
-              setModal(true)
-            }}
+            onClick={() => setFormModal({ mode: 'create' })}
             className="inline-flex items-center gap-1 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800"
           >
             <Plus className="h-4 w-4" aria-hidden />
@@ -257,8 +264,7 @@ export default function AquacultureLandlordsPage() {
 
       <p className="mb-4 text-xs text-slate-500">
         Period columns use ledger entry dates for <span className="font-medium text-slate-700">{periodDescription}</span>
-        , matched to each row&apos;s pond when the line has a pond; lines without a pond appear as &quot;No pond&quot;
-        (only when viewing all ponds). Remaining contract payable is measured from{' '}
+        , matched to each row&apos;s pond when the line has a pond. Remaining contract payable is measured from{' '}
         <span className="font-medium text-slate-700">{metricsAsOf}</span> through each pond&apos;s lease end (when set).
       </p>
 
@@ -283,7 +289,6 @@ export default function AquacultureLandlordsPage() {
               {sym}
               {formatNumber(totals.rec, 2)}
             </p>
-            <p className="mt-0.5 text-[11px] text-slate-500">Charges & positive adjustments</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Period paid</p>
@@ -298,28 +303,24 @@ export default function AquacultureLandlordsPage() {
               {sym}
               {formatNumber(totals.bal, 2)}
             </p>
-            <p className="mt-0.5 text-[11px] text-slate-500">Receivable − paid (selected period)</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Remainder of contracts</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Contract remainder</p>
             <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
               {sym}
               {formatNumber(totals.rem, 2)}
             </p>
             {totals.anyOpenEndedGap ? (
               <p className="mt-0.5 text-[11px] text-amber-800">Some rows exclude open-ended leases</p>
-            ) : (
-              <p className="mt-0.5 text-[11px] text-slate-500">Through lease end</p>
-            )}
+            ) : null}
           </div>
         </div>
       ) : null}
 
       {rows.length > uniqueLandlordIds.size ? (
         <p className="mb-3 text-xs text-slate-500">
-          The same landlord may appear on multiple rows (one per pond share).{' '}
-          <span className="font-medium text-slate-600">Ledger balance</span> repeats the landlord&apos;s total running
-          balance on each row — do not sum that column across rows.
+          The same landlord may appear on multiple rows (one per pond share). Do not sum the ledger balance column across
+          rows.
         </p>
       ) : null}
 
@@ -338,7 +339,9 @@ export default function AquacultureLandlordsPage() {
                 <th className="whitespace-nowrap px-3 py-3 text-right font-medium">Contract remainder</th>
                 <th className="whitespace-nowrap px-3 py-3 text-right font-medium">Ledger balance</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium">Status</th>
-                <th className="whitespace-nowrap px-3 py-3 pr-4 text-right font-medium"> </th>
+                <th className="sticky right-0 whitespace-nowrap bg-slate-50 px-3 py-3 pr-4 text-right font-medium shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -351,7 +354,14 @@ export default function AquacultureLandlordsPage() {
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="px-4 py-12 text-center text-slate-500">
-                    No pond shares yet. Open a landlord to assign land decimals per pond, or widen your filters.
+                    No landlords yet.{' '}
+                    <button
+                      type="button"
+                      className="font-medium text-teal-800 underline"
+                      onClick={() => setFormModal({ mode: 'create' })}
+                    >
+                      Create the first landlord
+                    </button>
                   </td>
                 </tr>
               ) : (
@@ -362,14 +372,19 @@ export default function AquacultureLandlordsPage() {
                       : r.pond_name?.trim() || `Pond #${r.pond_id}`
                   const rk = `${r.id}-${r.pond_id ?? 'na'}`
                   return (
-                    <tr key={rk} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/80">
+                    <tr key={rk} className="group border-b border-slate-100 last:border-0 hover:bg-slate-50/80">
                       <td className="px-3 py-3 pl-4 align-top text-slate-800">{pLabel}</td>
                       <td className="px-3 py-3 align-top">
-                        <div className="font-medium text-slate-900">{r.name}</div>
+                        <Link
+                          href={`/aquaculture/landlords/${r.id}`}
+                          className="font-medium text-slate-900 hover:text-teal-900 hover:underline"
+                        >
+                          {r.name}
+                        </Link>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
-                          {r.code ? <span>{r.code}</span> : null}
+                          {r.code ? <span className="font-mono">{r.code}</span> : null}
                           <span>
-                            {r.pond_share_count} pond{r.pond_share_count === 1 ? '' : 's'} total
+                            {r.pond_share_count} pond{r.pond_share_count === 1 ? '' : 's'}
                           </span>
                           {!r.is_active ? (
                             <span className="rounded bg-slate-200 px-1.5 py-0.5 text-slate-700">Inactive</span>
@@ -404,7 +419,7 @@ export default function AquacultureLandlordsPage() {
                           <div className="mt-0.5 text-[11px] font-normal text-amber-800">+ open-ended</div>
                         ) : null}
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums text-slate-800">
+                      <td className="px-3 py-3 text-right tabular-nums font-medium text-slate-900">
                         {sym}
                         {formatNumber(parseMoney(r.balance_signed), 2)}
                       </td>
@@ -415,13 +430,44 @@ export default function AquacultureLandlordsPage() {
                           {statusLabel(r.balance_status)}
                         </span>
                       </td>
-                      <td className="px-3 py-3 pr-4 text-right align-top">
-                        <Link
-                          href={`/aquaculture/landlords/${r.id}`}
-                          className="font-medium text-teal-800 underline-offset-2 hover:text-teal-950 hover:underline"
-                        >
-                          Open
-                        </Link>
+                      <td className="sticky right-0 bg-white px-3 py-3 pr-4 text-right align-top group-hover:bg-slate-50/80">
+                        <div className="inline-flex items-center gap-0.5">
+                          <Link
+                            href={`/aquaculture/landlords/${r.id}`}
+                            className={iconBtnClass()}
+                            title="View ledger"
+                            aria-label={`View ledger for ${r.name}`}
+                          >
+                            <Eye className="h-4 w-4" aria-hidden />
+                          </Link>
+                          <button
+                            type="button"
+                            className={iconBtnClass()}
+                            title="Edit landlord"
+                            aria-label={`Edit ${r.name}`}
+                            onClick={() => setFormModal({ mode: 'edit', id: r.id })}
+                          >
+                            <Pencil className="h-4 w-4" aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            className={iconBtnClass()}
+                            title="Record payment"
+                            aria-label={`Record payment for ${r.name}`}
+                            onClick={() => setPayModal({ id: r.id, name: r.name })}
+                          >
+                            <Wallet className="h-4 w-4" aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            className={iconBtnClass('danger')}
+                            title="Delete landlord"
+                            aria-label={`Delete ${r.name}`}
+                            onClick={() => void deleteLandlord(r.id, r.name)}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -432,54 +478,27 @@ export default function AquacultureLandlordsPage() {
         </div>
       </div>
 
-      <div className="mt-4 space-y-1 text-xs text-slate-500">
-        <p>
-          <span className="font-medium text-slate-600">Ledger balance</span> is the running obligation from all landlord
-          ledger entries (all dates), not limited to the selected period. Positive means we owe the landlord; negative
-          means credit or overpayment.
-        </p>
-        <p>
-          <span className="font-medium text-slate-600">Contract remainder</span> uses each pond&apos;s lease price per
-          decimal × this landlord&apos;s share on that row, prorated from the as-of date above through{' '}
-          <code className="rounded bg-slate-100 px-1">lease_contract_end</code> when set.
-        </p>
-      </div>
+      <LandlordFormModal
+        open={formModal != null}
+        mode={formModal?.mode ?? 'create'}
+        landlordId={formModal?.mode === 'edit' ? formModal.id : undefined}
+        ponds={ponds}
+        currency={currency}
+        onClose={() => setFormModal(null)}
+        onSuccess={handleFormSuccess}
+      />
 
-      {modal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">New landlord</h2>
-            <label className="mt-4 block text-sm font-medium text-slate-700">
-              Name *
-              <input
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Md. Rahman"
-              />
-            </label>
-            <p className="mt-3 text-xs text-slate-600">
-              A reference code is assigned automatically (for example LL-0001). You can change it later on the landlord
-              detail page if needed.
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setModal(false)}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void create()}
-                className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800"
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
+      {payModal ? (
+        <LandlordLedgerEntryModal
+          open
+          landlordId={payModal.id}
+          landlordName={payModal.name}
+          ponds={ponds}
+          currency={currency}
+          defaultKind="payment"
+          onClose={() => setPayModal(null)}
+          onSuccess={() => void load()}
+        />
       ) : null}
     </div>
   )

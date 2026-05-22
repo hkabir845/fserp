@@ -8,7 +8,7 @@ import api from '@/lib/api'
 import { ChevronLeft, Info, Pencil, Plus, Shield, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import PermissionMatrix, { type PermItem } from '@/components/users/PermissionMatrix'
-import { getRoleDisplayName } from '@/utils/rbac'
+import { getAccessProfileSeedLabel, getRoleDisplayName } from '@/utils/rbac'
 
 type PermDef = { id: string; label: string; group: string }
 
@@ -305,11 +305,12 @@ export default function RolesPage() {
                   />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-600">Modules and apps</p>
+                  <p className="text-xs font-medium text-slate-600">Modules, apps & reports</p>
                   <p className="mt-0.5 flex items-start gap-1 text-[11px] text-slate-500">
                     <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                    Search to find an area. Optional: pre-fill from a built-in job type when creating a new profile
-                    (you can still adjust every line).
+                    Search to find a module or report. Use &quot;Reports hub&quot; or group shortcuts for all financial,
+                    inventory, or aquaculture reports, or tick individual reports. Optional: pre-fill from a built-in job
+                    type when creating a new profile.
                   </p>
                   {!editing && (
                     <div className="mt-2">
@@ -323,9 +324,19 @@ export default function RolesPage() {
                         onChange={(e) => applySeedRole(e.target.value)}
                       >
                         <option value="">— From scratch (or add checks below) —</option>
-                        {(['admin', 'accountant', 'cashier', 'operator'] as const).map((k) => (
+                        {(
+                          [
+                            'aquaculture_only',
+                            'admin',
+                            'manager',
+                            'accountant',
+                            'supervisor',
+                            'cashier',
+                            'operator',
+                          ] as const
+                        ).map((k) => (
                           <option key={k} value={k}>
-                            {`Same as ${getRoleDisplayName(k)} default`}
+                            {getAccessProfileSeedLabel(k)}
                           </option>
                         ))}
                       </select>

@@ -16,7 +16,9 @@ from api.services.permission_service import user_client_dict, POS_SALE_SCOPES, n
 
 logger = logging.getLogger(__name__)
 
-TENANT_USER_ROLES = frozenset({"admin", "accountant", "cashier", "operator"})
+TENANT_USER_ROLES = frozenset(
+    {"admin", "manager", "accountant", "supervisor", "cashier", "operator"}
+)
 
 
 def _set_pos_sale_scope_cashier_operator(user: User, data: dict, force_default: bool) -> "JsonResponse|None":
@@ -233,7 +235,10 @@ def users_list_or_create(request):
         if role not in TENANT_USER_ROLES:
             return JsonResponse(
                 {
-                    "detail": "Role must be one of: admin, accountant, cashier, operator for company users.",
+                    "detail": (
+                        "Role must be one of: admin, manager, accountant, supervisor, cashier, operator "
+                        "for company users."
+                    ),
                 },
                 status=400,
             )
@@ -372,7 +377,9 @@ def user_detail(request, user_id):
             if data.get("role") is not None and new_role not in TENANT_USER_ROLES:
                 return JsonResponse(
                     {
-                        "detail": "Role must be one of: admin, accountant, cashier, operator.",
+                        "detail": (
+                            "Role must be one of: admin, manager, accountant, supervisor, cashier, operator."
+                        ),
                     },
                     status=400,
                 )

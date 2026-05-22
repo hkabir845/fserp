@@ -405,6 +405,26 @@ export default function AquacultureDataBankPage() {
     }
   }
 
+  const unlockClose = async (close: PondClose) => {
+    const ok = window.confirm(
+      `Unlock ${close.pond_name} for operations?\n\n` +
+        `Period ${formatDateOnly(close.period_start)} – ${formatDateOnly(close.period_end)} ` +
+        'will stay in close history but edits and new records in that range will work again.'
+    )
+    if (!ok) return
+    const key = `${close.id}-unlock`
+    setBusyKey(key)
+    try {
+      await api.post(`/aquaculture/data-bank/closes/${close.id}/unlock/`)
+      toast.success(`${close.pond_name}: open for operations`)
+      await load()
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Unlock failed'))
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
   const ponds = useMemo(
     () => mergePondRows(data ?? { ponds: [], closes: [] }, pondList),
     [data, pondList]
@@ -803,7 +823,9 @@ export default function AquacultureDataBankPage() {
                       <ul className="space-y-3">
                         {row.close_history.map((c) => {
                           const busy =
-                            busyKey === `${c.id}-reopen` || busyKey === `${c.id}-relock`
+                            busyKey === `${c.id}-reopen` ||
+                            busyKey === `${c.id}-relock` ||
+                            busyKey === `${c.id}-unlock`
                           return (
                             <li
                               key={c.id}
@@ -828,6 +850,14 @@ export default function AquacultureDataBankPage() {
                                 </Link>
                               {isAdmin && c.is_data_locked ? (
                                 <>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => void unlockClose(c)}
+                                    className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+                                  >
+                                    <LockOpen className="h-3 w-3" /> Unlock operations
+                                  </button>
                                   {c.reference_access_enabled ? (
                                     <button
                                       type="button"
@@ -844,7 +874,7 @@ export default function AquacultureDataBankPage() {
                                       onClick={() => void reopenClose(c)}
                                       className="inline-flex items-center gap-1 rounded border border-teal-200 px-2 py-1 text-xs font-medium text-teal-800 hover:bg-teal-50 disabled:opacity-50"
                                     >
-                                      <LockOpen className="h-3 w-3" /> Open reference
+                                      <Eye className="h-3 w-3" /> Open reference
                                     </button>
                                   )}
                                 </>

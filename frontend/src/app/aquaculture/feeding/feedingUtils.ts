@@ -185,6 +185,106 @@ export function buildMealPlanRows(
   return { rows, totalKg }
 }
 
+/** Parse a positive kg string; returns null if empty or invalid. */
+export function parsePositiveKg(kgStr: string | null | undefined): number | null {
+  if (kgStr == null || String(kgStr).trim() === '') return null
+  const n = Number.parseFloat(String(kgStr).trim())
+  if (!Number.isFinite(n) || n <= 0) return null
+  return n
+}
+
+/**
+ * Scale per-meal kg while preserving each meal's share of the advised daily total
+ * (e.g. 2× or 3× per day with unequal splits).
+ */
+export function scaleMealPlanToTotalKg(
+  plan: { rows: MealPlanRow[]; totalKg: string | null },
+  newTotalKg: number,
+): { rows: MealPlanRow[]; totalKg: string | null } {
+  if (!plan.rows.length || !Number.isFinite(newTotalKg) || newTotalKg <= 0) {
+    return plan
+  }
+
+  const baseWeights = plan.rows.map((r) => {
+    if (r.kg === '—') return 0
+    const n = Number.parseFloat(r.kg)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  })
+
+  let baseSum = baseWeights.reduce((acc, w) => acc + w, 0)
+  if (baseSum <= 0 && plan.totalKg != null) {
+    const t = Number.parseFloat(plan.totalKg)
+    if (Number.isFinite(t) && t > 0) baseSum = t
+  }
+
+  const distributeEqual = () => {
+    const each = newTotalKg / plan.rows.length
+    const labels = plan.rows.map(() => each.toFixed(2))
+    return { rows: plan.rows.map((r, i) => ({ ...r, kg: labels[i] })), totalKg: newTotalKg.toFixed(2) }
+  }
+
+  if (baseSum <= 0) {
+    return distributeEqual()
+  }
+
+  const raw = baseWeights.map((w) => ((w > 0 ? w : 0) / baseSum) * newTotalKg)
+  const rounded = raw.map((x) => Math.round(x * 100) / 100)
+  let diff = Math.round((newTotalKg - rounded.reduce((acc, x) => acc + x, 0)) * 100) / 100
+  if (Math.abs(diff) >= 0.005) {
+    let maxIdx = 0
+    for (let i = 1; i < rounded.length; i++) {
+      if (rounded[i] > rounded[maxIdx]) maxIdx = i
+    }
+    rounded[maxIdx] = Math.round((rounded[maxIdx] + diff) * 100) / 100
+  }
+
+  const hasPositiveBase = baseWeights.some((w) => w > 0)
+  const rows = plan.rows.map((r, i) => {
+    if (baseWeights[i] > 0) {
+      return { ...r, kg: rounded[i].toFixed(2) }
+    }
+    if (!hasPositiveBase) {
+      return { ...r, kg: (newTotalKg / plan.rows.length).toFixed(2) }
+    }
+    return { ...r, kg: '—' }
+  })
+
+  return { rows, totalKg: newTotalKg.toFixed(2) }
+}
+
+/** True when field dose differs from saved suggested kg (≥ 5 g). */
+export function doseDiffersFromSuggested(
+  fieldKg: string | null | undefined,
+  suggestedKg: string | null | undefined,
+): boolean {
+  const field = parsePositiveKg(fieldKg)
+  const suggested = parsePositiveKg(suggestedKg)
+  if (field == null || suggested == null) return false
+  return Math.abs(field - suggested) >= 0.005
+}
+
+/** Meal plan for apply-in-field: scale per-meal kg to match field total when it differs from advice. */
+export function mealPlanForFieldApply(
+  basePlan: { rows: MealPlanRow[]; totalKg: string | null },
+  applyKgStr: string,
+  suggestedKg: string | null | undefined,
+): { plan: { rows: MealPlanRow[]; totalKg: string | null }; scaled: boolean } {
+  const newKg = parsePositiveKg(applyKgStr)
+  if (newKg == null) {
+    return { plan: basePlan, scaled: false }
+  }
+
+  const baseFromPlan = parsePositiveKg(basePlan.totalKg)
+  const baseFromAdvice = parsePositiveKg(suggestedKg ?? undefined)
+  const baseKg = baseFromPlan ?? baseFromAdvice
+
+  if (baseKg != null && Math.abs(newKg - baseKg) < 0.005) {
+    return { plan: basePlan, scaled: false }
+  }
+
+  return { plan: scaleMealPlanToTotalKg(basePlan, newKg), scaled: true }
+}
+
 export function statusPill(status: string) {
   const base = 'inline-flex rounded-full px-2 py-0.5 text-xs font-medium'
   if (status === 'pending_review') return `${base} bg-amber-100 text-amber-900`

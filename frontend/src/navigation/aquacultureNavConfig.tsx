@@ -12,6 +12,7 @@ import {
   DollarSign,
   Wallet,
   Archive,
+  Receipt,
 } from 'lucide-react'
 
 export type AquacultureNavItem = {
@@ -73,6 +74,12 @@ export const AQUACULTURE_NAV_GROUPS: AquacultureNavGroup[] = [
     description: 'Sales, costs, and allocated P&L',
     items: [
       { href: '/aquaculture/sales', label: 'Pond & fish sales', icon: DollarSign },
+      {
+        href: '/aquaculture/expenses',
+        label: 'Pond costs & expenses',
+        sidebarLabel: 'Pond costs',
+        icon: Receipt,
+      },
       {
         href: '/aquaculture/financing',
         label: 'Financing & loan repayment',

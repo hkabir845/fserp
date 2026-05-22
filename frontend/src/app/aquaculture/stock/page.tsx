@@ -19,6 +19,7 @@ import {
   Search,
   Trash2,
   Undo2,
+  ArrowRightLeft,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
@@ -26,6 +27,9 @@ import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { aquacultureExpenseDeleteConfirmMessage } from '@/lib/aquacultureExpensePolicy'
+import { PondWarehouseAddStockModal } from '@/components/aquaculture/PondWarehouseAddStockModal'
+import { PondWarehouseInterPondModal } from '@/components/aquaculture/PondWarehouseInterPondModal'
+import { AquacultureWarehouseGroupsPanel } from '@/components/aquaculture/AquacultureWarehouseGroupsPanel'
 import { AquacultureStockLedgerFormModal } from './AquacultureStockLedgerFormModal'
 
 const iconAction =
@@ -129,6 +133,9 @@ function isFishStockLedgerPayload(x: unknown): x is FishStockLedgerListPayload {
 interface WarehouseMatrixRow {
   pond_id: number
   pond_name: string
+  warehouse_group_id?: number | null
+  warehouse_group_name?: string
+  is_shared_warehouse_member?: boolean
   item_id: number
   item_name: string
   unit: string
@@ -366,6 +373,8 @@ function AquacultureStockPageContent() {
   const [whPond, setWhPond] = useState('')
   const [whSearch, setWhSearch] = useState('')
   const [whPosCategory, setWhPosCategory] = useState('')
+  const [addWhOpen, setAddWhOpen] = useState(false)
+  const [interPondOpen, setInterPondOpen] = useState(false)
   const [movements, setMovements] = useState<MovementRow[]>([])
   const [movementsLoading, setMovementsLoading] = useState(false)
   const [movementsSources, setMovementsSources] = useState<RefOpt[]>([])
@@ -894,17 +903,18 @@ function AquacultureStockPageContent() {
           {mainTab === 'fish' && ref?.coa_note ? <p className="mt-3 text-xs text-slate-500">{ref.coa_note}</p> : null}
           {mainTab === 'warehouse' ? (
             <p className="mt-3 max-w-3xl text-xs leading-relaxed text-slate-500">
-              Rows are inventory at each pond (sacks, bottles, kg, etc.). Move stock from a station in{' '}
+              Feed, medicine, and supplies stored at each pond. Use <strong className="font-medium text-slate-700">Add stock</strong>{' '}
+              to move from your shop, or{' '}
               <Link href="/inventory" className="font-medium text-teal-800 underline hover:text-teal-950">
                 Inventory
-              </Link>
-              ; adjust on-hand from a{' '}
-              <Link href="/aquaculture/ponds" className="font-medium text-teal-800 underline hover:text-teal-950">
-                pond
               </Link>{' '}
-              or via{' '}
+              for advanced transfers. Consumption happens on{' '}
               <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline hover:text-teal-950">
                 feeding advice
+              </Link>{' '}
+              and{' '}
+              <Link href="/aquaculture/medicine" className="font-medium text-teal-800 underline hover:text-teal-950">
+                medicine
               </Link>
               .
             </p>
@@ -1916,12 +1926,36 @@ function AquacultureStockPageContent() {
           </div>
 
           {whSubTab === 'on_hand' ? (
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900">Pond warehouse on hand</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Current quantities by pond and SKU. Filter by pond (loads from server), then narrow by product type or
-              search.
-            </p>
+          <>
+          <AquacultureWarehouseGroupsPanel onChanged={() => void loadWarehouseMatrix()} />
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm mt-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">Pond warehouse on hand</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Current quantities by pond and SKU. Filter by pond (loads from server), then narrow by product type or
+                  search.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInterPondOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+                >
+                  <ArrowRightLeft className="h-4 w-4" aria-hidden />
+                  Move between ponds
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddWhOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800"
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  Add stock
+                </button>
+              </div>
+            </div>
             <div className="mt-3 flex flex-wrap items-end gap-3">
               <label className="block min-w-[11rem] text-xs font-medium text-slate-600">
                 Pond
@@ -1976,7 +2010,7 @@ function AquacultureStockPageContent() {
               ) : filteredWhRows.length === 0 ? (
                 <p className="py-8 text-center text-sm text-slate-500">
                   {whRows.length === 0
-                    ? 'No pond warehouse stock yet. Move inventory from a station (Inventory → move to pond warehouse), then open a pond to verify.'
+                    ? 'No pond warehouse stock yet. Click Add stock above to move feed or medicine from your shop.'
                     : 'No rows match your filters.'}{' '}
                   {whRows.length > 0 && (whSearch.trim() || whPosCategory) ? (
                     <button
@@ -1996,6 +2030,7 @@ function AquacultureStockPageContent() {
                   <thead>
                     <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
                       <th className="py-2 pr-4">Pond</th>
+                      <th className="py-2 pr-4">Shared group</th>
                       <th className="py-2 pr-4">Product</th>
                       <th className="py-2 pr-4">Type</th>
                       <th className="py-2 pr-4">Category</th>
@@ -2019,6 +2054,15 @@ function AquacultureStockPageContent() {
                               {r.pond_name}
                               <ExternalLink className="h-3 w-3 opacity-60" aria-hidden />
                             </Link>
+                          </td>
+                          <td className="py-2 pr-4 text-slate-600">
+                            {r.warehouse_group_name ? (
+                              <span className="rounded bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-900">
+                                {r.warehouse_group_name}
+                              </span>
+                            ) : (
+                              '—'
+                            )}
                           </td>
                           <td className="py-2 pr-4 text-slate-800">{r.item_name}</td>
                           <td className="py-2 pr-4 text-slate-600">{warehouseShelfLabel(r.pos_category)}</td>
@@ -2045,6 +2089,7 @@ function AquacultureStockPageContent() {
               )}
             </div>
           </section>
+          </>
           ) : null}
 
           {whSubTab === 'consumed' ? (
@@ -2357,6 +2402,23 @@ function AquacultureStockPageContent() {
           </div>
         </div>
       ) : null}
+
+      <PondWarehouseAddStockModal
+        open={addWhOpen}
+        onClose={() => setAddWhOpen(false)}
+        initialPondId={whPond ? parseInt(whPond, 10) : null}
+        onSuccess={() => {
+          if (mainTab === 'warehouse' && whSubTab === 'on_hand') void loadWarehouseMatrix()
+        }}
+      />
+      <PondWarehouseInterPondModal
+        open={interPondOpen}
+        onClose={() => setInterPondOpen(false)}
+        initialFromPondId={whPond ? parseInt(whPond, 10) : null}
+        onSuccess={() => {
+          if (mainTab === 'warehouse' && whSubTab === 'on_hand') void loadWarehouseMatrix()
+        }}
+      />
     </div>
   )
 }

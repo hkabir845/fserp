@@ -17,6 +17,7 @@ from api.utils.auth import (
 from api.models import Company, Organization, Station, User
 from api.chart_templates.fuel_station import seed_fuel_station_if_empty
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
+from api.services.aquaculture_medicine_catalog_seed import ensure_aquaculture_medicine_catalog_items
 from api.services.permission_service import normalize_role_key
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_tenant_company_data
 from api.services.company_code import resolved_company_code
@@ -503,6 +504,7 @@ def companies_list_or_create(request):
 
             if getattr(c, "aquaculture_enabled", False):
                 aquaculture_chart_accounts_created = ensure_aquaculture_chart_accounts(c.id)
+                ensure_aquaculture_medicine_catalog_items(c.id)
 
             owner = User(
                 username=admin_email,
@@ -745,6 +747,7 @@ def company_detail(request, company_id: int):
             _enrich_company_group_context(payload, company, getattr(request, "api_user", None))
             if should_seed_aquaculture_coa:
                 payload["aquaculture_chart_accounts_created"] = ensure_aquaculture_chart_accounts(company.id)
+                ensure_aquaculture_medicine_catalog_items(company.id)
             return JsonResponse(payload)
         except Exception as e:
             return JsonResponse(

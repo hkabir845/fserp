@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Eye, EyeOff } from 'lucide-react'
 import { getApiBaseUrl, getBackendOrigin, getApiDocsUrl, setAuthApiOriginStamp } from '@/lib/api'
 import { formatApiErrorJson } from '@/utils/errorHandler'
+import { getDefaultLandingHref } from '@/utils/dashboardLanding'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -33,7 +34,15 @@ export default function LoginPage() {
     try {
       const token = localStorage.getItem('access_token')?.trim()
       if (token && token !== 'undefined' && token !== 'null') {
-        router.replace('/apps')
+        try {
+          const userStr = localStorage.getItem('user')
+          const u = userStr ? JSON.parse(userStr) : null
+          router.replace(
+            getDefaultLandingHref(u?.role, Array.isArray(u?.permissions) ? u.permissions : null)
+          )
+        } catch {
+          router.replace('/dashboard')
+        }
       }
     } catch {
       /* ignore */
@@ -325,16 +334,11 @@ export default function LoginPage() {
       localStorage.setItem('user', JSON.stringify(user))
       setAuthApiOriginStamp()
 
-      // Redirect based on user role
-      // Super Admin goes to admin dashboard, Cashiers go to POS, others go to dashboard
-      const userRole = user?.role?.toLowerCase()
-      if (userRole === 'super_admin') {
-        router.push('/admin')
-      } else if (userRole === 'cashier' || userRole === 'operator') {
-        router.push('/cashier')
-      } else {
-        router.push('/apps')
-      }
+      const landing = getDefaultLandingHref(
+        user?.role,
+        Array.isArray(user?.permissions) ? user.permissions : null
+      )
+      router.push(landing)
     } catch (err: any) {
       // One-line dev log (avoid console.error: it chains through SuppressWarnings + errorHandler and prints noisy stacks)
       if (process.env.NODE_ENV === 'development') {

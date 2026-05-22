@@ -11,10 +11,12 @@ import {
   Gauge,
   Landmark,
   Lock,
+  Plus,
   RefreshCw,
   Scale,
   Sprout,
 } from 'lucide-react'
+import { PondWarehouseAddStockModal } from '@/components/aquaculture/PondWarehouseAddStockModal'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -100,6 +102,8 @@ interface PondDetail {
   notes: string
   pond_role?: string
   pond_role_label?: string
+  warehouse_group_id?: number | null
+  warehouse_group_name?: string
   pos_customer_id?: number | null
   pos_customer_display?: string | null
   pos_customer_auto_managed?: boolean
@@ -376,6 +380,7 @@ export default function PondDetailViewPage() {
   const [pondWarehouseReceipts, setPondWarehouseReceipts] = useState<PondWarehouseReceipt[]>([])
   const [warehouseLoadError, setWarehouseLoadError] = useState<string | null>(null)
   const [warehouseRefreshing, setWarehouseRefreshing] = useState(false)
+  const [addWhOpen, setAddWhOpen] = useState(false)
   const [inventoryItems, setInventoryItems] = useState<ItemPickRow[]>([])
   const [defaultFeedSel, setDefaultFeedSel] = useState('')
   const [defaultFeedSaving, setDefaultFeedSaving] = useState(false)
@@ -1032,24 +1037,54 @@ export default function PondDetailViewPage() {
 
           <section className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-slate-900">Pond warehouse</h2>
-              <button
-                type="button"
-                disabled={warehouseRefreshing || !Number.isFinite(pondIdNum)}
-                onClick={() => void refreshWarehouseStock()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${warehouseRefreshing ? 'animate-spin' : ''}`} aria-hidden />
-                Refresh stock
-              </button>
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">Pond warehouse</h2>
+                {pond.warehouse_group_name ? (
+                  <p className="mt-0.5 text-xs text-slate-600">
+                    Shared store: <span className="font-medium text-teal-900">{pond.warehouse_group_name}</span> — use{' '}
+                    <Link href="/aquaculture/stock?tab=warehouse" className="font-medium text-teal-800 hover:underline">
+                      Stock → Move between ponds
+                    </Link>{' '}
+                    to reallocate.
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!Number.isFinite(pondIdNum)}
+                  onClick={() => setAddWhOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden />
+                  Add stock
+                </button>
+                <button
+                  type="button"
+                  disabled={warehouseRefreshing || !Number.isFinite(pondIdNum)}
+                  onClick={() => void refreshWarehouseStock()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${warehouseRefreshing ? 'animate-spin' : ''}`} aria-hidden />
+                  Refresh
+                </button>
+              </div>
             </div>
             <p className="mt-1 text-xs text-slate-600">
-              On-hand quantities below come only from <strong className="font-medium">Inventory → Move to pond warehouse</strong>{' '}
-              (shop station → this pond). Shop stock that stays at the station does not show here. Regular station-to-station
-              transfer drafts do not appear here. Internal move — no COGS until feed is applied or consumed. API:{' '}
-              <code className="rounded bg-slate-100 px-1">POST /api/aquaculture/pond-warehouse-transfer/</code>
-              {' · '}
-              <code className="rounded bg-slate-100 px-1">POST /api/aquaculture/pond-warehouse-consume/</code>
+              Feed, medicine, and supplies at this pond. Use <strong className="font-medium">Add stock</strong> to move
+              from your shop (no COGS until consumed via{' '}
+              <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline">
+                feeding
+              </Link>{' '}
+              or{' '}
+              <Link href="/aquaculture/medicine" className="font-medium text-violet-800 underline">
+                medicine
+              </Link>
+              ). Advanced:{' '}
+              <Link href="/inventory" className="font-medium text-teal-800 underline">
+                Inventory
+              </Link>
+              .
             </p>
             {recentPondWarehouseConsumption.length > 0 ? (
               <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
@@ -1200,32 +1235,10 @@ export default function PondDetailViewPage() {
                             </p>
                           </div>
                         ) : null}
-                        <ul className="mt-2 max-w-xl list-disc space-y-1.5 pl-5 text-xs leading-relaxed">
-                          <li>
-                            If you expected to see shop inventory here: it only appears after a{' '}
-                            <strong className="font-medium">Move to pond warehouse</strong> from{' '}
-                            <Link href="/inventory" className="font-medium text-teal-700 underline hover:text-teal-800">
-                              Inventory
-                            </Link>
-                            . Choose your <strong className="font-medium">home station</strong> as the source, destination{' '}
-                            <strong className="font-medium">this pond</strong>, add lines, then submit the move.
-                          </li>
-                          <li>
-                            The SKU must be <strong className="font-medium">inventory</strong> and{' '}
-                            <strong className="font-medium">tracked per station</strong> (not tank-only fuel). If the move
-                            fails, the error toast explains the rule.
-                          </li>
-                          <li>
-                            After a successful move, use <strong className="font-medium">Refresh stock</strong> above if the
-                            table did not update.
-                          </li>
-                          {receiptsForThisPond.length === 0 ? (
-                            <li className="text-slate-500">
-                              Pond warehouse receipts in Inventory are filtered to your user&apos;s home station (if set). If
-                              you moved stock from another site, ask an admin or use an account that can see that station.
-                            </li>
-                          ) : null}
-                        </ul>
+                        <p className="mt-2 text-xs text-slate-600">
+                          Click <strong className="font-medium text-slate-800">Add stock</strong> above to move feed or
+                          medicine from your shop into this pond.
+                        </p>
                       </td>
                     </tr>
                   </tbody>
@@ -1583,6 +1596,14 @@ export default function PondDetailViewPage() {
           </section>
         </>
       )}
+
+      <PondWarehouseAddStockModal
+        open={addWhOpen}
+        onClose={() => setAddWhOpen(false)}
+        initialPondId={Number.isFinite(pondIdNum) ? pondIdNum : null}
+        lockPond
+        onSuccess={() => void refreshWarehouseStock()}
+      />
     </div>
   )
 }

@@ -15,7 +15,7 @@ set DJANGO_SECRET_KEY=<paste-50+-char-random>   # Windows; use export on Linux/m
 python manage.py check --deploy
 ```
 
-Custom **FSERP deploy warnings** (non-fatal): **fserp.W001** SQLite without `FSERP_USE_SQLITE=1`, **fserp.W002** LocMem cache without Redis, **fserp.W003** missing `EMAIL_HOST`, **fserp.W004** WhiteNoise missing while static is not offloaded (`FSERP_DISABLE_WHITENOISE`). Fix in `.env` / `pip install` or accept the risk on internal hosts.
+Custom **FSERP deploy warnings** (non-fatal, registered in `api/checks.py`): **fserp.W001** SQLite without `FSERP_USE_SQLITE=1`, **fserp.W002** LocMem cache without Redis, **fserp.W003** missing `EMAIL_HOST`, **fserp.W004** WhiteNoise missing while static is not offloaded (`FSERP_DISABLE_WHITENOISE`). Fix in `.env` / `pip install` or silence a specific id via `FSERP_SILENCED_SYSTEM_CHECKS` (e.g. `fserp.W002` for single-worker hosts).
 
 **Dependencies:** `pip install -r requirements.txt` includes WhiteNoise for static files under Gunicorn. Use `pip install -r requirements-prod.txt` on the API host to add Gunicorn.
 
@@ -100,3 +100,18 @@ Put **nginx** (or cPanel/Apache) in front: TLS, `proxy_set_header X-Forwarded-Pr
 
 - Always run **`python manage.py migrate`** on deploy before restarting workers.
 - Re-read `backend/README.md` (CORS headers, master tenant bootstrap, backups).
+
+## 9. Go-live sign-off (pre-deployment audit)
+
+Run these once on the release branch before promoting to production:
+
+| Check | Command / expectation |
+|-------|------------------------|
+| Backend tests | `pytest tests/ -q` → **364 passed** (4 skipped) |
+| Deploy system check | `python manage.py check --deploy` with real `DJANGO_SECRET_KEY` |
+| Migrations | `python manage.py showmigrations api` → all `[X]` through **0110** |
+| Frontend build | `cd frontend && npm ci && npm run build` |
+| Permission defaults | Role `user` must **not** receive `app.users` / `app.backup` (see `tests/test_permission_defaults.py`) |
+| Dev-only API | `POST /api/customers/add-dummy/` returns **403** when `DEBUG=False` |
+
+**Code hardening included in this release:** safer default permissions for generic/unknown roles; duplicate `fserp.W001` deploy-check id removed; financial analytics / payroll `Decimal` fixes; route-level `error.tsx`; production error details hidden in UI.

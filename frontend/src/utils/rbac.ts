@@ -6,7 +6,9 @@
 export type UserRole =
   | 'super_admin'
   | 'admin'
+  | 'manager'
   | 'accountant'
+  | 'supervisor'
   | 'cashier'
   | 'operator'
 
@@ -74,12 +76,84 @@ export function getCurrentUserPermissions(): string[] | null {
 
 /**
  * When `user.permissions` is present from the API, checks the list. When absent (legacy session), returns true so existing role-based UI still works.
+ * ``app.aquaculture`` grants every ``app.aquaculture.*`` module key.
  */
 export function hasPermission(key: string): boolean {
   const p = getCurrentUserPermissions()
   if (p == null) return true
   if (p.includes('*')) return true
-  return p.includes(key)
+  if (p.includes(key)) return true
+  if (key.startsWith('app.aquaculture.') && (p.includes('app.aquaculture') || p.includes(key))) {
+    return true
+  }
+  return false
+}
+
+/** Any aquaculture module or the all-modules parent key. */
+export function hasAnyAquaculturePermission(): boolean {
+  const p = getCurrentUserPermissions()
+  if (p == null) return true
+  if (p.includes('*') || p.includes('app.aquaculture')) return true
+  return p.some((k) => k.startsWith('app.aquaculture.'))
+}
+
+const INVENTORY_REPORT_IDS = new Set([
+  'inventory-sku-valuation',
+  'item-master-by-category',
+  'item-sales-by-category',
+  'item-purchases-by-category',
+  'item-sales-custom',
+  'item-purchases-custom',
+  'item-stock-movement',
+  'item-velocity-analysis',
+  'item-purchase-velocity-analysis',
+])
+
+const AQUACULTURE_REPORT_IDS = new Set([
+  'aquaculture-pl-management',
+  'aquaculture-pond-pl',
+  'aquaculture-fish-sales',
+  'aquaculture-pond-sales-comprehensive',
+  'aquaculture-expenses',
+  'aquaculture-sampling',
+  'aquaculture-production-cycles',
+  'aquaculture-profit-transfers',
+  'aquaculture-fish-transfers',
+  'aquaculture-pond-feed-stock',
+  'aquaculture-pond-medicine-stock',
+  'aquaculture-pond-supplies-stock',
+  'aquaculture-fish-stock-position',
+  'aquaculture-shop-station-stock',
+  'aquaculture-equipment-assets',
+  'aquaculture-pond-total-inventory',
+])
+
+/** Permission key for a report slug (matches backend ``report_permission_key``). */
+export function reportPermissionKey(reportId: string): string {
+  return `report.${(reportId || '').trim().replace(/-/g, '_')}`
+}
+
+/**
+ * Whether the current user may open a report (hub card + API). When ``user.permissions`` is absent, returns true
+ * (legacy role-based filters on the Reports page still apply).
+ */
+export function canAccessReport(reportId: string): boolean {
+  const p = getCurrentUserPermissions()
+  if (p == null) return true
+  if (p.includes('*')) return true
+  const rid = (reportId || '').trim()
+  if (!rid) return false
+  if (p.includes(reportPermissionKey(rid))) return true
+  if (INVENTORY_REPORT_IDS.has(rid)) {
+    return p.includes('report.inventory_sku')
+  }
+  if (rid === 'aquaculture-pl-management') {
+    return p.includes('app.aquaculture') || p.includes('app.aquaculture.report_pl')
+  }
+  if (AQUACULTURE_REPORT_IDS.has(rid)) {
+    return p.includes('app.aquaculture')
+  }
+  return p.includes('app.reports')
 }
 
 /** Inventory valuation & velocity report: extra key `report.inventory_sku` when permissions are in use. */
@@ -87,7 +161,9 @@ export function canViewInventorySkuReport(userRole: string | null): boolean {
   const p = getCurrentUserPermissions()
   const r = (userRole || '').toLowerCase()
   if (p != null) {
-    return p.includes('*') || p.includes('report.inventory_sku')
+    if (p.includes('*')) return true
+    if (p.includes('report.inventory_sku')) return true
+    return [...INVENTORY_REPORT_IDS].some((id) => p.includes(reportPermissionKey(id)))
   }
   return ['super_admin', 'admin', 'accountant', 'manager'].includes(r)
 }
@@ -121,12 +197,38 @@ export function getRoleDisplayName(role: UserRole | string | null): string {
   const roleMap: Record<string, string> = {
     super_admin: 'Super Admin',
     admin: 'Admin',
-    accountant: 'Accountant',
+    manager: 'Manager (Fuel Station, Shop & Aquaculture)',
+    accountant: 'Accountant (Fuel Station, Shop & Aquaculture)',
+    supervisor: 'Supervisor (Ponds)',
     cashier: 'Cashier',
-    operator: 'Operator',
+    operator: 'Operator (Fuel Station)',
   }
 
   return roleMap[role.toLowerCase()] || role
+}
+
+/** Labels for optional access-profile seeds from ``/permission-catalog/`` (includes ``aquaculture_only``). */
+export function getAccessProfileSeedLabel(seedKey: string): string {
+  if (seedKey === 'aquaculture_only') {
+    return 'Aquaculture only (ponds & fish — no fuel station or shop POS)'
+  }
+  const builtIn = ['admin', 'manager', 'accountant', 'supervisor', 'cashier', 'operator'] as const
+  if ((builtIn as readonly string[]).includes(seedKey)) {
+    return `Same as ${getRoleDisplayName(seedKey)} default`
+  }
+  return seedKey
+}
+
+/** Same seeds as {@link getAccessProfileSeedLabel}, for the Users “new access profile” dropdown. */
+export function getAccessProfileSeedOptionLabel(seedKey: string): string {
+  if (seedKey === 'aquaculture_only') {
+    return getAccessProfileSeedLabel(seedKey)
+  }
+  const builtIn = ['admin', 'manager', 'accountant', 'supervisor', 'cashier', 'operator'] as const
+  if ((builtIn as readonly string[]).includes(seedKey)) {
+    return `Match ${getRoleDisplayName(seedKey)} defaults`
+  }
+  return seedKey
 }
 
 export function getRoleBadgeColor(role: UserRole | string | null): string {
@@ -135,7 +237,9 @@ export function getRoleBadgeColor(role: UserRole | string | null): string {
   const colorMap: Record<string, string> = {
     super_admin: 'bg-purple-100 text-purple-800',
     admin: 'bg-blue-100 text-blue-800',
+    manager: 'bg-indigo-100 text-indigo-800',
     accountant: 'bg-green-100 text-green-800',
+    supervisor: 'bg-cyan-100 text-cyan-800',
     cashier: 'bg-orange-100 text-orange-800',
     operator: 'bg-teal-100 text-teal-800',
   }

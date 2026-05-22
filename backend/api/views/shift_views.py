@@ -10,6 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Employee, Meter, ShiftTemplate, ShiftSession, Station
+from api.services.shift_template_defaults import seed_standard_24_7_shift_templates
 from api.services.station_policy import active_station_count
 
 
@@ -265,6 +266,24 @@ def shift_templates_list_or_create(request):
         t.save()
         return JsonResponse(_template_to_json(t), status=201)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
+def shift_templates_seed_standard_247(request):
+    """Create Day / Evening / Night templates (8h each) if not already present."""
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    result = seed_standard_24_7_shift_templates(request.company_id)
+    templates = ShiftTemplate.objects.filter(company_id=request.company_id).order_by("id")
+    return JsonResponse(
+        {
+            **result,
+            "templates": [_template_to_json(t) for t in templates],
+        },
+        status=201 if result["created_count"] else 200,
+    )
 
 
 @csrf_exempt

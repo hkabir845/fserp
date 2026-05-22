@@ -28,6 +28,7 @@ import { getCurrencySymbol } from '@/utils/currency'
 import {
   AdvicePlanCard,
   AdviceRichText,
+  FeedingDoseEditor,
   FeedingInsightHero,
   MealPlanTable,
   PageTipsAside,
@@ -40,6 +41,7 @@ import {
   type FeedingAdviceRow,
   SACK_SIZE_OPTIONS_KG,
   buildMealPlanRows,
+  mealPlanForFieldApply,
   feedInventoryQtyFromKgForEstimate,
   feedKgToSackLabel,
   isoToday,
@@ -334,11 +336,39 @@ export default function AquacultureFeedingPage() {
     [selected, feedingScheduleBlock, recommendedFeedingTimes],
   )
 
+  const activeDoseKg = useMemo(() => {
+    if (!selected) return ''
+    if (selected.status === 'pending_review') return editKg.trim()
+    if (selected.status === 'approved') return applyKg.trim()
+    return ''
+  }, [selected, editKg, applyKg])
+
+  const { plan: displayMealPlan, scaled: mealPlanScaled } = useMemo(() => {
+    if (!selected || (selected.status !== 'pending_review' && selected.status !== 'approved')) {
+      return { plan: mealPlan, scaled: false }
+    }
+    return mealPlanForFieldApply(mealPlan, activeDoseKg, selected.suggested_feed_kg)
+  }, [mealPlan, activeDoseKg, selected?.status, selected?.suggested_feed_kg])
+
   const sackKgForDisplay = useMemo((): number => {
     const n = Number.parseInt(editSackSize, 10)
     if (isAllowedSackKg(n)) return n
     return rowSackKg(selected)
   }, [editSackSize, selected])
+
+  /** Daily plans list reflects in-progress kg/sack edits for the selected row. */
+  const listDisplayRows = useMemo(() => {
+    if (!selected?.id) return displayRows
+    if (selected.status !== 'pending_review' && selected.status !== 'approved') return displayRows
+    return displayRows.map((r) => {
+      if (r.id !== selected.id) return r
+      return {
+        ...r,
+        suggested_feed_kg: activeDoseKg !== '' ? activeDoseKg : r.suggested_feed_kg,
+        sack_size_kg: sackKgForDisplay,
+      }
+    })
+  }, [displayRows, selected?.id, selected?.status, activeDoseKg, sackKgForDisplay])
 
   const mealsLabel = useMemo(() => {
     const raw =
@@ -445,6 +475,15 @@ export default function AquacultureFeedingPage() {
     setApplyKg(kgStrFromSacks(String(sacks), sackKgForDisplay))
   }
 
+  const resetToSuggestedDose = useCallback(() => {
+    const kg = selected?.suggested_feed_kg ?? ''
+    if (selected?.status === 'pending_review') {
+      onEditKgChange(kg)
+    } else if (selected?.status === 'approved') {
+      onApplyKgChange(kg)
+    }
+  }, [selected?.status, selected?.suggested_feed_kg, sackKgForDisplay])
+
   const sackSelect = (
     <label className="block text-xs font-medium text-slate-700">
       Sack size (kg)
@@ -534,18 +573,54 @@ export default function AquacultureFeedingPage() {
   const approve = async () => {
     if (!selected || selected.status !== 'pending_review') return
     try {
-      const { data } = await api.post<FeedingAdviceRow>(`/aquaculture/feeding-advice/${selected.id}/approve/`, {})
+      const kgPayload = editKg.trim() === '' ? null : editKg.trim()
+      const needsSave =
+        (selected.edited_advice_text || '') !== editText ||
+        String(selected.suggested_feed_kg ?? '') !== String(kgPayload ?? '') ||
+        String(rowSackKg(selected)) !== editSackSize
+      let row = selected
+      if (needsSave) {
+        const { data: saved } = await api.put<FeedingAdviceRow>(`/aquaculture/feeding-advice/${selected.id}/`, {
+          edited_advice_text: editText,
+          suggested_feed_kg: kgPayload,
+          sack_size_kg: Number.parseInt(editSackSize, 10),
+        })
+        row = saved
+      }
+      const { data } = await api.post<FeedingAdviceRow>(`/aquaculture/feeding-advice/${row.id}/approve/`, {})
       toast.success('Approved — ready to apply in the field')
       setSelected(data)
+      setApplyKg(data.suggested_feed_kg ?? '')
+      setApplySacks(sacksStrFromKg(data.suggested_feed_kg ?? '', rowSackKg(data)))
       void loadList()
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Approve failed'))
     }
   }
 
+  const disapproveAdvice = async () => {
+    if (!selected || selected.status !== 'approved') return
+    if (!window.confirm('Send this plan back to review? Approval will be cleared.')) return
+    try {
+      const { data } = await api.post<FeedingAdviceRow>(
+        `/aquaculture/feeding-advice/${selected.id}/disapprove/`,
+        {},
+      )
+      toast.success('Sent back to review')
+      setSelected(data)
+      void loadList()
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Could not revoke approval'))
+    }
+  }
+
   const cancelAdvice = async () => {
-    if (!selected || selected.status !== 'pending_review') return
-    if (!window.confirm('Cancel this draft?')) return
+    if (!selected || (selected.status !== 'pending_review' && selected.status !== 'approved')) return
+    const msg =
+      selected.status === 'approved'
+        ? 'Cancel this approved plan? It cannot be applied afterward.'
+        : 'Cancel this draft?'
+    if (!window.confirm(msg)) return
     try {
       const { data } = await api.post<FeedingAdviceRow>(`/aquaculture/feeding-advice/${selected.id}/cancel/`, {})
       toast.success('Cancelled')
@@ -1008,12 +1083,12 @@ export default function AquacultureFeedingPage() {
                     </button>
                   </p>
                 ) : (
-                  displayRows.map((r) => (
+                  listDisplayRows.map((r) => (
                     <AdvicePlanCard
                       key={r.id}
                       row={r}
                       selected={selected?.id === r.id}
-                      onSelect={() => setSelected(r)}
+                      onSelect={() => setSelected(rows.find((x) => x.id === r.id) ?? r)}
                     />
                   ))
                 )}
@@ -1038,7 +1113,44 @@ export default function AquacultureFeedingPage() {
             </div>
           ) : (
             <div className="space-y-4 lg:sticky lg:top-4">
-              <FeedingInsightHero row={selected} weatherLabel={weatherLabel} mealsLabel={mealsLabel} />
+              <FeedingInsightHero
+                row={selected}
+                weatherLabel={weatherLabel}
+                mealsLabel={mealsLabel}
+                feedKgOverride={
+                  selected.status === 'pending_review' || selected.status === 'approved' ? activeDoseKg || null : null
+                }
+              />
+
+              {(selected.status === 'pending_review' || selected.status === 'approved') && (
+                <FeedingDoseEditor
+                  kg={selected.status === 'pending_review' ? editKg : applyKg}
+                  sacks={selected.status === 'pending_review' ? editSacks : applySacks}
+                  sackKg={sackKgForDisplay}
+                  suggestedKg={selected.suggested_feed_kg}
+                  onKgChange={selected.status === 'pending_review' ? onEditKgChange : onApplyKgChange}
+                  onSacksChange={selected.status === 'pending_review' ? onEditSacksChange : onApplySacksChange}
+                  onUseSuggested={resetToSuggestedDose}
+                  sackSelect={sackSelect}
+                  hint={
+                    selected.status === 'approved'
+                      ? 'Adjust field kg before apply, or use the AI suggested total. Meal rows below scale to your total while keeping the advised per-meal ratio.'
+                      : undefined
+                  }
+                  footer={
+                    selected.status === 'approved' ? (
+                      <button
+                        type="button"
+                        disabled={sackSaveBusy}
+                        onClick={() => void saveSackSizeOnly()}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800"
+                      >
+                        {sackSaveBusy ? 'Saving…' : 'Save sack size'}
+                      </button>
+                    ) : undefined
+                  }
+                />
+              )}
 
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
                 <div className="min-w-0 text-xs text-slate-500">
@@ -1077,16 +1189,17 @@ export default function AquacultureFeedingPage() {
                 </p>
               ) : null}
 
-              {mealPlan.rows.length > 0 ? (
+              {displayMealPlan.rows.length > 0 ? (
                 <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                   <h3 className="text-sm font-semibold text-slate-900">Meal schedule</h3>
                   <p className="mt-0.5 text-xs text-slate-500">
                     Per-meal kg and sacks ({sackKgForDisplay} kg/sack)
+                    {mealPlanScaled ? ' · scaled to your daily total using the advised per-meal ratio' : ''}
                   </p>
                   <div className="mt-3">
                     <MealPlanTable
-                      rows={mealPlan.rows}
-                      totalKg={mealPlan.totalKg}
+                      rows={displayMealPlan.rows}
+                      totalKg={displayMealPlan.totalKg}
                       sackKg={sackKgForDisplay}
                       appliedKg={selected.status === 'applied' ? selected.applied_feed_kg : null}
                     />
@@ -1144,35 +1257,15 @@ export default function AquacultureFeedingPage() {
               {selected.status === 'pending_review' && (
                 <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                   <h3 className="text-sm font-semibold text-slate-900">Review & approve</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Save your feed amount above, add optional notes, then approve for field use.
+                  </p>
                   <textarea
                     className="mt-2 min-h-[100px] w-full rounded-lg border border-slate-300 p-3 text-sm"
                     value={editText}
                     onChange={(e) => setEditText(e.target.value)}
                     placeholder="Optional manager notes…"
                   />
-                  <div className="mt-3">{sackSelect}</div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <label className="block text-xs font-medium text-slate-700">
-                      kg / day
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                        value={editKg}
-                        onChange={(e) => onEditKgChange(e.target.value)}
-                      />
-                    </label>
-                    <label className="block text-xs font-medium text-slate-700">
-                      Sacks
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                        value={editSacks}
-                        onChange={(e) => onEditSacksChange(e.target.value)}
-                      />
-                    </label>
-                  </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -1206,28 +1299,8 @@ export default function AquacultureFeedingPage() {
                 <section className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
                   <h3 className="text-sm font-semibold text-emerald-950">Apply in field</h3>
                   <p className="mt-1 text-xs text-emerald-900/90">
-                    Consume pond warehouse stock or record a feed purchase expense.
+                    Feed amount is set above. Consume pond warehouse stock or record a feed purchase expense.
                   </p>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <label className="block text-xs font-medium text-slate-700">
-                      kg
-                      <input
-                        type="text"
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                        value={applyKg}
-                        onChange={(e) => onApplyKgChange(e.target.value)}
-                      />
-                    </label>
-                    <label className="block text-xs font-medium text-slate-700">
-                      Sacks
-                      <input
-                        type="text"
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                        value={applySacks}
-                        onChange={(e) => onApplySacksChange(e.target.value)}
-                      />
-                    </label>
-                  </div>
                   <label className="mt-3 block text-xs font-medium text-slate-700">
                     Feed product
                     <select
@@ -1318,27 +1391,31 @@ export default function AquacultureFeedingPage() {
                       />
                     </div>
                   )}
-                  <button
-                    type="button"
-                    disabled={applyBusy || applyPlanBlockedByWarehouseLoad}
-                    onClick={() => void apply()}
-                    className="mt-4 w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white disabled:opacity-50 sm:w-auto sm:px-6"
-                  >
-                    {applyBusy ? 'Applying…' : applyPlanBlockedByWarehouseLoad ? 'Loading stock…' : 'Apply plan'}
-                  </button>
-                  {(selected.status === 'approved' || selected.status === 'applied') && (
-                    <div className="mt-4 border-t border-emerald-200/80 pt-3">
-                      {sackSelect}
-                      <button
-                        type="button"
-                        disabled={sackSaveBusy}
-                        onClick={() => void saveSackSizeOnly()}
-                        className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs"
-                      >
-                        {sackSaveBusy ? 'Saving…' : 'Save sack size'}
-                      </button>
-                    </div>
-                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={applyBusy || applyPlanBlockedByWarehouseLoad}
+                      onClick={() => void apply()}
+                      className="rounded-lg bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      {applyBusy ? 'Applying…' : applyPlanBlockedByWarehouseLoad ? 'Loading stock…' : 'Apply plan'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void disapproveAdvice()}
+                      className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-950"
+                    >
+                      Revoke approval
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void cancelAdvice()}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900"
+                    >
+                      <XCircle className="h-4 w-4" aria-hidden />
+                      Cancel plan
+                    </button>
+                  </div>
                 </section>
               )}
 
@@ -1366,7 +1443,8 @@ export default function AquacultureFeedingPage() {
                   ) : null}
                   <p className="mt-2 text-xs text-slate-600">
                     Applied feeding advice cannot be deleted (audit trail). To undo accounting or stock, delete the
-                    linked expense below — or cancel only works on drafts before apply.
+                    linked expense below. Revoke approval or cancel plan only while status is review or approved (not
+                    applied).
                   </p>
                   {selected.linked_expense_id ? (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1394,6 +1472,17 @@ export default function AquacultureFeedingPage() {
                       Linked expense already removed. You can record a new apply with the correct options if needed.
                     </p>
                   )}
+                  <div className="mt-4 border-t border-slate-200 pt-3">
+                    {sackSelect}
+                    <button
+                      type="button"
+                      disabled={sackSaveBusy}
+                      onClick={() => void saveSackSizeOnly()}
+                      className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                    >
+                      {sackSaveBusy ? 'Saving…' : 'Save sack size'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

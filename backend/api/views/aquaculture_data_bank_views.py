@@ -17,6 +17,7 @@ from api.services.aquaculture_data_bank_service import (
     preview_station_close,
     relock_close,
     reopen_close_for_reference,
+    unlock_pond_close,
     user_may_manage_aquaculture_data_bank,
 )
 from api.views.aquaculture_views import _aquaculture_access, _pond_for_company
@@ -236,6 +237,34 @@ def aquaculture_data_bank_reopen_close(request, close_id: int):
         {
             "pond_close": pond_close_to_dict(close),
             "message": "Pond opened for reference in Data Bank. Operational edits remain locked.",
+        }
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def aquaculture_data_bank_unlock_close(request, close_id: int):
+    """Remove operational lock from a pond close (reverses test or mistaken year close)."""
+    err = _data_bank_admin_required(request)
+    if err:
+        return err
+    close, msg = unlock_pond_close(
+        company_id=request.company_id,
+        close_id=close_id,
+        user=getattr(request, "api_user", None),
+    )
+    if msg:
+        return JsonResponse({"detail": msg}, status=404)
+    return JsonResponse(
+        {
+            "pond_close": pond_close_to_dict(close),
+            "message": (
+                f"{close.pond.name} is open for operations again. "
+                f"The {close.period_start.isoformat()} – {close.period_end.isoformat()} "
+                "close remains in history but no longer blocks edits."
+            ),
         }
     )
 

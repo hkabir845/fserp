@@ -6,11 +6,38 @@ import Link from 'next/link'
 import PageLayout from '@/components/PageLayout'
 import PermissionMatrix, { type PermItem } from '@/components/users/PermissionMatrix'
 import { PosSaleScopeSelector } from '@/components/pos/PosSaleScopeSelector'
-import { Plus, Edit2, Trash2, Shield, User, X, Eye, EyeOff, Grid3x3, List, Ban, UserCheck, Sparkles, Search, ChevronRight, KeyRound, Users, Briefcase, Info, MapPin } from 'lucide-react'
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  Shield,
+  User,
+  X,
+  Eye,
+  EyeOff,
+  Grid3x3,
+  List,
+  Ban,
+  UserCheck,
+  UserX,
+  Sparkles,
+  Search,
+  ChevronRight,
+  KeyRound,
+  Users,
+  Briefcase,
+  Info,
+  MapPin,
+} from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl } from '@/lib/api'
 import { formatDate } from '@/utils/date'
-import { getRoleBadgeColor, getRoleDisplayName } from '@/utils/rbac'
+import {
+  getAccessProfileSeedLabel,
+  getAccessProfileSeedOptionLabel,
+  getRoleBadgeColor,
+  getRoleDisplayName,
+} from '@/utils/rbac'
 
 interface SystemUser {
   id: number
@@ -37,18 +64,51 @@ interface CompanyOption {
 
 const JOB_TITLE_HINT: Record<string, string> = {
   admin: 'Company admin: can manage people, company settings, and all modules (unless a custom access profile below overrides).',
-  accountant: 'Full accounting, sales, inventory, and reports. Typical back-office user.',
+  manager:
+    'Runs fuel station, shop, and aquaculture: operations, reports, and company settings. Cannot manage user accounts (use Admin for that).',
+  accountant:
+    'Back office: GL, AR/AP, fuel and shop inventory, HR, reports, and aquaculture when the module is enabled.',
+  supervisor:
+    'Pond operations: sampling, feeding, pond costs, fish sales, and aquaculture reports. No full GL or user management.',
   cashier:
     'Register, customers, and basic reports. Choose their POS location when you have more than one site; sales stay at that site only. Set lane (fuel + shop, etc.) below.',
   operator:
-    'POS only: new sale and donation. Choose their POS location when you have more than one site. Set lane below.',
+    'Fuel-station POS only: new sale and donation at their assigned site. Fuel lane is selected by default below.',
 }
+
+const TENANT_JOB_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'manager', label: 'Manager (Fuel Station, Shop & Aquaculture)' },
+  { value: 'accountant', label: 'Accountant (Fuel Station, Shop & Aquaculture)' },
+  { value: 'supervisor', label: 'Supervisor (Ponds)' },
+  { value: 'cashier', label: 'Cashier' },
+  { value: 'operator', label: 'Operator (Fuel Station)' },
+]
 
 const CREATE_STEPS = [
   { n: 1, title: 'Account', sub: 'Who is this person?', icon: User },
   { n: 2, title: 'Access', sub: 'Job type & optional profile', icon: Briefcase },
   { n: 3, title: 'Sign-in', sub: 'Set a password', icon: KeyRound },
 ] as const
+
+type UserStatusFilter = 'all' | 'active' | 'inactive'
+
+function UserStatusBadge({ isActive }: { isActive: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+        isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+      }`}
+    >
+      {isActive ? (
+        <UserCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : (
+        <UserX className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      )}
+      {isActive ? 'Active' : 'Inactive'}
+    </span>
+  )
+}
 
 type PermDef = { id: string; label: string; group: string }
 
@@ -78,17 +138,22 @@ export default function UsersPage() {
   const [savingNewRole, setSavingNewRole] = useState(false)
   const [userSearch, setUserSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('')
+  const [statusFilter, setStatusFilter] = useState<UserStatusFilter>('all')
   const [createStep, setCreateStep] = useState(1)
   const [showAdvancedPerms, setShowAdvancedPerms] = useState(false)
   const [roleDefaults, setRoleDefaults] = useState<Record<string, string[]>>({})
   const [newProfileStartFrom, setNewProfileStartFrom] = useState<string>('')
-  const [viewMode, setViewMode] = useState<'card' | 'list'>(() => {
-    if (typeof window !== 'undefined') {
+  /** Default must match SSR; hydrate from localStorage after mount to avoid hydration mismatch. */
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
+
+  useEffect(() => {
+    try {
       const saved = localStorage.getItem('users_view_mode')
-      if (saved === 'card' || saved === 'list') return saved
+      if (saved === 'card' || saved === 'list') setViewMode(saved)
+    } catch {
+      /* private mode / no storage */
     }
-    return 'card'
-  })
+  }, [])
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -287,7 +352,12 @@ export default function UsersPage() {
     try {
       const { data } = await api.get<SystemUser[]>('/users/')
       if (Array.isArray(data)) {
-        setUsers(data)
+        setUsers(
+          data.map((u) => ({
+            ...u,
+            is_active: u.is_active !== false && String(u.is_active).toLowerCase() !== 'false',
+          }))
+        )
       }
     } catch (error: unknown) {
       const err = error as { response?: { status?: number } }
@@ -311,9 +381,13 @@ export default function UsersPage() {
     }
   }
 
+  const inactiveUserCount = useMemo(() => users.filter((u) => !u.is_active).length, [users])
+
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase()
     return users.filter((u) => {
+      if (statusFilter === 'active' && !u.is_active) return false
+      if (statusFilter === 'inactive' && u.is_active) return false
       if (roleFilter && (u.role || '').toLowerCase() !== roleFilter.toLowerCase()) {
         return false
       }
@@ -325,7 +399,7 @@ export default function UsersPage() {
         (u.custom_role_name || '').toLowerCase().includes(q)
       )
     })
-  }, [users, userSearch, roleFilter])
+  }, [users, userSearch, roleFilter, statusFilter])
 
   const onProfileMatrixChange = (ids: string[]) => {
     setSelectedProfilePerms(ids)
@@ -745,7 +819,7 @@ export default function UsersPage() {
     )
   }
 
-  const hasListFilters = Boolean(userSearch.trim() || roleFilter)
+  const hasListFilters = Boolean(userSearch.trim() || roleFilter || statusFilter !== 'all')
 
   return (
     <PageLayout>
@@ -841,6 +915,43 @@ export default function UsersPage() {
                   ))}
                 </select>
               </div>
+              <div
+                className="flex w-full shrink-0 items-center rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm sm:w-auto"
+                role="group"
+                aria-label="Filter by account status"
+              >
+                {(
+                  [
+                    { id: 'all' as const, label: 'All', icon: Users },
+                    { id: 'active' as const, label: 'Active', icon: UserCheck },
+                    { id: 'inactive' as const, label: 'Inactive', icon: UserX },
+                  ] as const
+                ).map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setStatusFilter(id)}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      statusFilter === id
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    }`}
+                    aria-pressed={statusFilter === id}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                    {label}
+                    {id === 'inactive' && inactiveUserCount > 0 ? (
+                      <span
+                        className={`tabular-nums text-xs ${
+                          statusFilter === id ? 'text-white/80' : 'text-gray-400'
+                        }`}
+                      >
+                        ({inactiveUserCount})
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -854,9 +965,10 @@ export default function UsersPage() {
               onClick={() => {
                 setUserSearch('')
                 setRoleFilter('')
+                setStatusFilter('all')
               }}
             >
-              Clear search and job filter
+              Clear filters
             </button>
           </div>
         )}
@@ -906,27 +1018,23 @@ export default function UsersPage() {
                     </div>
 
                     <div className="flex items-center justify-between pt-2">
-                      <span
-                        className={`px-2 py-1 text-xs rounded-full ${
-                          user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}
-                      >
-                        {user.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                      <UserStatusBadge isActive={user.is_active} />
                       <span className="text-xs text-gray-500">
                         Joined {user.created_at ? formatDate(user.created_at, true) : 'N/A'}
                       </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-1 pt-4 border-t">
+                  <div className="flex flex-wrap items-center justify-end gap-1 border-t pt-4">
                     <button
                       type="button"
                       onClick={() => handleEdit(user)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded"
-                      title="Edit User"
+                      className="inline-flex items-center gap-1 rounded p-2 text-blue-600 hover:bg-blue-50"
+                      title="Edit user"
+                      aria-label="Edit user"
                     >
-                      <Edit2 className="h-4 w-4" />
+                      <Edit2 className="h-4 w-4 shrink-0" aria-hidden />
+                      <span className="sr-only sm:not-sr-only sm:text-xs sm:font-medium">Edit</span>
                     </button>
                     {currentSessionUserId !== null && user.id === currentSessionUserId ? (
                       <span className="px-2 text-xs text-gray-400" title="You cannot change your own account here">
@@ -938,28 +1046,34 @@ export default function UsersPage() {
                           <button
                             type="button"
                             onClick={() => handleSetUserActive(user, false)}
-                            className="p-2 text-amber-600 hover:bg-amber-50 rounded"
+                            className="inline-flex items-center gap-1 rounded p-2 text-amber-700 hover:bg-amber-50"
                             title="Deactivate login (keeps the user record)"
+                            aria-label="Deactivate user"
                           >
-                            <Ban className="h-4 w-4" />
+                            <Ban className="h-4 w-4 shrink-0" aria-hidden />
+                            <span className="sr-only sm:not-sr-only sm:text-xs sm:font-medium">Deactivate</span>
                           </button>
                         ) : (
                           <button
                             type="button"
                             onClick={() => handleSetUserActive(user, true)}
-                            className="p-2 text-green-600 hover:bg-green-50 rounded"
+                            className="inline-flex items-center gap-1 rounded p-2 text-green-700 hover:bg-green-50"
                             title="Activate login"
+                            aria-label="Activate user"
                           >
-                            <UserCheck className="h-4 w-4" />
+                            <UserCheck className="h-4 w-4 shrink-0" aria-hidden />
+                            <span className="sr-only sm:not-sr-only sm:text-xs sm:font-medium">Activate</span>
                           </button>
                         )}
                         <button
                           type="button"
                           onClick={() => handleDelete(user)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded"
+                          className="inline-flex items-center gap-1 rounded p-2 text-red-600 hover:bg-red-50"
                           title="Permanently delete user from database"
+                          aria-label="Delete user permanently"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                          <span className="sr-only sm:not-sr-only sm:text-xs sm:font-medium">Delete</span>
                         </button>
                       </>
                     )}
@@ -1060,13 +1174,7 @@ export default function UsersPage() {
                           {user.custom_role_name || '—'}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                              user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {user.is_active ? 'Active' : 'Inactive'}
-                          </span>
+                          <UserStatusBadge isActive={user.is_active} />
                         </td>
                         <td className="hidden whitespace-nowrap px-4 py-3 text-sm text-gray-500 md:table-cell">
                           {user.created_at ? formatDate(user.created_at, true) : '—'}
@@ -1076,10 +1184,11 @@ export default function UsersPage() {
                             <button
                               type="button"
                               onClick={() => handleEdit(user)}
-                              className="inline-flex rounded p-1.5 text-blue-600 hover:bg-blue-50"
-                              title="Edit"
+                              className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-blue-600 hover:bg-blue-50"
+                              title="Edit user"
+                              aria-label="Edit user"
                             >
-                              <Edit2 className="h-4 w-4" />
+                              <Edit2 className="h-4 w-4 shrink-0" aria-hidden />
                             </button>
                             {currentSessionUserId !== null && user.id === currentSessionUserId ? (
                               <span className="px-2 text-xs text-gray-400">—</span>
@@ -1089,28 +1198,31 @@ export default function UsersPage() {
                                   <button
                                     type="button"
                                     onClick={() => handleSetUserActive(user, false)}
-                                    className="inline-flex rounded p-1.5 text-amber-600 hover:bg-amber-50"
+                                    className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-amber-700 hover:bg-amber-50"
                                     title="Deactivate login"
+                                    aria-label="Deactivate user"
                                   >
-                                    <Ban className="h-4 w-4" />
+                                    <Ban className="h-4 w-4 shrink-0" aria-hidden />
                                   </button>
                                 ) : (
                                   <button
                                     type="button"
                                     onClick={() => handleSetUserActive(user, true)}
-                                    className="inline-flex rounded p-1.5 text-green-600 hover:bg-green-50"
+                                    className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-green-700 hover:bg-green-50"
                                     title="Activate login"
+                                    aria-label="Activate user"
                                   >
-                                    <UserCheck className="h-4 w-4" />
+                                    <UserCheck className="h-4 w-4 shrink-0" aria-hidden />
                                   </button>
                                 )}
                                 <button
                                   type="button"
                                   onClick={() => handleDelete(user)}
-                                  className="inline-flex rounded p-1.5 text-red-600 hover:bg-red-50"
+                                  className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-red-600 hover:bg-red-50"
                                   title="Permanently delete"
+                                  aria-label="Delete user permanently"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
                                 </button>
                               </>
                             )}
@@ -1290,7 +1402,8 @@ export default function UsersPage() {
                         </select>
                         <p className="mt-1 flex items-start gap-1 text-xs text-gray-500">
                           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          Custom access profiles and roles load after you pick a company.
+                          Assign the tenant company (e.g. Adib Filling Station). Aquaculture and Premium Agro pond work
+                          stay under that company—use an access profile on step 2 to limit users to aquaculture only.
                         </p>
                       </div>
                     )}
@@ -1305,6 +1418,17 @@ export default function UsersPage() {
                     <span className="font-medium">Job type</span> sets defaults. An optional{' '}
                     <span className="font-medium">access profile</span> overrides with a named template.
                   </p>
+                  {hasAccessContext && (
+                    <p className="mb-3 flex items-start gap-2 rounded-lg border border-teal-100 bg-teal-50/90 px-3 py-2.5 text-sm text-teal-950">
+                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" aria-hidden />
+                      <span>
+                        <strong>Aquaculture</strong> (including Premium Agro pond operations) is part of this same
+                        company—not a separate tenant. For staff who should only work ponds and fish farming, create or
+                        pick an access profile seeded as <strong>Aquaculture only</strong> (no fuel station, shop POS, or
+                        full accounting).
+                      </span>
+                    </p>
+                  )}
                   <div className="grid grid-cols-1 gap-4">
                     <div>
                       <label className="mb-2 block text-sm font-medium text-gray-700">
@@ -1312,15 +1436,21 @@ export default function UsersPage() {
                       </label>
                       <select
                         value={formData.role}
-                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                        onChange={(e) => {
+                          const role = e.target.value
+                          setFormData((fd) => ({
+                            ...fd,
+                            role,
+                            ...(role === 'operator' ? { pos_sale_scope: 'fuel' } : {}),
+                          }))
+                        }}
                         className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="admin">Admin</option>
-                        <option value="accountant">Accountant</option>
-                        <option value="cashier">Cashier</option>
-                        {!isCompanyOwner && (
-                          <option value="operator">Register operator (limited POS)</option>
-                        )}
+                        {TENANT_JOB_TYPE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
                       </select>
                       <p className="mt-1.5 flex items-start gap-1 text-xs text-gray-600">
                         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -1692,9 +1822,19 @@ export default function UsersPage() {
                     }}
                   >
                     <option value="">— Build from scratch (or deny all) —</option>
-                    {(['admin', 'accountant', 'cashier', 'operator'] as const).map((k) => (
+                    {(
+                      [
+                        'aquaculture_only',
+                        'admin',
+                        'manager',
+                        'accountant',
+                        'supervisor',
+                        'cashier',
+                        'operator',
+                      ] as const
+                    ).map((k) => (
                       <option key={k} value={k}>
-                        {`Match ${getRoleDisplayName(k)} defaults`}
+                        {getAccessProfileSeedOptionLabel(k)}
                       </option>
                     ))}
                   </select>

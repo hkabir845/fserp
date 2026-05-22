@@ -373,6 +373,7 @@ urlpatterns = [
     # Shifts
     path("shifts/", shift_views.shifts_list),
     path("shifts/templates/", shift_views.shift_templates_list_or_create),
+    path("shifts/templates/seed-standard-247/", shift_views.shift_templates_seed_standard_247),
     path("shifts/templates/<int:template_id>/", shift_views.shift_template_detail),
     path("shifts/sessions/active/", shift_views.shifts_sessions_active),
     path("shifts/sessions/open/", shift_views.shifts_sessions_open),
@@ -437,6 +438,10 @@ urlpatterns = [
         "aquaculture/ponds/provision-pos-customers/",
         aquaculture_views.aquaculture_ponds_provision_pos_customers,
     ),
+    path(
+        "aquaculture/medicine-catalog/ensure/",
+        aquaculture_views.aquaculture_medicine_catalog_ensure,
+    ),
     path("aquaculture/ponds/<int:pond_id>/", aquaculture_views.aquaculture_pond_detail),
     path(
         "aquaculture/ponds/<int:pond_id>/warehouse-stock/",
@@ -453,6 +458,22 @@ urlpatterns = [
     path(
         "aquaculture/pond-warehouse-consume/",
         aquaculture_views.aquaculture_pond_warehouse_consume,
+    ),
+    path(
+        "aquaculture/warehouse-groups/",
+        aquaculture_views.aquaculture_warehouse_groups_list_or_create,
+    ),
+    path(
+        "aquaculture/warehouse-groups/<int:group_id>/",
+        aquaculture_views.aquaculture_warehouse_group_detail,
+    ),
+    path(
+        "aquaculture/warehouse-group-pool/",
+        aquaculture_views.aquaculture_warehouse_group_pool,
+    ),
+    path(
+        "aquaculture/pond-warehouse-inter-pond-transfers/",
+        aquaculture_views.aquaculture_pond_warehouse_inter_pond_transfers,
     ),
     path("aquaculture/expenses/", aquaculture_views.aquaculture_expenses_list_or_create),
     path("aquaculture/shop-stock-issue/", aquaculture_views.aquaculture_shop_stock_issue),
@@ -513,6 +534,7 @@ urlpatterns = [
     path("aquaculture/feeding-advice/generate/", aquaculture_views.aquaculture_feeding_advice_generate),
     path("aquaculture/feeding-advice/<int:advice_id>/", aquaculture_views.aquaculture_feeding_advice_detail),
     path("aquaculture/feeding-advice/<int:advice_id>/approve/", aquaculture_views.aquaculture_feeding_advice_approve),
+    path("aquaculture/feeding-advice/<int:advice_id>/disapprove/", aquaculture_views.aquaculture_feeding_advice_disapprove),
     path("aquaculture/feeding-advice/<int:advice_id>/cancel/", aquaculture_views.aquaculture_feeding_advice_cancel),
     path("aquaculture/feeding-advice/<int:advice_id>/apply/", aquaculture_views.aquaculture_feeding_advice_apply),
     path("aquaculture/data-bank/", aquaculture_data_bank_views.aquaculture_data_bank_list),
@@ -535,6 +557,10 @@ urlpatterns = [
     path(
         "aquaculture/data-bank/closes/<int:close_id>/reopen/",
         aquaculture_data_bank_views.aquaculture_data_bank_reopen_close,
+    ),
+    path(
+        "aquaculture/data-bank/closes/<int:close_id>/unlock/",
+        aquaculture_data_bank_views.aquaculture_data_bank_unlock_close,
     ),
     path(
         "aquaculture/data-bank/closes/<int:close_id>/relock/",

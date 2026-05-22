@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 
 import { getAquacultureMenuItemsFlatWithGroup } from '@/navigation/aquacultureNavConfig'
+import { hasAnyAquacultureModuleInList, menuHrefAllowedForAquaculture } from '@/navigation/aquaculturePermissions'
 
 /** Sidebar search hints (unchanged from Sidebar) */
 export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
@@ -136,21 +137,25 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   '/reporting-categories': ['app.settings'],
   '/reports': ['app.reports'],
   '/reports/analytics': ['app.reports'],
-  '/aquaculture': ['app.aquaculture'],
-  '/aquaculture/ponds': ['app.aquaculture'],
-  '/aquaculture/expenses': ['app.aquaculture'],
-  '/aquaculture/sales': ['app.aquaculture'],
-  '/aquaculture/sampling': ['app.aquaculture'],
-  '/aquaculture/feeding': ['app.aquaculture'],
-  '/aquaculture/medicine': ['app.aquaculture'],
-  '/aquaculture/report': ['app.aquaculture'],
-  '/reports?report=aquaculture-pl-management&category=aquaculture': ['app.aquaculture', 'app.reports'],
-  '/aquaculture/cycles': ['app.aquaculture'],
-  '/aquaculture/transfers': ['app.aquaculture'],
-  '/aquaculture/stock': ['app.aquaculture'],
-  '/aquaculture/landlords': ['app.aquaculture'],
-  '/aquaculture/financing': ['app.aquaculture'],
-  '/aquaculture/data-bank': ['app.aquaculture'],
+  '/aquaculture': ['app.aquaculture', 'app.aquaculture.dashboard'],
+  '/aquaculture/ponds': ['app.aquaculture', 'app.aquaculture.ponds'],
+  '/aquaculture/expenses': ['app.aquaculture', 'app.aquaculture.expenses'],
+  '/aquaculture/sales': ['app.aquaculture', 'app.aquaculture.sales'],
+  '/aquaculture/sampling': ['app.aquaculture', 'app.aquaculture.sampling'],
+  '/aquaculture/feeding': ['app.aquaculture', 'app.aquaculture.feeding'],
+  '/aquaculture/medicine': ['app.aquaculture', 'app.aquaculture.medicine'],
+  '/aquaculture/report': ['app.aquaculture', 'app.aquaculture.report_pl'],
+  '/reports?report=aquaculture-pl-management&category=aquaculture': [
+    'app.aquaculture',
+    'app.aquaculture.report_pl',
+    'app.reports',
+  ],
+  '/aquaculture/cycles': ['app.aquaculture', 'app.aquaculture.cycles'],
+  '/aquaculture/transfers': ['app.aquaculture', 'app.aquaculture.transfers'],
+  '/aquaculture/stock': ['app.aquaculture', 'app.aquaculture.stock'],
+  '/aquaculture/landlords': ['app.aquaculture', 'app.aquaculture.landlords'],
+  '/aquaculture/financing': ['app.aquaculture', 'app.aquaculture.financing'],
+  '/aquaculture/data-bank': ['app.aquaculture', 'app.aquaculture.data_bank'],
 }
 
 function menuItemAllowedByPermissions(href: string, perms: string[]): boolean {
@@ -159,9 +164,8 @@ function menuItemAllowedByPermissions(href: string, perms: string[]): boolean {
   if (anyOf?.length) {
     return anyOf.some((k) => perms.includes(k))
   }
-  // Aquaculture sub-routes (e.g. Data Bank) share app.aquaculture when not listed explicitly.
-  if (href.startsWith('/aquaculture') && perms.includes('app.aquaculture')) {
-    return true
+  if (href.startsWith('/aquaculture') || href.includes('aquaculture-pl-management')) {
+    return menuHrefAllowedForAquaculture(href, perms)
   }
   return false
 }
@@ -329,28 +333,37 @@ export function isTenantAdminAquacultureUser(
   return isSuperAdmin || (userRole || '').toLowerCase() === 'admin'
 }
 
+function isAquacultureHref(href: string): boolean {
+  return href.startsWith('/aquaculture') || href.includes('aquaculture-pl-management')
+}
+
 /**
- * Hide Aquaculture when the company flag is off, or when it is on but the signed-in user is not
- * the tenant Admin (built-in ``admin`` role) or a platform super-admin.
+ * Hide Aquaculture when the company flag is off, or when the user has no aquaculture permission.
  */
 export function filterAquacultureMenuWhenDisabled(
   items: ErpAppMenuItem[],
   aquacultureEnabled: boolean,
   userRole: string | null,
-  isSuperAdmin: boolean
+  isSuperAdmin: boolean,
+  effectivePermissions?: string[] | null
 ): ErpAppMenuItem[] {
   if (!aquacultureEnabled) {
-    return items.filter((i) => !i.href.startsWith('/aquaculture'))
+    return items.filter((i) => !isAquacultureHref(i.href))
   }
-  if (!isTenantAdminAquacultureUser(userRole, isSuperAdmin)) {
-    return items.filter((i) => !i.href.startsWith('/aquaculture'))
+  if (isTenantAdminAquacultureUser(userRole, isSuperAdmin)) {
+    return items
   }
-  return items
+  if (effectivePermissions != null) {
+    if (hasAnyAquacultureModuleInList(effectivePermissions)) {
+      return items
+    }
+    return items.filter((i) => !isAquacultureHref(i.href))
+  }
+  return items.filter((i) => !isAquacultureHref(i.href))
 }
 
 /**
- * True when the sidebar would show Aquaculture: module on (superuser), FSMS ERP mode, and the
- * user is tenant Admin or platform super-admin. Matches aquaculture API authorization.
+ * True when Aquaculture workspace routes may load: module enabled, FSMS ERP mode, and user has access.
  */
 export function isAquacultureNavUnlocked(
   userRole: string | null,
@@ -360,25 +373,9 @@ export function isAquacultureNavUnlocked(
   aquacultureEnabled: boolean
 ): boolean {
   if (!aquacultureEnabled || mode !== 'fsms_erp') return false
-  if (!isTenantAdminAquacultureUser(userRole, isSuperAdmin)) return false
-  const filtered = filterAquacultureMenuWhenDisabled(
-    filterTenantBackupMenuItem(
-      getFilteredMenuItems(
-        userRole,
-        isSuperAdmin,
-        mode,
-        getFsmsErpMenuItems(),
-        getSaasMenuItems(0, 0),
-        userPermissions
-      ),
-      userRole?.toLowerCase() || '',
-      userPermissions
-    ),
-    true,
-    userRole,
-    isSuperAdmin
-  )
-  return filtered.some((item) => item.href.startsWith('/aquaculture'))
+  if (isTenantAdminAquacultureUser(userRole, isSuperAdmin)) return true
+  if (userPermissions != null && hasAnyAquacultureModuleInList(userPermissions)) return true
+  return false
 }
 
 export function filterTenantBackupMenuItem(

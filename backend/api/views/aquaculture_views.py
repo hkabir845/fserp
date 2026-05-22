@@ -29,6 +29,9 @@ from api.models import (
     AquaculturePond,
     AquaculturePondProfitTransfer,
     AquacultureProductionCycle,
+    AquacultureWarehouseGroup,
+    PondWarehouseInterPondTransfer,
+    PondWarehouseInterPondTransferLine,
     BankAccount,
     ChartOfAccount,
     Company,
@@ -72,6 +75,11 @@ from api.services.aquaculture_expense_cleanup import (
     cleanup_aquaculture_expense_posting_effects,
     sync_aquaculture_expense_posting_effects,
 )
+from api.services.aquaculture_landlord_opening import (
+    apply_landlord_opening_from_body,
+    landlord_opening_fields_for_api,
+    parse_landlord_opening_from_body,
+)
 from api.services.aquaculture_sale_cleanup import (
     cleanup_aquaculture_fish_sale_effects,
     reconcile_aquaculture_fish_sale_with_invoice,
@@ -100,8 +108,10 @@ from api.services.aquaculture_pond_stock_service import (
     feed_inventory_qty_from_kg,
     pond_warehouse_stock_matrix,
     pond_warehouse_stock_rows,
+    transfer_pond_warehouse_between_ponds,
     transfer_station_stock_to_pond_warehouse,
 )
+from api.services.aquaculture_warehouse_group_service import warehouse_group_pool_rows
 from api.services.aquaculture_shop_stock import execute_aquaculture_shop_stock_issue
 from api.services.tenant_reporting_categories import (
     aquaculture_expense_label,
@@ -341,6 +351,66 @@ def _apply_pond_default_medicine_item(p: AquaculturePond, body: dict, company_id
         return "default_medicine_item_id must refer to an active item"
     p.default_medicine_item_id = iid
     return None
+
+
+def _apply_pond_warehouse_group(p: AquaculturePond, body: dict, company_id: int) -> str | None:
+    if "warehouse_group_id" not in body:
+        return None
+    raw = body.get("warehouse_group_id")
+    if raw in (None, ""):
+        p.warehouse_group_id = None
+        return None
+    try:
+        gid = int(raw)
+    except (TypeError, ValueError):
+        return "warehouse_group_id must be an integer or null"
+    g = AquacultureWarehouseGroup.objects.filter(pk=gid, company_id=company_id, is_active=True).first()
+    if not g:
+        return "warehouse_group_id must refer to an active warehouse group in this company"
+    p.warehouse_group_id = gid
+    return None
+
+
+def _warehouse_group_to_json(g: AquacultureWarehouseGroup, *, member_ponds: list | None = None) -> dict:
+    ponds = member_ponds if member_ponds is not None else []
+    return {
+        "id": g.id,
+        "name": g.name or "",
+        "code": g.code or "",
+        "notes": g.notes or "",
+        "is_active": g.is_active,
+        "member_ponds": ponds,
+        "member_pond_count": len(ponds),
+        "created_at": g.created_at.isoformat() if g.created_at else "",
+        "updated_at": g.updated_at.isoformat() if g.updated_at else "",
+    }
+
+
+def _inter_pond_transfer_to_json(t: PondWarehouseInterPondTransfer) -> dict:
+    lines = list(
+        PondWarehouseInterPondTransferLine.objects.filter(transfer_id=t.id)
+        .select_related("item")
+        .order_by("id")
+    )
+    return {
+        "id": t.id,
+        "transfer_number": t.transfer_number or "",
+        "from_pond_id": t.from_pond_id,
+        "from_pond_name": (t.from_pond.name or "").strip() if t.from_pond_id else "",
+        "to_pond_id": t.to_pond_id,
+        "to_pond_name": (t.to_pond.name or "").strip() if t.to_pond_id else "",
+        "memo": t.memo or "",
+        "created_at": t.created_at.isoformat() if t.created_at else "",
+        "lines": [
+            {
+                "item_id": ln.item_id,
+                "item_name": (ln.item.name or "").strip() if ln.item_id else "",
+                "quantity": str(ln.quantity),
+                "unit": (ln.item.unit or "").strip() if ln.item_id and ln.item else "",
+            }
+            for ln in lines
+        ],
+    }
 
 
 def _apply_pond_pos_customer(p: AquaculturePond, body: dict, company_id: int) -> str | None:
@@ -716,6 +786,17 @@ def _pond_to_json(
         ),
         "pond_role": getattr(p, "pond_role", None) or "grow_out",
         "pond_role_label": POND_ROLE_LABELS.get(getattr(p, "pond_role", None) or "grow_out", "Grow-out"),
+        "warehouse_group_id": getattr(p, "warehouse_group_id", None),
+        "warehouse_group_name": (
+            (p.warehouse_group.name or "").strip()
+            if getattr(p, "warehouse_group_id", None) and getattr(p, "warehouse_group", None)
+            else ""
+        ),
+        "warehouse_group_code": (
+            (p.warehouse_group.code or "").strip()
+            if getattr(p, "warehouse_group_id", None) and getattr(p, "warehouse_group", None)
+            else ""
+        ),
         "created_at": p.created_at.isoformat() if p.created_at else "",
         "updated_at": p.updated_at.isoformat() if p.updated_at else "",
         "landlord_pond_shares": landlord_shares if landlord_shares is not None else [],
@@ -903,7 +984,12 @@ def aquaculture_ponds_list_or_create(request):
     if request.method == "GET":
         qs = (
             AquaculturePond.objects.filter(company_id=cid)
-            .select_related("pos_customer", "default_feed_item", "default_medicine_item")
+            .select_related(
+                "pos_customer",
+                "default_feed_item",
+                "default_medicine_item",
+                "warehouse_group",
+            )
             .prefetch_related(_LANDLORD_POND_SHARE_PREFETCH)
             .order_by("sort_order", "id")
         )
@@ -966,6 +1052,9 @@ def aquaculture_ponds_list_or_create(request):
     dmi_err = _apply_pond_default_medicine_item(p, body, cid)
     if dmi_err:
         return JsonResponse({"detail": dmi_err}, status=400)
+    wg_err = _apply_pond_warehouse_group(p, body, cid)
+    if wg_err:
+        return JsonResponse({"detail": wg_err}, status=400)
     try:
         with transaction.atomic():
             p.save()
@@ -976,7 +1065,12 @@ def aquaculture_ponds_list_or_create(request):
         return JsonResponse({"detail": str(ex)}, status=400)
     p = (
         AquaculturePond.objects.filter(pk=p.pk)
-        .select_related("pos_customer", "default_feed_item", "default_medicine_item")
+        .select_related(
+            "pos_customer",
+            "default_feed_item",
+            "default_medicine_item",
+            "warehouse_group",
+        )
         .prefetch_related(_LANDLORD_POND_SHARE_PREFETCH)
         .first()
     )
@@ -1004,6 +1098,21 @@ def aquaculture_ponds_provision_pos_customers(request):
 
 
 @csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def aquaculture_medicine_catalog_ensure(request):
+    """Ensure built-in pond-care / medicine SKUs (AQ-MED-*) exist for the treatment form dropdown."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    from api.services.aquaculture_medicine_catalog_seed import ensure_aquaculture_medicine_catalog_items
+
+    result = ensure_aquaculture_medicine_catalog_items(request.company_id)
+    return JsonResponse(result)
+
+
+@csrf_exempt
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
@@ -1018,7 +1127,12 @@ def aquaculture_pond_detail(request, pond_id: int):
     if request.method == "GET":
         p = (
             AquaculturePond.objects.filter(pk=p.pk)
-            .select_related("pos_customer", "default_feed_item", "default_medicine_item")
+            .select_related(
+                "pos_customer",
+                "default_feed_item",
+                "default_medicine_item",
+                "warehouse_group",
+            )
             .prefetch_related(_LANDLORD_POND_SHARE_PREFETCH)
             .first()
         )
@@ -1073,6 +1187,9 @@ def aquaculture_pond_detail(request, pond_id: int):
         dmi_err = _apply_pond_default_medicine_item(p, body, cid)
         if dmi_err:
             return JsonResponse({"detail": dmi_err}, status=400)
+        wg_err = _apply_pond_warehouse_group(p, body, cid)
+        if wg_err:
+            return JsonResponse({"detail": wg_err}, status=400)
         p.save()
         if "pos_customer_id" in body:
             raw_pc = body.get("pos_customer_id")
@@ -1094,7 +1211,12 @@ def aquaculture_pond_detail(request, pond_id: int):
         sync_auto_pos_customer_from_pond(p)
         p = (
             AquaculturePond.objects.filter(pk=p.pk)
-            .select_related("pos_customer", "default_feed_item", "default_medicine_item")
+            .select_related(
+                "pos_customer",
+                "default_feed_item",
+                "default_medicine_item",
+                "warehouse_group",
+            )
             .prefetch_related(_LANDLORD_POND_SHARE_PREFETCH)
             .first()
         )
@@ -1516,6 +1638,179 @@ def aquaculture_pond_warehouse_consume(request):
         {"pond_id": pond_id, "expense": _expense_to_json(expense_obj), "items": rows},
         status=201,
     )
+
+
+def _warehouse_group_member_ponds_json(company_id: int, group_id: int) -> list[dict]:
+    return [
+        {
+            "id": p.id,
+            "name": (p.name or "").strip(),
+            "code": (p.code or "").strip(),
+            "is_active": p.is_active,
+        }
+        for p in AquaculturePond.objects.filter(company_id=company_id, warehouse_group_id=group_id).order_by(
+            "sort_order", "id"
+        )
+    ]
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@auth_required
+@require_company_id
+def aquaculture_warehouse_groups_list_or_create(request):
+    """List or create shared pond warehouse groups (e.g. Ashari canal shed)."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    if request.method == "GET":
+        qs = AquacultureWarehouseGroup.objects.filter(company_id=cid).order_by("name", "id")
+        out = []
+        for g in qs:
+            members = _warehouse_group_member_ponds_json(cid, g.id) if g.is_active else []
+            out.append(_warehouse_group_to_json(g, member_ponds=members))
+        return JsonResponse(out, safe=False)
+
+    body, e = parse_json_body(request)
+    if e:
+        return e
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JsonResponse({"detail": "name is required"}, status=400)
+    code = (body.get("code") or "").strip()[:64]
+    if code and AquacultureWarehouseGroup.objects.filter(company_id=cid, code__iexact=code).exists():
+        return JsonResponse({"detail": "Another warehouse group already uses this code."}, status=400)
+    g = AquacultureWarehouseGroup.objects.create(
+        company_id=cid,
+        name=name[:200],
+        code=code,
+        notes=str(body.get("notes") or "")[:5000],
+        is_active=bool(body.get("is_active", True)),
+    )
+    return JsonResponse(_warehouse_group_to_json(g, member_ponds=[]), status=201)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT", "DELETE"])
+@auth_required
+@require_company_id
+def aquaculture_warehouse_group_detail(request, group_id: int):
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    g = AquacultureWarehouseGroup.objects.filter(pk=group_id, company_id=cid).first()
+    if not g:
+        return JsonResponse({"detail": "Warehouse group not found"}, status=404)
+
+    if request.method == "GET":
+        return JsonResponse(
+            _warehouse_group_to_json(g, member_ponds=_warehouse_group_member_ponds_json(cid, g.id))
+        )
+
+    if request.method == "PUT":
+        body, e = parse_json_body(request)
+        if e:
+            return e
+        if "name" in body:
+            n = (body.get("name") or "").strip()
+            if n:
+                g.name = n[:200]
+        if "code" in body:
+            new_code = (body.get("code") or "").strip()[:64]
+            if new_code != (g.code or "").strip() and AquacultureWarehouseGroup.objects.filter(
+                company_id=cid, code__iexact=new_code
+            ).exclude(pk=g.id).exists():
+                return JsonResponse({"detail": "Another warehouse group already uses this code."}, status=400)
+            g.code = new_code
+        if "notes" in body:
+            g.notes = str(body.get("notes") or "")[:5000]
+        if "is_active" in body:
+            g.is_active = bool(body["is_active"])
+        g.save()
+        return JsonResponse(
+            _warehouse_group_to_json(g, member_ponds=_warehouse_group_member_ponds_json(cid, g.id))
+        )
+
+    AquaculturePond.objects.filter(company_id=cid, warehouse_group_id=g.id).update(warehouse_group_id=None)
+    g.delete()
+    return JsonResponse({"ok": True})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def aquaculture_warehouse_group_pool(request):
+    """Pooled on-hand per SKU for shared warehouse groups (sum of member pond allocations)."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    raw_gid = request.GET.get("warehouse_group_id")
+    group_id: int | None = None
+    if raw_gid not in (None, ""):
+        try:
+            group_id = int(raw_gid)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "warehouse_group_id must be an integer"}, status=400)
+        if not AquacultureWarehouseGroup.objects.filter(pk=group_id, company_id=cid).exists():
+            return JsonResponse({"detail": "Warehouse group not found"}, status=404)
+    rows = warehouse_group_pool_rows(cid, group_id=group_id)
+    return JsonResponse({"rows": rows})
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@auth_required
+@require_company_id
+def aquaculture_pond_warehouse_inter_pond_transfers(request):
+    """List or create pond-to-pond warehouse reallocations (no GL)."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    if request.method == "GET":
+        qs = (
+            PondWarehouseInterPondTransfer.objects.filter(company_id=cid)
+            .select_related("from_pond", "to_pond")
+            .order_by("-created_at", "-id")[:200]
+        )
+        return JsonResponse([_inter_pond_transfer_to_json(t) for t in qs], safe=False)
+
+    body, e = parse_json_body(request)
+    if e:
+        return e
+    raw_fp = body.get("from_pond_id")
+    raw_tp = body.get("to_pond_id")
+    if raw_fp in (None, "") or raw_tp in (None, ""):
+        return JsonResponse({"detail": "from_pond_id and to_pond_id are required"}, status=400)
+    try:
+        from_pond_id = int(raw_fp)
+        to_pond_id = int(raw_tp)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "from_pond_id and to_pond_id must be integers"}, status=400)
+    lock_err = _pond_write_lock_response(cid, from_pond_id)
+    if lock_err:
+        return lock_err
+    lock_err = _pond_write_lock_response(cid, to_pond_id)
+    if lock_err:
+        return lock_err
+    items = body.get("items")
+    if not isinstance(items, list) or not items:
+        return JsonResponse({"detail": "items must be a non-empty array of { item_id, quantity }"}, status=400)
+    try:
+        xfer = transfer_pond_warehouse_between_ponds(
+            company_id=cid,
+            from_pond_id=from_pond_id,
+            to_pond_id=to_pond_id,
+            items=items,
+            memo=str(body.get("memo") or ""),
+        )
+    except StockBusinessError as ex:
+        return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
+    return JsonResponse(_inter_pond_transfer_to_json(xfer), status=201)
 
 
 @csrf_exempt
@@ -3808,6 +4103,36 @@ def aquaculture_feeding_advice_approve(request, advice_id: int):
     return JsonResponse(_feeding_advice_to_json(a))
 
 
+def _clear_feeding_advice_approval(a: AquacultureFeedingAdvice) -> None:
+    a.approved_advice_text = ""
+    a.approved_at = None
+    a.approved_by = None
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def aquaculture_feeding_advice_disapprove(request, advice_id: int):
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    a = _feeding_advice_for_company(cid, advice_id)
+    if not a:
+        return JsonResponse({"detail": "Not found"}, status=404)
+    if a.status != AquacultureFeedingAdvice.STATUS_APPROVED:
+        return JsonResponse({"detail": "Only approved advice can be sent back to review"}, status=400)
+    lock_err = _pond_write_lock_response(cid, a.pond_id, a.target_date)
+    if lock_err:
+        return lock_err
+    _clear_feeding_advice_approval(a)
+    a.status = AquacultureFeedingAdvice.STATUS_PENDING_REVIEW
+    a.save()
+    a = _feeding_advice_for_company(cid, advice_id)
+    return JsonResponse(_feeding_advice_to_json(a))
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 @auth_required
@@ -3820,11 +4145,19 @@ def aquaculture_feeding_advice_cancel(request, advice_id: int):
     a = _feeding_advice_for_company(cid, advice_id)
     if not a:
         return JsonResponse({"detail": "Not found"}, status=404)
-    if a.status != AquacultureFeedingAdvice.STATUS_PENDING_REVIEW:
-        return JsonResponse({"detail": "Only pending advice can be cancelled"}, status=400)
+    if a.status not in (
+        AquacultureFeedingAdvice.STATUS_PENDING_REVIEW,
+        AquacultureFeedingAdvice.STATUS_APPROVED,
+    ):
+        return JsonResponse(
+            {"detail": "Only pending or approved (not yet applied) advice can be cancelled"},
+            status=400,
+        )
     lock_err = _pond_write_lock_response(cid, a.pond_id, a.target_date)
     if lock_err:
         return lock_err
+    if a.status == AquacultureFeedingAdvice.STATUS_APPROVED:
+        _clear_feeding_advice_approval(a)
     a.status = AquacultureFeedingAdvice.STATUS_CANCELLED
     a.save()
     a = _feeding_advice_for_company(cid, advice_id)
@@ -4302,11 +4635,16 @@ def _landlord_json_detail(l: AquacultureLandlord) -> dict:
         "ledger": _landlord_ledger_rows(l.id),
         "created_at": l.created_at.isoformat() if l.created_at else "",
         "updated_at": l.updated_at.isoformat() if l.updated_at else "",
+        **landlord_opening_fields_for_api(l),
     }
 
 
 def _landlord_for_company(company_id: int, landlord_id: int) -> AquacultureLandlord | None:
-    return AquacultureLandlord.objects.filter(pk=landlord_id, company_id=company_id).first()
+    return (
+        AquacultureLandlord.objects.filter(pk=landlord_id, company_id=company_id)
+        .select_related("opening_balance_journal")
+        .first()
+    )
 
 
 def _parse_landlord_ledger_payment_gl_fields(
@@ -4604,7 +4942,12 @@ def aquaculture_landlords_list_or_create(request):
     if perr:
         ll.delete()
         return JsonResponse({"detail": perr}, status=400)
-    ll = AquacultureLandlord.objects.filter(pk=ll.pk).first()
+    if any(k in body for k in ("opening_balance", "opening_balance_date", "post_opening_to_gl")):
+        oerr = apply_landlord_opening_from_body(ll, cid, body, allow_when_locked=True)
+        if oerr:
+            ll.delete()
+            return JsonResponse({"detail": oerr}, status=400)
+    ll = AquacultureLandlord.objects.filter(pk=ll.pk).select_related("opening_balance_journal").first()
     return JsonResponse(_landlord_json_detail(ll), status=201)
 
 
@@ -4647,7 +4990,16 @@ def aquaculture_landlord_detail(request, landlord_id: int):
     if perr:
         return JsonResponse({"detail": perr}, status=400)
     ll.save()
+    oerr = apply_landlord_opening_from_body(ll, cid, body)
+    if oerr:
+        return JsonResponse({"detail": oerr}, status=400)
     ll = _landlord_for_company(cid, landlord_id)
+    if ll:
+        ll = (
+            AquacultureLandlord.objects.filter(pk=ll.pk, company_id=cid)
+            .select_related("opening_balance_journal")
+            .first()
+        )
     return JsonResponse(_landlord_json_detail(ll))
 
 
@@ -4840,6 +5192,17 @@ def aquaculture_landlord_ledger_entry_detail(request, landlord_id: int, entry_id
         return JsonResponse({"detail": "Ledger entry not found"}, status=404)
 
     if request.method == "DELETE":
+        ll_ob = AquacultureLandlord.objects.filter(
+            pk=landlord_id, company_id=cid, opening_balance_ledger_entry_id=ent.id
+        ).exists()
+        if ll_ob:
+            return JsonResponse(
+                {
+                    "detail": "This row is the landlord opening balance. "
+                    "Change opening balance on the landlord profile instead of deleting it here.",
+                },
+                status=400,
+            )
         try:
             with transaction.atomic():
                 _reverse_landlord_lease_paid_effect(cid, ent)

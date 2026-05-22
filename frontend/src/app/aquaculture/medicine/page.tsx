@@ -4,14 +4,12 @@ import Link from 'next/link'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
-  ArrowLeft,
   Calendar,
   ChevronDown,
   ChevronUp,
   ClipboardList,
-  MapPin,
+  Info,
   Package,
-  Pill,
   Plus,
   RefreshCw,
   Stethoscope,
@@ -20,19 +18,19 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
-import { formatStockUnit, productOptionLabel } from '@/lib/aquacultureMedicineUnits'
+import { productOptionLabel } from '@/lib/aquacultureMedicineUnits'
 import {
-  formatTreatmentWaterVolume,
-  pondHasCalculableVolume,
-  pondVolumeSetupHint,
-  pondVolumeSummaryLine,
-} from '@/lib/aquaculturePondVolume'
+  buildKgPerDecimalDoseHint,
+  buildMedicineDoseSuggestion,
+  parsePondWaterAreaDecimal,
+  formatMedicineQuantity,
+  totalKgForKgPerDecimalRate,
+} from '@/lib/aquacultureMedicineDoseGuide'
+import { formatTreatmentWaterVolume } from '@/lib/aquaculturePondVolume'
 import {
-  APPLICATION_METHODS,
-  DOSE_UNITS,
-  TREATMENT_PURPOSES,
   buildTreatmentMemoForLine,
   isoToday,
+  isBuiltinMedicineSku,
   isMedicineItem,
   makeBatchRef,
   monthStartIso,
@@ -43,13 +41,12 @@ import {
 } from './medicineUtils'
 import {
   MedicineHistoryTable,
-  MedicineProductLinesEditor,
   MedicineStatCard,
-  MedicineTipsAside,
   MedicineTreatmentDeleteDialog,
   type MedicineHistoryRow,
 } from './MedicineUi'
 import { MedicineTreatmentEditModal } from './MedicineTreatmentEditModal'
+import { MedicineTreatmentEntryModal } from './MedicineTreatmentEntryModal'
 
 interface Pond {
   id: number
@@ -70,6 +67,7 @@ interface CycleRow {
 interface ItemPickRow {
   id: number
   name: string
+  item_number?: string
   item_type?: string
   pos_category?: string
   category?: string
@@ -102,9 +100,9 @@ const EMPTY_TREATMENT: TreatmentFormFields = {
   notes: '',
 }
 
-const inputCls =
-  'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20'
 const labelCls = 'block text-xs font-medium text-slate-700'
+const selectCls =
+  'rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20'
 
 function AquacultureMedicinePageInner() {
   const toast = useToast()
@@ -112,7 +110,9 @@ function AquacultureMedicinePageInner() {
   const initialPond = searchParams.get('pond_id') ?? ''
 
   const [ponds, setPonds] = useState<Pond[]>([])
-  const [pondId, setPondId] = useState(initialPond)
+  const [filterPond, setFilterPond] = useState(initialPond)
+  const [entryPondId, setEntryPondId] = useState('')
+  const [entryModal, setEntryModal] = useState(false)
   const [cycles, setCycles] = useState<CycleRow[]>([])
   const [inventoryItems, setInventoryItems] = useState<ItemPickRow[]>([])
   const [warehouseRows, setWarehouseRows] = useState<WarehouseStockRow[]>([])
@@ -134,24 +134,78 @@ function AquacultureMedicinePageInner() {
 
   const [historyFrom, setHistoryFrom] = useState(monthStartIso)
   const [historyTo, setHistoryTo] = useState(isoToday)
-  const [showEntryForm, setShowEntryForm] = useState(true)
   const [editRow, setEditRow] = useState<MedicineHistoryRow | null>(null)
   const [deleteRow, setDeleteRow] = useState<MedicineHistoryRow | null>(null)
   const [actionBusy, setActionBusy] = useState(false)
   const [busyRowId, setBusyRowId] = useState<number | null>(null)
   const waterVolumeEditedRef = useRef(false)
-  const historySectionRef = useRef<HTMLElement>(null)
+  const treatmentFieldsEditedRef = useRef(false)
+  const [doseSuggestionLabel, setDoseSuggestionLabel] = useState<string | null>(null)
 
-  const pondIdNum = pondId.trim() !== '' ? Number.parseInt(pondId, 10) : NaN
-  const selectedPond = ponds.find((p) => p.id === pondIdNum) ?? null
+  const filterPondNum = filterPond.trim() !== '' ? Number.parseInt(filterPond, 10) : NaN
+  const entryPondNum = entryPondId.trim() !== '' ? Number.parseInt(entryPondId, 10) : NaN
+  const selectedFilterPond = ponds.find((p) => p.id === filterPondNum) ?? null
+  const selectedEntryPond = ponds.find((p) => p.id === entryPondNum) ?? null
 
   const medicineCatalog = useMemo(() => {
     const meds = inventoryItems.filter(isMedicineItem)
-    return meds.length > 0 ? meds : inventoryItems
+    const list = meds.length > 0 ? meds : inventoryItems
+    return [...list].sort((a, b) => {
+      const aBuilt = isBuiltinMedicineSku(a.item_number) ? 0 : 1
+      const bBuilt = isBuiltinMedicineSku(b.item_number) ? 0 : 1
+      if (aBuilt !== bBuilt) return aBuilt - bBuilt
+      return a.name.localeCompare(b.name)
+    })
   }, [inventoryItems])
+
+  const applyDoseSuggestionForLine = useCallback(
+    (lineId: string, itemId: string) => {
+      const item = medicineCatalog.find((c) => String(c.id) === itemId)
+      if (!item) return
+      const sug = buildMedicineDoseSuggestion(
+        item.name,
+        item.category,
+        selectedEntryPond ?? undefined,
+        item.item_number,
+      )
+      if (!sug) {
+        setDoseSuggestionLabel(null)
+        return
+      }
+      if (!treatmentFieldsEditedRef.current) {
+        const waterVol = selectedEntryPond ? formatTreatmentWaterVolume(selectedEntryPond) : null
+        setTreatment((prev) => ({
+          ...prev,
+          purpose: sug.treatment.purpose ?? prev.purpose,
+          method: sug.treatment.method ?? prev.method,
+          doseAmount: sug.treatment.doseAmount ?? prev.doseAmount,
+          doseUnit: sug.treatment.doseUnit ?? prev.doseUnit,
+          withdrawalDays: sug.treatment.withdrawalDays ?? prev.withdrawalDays,
+          notes: sug.treatment.notes ?? prev.notes,
+          waterVolume: waterVolumeEditedRef.current ? prev.waterVolume : waterVol ?? prev.waterVolume,
+        }))
+      }
+      setDoseSuggestionLabel(sug.guide.name)
+      if (sug.quantity || sug.lineNote) {
+        setProductLines((prev) =>
+          prev.map((l) =>
+            l.id === lineId
+              ? {
+                  ...l,
+                  quantity: sug.quantity && !l.quantity.trim() ? sug.quantity : l.quantity,
+                  lineNote: sug.lineNote && !l.lineNote.trim() ? sug.lineNote : l.lineNote,
+                }
+              : l,
+          ),
+        )
+      }
+    },
+    [medicineCatalog, selectedEntryPond],
+  )
 
   const loadPonds = useCallback(async () => {
     try {
+      await api.post('/aquaculture/medicine-catalog/ensure/').catch(() => null)
       const [pondsRes, coRes, itemsRes] = await Promise.all([
         api.get<Pond[]>('/aquaculture/ponds/'),
         api.get<Record<string, unknown>>('/companies/current/'),
@@ -171,8 +225,8 @@ function AquacultureMedicinePageInner() {
   const loadLedger = useCallback(async () => {
     setLedgerLoading(true)
     try {
-      const params: Record<string, string> = { kind: 'medicine', limit: '200' }
-      if (Number.isFinite(pondIdNum)) params.pond_id = String(pondIdNum)
+      const params: Record<string, string> = { kind: 'medicine', limit: '300' }
+      if (Number.isFinite(filterPondNum)) params.pond_id = String(filterPondNum)
       if (historyFrom) params.date_from = historyFrom
       if (historyTo) params.date_to = historyTo
       const { data } = await api.get<{ rows?: ConsumptionRow[] }>(
@@ -186,17 +240,17 @@ function AquacultureMedicinePageInner() {
     } finally {
       setLedgerLoading(false)
     }
-  }, [toast, pondIdNum, historyFrom, historyTo])
+  }, [toast, filterPondNum, historyFrom, historyTo])
 
-  const loadWarehouse = useCallback(async () => {
-    if (!Number.isFinite(pondIdNum)) {
+  const loadWarehouse = useCallback(async (pondNum: number) => {
+    if (!Number.isFinite(pondNum)) {
       setWarehouseRows([])
       return
     }
     setWhLoading(true)
     try {
       const { data } = await api.get<{ items?: WarehouseStockRow[] }>(
-        `/aquaculture/ponds/${pondIdNum}/warehouse-stock/`,
+        `/aquaculture/ponds/${pondNum}/warehouse-stock/`,
       )
       setWarehouseRows(Array.isArray(data?.items) ? data.items : [])
     } catch {
@@ -204,73 +258,75 @@ function AquacultureMedicinePageInner() {
     } finally {
       setWhLoading(false)
     }
-  }, [pondIdNum])
+  }, [])
 
   useEffect(() => {
     void loadPonds()
   }, [loadPonds])
 
   useEffect(() => {
-    if (initialPond && !pondId) setPondId(initialPond)
-  }, [initialPond, pondId])
+    if (initialPond && !filterPond) setFilterPond(initialPond)
+  }, [initialPond, filterPond])
 
   useEffect(() => {
     void loadLedger()
   }, [loadLedger])
 
   useEffect(() => {
-    if (!Number.isFinite(pondIdNum)) {
-      setCycles([])
+    const pondForDefault = Number.isFinite(filterPondNum) ? filterPondNum : NaN
+    if (!Number.isFinite(pondForDefault)) {
       setDefaultMedSel('')
-      setProductLines([newMedicineProductLine()])
+      return
+    }
+    const p = ponds.find((x) => x.id === pondForDefault)
+    if (p?.default_medicine_item_id != null) {
+      setDefaultMedSel(String(p.default_medicine_item_id))
+    } else {
+      setDefaultMedSel('')
+    }
+  }, [filterPondNum, ponds])
+
+  useEffect(() => {
+    if (entryModal && Number.isFinite(entryPondNum)) return
+    if (Number.isFinite(filterPondNum)) void loadWarehouse(filterPondNum)
+    else setWarehouseRows([])
+  }, [filterPondNum, entryModal, entryPondNum, loadWarehouse])
+
+  useEffect(() => {
+    if (!entryModal) return
+    if (!Number.isFinite(entryPondNum)) {
+      setCycles([])
       return
     }
     void (async () => {
       try {
         const { data } = await api.get<CycleRow[]>('/aquaculture/production-cycles/', {
-          params: { pond_id: pondIdNum },
+          params: { pond_id: entryPondNum },
         })
         setCycles(Array.isArray(data) ? data : [])
       } catch {
         setCycles([])
       }
     })()
-    const p = ponds.find((x) => x.id === pondIdNum)
+    const p = ponds.find((x) => x.id === entryPondNum)
     if (p?.default_medicine_item_id != null) {
-      const id = String(p.default_medicine_item_id)
-      setDefaultMedSel(id)
-      setProductLines([newMedicineProductLine(id)])
+      const line = newMedicineProductLine(String(p.default_medicine_item_id))
+      setProductLines([line])
+      queueMicrotask(() => applyDoseSuggestionForLine(line.id, String(p.default_medicine_item_id)))
     } else {
-      setDefaultMedSel('')
       setProductLines([newMedicineProductLine()])
     }
-    void loadWarehouse()
-  }, [pondIdNum, ponds, loadWarehouse])
+    void loadWarehouse(entryPondNum)
+  }, [entryModal, entryPondNum, ponds, loadWarehouse, applyDoseSuggestionForLine])
 
   useEffect(() => {
-    waterVolumeEditedRef.current = false
-    setShowEntryForm(true)
-    setEditRow(null)
-    setDeleteRow(null)
-  }, [pondIdNum])
-
-  const scrollToHistory = useCallback(() => {
-    window.setTimeout(() => {
-      historySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 80)
-  }, [])
-
-  useEffect(() => {
-    if (!selectedPond || waterVolumeEditedRef.current) return
-    const filled = formatTreatmentWaterVolume(selectedPond)
+    if (!entryModal || !selectedEntryPond || waterVolumeEditedRef.current) return
+    const filled = formatTreatmentWaterVolume(selectedEntryPond)
     setTreatment((prev) => ({
       ...prev,
       waterVolume: filled ?? '',
     }))
-  }, [selectedPond])
-
-  const pondVolumeLine = selectedPond ? pondVolumeSummaryLine(selectedPond) : null
-  const pondVolumeHint = selectedPond ? pondVolumeSetupHint(selectedPond) : ''
+  }, [entryModal, selectedEntryPond])
 
   const medicineOnHand = useMemo(() => {
     const medIds = new Set(medicineCatalog.map((i) => i.id))
@@ -292,6 +348,31 @@ function AquacultureMedicinePageInner() {
     [productLines],
   )
 
+  const kgPerDecimalDoseHint = useMemo(
+    () =>
+      treatment.doseUnit === 'kg_decimal'
+        ? buildKgPerDecimalDoseHint(selectedEntryPond, treatment.doseAmount)
+        : null,
+    [treatment.doseUnit, treatment.doseAmount, selectedEntryPond],
+  )
+
+  useEffect(() => {
+    if (!entryModal || treatment.doseUnit !== 'kg_decimal') return
+    const dec = parsePondWaterAreaDecimal(selectedEntryPond)
+    const rate = Number.parseFloat(treatment.doseAmount.replace(/,/g, ''))
+    if (dec == null || !Number.isFinite(rate) || rate <= 0) return
+    const qtyStr = formatMedicineQuantity(Math.max(0.1, totalKgForKgPerDecimalRate(rate, dec)))
+    setProductLines((prev) => {
+      let changed = false
+      const next = prev.map((l) => {
+        if (!l.itemId.trim() || l.quantity.trim()) return l
+        changed = true
+        return { ...l, quantity: qtyStr }
+      })
+      return changed ? next : prev
+    })
+  }, [entryModal, treatment.doseUnit, treatment.doseAmount, selectedEntryPond])
+
   const monthStats = useMemo(() => {
     const start = monthStartIso()
     let count = 0
@@ -306,10 +387,50 @@ function AquacultureMedicinePageInner() {
   }, [ledger])
 
   const sym = getCurrencySymbol(currency)
+  const showPondColumn = !Number.isFinite(filterPondNum)
+
+  const resetEntryForm = useCallback(
+    (pondId: string) => {
+      setEntryPondId(pondId)
+      setMedDate(isoToday())
+      setMedCycleId('')
+      setTreatment({ ...EMPTY_TREATMENT })
+      setDoseSuggestionLabel(null)
+      waterVolumeEditedRef.current = false
+      treatmentFieldsEditedRef.current = false
+      const p = ponds.find((x) => String(x.id) === pondId)
+      if (p?.default_medicine_item_id != null) {
+        setProductLines([newMedicineProductLine(String(p.default_medicine_item_id))])
+      } else {
+        setProductLines([newMedicineProductLine()])
+      }
+      if (p) {
+        const filled = formatTreatmentWaterVolume(p)
+        if (filled) setTreatment((prev) => ({ ...prev, waterVolume: filled }))
+      }
+    },
+    [ponds],
+  )
+
+  const openNewTreatment = () => {
+    const defaultPond =
+      filterPond && ponds.some((p) => String(p.id) === filterPond)
+        ? filterPond
+        : ponds[0]
+          ? String(ponds[0].id)
+          : ''
+    resetEntryForm(defaultPond)
+    setEntryModal(true)
+  }
+
+  const closeEntryModal = () => {
+    if (medSaving) return
+    setEntryModal(false)
+  }
 
   const saveDefaultMedicine = async () => {
-    if (!Number.isFinite(pondIdNum)) {
-      toast.error('Select a pond first')
+    if (!Number.isFinite(filterPondNum)) {
+      toast.error('Select a pond in the filter to set its default medicine')
       return
     }
     setDefaultMedSaving(true)
@@ -323,7 +444,7 @@ function AquacultureMedicinePageInner() {
         setDefaultMedSaving(false)
         return
       }
-      await api.put(`/aquaculture/ponds/${pondIdNum}/`, body)
+      await api.put(`/aquaculture/ponds/${filterPondNum}/`, body)
       toast.success('Default medicine saved for this pond')
       void loadPonds()
     } catch (e) {
@@ -334,6 +455,7 @@ function AquacultureMedicinePageInner() {
   }
 
   const updateProductLine = (id: string, patch: Partial<MedicineProductLine>) => {
+    if ('quantity' in patch || 'lineNote' in patch) treatmentFieldsEditedRef.current = true
     setProductLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)))
   }
 
@@ -349,13 +471,17 @@ function AquacultureMedicinePageInner() {
     const idStr = String(itemId)
     setProductLines((prev) => {
       const empty = prev.find((l) => !l.itemId.trim())
-      if (empty) return prev.map((l) => (l.id === empty.id ? { ...l, itemId: idStr } : l))
-      return prev.map((l, i) => (i === 0 ? { ...l, itemId: idStr } : l))
+      const targetId = empty?.id ?? prev[0]?.id
+      const next = empty
+        ? prev.map((l) => (l.id === empty.id ? { ...l, itemId: idStr } : l))
+        : prev.map((l, i) => (i === 0 ? { ...l, itemId: idStr } : l))
+      if (targetId) queueMicrotask(() => applyDoseSuggestionForLine(targetId, idStr))
+      return next
     })
   }
 
   const recordMedicine = async () => {
-    if (!Number.isFinite(pondIdNum)) {
+    if (!Number.isFinite(entryPondNum)) {
       toast.error('Select a pond')
       return
     }
@@ -383,7 +509,7 @@ function AquacultureMedicinePageInner() {
           lineNote: row.lineNote,
         })
         const body: Record<string, unknown> = {
-          pond_id: pondIdNum,
+          pond_id: entryPondNum,
           item_id: row.itemId,
           quantity: String(row.quantity),
           expense_category: 'medicine_consumed',
@@ -397,29 +523,27 @@ function AquacultureMedicinePageInner() {
         await api.post('/aquaculture/pond-warehouse-consume/', body)
         recorded += 1
       }
-      const p = ponds.find((x) => x.id === pondIdNum)
-      const defaultId = p?.default_medicine_item_id != null ? String(p.default_medicine_item_id) : ''
-      setProductLines([newMedicineProductLine(defaultId)])
       if (total === 1) {
         toast.success('Treatment recorded — stock reduced and COGS posted')
       } else {
         toast.success(
-          `Recorded ${total} products in one protocol${batchRef ? ` (${batchRef})` : ''} — ${total} COGS lines posted`,
+          `Recorded ${total} products in one protocol${batchRef ? ` (${batchRef})` : ''}`,
         )
       }
-      setShowEntryForm(false)
+      setEntryModal(false)
       setTreatment({ ...EMPTY_TREATMENT })
+      setDoseSuggestionLabel(null)
       waterVolumeEditedRef.current = false
+      treatmentFieldsEditedRef.current = false
+      if (!Number.isFinite(filterPondNum)) setFilterPond(String(entryPondNum))
       void loadLedger()
-      void loadWarehouse()
-      scrollToHistory()
+      if (Number.isFinite(filterPondNum)) void loadWarehouse(filterPondNum)
     } catch (e) {
       if (recorded > 0) {
         toast.error(
-          `${extractErrorMessage(e, 'Could not finish batch')}. ${recorded} of ${total} product(s) were already saved — review history and retry remaining lines if needed.`,
+          `${extractErrorMessage(e, 'Could not finish batch')}. ${recorded} of ${total} product(s) were already saved.`,
         )
         void loadLedger()
-        void loadWarehouse()
       } else {
         toast.error(extractErrorMessage(e, 'Could not record treatment'))
       }
@@ -430,7 +554,20 @@ function AquacultureMedicinePageInner() {
 
   const setTreatmentField = <K extends keyof TreatmentFormFields>(key: K, value: TreatmentFormFields[K]) => {
     if (key === 'waterVolume') waterVolumeEditedRef.current = true
+    else treatmentFieldsEditedRef.current = true
     setTreatment((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const refillWaterVolumeFromPond = () => {
+    if (!selectedEntryPond) return
+    const filled = formatTreatmentWaterVolume(selectedEntryPond)
+    if (filled) {
+      waterVolumeEditedRef.current = false
+      setTreatment((prev) => ({ ...prev, waterVolume: filled }))
+      toast.success('Filled from pond dimensions')
+    } else {
+      toast.error('Set water area and depth on the pond page first')
+    }
   }
 
   const saveTreatmentEdit = async (payload: {
@@ -467,7 +604,11 @@ function AquacultureMedicinePageInner() {
       toast.success('Treatment deleted — stock restored')
       setDeleteRow(null)
       void loadLedger()
-      void loadWarehouse()
+      if (Number.isFinite(filterPondNum)) void loadWarehouse(filterPondNum)
+      else if (deleteRow.pond_name) {
+        const p = ponds.find((x) => x.name === deleteRow.pond_name)
+        if (p) void loadWarehouse(p.id)
+      }
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not delete treatment'))
     } finally {
@@ -476,532 +617,311 @@ function AquacultureMedicinePageInner() {
     }
   }
 
-  const openNewTreatmentForm = () => {
-    setShowEntryForm(true)
-    setTreatment({ ...EMPTY_TREATMENT })
-    waterVolumeEditedRef.current = false
-    if (selectedPond) {
-      const filled = formatTreatmentWaterVolume(selectedPond)
-      if (filled) setTreatment((prev) => ({ ...prev, waterVolume: filled }))
-    }
-    window.setTimeout(() => {
-      document.getElementById('medicine-entry-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 50)
-  }
-
-  const refillWaterVolumeFromPond = () => {
-    if (!selectedPond) return
-    const filled = formatTreatmentWaterVolume(selectedPond)
-    if (filled) {
-      waterVolumeEditedRef.current = false
-      setTreatment((prev) => ({ ...prev, waterVolume: filled }))
-      toast.success('Filled from pond dimensions')
-    } else {
-      toast.error('Set water area and depth on the pond page first')
-    }
-  }
+  useEffect(() => {
+    if (!editRow) return
+    const p = ponds.find((x) => x.name === editRow.pond_name)
+    if (!p) return
+    void (async () => {
+      try {
+        const { data } = await api.get<CycleRow[]>('/aquaculture/production-cycles/', {
+          params: { pond_id: p.id },
+        })
+        setCycles(Array.isArray(data) ? data : [])
+      } catch {
+        setCycles([])
+      }
+    })()
+  }, [editRow, ponds])
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-      <Link
-        href="/aquaculture"
-        className="inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:text-teal-950"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden />
-        Aquaculture
-      </Link>
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium text-teal-800">
+            <Link href="/aquaculture" className="hover:underline">
+              Aquaculture
+            </Link>
+            <span className="text-slate-400" aria-hidden>
+              {' '}
+              /{' '}
+            </span>
+            <span className="text-slate-700">Health</span>
+          </p>
+          <h1 id="aq-medicine-title" className="mt-1 text-xl font-bold tracking-tight text-slate-900">
+            Medicine & treatments
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
+            Record medicine applied at the pond warehouse. Each entry reduces on-hand stock and posts COGS — same flow as{' '}
+            <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline">
+              feed consumed
+            </Link>
+            .
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-xs text-slate-600">
+            Pond
+            <select
+              className={`${selectCls} ml-1 block min-w-[9rem]`}
+              value={filterPond}
+              onChange={(e) => setFilterPond(e.target.value)}
+            >
+              <option value="">All ponds</option>
+              {ponds.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1 text-xs text-slate-600">
+            <Calendar className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <input
+              type="date"
+              className={selectCls}
+              value={historyFrom}
+              onChange={(e) => setHistoryFrom(e.target.value)}
+              aria-label="From date"
+            />
+            <span className="text-slate-400">–</span>
+            <input
+              type="date"
+              className={selectCls}
+              value={historyTo}
+              onChange={(e) => setHistoryTo(e.target.value)}
+              aria-label="To date"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void loadLedger()}
+            disabled={ledgerLoading}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${ledgerLoading ? 'animate-spin' : ''}`} aria-hidden />
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={openNewTreatment}
+            disabled={loading || ponds.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            New treatment entry
+          </button>
+        </div>
+      </div>
 
-      <header className="mt-4 border-b border-slate-200 pb-5">
-        <p className="text-xs font-semibold uppercase tracking-wider text-violet-700">Aquaculture · Health</p>
-        <h1 className="mt-1 flex flex-wrap items-center gap-3 text-2xl font-bold tracking-tight text-slate-900">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-md shadow-violet-600/25">
-            <Pill className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-          </span>
-          Medicine & treatments
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-          Log one or more medicines for the same treatment (bath, protocol, or day) in a single submit. Shared dose and
-          withdrawal details apply to all products; each product still posts its own stock and COGS line — same flow as{' '}
-          <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline">
-            feed consumed
-          </Link>
-          .
-        </p>
-      </header>
+      <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-sm leading-relaxed text-slate-700">
+        <div className="flex gap-2">
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-teal-700" aria-hidden />
+          <div>
+            <p className="font-medium text-slate-900">How it works</p>
+            <p className="mt-1">
+              Move medicine SKUs to the pond warehouse via{' '}
+              <Link href="/aquaculture/stock" className="font-medium text-teal-800 underline">
+                Stock → Add stock
+              </Link>{' '}
+              or{' '}
+              <Link href="/inventory" className="font-medium text-teal-800 underline">
+                Inventory
+              </Link>
+              , then log treatments here. Multi-product baths share application details and get a batch reference in the
+              table. Edit protocol fields from the row actions; delete restores stock and reverses COGS.
+            </p>
+          </div>
+        </div>
+      </div>
 
       {loading ? (
-        <div className="mt-12 flex justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-violet-600" />
+        <div className="mt-10 flex justify-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+        </div>
+      ) : ponds.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
+          <p className="font-medium">Add at least one pond first</p>
+          <Link href="/aquaculture/ponds" className="mt-3 inline-block font-medium text-teal-800 underline">
+            Go to Ponds
+          </Link>
         </div>
       ) : (
-        <div className="mt-6 space-y-6">
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <label className={labelCls}>
-              Pond
-              <select className={`${inputCls} max-w-md`} value={pondId} onChange={(e) => setPondId(e.target.value)}>
-                <option value="">Select pond…</option>
-                {ponds.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedPond ? (
-              <p className="mt-2 text-xs text-slate-500">
-                <Link
-                  href={`/aquaculture/ponds/${selectedPond.id}`}
-                  className="inline-flex items-center gap-1 font-medium text-teal-800 hover:underline"
-                >
-                  <MapPin className="h-3 w-3" aria-hidden />
-                  Pond warehouse & setup
-                </Link>
-                {selectedPond.default_medicine_item_name ? (
-                  <span className="ml-2 text-violet-800">
-                    · Default SKU: {selectedPond.default_medicine_item_name}
-                  </span>
-                ) : null}
-                {pondVolumeLine ? (
-                  <span className="mt-1 block text-violet-900/90">
-                    Pond water volume: {pondVolumeLine}
-                  </span>
-                ) : selectedPond ? (
-                  <span className="mt-1 block text-amber-900">{pondVolumeHint}</span>
-                ) : null}
-              </p>
-            ) : null}
-          </section>
+        <>
+          <div className="mt-5 grid gap-4 sm:grid-cols-3">
+            <MedicineStatCard
+              title="This month"
+              value={monthStats.count}
+              sub="treatments in view"
+              icon={ClipboardList}
+            />
+            <MedicineStatCard
+              title="Month COGS"
+              value={`${sym}${formatNumber(monthStats.total, 0)}`}
+              sub="medicine consumed"
+              icon={Stethoscope}
+              tone="slate"
+            />
+            <MedicineStatCard
+              title={Number.isFinite(filterPondNum) ? 'On hand (pond)' : 'Records'}
+              value={Number.isFinite(filterPondNum) ? medicineOnHand.length : ledger.length}
+              sub={
+                Number.isFinite(filterPondNum)
+                  ? medicineOnHand.length === 1
+                    ? 'SKU at pond'
+                    : 'SKUs at pond'
+                  : 'in date range'
+              }
+              icon={Package}
+              tone={
+                Number.isFinite(filterPondNum) && medicineOnHand.length === 0 ? 'amber' : 'violet'
+              }
+            />
+          </div>
 
-          {Number.isFinite(pondIdNum) ? (
-            <div className="grid gap-4 sm:grid-cols-3">
-              <MedicineStatCard
-                title="This month"
-                value={monthStats.count}
-                sub="treatments recorded"
-                icon={ClipboardList}
-              />
-              <MedicineStatCard
-                title="Month COGS"
-                value={`${sym}${formatNumber(monthStats.total, 0)}`}
-                sub="medicine consumed"
-                icon={Stethoscope}
-                tone="slate"
-              />
-              <MedicineStatCard
-                title="On hand"
-                value={medicineOnHand.length}
-                sub={medicineOnHand.length === 1 ? 'SKU at pond' : 'SKUs at pond'}
-                icon={Package}
-                tone={medicineOnHand.length === 0 ? 'amber' : 'violet'}
-              />
-            </div>
+          {Number.isFinite(filterPondNum) && selectedFilterPond ? (
+            <p className="mt-3 text-xs text-slate-600">
+              <Link
+                href={`/aquaculture/ponds/${selectedFilterPond.id}`}
+                className="font-medium text-teal-800 hover:underline"
+              >
+                {selectedFilterPond.name} — warehouse & setup
+              </Link>
+              {selectedFilterPond.default_medicine_item_name ? (
+                <span className="ml-2">· Default SKU: {selectedFilterPond.default_medicine_item_name}</span>
+              ) : null}
+            </p>
           ) : null}
 
-          {!Number.isFinite(pondIdNum) ? (
-            <p className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-14 text-center text-sm text-slate-600">
-              Select a pond to record a treatment or review history.
-            </p>
-          ) : (
-            <div className="grid gap-6 lg:grid-cols-[1fr_minmax(240px,280px)]">
-              <div className="space-y-6">
-                <section
-                  ref={historySectionRef}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-violet-500/5 sm:p-5"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-semibold text-slate-900">Treatment history</h2>
-                      <p className="mt-0.5 text-xs text-slate-600">
-                        Recorded medicine use — edit protocol details or delete to restore pond stock and reverse COGS.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label className="flex items-center gap-1 text-xs text-slate-600">
-                        <Calendar className="h-3.5 w-3.5" aria-hidden />
-                        <input
-                          type="date"
-                          className="rounded-md border border-slate-200 px-2 py-1 text-xs"
-                          value={historyFrom}
-                          onChange={(e) => setHistoryFrom(e.target.value)}
-                        />
-                        <span>–</span>
-                        <input
-                          type="date"
-                          className="rounded-md border border-slate-200 px-2 py-1 text-xs"
-                          value={historyTo}
-                          onChange={(e) => setHistoryTo(e.target.value)}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => void loadLedger()}
-                        disabled={ledgerLoading}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      >
-                        <RefreshCw className={`h-3.5 w-3.5 ${ledgerLoading ? 'animate-spin' : ''}`} aria-hidden />
-                        Refresh
-                      </button>
-                      {!showEntryForm ? (
-                        <button
-                          type="button"
-                          onClick={openNewTreatmentForm}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-violet-800"
-                        >
-                          <Plus className="h-3.5 w-3.5" aria-hidden />
-                          Record new treatment
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                  <MedicineHistoryTable
-                    rows={ledger}
-                    currency={currency}
-                    loading={ledgerLoading}
-                    formHidden={!showEntryForm}
-                    busyRowId={busyRowId}
-                    onEdit={(row) => setEditRow(row)}
-                    onDelete={(row) => setDeleteRow(row)}
-                  />
-                </section>
+          <p className="mt-4 rounded-lg border border-violet-200/80 bg-violet-50/50 px-3 py-2 text-xs leading-relaxed text-violet-950">
+            Standard pond-care products (lime, salt, probiotics, etc.) are built-in inventory SKUs — open{' '}
+            <span className="font-medium">New treatment</span> and pick them from the medicine product dropdown. Dose
+            rates auto-fill from pond water area when available.
+          </p>
 
-                {!showEntryForm ? (
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3">
-                    <p className="text-sm text-emerald-950">
-                      Treatment saved. Review history above — stock reduced and COGS posted.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={openNewTreatmentForm}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-violet-700 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-800"
-                    >
-                      <Plus className="h-4 w-4" aria-hidden />
-                      Record another
-                    </button>
-                  </div>
-                ) : null}
+          <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <MedicineHistoryTable
+              rows={ledger}
+              currency={currency}
+              loading={ledgerLoading}
+              showPondColumn={showPondColumn}
+              busyRowId={busyRowId}
+              onEdit={(row) => setEditRow(row)}
+              onDelete={(row) => setDeleteRow(row)}
+            />
+          </div>
 
-                {showEntryForm ? (
-                <section
-                  id="medicine-entry-form"
-                  className="overflow-hidden rounded-2xl border border-violet-200/80 bg-white shadow-sm ring-1 ring-violet-500/10"
-                >
-                  <div className="border-b border-violet-100 bg-gradient-to-r from-violet-50 to-white px-4 py-3 sm:px-5">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                    <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
-                      <Stethoscope className="h-4 w-4 text-violet-700" aria-hidden />
-                      New treatment entry
-                    </h2>
-                    <p className="mt-0.5 text-xs text-slate-600">
-                      Add multiple products for one protocol, then record once. Quantity uses each product&apos;s stock
-                      unit (kg for lime, L or bottle for liquids, bag, etc.). Multi-product treatments share a batch
-                      reference in history.
-                    </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowEntryForm(false)}
-                        className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                      >
-                        Hide form
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-5 p-4 sm:p-5">
-                    <label className={labelCls}>
-                      Treatment date <span className="text-red-600">*</span>
-                      <input
-                        type="date"
-                        className={`${inputCls} max-w-xs`}
-                        value={medDate}
-                        onChange={(e) => setMedDate(e.target.value)}
-                      />
-                    </label>
-
-                    <MedicineProductLinesEditor
-                      lines={productLines}
-                      medicineCatalog={medicineCatalog}
-                      stockByItemId={stockByItemId}
-                      whLoading={whLoading}
-                      inputCls={inputCls}
-                      labelCls={labelCls}
-                      onChangeLine={updateProductLine}
-                      onAddLine={addProductLine}
-                      onRemoveLine={removeProductLine}
-                    />
-
-                    <fieldset className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
-                      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        Application details (shared by all products)
-                      </legend>
-                      <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                        <label className={labelCls}>
-                          Purpose
-                          <select
-                            className={inputCls}
-                            value={treatment.purpose}
-                            onChange={(e) => setTreatmentField('purpose', e.target.value as TreatmentFormFields['purpose'])}
-                          >
-                            <option value="">—</option>
-                            {TREATMENT_PURPOSES.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className={labelCls}>
-                          Application method
-                          <select
-                            className={inputCls}
-                            value={treatment.method}
-                            onChange={(e) => setTreatmentField('method', e.target.value as TreatmentFormFields['method'])}
-                          >
-                            <option value="">—</option>
-                            {APPLICATION_METHODS.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className={labelCls}>
-                          Dose rate
-                          <div className="mt-1 flex gap-2">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              className={`${inputCls} mt-0 flex-1 tabular-nums`}
-                              value={treatment.doseAmount}
-                              onChange={(e) => setTreatmentField('doseAmount', e.target.value)}
-                              placeholder="e.g. 2"
-                            />
-                            <select
-                              className={`${inputCls} mt-0 w-36 shrink-0`}
-                              value={treatment.doseUnit}
-                              onChange={(e) =>
-                                setTreatmentField('doseUnit', e.target.value as TreatmentFormFields['doseUnit'])
-                              }
-                            >
-                              <option value="">unit</option>
-                              {DOSE_UNITS.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                  {u.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </label>
-                        <label className={labelCls}>
-                          Water / pond volume treated
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            <input
-                              type="text"
-                              className={`${inputCls} mt-0 min-w-[12rem] flex-1`}
-                              value={treatment.waterVolume}
-                              onChange={(e) => setTreatmentField('waterVolume', e.target.value)}
-                              placeholder={
-                                selectedPond && pondHasCalculableVolume(selectedPond)
-                                  ? 'Auto-filled from pond — edit if partial treatment'
-                                  : 'e.g. 500 m³ or full pond'
-                              }
-                            />
-                            {selectedPond ? (
-                              <button
-                                type="button"
-                                onClick={refillWaterVolumeFromPond}
-                                disabled={!pondHasCalculableVolume(selectedPond)}
-                                className="shrink-0 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-900 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                title={
-                                  pondHasCalculableVolume(selectedPond)
-                                    ? 'Recalculate from pond water area and depth'
-                                    : pondVolumeHint
-                                }
-                              >
-                                Use pond volume
-                              </button>
-                            ) : null}
-                          </div>
-                          {selectedPond ? (
-                            <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
-                              {pondHasCalculableVolume(selectedPond) ? (
-                                <>
-                                  Filled from pond setup ({pondVolumeLine}). Change if you only treat part of the
-                                  pond.
-                                </>
-                              ) : (
-                                <>
-                                  {pondVolumeHint}{' '}
-                                  <Link
-                                    href={`/aquaculture/ponds/${selectedPond.id}`}
-                                    className="font-medium text-teal-800 underline"
-                                  >
-                                    Open pond setup
-                                  </Link>
-                                </>
-                              )}
-                            </p>
-                          ) : null}
-                        </label>
-                        <label className={labelCls}>
-                          Withdrawal period (days)
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className={inputCls}
-                            value={treatment.withdrawalDays}
-                            onChange={(e) => setTreatmentField('withdrawalDays', e.target.value)}
-                            placeholder="e.g. 7"
-                          />
-                        </label>
-                        <label className={labelCls}>
-                          Applied by
-                          <input
-                            type="text"
-                            className={inputCls}
-                            value={treatment.appliedBy}
-                            onChange={(e) => setTreatmentField('appliedBy', e.target.value)}
-                            placeholder="Staff name"
-                          />
-                        </label>
-                        <label className={`${labelCls} sm:col-span-2`}>
-                          Production cycle
-                          <select
-                            className={inputCls}
-                            value={medCycleId}
-                            onChange={(e) => setMedCycleId(e.target.value)}
-                          >
-                            <option value="">— optional —</option>
-                            {cycles.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className={`${labelCls} sm:col-span-2`}>
-                          Notes
-                          <textarea
-                            className={`${inputCls} min-h-[4rem] resize-y`}
-                            value={treatment.notes}
-                            onChange={(e) => setTreatmentField('notes', e.target.value)}
-                            placeholder="Symptoms, fish batch, follow-up schedule…"
-                            rows={2}
-                          />
-                        </label>
-                      </div>
-                    </fieldset>
-
-                    <button
-                      type="button"
-                      disabled={medSaving}
-                      onClick={() => void recordMedicine()}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-violet-700/20 hover:bg-violet-800 disabled:opacity-50 sm:w-auto"
-                    >
-                      <Pill className="h-4 w-4" aria-hidden />
-                      {medSaving
-                        ? 'Saving…'
-                        : filledLineCount > 1
-                          ? `Record treatment (${filledLineCount} products)`
-                          : 'Record treatment'}
-                    </button>
-                  </div>
-                </section>
-                ) : null}
-
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                  <button
-                    type="button"
-                    onClick={() => setShowDefaultSku((v) => !v)}
-                    className="flex w-full items-center justify-between gap-2 text-left text-sm font-medium text-slate-800"
+          <section className="mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setShowDefaultSku((v) => !v)}
+              className="flex w-full items-center justify-between gap-2 text-left text-sm font-medium text-slate-800"
+            >
+              <span className="flex items-center gap-2">
+                <Package className="h-4 w-4 text-slate-500" aria-hidden />
+                Default medicine SKU per pond (optional)
+              </span>
+              {showDefaultSku ? (
+                <ChevronUp className="h-4 w-4 text-slate-400" aria-hidden />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden />
+              )}
+            </button>
+            {showDefaultSku ? (
+              <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3">
+                <label className={`${labelCls} min-w-[10rem]`}>
+                  Pond
+                  <select
+                    className={`${selectCls} mt-1 block w-full min-w-[12rem]`}
+                    value={filterPond}
+                    onChange={(e) => setFilterPond(e.target.value)}
                   >
-                    <span className="flex items-center gap-2">
-                      <Package className="h-4 w-4 text-slate-500" aria-hidden />
-                      Default medicine SKU (optional shortcut)
-                    </span>
-                    {showDefaultSku ? (
-                      <ChevronUp className="h-4 w-4 text-slate-400" aria-hidden />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden />
-                    )}
-                  </button>
-                  {showDefaultSku ? (
-                    <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3">
-                      <label className={`${labelCls} min-w-[200px] flex-1`}>
-                        Product
-                        <select
-                          className={inputCls}
-                          value={defaultMedSel}
-                          onChange={(e) => setDefaultMedSel(e.target.value)}
-                        >
-                          <option value="">None</option>
-                          {medicineCatalog.map((it) => (
-                            <option key={it.id} value={it.id}>
-                              {productOptionLabel(it.name, it.unit)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <button
-                        type="button"
-                        disabled={defaultMedSaving}
-                        onClick={() => void saveDefaultMedicine()}
-                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-                      >
-                        {defaultMedSaving ? 'Saving…' : 'Save default'}
-                      </button>
-                    </div>
-                  ) : null}
-                </section>
-
+                    <option value="">Select pond…</option>
+                    {ponds.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={`${labelCls} min-w-[200px] flex-1`}>
+                  Product
+                  <select
+                    className={`${selectCls} mt-1 block w-full`}
+                    value={defaultMedSel}
+                    onChange={(e) => setDefaultMedSel(e.target.value)}
+                    disabled={!Number.isFinite(filterPondNum)}
+                  >
+                    <option value="">None</option>
+                    {medicineCatalog.map((it) => (
+                      <option key={it.id} value={it.id}>
+                        {productOptionLabel(it.name, it.unit)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={defaultMedSaving || !Number.isFinite(filterPondNum)}
+                  onClick={() => void saveDefaultMedicine()}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {defaultMedSaving ? 'Saving…' : 'Save default'}
+                </button>
               </div>
-
-              <aside className="space-y-4">
-                <MedicineTipsAside />
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Stock at pond</h3>
-                  {whLoading ? (
-                    <p className="mt-3 text-xs text-slate-500">Loading…</p>
-                  ) : medicineOnHand.length === 0 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-amber-900">
-                      No medicine on hand. Use Inventory → move stock to this pond warehouse before recording
-                      treatments.
-                    </p>
-                  ) : (
-                    <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto text-xs">
-                      {medicineOnHand.map((r) => {
-                        const inForm = productLines.some((l) => l.itemId === String(r.item_id))
-                        return (
-                          <li key={r.item_id}>
-                            <button
-                              type="button"
-                              onClick={() => assignProductFromStock(r.item_id)}
-                              className={`w-full rounded-lg border px-2.5 py-2 text-left transition hover:border-violet-300 hover:bg-violet-50/50 ${
-                                inForm
-                                  ? 'border-violet-400 bg-violet-50 ring-1 ring-violet-300/50'
-                                  : 'border-slate-100 bg-slate-50/80'
-                              }`}
-                            >
-                              <span className="font-medium text-slate-900">{r.item_name}</span>
-                              <span className="mt-0.5 block tabular-nums text-slate-600">
-                                {r.quantity} {formatStockUnit(r.unit)}
-                              </span>
-                            </button>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
-                  <p className="mt-3 border-t border-slate-100 pt-2 text-[11px] text-slate-500">
-                    Click a row to add it to the next empty product line.
-                  </p>
-                </section>
-              </aside>
-            </div>
-          )}
-        </div>
+            ) : null}
+          </section>
+        </>
       )}
+
+      <MedicineTreatmentEntryModal
+        open={entryModal}
+        ponds={ponds}
+        pondId={entryPondId}
+        doseSuggestionLabel={doseSuggestionLabel}
+        kgPerDecimalDoseHint={kgPerDecimalDoseHint}
+        onPondIdChange={(id) => {
+          setEntryPondId(id)
+          waterVolumeEditedRef.current = false
+          treatmentFieldsEditedRef.current = false
+          setDoseSuggestionLabel(null)
+          setMedCycleId('')
+          const p = ponds.find((x) => String(x.id) === id)
+          if (p?.default_medicine_item_id != null) {
+            const line = newMedicineProductLine(String(p.default_medicine_item_id))
+            setProductLines([line])
+            queueMicrotask(() => applyDoseSuggestionForLine(line.id, String(p.default_medicine_item_id)))
+          } else {
+            setProductLines([newMedicineProductLine()])
+          }
+          const filled = p ? formatTreatmentWaterVolume(p) : null
+          setTreatment({
+            ...EMPTY_TREATMENT,
+            waterVolume: filled ?? '',
+          })
+        }}
+        onProductItemSelect={applyDoseSuggestionForLine}
+        cycles={cycles}
+        medicineCatalog={medicineCatalog}
+        stockByItemId={stockByItemId}
+        medicineOnHand={medicineOnHand}
+        whLoading={whLoading}
+        productLines={productLines}
+        treatment={treatment}
+        medDate={medDate}
+        medCycleId={medCycleId}
+        medSaving={medSaving}
+        filledLineCount={filledLineCount}
+        onMedDateChange={setMedDate}
+        onMedCycleIdChange={setMedCycleId}
+        onTreatmentField={setTreatmentField}
+        onChangeLine={updateProductLine}
+        onAddLine={addProductLine}
+        onRemoveLine={removeProductLine}
+        onAssignFromStock={assignProductFromStock}
+        onRefillWaterVolume={refillWaterVolumeFromPond}
+        onRecord={() => void recordMedicine()}
+        onClose={closeEntryModal}
+      />
 
       {editRow ? (
         <MedicineTreatmentEditModal
@@ -1030,7 +950,7 @@ export default function AquacultureMedicinePage() {
     <Suspense
       fallback={
         <div className="flex min-h-[40vh] items-center justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-violet-600" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
         </div>
       }
     >

@@ -80,8 +80,8 @@ def _d(v: Any) -> Decimal:
     return Decimal(str(v))
 
 
-def _f(d: Decimal) -> float:
-    return float(d.quantize(Decimal("0.01")))
+def _f(d: Decimal | int | float | str | None) -> float:
+    return float(_d(d).quantize(Decimal("0.01")))
 
 
 def _item_qoh_at_station(company_id: int, item: Item, station_id: int) -> Decimal:

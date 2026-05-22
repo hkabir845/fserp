@@ -305,6 +305,22 @@ export function initConsoleErrorFilter(): void {
   const originalWarn = console.warn.bind(console)
   const originalLog = console.log.bind(console)
 
+  /** React hydration noise when Cursor/browser tools inject data-cursor-ref before hydrate. */
+  const checkHydrationToolingNoise = (args: unknown[]): boolean => {
+    if (args.length === 0) return false
+    const blob = args
+      .map((a) => {
+        try {
+          return typeof a === 'string' ? a : String(a)
+        } catch {
+          return ''
+        }
+      })
+      .join(' ')
+    if (!/hydrat/i.test(blob)) return false
+    return /data-cursor-ref/i.test(blob)
+  }
+
   // Helper to check if error is from extension or expected connection error
   const checkExtensionError = (arg: any): boolean => {
     if (!arg) return false
@@ -363,6 +379,9 @@ export function initConsoleErrorFilter(): void {
   // Filter console.error - suppress extension and connection errors
   console.error = (...args: any[]) => {
     if (args.length > 0 && argsLookLikeExtensionNoise(args)) {
+      return
+    }
+    if (checkHydrationToolingNoise(args)) {
       return
     }
     // Check if any argument is an extension or connection error

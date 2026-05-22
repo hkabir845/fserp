@@ -21,10 +21,13 @@ from api.models import (
     AquacultureProductionCycle,
     Item,
     ItemPondStock,
+    PondWarehouseInterPondTransfer,
+    PondWarehouseInterPondTransferLine,
     PondWarehouseStockReceipt,
     PondWarehouseStockReceiptLine,
     Station,
 )
+from api.services.aquaculture_warehouse_group_service import assert_ponds_allow_inter_warehouse_transfer
 from api.services.aquaculture_shop_stock import _parse_shop_issue_items, _total_cost_at_issue
 from api.services.gl_posting import (
     _item_receives_physical_stock,
@@ -250,6 +253,59 @@ def reverse_pond_warehouse_stock_receipt(*, company_id: int, receipt_id: int) ->
 
 
 @transaction.atomic
+def transfer_pond_warehouse_between_ponds(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    to_pond_id: int,
+    items: list,
+    memo: str = "",
+) -> PondWarehouseInterPondTransfer:
+    """
+    Move feed/medicine allocation from one pond warehouse to another (no GL).
+    Allowed between private ponds, or between members of the same shared warehouse group.
+    """
+    from_pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).first()
+    to_pond = AquaculturePond.objects.filter(pk=to_pond_id, company_id=company_id).first()
+    if not from_pond or not to_pond:
+        raise StockBusinessError("Source or destination pond not found for this company.")
+    assert_ponds_allow_inter_warehouse_transfer(company_id, from_pond, to_pond)
+
+    lines_data = _parse_shop_issue_items(company_id, items)
+    for d in lines_data:
+        if not item_uses_station_bins(company_id, d["item"]):
+            raise StockBusinessError(
+                "Pond-to-pond transfer only supports shop-style feed/medicine SKUs (station-bin inventory)."
+            )
+    assert_pond_lines_within_qoh(company_id, from_pond_id, lines_data)
+    decrement_pond_lines(company_id, from_pond_id, lines_data)
+    for d in lines_data:
+        add_pond_stock(company_id, to_pond_id, d["item"].id, d["quantity"])
+
+    xfer = PondWarehouseInterPondTransfer.objects.create(
+        company_id=company_id,
+        from_pond_id=from_pond.id,
+        to_pond_id=to_pond.id,
+        memo=(memo or "")[:5000],
+    )
+    PondWarehouseInterPondTransfer.objects.filter(pk=xfer.pk).update(
+        transfer_number=f"PWIP-{xfer.pk}",
+    )
+    for d in lines_data:
+        PondWarehouseInterPondTransferLine.objects.create(
+            transfer_id=xfer.pk,
+            item_id=d["item"].id,
+            quantity=d["quantity"],
+        )
+    return (
+        PondWarehouseInterPondTransfer.objects.filter(pk=xfer.pk)
+        .select_related("from_pond", "to_pond")
+        .first()
+        or xfer
+    )
+
+
+@transaction.atomic
 def consume_pond_warehouse_stock(
     *,
     company_id: int,
@@ -410,7 +466,11 @@ def pond_warehouse_stock_rows(company_id: int, pond_id: int) -> list[dict]:
 
 def pond_warehouse_stock_matrix(company_id: int, *, pond_id: int | None = None) -> list[dict]:
     """On-hand pond-warehouse quantities across ponds (same shape as single-pond rows, plus pond fields)."""
-    qs = ItemPondStock.objects.filter(company_id=company_id).select_related("pond", "item")
+    qs = ItemPondStock.objects.filter(company_id=company_id).select_related(
+        "pond",
+        "pond__warehouse_group",
+        "item",
+    )
     if pond_id is not None:
         qs = qs.filter(pond_id=pond_id)
     qs = qs.order_by("pond__name", "item__name", "item_id")
@@ -423,10 +483,15 @@ def pond_warehouse_stock_matrix(company_id: int, *, pond_id: int | None = None) 
         it = r.item
         cw = it.content_weight_kg
         uc = item_inventory_unit_cost(it)
+        wg = getattr(pond, "warehouse_group", None)
         out.append(
             {
                 "pond_id": pond.id,
                 "pond_name": (pond.name or "").strip(),
+                "warehouse_group_id": wg.id if wg else None,
+                "warehouse_group_name": (wg.name or "").strip() if wg else "",
+                "warehouse_group_code": (wg.code or "").strip() if wg else "",
+                "is_shared_warehouse_member": bool(wg),
                 "item_id": it.id,
                 "item_name": (it.name or "").strip(),
                 "unit": (it.unit or "").strip() or "unit",

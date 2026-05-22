@@ -122,8 +122,8 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
                 <div className="min-w-0">
                   <h1 className="text-lg font-semibold tracking-tight text-slate-900">Access restricted</h1>
                   <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                    Aquaculture is available only to the company&apos;s Admin account after a platform administrator
-                    enables the module. Sign in as that Admin user, or switch mode if you are a platform administrator.
+                    Your account does not have Aquaculture access. Ask a company Admin to enable the module and assign
+                    Aquaculture permissions on Roles &amp; access, or sign in with an Admin account.
                   </p>
                   <div className="mt-4 flex flex-wrap gap-3 text-sm font-medium">
                     <Link href="/users" className="text-teal-800 underline decoration-teal-600/40 underline-offset-2">

@@ -41,7 +41,8 @@ npm run build
 
 - **Who:** Company **`admin`** (and **`super_admin`** via SaaS or selected company) can download/upload backups.
 - **Restore** replaces **all** ERP data for that tenant (destructive). The UI and API require typing **`DELETE_ALL_TENANT_DATA`** before upload.
-- **Schema v2** (current): full tenant export — core ERP, forecourt, aquaculture (ponds, cycles, sales, feeding, landlords), inventory transfers, station/pond stock, payroll pond allocations, custom roles, reporting categories, and related lines.
+- **Schema v2** (current): full per-tenant application export — core ERP, forecourt, aquaculture (ponds, cycles, sales, feeding, landlords, Data Bank pond closes), inventory transfers, pond warehouse groups, station/pond stock, payroll pond allocations, custom roles, reporting categories, tenant group (`Organization` portal settings), and related lines.
+- **Scope:** One backup file = one **Company** (legal entity). Super admins use `/admin/backup` for any tenant; company admins use `/backup` for their own tenant. Host-level PostgreSQL backups remain the way to snapshot the entire platform database.
 - **Schema v1** backups still restore but may omit aquaculture/stock; the API returns a warning when restoring v1 files.
 - Large tenants: the frontend uses a **15-minute** Axios timeout for backup/restore; nginx/proxy timeouts should allow the same (or higher).
 - Automated tests: `tests/test_password_reset_and_backup.py`, `tests/test_tenant_backup_full.py`, `tests/test_delete_tenant_company.py`.

@@ -55,10 +55,14 @@ def test_push_release_all_tenants_skipped_when_already_current(
 ):
     """Second rollout when every tenant is already at the target — accurate skip counts."""
     tgt = settings.PLATFORM_TARGET_RELEASE
+    from api.services.tenant_release import PLATFORM_HOOKS_VERSION
+
     company_master.platform_release = tgt
-    company_master.save(update_fields=["platform_release"])
+    company_master.platform_hooks_version = PLATFORM_HOOKS_VERSION
+    company_master.save(update_fields=["platform_release", "platform_hooks_version"])
     company_tenant.platform_release = tgt
-    company_tenant.save(update_fields=["platform_release"])
+    company_tenant.platform_hooks_version = PLATFORM_HOOKS_VERSION
+    company_tenant.save(update_fields=["platform_release", "platform_hooks_version"])
 
     body = {
         "scope": "all_tenants",

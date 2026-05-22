@@ -8,7 +8,11 @@ from typing import Any
 from django.db.models import Q
 
 from api.models import Company, TenantPlatformReleaseEvent
-from api.services.tenant_release import get_target_release
+from api.services.tenant_release import (
+    PLATFORM_HOOKS_VERSION,
+    get_target_release,
+    tenant_needs_hooks,
+)
 
 
 def record_release_audit(
@@ -45,8 +49,11 @@ def compute_fleet_release_summary() -> dict[str, Any]:
     at_target = 0
     unset = 0
     behind_diff_tag = 0
-    for c in tenants.only("id", "platform_release"):
+    hooks_stale = 0
+    for c in tenants.only("id", "platform_release", "platform_hooks_version"):
         cur = (getattr(c, "platform_release", None) or "").strip()
+        if tenant_needs_hooks(c):
+            hooks_stale += 1
         if not cur:
             unset += 1
         elif cur == target:
@@ -57,10 +64,12 @@ def compute_fleet_release_summary() -> dict[str, Any]:
     compliance_pct = round(100.0 * at_target / total, 1) if total else 100.0
     return {
         "server_target_release": target,
+        "platform_hooks_version": PLATFORM_HOOKS_VERSION,
         "tenant_count": total,
         "at_target": at_target,
         "behind_different_tag": behind_diff_tag,
         "unset_or_empty_tag": unset,
+        "hooks_stale": hooks_stale,
         "not_at_target": not_current,
         "compliance_pct": compliance_pct,
     }

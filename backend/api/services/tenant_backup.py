@@ -4,7 +4,8 @@ Tenant-scoped backup (export) and restore (full replace) for FSERP.
 Uses Django's serialization format (python/json compatible). Restore clears the
 tenant in FK-safe order (PROTECT chains), then reloads from the bundle.
 
-Schema v2 includes full ERP + aquaculture + inventory stock/transfer coverage.
+Schema v2 includes full ERP + aquaculture (incl. Data Bank closes) + inventory stock/transfer
+coverage, plus the tenant group (Organization) for portal settings.
 Schema v1 backups restore but omit aquaculture/stock modules (legacy).
 
 PasswordResetToken rows are intentionally excluded from backups (single-use secrets).
@@ -33,6 +34,7 @@ from api.utils.password_reset_tokens import (
 )
 
 from api.models import (
+    AquacultureDataBankPondClose,
     AquacultureBiomassSample,
     AquacultureExpense,
     AquacultureExpenseInventoryLine,
@@ -84,6 +86,7 @@ from api.models import (
     LoanRepayment,
     Meter,
     Nozzle,
+    Organization,
     Payment,
     PaymentBillAllocation,
     PaymentInvoiceAllocation,
@@ -111,6 +114,7 @@ RESTORE_CONFIRM_PHRASE = "DELETE_ALL_TENANT_DATA"
 
 # Django app labels present in every serialized record (for coverage checks / tests).
 EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
+    "api.organization",
     "api.company",
     "api.contract",
     "api.companyrole",
@@ -133,6 +137,7 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.bankaccount",
     "api.subscriptionledgerinvoice",
     "api.bankdeposit",
+    "api.aquaculturewarehousegroup",
     "api.aquaculturepond",
     "api.aquaculturelandlord",
     "api.aquacultureproductioncycle",
@@ -151,6 +156,8 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.inventorytransferline",
     "api.pondwarehousestockreceipt",
     "api.pondwarehousestockreceiptline",
+    "api.pondwarehouseinterpondtransfer",
+    "api.pondwarehouseinterpondtransferline",
     "api.invoice",
     "api.invoiceline",
     "api.bill",
@@ -175,6 +182,7 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.aquaculturepondprofittransfer",
     "api.aquaculturefinancingallocation",
     "api.aquaculturefeedingadvice",
+    "api.aquaculturedatabankpondclose",
     "api.aquaculturelandlordledgerentry",
     "api.taxrate",
     "api.employeeledgerentry",
@@ -284,6 +292,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     AquacultureFishStockLedger.objects.filter(company_id=cid).delete()
     AquacultureExpense.objects.filter(company_id=cid).delete()
     AquacultureProductionCycle.objects.filter(company_id=cid).delete()
+    AquacultureDataBankPondClose.objects.filter(company_id=cid).delete()
 
     while Loan.objects.filter(company_id=cid).exists():
         leaf = (
@@ -432,7 +441,12 @@ def _serialize_many(records: list[dict[str, Any]], iterable: Iterable) -> None:
 def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> None:
     """Serialize all tenant tables in FK-safe order for restore."""
     cid = company_id
+    company = Company.objects.filter(pk=cid).select_related("organization").first()
+    if not company:
+        raise ValueError("Company not found.")
+    org_id = company.organization_id
 
+    _serialize_many(records, Organization.objects.filter(pk=org_id))
     _serialize_many(records, Company.objects.filter(pk=cid))
     _serialize_many(records, Contract.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, CompanyRole.objects.filter(company_id=cid).order_by("id"))
@@ -523,6 +537,9 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
     _serialize_many(records, AquaculturePondProfitTransfer.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, AquacultureFinancingAllocation.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, AquacultureFeedingAdvice.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records, AquacultureDataBankPondClose.objects.filter(company_id=cid).order_by("id")
+    )
     _serialize_many(
         records, AquacultureLandlordLedgerEntry.objects.filter(landlord__company_id=cid).order_by("id")
     )
@@ -628,7 +645,7 @@ def restore_bundle(
     }
     if schema < BACKUP_SCHEMA_VERSION:
         result["warning"] = (
-            "Backup uses an older schema; aquaculture, inventory transfers, and stock tables "
-            "may not have been included in this file."
+            "Backup uses an older schema; aquaculture, Data Bank closes, inventory transfers, "
+            "stock tables, and organization portal settings may not have been included in this file."
         )
     return result

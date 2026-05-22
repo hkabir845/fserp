@@ -159,8 +159,10 @@ function TenantBackupRestoreContent() {
               <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">Your organization</p>
               <h1 className="text-3xl font-bold text-gray-900">Backup and restore</h1>
               <p className="mt-1 text-gray-600">
-                Export or replace all data for <span className="font-semibold text-gray-800">{companyLabel || 'your company'}</span>
-                . Super admins: pick the tenant in the company switcher, or use the SaaS menu for any company.
+                Export or replace the full application data for{' '}
+                <span className="font-semibold text-gray-800">{companyLabel || 'your company'}</span> (schema v2): ERP,
+                forecourt, aquaculture, inventory, payroll, loans, and related records. Super admins: use SaaS → Backup
+                &amp; Restore to pick any tenant.
               </p>
             </div>
           </div>
@@ -172,7 +174,8 @@ function TenantBackupRestoreContent() {
                 <p className="font-medium text-slate-900">Scope</p>
                 <p className="mt-1">
                   Applies to your signed-in tenant (the company selected in the header switcher when you use multiple
-                  contexts). The backup file is tied to your company ID.
+                  contexts). The backup file is tied to your company ID and includes portal organization settings used
+                  for login routing.
                 </p>
               </div>
             </div>
@@ -182,8 +185,8 @@ function TenantBackupRestoreContent() {
             <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900">Download backup</h2>
               <p className="mt-2 text-sm text-gray-600">
-                JSON snapshot of this tenant (chart of accounts, stations, customers, journals, loans, etc.). Large
-                tenants may take several minutes.
+                JSON snapshot of this tenant: chart of accounts, stations, customers, journals, loans, aquaculture, Data
+                Bank closes, inventory, and more. Large tenants may take several minutes.
               </p>
               <button
                 type="button"

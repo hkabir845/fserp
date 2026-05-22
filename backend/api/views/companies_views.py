@@ -22,7 +22,7 @@ from api.services.permission_service import normalize_role_key
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_tenant_company_data
 from api.services.company_code import resolved_company_code
 from api.services.station_policy import active_station_count, can_set_company_to_single
-from api.services.tenant_release import get_target_release
+from api.services.tenant_release import get_target_release, provision_new_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -506,6 +506,8 @@ def companies_list_or_create(request):
                 aquaculture_chart_accounts_created = ensure_aquaculture_chart_accounts(c.id)
                 ensure_aquaculture_medicine_catalog_items(c.id)
 
+            provision_result = provision_new_tenant(c)
+
             owner = User(
                 username=admin_email,
                 email=admin_email,
@@ -530,6 +532,7 @@ def companies_list_or_create(request):
             payload["chart_of_accounts"] = chart_of_accounts_result
         if aquaculture_chart_accounts_created:
             payload["aquaculture_chart_accounts_created"] = aquaculture_chart_accounts_created
+        payload["tenant_provision"] = provision_result
         return JsonResponse(payload, status=201)
     except Exception as e:
         logger.exception("create company with admin failed")
@@ -963,12 +966,16 @@ def company_group_entity_create(request):
 
             if getattr(c, "aquaculture_licensed", False):
                 aquaculture_chart_accounts_created = ensure_aquaculture_chart_accounts(c.id)
+                ensure_aquaculture_medicine_catalog_items(c.id)
+
+            provision_result = provision_new_tenant(c)
 
         payload = _company_to_json(Company.objects.filter(pk=c.id).select_related("organization").first() or c)
         if chart_of_accounts_result is not None:
             payload["chart_of_accounts"] = chart_of_accounts_result
         if aquaculture_chart_accounts_created:
             payload["aquaculture_chart_accounts_created"] = aquaculture_chart_accounts_created
+        payload["tenant_provision"] = provision_result
         return JsonResponse(payload, status=201)
     except Exception as e:
         logger.exception("create group entity failed")

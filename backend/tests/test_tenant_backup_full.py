@@ -9,6 +9,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from api.models import (
+    AquacultureDataBankPondClose,
     AquaculturePond,
     Company,
     Customer,
@@ -150,3 +151,59 @@ def test_expected_backup_model_list_matches_django_labels():
     for label in EXPECTED_BACKUP_MODELS:
         app_label, model_name = label.split(".", 1)
         assert apps.get_model(app_label, model_name) is not None
+
+
+def test_backup_includes_organization_and_data_bank_closes(company_tenant):
+    pond = AquaculturePond.objects.create(company=company_tenant, name="Backup Close Pond")
+    AquacultureDataBankPondClose.objects.create(
+        company=company_tenant,
+        pond=pond,
+        label="FY 2025",
+        period_start=date(2024, 7, 1),
+        period_end=date(2025, 6, 30),
+    )
+    labels = set(build_backup_bundle(company_tenant.id)["model_labels"])
+    assert "api.organization" in labels
+    assert "api.aquaculturedatabankpondclose" in labels
+    org_ids = {
+        r["pk"]
+        for r in build_backup_bundle(company_tenant.id)["records"]
+        if r["model"] == "api.organization"
+    }
+    assert company_tenant.organization_id in org_ids
+
+
+def test_data_bank_pond_close_backup_restore_roundtrip(company_tenant):
+    pond = AquaculturePond.objects.create(company=company_tenant, name="Close Roundtrip Pond")
+    AquacultureDataBankPondClose.objects.create(
+        company=company_tenant,
+        pond=pond,
+        label="FY 2024",
+        period_start=date(2023, 7, 1),
+        period_end=date(2024, 6, 30),
+    )
+    bundle = json.loads(backup_bundle_json_bytes(company_tenant.id).decode("utf-8"))
+    restore_bundle(bundle, company_tenant.id, confirm_replace=RESTORE_CONFIRM_PHRASE)
+    assert AquacultureDataBankPondClose.objects.filter(
+        company_id=company_tenant.id, label="FY 2024"
+    ).exists()
+
+
+def test_all_company_scoped_models_in_expected_backup_list():
+    """Every api model with a direct Company FK must be in EXPECTED_BACKUP_MODELS (or documented exclusion)."""
+    from django.apps import apps
+
+    excluded = {
+        # Intentionally omitted from tenant JSON backups (single-use secrets).
+        "api.passwordresettoken",
+    }
+    company_model = apps.get_model("api", "Company")
+    missing: list[str] = []
+    for model in apps.get_app_config("api").get_models():
+        for field in model._meta.get_fields():
+            if getattr(field, "related_model", None) is company_model and getattr(field, "many_to_one", False):
+                label = model._meta.label_lower
+                if label not in EXPECTED_BACKUP_MODELS and label not in excluded:
+                    missing.append(label)
+                break
+    assert not missing, f"Add to tenant backup: {', '.join(sorted(missing))}"

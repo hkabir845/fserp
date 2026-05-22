@@ -187,10 +187,11 @@ function SaasBackupRestoreContent() {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">SaaS platform</p>
-              <h1 className="text-3xl font-bold text-gray-900">Backup and restore (tenants)</h1>
+              <h1 className="text-3xl font-bold text-gray-900">Backup and restore</h1>
               <p className="mt-1 text-gray-600">
-                Export or replace tenant data by company. JSON format, schema version 1. Use for disaster recovery and
-                migration — protect files like production credentials.
+                Export or replace a tenant&apos;s full ERP data by company (schema v2): core books, forecourt, aquaculture
+                (ponds, landlords, Data Bank closes, stock), inventory, payroll, loans, and portal organization settings.
+                Use for disaster recovery and migration — protect files like production credentials.
               </p>
             </div>
           </div>
@@ -258,8 +259,12 @@ function SaasBackupRestoreContent() {
                 <p className="font-medium text-slate-900">Scope</p>
                 <p className="mt-1">
                   {targetCompanyId != null
-                    ? `Operations apply to the selected company (ID ${targetCompanyId}).`
+                    ? `Per-tenant full application backup for company ID ${targetCompanyId} (one legal entity). Platform-wide database dumps are separate (PostgreSQL / host backups).`
                     : 'Select a company above.'}
+                </p>
+                <p className="mt-2 text-slate-600">
+                  Company owners use Management → Backup &amp; Restore for their own tenant. Super admins can run the same
+                  export/restore here for any tenant.
                 </p>
               </div>
             </div>

@@ -438,9 +438,12 @@ def admin_platform_release(request):
     """GET /api/admin/platform-release/ — current deploy target tag for manual tenant rollout."""
     from fsms.release_info import APP_VERSION, RELEASE_NOTES
 
+    from api.services.tenant_release import PLATFORM_HOOKS_VERSION
+
     return JsonResponse(
         {
             "target_release": get_target_release(),
+            "platform_hooks_version": PLATFORM_HOOKS_VERSION,
             "app_version": APP_VERSION,
             "manual_rollout": True,
             "fleet_summary": compute_fleet_release_summary(),

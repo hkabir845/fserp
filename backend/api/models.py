@@ -77,6 +77,9 @@ class Company(models.Model):
     platform_release_applied_at = models.DateTimeField(null=True, blank=True)
     # Set when apply_platform_release moves this company to a new tag; None = nothing to roll back.
     platform_release_previous = models.CharField(max_length=64, blank=True, null=True)
+    # Increment PLATFORM_HOOKS_VERSION in tenant_release when TENANT_RELEASE_HOOKS change;
+    # tenants below this version re-run hooks on create or Apply release even if release tag matches.
+    platform_hooks_version = models.PositiveIntegerField(default=0)
     # Tenant choice: one operating site (at most one active Station row) vs many locations.
     station_mode = models.CharField(
         max_length=16,

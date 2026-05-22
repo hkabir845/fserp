@@ -389,8 +389,10 @@ def preview_master_push(
             row["release"] = {
                 "current_release": cur,
                 "target_release": tgt,
+                "current_hooks_version": int(getattr(tenant, "platform_hooks_version", 0) or 0),
                 "would_apply": needs,
                 "would_skip_already_current": not needs,
+                "hooks_stale": needs and cur == tgt,
             }
             if needs:
                 release_would_apply += 1

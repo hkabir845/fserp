@@ -22,7 +22,8 @@ from api.chart_templates.fuel_station import (
     ensure_loan_module_default_accounts,
     seed_fuel_station_chart,
 )
-from api.models import AquacultureExpense, AquaculturePond, ChartOfAccount, Company, Organization
+from api.models import AquacultureExpense, AquaculturePond, ChartOfAccount, Company, Employee, Organization, Station
+from api.services.employee_pond_labor import LABOR_SCOPE_ASSIGNED_POND, LABOR_SCOPE_NOT_APPLICABLE
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 from api.services.aquaculture_medicine_catalog_seed import ensure_aquaculture_medicine_catalog_items
 from api.services.aquaculture_pond_pos_customer import (
@@ -160,6 +161,25 @@ def hook_payroll_employee_subledger(company_id: int) -> None:
     backfill_missing_payroll_subledger_lines(company_id)
 
 
+def hook_employee_labor_scope_cleanup(company_id: int) -> None:
+    """
+    Broaden 0103: staff on fuel retail sites without a home pond should not use assigned_pond scope.
+    """
+    if not _active_company(company_id):
+        return
+    fuel_station_ids = set(
+        Station.objects.filter(company_id=company_id, operates_fuel_retail=True).values_list("id", flat=True)
+    )
+    if not fuel_station_ids:
+        return
+    Employee.objects.filter(
+        company_id=company_id,
+        home_station_id__in=fuel_station_ids,
+        aquaculture_labor_scope=LABOR_SCOPE_ASSIGNED_POND,
+        home_aquaculture_pond_id__isnull=True,
+    ).update(aquaculture_labor_scope=LABOR_SCOPE_NOT_APPLICABLE)
+
+
 def hook_bank_and_equity_registers(company_id: int) -> None:
     """Bank registers from chart + equity registers used for transfers."""
     if not _active_company(company_id):
@@ -180,6 +200,7 @@ TENANT_RELEASE_HOOKS: list = [
     hook_aquaculture_module,
     hook_aquaculture_pond_pos_customers,
     hook_payroll_employee_subledger,
+    hook_employee_labor_scope_cleanup,
     hook_bank_and_equity_registers,
 ]
 

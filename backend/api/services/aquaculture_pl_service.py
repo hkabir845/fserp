@@ -33,6 +33,7 @@ from api.services.aquaculture_cost_per_kg import (
     vendor_bill_pond_operating_total,
     vendor_bill_pond_operating_total_company,
 )
+from api.services.aquaculture_pond_pl_opening import pl_opening_totals_for_pond
 
 
 def _money_q(d: Decimal) -> Decimal:
@@ -181,8 +182,16 @@ def compute_aquaculture_pl_summary_dict(
             t_in = _money_q(transfer_in_by_pond.get(pond.id, Decimal("0")))
             t_out = _money_q(transfer_out_by_pond.get(pond.id, Decimal("0")))
         wo = _money_q(writeoff_by_pond.get(pond.id, Decimal("0")))
-        exp_total = _money_q(exp_direct + exp_shared + t_in - t_out + wo)
-        rev = _money_q(_rev_q(pond.id).aggregate(t=Sum("total_amount"))["t"] or Decimal("0"))
+        prior_income = prior_expense = Decimal("0")
+        prior_income_by: dict[str, Decimal] = {}
+        prior_expense_by: dict[str, Decimal] = {}
+        if cycle_filter_id is None:
+            prior_income, prior_expense, prior_income_by, prior_expense_by = pl_opening_totals_for_pond(
+                cid, pond.id
+            )
+        exp_total = _money_q(exp_direct + exp_shared + t_in - t_out + wo + prior_expense)
+        period_rev = _rev_q(pond.id).aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
+        rev = _money_q(Decimal(str(period_rev)) + prior_income)
         if cycle_filter_id is not None:
             pay = Decimal("0")
         else:
@@ -198,12 +207,16 @@ def compute_aquaculture_pl_summary_dict(
         profit = _money_q(rev - exp_total - pay)
 
         rev_by_type: list[dict] = []
+        merged_rev: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
         rq = _rev_q(pond.id)
         for row in rq.values("income_type").annotate(t=Sum("total_amount")):
-            tq = _money_q(Decimal(str(row["t"] or 0)))
+            code = str(row["income_type"] or "")
+            merged_rev[code] += _money_q(Decimal(str(row["t"] or 0)))
+        for code, amt in prior_income_by.items():
+            merged_rev[code] += _money_q(amt)
+        for code, tq in merged_rev.items():
             if tq == 0:
                 continue
-            code = str(row["income_type"] or "")
             rev_by_type.append(
                 {
                     "income_type": code,
@@ -218,6 +231,8 @@ def compute_aquaculture_pl_summary_dict(
                 "pond_id": pond.id,
                 "pond_name": pond.name,
                 "revenue": str(rev),
+                "prior_pl_opening_income": str(_money_q(prior_income)),
+                "prior_pl_opening_expense": str(_money_q(prior_expense)),
                 "revenue_by_income_type": rev_by_type,
                 "direct_operating_expenses": str(exp_direct),
                 "shared_operating_expenses": str(exp_shared),
@@ -272,6 +287,11 @@ def compute_aquaculture_pl_summary_dict(
         by_cat_dec["lease"] += landlord_lease_payment_pond_operating_total_company(
             company_id=cid, start=start, end=end
         )
+        if cycle_filter_id is None:
+            for pond in ponds_qs:
+                _, prior_exp, _, prior_exp_by = pl_opening_totals_for_pond(cid, pond.id)
+                for code, amt in prior_exp_by.items():
+                    by_cat_dec[code] += _money_q(amt)
     elif cycle_filter_id is not None:
         for row in _dexp_q(pond_filter_id).values("expense_category").annotate(s=Sum("amount")):
             by_cat_dec[row["expense_category"]] += _money_q(row["s"] or Decimal("0"))

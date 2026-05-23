@@ -94,6 +94,11 @@ class Company(models.Model):
         default=False,
         help_text="When true (and typically aquaculture_licensed), tenant Admin may use Aquaculture in ERP (menu, APIs).",
     )
+    aquaculture_go_live_cutover_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Cutover date for aquaculture go-live: openings and biological snapshot as of this date.",
+    )
     organization = models.ForeignKey(
         Organization,
         on_delete=models.PROTECT,
@@ -653,6 +658,14 @@ class Customer(models.Model):
     bank_routing_number = models.CharField(max_length=64, blank=True)
     opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     opening_balance_date = models.DateField(null=True, blank=True)
+    opening_balance_journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="customer_openings",
+        help_text="AUTO-CUST-OB-{customer id} when opening balance is posted to the G/L.",
+    )
     current_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -701,6 +714,14 @@ class Vendor(models.Model):
     bank_routing_number = models.CharField(max_length=64, blank=True)
     opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     opening_balance_date = models.DateField(null=True, blank=True)
+    opening_balance_journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="vendor_openings",
+        help_text="AUTO-VEND-OB-{vendor id} when opening balance is posted to the G/L.",
+    )
     current_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -760,6 +781,14 @@ class Employee(models.Model):
     salary = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     opening_balance_date = models.DateField(null=True, blank=True)
+    opening_balance_journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="employee_openings",
+        help_text="AUTO-EMP-OB-{employee id} when opening balance is posted to the G/L.",
+    )
     current_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1933,6 +1962,14 @@ class AquaculturePond(models.Model):
             "Use pond-to-pond warehouse transfer to reallocate between members."
         ),
     )
+    pl_opening_journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_pond_pl_openings",
+        help_text="AUTO-POND-PL-OB-{pond id} when prior P&L openings are posted to the G/L.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1945,6 +1982,47 @@ class AquaculturePond(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class AquaculturePondPlOpening(models.Model):
+    """
+    Go-live P&L opening by income type or expense category for one pond.
+    Does not post GL; complements operational sales/expenses after cutover.
+    Landlord rent openings stay on AquacultureLandlord, not here.
+    """
+
+    KIND_INCOME = "income"
+    KIND_EXPENSE = "expense"
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_pond_pl_openings")
+    pond = models.ForeignKey(
+        AquaculturePond, on_delete=models.CASCADE, related_name="pl_openings"
+    )
+    pl_kind = models.CharField(max_length=16, db_index=True)
+    category_code = models.CharField(max_length=64, db_index=True)
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Positive amount; interpreted as revenue (income) or cost (expense) by pl_kind.",
+    )
+    as_of_date = models.DateField(null=True, blank=True)
+    memo = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_pond_pl_opening"
+        ordering = ["pl_kind", "category_code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "pond", "pl_kind", "category_code"],
+                name="uq_aq_pond_pl_opening_kind_cat",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "pond", "pl_kind"]),
+        ]
 
 
 class AquacultureLandlord(models.Model):

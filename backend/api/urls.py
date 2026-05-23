@@ -439,6 +439,10 @@ urlpatterns = [
         aquaculture_views.aquaculture_ponds_provision_pos_customers,
     ),
     path(
+        "aquaculture/ponds/opening-balances/",
+        aquaculture_views.aquaculture_ponds_opening_balances,
+    ),
+    path(
         "aquaculture/medicine-catalog/ensure/",
         aquaculture_views.aquaculture_medicine_catalog_ensure,
     ),

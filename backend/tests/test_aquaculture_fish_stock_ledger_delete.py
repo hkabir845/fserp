@@ -14,6 +14,7 @@ from api.models import (
     ChartOfAccount,
     Company,
     JournalEntry,
+    JournalEntryLine,
 )
 from api.services.gl_posting import post_aquaculture_fish_stock_ledger_journal
 
@@ -238,3 +239,54 @@ def test_fish_stock_ledger_get_aggregates_match_implied_ledger_component(
     assert len(pos) == 1
     assert pos[0]["ledger_fish_count_delta"] == body["total_fish_count_delta"]
     assert float(pos[0]["ledger_weight_kg_delta"]) == float(body["total_weight_kg_delta"])
+
+
+@pytest.mark.django_db
+def test_fish_stock_opening_gl_credits_opening_balance_equity(company_tenant):
+    ChartOfAccount.objects.create(
+        company_id=company_tenant.id,
+        account_code="1581",
+        account_name="Biological inventory",
+        account_type="asset",
+        is_active=True,
+    )
+    equity = ChartOfAccount.objects.create(
+        company_id=company_tenant.id,
+        account_code="3200",
+        account_name="Opening Balance Equity",
+        account_type="equity",
+        account_sub_type="opening_balance_equity",
+        is_active=True,
+    )
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="Opening pond", is_active=True)
+    led = AquacultureFishStockLedger.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        entry_date=date(2026, 5, 1),
+        entry_kind="opening",
+        fish_species="tilapia",
+        fish_count_delta=1000,
+        weight_kg_delta=Decimal("500"),
+        book_value=Decimal("25000.00"),
+        post_to_books=True,
+        memo="Go-live opening biomass",
+    )
+    je = post_aquaculture_fish_stock_ledger_journal(
+        company_tenant.id,
+        led.id,
+        date(2026, 5, 1),
+        is_write_down=False,
+        book_value=Decimal("25000.00"),
+        pond_label="Opening pond",
+        line_memo="Go-live opening biomass",
+        credit_opening_equity=True,
+    )
+    assert je is not None
+    lines = JournalEntryLine.objects.filter(journal_entry=je).order_by("id")
+    assert lines.count() == 2
+    dr = lines.filter(debit__gt=0).first()
+    cr = lines.filter(credit__gt=0).first()
+    assert dr.account.account_code == "1581"
+    assert cr.account_id == equity.id
+    assert dr.debit == Decimal("25000.00")
+    assert cr.credit == Decimal("25000.00")

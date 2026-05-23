@@ -36,7 +36,9 @@ from api.models import (
     ChartOfAccount,
     Company,
     Customer,
+    Employee,
     Item,
+    Vendor,
     JournalEntry,
     JournalEntryLine,
     Station,
@@ -91,6 +93,28 @@ from api.services.gl_posting import (
     sync_landlord_lease_payment_journal,
 )
 from api.services.aquaculture_production_cycle_service import cycle_code_conflict, next_automatic_cycle_code
+from api.services.aquaculture_cutover import (
+    get_stored_cutover_date,
+    is_go_live_fish_opening,
+    require_cutover_configured,
+    validate_opening_as_of,
+    validate_operational_date,
+)
+from api.services.aquaculture_pond_go_live_service import (
+    build_opening_balances_payload,
+    set_company_cutover_date,
+)
+from api.services.aquaculture_pond_pl_opening_gl import apply_pond_pl_opening_gl
+from api.services.party_balance_sync import refresh_customer_balance, refresh_vendor_balance
+from api.services.party_opening_gl import (
+    apply_customer_opening_gl,
+    apply_employee_opening_gl,
+    apply_vendor_opening_gl,
+)
+from api.services.aquaculture_pond_pl_opening import (
+    category_catalog_for_api,
+    sync_pond_pl_openings,
+)
 from api.services.aquaculture_pond_pos_customer import (
     maybe_provision_auto_pos_customer,
     on_pond_deleted,
@@ -617,7 +641,17 @@ def _pond_write_lock_response(
     company_id: int,
     pond_id: int,
     transaction_date: date | None = None,
+    *,
+    opening_as_of: bool = False,
 ):
+    if transaction_date is not None:
+        cut_detail = (
+            validate_opening_as_of(company_id, transaction_date)
+            if opening_as_of
+            else validate_operational_date(company_id, transaction_date)
+        )
+        if cut_detail:
+            return JsonResponse({"detail": cut_detail, "code": "cutover_date_invalid"}, status=400)
     detail = pond_write_blocked_detail(company_id, pond_id, transaction_date)
     if detail:
         return JsonResponse({"detail": detail, "code": "pond_data_locked"}, status=409)
@@ -715,7 +749,7 @@ def _fetch_tilapia_stock_row_for_pond(company_id: int, pond_id: int) -> dict | N
 
 def _landlord_pond_share_json(sh: AquacultureLandlordPondShare) -> dict:
     ll = sh.landlord
-    return {
+    out = {
         "id": sh.id,
         "landlord_id": sh.landlord_id,
         "landlord_name": (ll.name or "").strip() if ll else "",
@@ -723,6 +757,9 @@ def _landlord_pond_share_json(sh: AquacultureLandlordPondShare) -> dict:
         "land_area_decimal": str(sh.land_area_decimal),
         "notes": (sh.notes or "").strip(),
     }
+    if ll:
+        out.update(landlord_opening_fields_for_api(ll))
+    return out
 
 
 def _pond_lease_payment_status_payload(p: AquaculturePond, lease: dict) -> dict:
@@ -772,6 +809,12 @@ def _pond_to_json(
         "pos_customer_id": pcid,
         "pos_customer_display": pc_disp,
         "pos_customer_auto_managed": bool(getattr(p, "auto_pos_customer", False)),
+        "pos_customer_opening_balance": (
+            str(_money_q(pc.opening_balance or Decimal(0))) if pc else None
+        ),
+        "pos_customer_opening_balance_date": (
+            pc.opening_balance_date.isoformat() if pc and pc.opening_balance_date else None
+        ),
         "default_feed_item_id": getattr(p, "default_feed_item_id", None),
         "default_feed_item_name": (
             (p.default_feed_item.name or "").strip()
@@ -1095,6 +1138,307 @@ def aquaculture_ponds_provision_pos_customers(request):
         return err
     result = provision_missing_pond_pos_customers(company_id=request.company_id)
     return JsonResponse(result)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT"])
+@auth_required
+@require_company_id
+def aquaculture_ponds_opening_balances(request):
+    """
+    GET: per-pond P&L openings (income/expense categories) + balance-sheet parties.
+    PUT: bulk save { updates: [{ pond_id, pl_income?, pl_expense?, customer?, ... }] }.
+    Landlords: Aquaculture → Landlords only.
+    """
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    if request.method == "GET":
+        return JsonResponse(build_opening_balances_payload(cid))
+
+    body, e = parse_json_body(request)
+    if e:
+        return e
+
+    if "cutover_date" in body:
+        raw_cut = body.get("cutover_date")
+        if raw_cut in (None, ""):
+            set_company_cutover_date(cid, None)
+        else:
+            cut = _parse_date(raw_cut)
+            if not cut:
+                return JsonResponse({"detail": "cutover_date must be YYYY-MM-DD"}, status=400)
+            set_company_cutover_date(cid, cut)
+
+    updates = body.get("updates")
+    if not isinstance(updates, list):
+        return JsonResponse({"detail": "updates must be a list"}, status=400)
+
+    saved = 0
+    errors: list[dict] = []
+
+    for item in updates:
+        if not isinstance(item, dict):
+            errors.append({"detail": "each update must be an object"})
+            continue
+        pond_id = item.get("pond_id")
+        try:
+            pond_id = int(pond_id)
+        except (TypeError, ValueError):
+            errors.append({"detail": "pond_id required", "item": item})
+            continue
+        p = AquaculturePond.objects.filter(pk=pond_id, company_id=cid).first()
+        if not p:
+            errors.append({"pond_id": pond_id, "detail": "Pond not found"})
+            continue
+
+        item_errors: list[dict] = []
+
+        has_opening = bool(
+            item.get("pl_income")
+            or item.get("pl_expense")
+            or item.get("customer")
+            or item.get("vendors")
+            or item.get("employees")
+        )
+        if has_opening:
+            cut_req = require_cutover_configured(cid)
+            if cut_req:
+                item_errors.append({"pond_id": pond_id, "detail": cut_req})
+
+        if (item.get("pl_income") or item.get("pl_expense")) and p.pl_opening_journal_id:
+            item_errors.append(
+                {
+                    "pond_id": pond_id,
+                    "detail": "Prior P&L openings cannot be changed after they are posted to the G/L.",
+                }
+            )
+
+        cust_body = item.get("customer")
+        if isinstance(cust_body, dict) and p.pos_customer_id:
+            c = Customer.objects.filter(pk=p.pos_customer_id, company_id=cid).first()
+            if c and "opening_balance" in cust_body:
+                new_ob = _money_q(_decimal(cust_body.get("opening_balance"), c.opening_balance))
+                ob_date = (
+                    _parse_date(cust_body.get("opening_balance_date"))
+                    if "opening_balance_date" in cust_body
+                    else c.opening_balance_date
+                )
+                if new_ob != 0 and not ob_date:
+                    item_errors.append(
+                        {
+                            "pond_id": pond_id,
+                            "detail": "Customer opening balance date required when balance is non-zero",
+                        }
+                    )
+                elif new_ob != 0 and ob_date:
+                    cut_err = validate_opening_as_of(cid, ob_date)
+                    if cut_err:
+                        item_errors.append({"pond_id": pond_id, "detail": cut_err})
+                if c.opening_balance_journal_id and "opening_balance" in cust_body:
+                    old_ob = _money_q(c.opening_balance or Decimal("0"))
+                    old_date = c.opening_balance_date
+                    if new_ob != old_ob or ob_date != old_date:
+                        item_errors.append(
+                            {
+                                "pond_id": pond_id,
+                                "detail": "Customer opening balance cannot be changed after it is posted to the G/L.",
+                            }
+                        )
+
+        for v_item in item.get("vendors") or []:
+            if not isinstance(v_item, dict) or "id" not in v_item:
+                continue
+            v = Vendor.objects.filter(
+                pk=int(v_item["id"]), company_id=cid, default_aquaculture_pond_id=pond_id
+            ).first()
+            if not v:
+                item_errors.append({"pond_id": pond_id, "vendor_id": v_item.get("id"), "detail": "Vendor not found"})
+                continue
+            if "opening_balance" in v_item:
+                new_ob = _money_q(_decimal(v_item.get("opening_balance"), v.opening_balance))
+                ob_date = (
+                    _parse_date(v_item.get("opening_balance_date"))
+                    if "opening_balance_date" in v_item
+                    else v.opening_balance_date
+                )
+                if new_ob != 0 and not ob_date:
+                    item_errors.append(
+                        {
+                            "pond_id": pond_id,
+                            "vendor_id": v_item.get("id"),
+                            "detail": "Vendor opening balance date required when balance is non-zero",
+                        }
+                    )
+                elif new_ob != 0 and ob_date:
+                    cut_err = validate_opening_as_of(cid, ob_date)
+                    if cut_err:
+                        item_errors.append({"pond_id": pond_id, "vendor_id": v_item.get("id"), "detail": cut_err})
+                if v.opening_balance_journal_id and "opening_balance" in v_item:
+                    old_ob = _money_q(v.opening_balance or Decimal("0"))
+                    old_date = v.opening_balance_date
+                    if new_ob != old_ob or ob_date != old_date:
+                        item_errors.append(
+                            {
+                                "pond_id": pond_id,
+                                "vendor_id": v_item.get("id"),
+                                "detail": "Vendor opening balance cannot be changed after it is posted to the G/L.",
+                            }
+                        )
+
+        for e_item in item.get("employees") or []:
+            if not isinstance(e_item, dict) or "id" not in e_item:
+                continue
+            emp = Employee.objects.filter(
+                pk=int(e_item["id"]), company_id=cid, home_aquaculture_pond_id=pond_id
+            ).first()
+            if not emp:
+                item_errors.append(
+                    {"pond_id": pond_id, "employee_id": e_item.get("id"), "detail": "Employee not found"}
+                )
+                continue
+            if "opening_balance" in e_item:
+                new_ob = _money_q(_decimal(e_item.get("opening_balance"), emp.opening_balance))
+                ob_date = (
+                    _parse_date(e_item.get("opening_balance_date"))
+                    if "opening_balance_date" in e_item
+                    else emp.opening_balance_date
+                )
+                if new_ob != 0 and not ob_date:
+                    item_errors.append(
+                        {
+                            "pond_id": pond_id,
+                            "employee_id": e_item.get("id"),
+                            "detail": "Employee opening balance date required when balance is non-zero",
+                        }
+                    )
+                elif new_ob != 0 and ob_date:
+                    cut_err = validate_opening_as_of(cid, ob_date)
+                    if cut_err:
+                        item_errors.append(
+                            {"pond_id": pond_id, "employee_id": e_item.get("id"), "detail": cut_err}
+                        )
+                if emp.opening_balance_journal_id and "opening_balance" in e_item:
+                    old_ob = _money_q(emp.opening_balance or Decimal("0"))
+                    old_date = emp.opening_balance_date
+                    if new_ob != old_ob or ob_date != old_date:
+                        item_errors.append(
+                            {
+                                "pond_id": pond_id,
+                                "employee_id": e_item.get("id"),
+                                "detail": "Employee opening balance cannot be changed after it is posted to the G/L.",
+                            }
+                        )
+
+        if item_errors:
+            errors.extend(item_errors)
+            continue
+
+        try:
+            with transaction.atomic():
+                if "lease_paid_to_landlord" in item:
+                    paid = _money_q(_decimal(item.get("lease_paid_to_landlord"), "0"))
+                    if paid < 0:
+                        raise ValueError("lease_paid_to_landlord cannot be negative")
+                    p.lease_paid_to_landlord = paid
+                    p.save(update_fields=["lease_paid_to_landlord", "updated_at"])
+                    saved += 1
+
+                cust_body = item.get("customer")
+                if isinstance(cust_body, dict) and p.pos_customer_id:
+                    c = Customer.objects.filter(pk=p.pos_customer_id, company_id=cid).first()
+                    if c:
+                        if "opening_balance" in cust_body:
+                            c.opening_balance = _money_q(
+                                _decimal(cust_body.get("opening_balance"), c.opening_balance)
+                            )
+                        if "opening_balance_date" in cust_body:
+                            c.opening_balance_date = _parse_date(cust_body.get("opening_balance_date"))
+                        if "current_balance" in cust_body:
+                            c.current_balance = _money_q(_decimal(cust_body.get("current_balance"), c.current_balance))
+                        c.save()
+                        if "opening_balance" in cust_body and "current_balance" not in cust_body:
+                            refresh_customer_balance(cid, c.id)
+                            c.refresh_from_db()
+                        post_gl = bool(cust_body.get("post_opening_to_gl", True))
+                        gl_err = apply_customer_opening_gl(cid, c, post_to_gl=post_gl)
+                        if gl_err:
+                            raise ValueError(gl_err)
+                        saved += 1
+
+                for v_item in item.get("vendors") or []:
+                    if not isinstance(v_item, dict) or "id" not in v_item:
+                        continue
+                    v = Vendor.objects.filter(
+                        pk=int(v_item["id"]), company_id=cid, default_aquaculture_pond_id=pond_id
+                    ).first()
+                    if not v:
+                        continue
+                    if "opening_balance" in v_item:
+                        v.opening_balance = _money_q(_decimal(v_item.get("opening_balance"), v.opening_balance))
+                    if "opening_balance_date" in v_item:
+                        v.opening_balance_date = _parse_date(v_item.get("opening_balance_date"))
+                    if "current_balance" in v_item:
+                        v.current_balance = _money_q(_decimal(v_item.get("current_balance"), v.current_balance))
+                    v.save()
+                    if "opening_balance" in v_item and "current_balance" not in v_item:
+                        refresh_vendor_balance(cid, v.id)
+                        v.refresh_from_db()
+                    post_gl = bool(v_item.get("post_opening_to_gl", True))
+                    gl_err = apply_vendor_opening_gl(cid, v, post_to_gl=post_gl)
+                    if gl_err:
+                        raise ValueError(gl_err)
+                    saved += 1
+
+                for e_item in item.get("employees") or []:
+                    if not isinstance(e_item, dict) or "id" not in e_item:
+                        continue
+                    emp = Employee.objects.filter(
+                        pk=int(e_item["id"]), company_id=cid, home_aquaculture_pond_id=pond_id
+                    ).first()
+                    if not emp:
+                        continue
+                    if "opening_balance" in e_item:
+                        emp.opening_balance = _money_q(
+                            _decimal(e_item.get("opening_balance"), emp.opening_balance)
+                        )
+                    if "opening_balance_date" in e_item:
+                        emp.opening_balance_date = _parse_date(e_item.get("opening_balance_date"))
+                    emp.save()
+                    from api.services.employee_payroll_subledger import refresh_employee_balance
+
+                    refresh_employee_balance(emp.id)
+                    emp.refresh_from_db()
+                    post_gl = bool(e_item.get("post_opening_to_gl", True))
+                    gl_err = apply_employee_opening_gl(cid, emp, post_to_gl=post_gl)
+                    if gl_err:
+                        raise ValueError(gl_err)
+                    saved += 1
+
+                if "pl_income" in item or "pl_expense" in item:
+                    pl_err = sync_pond_pl_openings(
+                        cid,
+                        pond_id,
+                        income=item.get("pl_income"),
+                        expense=item.get("pl_expense"),
+                    )
+                    if pl_err:
+                        raise ValueError(pl_err)
+                    p.refresh_from_db()
+                    post_pl_gl = bool(item.get("post_pl_opening_to_gl", False))
+                    pl_gl_err = apply_pond_pl_opening_gl(cid, pond_id, post_to_gl=post_pl_gl)
+                    if pl_gl_err:
+                        raise ValueError(pl_gl_err)
+                    saved += 1
+        except ValueError as exc:
+            errors.append({"pond_id": pond_id, "detail": str(exc)})
+
+    payload = build_opening_balances_payload(cid)
+    payload["saved"] = saved
+    payload["errors"] = errors
+    status = 200 if not errors else 207
+    return JsonResponse(payload, status=status)
 
 
 @csrf_exempt
@@ -2963,7 +3307,9 @@ def aquaculture_fish_stock_ledger_list_or_create(request):
     if not pond:
         return JsonResponse({"detail": "Pond not found"}, status=404)
     ed = _parse_date(body.get("entry_date"))
-    lock_err = _pond_write_lock_response(cid, pond_id, ed)
+    memo_preview = str(body.get("memo") or "").strip()
+    opening_as_of = is_go_live_fish_opening(body, memo_preview)
+    lock_err = _pond_write_lock_response(cid, pond_id, ed, opening_as_of=opening_as_of)
     if lock_err:
         return lock_err
     if not ed:
@@ -3075,6 +3421,9 @@ def aquaculture_fish_stock_ledger_list_or_create(request):
         )
         led.save()
         if post_books:
+            opening_equity_credit = bool(body.get("opening_equity_credit"))
+            if not opening_equity_credit and "go-live" in (memo or "").lower():
+                opening_equity_credit = True
             je = post_aquaculture_fish_stock_ledger_journal(
                 cid,
                 led.id,
@@ -3083,6 +3432,7 @@ def aquaculture_fish_stock_ledger_list_or_create(request):
                 book_value=bv,
                 pond_label=pond_label,
                 line_memo=line_memo[:300],
+                credit_opening_equity=opening_equity_credit and not is_write_down,
             )
             if je:
                 led.journal_entry = je
@@ -3115,7 +3465,18 @@ def aquaculture_fish_stock_ledger_detail(request, ledger_id: int):
     if request.method == "GET":
         return JsonResponse(_stock_ledger_to_json(led))
     if request.method == "DELETE":
-        lock_err = _pond_write_lock_response(cid, led.pond_id, led.entry_date)
+        cutover = get_stored_cutover_date(cid)
+        opening_row = bool(
+            cutover
+            and led.entry_date == cutover
+            and (
+                is_go_live_fish_opening({}, led.memo or "")
+                or (led.entry_kind == "adjustment" and led.fish_count_delta > 0 and led.post_to_books)
+            )
+        )
+        lock_err = _pond_write_lock_response(
+            cid, led.pond_id, led.entry_date, opening_as_of=opening_row
+        )
         if lock_err:
             return lock_err
         with transaction.atomic():
@@ -3227,6 +3588,12 @@ def aquaculture_fish_stock_ledger_detail(request, ledger_id: int):
             {"detail": "fish_count_delta and weight_kg_delta must both be non-zero."},
             status=400,
         )
+
+    memo_merged = str(body.get("memo") or led.memo or "")
+    opening_as_of = is_go_live_fish_opening(body, memo_merged)
+    lock_err = _pond_write_lock_response(cid, led.pond_id, led.entry_date, opening_as_of=opening_as_of)
+    if lock_err:
+        return lock_err
 
     led.save()
     led = AquacultureFishStockLedger.objects.filter(pk=led.pk).select_related("pond", "production_cycle", "journal_entry").first()

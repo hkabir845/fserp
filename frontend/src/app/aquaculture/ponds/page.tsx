@@ -18,7 +18,14 @@ import {
   Wallet,
   ChevronDown,
   Sparkles,
+  Landmark,
 } from 'lucide-react'
+import { PondOpeningBalancesModal, type PondOpeningSource } from '@/components/aquaculture/PondOpeningBalancesModal'
+import {
+  PondGoLiveFleetBanner,
+  PondGoLiveReadinessBadge,
+} from '@/components/aquaculture/PondGoLiveFleetBanner'
+import type { OpeningBalancesResponse } from '@/components/aquaculture/pondOpeningShared'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
@@ -36,12 +43,8 @@ interface CustomerOpt {
   default_station_name?: string | null
 }
 
-interface Pond {
-  id: number
-  name: string
-  code: string
+interface Pond extends PondOpeningSource {
   sort_order: number
-  is_active: boolean
   notes: string
   pond_role?: string
   pond_role_label?: string
@@ -391,6 +394,16 @@ export default function AquaculturePondsPage() {
   const [provisioningCustomers, setProvisioningCustomers] = useState(false)
   const [skipAutoPosCustomer, setSkipAutoPosCustomer] = useState(false)
   const [warehouseGroups, setWarehouseGroups] = useState<{ id: number; name: string }[]>([])
+  const [openingModal, setOpeningModal] = useState(false)
+  const [currency, setCurrency] = useState('BDT')
+  const [goLiveFleet, setGoLiveFleet] = useState<NonNullable<OpeningBalancesResponse['go_live']> | null>(
+    null,
+  )
+  const [goLiveCutoverDate, setGoLiveCutoverDate] = useState<string | null>(null)
+  const [goLiveByPondId, setGoLiveByPondId] = useState<
+    Map<number, { readinessPercent: number; ready: boolean }>
+  >(() => new Map())
+  const [goLiveLoading, setGoLiveLoading] = useState(false)
 
   const pondsMissingPosCustomer = useMemo(
     () => ponds.filter((p) => !p.pos_customer_id),
@@ -440,19 +453,51 @@ export default function AquaculturePondsPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setGoLiveLoading(true)
     try {
-      const { data } = await api.get<Pond[]>('/aquaculture/ponds/')
-      setPonds(Array.isArray(data) ? data : [])
+      const [pondsRes, openingRes] = await Promise.all([
+        api.get<Pond[]>('/aquaculture/ponds/'),
+        api.get<OpeningBalancesResponse>('/aquaculture/ponds/opening-balances/').catch(() => null),
+      ])
+      setPonds(Array.isArray(pondsRes.data) ? pondsRes.data : [])
+      if (openingRes?.data) {
+        setGoLiveFleet(openingRes.data.go_live ?? null)
+        setGoLiveCutoverDate(openingRes.data.cutover_date?.slice(0, 10) ?? null)
+        const next = new Map<number, { readinessPercent: number; ready: boolean }>()
+        for (const row of openingRes.data.ponds ?? []) {
+          next.set(row.pond_id, {
+            readinessPercent: row.go_live?.readiness_percent ?? 0,
+            ready: row.go_live?.ready ?? false,
+          })
+        }
+        setGoLiveByPondId(next)
+      } else {
+        setGoLiveFleet(null)
+        setGoLiveCutoverDate(null)
+        setGoLiveByPondId(new Map())
+      }
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not load ponds'))
     } finally {
       setLoading(false)
+      setGoLiveLoading(false)
     }
   }, [toast])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { data } = await api.get<Record<string, unknown>>('/companies/current/')
+        setCurrency(String(data?.currency || 'BDT').slice(0, 3))
+      } catch {
+        /* keep default */
+      }
+    })()
+  }, [])
 
   useEffect(() => {
     void (async () => {
@@ -784,6 +829,16 @@ export default function AquaculturePondsPage() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setOpeningModal(true)}
+                  disabled={ponds.length === 0}
+                  className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 shadow-sm hover:bg-teal-100 disabled:opacity-50"
+                  title="Go-live: P&L by income/expense category, customer A/R, advanced party openings; landlords on Landlords page"
+                >
+                  <Landmark className="h-4 w-4" aria-hidden />
+                  Go-live setup
+                </button>
+                <button
+                  type="button"
                   onClick={openNew}
                   className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-700"
                 >
@@ -835,6 +890,13 @@ export default function AquaculturePondsPage() {
                 </div>
               </div>
             ) : null}
+
+            <PondGoLiveFleetBanner
+              fleet={goLiveFleet}
+              cutoverDate={goLiveCutoverDate}
+              loading={goLiveLoading}
+              onOpenSetup={() => setOpeningModal(true)}
+            />
           </div>
         </header>
 
@@ -864,6 +926,16 @@ export default function AquaculturePondsPage() {
                   </li>
                   <li>
                     <strong className="font-semibold text-slate-800">Internal issues:</strong> The expenses page optional at-cost stock issue is only for deliberate moves without ringing POS.
+                  </li>
+                  <li>
+                    <strong className="font-semibold text-slate-800">Go-live openings:</strong>{' '}
+                    <strong>Go-live setup</strong> — cutover checklist: prior P&amp;L, A/R, fish biomass, feed on hand, lease
+                    A/R for on-account sales, and advanced vendor/employee/loan links.{' '}
+                    <strong>Landlord rent</strong> is set only on{' '}
+                    <Link href="/aquaculture/landlords" className="font-medium text-teal-800 underline">
+                      Landlords
+                    </Link>
+                    .
                   </li>
                 </ul>
               </div>
@@ -969,6 +1041,14 @@ export default function AquaculturePondsPage() {
                               </span>
                               {p.notes?.trim() ? (
                                 <p className="mt-1 line-clamp-2 text-xs text-slate-500">{p.notes.trim()}</p>
+                              ) : null}
+                              {goLiveByPondId.has(p.id) ? (
+                                <div className="mt-1.5">
+                                  <PondGoLiveReadinessBadge
+                                    readinessPercent={goLiveByPondId.get(p.id)!.readinessPercent}
+                                    ready={goLiveByPondId.get(p.id)!.ready}
+                                  />
+                                </div>
                               ) : null}
                             </Link>
                           </td>
@@ -1081,13 +1161,21 @@ export default function AquaculturePondsPage() {
                                   : 'Grow-out')}
                           </p>
                         </div>
-                        <span
-                          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                            p.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {p.is_active ? 'Active' : 'Inactive'}
-                        </span>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              p.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {p.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                          {goLiveByPondId.has(p.id) ? (
+                            <PondGoLiveReadinessBadge
+                              readinessPercent={goLiveByPondId.get(p.id)!.readinessPercent}
+                              ready={goLiveByPondId.get(p.id)!.ready}
+                            />
+                          ) : null}
+                        </div>
                       </div>
 
                       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -1210,6 +1298,12 @@ export default function AquaculturePondsPage() {
           </div>
         </div>
       </div>
+      <PondOpeningBalancesModal
+        open={openingModal}
+        currency={currency}
+        onClose={() => setOpeningModal(false)}
+        onSaved={() => void load()}
+      />
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
@@ -1403,8 +1497,48 @@ export default function AquaculturePondsPage() {
                 </span>
               </label>
 
+              {editing ? (
+                <div className="rounded-xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-teal-950">Go-live opening balances</h3>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-700">
+                        Prior P&amp;L by income type and expense category, customer A/R (unpaid on-account sales),
+                        vendors, employees, and fish biomass are <strong>not</strong> entered on this pond form. Landlord
+                        rent ledger openings are on{' '}
+                        <Link href="/aquaculture/landlords" className="font-medium text-teal-800 underline">
+                          Aquaculture → Landlords
+                        </Link>
+                        .
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModal(false)
+                        setEditing(null)
+                        setOpeningModal(true)
+                      }}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800"
+                    >
+                      <Wallet className="h-4 w-4" aria-hidden />
+                      Open go-live setup
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+                  After you save the new pond, use <strong>Go-live setup</strong> on the toolbar above for prior
+                  P&amp;L, customer A/R, and other go-live amounts.
+                </p>
+              )}
+
               <div className="border-t border-slate-200 pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lease (landlord payment)</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lease contract (rent math)</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Figures below adjust the lease balance due on this pond. They are separate from landlord ledger
+                  openings and from P&amp;L / A/R go-live balances.
+                </p>
               </div>
               <label className="block text-sm font-medium text-slate-700">
                 Leasing area (decimal)
@@ -1481,7 +1615,7 @@ export default function AquaculturePondsPage() {
               </div>
 
               <label className="block text-sm font-medium text-slate-700">
-                Paid to landlord (cumulative)
+                Already paid on lease (before go-live)
                 <input
                   inputMode="decimal"
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -1489,6 +1623,15 @@ export default function AquaculturePondsPage() {
                   value={form.lease_paid_to_landlord}
                   onChange={(e) => setForm((f) => ({ ...f, lease_paid_to_landlord: e.target.value }))}
                 />
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  Total rent you had already paid on this lease contract before recording payments in{' '}
+                  <Link href="/aquaculture/landlords" className="font-medium text-teal-800 underline">
+                    Landlords
+                  </Link>
+                  . This reduces &quot;balance after landlord payments&quot; below — it is <strong>not</strong> the same
+                  as income, expense, or customer opening balances (use the button above or{' '}
+                  <strong>Go-live setup</strong> on the ponds toolbar).
+                </span>
               </label>
               <div
                 className={`rounded-lg border p-3 text-sm ${

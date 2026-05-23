@@ -9,6 +9,7 @@ from django.db import transaction
 
 from api.models import AquacultureLandlord, AquacultureLandlordLedgerEntry, ChartOfAccount
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
+from api.services.aquaculture_cutover import validate_opening_as_of
 from api.services.gl_posting import CODE_AQ_LEASE_EXPENSE, _coa, _create_posted_entry
 from api.services.loan_counterparty_opening import resolve_opening_balance_equity
 
@@ -204,6 +205,10 @@ def apply_landlord_opening_from_body(
     ob_amt, as_of, post_gl, err = parse_landlord_opening_from_body(merged)
     if err:
         return err
+    if as_of:
+        cut_err = validate_opening_as_of(company_id, as_of)
+        if cut_err:
+            return cut_err
 
     ll.opening_balance = ob_amt
     ll.opening_balance_date = as_of

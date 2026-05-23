@@ -257,11 +257,7 @@ def vendor_detail(request, vendor_id: int):
         if "bank_routing_number" in body:
             v.bank_routing_number = (body.get("bank_routing_number") or "")[:64]
         if "opening_balance" in body:
-            new_ob = _decimal(body.get("opening_balance"), v.opening_balance)
-            old_ob = v.opening_balance
-            v.opening_balance = new_ob
-            if "current_balance" not in body:
-                v.current_balance = (v.current_balance or Decimal("0")) + (new_ob - old_ob)
+            v.opening_balance = _decimal(body.get("opening_balance"), v.opening_balance)
         if "opening_balance_date" in body:
             v.opening_balance_date = _parse_date(body.get("opening_balance_date"))
         if "current_balance" in body:
@@ -289,6 +285,10 @@ def vendor_detail(request, vendor_id: int):
                 return JsonResponse({"detail": de_err}, status=400)
             v.default_expense_account_id = deid
         v.save()
+        if "opening_balance" in body and "current_balance" not in body:
+            from api.services.party_balance_sync import refresh_vendor_balance
+
+            refresh_vendor_balance(request.company_id, v.id)
         v = (
             Vendor.objects.filter(pk=v.pk, company_id=request.company_id)
             .select_related("default_station", "default_aquaculture_pond", "default_expense_account")

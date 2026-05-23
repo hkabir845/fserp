@@ -392,6 +392,15 @@ def employee_detail(request, employee_id: int):
                 e.home_aquaculture_pond_id = hp_id
         e.save()
         refresh_employee_balance(e.id)
+        if any(k in body for k in ("opening_balance", "opening_balance_date", "post_opening_to_gl")):
+            from api.services.party_opening_gl import apply_employee_opening_gl
+
+            e.refresh_from_db()
+            gl_err = apply_employee_opening_gl(
+                cid, e, post_to_gl=bool(body.get("post_opening_to_gl", False))
+            )
+            if gl_err:
+                return JsonResponse({"detail": gl_err}, status=400)
         e = (
             Employee.objects.filter(pk=e.pk, company_id=cid)
             .select_related("home_station", "home_aquaculture_pond")

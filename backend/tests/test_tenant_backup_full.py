@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -11,12 +12,24 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from api.models import (
     AquacultureDataBankPondClose,
     AquaculturePond,
+    AquaculturePondPlOpening,
     Company,
     Customer,
+    Employee,
     InventoryTransfer,
     Item,
     ItemStationStock,
+    JournalEntryLine,
     Station,
+    Vendor,
+)
+from api.services.aquaculture_pond_go_live_service import set_company_cutover_date
+from api.services.aquaculture_pond_pl_opening import sync_pond_pl_openings
+from api.services.aquaculture_pond_pl_opening_gl import post_pond_pl_opening_gl
+from api.services.party_opening_gl import (
+    post_customer_opening_gl,
+    post_employee_opening_gl,
+    post_vendor_opening_gl,
 )
 from api.services.tenant_backup import (
     BACKUP_SCHEMA_VERSION,
@@ -207,3 +220,96 @@ def test_all_company_scoped_models_in_expected_backup_list():
                     missing.append(label)
                 break
     assert not missing, f"Add to tenant backup: {', '.join(sorted(missing))}"
+
+
+def _seed_opening_gl_accounts(company):
+    from api.models import ChartOfAccount
+
+    for code, name, atype, sub in [
+        ("1100", "AR", "asset", ""),
+        ("2000", "AP", "liability", ""),
+        ("2200", "Payroll", "liability", ""),
+        ("3200", "OBE", "equity", "opening_balance_equity"),
+        ("4240", "Fish sales", "income", ""),
+        ("6716", "Feed", "expense", ""),
+    ]:
+        ChartOfAccount.objects.create(
+            company=company,
+            account_code=code,
+            account_name=name,
+            account_type=atype,
+            account_sub_type=sub,
+            is_active=True,
+        )
+
+
+def test_go_live_opening_journal_fk_backup_restore_roundtrip(company_tenant):
+    """Opening-balance journal links survive backup even though parties serialize before journals."""
+    cutover = date(2026, 5, 22)
+    set_company_cutover_date(company_tenant.id, cutover)
+    _seed_opening_gl_accounts(company_tenant)
+
+    cust = Customer.objects.create(
+        company=company_tenant,
+        display_name="Backup OB Customer",
+        customer_number="BK-C1",
+        opening_balance=Decimal("1000"),
+        opening_balance_date=cutover,
+    )
+    vend = Vendor.objects.create(
+        company=company_tenant,
+        display_name="Backup OB Vendor",
+        vendor_number="BK-V1",
+        opening_balance=Decimal("800"),
+        opening_balance_date=cutover,
+    )
+    emp = Employee.objects.create(
+        company=company_tenant,
+        first_name="Backup",
+        last_name="Worker",
+        opening_balance=Decimal("500"),
+        opening_balance_date=cutover,
+    )
+    pond = AquaculturePond.objects.create(company=company_tenant, name="Backup OB Pond", code="BK-P1")
+
+    assert post_customer_opening_gl(company_tenant.id, cust)
+    assert post_vendor_opening_gl(company_tenant.id, vend)
+    assert post_employee_opening_gl(company_tenant.id, emp)
+    sync_pond_pl_openings(
+        company_tenant.id,
+        pond.id,
+        income=[{"category_code": "fish_harvest_sale", "amount": "300", "as_of_date": cutover.isoformat()}],
+        expense=[{"category_code": "feed_purchase", "amount": "100", "as_of_date": cutover.isoformat()}],
+    )
+    assert post_pond_pl_opening_gl(company_tenant.id, pond.id)
+
+    cust.refresh_from_db()
+    vend.refresh_from_db()
+    emp.refresh_from_db()
+    pond.refresh_from_db()
+    company_tenant.refresh_from_db()
+    cust_je = cust.opening_balance_journal_id
+    vend_je = vend.opening_balance_journal_id
+    emp_je = emp.opening_balance_journal_id
+    pond_je = pond.pl_opening_journal_id
+    assert all([cust_je, vend_je, emp_je, pond_je])
+
+    bundle = json.loads(backup_bundle_json_bytes(company_tenant.id).decode("utf-8"))
+    labels = set(bundle["model_labels"])
+    assert "api.aquaculturepondplopening" in labels
+
+    restore_bundle(bundle, company_tenant.id, confirm_replace=RESTORE_CONFIRM_PHRASE)
+
+    company_tenant.refresh_from_db()
+    cust = Customer.objects.get(company_id=company_tenant.id, customer_number="BK-C1")
+    vend = Vendor.objects.get(company_id=company_tenant.id, vendor_number="BK-V1")
+    emp = Employee.objects.get(company_id=company_tenant.id, last_name="Worker")
+    pond = AquaculturePond.objects.get(company_id=company_tenant.id, code="BK-P1")
+
+    assert company_tenant.aquaculture_go_live_cutover_date == cutover
+    assert cust.opening_balance_journal_id == cust_je
+    assert vend.opening_balance_journal_id == vend_je
+    assert emp.opening_balance_journal_id == emp_je
+    assert pond.pl_opening_journal_id == pond_je
+    assert AquaculturePondPlOpening.objects.filter(company_id=company_tenant.id, pond_id=pond.id).exists()
+    assert JournalEntryLine.objects.filter(journal_entry_id=cust_je).exists()

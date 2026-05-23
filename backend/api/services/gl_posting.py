@@ -970,12 +970,14 @@ def post_aquaculture_fish_stock_ledger_journal(
     book_value: Decimal,
     pond_label: str,
     line_memo: str,
+    credit_opening_equity: bool = False,
 ) -> JournalEntry | None:
     """
     Idempotent entry_number AUTO-AQ-BIOSTK-{ledger_id}.
 
     Write-down (mortality / negative adjustment with value): Dr 6726 / Cr 1581.
     Count gain (positive adjustment with value): Dr 1581 / Cr 4244.
+    Go-live / opening biomass (credit_opening_equity=True): Dr 1581 / Cr 3200 Opening Balance Equity.
     """
     entry_number = f"AUTO-AQ-BIOSTK-{ledger_id}"
     if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
@@ -988,11 +990,18 @@ def post_aquaculture_fish_stock_ledger_journal(
     bio = ChartOfAccount.objects.filter(company_id=company_id, account_code="1581", is_active=True).first()
     exp = ChartOfAccount.objects.filter(company_id=company_id, account_code="6726", is_active=True).first()
     gain = ChartOfAccount.objects.filter(company_id=company_id, account_code="4244", is_active=True).first()
-    if not bio or (is_write_down and not exp) or (not is_write_down and not gain):
+    equity = None
+    if credit_opening_equity and not is_write_down:
+        from api.services.loan_counterparty_opening import resolve_opening_balance_equity
+
+        equity = resolve_opening_balance_equity(company_id)
+    if not bio or (is_write_down and not exp) or (not is_write_down and credit_opening_equity and not equity) or (
+        not is_write_down and not credit_opening_equity and not gain
+    ):
         logger.warning(
             "skip aquaculture fish stock journal %s: missing COA (1581%s)",
             entry_number,
-            ", 6726" if is_write_down else ", 4244",
+            ", 6726" if is_write_down else (", 3200" if credit_opening_equity else ", 4244"),
         )
         return None
 
@@ -1011,6 +1020,12 @@ def post_aquaculture_fish_stock_ledger_journal(
             (bio, Decimal("0"), amt, memo),
         ]
         desc = f"Aquaculture — biological shrinkage ({pond_label})"[:500]
+    elif credit_opening_equity:
+        lines = [
+            (bio, amt, Decimal("0"), memo),
+            (equity, Decimal("0"), amt, memo),
+        ]
+        desc = f"Aquaculture — biological inventory opening ({pond_label})"[:500]
     else:
         lines = [
             (bio, amt, Decimal("0"), memo),

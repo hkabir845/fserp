@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+from copy import deepcopy
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Iterable
@@ -49,6 +50,7 @@ from api.models import (
     AquacultureLandlordLedgerEntry,
     AquacultureLandlordPondShare,
     AquaculturePond,
+    AquaculturePondPlOpening,
     AquaculturePondProfitTransfer,
     AquacultureProductionCycle,
     AquacultureWarehouseGroup,
@@ -139,6 +141,7 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.bankdeposit",
     "api.aquaculturewarehousegroup",
     "api.aquaculturepond",
+    "api.aquaculturepondplopening",
     "api.aquaculturelandlord",
     "api.aquacultureproductioncycle",
     "api.itemstationstock",
@@ -187,6 +190,60 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.taxrate",
     "api.employeeledgerentry",
 )
+
+# Nullable FKs to JournalEntry that may appear before journal rows in the backup stream.
+_DEFERRED_JOURNAL_ENTRY_FKS: dict[str, tuple[str, ...]] = {
+    "api.customer": ("opening_balance_journal",),
+    "api.vendor": ("opening_balance_journal",),
+    "api.employee": ("opening_balance_journal",),
+    "api.payrollrun": ("salary_journal",),
+    "api.loancounterparty": ("opening_balance_journal",),
+    "api.aquaculturepond": ("pl_opening_journal",),
+    "api.aquaculturelandlord": ("opening_balance_journal",),
+    "api.loandisbursement": ("journal_entry",),
+    "api.loanrepayment": ("journal_entry", "reversal_journal_entry"),
+    "api.loaninterestaccrual": ("journal_entry", "reversal_journal_entry"),
+    "api.aquaculturefishstockledger": ("journal_entry",),
+    "api.aquaculturelandlordledgerentry": ("journal_entry",),
+    "api.aquaculturepondprofittransfer": ("journal_entry",),
+}
+
+DeferredJournalFkPatch = tuple[str, int, str, int]
+
+
+def _prepare_restore_records(
+    records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[DeferredJournalFkPatch]]:
+    """
+    Strip nullable JournalEntry FKs before deserialize so parent rows can load
+    before their journal entries, then patch links after the full bundle is saved.
+    """
+    restore_records = deepcopy(records)
+    patches: list[DeferredJournalFkPatch] = []
+    for rec in restore_records:
+        for field in _DEFERRED_JOURNAL_ENTRY_FKS.get(rec["model"], ()):
+            je_pk = rec["fields"].pop(field, None)
+            if je_pk is not None:
+                patches.append((rec["model"], int(rec["pk"]), field, int(je_pk)))
+    return restore_records, patches
+
+
+def _apply_deferred_journal_entry_fks(patches: list[DeferredJournalFkPatch]) -> None:
+    from django.apps import apps
+
+    for model_label, pk, field, je_pk in patches:
+        app_label, model_name = model_label.split(".", 1)
+        model = apps.get_model(app_label, model_name)
+        updated = model.objects.filter(pk=pk).update(**{field: je_pk})
+        if updated != 1:
+            logger.warning(
+                "restore deferred journal FK: %s pk=%s field=%s je_pk=%s updated=%s",
+                model_label,
+                pk,
+                field,
+                je_pk,
+                updated,
+            )
 
 
 def _sanitize_for_json(obj: Any) -> Any:
@@ -325,6 +382,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     Employee.objects.filter(company_id=cid).delete()
     ItemStationStock.objects.filter(company_id=cid).delete()
     ItemPondStock.objects.filter(company_id=cid).delete()
+    AquaculturePondPlOpening.objects.filter(company_id=cid).delete()
     AquaculturePond.objects.filter(company_id=cid).delete()
     AquacultureWarehouseGroup.objects.filter(company_id=cid).delete()
     AquacultureLandlord.objects.filter(company_id=cid).delete()
@@ -473,6 +531,7 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
     _serialize_many(records, BankDeposit.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, AquacultureWarehouseGroup.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, AquaculturePond.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, AquaculturePondPlOpening.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, AquacultureLandlord.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, AquacultureProductionCycle.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, ItemStationStock.objects.filter(company_id=cid).order_by("id"))
@@ -629,18 +688,19 @@ def restore_bundle(
         )
 
     schema = int(data.get("schema_version") or 0)
-    records = data["records"]
+    restore_records, journal_fk_patches = _prepare_restore_records(data["records"])
     with transaction.atomic():
         delete_tenant_company_data(target_company_id)
-        for obj in serializers.deserialize("python", records):
+        for obj in serializers.deserialize("python", restore_records):
             obj.save()
+        _apply_deferred_journal_entry_fks(journal_fk_patches)
         # Belt-and-suspenders: never leave pre-restore reset links/OTPs valid after reload.
         purge_password_reset_tokens_for_company(target_company_id)
 
     result: dict[str, Any] = {
         "ok": True,
         "company_id": target_company_id,
-        "restored_objects": len(records),
+        "restored_objects": len(restore_records),
         "schema_version": schema,
     }
     if schema < BACKUP_SCHEMA_VERSION:

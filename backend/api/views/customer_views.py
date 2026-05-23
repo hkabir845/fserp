@@ -308,11 +308,7 @@ def customer_detail(request, customer_id: int):
         if "bank_routing_number" in body:
             c.bank_routing_number = (body.get("bank_routing_number") or "")[:64]
         if "opening_balance" in body:
-            new_ob = _decimal(body.get("opening_balance"), c.opening_balance)
-            old_ob = c.opening_balance
-            c.opening_balance = new_ob
-            if "current_balance" not in body:
-                c.current_balance = (c.current_balance or Decimal("0")) + (new_ob - old_ob)
+            c.opening_balance = _decimal(body.get("opening_balance"), c.opening_balance)
         if "opening_balance_date" in body:
             c.opening_balance_date = _parse_date(body.get("opening_balance_date"))
         if "current_balance" in body:
@@ -325,6 +321,10 @@ def customer_detail(request, customer_id: int):
                 return JsonResponse({"detail": derr}, status=400)
             c.default_station_id = dst_id
         c.save()
+        if "opening_balance" in body and "current_balance" not in body:
+            from api.services.party_balance_sync import refresh_customer_balance
+
+            refresh_customer_balance(request.company_id, c.id)
         c = (
             Customer.objects.filter(pk=c.pk, company_id=request.company_id)
             .select_related("default_station")

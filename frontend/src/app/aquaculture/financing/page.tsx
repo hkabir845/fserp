@@ -54,7 +54,13 @@ type WorksheetPond = {
   selected?: boolean
 }
 
-type CoaRow = { id: number; account_code: string; account_name: string; account_type: string }
+type CoaRow = {
+  id: number
+  account_code: string
+  account_name: string
+  account_type: string
+  is_active?: boolean
+}
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10)

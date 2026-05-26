@@ -870,6 +870,12 @@ function getSalesPurchaseScopeDisplay(
   }
 }
 
+function printMoney(value: unknown, fallback: unknown = 0): number {
+  const raw = value ?? fallback
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : 0
+}
+
 function buildDailySummaryLinePrintHtml(bl: Record<string, unknown>): string {
   const isFuel = bl.line === 'fuel'
   const sales = (bl.sales || {}) as Record<string, unknown>
@@ -890,20 +896,20 @@ function buildDailySummaryLinePrintHtml(bl: Record<string, unknown>): string {
   html += `<tr><td><strong>Transactions</strong></td><td>${sales.total_transactions ?? 0}</td></tr>`
   if (isFuel) {
     html += `<tr><td><strong>Fuel liters</strong></td><td>${formatNumber(Number(sales.total_liters ?? 0))} L</td></tr>`
-    html += `<tr><td><strong>Fuel sales</strong></td><td>${formatCurrency(sales.fuel_amount ?? sales.total_amount)}</td></tr>`
-    html += `<tr><td><strong>Shop / other</strong></td><td>${formatCurrency(sales.shop_amount ?? 0)}</td></tr>`
-    html += `<tr><td><strong>Cash sales</strong></td><td>${formatCurrency(sales.cash_sales_total ?? 0)}</td></tr>`
+    html += `<tr><td><strong>Fuel sales</strong></td><td>${formatCurrency(printMoney(sales.fuel_amount, sales.total_amount))}</td></tr>`
+    html += `<tr><td><strong>Shop / other</strong></td><td>${formatCurrency(printMoney(sales.shop_amount))}</td></tr>`
+    html += `<tr><td><strong>Cash sales</strong></td><td>${formatCurrency(printMoney(sales.cash_sales_total))}</td></tr>`
     html += `<tr><td><strong>Shifts</strong></td><td>${shifts.total_shifts ?? 0}</td></tr>`
-    html += `<tr><td><strong>Cash variance</strong></td><td>${formatCurrency(shifts.total_cash_variance)}</td></tr>`
+    html += `<tr><td><strong>Cash variance</strong></td><td>${formatCurrency(printMoney(shifts.total_cash_variance))}</td></tr>`
     html += `<tr><td><strong>Dip readings</strong></td><td>${dips.total_readings ?? 0}</td></tr>`
     html += `<tr><td><strong>Net dip variance (L)</strong></td><td>${formatNumber(Number(dips.net_variance_liters ?? dips.net_variance ?? 0))}</td></tr>`
   } else {
-    html += `<tr><td><strong>Shop sales</strong></td><td>${formatCurrency(sales.shop_amount ?? sales.total_amount)}</td></tr>`
-    html += `<tr><td><strong>Cash (walk-in)</strong></td><td>${formatCurrency(sales.cash_sales_total ?? 0)}</td></tr>`
-    html += `<tr><td><strong>Credit (pond POS)</strong></td><td>${formatCurrency(sales.credit_sales_total ?? 0)}</td></tr>`
+    html += `<tr><td><strong>Shop sales</strong></td><td>${formatCurrency(printMoney(sales.shop_amount, sales.total_amount))}</td></tr>`
+    html += `<tr><td><strong>Cash (walk-in)</strong></td><td>${formatCurrency(printMoney(sales.cash_sales_total))}</td></tr>`
+    html += `<tr><td><strong>Credit (pond POS)</strong></td><td>${formatCurrency(printMoney(sales.credit_sales_total))}</td></tr>`
     html += `<tr><td><strong>Pond POS invoices</strong></td><td>${aq.pond_pos_invoice_count ?? 0}</td></tr>`
-    html += `<tr><td><strong>Pond POS total</strong></td><td>${formatCurrency(aq.pond_pos_sales_total ?? 0)}</td></tr>`
-    html += `<tr><td><strong>Average sale</strong></td><td>${formatCurrency(sales.average_sale)}</td></tr>`
+    html += `<tr><td><strong>Pond POS total</strong></td><td>${formatCurrency(printMoney(aq.pond_pos_sales_total))}</td></tr>`
+    html += `<tr><td><strong>Average sale</strong></td><td>${formatCurrency(printMoney(sales.average_sale))}</td></tr>`
   }
   html += '</tbody></table>'
 
@@ -951,7 +957,7 @@ function buildDailySummaryPrintHtml(reportData: Record<string, unknown>): string
   if (businessLines.length > 1) {
     html += '<h2>Company total</h2><table><tbody>'
     html += `<tr><td><strong>Total transactions</strong></td><td>${sales.total_transactions ?? 0}</td></tr>`
-    html += `<tr><td><strong>Total amount</strong></td><td>${formatCurrency(sales.total_amount)}</td></tr>`
+    html += `<tr><td><strong>Total amount</strong></td><td>${formatCurrency(printMoney(sales.total_amount))}</td></tr>`
     if (Number(sales.total_liters ?? 0) > 0) {
       html += `<tr><td><strong>Total fuel liters</strong></td><td>${formatNumber(Number(sales.total_liters ?? 0))} L</td></tr>`
     }
@@ -999,10 +1005,10 @@ function buildDailySummaryCsv(reportData: Record<string, unknown>): string {
 
   if (businessLines.length > 1) {
     const sales = (reportData.sales || {}) as Record<string, unknown>
-    pushRow('Company total', 'Transactions', sales.total_transactions ?? 0)
-    pushRow('Company total', 'Total amount', sales.total_amount ?? 0)
+    pushRow('Company total', 'Transactions', printMoney(sales.total_transactions))
+    pushRow('Company total', 'Total amount', printMoney(sales.total_amount))
     if (Number(sales.total_liters ?? 0) > 0) {
-      pushRow('Company total', 'Fuel liters', sales.total_liters ?? 0)
+      pushRow('Company total', 'Fuel liters', printMoney(sales.total_liters))
     }
   }
 
@@ -1014,28 +1020,28 @@ function buildDailySummaryCsv(reportData: Record<string, unknown>): string {
     const dips = (bl.dips || {}) as Record<string, unknown>
     const aq = (bl.aquaculture || {}) as Record<string, unknown>
 
-    pushRow(label, 'Transactions', sales.total_transactions ?? 0)
+    pushRow(label, 'Transactions', printMoney(sales.total_transactions))
     if (isFuel) {
-      pushRow(label, 'Fuel liters', sales.total_liters ?? 0)
-      pushRow(label, 'Fuel sales', sales.fuel_amount ?? sales.total_amount ?? 0)
-      pushRow(label, 'Shop / other', sales.shop_amount ?? 0)
-      pushRow(label, 'Cash sales', sales.cash_sales_total ?? 0)
-      pushRow(label, 'Shifts', shifts.total_shifts ?? 0)
-      pushRow(label, 'Cash variance', shifts.total_cash_variance ?? 0)
-      pushRow(label, 'Dip readings', dips.total_readings ?? 0)
-      pushRow(label, 'Net dip variance (L)', dips.net_variance_liters ?? dips.net_variance ?? 0)
+      pushRow(label, 'Fuel liters', printMoney(sales.total_liters))
+      pushRow(label, 'Fuel sales', printMoney(sales.fuel_amount, sales.total_amount))
+      pushRow(label, 'Shop / other', printMoney(sales.shop_amount))
+      pushRow(label, 'Cash sales', printMoney(sales.cash_sales_total))
+      pushRow(label, 'Shifts', printMoney(shifts.total_shifts))
+      pushRow(label, 'Cash variance', printMoney(shifts.total_cash_variance))
+      pushRow(label, 'Dip readings', printMoney(dips.total_readings))
+      pushRow(label, 'Net dip variance (L)', printMoney(dips.net_variance_liters, dips.net_variance))
       const byFuel = (bl.by_product_fuel || {}) as Record<string, { line_count?: number; liters?: number; amount?: number }>
       Object.entries(byFuel).forEach(([name, m]) => {
         pushRow(label, `Fuel product: ${name} (L)`, m.liters ?? 0)
         pushRow(label, `Fuel product: ${name} (amount)`, m.amount ?? 0)
       })
     } else {
-      pushRow(label, 'Shop sales', sales.shop_amount ?? sales.total_amount ?? 0)
-      pushRow(label, 'Cash (walk-in)', sales.cash_sales_total ?? 0)
-      pushRow(label, 'Credit (pond POS)', sales.credit_sales_total ?? 0)
-      pushRow(label, 'Pond POS invoices', aq.pond_pos_invoice_count ?? 0)
-      pushRow(label, 'Pond POS total', aq.pond_pos_sales_total ?? 0)
-      pushRow(label, 'Average sale', sales.average_sale ?? 0)
+      pushRow(label, 'Shop sales', printMoney(sales.shop_amount, sales.total_amount))
+      pushRow(label, 'Cash (walk-in)', printMoney(sales.cash_sales_total))
+      pushRow(label, 'Credit (pond POS)', printMoney(sales.credit_sales_total))
+      pushRow(label, 'Pond POS invoices', printMoney(aq.pond_pos_invoice_count))
+      pushRow(label, 'Pond POS total', printMoney(aq.pond_pos_sales_total))
+      pushRow(label, 'Average sale', printMoney(sales.average_sale))
       const byCat = (bl.by_pos_category || {}) as Record<string, { line_count?: number; quantity?: number; amount?: number }>
       Object.entries(byCat).forEach(([cat, m]) => {
         pushRow(label, `POS category: ${cat} (qty)`, m.quantity ?? 0)
@@ -1062,9 +1068,16 @@ function buildDailySummaryCsv(reportData: Record<string, unknown>): string {
   return lines.join('\n')
 }
 
+type ReportScopeExportData = {
+  filter_station_id?: number
+  business_segment?: string
+  business_segment_label?: string
+  business_segment_station_names?: string[]
+}
+
 function getReportScopeForExport(
   reportId: ReportType | null,
-  reportData: Parameters<typeof getReportSiteScopeDisplay>[1],
+  reportData: ReportScopeExportData | null | undefined,
   stations: { id: number; station_name: string }[],
   userHasHomeStation: boolean,
   homeStationId: number | null,

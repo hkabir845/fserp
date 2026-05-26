@@ -1,13 +1,11 @@
-# Start Django — no PATH / "python" required (uses repo-root .venv).
+# Start Django — no PATH / "python" required (uses repo-root venv).
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-$venvPy = Join-Path (Split-Path $PSScriptRoot -Parent) ".venv-local\Scripts\python.exe"
-if (-not (Test-Path $venvPy)) {
-    $venvPy = Join-Path (Split-Path $PSScriptRoot -Parent) ".venv\Scripts\python.exe"
-}
-if (-not (Test-Path $venvPy)) {
-    Write-Host "ERROR: Missing $venvPy" -ForegroundColor Red
+. (Join-Path (Split-Path $PSScriptRoot -Parent) "scripts\resolve-venv.ps1")
+$venvPy = Get-FserpVenvPython -Root (Split-Path $PSScriptRoot -Parent)
+if (-not $venvPy) {
+    Write-Host "ERROR: No working Python venv found." -ForegroundColor Red
     Write-Host "Run from repo root:  powershell -File scripts\dev-setup.ps1" -ForegroundColor Yellow
     exit 1
 }

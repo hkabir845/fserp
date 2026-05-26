@@ -2,9 +2,10 @@
 setlocal
 cd /d "%~dp0"
 
-set "VENV_PY=%~dp0..\.venv\Scripts\python.exe"
+set "VENV_PY=%~dp0..\.venv-local\Scripts\python.exe"
+if not exist "%VENV_PY%" set "VENV_PY=%~dp0..\.venv\Scripts\python.exe"
 if not exist "%VENV_PY%" (
-  echo ERROR: Missing %VENV_PY%
+  echo ERROR: No Python venv found.
   echo Run from repo root: powershell -File scripts\dev-setup.ps1
   exit /b 1
 )

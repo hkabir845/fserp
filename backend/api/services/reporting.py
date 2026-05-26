@@ -30,6 +30,7 @@ from api.models import (
     Meter,
     Nozzle,
     Payment,
+    PaymentBillAllocation,
     ShiftSession,
     Station,
     Tank,
@@ -38,6 +39,8 @@ from api.models import (
 )
 from api.services.gl_posting import item_inventory_unit_cost
 from api.services.payment_allocation import bill_open_amount, invoice_open_amount
+from api.utils.pos_payment import is_on_account_payment
+from api.services.aquaculture_pond_pos_customer import pond_pos_customer_ids
 
 # Vendor bills included in purchase / movement reports (exclude draft and void).
 _BILL_LINE_POSTED_STATUSES = ("open", "paid", "partial", "overdue")
@@ -2849,77 +2852,73 @@ def report_meter_readings(company_id: int, start: date, end: date, station_id: i
     return mtr_out
 
 
-def report_daily_summary(company_id: int, start: date, end: date, station_id: int | None = None) -> dict[str, Any]:
-    invs = Invoice.objects.filter(
-        company_id=company_id,
-        invoice_date__gte=start,
-        invoice_date__lte=end,
-    )
-    if station_id is not None:
-        invs = invs.filter(station_id=station_id)
-    n_inv = invs.count()
-    lines = InvoiceLine.objects.filter(invoice__in=invs).select_related("item")
-    total_liters = Decimal("0")
-    total_amt = Decimal("0")
-    by_product: dict[str, dict[str, Decimal]] = {}
-    for line in lines:
-        amt = line.amount or Decimal("0")
-        total_amt += amt
-        if line.item_id:
-            key = line.item.name or str(line.item_id)
-            if key not in by_product:
-                by_product[key] = {
-                    "liters": Decimal("0"),
-                    "amount": Decimal("0"),
-                    "line_count": Decimal("0"),
-                }
-            by_product[key]["line_count"] += Decimal("1")
-            by_product[key]["amount"] += amt
-            if _is_fuel_line(line):
-                q = line.quantity or Decimal("0")
-                by_product[key]["liters"] += q
-                total_liters += q
-    avg = (total_amt / n_inv) if n_inv else Decimal("0")
+def _pos_category_label(raw: str) -> str:
+    s = (raw or "general").strip().lower().replace("_", " ")
+    labels = {
+        "feed": "Feed",
+        "medicine": "Medicine & treatments",
+        "fish": "Fish & fry",
+        "supplies": "Supplies",
+        "equipment": "Equipment",
+        "general": "General retail",
+        "fuel": "Fuel",
+        "non_pos": "Non-POS",
+    }
+    return labels.get(s, s.title() or "General")
 
+
+def _daily_summary_shift_dip_tank_blocks(
+    company_id: int,
+    start: date,
+    end: date,
+    station_ids: list[int],
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    """Forecourt ops: shifts, tank dips, tank levels (fuel sites only)."""
     s_inv = Invoice.objects.filter(
         company_id=company_id,
         invoice_date__gte=start,
         invoice_date__lte=end,
         shift_session_id__isnull=False,
+        station_id__in=station_ids,
     )
-    if station_id is not None:
-        s_inv = s_inv.filter(station_id=station_id)
     shift_ids_with_sales = s_inv.values_list("shift_session_id", flat=True).distinct()
+    shift_sessions_qs = (
+        ShiftSession.objects.filter(company_id=company_id, station_id__in=station_ids)
+        .filter(
+            Q(opened_at__date__gte=start, opened_at__date__lte=end)
+            | Q(pk__in=shift_ids_with_sales)
+        )
+        .distinct()
+    )
+    cash_var_agg = shift_sessions_qs.filter(closed_at__isnull=False).aggregate(
+        sv=Coalesce(Sum("cash_variance"), Decimal("0"))
+    )
+    shifts_block = {
+        "total_shifts": shift_sessions_qs.count(),
+        "total_cash_variance": _f(cash_var_agg["sv"] or Decimal("0")),
+    }
+
     dip_qs = TankDip.objects.filter(
         company_id=company_id,
         dip_date__gte=start,
         dip_date__lte=end,
+        tank__station_id__in=station_ids,
     )
-    if station_id is not None:
-        dip_qs = dip_qs.filter(tank__station_id=station_id)
     dip_count = dip_qs.count()
     net_dip_liters = Decimal("0")
     for d in dip_qs.iterator():
         if d.book_stock_before is not None:
             net_dip_liters += _d(d.volume) - _d(d.book_stock_before)
+    dips_block = {
+        "total_readings": dip_count,
+        "net_variance_liters": _f(net_dip_liters),
+        "net_variance": _f(net_dip_liters),
+    }
 
-    shift_sessions_qs = ShiftSession.objects.filter(company_id=company_id).filter(
-        Q(opened_at__date__gte=start, opened_at__date__lte=end)
-        | Q(pk__in=shift_ids_with_sales)
-    )
-    if station_id is not None:
-        shift_sessions_qs = shift_sessions_qs.filter(station_id=station_id)
-    shift_sessions_qs = shift_sessions_qs.distinct()
-    cash_var_agg = shift_sessions_qs.filter(closed_at__isnull=False).aggregate(
-        sv=Coalesce(Sum("cash_variance"), Decimal("0"))
-    )
-    total_cash_var = cash_var_agg["sv"] or Decimal("0")
-
-    tnk_qs = Tank.objects.filter(company_id=company_id, is_active=True).select_related("product", "station")
-    if station_id is not None:
-        tnk_qs = tnk_qs.filter(station_id=station_id)
     tank_rows: list[dict[str, Any]] = []
-    for t in tnk_qs:
+    for t in Tank.objects.filter(
+        company_id=company_id, is_active=True, station_id__in=station_ids
+    ).select_related("product", "station"):
         cap = t.capacity or Decimal("0")
         stock = t.current_stock or Decimal("0")
         pct = (stock / cap * Decimal("100")) if cap > 0 else Decimal("0")
@@ -2933,43 +2932,363 @@ def report_daily_summary(company_id: int, start: date, end: date, station_id: in
                 "fill_percentage": _f(pct),
             }
         )
+    return shifts_block, dips_block, tank_rows
 
+
+def _compute_daily_summary_block(
+    company_id: int,
+    start: date,
+    end: date,
+    station_ids: list[int],
+    *,
+    site_kind: str,
+    line_label: str,
+    station_names: list[str],
+) -> dict[str, Any]:
+    """Sales + ops snapshot for one business line (fuel forecourt or aquaculture shop hub)."""
+    if not station_ids:
+        return {
+            "line": site_kind,
+            "label": line_label,
+            "station_names": station_names,
+            "sales": {
+                "total_transactions": 0,
+                "total_liters": _f(Decimal("0")),
+                "total_amount": _f(Decimal("0")),
+                "fuel_amount": _f(Decimal("0")),
+                "shop_amount": _f(Decimal("0")),
+                "cash_sales_total": _f(Decimal("0")),
+                "credit_sales_total": _f(Decimal("0")),
+                "cash_transaction_count": 0,
+                "credit_transaction_count": 0,
+                "average_sale": _f(Decimal("0")),
+            },
+            "by_product_fuel": {},
+            "by_pos_category": {},
+            "shifts": {"total_shifts": 0, "total_cash_variance": _f(Decimal("0"))},
+            "dips": {"total_readings": 0, "net_variance_liters": _f(Decimal("0")), "net_variance": _f(Decimal("0"))},
+            "tanks": [],
+            "aquaculture": {"pond_pos_invoice_count": 0, "pond_pos_sales_total": _f(Decimal("0"))},
+        }
+
+    invs = (
+        Invoice.objects.filter(
+            company_id=company_id,
+            invoice_date__gte=start,
+            invoice_date__lte=end,
+            station_id__in=station_ids,
+        )
+        .exclude(status="draft")
+        .select_related("customer")
+    )
+    n_inv = invs.count()
+    inv_ids = list(invs.values_list("id", flat=True))
+    lines = InvoiceLine.objects.filter(invoice_id__in=inv_ids).select_related("item")
+
+    total_amt = Decimal("0")
+    fuel_liters = Decimal("0")
+    fuel_amt = Decimal("0")
+    shop_amt = Decimal("0")
+    cash_amt = credit_amt = Decimal("0")
+    cash_tx = credit_tx = 0
+    pond_pos_amt = Decimal("0")
+    pond_pos_tx = 0
+    pond_pos_ids = pond_pos_customer_ids(company_id)
+
+    by_product_fuel: dict[str, dict[str, Any]] = {}
+    by_pos_category: dict[str, dict[str, Any]] = {}
+
+    for inv in invs:
+        amt = inv.total or Decimal("0")
+        if is_on_account_payment(inv.payment_method):
+            credit_amt += amt
+            credit_tx += 1
+        else:
+            cash_amt += amt
+            cash_tx += 1
+        if inv.customer_id and int(inv.customer_id) in pond_pos_ids:
+            pond_pos_amt += amt
+            pond_pos_tx += 1
+
+    for line in lines:
+        amt = line.amount or Decimal("0")
+        total_amt += amt
+        if _is_fuel_line(line):
+            fuel_amt += amt
+            q = line.quantity or Decimal("0")
+            fuel_liters += q
+            key = (line.item.name if line.item_id else "Fuel").strip() or "Fuel"
+            if key not in by_product_fuel:
+                by_product_fuel[key] = {
+                    "liters": Decimal("0"),
+                    "amount": Decimal("0"),
+                    "line_count": 0,
+                }
+            by_product_fuel[key]["line_count"] += 1
+            by_product_fuel[key]["amount"] += amt
+            by_product_fuel[key]["liters"] += q
+        else:
+            shop_amt += amt
+            raw_cat = (line.item.pos_category if line.item_id else "general") or "general"
+            cat_key = _pos_category_label(raw_cat)
+            if cat_key not in by_pos_category:
+                by_pos_category[cat_key] = {
+                    "amount": Decimal("0"),
+                    "quantity": Decimal("0"),
+                    "line_count": 0,
+                }
+            by_pos_category[cat_key]["line_count"] += 1
+            by_pos_category[cat_key]["amount"] += amt
+            by_pos_category[cat_key]["quantity"] += line.quantity or Decimal("0")
+
+    avg = (total_amt / n_inv) if n_inv else Decimal("0")
+
+    bp_fuel_out = {
+        k: {
+            "liters": _f(v["liters"]),
+            "amount": _f(v["amount"]),
+            "line_count": v["line_count"],
+        }
+        for k, v in sorted(by_product_fuel.items(), key=lambda x: x[0].lower())
+    }
+    bp_cat_out = {
+        k: {
+            "amount": _f(v["amount"]),
+            "quantity": _f(v["quantity"]),
+            "line_count": v["line_count"],
+        }
+        for k, v in sorted(by_pos_category.items(), key=lambda x: (-x[1]["amount"], x[0].lower()))
+    }
+
+    block: dict[str, Any] = {
+        "line": site_kind,
+        "label": line_label,
+        "station_names": station_names,
+        "sales": {
+            "total_transactions": n_inv,
+            "total_liters": _f(fuel_liters),
+            "total_amount": _f(total_amt),
+            "fuel_amount": _f(fuel_amt),
+            "shop_amount": _f(shop_amt),
+            "cash_sales_total": _f(cash_amt),
+            "credit_sales_total": _f(credit_amt),
+            "cash_transaction_count": cash_tx,
+            "credit_transaction_count": credit_tx,
+            "average_sale": _f(avg),
+        },
+        "by_product_fuel": bp_fuel_out,
+        "by_pos_category": bp_cat_out,
+        "aquaculture": {
+            "pond_pos_invoice_count": pond_pos_tx,
+            "pond_pos_sales_total": _f(pond_pos_amt),
+        },
+    }
+
+    if site_kind == "fuel":
+        shifts, dips, tanks = _daily_summary_shift_dip_tank_blocks(
+            company_id, start, end, station_ids
+        )
+        block["shifts"] = shifts
+        block["dips"] = dips
+        block["tanks"] = tanks
+    else:
+        block["shifts"] = {"total_shifts": 0, "total_cash_variance": _f(Decimal("0"))}
+        block["dips"] = {
+            "total_readings": 0,
+            "net_variance_liters": _f(Decimal("0")),
+            "net_variance": _f(Decimal("0")),
+        }
+        block["tanks"] = []
+
+    return block
+
+
+def _merge_daily_summary_sales(blocks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Company-wide sales totals from one or more line blocks."""
+    tx = sum(int(b["sales"].get("total_transactions") or 0) for b in blocks)
+    total_amt = sum(Decimal(str(b["sales"].get("total_amount") or 0)) for b in blocks)
+    fuel_liters = sum(Decimal(str(b["sales"].get("total_liters") or 0)) for b in blocks)
+    avg = (total_amt / tx) if tx else Decimal("0")
+    by_product: dict[str, dict[str, Any]] = {}
+    for b in blocks:
+        for name, m in (b.get("by_product_fuel") or {}).items():
+            if name not in by_product:
+                by_product[name] = {"liters": Decimal("0"), "amount": Decimal("0"), "line_count": 0}
+            by_product[name]["liters"] += Decimal(str(m.get("liters") or 0))
+            by_product[name]["amount"] += Decimal(str(m.get("amount") or 0))
+            by_product[name]["line_count"] += int(m.get("line_count") or 0)
+        for name, m in (b.get("by_pos_category") or {}).items():
+            if name not in by_product:
+                by_product[name] = {"liters": Decimal("0"), "amount": Decimal("0"), "line_count": 0}
+            by_product[name]["amount"] += Decimal(str(m.get("amount") or 0))
+            by_product[name]["line_count"] += int(m.get("line_count") or 0)
+            by_product[name]["liters"] += Decimal(str(m.get("quantity") or 0))
     bp_out = {
         k: {
             "liters": _f(v["liters"]),
             "amount": _f(v["amount"]),
-            "line_count": int(v["line_count"]),
+            "line_count": v["line_count"],
         }
         for k, v in by_product.items()
     }
+    return {
+        "total_transactions": tx,
+        "total_liters": _f(fuel_liters),
+        "total_amount": _f(total_amt),
+        "average_sale": _f(avg),
+        "by_product": bp_out,
+    }
+
+
+def report_daily_summary(
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    *,
+    business_segment: str = "all",
+) -> dict[str, Any]:
+    """
+    Operations snapshot by business line: fuel forecourt (Main Station) vs aquaculture shop hub (Premium Agro).
+    Fuel sites include shifts, dips, and tanks; shop hubs emphasize POS category sales and pond on-account POS.
+    """
+    station_ids, scope_meta = _resolve_report_station_scope(
+        company_id, station_id=station_id, business_segment=business_segment
+    )
+    segment = scope_meta.get("business_segment") or "all"
+    station_names = scope_meta.get("business_segment_station_names") or []
+
+    business_lines: list[dict[str, Any]] = []
+
+    if segment == "all" and station_id is None:
+        fuel_ids, fuel_meta = _resolve_report_station_scope(
+            company_id, station_id=None, business_segment="fuel"
+        )
+        agro_ids, agro_meta = _resolve_report_station_scope(
+            company_id, station_id=None, business_segment="aquaculture"
+        )
+        if fuel_ids:
+            business_lines.append(
+                _compute_daily_summary_block(
+                    company_id,
+                    start,
+                    end,
+                    fuel_ids,
+                    site_kind="fuel",
+                    line_label=str(fuel_meta.get("business_segment_label") or "Fuel Station"),
+                    station_names=list(fuel_meta.get("business_segment_station_names") or []),
+                )
+            )
+        if agro_ids:
+            business_lines.append(
+                _compute_daily_summary_block(
+                    company_id,
+                    start,
+                    end,
+                    agro_ids,
+                    site_kind="shop",
+                    line_label=str(agro_meta.get("business_segment_label") or "Aquaculture (Premium Agro)"),
+                    station_names=list(agro_meta.get("business_segment_station_names") or []),
+                )
+            )
+    elif station_ids is not None and not station_ids:
+        business_lines = []
+    else:
+        ids = station_ids if station_ids is not None else []
+        if station_id is not None and not ids:
+            ids = [station_id]
+        if not ids and station_id is None:
+            ids = list(
+                Station.objects.filter(company_id=company_id, is_active=True).values_list("id", flat=True)
+            )
+        fuel_count = Station.objects.filter(
+            pk__in=ids, company_id=company_id, operates_fuel_retail=True
+        ).count()
+        shop_count = Station.objects.filter(
+            pk__in=ids, company_id=company_id, operates_fuel_retail=False
+        ).count()
+        if fuel_count and not shop_count:
+            kind = "fuel"
+        elif shop_count and not fuel_count:
+            kind = "shop"
+        elif segment == "aquaculture":
+            kind = "shop"
+        elif segment == "fuel":
+            kind = "fuel"
+        else:
+            kind = "shop" if scope_meta.get("filter_station_is_shop_hub") else "fuel"
+        label = str(scope_meta.get("business_segment_label") or ("Aquaculture (Premium Agro)" if kind == "shop" else "Fuel Station"))
+        business_lines.append(
+            _compute_daily_summary_block(
+                company_id,
+                start,
+                end,
+                ids,
+                site_kind=kind,
+                line_label=label,
+                station_names=station_names,
+            )
+        )
+
+    primary = business_lines[0] if len(business_lines) == 1 else None
+    merged_sales = _merge_daily_summary_sales(business_lines) if business_lines else {
+        "total_transactions": 0,
+        "total_liters": _f(Decimal("0")),
+        "total_amount": _f(Decimal("0")),
+        "average_sale": _f(Decimal("0")),
+        "by_product": {},
+    }
+
+    shifts_agg = {"total_shifts": 0, "total_cash_variance": _f(Decimal("0"))}
+    dips_agg = {"total_readings": 0, "net_variance_liters": _f(Decimal("0")), "net_variance": _f(Decimal("0"))}
+    tanks_agg: list[dict[str, Any]] = []
+    for bl in business_lines:
+        if bl.get("line") == "fuel":
+            sh = bl.get("shifts") or {}
+            shifts_agg["total_shifts"] += int(sh.get("total_shifts") or 0)
+            shifts_agg["total_cash_variance"] = _f(
+                Decimal(str(shifts_agg["total_cash_variance"])) + Decimal(str(sh.get("total_cash_variance") or 0))
+            )
+            dp = bl.get("dips") or {}
+            dips_agg["total_readings"] += int(dp.get("total_readings") or 0)
+            dips_agg["net_variance_liters"] = _f(
+                Decimal(str(dips_agg["net_variance_liters"]))
+                + Decimal(str(dp.get("net_variance_liters") or 0))
+            )
+            dips_agg["net_variance"] = dips_agg["net_variance_liters"]
+            tanks_agg.extend(bl.get("tanks") or [])
+
+    shop_note = ""
+    if segment == "aquaculture" or (primary and primary.get("line") == "shop"):
+        shop_note = (
+            " Aquaculture shop hub: sales by POS category (feed, medicine, fish, supplies). "
+            "Pond on-account POS appears under credit sales. No fuel tanks or dips at this site."
+        )
+    elif segment == "fuel" or (primary and primary.get("line") == "fuel"):
+        shop_note = (
+            " Fuel forecourt: liters on fuel-classified lines, shift cash variance, tank dips, and tank levels."
+        )
+    elif segment == "all":
+        shop_note = (
+            " Combined view: fuel forecourt ops (Main Station) and aquaculture shop sales (Premium Agro) "
+            "are broken out under Business lines below."
+        )
 
     dsum: dict[str, Any] = {
         "report_id": "daily-summary",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
-        "sales": {
-            "total_transactions": n_inv,
-            "total_liters": _f(total_liters),
-            "total_amount": _f(total_amt),
-            "average_sale": _f(avg),
-            "by_product": bp_out,
-        },
-        "shifts": {
-            "total_shifts": shift_sessions_qs.count(),
-            "total_cash_variance": _f(total_cash_var),
-        },
-        "dips": {
-            "total_readings": dip_count,
-            "net_variance_liters": _f(net_dip_liters),
-            "net_variance": _f(net_dip_liters),
-        },
-        "tanks": tank_rows,
+        "sales": merged_sales,
+        "shifts": shifts_agg if business_lines else (primary or {}).get("shifts", shifts_agg),
+        "dips": dips_agg if len(business_lines) != 1 else (primary or {}).get("dips", dips_agg),
+        "tanks": tanks_agg if business_lines else (primary or {}).get("tanks", []),
+        "business_lines": business_lines,
         "accounting_note": (
-            "Sales from invoices in range; liters only on fuel-classified lines. "
-            "Meter/nozzle reports allocate by product. Dip net variance is liters (stick − book at dip), not currency."
+            "Daily summary splits fuel forecourt (Main Station) from aquaculture shop hub (Premium Agro). "
+            "Use the business line filter to focus one side. Sales exclude draft invoices."
+            + shop_note
         ),
     }
-    if station_id is not None:
-        dsum["filter_station_id"] = station_id
+    dsum.update(scope_meta)
     return dsum
 
 
@@ -3022,6 +3341,433 @@ def report_sales_by_station(company_id: int, start: date, end: date, station_id:
     if station_id is not None:
         sbs["filter_station_id"] = station_id
     return sbs
+
+
+def _report_filter_station_meta(company_id: int, station_id: int | None) -> dict[str, Any]:
+    if station_id is None:
+        return {}
+    st = Station.objects.filter(pk=station_id, company_id=company_id).only(
+        "station_name", "operates_fuel_retail"
+    ).first()
+    if not st:
+        return {"filter_station_id": station_id}
+    meta: dict[str, Any] = {
+        "filter_station_id": station_id,
+        "filter_station_name": (st.station_name or f"Station {station_id}").strip(),
+        "filter_station_is_shop_hub": not bool(st.operates_fuel_retail),
+    }
+    return meta
+
+
+def _resolve_report_station_scope(
+    company_id: int,
+    *,
+    station_id: int | None,
+    business_segment: str,
+) -> tuple[list[int] | None, dict[str, Any]]:
+    """
+    Resolve station filter for Sales / Purchase reports.
+    Returns (station_ids, meta). station_ids None = all sites; [] = no matching sites.
+    Explicit station_id (home station or single-site pick) wins over business_segment.
+    """
+    segment = (business_segment or "all").strip().lower()
+    meta: dict[str, Any] = {"business_segment": "all"}
+
+    if station_id is not None:
+        meta["business_segment"] = "single"
+        meta.update(_report_filter_station_meta(company_id, station_id))
+        name = meta.get("filter_station_name") or f"Station {station_id}"
+        meta["business_segment_label"] = name
+        meta["business_segment_station_names"] = [name]
+        meta["business_segment_station_ids"] = [station_id]
+        return [station_id], meta
+
+    if segment in ("", "all"):
+        return None, meta
+
+    meta["business_segment"] = segment
+    qs = Station.objects.filter(company_id=company_id, is_active=True).order_by("station_name", "id")
+
+    if segment == "fuel":
+        scoped = qs.filter(operates_fuel_retail=True)
+        ids = list(scoped.values_list("id", flat=True))
+        names = [(n or "").strip() for n in scoped.values_list("station_name", flat=True)]
+        meta["business_segment_label"] = "Fuel Station"
+        meta["business_segment_station_ids"] = ids
+        meta["business_segment_station_names"] = names
+        return ids, meta
+
+    if segment == "aquaculture":
+        scoped = qs.filter(operates_fuel_retail=False)
+        ids = list(scoped.values_list("id", flat=True))
+        names = [(n or "").strip() for n in scoped.values_list("station_name", flat=True)]
+        if not ids:
+            premium = qs.filter(station_name__iexact="Premium Agro")
+            ids = list(premium.values_list("id", flat=True))
+            names = [(n or "").strip() for n in premium.values_list("station_name", flat=True)]
+        has_premium = any(n.lower() == "premium agro" for n in names)
+        meta["business_segment_label"] = (
+            "Aquaculture (Premium Agro)" if has_premium else "Aquaculture (Shop hub)"
+        )
+        meta["business_segment_station_ids"] = ids
+        meta["business_segment_station_names"] = names
+        meta["filter_station_is_shop_hub"] = bool(ids)
+        if len(ids) == 1:
+            meta.update(_report_filter_station_meta(company_id, ids[0]))
+        return ids, meta
+
+    return None, meta
+
+
+def _empty_sales_report_payload(
+    _company_id: int,
+    start: date,
+    end: date,
+    scope_meta: dict[str, Any],
+) -> dict[str, Any]:
+    note = "No active sites match the selected business line filter."
+    payload: dict[str, Any] = {
+        "report_id": "sales-report",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": {
+            "cash_invoice_count": 0,
+            "cash_sales_total": _f(Decimal("0")),
+            "credit_invoice_count": 0,
+            "credit_sales_total": _f(Decimal("0")),
+            "total_invoices": 0,
+            "grand_total": _f(Decimal("0")),
+            "pond_pos_customer_count": 0,
+        },
+        "cash_customers": [],
+        "credit_customers": [],
+        "accounting_note": note,
+    }
+    payload.update(scope_meta)
+    return payload
+
+
+def _empty_purchase_report_payload(
+    start: date,
+    end: date,
+    scope_meta: dict[str, Any],
+) -> dict[str, Any]:
+    note = "No active sites match the selected business line filter."
+    payload: dict[str, Any] = {
+        "report_id": "purchase-report",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": {
+            "cash_bill_count": 0,
+            "cash_purchase_total": _f(Decimal("0")),
+            "credit_bill_count": 0,
+            "credit_purchase_total": _f(Decimal("0")),
+            "total_bills": 0,
+            "grand_total": _f(Decimal("0")),
+        },
+        "cash_vendors": [],
+        "credit_vendors": [],
+        "accounting_note": note,
+    }
+    payload.update(scope_meta)
+    return payload
+
+
+def _apply_invoice_station_scope(qs, station_ids: list[int] | None, station_id: int | None):
+    if station_id is not None:
+        return qs.filter(station_id=station_id)
+    if station_ids is not None:
+        if not station_ids:
+            return qs.none()
+        return qs.filter(station_id__in=station_ids)
+    return qs
+
+
+def _apply_bill_station_scope(qs, station_ids: list[int] | None, station_id: int | None):
+    if station_id is not None:
+        return qs.filter(
+            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
+        ).distinct()
+    if station_ids is not None:
+        if not station_ids:
+            return qs.none()
+        return qs.filter(
+            Q(receipt_station_id__in=station_ids) | Q(lines__receipt_station_id__in=station_ids)
+        ).distinct()
+    return qs
+
+
+def _sales_report_customer_row(
+    customer_id: int | None,
+    customer: Customer | None,
+    *,
+    pond_pos_customer_ids: frozenset[int],
+) -> dict[str, Any]:
+    if customer_id is None:
+        return {
+            "customer_id": None,
+            "customer_number": "",
+            "display_name": "— (no customer)",
+            "is_pond_pos_customer": False,
+            "invoice_count": 0,
+            "total": Decimal("0"),
+        }
+    name = (customer.display_name or f"Customer {customer_id}").strip() if customer else f"Customer {customer_id}"
+    num = (customer.customer_number or "").strip() if customer else ""
+    return {
+        "customer_id": customer_id,
+        "customer_number": num,
+        "display_name": name,
+        "is_pond_pos_customer": int(customer_id) in pond_pos_customer_ids,
+        "invoice_count": 0,
+        "total": Decimal("0"),
+    }
+
+
+def report_sales_report(
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    *,
+    business_segment: str = "all",
+) -> dict[str, Any]:
+    """
+    Invoice totals grouped by customer, split into cash (immediate tender) vs credit (on account / A/R).
+    Excludes draft invoices. Optional business_segment: all | fuel | aquaculture.
+    """
+    station_ids, scope_meta = _resolve_report_station_scope(
+        company_id, station_id=station_id, business_segment=business_segment
+    )
+    if station_ids is not None and not station_ids:
+        return _empty_sales_report_payload(company_id, start, end, scope_meta)
+
+    inv_qs = (
+        Invoice.objects.filter(
+            company_id=company_id,
+            invoice_date__gte=start,
+            invoice_date__lte=end,
+        )
+        .exclude(status="draft")
+        .select_related("customer")
+    )
+    inv_qs = _apply_invoice_station_scope(inv_qs, station_ids, station_id)
+
+    pond_pos_ids = frozenset(pond_pos_customer_ids(company_id))
+
+    cash_by_cust: dict[int | None, dict[str, Any]] = {}
+    credit_by_cust: dict[int | None, dict[str, Any]] = {}
+
+    cash_inv_count = 0
+    credit_inv_count = 0
+    cash_total = Decimal("0")
+    credit_total = Decimal("0")
+
+    for inv in inv_qs:
+        cid_c = inv.customer_id
+        is_credit = is_on_account_payment(inv.payment_method)
+        bucket = credit_by_cust if is_credit else cash_by_cust
+        if cid_c not in bucket:
+            bucket[cid_c] = _sales_report_customer_row(
+                cid_c, inv.customer, pond_pos_customer_ids=pond_pos_ids
+            )
+        bucket[cid_c]["invoice_count"] += 1
+        amt = inv.total or Decimal("0")
+        bucket[cid_c]["total"] += amt
+        if is_credit:
+            credit_inv_count += 1
+            credit_total += amt
+        else:
+            cash_inv_count += 1
+            cash_total += amt
+
+    def _finalize(rows_map: dict[int | None, dict[str, Any]]) -> list[dict[str, Any]]:
+        rows = sorted(rows_map.values(), key=lambda r: (r["display_name"], r["customer_id"] or 0))
+        for r in rows:
+            r["total"] = _f(r["total"])
+        return rows
+
+    cash_customers = _finalize(cash_by_cust)
+    credit_customers = _finalize(credit_by_cust)
+    grand_total = cash_total + credit_total
+
+    shop_note = ""
+    if scope_meta.get("filter_station_is_shop_hub") or scope_meta.get("business_segment") == "aquaculture":
+        shop_note = (
+            " Shop hub (non-fuel site, e.g. Premium Agro): walk-in and counter sales are cash; "
+            "aquaculture pond POS customers are on account and appear under Credit customers."
+        )
+    elif scope_meta.get("business_segment") == "fuel":
+        shop_note = " Fuel forecourt POS and on-account fuel customer sales at fuel retail sites."
+
+    payload: dict[str, Any] = {
+        "report_id": "sales-report",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": {
+            "cash_invoice_count": cash_inv_count,
+            "cash_sales_total": _f(cash_total),
+            "credit_invoice_count": credit_inv_count,
+            "credit_sales_total": _f(credit_total),
+            "total_invoices": cash_inv_count + credit_inv_count,
+            "grand_total": _f(grand_total),
+            "pond_pos_customer_count": len(
+                [r for r in credit_customers if r.get("is_pond_pos_customer")]
+            ),
+        },
+        "cash_customers": cash_customers,
+        "credit_customers": credit_customers,
+        "accounting_note": (
+            "Cash customers: invoices with immediate tender (cash, card, transfer, etc.). "
+            "Credit customers: on-account / A/R sales (payment_method on_account), including "
+            "aquaculture pond POS accounts at the shop station."
+            + shop_note
+            + " Totals are invoice amounts in the date range (non-draft). "
+            "Use the business line filter for Fuel Station vs Aquaculture (Premium Agro)."
+        ),
+    }
+    payload.update(scope_meta)
+    return payload
+
+
+def _bill_paid_through(company_id: int, bill_id: int, through: date) -> Decimal:
+    """Vendor payments allocated to this bill with payment_date on or before ``through``."""
+    s = (
+        PaymentBillAllocation.objects.filter(
+            bill_id=bill_id,
+            payment__company_id=company_id,
+            payment__payment_date__lte=through,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    return s or Decimal("0")
+
+
+def _purchase_report_vendor_row(vendor_id: int | None, vendor: Vendor | None) -> dict[str, Any]:
+    if vendor_id is None:
+        return {
+            "vendor_id": None,
+            "vendor_number": "",
+            "display_name": "— (no vendor)",
+            "bill_count": 0,
+            "total": Decimal("0"),
+        }
+    if vendor:
+        name = (vendor.display_name or vendor.company_name or f"Vendor {vendor_id}").strip()
+        num = (vendor.vendor_number or "").strip()
+    else:
+        name = f"Vendor {vendor_id}"
+        num = ""
+    return {
+        "vendor_id": vendor_id,
+        "vendor_number": num,
+        "display_name": name,
+        "bill_count": 0,
+        "total": Decimal("0"),
+    }
+
+
+def report_purchase_report(
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    *,
+    business_segment: str = "all",
+) -> dict[str, Any]:
+    """
+    Bill totals grouped by vendor, split into cash (paid through period end) vs credit (A/P balance).
+    Excludes draft and void bills. Optional business_segment: all | fuel | aquaculture.
+    """
+    station_ids, scope_meta = _resolve_report_station_scope(
+        company_id, station_id=station_id, business_segment=business_segment
+    )
+    if station_ids is not None and not station_ids:
+        return _empty_purchase_report_payload(start, end, scope_meta)
+
+    bill_qs = (
+        Bill.objects.filter(
+            company_id=company_id,
+            bill_date__gte=start,
+            bill_date__lte=end,
+            status__in=_BILL_LINE_POSTED_STATUSES,
+        )
+        .select_related("vendor")
+    )
+    bill_qs = _apply_bill_station_scope(bill_qs, station_ids, station_id)
+
+    cash_by_vendor: dict[int | None, dict[str, Any]] = {}
+    credit_by_vendor: dict[int | None, dict[str, Any]] = {}
+
+    cash_bill_count = 0
+    credit_bill_count = 0
+    cash_total = Decimal("0")
+    credit_total = Decimal("0")
+
+    for bill in bill_qs:
+        vid = bill.vendor_id
+        total = bill.total or Decimal("0")
+        if total <= 0:
+            continue
+        paid = _bill_paid_through(company_id, bill.id, end)
+        cash_amt = min(total, paid)
+        credit_amt = max(Decimal("0"), total - cash_amt)
+
+        if cash_amt > 0:
+            if vid not in cash_by_vendor:
+                cash_by_vendor[vid] = _purchase_report_vendor_row(vid, bill.vendor)
+            cash_by_vendor[vid]["bill_count"] += 1
+            cash_by_vendor[vid]["total"] += cash_amt
+            cash_bill_count += 1
+            cash_total += cash_amt
+
+        if credit_amt > 0:
+            if vid not in credit_by_vendor:
+                credit_by_vendor[vid] = _purchase_report_vendor_row(vid, bill.vendor)
+            credit_by_vendor[vid]["bill_count"] += 1
+            credit_by_vendor[vid]["total"] += credit_amt
+            credit_bill_count += 1
+            credit_total += credit_amt
+
+    def _finalize_vendors(rows_map: dict[int | None, dict[str, Any]]) -> list[dict[str, Any]]:
+        rows = sorted(rows_map.values(), key=lambda r: (r["display_name"], r["vendor_id"] or 0))
+        for r in rows:
+            r["total"] = _f(r["total"])
+        return rows
+
+    cash_vendors = _finalize_vendors(cash_by_vendor)
+    credit_vendors = _finalize_vendors(credit_by_vendor)
+    grand_total = cash_total + credit_total
+
+    shop_note = ""
+    if scope_meta.get("filter_station_is_shop_hub") or scope_meta.get("business_segment") == "aquaculture":
+        shop_note = (
+            " Shop hub (non-fuel site, e.g. Premium Agro): feed, medicine, and supplies received "
+            "into this station's stock; pond on-account issues are sales, not purchases here."
+        )
+    elif scope_meta.get("business_segment") == "fuel":
+        shop_note = " Fuel-site vendor bills (shop stock, forecourt supplies) received at fuel stations."
+
+    payload: dict[str, Any] = {
+        "report_id": "purchase-report",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": {
+            "cash_bill_count": cash_bill_count,
+            "cash_purchase_total": _f(cash_total),
+            "credit_bill_count": credit_bill_count,
+            "credit_purchase_total": _f(credit_total),
+            "total_bills": cash_bill_count + credit_bill_count,
+            "grand_total": _f(grand_total),
+        },
+        "cash_vendors": cash_vendors,
+        "credit_vendors": credit_vendors,
+        "accounting_note": (
+            "Cash vendors: bill amounts paid through vendor payments on or before the period end date. "
+            "Credit vendors: remaining A/P on bills in the date range (unpaid or partially unpaid as of period end). "
+            "Partially paid bills may appear in both sections. Draft and void bills are excluded."
+            + shop_note
+            + " Use the business line filter for Fuel Station vs Aquaculture (Premium Agro). "
+            "Bills match when the bill header or any line receipt station is in scope."
+        ),
+    }
+    payload.update(scope_meta)
+    return payload
 
 
 def report_inventory_sku_valuation(

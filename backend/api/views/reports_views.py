@@ -37,6 +37,8 @@ from api.services.reporting import (
     report_meter_readings,
     report_sales_by_nozzle,
     report_sales_by_station,
+    report_sales_report,
+    report_purchase_report,
     report_shift_summary,
     report_tank_dip_register,
     report_tank_dip_variance,
@@ -76,6 +78,8 @@ _REPORT_HANDLERS = {
     "meter-readings": report_meter_readings,
     "daily-summary": report_daily_summary,
     "sales-by-station": report_sales_by_station,
+    "sales-report": report_sales_report,
+    "purchase-report": report_purchase_report,
     "financial-analytics": report_financial_analytics,
     "inventory-sku-valuation": report_inventory_sku_valuation,
     "item-master-by-category": report_item_master_by_category,
@@ -173,6 +177,8 @@ STATION_SCOPED_REPORTS = frozenset(
         "shift-summary",
         "daily-summary",
         "sales-by-station",
+        "sales-report",
+        "purchase-report",
         "sales-by-nozzle",
         "meter-readings",
         "tank-dip-variance",
@@ -289,6 +295,28 @@ def report_by_id(request, report_id: str):
             if st_err:
                 return st_err
         payload = report_financial_analytics(cid, start, end, st_id, pond_id)
+    elif report_id in ("sales-report", "purchase-report", "daily-summary"):
+        st_id, st_err = effective_report_station_id(request, cid)
+        if st_err:
+            return st_err
+        segment = (request.GET.get("business_segment") or "all").strip().lower()
+        if segment not in ("all", "fuel", "aquaculture", ""):
+            return JsonResponse(
+                {"detail": "business_segment must be all, fuel, or aquaculture."},
+                status=400,
+            )
+        if report_id == "sales-report":
+            payload = report_sales_report(
+                cid, start, end, st_id, business_segment=segment or "all"
+            )
+        elif report_id == "purchase-report":
+            payload = report_purchase_report(
+                cid, start, end, st_id, business_segment=segment or "all"
+            )
+        else:
+            payload = report_daily_summary(
+                cid, start, end, st_id, business_segment=segment or "all"
+            )
     elif report_id in STATION_SCOPED_REPORTS:
         st_id, st_err = effective_report_station_id(request, cid)
         if st_err:

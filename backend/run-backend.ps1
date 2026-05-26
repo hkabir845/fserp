@@ -3,12 +3,10 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$venvPy = Join-Path $repoRoot ".venv-local\Scripts\python.exe"
-if (-not (Test-Path $venvPy)) {
-    $venvPy = Join-Path $repoRoot ".venv\Scripts\python.exe"
-}
-if (-not (Test-Path $venvPy)) {
-    Write-Host "ERROR: No Python venv found." -ForegroundColor Red
+. (Join-Path $repoRoot "scripts\resolve-venv.ps1")
+$venvPy = Get-FserpVenvPython -Root $repoRoot
+if (-not $venvPy) {
+    Write-Host "ERROR: No working Python venv found." -ForegroundColor Red
     Write-Host "Run: powershell -File $repoRoot\scripts\dev-setup.ps1" -ForegroundColor Yellow
     exit 1
 }

@@ -24,6 +24,7 @@ import { formatAmountPlain, formatCurrency, formatNumber } from '@/utils/formatt
 import { escapeHtml, printDocument } from '@/utils/printDocument'
 import type { PrintBranding } from '@/utils/printBranding'
 import { loadPrintBranding } from '@/utils/printBranding'
+import { useCenterActiveListItem } from '@/hooks/useCenterActiveListItem'
 import { FinancialAnalyticsPanel } from './analytics/FinancialAnalyticsPanel'
 import { AquaculturePlManagementPanel } from './aquaculture/AquaculturePlManagementPanel'
 import {
@@ -1134,6 +1135,7 @@ export default function ReportsPage() {
     useState<SalesPurchasePeriodPreset>('today')
   const salesPurchaseDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reportDisplayRef = useRef<HTMLDivElement>(null)
+  const reportListRef = useRef<HTMLElement>(null)
   const [userHasHomeStation, setUserHasHomeStation] = useState(false)
   const [homeStationMeta, setHomeStationMeta] = useState<{
     id: number | null
@@ -1756,6 +1758,13 @@ export default function ReportsPage() {
     if (!selectedReport || loading) return
     scrollReportPanelIntoView()
   }, [selectedReport, loading, scrollReportPanelIntoView])
+
+  useCenterActiveListItem(
+    reportListRef,
+    '[data-report-selected="true"]',
+    Boolean(selectedReport),
+    [selectedReport, filteredReports, filterCategory]
+  )
 
   const onSalesPurchasePresetChange = useCallback(
     (preset: SalesPurchasePeriodPreset) => {
@@ -2896,26 +2905,33 @@ export default function ReportsPage() {
 
           <div className="flex min-h-0 w-full min-w-0 flex-col gap-6 lg:max-h-[calc(100dvh-11rem)] lg:flex-row lg:items-stretch lg:gap-6 xl:gap-8">
             {/* Report list: fixed max width; main pane uses flex-1 for full usable width (especially for Analytics) */}
-            <aside className="w-full min-w-0 shrink-0 space-y-3 lg:max-h-full lg:max-w-[20rem] lg:overflow-y-auto lg:overscroll-y-contain lg:pr-1 xl:max-w-[22rem]">
+            <aside
+              ref={reportListRef}
+              className="w-full min-w-0 shrink-0 space-y-3 lg:max-h-full lg:max-w-[20rem] lg:overflow-y-auto lg:overscroll-y-contain lg:pr-1 xl:max-w-[22rem]"
+            >
               {filteredReports.map((report) => {
                 const Icon = report.icon
+                const isSelected = selectedReport === report.id
                 return (
                   <button
                     key={report.id}
-                    onClick={() => fetchReport(report.id)}
+                    type="button"
+                    data-report-id={report.id}
+                    data-report-selected={isSelected ? 'true' : undefined}
+                    onClick={() => void fetchReport(report.id)}
                     disabled={loading}
                     className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                      selectedReport === report.id
-                        ? 'border-blue-500 bg-blue-50'
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/20'
                         : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm'
                     } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <div className="flex items-start space-x-3">
                       <div className={`p-2 rounded-lg ${
-                        selectedReport === report.id ? 'bg-blue-100' : 'bg-gray-100'
+                        isSelected ? 'bg-blue-100' : 'bg-gray-100'
                       }`}>
                         <Icon className={`h-5 w-5 ${
-                          selectedReport === report.id ? 'text-blue-600' : 'text-gray-600'
+                          isSelected ? 'text-blue-600' : 'text-gray-600'
                         }`} />
                       </div>
                       <div className="flex-1 min-w-0">

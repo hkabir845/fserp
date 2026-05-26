@@ -89,6 +89,16 @@ export function hasPermission(key: string): boolean {
   return false
 }
 
+/** Tenant Backup & Restore (Management → Backup & Restore). Matches backend ``app.backup`` enforcement. */
+export function canAccessBackup(userRole?: string | null): boolean {
+  const p = getCurrentUserPermissions()
+  if (p != null) {
+    return p.includes('*') || p.includes('app.backup')
+  }
+  const r = (userRole ?? getCurrentUserRole() ?? '').toLowerCase()
+  return r === 'admin' || r === 'super_admin' || r === 'manager'
+}
+
 /** Any aquaculture module or the all-modules parent key. */
 export function hasAnyAquaculturePermission(): boolean {
   const p = getCurrentUserPermissions()

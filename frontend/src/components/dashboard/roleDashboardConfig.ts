@@ -27,7 +27,7 @@ export const ROLE_DASHBOARD_CONFIG: Record<string, RoleDashboardConfig> = {
     focus: 'Sales, finance, operations, and settings — all in one place.',
     statKeys: ['today_sales', 'customers', 'invoices', 'revenue'],
     maxQuickApps: 10,
-    prioritizeHrefs: ['/users', '/company', '/reports', '/invoices', '/cashier'],
+    prioritizeHrefs: ['/users', '/company', '/backup', '/reports', '/invoices', '/cashier'],
   },
   manager: {
     gradient: 'from-indigo-600 via-blue-600 to-cyan-700',

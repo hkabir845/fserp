@@ -4,17 +4,24 @@ import type { ReactNode } from 'react'
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import Modal from '@/components/ui/Modal'
 import {
   ArrowRight,
   ArrowRightLeft,
+  Building2,
   Check,
+  CheckCircle2,
+  ChevronDown,
+  FileEdit,
   Info,
   Loader2,
   MapPin,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
+  Sprout,
   Trash2,
   Package,
   AlertCircle,
@@ -209,6 +216,51 @@ function pondWarehouseReceiptImpactSummary(): string {
   return 'Completed — shop bin −qty, pond warehouse +qty; no GL. Reverse only if the pond still holds these items (not consumed).'
 }
 
+type ConfirmAction =
+  | { kind: 'post'; id: number; label: string }
+  | { kind: 'delete'; id: number; label: string }
+  | { kind: 'unpost'; id: number; label: string }
+  | { kind: 'reverse'; id: number; label: string }
+
+function StatCard({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  accent = 'default',
+}: {
+  label: string
+  value: string | number
+  hint?: string
+  icon: typeof Package
+  accent?: 'default' | 'amber' | 'emerald' | 'teal'
+}) {
+  const accentClasses = {
+    default: 'border-border/80 bg-card from-muted/30 to-card ring-border/60',
+    amber: 'border-amber-200/80 bg-gradient-to-br from-amber-50/90 to-card ring-amber-500/10 dark:border-amber-900/40 dark:from-amber-950/25',
+    emerald:
+      'border-emerald-200/80 bg-gradient-to-br from-emerald-50/90 to-card ring-emerald-500/10 dark:border-emerald-900/40 dark:from-emerald-950/25',
+    teal: 'border-teal-200/80 bg-gradient-to-br from-teal-50/90 to-card ring-teal-500/10 dark:border-teal-900/40 dark:from-teal-950/25',
+  }[accent]
+
+  return (
+    <div
+      className={`rounded-xl border bg-gradient-to-br p-4 shadow-sm ring-1 ${accentClasses}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-foreground">{value}</p>
+          {hint ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p> : null}
+        </div>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background/80 shadow-sm ring-1 ring-border/60">
+          <Icon className="h-5 w-5 text-muted-foreground" aria-hidden />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function InventoryContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -251,6 +303,12 @@ function InventoryContent() {
   const [lookupItemId, setLookupItemId] = useState<number | ''>('')
   const [availability, setAvailability] = useState<AvailabilityResponse | null>(null)
   const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupSearch, setLookupSearch] = useState('')
+  const [transferSearch, setTransferSearch] = useState('')
+  const [transferStatusFilter, setTransferStatusFilter] = useState<'all' | 'draft' | 'posted'>('all')
+  const [pondReceiptSearch, setPondReceiptSearch] = useState('')
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
 
   const loadCore = useCallback(async () => {
     const token = localStorage.getItem('access_token')
@@ -714,7 +772,6 @@ function InventoryContent() {
   }
 
   const postTransfer = async (id: number) => {
-    if (!confirm('Post this transfer? Stock will move between stations and a journal entry will be created.')) return
     setTransferPostingId(id)
     try {
       await api.post(`/inventory/transfers/${id}/`)
@@ -728,7 +785,6 @@ function InventoryContent() {
   }
 
   const deleteDraft = async (id: number) => {
-    if (!confirm('Delete this draft transfer? This cannot be undone.')) return
     setTransferDeletingId(id)
     try {
       await api.delete(`/inventory/transfers/${id}/delete/`)
@@ -742,12 +798,6 @@ function InventoryContent() {
   }
 
   const unpostTransfer = async (id: number) => {
-    if (
-      !confirm(
-        'Roll back this posted transfer? Stock returns to the source station, the automatic GL entry is removed, and the record becomes a draft again.',
-      )
-    )
-      return
     setTransferUnpostingId(id)
     try {
       await api.post(`/inventory/transfers/${id}/unpost/`)
@@ -761,12 +811,6 @@ function InventoryContent() {
   }
 
   const reversePondReceipt = async (id: number) => {
-    if (
-      !confirm(
-        'Reverse this pond warehouse receipt? Quantities move back to the shop station only if the pond still has enough on hand.',
-      )
-    )
-      return
     setPondReceiptReversingId(id)
     try {
       await api.post(`/inventory/pond-warehouse-receipts/${id}/reverse/`)
@@ -776,6 +820,20 @@ function InventoryContent() {
       toast.error(extractErrorMessage(e, 'Could not reverse receipt'))
     } finally {
       setPondReceiptReversingId(null)
+    }
+  }
+
+  const runConfirmAction = async () => {
+    if (!confirmAction) return
+    setConfirmBusy(true)
+    try {
+      if (confirmAction.kind === 'post') await postTransfer(confirmAction.id)
+      else if (confirmAction.kind === 'delete') await deleteDraft(confirmAction.id)
+      else if (confirmAction.kind === 'unpost') await unpostTransfer(confirmAction.id)
+      else if (confirmAction.kind === 'reverse') await reversePondReceipt(confirmAction.id)
+      setConfirmAction(null)
+    } finally {
+      setConfirmBusy(false)
     }
   }
 
@@ -804,6 +862,59 @@ function InventoryContent() {
     () => [...activeStations].sort((a, b) => a.id - b.id),
     [activeStations],
   )
+
+  const transferStats = useMemo(
+    () => ({
+      draftCount: transfers.filter(t => t.status === 'draft').length,
+      postedCount: transfers.filter(t => t.status === 'posted').length,
+      pondReceiptCount: pondReceipts.length,
+    }),
+    [transfers, pondReceipts],
+  )
+
+  const filteredTransfers = useMemo(() => {
+    const q = transferSearch.trim().toLowerCase()
+    return transfers.filter(t => {
+      if (transferStatusFilter !== 'all' && t.status !== transferStatusFilter) return false
+      if (!q) return true
+      const hay = [
+        t.transfer_number,
+        t.from_station_name,
+        t.to_station_name,
+        t.memo,
+        ...(t.lines?.map(l => `${l.item_name} ${l.quantity}`) || []),
+      ]
+        .join(' ')
+        .toLowerCase()
+      return hay.includes(q)
+    })
+  }, [transfers, transferSearch, transferStatusFilter])
+
+  const filteredPondReceipts = useMemo(() => {
+    const q = pondReceiptSearch.trim().toLowerCase()
+    if (!q) return pondReceipts
+    return pondReceipts.filter(r => {
+      const hay = [
+        r.receipt_number,
+        r.from_station_name,
+        r.pond_name,
+        ...(r.lines?.map(l => `${l.item_name} ${l.quantity}`) || []),
+      ]
+        .join(' ')
+        .toLowerCase()
+      return hay.includes(q)
+    })
+  }, [pondReceipts, pondReceiptSearch])
+
+  const filteredLookupItems = useMemo(() => {
+    const q = lookupSearch.trim().toLowerCase()
+    if (!q) return posItems
+    return posItems.filter(
+      p =>
+        p.name.toLowerCase().includes(q) ||
+        (p.item_number && p.item_number.toLowerCase().includes(q)),
+    )
+  }, [posItems, lookupSearch])
 
   useEffect(() => {
     if (loading) return
@@ -843,43 +954,149 @@ function InventoryContent() {
     router.replace(`/inventory?${q.toString()}`, { scroll: false })
   }
 
+  const confirmCopy = useMemo(() => {
+    if (!confirmAction) return { title: '', body: '', confirmLabel: 'Confirm', danger: false }
+    switch (confirmAction.kind) {
+      case 'post':
+        return {
+          title: 'Post transfer?',
+          body: 'Stock will move between sites and an automatic journal entry will be created.',
+          confirmLabel: 'Post transfer',
+          danger: false,
+        }
+      case 'delete':
+        return {
+          title: 'Delete draft?',
+          body: 'This draft transfer will be permanently removed. This cannot be undone.',
+          confirmLabel: 'Delete draft',
+          danger: true,
+        }
+      case 'unpost':
+        return {
+          title: 'Roll back transfer?',
+          body: 'Stock returns to the source site, the automatic GL entry is removed, and the record becomes a draft again.',
+          confirmLabel: 'Roll back',
+          danger: true,
+        }
+      case 'reverse':
+        return {
+          title: 'Reverse pond receipt?',
+          body: 'Quantities move back to the shop site only if the pond still has enough on hand.',
+          confirmLabel: 'Reverse receipt',
+          danger: true,
+        }
+      default:
+        return { title: '', body: '', confirmLabel: 'Confirm', danger: false }
+    }
+  }, [confirmAction])
+
   return (
-    <div className="page-with-sidebar flex h-screen min-h-0 w-full min-w-0 max-w-full bg-gray-100">
-      <Sidebar />
-      <div className="flex-1 min-h-0 min-w-0 overflow-auto app-scroll-pad p-4 sm:p-6 lg:p-8">
+    <PageLayout>
+      <div className="app-scroll-pad p-4 sm:p-6 lg:p-8">
         <div className="mx-auto w-full max-w-7xl space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-              Inter-station inventory
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-              <span className="font-medium text-foreground">Shop (general) products</span> use per-station bins
-              when you have multiple active sites; with one site, stock stays at that location.{' '}
-              <span className="font-medium text-foreground">Fuel</span> is tracked in tanks.{' '}
-              <Link href="/items" className="text-primary underline underline-offset-2">
-                Products
-              </Link>
-              {' · '}
-              <Link href="/cashier" className="text-primary underline underline-offset-2">
-                Cashier
-              </Link>
-            </p>
-          </div>
+          <header className="space-y-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Inventory operations
+                </p>
+                <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                  Inventory &amp; transfers
+                </h1>
+                <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                  Move shop stock between sites, send feed and supplies into pond warehouses, and check
+                  quantities by location. Fuel stays in tanks; product master data lives under Products.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
+                <Link
+                  href="/items"
+                  className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-muted/60"
+                >
+                  <Package className="h-4 w-4" />
+                  Products
+                </Link>
+                <Link
+                  href="/cashier"
+                  className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-muted/60"
+                >
+                  <ArrowRightLeft className="h-4 w-4" />
+                  Cashier
+                </Link>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-muted/60 disabled:opacity-50"
+                  onClick={() => void loadCore()}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            {!loading ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <StatCard
+                  label="Active sites"
+                  value={activeStationCount}
+                  hint={
+                    stationMode === 'single'
+                      ? 'Single-site company preference'
+                      : 'Multi-site operations enabled'
+                  }
+                  icon={Building2}
+                />
+                <StatCard
+                  label="Draft transfers"
+                  value={transferStats.draftCount}
+                  hint="Awaiting post to move stock"
+                  icon={FileEdit}
+                  accent="amber"
+                />
+                <StatCard
+                  label="Posted transfers"
+                  value={transferStats.postedCount}
+                  hint="Completed inter-site moves"
+                  icon={CheckCircle2}
+                  accent="emerald"
+                />
+                {aquacultureEnabled ? (
+                  <StatCard
+                    label="Pond receipts"
+                    value={transferStats.pondReceiptCount}
+                    hint="Shop → pond warehouse moves"
+                    icon={Sprout}
+                    accent="teal"
+                  />
+                ) : (
+                  <StatCard
+                    label="Tracked products"
+                    value={posItems.length}
+                    hint="Shop SKUs available to move"
+                    icon={Package}
+                  />
+                )}
+              </div>
+            ) : null}
+          </header>
 
           {userHomeStation && (
-            <div className="flex items-start gap-2 rounded-lg border border-sky-200/90 bg-sky-50/95 px-4 py-3 text-sm text-sky-950 dark:border-sky-800/60 dark:bg-sky-950/30 dark:text-sky-100">
+            <div className="flex items-start gap-3 rounded-xl border border-sky-200/90 bg-gradient-to-r from-sky-50/95 to-card px-4 py-3 text-sm text-sky-950 shadow-sm dark:border-sky-800/60 dark:from-sky-950/30 dark:to-card dark:text-sky-100">
               <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
               <div>
                 <p className="font-medium">Your site: {userHomeStation.name}</p>
                 <p className="mt-1 text-sky-900/90 dark:text-sky-200/90">
-                  The transfer list shows only movement involving this station. Moving stock between{' '}
-                  <strong className="font-medium text-sky-950 dark:text-sky-50">other company sites</strong>{' '}
-                  needs a company-wide (admin or accountant) login without a home-station assignment.
+                  You see transfers involving this site only. Cross-site moves need a company-wide login
+                  without a home-station assignment.
                   {canMoveToPondWarehouse ? (
                     <>
                       {' '}
-                      You can still use <strong className="font-medium text-sky-950 dark:text-sky-50">Move to pond warehouse</strong>{' '}
-                      below to send shop stock from this site into an aquaculture pond store.
+                      You can still move shop stock into pond warehouses from this site.
                     </>
                   ) : null}
                 </p>
@@ -897,7 +1114,7 @@ function InventoryContent() {
               role="tab"
               aria-selected={tab === 'transfers'}
               onClick={() => setTabAndUrl('transfers')}
-              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
                 tab === 'transfers'
                   ? 'bg-card text-foreground shadow-sm ring-1 ring-border/80'
                   : 'text-muted-foreground hover:bg-background/80 hover:text-foreground'
@@ -905,13 +1122,18 @@ function InventoryContent() {
             >
               <ArrowRightLeft className="h-4 w-4 shrink-0" />
               Transfers
+              {!loading && transferStats.draftCount > 0 ? (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+                  {transferStats.draftCount}
+                </span>
+              ) : null}
             </button>
             <button
               type="button"
               role="tab"
               aria-selected={tab === 'lookup'}
               onClick={() => setTabAndUrl('lookup')}
-              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
                 tab === 'lookup'
                   ? 'bg-card text-foreground shadow-sm ring-1 ring-border/80'
                   : 'text-muted-foreground hover:bg-background/80 hover:text-foreground'
@@ -923,22 +1145,39 @@ function InventoryContent() {
           </div>
 
           {loading ? (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Loading…
+            <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-border bg-card px-10 py-16 text-center shadow-sm">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Loading inventory</p>
+                <p className="mt-1 text-xs text-muted-foreground">Sites, products, and transfer history</p>
+              </div>
             </div>
           ) : tab === 'lookup' ? (
             <div className="space-y-6 rounded-2xl border border-border bg-card p-5 shadow-md ring-1 ring-black/5 dark:ring-white/10 sm:p-7">
-              <h2 className="text-lg font-semibold tracking-tight">Availability by location</h2>
-              {userHomeStation && (
-                <p className="text-sm text-muted-foreground">
-                  Rows for <span className="font-medium text-foreground">{userHomeStation.name}</span> match
-                  your assigned site; other stations are shown for context when you have access to the full
-                  list.
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight">Availability by location</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Pick a product to see shop bins by site and pond warehouse quantities.
                 </p>
-              )}
-              <div className="flex max-w-md flex-col gap-3 sm:flex-row sm:items-end">
-                <div className="min-w-0 flex-1">
+              </div>
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+                <div className="min-w-0">
+                  <label className="text-sm font-medium" htmlFor="inv-lookup-search">
+                    Search products
+                  </label>
+                  <div className="relative mt-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      id="inv-lookup-search"
+                      type="search"
+                      placeholder="Name or SKU…"
+                      className={inputClassName + ' pl-9'}
+                      value={lookupSearch}
+                      onChange={e => setLookupSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="min-w-0">
                   <label className="text-sm font-medium" htmlFor="inv-lookup-item">
                     Product
                   </label>
@@ -957,7 +1196,7 @@ function InventoryContent() {
                     }}
                   >
                     <option value="">— Select a product —</option>
-                    {posItems.map(p => (
+                    {filteredLookupItems.map(p => (
                       <option key={p.id} value={p.id}>
                         {p.name}
                         {p.item_number ? ` (${p.item_number})` : ''}
@@ -974,111 +1213,158 @@ function InventoryContent() {
                   }}
                   disabled={lookupLoading}
                 >
-                  {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   Refresh
                 </button>
               </div>
 
-              {lookupLoading && <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />}
+              {lookupLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : null}
+
+              {!lookupLoading && !availability && (
+                <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-muted/20 px-6 py-10 text-center">
+                  <Package className="mx-auto h-10 w-10 text-muted-foreground/70" />
+                  <p className="mt-3 text-sm font-medium text-foreground">Select a product to view stock</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Search by name or SKU, then choose from the list.
+                  </p>
+                </div>
+              )}
 
               {!lookupLoading && availability && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {!availability.tracks_per_station ? (
-                    <div className="flex items-start gap-2 rounded-lg border border-amber-200/80 bg-amber-50/80 p-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
-                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div className="flex items-start gap-3 rounded-xl border border-amber-200/80 bg-amber-50/80 p-4 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
                       <div>
-                        <strong>{availability.name}</strong> — {availability.message || 'Not tracked per station.'}
+                        <p className="font-semibold">{availability.name}</p>
+                        <p className="mt-1">{availability.message || 'Not tracked per station.'}</p>
+                        <p className="mt-2 text-xs text-amber-900/80 dark:text-amber-200/80">
+                          Fuel is managed under Tanks. Other non-bin items are adjusted elsewhere.
+                        </p>
                       </div>
                     </div>
                   ) : (
                     <>
-                      <p className="text-sm text-muted-foreground">
-                        <strong>Total on hand (company):</strong>{' '}
-                        {availability.total_on_hand} {availability.unit || 'units'}
-                      </p>
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        <strong className="text-foreground">Shop sites vs pond warehouses:</strong> each row under
-                        Station is stock in that site&apos;s bin. Aquaculture feeding (consume from pond warehouse)
-                        deducts from the <strong className="text-foreground">pond warehouse</strong> table below — not
-                        from a station row — after feed is transferred from a site to the pond.
-                      </p>
-                      <div className="overflow-x-auto rounded-lg border">
-                        <table className="w-full min-w-[400px] text-sm">
-                          <thead className="bg-muted/50">
-                            <tr>
-                              <th className="px-3 py-2 text-left font-medium">Station</th>
-                              <th className="px-3 py-2 text-right font-medium">Quantity</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {availability.stations.length === 0 ? (
-                              <tr>
-                                <td colSpan={2} className="px-3 py-4 text-center text-muted-foreground">
-                                  No per-station rows yet
-                                </td>
-                              </tr>
-                            ) : (
-                              availability.stations.map(s => {
-                                const isMySite = userHomeStation && s.station_id === userHomeStation.id
-                                return (
-                                <tr
-                                  key={s.station_id}
-                                  className={`border-t ${isMySite ? 'bg-primary/5' : ''}`}
-                                >
-                                  <td className="px-3 py-2">
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                                      {s.station_name}
-                                      {s.station_number ? (
-                                        <span className="text-xs text-muted-foreground">
-                                          ({s.station_number})
-                                        </span>
-                                      ) : null}
-                                    </span>
-                                    {isMySite && (
-                                      <span className="ml-1.5 rounded bg-primary/15 px-1.5 py-0.5 text-xs font-medium text-primary">
-                                        Your site
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 text-right tabular-nums">{s.quantity}</td>
-                                </tr>
-                                )
-                              })
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                      {(availability.pond_warehouses?.length ?? 0) > 0 ? (
-                        <div className="overflow-x-auto rounded-lg border border-teal-200/80 dark:border-teal-900/40">
-                          <table className="w-full min-w-[400px] text-sm">
-                            <thead className="bg-teal-50/90 dark:bg-teal-950/35">
-                              <tr>
-                                <th className="px-3 py-2 text-left font-medium">Pond warehouse</th>
-                                <th className="px-3 py-2 text-right font-medium">Quantity</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {availability.pond_warehouses!.map(p => (
-                                <tr key={p.pond_id} className="border-t border-border">
-                                  <td className="px-3 py-2">
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <MapPin className="h-3.5 w-3.5 text-teal-700 dark:text-teal-400" />
-                                      {p.pond_name}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2 text-right tabular-nums">{p.quantity}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          No quantity in pond warehouses for this product (transfer from a site under Transfers, or it
-                          was already used).
+                      <div className="rounded-xl border border-border/80 bg-gradient-to-br from-muted/30 to-card p-4 shadow-sm">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Company total
                         </p>
-                      )}
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                          {availability.total_on_hand}{' '}
+                          <span className="text-base font-medium text-muted-foreground">
+                            {availability.unit || 'units'}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        <div className="overflow-hidden rounded-xl border border-border">
+                          <div className="border-b border-border bg-muted/40 px-4 py-3">
+                            <h3 className="text-sm font-semibold">Shop sites</h3>
+                            <p className="text-xs text-muted-foreground">Per-site bin quantities</p>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-[320px] text-sm">
+                              <thead className="bg-muted/30 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                <tr>
+                                  <th className="px-4 py-2.5">Site</th>
+                                  <th className="px-4 py-2.5 text-right">Quantity</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {availability.stations.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={2} className="px-4 py-8 text-center text-muted-foreground">
+                                      No per-site rows yet
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  availability.stations.map(s => {
+                                    const isMySite = userHomeStation && s.station_id === userHomeStation.id
+                                    return (
+                                      <tr
+                                        key={s.station_id}
+                                        className={`border-t border-border/70 ${isMySite ? 'bg-primary/5' : ''}`}
+                                      >
+                                        <td className="px-4 py-3">
+                                          <span className="inline-flex items-center gap-1.5">
+                                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                            {s.station_name}
+                                            {s.station_number ? (
+                                              <span className="text-xs text-muted-foreground">
+                                                ({s.station_number})
+                                              </span>
+                                            ) : null}
+                                          </span>
+                                          {isMySite ? (
+                                            <span className="ml-2 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
+                                              Your site
+                                            </span>
+                                          ) : null}
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-medium tabular-nums">
+                                          {s.quantity}
+                                        </td>
+                                      </tr>
+                                    )
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {(availability.pond_warehouses?.length ?? 0) > 0 ? (
+                          <div className="overflow-hidden rounded-xl border border-teal-200/80 dark:border-teal-900/40">
+                            <div className="border-b border-teal-200/70 bg-teal-50/90 px-4 py-3 dark:border-teal-900/40 dark:bg-teal-950/35">
+                              <h3 className="text-sm font-semibold text-teal-950 dark:text-teal-100">
+                                Pond warehouses
+                              </h3>
+                              <p className="text-xs text-teal-800/80 dark:text-teal-200/80">
+                                Used by aquaculture feeding and pond operations
+                              </p>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full min-w-[320px] text-sm">
+                                <thead className="bg-teal-50/60 text-left text-xs font-medium uppercase tracking-wide text-teal-900/70 dark:bg-teal-950/25 dark:text-teal-200/70">
+                                  <tr>
+                                    <th className="px-4 py-2.5">Pond</th>
+                                    <th className="px-4 py-2.5 text-right">Quantity</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {availability.pond_warehouses!.map(p => (
+                                    <tr key={p.pond_id} className="border-t border-border/70">
+                                      <td className="px-4 py-3">
+                                        <span className="inline-flex items-center gap-1.5">
+                                          <Sprout className="h-3.5 w-3.5 text-teal-700 dark:text-teal-400" />
+                                          {p.pond_name}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-medium tabular-nums">
+                                        {p.quantity}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center rounded-xl border border-dashed border-muted-foreground/30 bg-muted/15 px-6 py-10 text-center">
+                            <div>
+                              <Sprout className="mx-auto h-8 w-8 text-muted-foreground/60" />
+                              <p className="mt-2 text-sm font-medium text-foreground">No pond warehouse stock</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Transfer from a site under the Transfers tab, or stock was already consumed.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </>
                   )}
                 </div>
@@ -1087,96 +1373,84 @@ function InventoryContent() {
           ) : (
             <div className="flex w-full min-w-0 flex-col gap-5">
               {!canShowTransferForm ? (
-                <div className="rounded-xl border border-dashed border-muted-foreground/35 bg-muted/25 p-4 shadow-sm sm:p-5">
-                  <h2 className="text-lg font-semibold text-muted-foreground">New transfer (not available)</h2>
-                  <p className="mt-2 text-sm text-muted-foreground">
+                <div className="rounded-2xl border border-dashed border-muted-foreground/35 bg-muted/20 p-6 text-center shadow-sm sm:p-8">
+                  <ArrowRightLeft className="mx-auto h-10 w-10 text-muted-foreground/60" />
+                  <h2 className="mt-3 text-lg font-semibold text-foreground">Transfers not available</h2>
+                  <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
                     {userHomeStation ? (
                       <>
-                        Inter-station transfers (between company sites) require a login without a home station.{' '}
+                        Inter-site transfers need a login without a home station.
                         {!aquacultureEnabled ? (
-                          <>
-                            Turn on <strong>aquaculture</strong> in Company and add ponds to move shop stock into a
-                            pond warehouse from this site.
-                          </>
+                          <> Enable aquaculture in Company settings to move stock into pond warehouses.</>
                         ) : activePondsOrdered.length === 0 ? (
-                          <>
-                            Add a pond under <strong>Aquaculture → Ponds</strong> to move shop stock into that
-                            pond&apos;s warehouse.
-                          </>
+                          <> Add a pond under Aquaculture to use pond warehouse moves.</>
                         ) : (
-                          <>
-                            If this message persists, confirm you still have an <strong>active site</strong> under
-                            Sites.
-                          </>
+                          <> Confirm you have an active site under Sites.</>
                         )}
                       </>
                     ) : stationMode === 'single' ? (
                       <>
-                        <strong>Single-site</strong> companies cannot run inter-station transfers unless you add
-                        another site (Company → multiple stations).{' '}
-                        {!aquacultureEnabled ? (
-                          <>Enable aquaculture and add ponds to move shop stock into pond warehouses without a second site.</>
-                        ) : activePondsOrdered.length === 0 ? (
-                          <>Add ponds under Aquaculture to use pond warehouse moves from your shop.</>
-                        ) : (
-                          <>Check that at least one site is active under Sites.</>
-                        )}
+                        Single-site companies need another active site for inter-station transfers, or enable
+                        aquaculture with ponds for shop → pond moves.
                       </>
                     ) : (
                       <>
-                        Add <strong>two active sites</strong> for inter-station transfers, or enable{' '}
-                        <strong>aquaculture</strong> with ponds to move stock into a pond warehouse.
+                        Add two active sites for inter-station transfers, or enable aquaculture with ponds for
+                        warehouse moves.
                       </>
                     )}
                   </p>
+                  <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                    <Link href="/stations" className={btnSecondary}>
+                      <Building2 className="h-4 w-4" />
+                      Manage sites
+                    </Link>
+                    <Link href="/company" className={btnSecondary}>
+                      Company settings
+                    </Link>
+                  </div>
                 </div>
               ) : (
                 <div
                   id="inventory-transfer-form"
                   className="w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-black/5 dark:ring-white/10 scroll-mt-4"
                 >
-                  <div className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
-                    <h2 className="text-lg font-semibold tracking-tight">
-                      {editingInterStationTransferId != null
-                        ? `Edit transfer draft ${
-                            transfers.find(x => x.id === editingInterStationTransferId)?.transfer_number ||
-                            `TR-${editingInterStationTransferId}`
-                          }`
-                        : 'New stock transfer'}
-                    </h2>
-                    <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                      {canInterStationCreate && canMoveToPondWarehouse ? (
-                        <>
-                          Inter-site: save a <span className="font-medium text-foreground">draft</span> first; posting
-                          moves bins and records the GL. Pond:{' '}
-                          <span className="font-medium text-foreground">warehouse</span> moves apply immediately (shop →
-                          pond store; no draft).
-                        </>
-                      ) : canInterStationCreate ? (
-                        <>
-                          Save a <span className="font-medium text-foreground">draft</span> first; posting moves station
-                          bins and records the GL.
-                        </>
-                      ) : (
-                        <>
-                          <span className="font-medium text-foreground">Pond warehouse</span> moves apply immediately
-                          (shop bin → pond store; no inter-site journal).
-                        </>
-                      )}
-                    </p>
-                    {canInterStationCreate ? (
-                      <div
-                        className="mt-3 max-w-2xl rounded-md border border-border/70 bg-background/60 px-3 py-2 text-[11px] leading-snug text-muted-foreground"
-                        role="note"
-                      >
-                        <span className="font-medium text-foreground">Inter-site posting affects stock and books:</span>{' '}
-                        bin quantities shift between sites. The ledger gets an auto journal on each line&apos;s{' '}
-                        <span className="font-medium text-foreground">inventory</span> account (debit at receiver,
-                        credit at sender, same value at item cost) so company-wide inventory value is unchanged but
-                        station-tagged GL lines move. GL and inventory-by-site reports reflect this; sales, COGS, and
-                        bank accounts are not touched by a normal inter-site move.
+                  <div className="border-b border-border bg-gradient-to-r from-muted/40 to-card px-4 py-4 sm:px-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h2 className="text-lg font-semibold tracking-tight">
+                          {editingInterStationTransferId != null
+                            ? `Edit draft ${
+                                transfers.find(x => x.id === editingInterStationTransferId)?.transfer_number ||
+                                `TR-${editingInterStationTransferId}`
+                              }`
+                            : 'New stock transfer'}
+                        </h2>
+                        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                          {canInterStationCreate && canMoveToPondWarehouse
+                            ? 'Inter-site moves save as drafts and post with GL. Pond moves apply immediately.'
+                            : canInterStationCreate
+                              ? 'Save a draft first, then post to move stock and record the journal.'
+                              : 'Move shop stock into a pond warehouse immediately (no draft).'}
+                        </p>
                       </div>
-                    ) : null}
+                      {canInterStationCreate ? (
+                        <details className="max-w-md rounded-lg border border-border/70 bg-background/70 px-3 py-2 text-sm">
+                          <summary className="cursor-pointer list-none font-medium text-foreground [&::-webkit-details-marker]:hidden">
+                            <span className="inline-flex items-center gap-1.5">
+                              <Info className="h-4 w-4 text-muted-foreground" />
+                              How posting affects books
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            </span>
+                          </summary>
+                          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                            Bin quantities shift between sites. The ledger gets an auto journal on each
+                            line&apos;s inventory account (debit at receiver, credit at sender). Company-wide
+                            inventory value stays the same; sales and bank accounts are not touched.
+                          </p>
+                        </details>
+                      ) : null}
+                    </div>
                   </div>
 
                   <div className="space-y-5 p-4 sm:p-5">
@@ -1211,8 +1485,8 @@ function InventoryContent() {
                               </option>
                             ))}
                           </select>
-                          <p className="text-[11px] leading-snug text-muted-foreground">
-                            Quantities below use this site&apos;s bin.
+                          <p className="text-xs text-muted-foreground">
+                            Quantities use this site&apos;s bin.
                           </p>
                         </div>
                         <div
@@ -1251,23 +1525,12 @@ function InventoryContent() {
                               </optgroup>
                             ) : null}
                           </select>
-                          <p className="text-[11px] leading-snug text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             {editingInterStationTransferId != null ? (
-                              <>
-                                Editing an <span className="font-medium text-foreground">inter-station</span> draft —
-                                save changes here or cancel. Pond warehouse moves use a separate flow.
-                              </>
+                              <>Editing an inter-station draft. Pond moves use a separate flow.</>
                             ) : (
                               <>
-                            Choose another <span className="font-medium text-foreground">site</span> for a tracked
-                            inter-station transfer (draft, then post with GL), or a <span className="font-medium text-foreground">pond</span>{' '}
-                            to move stock into that pond&apos;s warehouse immediately. You can still link a site to a
-                            pond under{' '}
-                            <Link href="/stations" className="font-medium text-foreground underline-offset-2 hover:underline">
-                              Sites
-                            </Link>{' '}
-                            (<span className="font-medium text-foreground">Default aquaculture pond</span>) so station
-                            labels match pond names elsewhere.
+                                Another site for a draft transfer, or a pond for an immediate warehouse move.
                               </>
                             )}
                           </p>
@@ -1522,15 +1785,9 @@ function InventoryContent() {
                       )}
 
                       <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="max-w-md text-[11px] leading-relaxed text-muted-foreground sm:min-w-0 sm:max-w-[min(28rem,100%)] sm:flex-1">
-                          <span className="inline-flex items-start gap-1.5">
-                            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                            <span>
-                              Quantities must be <strong className="font-medium text-foreground">greater than zero</strong>.
-                              You cannot transfer more than is available at the sending site; if the same product
-                              appears on multiple lines, limits apply to the combined total.
-                            </span>
-                          </span>
+                        <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+                          Quantities must be greater than zero and cannot exceed available stock at the
+                          sending site.
                         </p>
                         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
                           {editingInterStationTransferId != null ? (
@@ -1567,77 +1824,103 @@ function InventoryContent() {
                 </div>
               )}
 
-              <div className="w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-black/5 dark:ring-white/5">
-                <div className="border-b border-border bg-muted/30 px-4 py-2.5 sm:px-5">
-                  <h2 className="text-base font-semibold tracking-tight">Inter-station transfers</h2>
-                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                    Drafts and posted moves between <span className="font-medium text-foreground">sites</span> only.
-                    {userHomeStation ? (
-                      <>
-                        {' '}
-                        With a home station, you only see rows that include{' '}
-                        <span className="font-medium text-foreground">{userHomeStation.name}</span>.
-                      </>
-                    ) : null}{' '}
-                    Pond warehouse moves are listed in the next table.
-                  </p>
+              <div className="w-full min-w-0 overflow-hidden rounded-2xl border border-border bg-card shadow-sm ring-1 ring-black/5 dark:ring-white/5">
+                <div className="border-b border-border bg-muted/30 px-4 py-4 sm:px-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <h2 className="text-base font-semibold tracking-tight">Inter-station transfers</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Drafts and posted moves between sites.
+                        {userHomeStation ? ` Filtered to ${userHomeStation.name}.` : ''}
+                      </p>
+                    </div>
+                    <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+                      <div className="relative min-w-0 flex-1 sm:min-w-[220px]">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          type="search"
+                          placeholder="Search transfers…"
+                          value={transferSearch}
+                          onChange={e => setTransferSearch(e.target.value)}
+                          className={inputClassName + ' pl-9'}
+                        />
+                      </div>
+                      <select
+                        className={selectClassName + ' sm:w-[140px]'}
+                        value={transferStatusFilter}
+                        onChange={e =>
+                          setTransferStatusFilter(e.target.value as 'all' | 'draft' | 'posted')
+                        }
+                        aria-label="Filter by status"
+                      >
+                        <option value="all">All statuses</option>
+                        <option value="draft">Draft</option>
+                        <option value="posted">Posted</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[880px] text-sm">
+                  <table className="w-full min-w-[760px] text-sm">
                     <thead className="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       <tr>
-                        <th className="px-3 py-2">#</th>
-                        <th className="px-3 py-2">Date</th>
-                        <th className="px-3 py-2">From → To</th>
-                        <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Lines</th>
-                        <th className="px-3 py-2 min-w-[200px] max-w-xs">Impact</th>
-                        <th className="px-3 py-2 text-right whitespace-nowrap">Actions</th>
+                        <th className="px-4 py-2.5">#</th>
+                        <th className="px-4 py-2.5">Date</th>
+                        <th className="px-4 py-2.5">Route</th>
+                        <th className="px-4 py-2.5">Status</th>
+                        <th className="px-4 py-2.5">Lines</th>
+                        <th className="px-4 py-2.5 text-right whitespace-nowrap">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {transfers.length === 0 ? (
+                      {filteredTransfers.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
-                            No transfers yet
+                          <td colSpan={6} className="px-4 py-12 text-center">
+                            <div className="mx-auto max-w-sm">
+                              <ArrowRightLeft className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                              <p className="mt-3 font-medium text-foreground">
+                                {transfers.length === 0 ? 'No transfers yet' : 'No matching transfers'}
+                              </p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {transfers.length === 0
+                                  ? 'Create a draft above to move stock between sites.'
+                                  : 'Try a different search or status filter.'}
+                              </p>
+                            </div>
                           </td>
                         </tr>
                       ) : (
-                        transfers.map(t => (
+                        filteredTransfers.map(t => (
                           <tr key={t.id} className="border-t border-border/80 transition-colors hover:bg-muted/30">
-                            <td className="px-3 py-2 font-mono text-xs">
+                            <td className="px-4 py-3 font-mono text-xs">
                               {t.transfer_number || `TR-${t.id}`}
                             </td>
-                            <td className="px-3 py-2 whitespace-nowrap">
+                            <td className="px-4 py-3 whitespace-nowrap">
                               {formatDateOnly(t.transfer_date)}
                             </td>
-                            <td className="px-3 py-2">
-                              {t.from_station_name || t.from_station_id} → {t.to_station_name || t.to_station_id}
+                            <td className="px-4 py-3">
+                              <span className="font-medium">{t.from_station_name || t.from_station_id}</span>
+                              <span className="mx-1.5 text-muted-foreground">→</span>
+                              <span>{t.to_station_name || t.to_station_id}</span>
                             </td>
-                            <td className="px-3 py-2">
+                            <td className="px-4 py-3">
                               <span
-                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                                   t.status === 'posted'
                                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200'
                                     : 'bg-amber-100 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200'
                                 }`}
+                                title={interStationTransferImpactSummary(t)}
                               >
                                 {t.status}
                               </span>
                             </td>
-                            <td className="px-3 py-2 text-muted-foreground">
-                              {t.lines?.map(l => `${l.item_name} (${l.quantity})`).join(' · ') || '—'}
+                            <td className="max-w-xs px-4 py-3 text-muted-foreground">
+                              <span className="line-clamp-2">
+                                {t.lines?.map(l => `${l.item_name} (${l.quantity})`).join(' · ') || '—'}
+                              </span>
                             </td>
-                            <td className="px-3 py-2 align-top">
-                              <p className="flex items-start gap-1.5 text-xs leading-snug text-muted-foreground">
-                                <Info
-                                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
-                                  aria-hidden
-                                />
-                                <span>{interStationTransferImpactSummary(t)}</span>
-                              </p>
-                            </td>
-                            <td className="px-3 py-2 text-right">
+                            <td className="px-4 py-3 text-right">
                               {t.status === 'draft' ? (
                                 <div className="flex flex-wrap items-center justify-end gap-1">
                                   {canInterStationCreate ? (
@@ -1656,9 +1939,15 @@ function InventoryContent() {
                                     type="button"
                                     className={btnRowIconPrimary}
                                     disabled={transferListBusy}
-                                    title="Post — move stock between sites and create GL entry"
+                                    title={interStationTransferImpactSummary(t)}
                                     aria-label={`Post transfer ${t.transfer_number || t.id}`}
-                                    onClick={() => void postTransfer(t.id)}
+                                    onClick={() =>
+                                      setConfirmAction({
+                                        kind: 'post',
+                                        id: t.id,
+                                        label: t.transfer_number || `TR-${t.id}`,
+                                      })
+                                    }
                                   >
                                     {transferPostingId === t.id ? (
                                       <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
@@ -1672,7 +1961,13 @@ function InventoryContent() {
                                     disabled={transferListBusy}
                                     title="Delete draft"
                                     aria-label={`Delete draft ${t.transfer_number || t.id}`}
-                                    onClick={() => void deleteDraft(t.id)}
+                                    onClick={() =>
+                                      setConfirmAction({
+                                        kind: 'delete',
+                                        id: t.id,
+                                        label: t.transfer_number || `TR-${t.id}`,
+                                      })
+                                    }
                                   >
                                     {transferDeletingId === t.id ? (
                                       <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
@@ -1686,9 +1981,15 @@ function InventoryContent() {
                                   type="button"
                                   className={btnRowIconWarning}
                                   disabled={transferListBusy}
-                                  title="Rollback — return stock to source and remove GL entry"
+                                  title={interStationTransferImpactSummary(t)}
                                   aria-label={`Roll back posted transfer ${t.transfer_number || t.id}`}
-                                  onClick={() => void unpostTransfer(t.id)}
+                                  onClick={() =>
+                                    setConfirmAction({
+                                      kind: 'unpost',
+                                      id: t.id,
+                                      label: t.transfer_number || `TR-${t.id}`,
+                                    })
+                                  }
                                 >
                                   {transferUnpostingId === t.id ? (
                                     <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
@@ -1707,47 +2008,69 @@ function InventoryContent() {
               </div>
 
               {pondReceipts.length > 0 || canMoveToPondWarehouse ? (
-                <div className="w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-black/5 dark:ring-white/5">
-                  <div className="border-b border-border bg-muted/30 px-4 py-2.5 sm:px-5">
-                    <h2 className="text-base font-semibold tracking-tight">Pond warehouse receipts</h2>
-                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                      Shop stock moved into a pond&apos;s warehouse (immediate; no draft). Same home-station filter as
-                      above when your user is tied to one site.
-                    </p>
+                <div className="w-full min-w-0 overflow-hidden rounded-2xl border border-border bg-card shadow-sm ring-1 ring-black/5 dark:ring-white/5">
+                  <div className="border-b border-border bg-muted/30 px-4 py-4 sm:px-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                      <div>
+                        <h2 className="text-base font-semibold tracking-tight">Pond warehouse receipts</h2>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Immediate shop → pond moves (no draft).
+                        </p>
+                      </div>
+                      <div className="relative w-full sm:max-w-xs">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          type="search"
+                          placeholder="Search receipts…"
+                          value={pondReceiptSearch}
+                          onChange={e => setPondReceiptSearch(e.target.value)}
+                          className={inputClassName + ' pl-9'}
+                        />
+                      </div>
+                    </div>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[880px] text-sm">
+                    <table className="w-full min-w-[680px] text-sm">
                       <thead className="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         <tr>
-                          <th className="px-3 py-2">#</th>
-                          <th className="px-3 py-2">When</th>
-                          <th className="px-3 py-2">From → Pond</th>
-                          <th className="px-3 py-2">Lines</th>
-                          <th className="px-3 py-2 min-w-[200px] max-w-xs">Impact</th>
-                          <th className="px-3 py-2 text-right whitespace-nowrap">Actions</th>
+                          <th className="px-4 py-2.5">#</th>
+                          <th className="px-4 py-2.5">When</th>
+                          <th className="px-4 py-2.5">Route</th>
+                          <th className="px-4 py-2.5">Lines</th>
+                          <th className="px-4 py-2.5 text-right whitespace-nowrap">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {pondReceipts.length === 0 ? (
+                        {filteredPondReceipts.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
-                              No pond warehouse moves recorded yet
+                            <td colSpan={5} className="px-4 py-12 text-center">
+                              <div className="mx-auto max-w-sm">
+                                <Sprout className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                                <p className="mt-3 font-medium text-foreground">
+                                  {pondReceipts.length === 0
+                                    ? 'No pond warehouse moves yet'
+                                    : 'No matching receipts'}
+                                </p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  Move feed or supplies from a shop site to a pond warehouse above.
+                                </p>
+                              </div>
                             </td>
                           </tr>
                         ) : (
-                          pondReceipts.map(r => (
+                          filteredPondReceipts.map(r => (
                             <tr key={r.id} className="border-t border-border/80 transition-colors hover:bg-muted/30">
-                              <td className="px-3 py-2 font-mono text-xs">
+                              <td className="px-4 py-3 font-mono text-xs">
                                 {r.receipt_number || `PWR-${r.id}`}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                              <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
                                 {r.created_at ? formatDateOnly(r.created_at) : '—'}
                               </td>
-                              <td className="px-3 py-2">
-                                <span className="text-foreground">
+                              <td className="px-4 py-3">
+                                <span className="font-medium">
                                   {r.from_station_name || r.from_station_id}
                                 </span>
-                                <span className="text-muted-foreground"> → </span>
+                                <span className="mx-1.5 text-muted-foreground">→</span>
                                 <Link
                                   href={`/aquaculture/ponds/${r.pond_id}`}
                                   className="font-medium text-primary underline-offset-2 hover:underline"
@@ -1755,26 +2078,25 @@ function InventoryContent() {
                                   {r.pond_name || `Pond #${r.pond_id}`}
                                 </Link>
                               </td>
-                              <td className="px-3 py-2 text-muted-foreground">
-                                {r.lines?.map(l => `${l.item_name} (${l.quantity})`).join(' · ') || '—'}
+                              <td className="max-w-xs px-4 py-3 text-muted-foreground">
+                                <span className="line-clamp-2">
+                                  {r.lines?.map(l => `${l.item_name} (${l.quantity})`).join(' · ') || '—'}
+                                </span>
                               </td>
-                              <td className="px-3 py-2 align-top">
-                                <p className="flex items-start gap-1.5 text-xs leading-snug text-muted-foreground">
-                                  <Info
-                                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
-                                    aria-hidden
-                                  />
-                                  <span>{pondWarehouseReceiptImpactSummary()}</span>
-                                </p>
-                              </td>
-                              <td className="px-3 py-2 text-right">
+                              <td className="px-4 py-3 text-right">
                                 <button
                                   type="button"
                                   className={btnRowIconDanger}
                                   disabled={transferListBusy}
-                                  title="Remove receipt — reverse stock from pond to shop if still available"
+                                  title={pondWarehouseReceiptImpactSummary()}
                                   aria-label={`Remove pond receipt ${r.receipt_number || r.id}`}
-                                  onClick={() => void reversePondReceipt(r.id)}
+                                  onClick={() =>
+                                    setConfirmAction({
+                                      kind: 'reverse',
+                                      id: r.id,
+                                      label: r.receipt_number || `PWR-${r.id}`,
+                                    })
+                                  }
                                 >
                                   {pondReceiptReversingId === r.id ? (
                                     <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
@@ -1795,7 +2117,46 @@ function InventoryContent() {
           )}
         </div>
       </div>
-    </div>
+
+      <Modal
+        isOpen={confirmAction != null}
+        onClose={() => {
+          if (!confirmBusy) setConfirmAction(null)
+        }}
+        title={confirmCopy.title}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            {confirmCopy.body}
+            {confirmAction ? (
+              <span className="mt-2 block font-medium text-gray-900">{confirmAction.label}</span>
+            ) : null}
+          </p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              className={btnSecondary + ' w-full sm:w-auto'}
+              disabled={confirmBusy}
+              onClick={() => setConfirmAction(null)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className={
+                (confirmCopy.danger ? btnDanger : btnPrimary) + ' w-full sm:w-auto !px-4 !py-2.5'
+              }
+              disabled={confirmBusy}
+              onClick={() => void runConfirmAction()}
+            >
+              {confirmBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {confirmCopy.confirmLabel}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </PageLayout>
   )
 }
 
@@ -1803,9 +2164,14 @@ export default function InventoryPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex h-screen items-center justify-center bg-muted/20 text-muted-foreground">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
+        <PageLayout>
+          <div className="flex min-h-[50vh] items-center justify-center p-6">
+            <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card px-10 py-12 text-center shadow-sm">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
+              <p className="text-sm font-medium text-foreground">Loading inventory…</p>
+            </div>
+          </div>
+        </PageLayout>
       }
     >
       <InventoryContent />

@@ -1,165 +1,29 @@
 'use client'
 
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
-import { useCompany } from '@/contexts/CompanyContext'
-import api from '@/lib/api'
-import { isConnectionError, safeLogError } from '@/utils/connectionError'
-import {
-  getFsmsErpMenuItems,
-  getSaasMenuItems,
-  getFilteredMenuItems,
-  filterAquacultureMenuWhenDisabled,
-  filterTenantBackupMenuItem,
-  getSectionDefinitions,
-  type ErpAppSection,
-} from '@/navigation/erpAppMenu'
+import { useErpNavigationMenu } from '@/hooks/useErpNavigationMenu'
 
 /**
  * Odoo-style app grid: categories with light icon tiles, no top app bar.
- * Same visibility rules as the sidebar.
+ * Same visibility rules as the sidebar (shared hook).
  */
 export default function AppsPage() {
   const router = useRouter()
-  const { mode } = useCompany()
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [userPermissions, setUserPermissions] = useState<string[] | null>(null)
-  const [companiesCount, setCompaniesCount] = useState(0)
-  const [usersCount, setUsersCount] = useState(0)
-  const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
-  const backendUnreachableRef = useRef(false)
-
-  const isSuperAdmin = userRole === 'super_admin'
+  const { menuItemsForNav: visibleApps, sectionsForNav: sections } = useErpNavigationMenu({
+    excludeHrefs: ['/apps'],
+  })
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const token = localStorage.getItem('access_token')
     if (!token?.trim()) {
       router.replace('/login')
-      return
-    }
-    const userStr = localStorage.getItem('user')
-    if (userStr && userStr !== 'undefined' && userStr !== 'null') {
-      try {
-        const u = JSON.parse(userStr)
-        if (u && typeof u === 'object') {
-          setUserRole((u.role as string | undefined)?.toLowerCase() || null)
-          setUserPermissions(Array.isArray((u as { permissions?: unknown }).permissions) ? (u as { permissions: string[] }).permissions : null)
-        }
-      } catch {
-        setUserRole(null)
-      }
     }
   }, [router])
-
-  useEffect(() => {
-    const fetchAq = async () => {
-      if (mode !== 'fsms_erp') {
-        setAquacultureEnabled(false)
-        return
-      }
-      const token = localStorage.getItem('access_token')
-      if (!token) {
-        setAquacultureEnabled(false)
-        return
-      }
-      try {
-        const { data } = await api.get<Record<string, unknown>>('/companies/current/')
-        setAquacultureEnabled(Boolean(data?.aquaculture_enabled))
-      } catch {
-        setAquacultureEnabled(false)
-      }
-    }
-    void fetchAq()
-    const onSaved = () => void fetchAq()
-    if (typeof window !== 'undefined') {
-      window.addEventListener('fserp-company-settings-saved', onSaved)
-    }
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('fserp-company-settings-saved', onSaved)
-      }
-    }
-  }, [mode])
-
-  useEffect(() => {
-    if (mode === 'saas_dashboard' && userRole === 'super_admin') {
-      backendUnreachableRef.current = false
-      const fetchCounts = async () => {
-        if (backendUnreachableRef.current) return
-        try {
-          const opts = { timeout: 5000 }
-          const [companiesResponse, usersResponse] = await Promise.all([
-            api.get('/admin/companies/', opts),
-            api.get('/admin/users/', { ...opts, params: { limit: 500 } }),
-          ])
-          if (companiesResponse.data && Array.isArray(companiesResponse.data)) {
-            setCompaniesCount(companiesResponse.data.length)
-          }
-          if (usersResponse.data && Array.isArray(usersResponse.data)) {
-            setUsersCount(usersResponse.data.length)
-          }
-        } catch (error: unknown) {
-          if (isConnectionError(error)) {
-            backendUnreachableRef.current = true
-          }
-          safeLogError('Error fetching counts for apps page:', error)
-        }
-      }
-      void fetchCounts()
-      const interval = setInterval(fetchCounts, 30000)
-      const onStorage = (e: StorageEvent) => {
-        if (e.key === 'admin_companies_updated' || e.key === 'admin_users_updated') {
-          void fetchCounts()
-        }
-      }
-      window.addEventListener('storage', onStorage)
-      window.addEventListener('adminCountsUpdated', () => {
-        void fetchCounts()
-      })
-      return () => {
-        clearInterval(interval)
-        window.removeEventListener('storage', onStorage)
-        window.removeEventListener('adminCountsUpdated', fetchCounts)
-      }
-    }
-  }, [mode, userRole])
-
-  const fsmsErpMenuItems = useMemo(() => getFsmsErpMenuItems(), [])
-
-  const saasMenuItems = useMemo(
-    () => getSaasMenuItems(companiesCount, usersCount),
-    [companiesCount, usersCount]
-  )
-
-  const visibleApps = useMemo(() => {
-    return filterAquacultureMenuWhenDisabled(
-      filterTenantBackupMenuItem(
-        getFilteredMenuItems(
-          userRole,
-          isSuperAdmin,
-          mode,
-          fsmsErpMenuItems,
-          saasMenuItems,
-          userPermissions
-        ).filter((item) => item.href !== '/apps'),
-        userRole?.toLowerCase() || '',
-        userPermissions
-      ),
-      aquacultureEnabled,
-      userRole,
-      isSuperAdmin,
-      userPermissions
-    )
-  }, [userRole, userPermissions, isSuperAdmin, mode, fsmsErpMenuItems, saasMenuItems, aquacultureEnabled])
-
-  const sections = useMemo(() => {
-    const vis = new Set<ErpAppSection>(visibleApps.map((i) => i.section))
-    return getSectionDefinitions(isSuperAdmin, mode, vis)
-  }, [visibleApps, isSuperAdmin, mode])
 
   return (
     <div className="page-with-sidebar flex h-screen min-h-0 w-full min-w-0 max-w-full bg-gray-100">
@@ -202,10 +66,6 @@ export default function AppsPage() {
                 </div>
               )
             })}
-
-            {visibleApps.length === 0 && (
-              <p className="px-2 py-12 text-center text-sm text-gray-500">No applications available for your account.</p>
-            )}
           </div>
         </div>
       </div>

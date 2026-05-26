@@ -176,7 +176,7 @@
 }
 
 /* Reserve space for the mobile menu (hamburger) + notch / status bar */
-@media (max-width: 1023px) {
+@media (max-width: 767px) {
   .page-with-sidebar > div.flex-1 {
     padding-top: max(3.5rem, env(safe-area-inset-top, 0px) + 0.5rem);
   }

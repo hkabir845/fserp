@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { ToastProvider } from './Toast'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { CompanyLocaleProvider } from '@/contexts/CompanyLocaleContext'
+import { SidebarNavProvider } from '@/contexts/SidebarNavContext'
 import { FixedBanner } from './FixedBanner'
 import { PwaInstallBanner } from './PwaInstallBanner'
 import { AuthApiOriginGuard } from './AuthApiOriginGuard'
@@ -23,11 +24,13 @@ export function Providers({ children }: { children: ReactNode }) {
           children
         ) : (
           <CompanyProvider>
-            <CompanyLocaleProvider>
-              <FixedBanner />
-              <PwaInstallBanner />
-              {children}
-            </CompanyLocaleProvider>
+            <SidebarNavProvider>
+              <CompanyLocaleProvider>
+                <FixedBanner />
+                <PwaInstallBanner />
+                {children}
+              </CompanyLocaleProvider>
+            </SidebarNavProvider>
           </CompanyProvider>
         )}
       </AuthApiOriginGuard>

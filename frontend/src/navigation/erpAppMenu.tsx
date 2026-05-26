@@ -30,6 +30,7 @@ import {
 
 import { getAquacultureMenuItemsFlatWithGroup } from '@/navigation/aquacultureNavConfig'
 import { hasAnyAquacultureModuleInList, menuHrefAllowedForAquaculture } from '@/navigation/aquaculturePermissions'
+import { canAccessBackup } from '@/utils/rbac'
 
 /** Sidebar search hints (unchanged from Sidebar) */
 export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
@@ -383,13 +384,12 @@ export function filterTenantBackupMenuItem(
   role: string,
   effectivePermissions?: string[] | null
 ): ErpAppMenuItem[] {
-  const r = role.toLowerCase()
   return items.filter((item) => {
     if (item.href !== '/backup') return true
     if (effectivePermissions != null) {
       return effectivePermissions.includes(PERM_WILDCARD) || effectivePermissions.includes('app.backup')
     }
-    return r === 'admin'
+    return canAccessBackup(role)
   })
 }
 

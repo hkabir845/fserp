@@ -1,11 +1,12 @@
 @echo off
 cd /d "%~dp0"
 set "PY="
-if exist "venv_new\Scripts\python.exe" set "PY=%~dp0venv_new\Scripts\python.exe"
-if exist "venv\Scripts\python.exe" set "PY=%~dp0venv\Scripts\python.exe"
-if not defined PY if exist "..\venv\Scripts\python.exe" set "PY=%~dp0..\venv\Scripts\python.exe"
+if exist "%~dp0..\.venv-local\Scripts\python.exe" set "PY=%~dp0..\.venv-local\Scripts\python.exe"
+if not defined PY if exist "%~dp0..\.venv\Scripts\python.exe" set "PY=%~dp0..\.venv\Scripts\python.exe"
+if not defined PY if exist "venv_new\Scripts\python.exe" set "PY=%~dp0venv_new\Scripts\python.exe"
 if not defined PY (
-    echo Virtual environment not found. Run setup.bat in backend folder or create venv in project root.
+    echo Virtual environment not found.
+    echo Run from repo root: powershell -File scripts\dev-setup.ps1
     pause
     exit /b 1
 )

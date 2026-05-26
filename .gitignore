@@ -35,6 +35,8 @@ Thumbs.db
 # Misc
 *.pyc
 .pytest_cache/
+*.rar
+FSERP.rar
 
 # Windows: reserved name `nul` cannot be versioned; breaks `git add` (see e.g. accidental `> nul` in wrong cwd)
 nul

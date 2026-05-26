@@ -1,50 +1,51 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Building2, Crown, Shield, Menu, Search, X, LogOut, KeyRound } from 'lucide-react'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useSidebarNav } from '@/contexts/SidebarNavContext'
 import CompanySwitcher from '@/components/CompanySwitcher'
 import api from '@/lib/api'
-import { isConnectionError, safeLogError } from '@/utils/connectionError'
-import {
-  MENU_SECTION_SEARCH_HINTS,
-  getFsmsErpMenuItems,
-  getSaasMenuItems,
-  getFilteredMenuItems,
-  filterAquacultureMenuWhenDisabled,
-  filterTenantBackupMenuItem,
-  getSectionDefinitions,
-  type ErpAppSection,
-} from '@/navigation/erpAppMenu'
+import { safeLogError } from '@/utils/connectionError'
+import { useErpNavigationMenu } from '@/hooks/useErpNavigationMenu'
+import { useCenterActiveListItem } from '@/hooks/useCenterActiveListItem'
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'sidebar_width_px'
 const SIDEBAR_WIDTH_DEFAULT = 256
 const SIDEBAR_WIDTH_MIN = 200
 const SIDEBAR_WIDTH_MAX = 520
 
+const NAV_ITEM_ACTIVE_CLASS =
+  'border-blue-400/80 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-500/30'
+const NAV_ITEM_IDLE_CLASS =
+  'border-transparent text-gray-300 hover:border-gray-600 hover:bg-gray-800/70 hover:text-white'
+
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [userPermissions, setUserPermissions] = useState<string[] | null>(null)
+  const { navOpen: mobileNavOpen, setNavOpen: setMobileNavOpen, isDesktopLayout } = useSidebarNav()
   const { selectedCompany, setSelectedCompany, isSaaSDashboard, isMasterCompany, mode, setMode, isClientReady } =
     useCompany()
-  const [navSessionReady, setNavSessionReady] = useState(false)
-  const [companiesCount, setCompaniesCount] = useState<number>(0)
-  const [usersCount, setUsersCount] = useState<number>(0)
+  const [navSearchQuery, setNavSearchQuery] = useState('')
+  const {
+    navReady,
+    userRole,
+    isSuperAdmin,
+    filteredMenuItems,
+    menuItemsForNav,
+    sectionsForNav,
+    activeNavHref,
+  } = useErpNavigationMenu({ searchQuery: navSearchQuery })
 
   const [sidebarWidthPx, setSidebarWidthPx] = useState(SIDEBAR_WIDTH_DEFAULT)
-  const [isDesktopLayout, setIsDesktopLayout] = useState(false)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
-  const [navSearchQuery, setNavSearchQuery] = useState('')
-  const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
   const resizeDragRef = useRef<{
     startX: number
     startWidth: number
   } | null>(null)
+  const navScrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -59,15 +60,6 @@ export default function Sidebar() {
     } catch {
       /* ignore */
     }
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const mq = window.matchMedia('(min-width: 1024px)')
-    const sync = () => setIsDesktopLayout(mq.matches)
-    sync()
-    mq.addEventListener('change', sync)
-    return () => mq.removeEventListener('change', sync)
   }, [])
 
   const endSidebarResize = useCallback(() => {
@@ -135,101 +127,16 @@ export default function Sidebar() {
     }
   }
   
-  // Session role/permissions from localStorage — after mount only (matches SSR placeholder nav).
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const userStr = localStorage.getItem('user')
-      if (userStr && userStr !== 'undefined' && userStr !== 'null') {
-        const parsedUser = JSON.parse(userStr)
-        if (parsedUser && typeof parsedUser === 'object') {
-          setUserRole(parsedUser.role?.toLowerCase() || null)
-          setUserPermissions(
-            Array.isArray((parsedUser as { permissions?: unknown }).permissions)
-              ? (parsedUser as { permissions: string[] }).permissions
-              : null
-          )
-        }
-      }
-    } catch (error) {
-      console.error('Error parsing user data:', error)
-    } finally {
-      setNavSessionReady(true)
-    }
-  }, [])
-
-  const navReady = isClientReady && navSessionReady
-  
-  // Fetch counts for SaaS dashboard menu items (stop polling if backend is unreachable)
-  const backendUnreachableRef = useRef(false)
-  useEffect(() => {
-    if (mode === 'saas_dashboard' && userRole === 'super_admin') {
-      backendUnreachableRef.current = false
-      const fetchCounts = async () => {
-        if (backendUnreachableRef.current) return
-        try {
-          // Short timeout for optional counts so we don't hang when backend is down
-          const opts = { timeout: 5000 }
-          const [companiesResponse, usersResponse] = await Promise.all([
-            api.get('/admin/companies/', opts),
-            api.get('/admin/users/', { ...opts, params: { limit: 500 } })
-          ])
-          if (companiesResponse.data && Array.isArray(companiesResponse.data)) {
-            setCompaniesCount(companiesResponse.data.length)
-          }
-          if (usersResponse.data && Array.isArray(usersResponse.data)) {
-            setUsersCount(usersResponse.data.length)
-          }
-        } catch (error: any) {
-          if (isConnectionError(error)) {
-            backendUnreachableRef.current = true
-          }
-          safeLogError('Error fetching counts for sidebar:', error)
-        }
-      }
-      
-      fetchCounts()
-      // Refresh counts every 30 seconds only while backend is reachable
-      const interval = setInterval(fetchCounts, 30000)
-      
-      // Listen for storage events to update counts when admin page updates them
-      const handleStorageChange = (e: StorageEvent) => {
-        if (e.key === 'admin_companies_updated' || e.key === 'admin_users_updated') {
-          fetchCounts()
-        }
-      }
-      window.addEventListener('storage', handleStorageChange)
-      
-      // Listen for custom events from admin page
-      const handleCustomEvent = () => {
-        fetchCounts()
-      }
-      window.addEventListener('adminCountsUpdated', handleCustomEvent)
-      
-      return () => {
-        clearInterval(interval)
-        window.removeEventListener('storage', handleStorageChange)
-        window.removeEventListener('adminCountsUpdated', handleCustomEvent)
-      }
-    }
-  }, [mode, userRole])
-
-  useEffect(() => {
-    setMobileNavOpen(false)
-  }, [pathname])
-
   useEffect(() => {
     if (typeof document === 'undefined') return
-    if (mobileNavOpen) {
+    if (mobileNavOpen && !isDesktopLayout) {
       const prev = document.body.style.overflow
       document.body.style.overflow = 'hidden'
       return () => {
         document.body.style.overflow = prev
       }
     }
-  }, [mobileNavOpen])
-  
-  const isSuperAdmin = userRole === 'super_admin'
+  }, [mobileNavOpen, isDesktopLayout])
 
   /** ERP nav is shown whenever not (superadmin in SaaS-only tab). */
   const showingErpNav = !isSuperAdmin || mode === 'fsms_erp'
@@ -406,94 +313,19 @@ export default function Sidebar() {
     }
   }
 
+  /** If menu search hides the current page, clear search so the selection stays visible (Reports-style). */
   useEffect(() => {
-    const fetchAq = async () => {
-      if (mode !== 'fsms_erp') {
-        setAquacultureEnabled(false)
-        return
-      }
-      const token = localStorage.getItem('access_token')
-      if (!token) {
-        setAquacultureEnabled(false)
-        return
-      }
-      try {
-        const { data } = await api.get<Record<string, unknown>>('/companies/current/')
-        setAquacultureEnabled(Boolean(data?.aquaculture_enabled))
-      } catch {
-        setAquacultureEnabled(false)
-      }
-    }
-    void fetchAq()
-    const onSaved = () => void fetchAq()
-    if (typeof window !== 'undefined') {
-      window.addEventListener('fserp-company-settings-saved', onSaved)
-    }
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('fserp-company-settings-saved', onSaved)
-      }
-    }
-  }, [mode, selectedCompany?.id, pathname])
+    if (!pathname || !navSearchQuery.trim() || !navReady || !activeNavHref) return
+    const visible = menuItemsForNav.some((item) => item.href === activeNavHref)
+    if (!visible) setNavSearchQuery('')
+  }, [pathname, navSearchQuery, navReady, activeNavHref, menuItemsForNav])
 
-  const fsmsErpMenuItems = useMemo(() => getFsmsErpMenuItems(), [])
-
-  const saasMenuItems = useMemo(
-    () => getSaasMenuItems(companiesCount, usersCount),
-    [companiesCount, usersCount]
+  useCenterActiveListItem(
+    navScrollRef,
+    '[data-nav-active="true"]',
+    Boolean(pathname && navReady),
+    [pathname, menuItemsForNav, navReady, mobileNavOpen, isDesktopLayout, activeNavHref]
   )
-
-  const filteredMenuItems = useMemo(
-    () =>
-      filterAquacultureMenuWhenDisabled(
-        filterTenantBackupMenuItem(
-          getFilteredMenuItems(
-            userRole,
-            isSuperAdmin,
-            mode,
-            fsmsErpMenuItems,
-            saasMenuItems,
-            userPermissions
-          ),
-          userRole?.toLowerCase() || '',
-          userPermissions
-        ),
-        aquacultureEnabled,
-        userRole,
-        isSuperAdmin,
-        userPermissions
-      ),
-    [userRole, userPermissions, isSuperAdmin, mode, fsmsErpMenuItems, saasMenuItems, aquacultureEnabled]
-  )
-
-  const menuItemsForNav = useMemo(() => {
-    const q = navSearchQuery.trim().toLowerCase()
-    if (!q) return filteredMenuItems
-    return filteredMenuItems.filter((item) => {
-      const label = item.label.toLowerCase()
-      const labelPlain = label.replace(/\s*\(\d+\)\s*/g, ' ').replace(/\s+/g, ' ').trim()
-      const href = item.href.toLowerCase()
-      const hints = (MENU_SECTION_SEARCH_HINTS[item.section] || '').toLowerCase()
-      return (
-        label.includes(q) ||
-        labelPlain.includes(q) ||
-        href.includes(q) ||
-        hints.includes(q)
-      )
-    })
-  }, [filteredMenuItems, navSearchQuery])
-
-  const sections = useMemo(() => {
-    const visibleSections = new Set<ErpAppSection>(
-      filteredMenuItems.map((item) => item.section)
-    )
-    return getSectionDefinitions(isSuperAdmin, mode, visibleSections)
-  }, [filteredMenuItems, isSuperAdmin, mode])
-
-  const sectionsForNav = useMemo(() => {
-    const ids = new Set(menuItemsForNav.map((i) => i.section))
-    return sections.filter((s) => ids.has(s.id))
-  }, [sections, menuItemsForNav])
 
   const handleLogout = () => {
     localStorage.removeItem('access_token')
@@ -511,7 +343,7 @@ export default function Sidebar() {
       <button
         type="button"
         onClick={() => setMobileNavOpen(true)}
-        className="fixed left-[max(0.75rem,env(safe-area-inset-left,0px))] top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[60] flex h-11 w-11 items-center justify-center rounded-lg bg-gray-900 text-white shadow-lg ring-1 ring-white/10 lg:hidden"
+        className="fixed left-[max(0.75rem,env(safe-area-inset-left,0px))] top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[60] flex h-11 w-11 items-center justify-center rounded-lg bg-gray-900 text-white shadow-lg ring-1 ring-white/10 md:hidden"
         aria-label="Open navigation menu"
       >
         <Menu className="h-6 w-6" />
@@ -519,7 +351,7 @@ export default function Sidebar() {
       {mobileNavOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-[45] bg-black/50 backdrop-blur-[1px] lg:hidden"
+          className="fixed inset-0 z-[45] bg-black/50 backdrop-blur-[1px] md:hidden"
           aria-label="Close menu"
           onClick={() => setMobileNavOpen(false)}
         />
@@ -528,8 +360,8 @@ export default function Sidebar() {
         key={`sidebar-${mode}`}
         className={`
           fixed inset-y-0 left-0 z-[50] flex h-full min-h-0 w-[min(100vw-3rem,20rem)] max-w-[20rem] flex-col overflow-hidden bg-gray-900 text-white shadow-xl transition-transform duration-200 ease-out
-          lg:static lg:z-auto lg:h-full lg:min-h-0 lg:min-w-0 lg:w-full lg:max-w-none lg:translate-x-0
-          ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+          md:static md:z-auto md:h-full md:min-h-0 md:min-w-0 md:w-full md:max-w-none md:translate-x-0
+          ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
       >
       {/* Header */}
@@ -541,7 +373,7 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={() => setMobileNavOpen(false)}
-          className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white lg:hidden"
+          className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white md:hidden"
           aria-label="Close navigation"
         >
           <X className="h-6 w-6" />
@@ -686,7 +518,10 @@ export default function Sidebar() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900 sm:px-4">
+        <div
+          ref={navScrollRef}
+          className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900 sm:px-4"
+        >
         {!navReady ? (
           <div className="py-8 text-center text-sm text-gray-500" aria-busy="true">
             Loading menu…
@@ -705,17 +540,7 @@ export default function Sidebar() {
                 </button>
               </>
             ) : (
-              <>
-                <p className="text-sm">No menu items available</p>
-                {isSuperAdmin && (
-                  <p className="mt-2 text-xs text-gray-500">
-                    Debug: Mode={mode}, SourceItems=
-                    {isSuperAdmin && mode === 'saas_dashboard' ? saasMenuItems.length : fsmsErpMenuItems.length},
-                    Filtered={filteredMenuItems.length},
-                    Sections={sections.length}
-                  </p>
-                )}
-              </>
+              <p className="text-sm">No menu items available</p>
             )}
           </div>
         ) : (
@@ -723,26 +548,16 @@ export default function Sidebar() {
             const sectionItems = menuItemsForNav.filter((item) => item.section === section.id)
             if (sectionItems.length === 0) return null
 
-            const matches = sectionItems.filter(
-              (other) => pathname === other.href || pathname.startsWith(other.href + '/')
-            )
-            const best =
-              matches.length === 0
-                ? null
-                : matches.reduce((a, b) => (a.href.length >= b.href.length ? a : b))
-
             const renderItem = (item: typeof sectionItems[number]) => {
               const Icon = item.icon
-              const isActive = best !== null && item.href === best.href
+              const isActive = activeNavHref !== null && item.href === activeNavHref
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={() => setMobileNavOpen(false)}
-                  className={`flex items-center space-x-3 px-3 py-2.5 rounded-md transition-all duration-200 group ${
-                    isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-500/30'
-                      : 'text-gray-300 hover:bg-gray-800/70 hover:text-white'
+                  data-nav-active={isActive ? 'true' : undefined}
+                  className={`flex items-center space-x-3 rounded-lg border-2 px-3 py-2.5 transition-all duration-200 group ${
+                    isActive ? NAV_ITEM_ACTIVE_CLASS : NAV_ITEM_IDLE_CLASS
                   }`}
                 >
                   <Icon className={`h-4.5 w-4.5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'} transition-colors`} />
@@ -804,7 +619,6 @@ export default function Sidebar() {
       <div className="p-4 border-t border-gray-800 space-y-1">
         <Link
           href="/account/password"
-          onClick={() => setMobileNavOpen(false)}
           className="flex items-center space-x-3 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors w-full"
         >
           <KeyRound className="h-5 w-5" />
@@ -829,7 +643,7 @@ export default function Sidebar() {
         aria-valuemin={SIDEBAR_WIDTH_MIN}
         aria-valuemax={SIDEBAR_WIDTH_MAX}
         aria-valuenow={Math.round(sidebarWidthPx)}
-        className={`pointer-events-none absolute top-0 z-[52] hidden h-full w-3 -translate-x-1/2 cursor-col-resize select-none lg:pointer-events-auto lg:block ${
+        className={`pointer-events-none absolute top-0 z-[52] hidden h-full w-3 -translate-x-1/2 cursor-col-resize select-none md:pointer-events-auto md:block ${
           isResizingSidebar ? 'bg-blue-500/25' : 'hover:bg-white/10'
         }`}
         style={{ right: 0 }}

@@ -15,14 +15,17 @@ from api.services.tenant_backup import (
     restore_bundle,
     _parse_bundle,
 )
+from api.services.permission_service import has_permission, resolve_user_permissions
 from api.utils.auth import auth_required, company_context_error_response, get_company_id, user_is_super_admin
 
 logger = logging.getLogger(__name__)
 
 
 def _user_can_backup(user) -> bool:
-    r = (getattr(user, "role", None) or "").strip().lower().replace(" ", "_").replace("-", "_")
-    return r in ("admin", "super_admin")
+    """Tenant backup/restore requires ``app.backup`` (Admin, Manager, or custom role)."""
+    if user_is_super_admin(user):
+        return True
+    return has_permission(resolve_user_permissions(user), "app.backup")
 
 
 def _ensure_tenant_admin_company_access(request, company_id: int) -> bool:

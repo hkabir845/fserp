@@ -7,7 +7,6 @@ export {
   formatCurrency,
   formatNumber,
   getCurrencySymbol,
-  getCurrencyName,
   roundToDecimals,
 } from './currency'
 

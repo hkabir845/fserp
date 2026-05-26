@@ -12,6 +12,7 @@ import { getApiBaseUrl } from '@/lib/api'
 import { isTenantAdminAquacultureUser } from '@/navigation/erpAppMenu'
 import { formatBankRegisterLabel } from '@/lib/bankAccountDisplay'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { COA_SALARY_EXP, suggestedPayrollSalaryExpenseAccountId } from '@/lib/coaDefaults'
 
 interface PayrollRun {
   id: number
@@ -152,6 +153,7 @@ export default function PayrollPage() {
   } | null>(null)
   const [payFromSelect, setPayFromSelect] = useState<string>('')
   const payFromTouched = useRef(false)
+  const salaryExpenseTouched = useRef(false)
   const [amountSaving, setAmountSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [detailAmounts, setDetailAmounts] = useState({
@@ -439,6 +441,7 @@ export default function PayrollPage() {
   }
 
   const resetForm = () => {
+    salaryExpenseTouched.current = false
     setFormData({
       pay_period_start: '',
       pay_period_end: '',
@@ -455,7 +458,23 @@ export default function PayrollPage() {
     setEditingId(null)
   }
 
+  /** Pre-select template salary expense (6400) on new payroll runs unless the user picks another account. */
+  useEffect(() => {
+    if (!showModal || editingId != null || salaryExpenseTouched.current) return
+    if (formData.salary_expense_account_id) return
+    if (salaryExpenseAccountOptions.length === 0) return
+    const suggested = suggestedPayrollSalaryExpenseAccountId(salaryExpenseAccountOptions)
+    if (!suggested) return
+    setFormData((prev) => ({ ...prev, salary_expense_account_id: suggested }))
+  }, [
+    showModal,
+    editingId,
+    formData.salary_expense_account_id,
+    salaryExpenseAccountOptions,
+  ])
+
   const handleEdit = (payroll: PayrollRun) => {
+    salaryExpenseTouched.current = true
     setEditingId(payroll.id)
     setFormData({
       pay_period_start: payroll.pay_period_start || '',
@@ -1257,13 +1276,14 @@ export default function PayrollPage() {
                       </label>
                       <select
                         value={formData.salary_expense_account_id}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          salaryExpenseTouched.current = true
                           setFormData({ ...formData, salary_expense_account_id: e.target.value })
-                        }
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                       >
                         <option value="">
-                          Default — 6400 Salaries and Wages (or company template) when posting
+                          Recommended — {COA_SALARY_EXP} Salaries and Wages (template default when posting)
                         </option>
                         {salaryExpenseAccountOptions.map((a) => (
                           <option key={a.id} value={String(a.id)}>

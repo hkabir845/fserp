@@ -43,6 +43,7 @@ import {
 import { BillPurposeSection } from '@/components/bills/BillPurposeSection'
 import { BillLineItemSelect } from '@/components/bills/BillLineItemSelect'
 import { BillStationAllocationFields } from '@/components/bills/BillStationAllocationFields'
+import { suggestedBillLineExpenseAccountId } from '@/lib/coaDefaults'
 
 /** Bill line inputs: fixed height so grid rows align across columns */
 const BILL_LINE_CTL =
@@ -436,7 +437,8 @@ function applyItemSelectionToBillLine(
   itemId: number,
   itemList: Item[],
   tankList: Tank[],
-  vendorDefaultExpenseAccountId?: number | null
+  vendorDefaultExpenseAccountId?: number | null,
+  templateFallbackExpenseId?: number | null
 ): BillLineItem {
   const item = itemList.find((i) => i.id === itemId)
   if (!item) return line
@@ -453,6 +455,8 @@ function applyItemSelectionToBillLine(
       vendorDefaultExpenseAccountId > 0
     ) {
       defaultExpense = vendorDefaultExpenseAccountId
+    } else if (templateFallbackExpenseId != null && templateFallbackExpenseId > 0) {
+      defaultExpense = templateFallbackExpenseId
     }
   }
   const next: BillLineItem = {
@@ -1027,6 +1031,18 @@ export default function BillsPage() {
     return x != null && x > 0 ? x : undefined
   }, [formData.vendor_id, vendors])
 
+  const templateBillExpenseAccountId = useMemo(() => {
+    return suggestedBillLineExpenseAccountId({
+      vendorDefaultExpenseId: resolvedVendorDefaultExpenseId,
+      options: expenseAccounts.map((a) => ({
+        id: a.id,
+        account_code: a.account_code,
+      })),
+    })
+  }, [resolvedVendorDefaultExpenseId, expenseAccounts])
+
+  const billLineExpenseTouchedRef = useRef(new Set<number>())
+
   const selectedVendorReceivingHint = useMemo(() => {
     if (!formData.vendor_id) return null
     const v = vendors.find((x) => x.id === formData.vendor_id)
@@ -1041,7 +1057,20 @@ export default function BillsPage() {
     }
     const vendor = vendors.find((v) => v.id === vendor_id)
     const receipt_station_id = resolveReceiptStationIdForVendor(vendor, stations)
-    setFormData((prev) => ({ ...prev, vendor_id, receipt_station_id }))
+    const coaOpts = expenseAccounts.map((a) => ({ id: a.id, account_code: a.account_code }))
+    const vendorExpense = suggestedBillLineExpenseAccountId({
+      vendorDefaultExpenseId: vendor?.default_expense_account_id,
+      options: coaOpts,
+    })
+    setFormData((prev) => {
+      const lines = prev.lines.map((line) => {
+        if (billLineExpenseTouchedRef.current.has(line.line_number)) return line
+        if (line.expense_account_id || line.item_id) return line
+        if (!vendorExpense) return line
+        return { ...line, expense_account_id: vendorExpense }
+      })
+      return { ...prev, vendor_id, receipt_station_id, lines }
+    })
   }
 
   const billExpenseCategories = useMemo(
@@ -1058,6 +1087,22 @@ export default function BillsPage() {
     () => expenseAccounts.filter((a) => isAquacultureOperatingCoaCode(a.account_code)),
     [expenseAccounts]
   )
+
+  useEffect(() => {
+    if (!showModal || expenseAccounts.length === 0) return
+    const fallback = templateBillExpenseAccountId
+    if (!fallback) return
+    setFormData((prev) => {
+      let changed = false
+      const lines = prev.lines.map((line) => {
+        if (billLineExpenseTouchedRef.current.has(line.line_number)) return line
+        if (line.expense_account_id || line.item_id) return line
+        changed = true
+        return { ...line, expense_account_id: fallback }
+      })
+      return changed ? { ...prev, lines } : prev
+    })
+  }, [showModal, expenseAccounts, templateBillExpenseAccountId])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -1358,7 +1403,7 @@ export default function BillsPage() {
         line_number: lineNumber,
         description: '',
         item_id: undefined,
-        expense_account_id: undefined,
+        expense_account_id: templateBillExpenseAccountId || undefined,
         tank_id: undefined,
         quantity: 1,
         unit_cost: 0,
@@ -1394,7 +1439,8 @@ export default function BillsPage() {
         pick.id,
         items,
         tanks,
-        resolvedVendorDefaultExpenseId
+        resolvedVendorDefaultExpenseId,
+        templateBillExpenseAccountId || undefined
       )
     } else {
       const account = expenseAccounts.find((a) => a.id === pick.id)
@@ -1507,12 +1553,14 @@ export default function BillsPage() {
         value,
         items,
         tanks,
-        resolvedVendorDefaultExpenseId
+        resolvedVendorDefaultExpenseId,
+        templateBillExpenseAccountId || undefined
       )
     }
 
     // If expense account is selected, clear item and tank
     if (field === 'expense_account_id' && value) {
+      billLineExpenseTouchedRef.current.add(newLines[index].line_number)
       newLines[index].item_id = undefined
       newLines[index].tank_id = undefined
       newLines[index].aquaculture_fish_weight_kg = undefined
@@ -1972,6 +2020,7 @@ export default function BillsPage() {
   }
 
   const resetForm = () => {
+    billLineExpenseTouchedRef.current.clear()
     const billDate = new Date().toISOString().split('T')[0]
     const due = new Date(`${billDate}T12:00:00`)
     due.setDate(due.getDate() + 30)

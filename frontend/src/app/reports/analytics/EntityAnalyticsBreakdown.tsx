@@ -12,6 +12,7 @@ import {
   Legend,
 } from 'recharts'
 import type { AquacultureAnalyticsSummary, EntityAnalyticsRow } from './analyticsEntityTypes'
+import { resolveReportTotalLabel } from '../reportSiteScope'
 
 const Y_AXIS_CURRENCY_W = 100
 const M_BAR_X = { top: 12, right: 12, left: 8, bottom: 64 } as const
@@ -51,7 +52,15 @@ function sumField(rows: EntityAnalyticsRow[], pick: (r: EntityAnalyticsRow) => n
   return rows.reduce((acc, r) => acc + pick(r), 0)
 }
 
-function StationListTable({ rows, fmt }: { rows: EntityAnalyticsRow[]; fmt: (n: number) => string }) {
+function StationListTable({
+  rows,
+  fmt,
+  totalLabel,
+}: {
+  rows: EntityAnalyticsRow[]
+  fmt: (n: number) => string
+  totalLabel: string
+}) {
   const totals = {
     document_sales: sumField(rows, (r) => r.document_sales),
     pl_income: sumField(rows, (r) => r.pl_income),
@@ -92,7 +101,7 @@ function StationListTable({ rows, fmt }: { rows: EntityAnalyticsRow[]; fmt: (n: 
         </tbody>
         <tfoot className="border-t border-slate-200 bg-slate-100 font-semibold">
           <tr>
-            <td className="px-4 py-3 text-slate-900">Total — all stations</td>
+            <td className="px-4 py-3 text-slate-900">{totalLabel}</td>
             <td className="px-3 py-3 text-right tabular-nums">{fmt(totals.document_sales)}</td>
             <td className="px-3 py-3 text-right tabular-nums">{fmt(totals.pl_income)}</td>
             <td className="px-3 py-3 text-right tabular-nums">{fmt(totals.pl_cogs)}</td>
@@ -106,7 +115,15 @@ function StationListTable({ rows, fmt }: { rows: EntityAnalyticsRow[]; fmt: (n: 
   )
 }
 
-function PondListTable({ rows, fmt }: { rows: EntityAnalyticsRow[]; fmt: (n: number) => string }) {
+function PondListTable({
+  rows,
+  fmt,
+  totalLabel,
+}: {
+  rows: EntityAnalyticsRow[]
+  fmt: (n: number) => string
+  totalLabel: string
+}) {
   const totals = {
     document_sales: sumField(rows, (r) => r.document_sales),
     management_revenue: sumField(rows, (r) => r.management_revenue_bdt ?? 0),
@@ -161,7 +178,7 @@ function PondListTable({ rows, fmt }: { rows: EntityAnalyticsRow[]; fmt: (n: num
         </tbody>
         <tfoot className="border-t border-teal-100 bg-teal-50/60 font-semibold">
           <tr>
-            <td className="px-4 py-3 text-teal-950">Total — all ponds</td>
+            <td className="px-4 py-3 text-teal-950">{totalLabel}</td>
             <td className="px-3 py-3 text-right tabular-nums">{fmt(totals.document_sales)}</td>
             <td className="px-3 py-3 text-right tabular-nums">{fmt(totals.management_revenue)}</td>
             <td className="px-3 py-3 text-right tabular-nums">{fmt(totals.management_profit)}</td>
@@ -183,10 +200,33 @@ type Props = {
   aquacultureSummary: AquacultureAnalyticsSummary | null
   daysSelected: number
   fmt: (n: number) => string
+  reportStationKey?: string
+  stations?: { id: number; station_name: string }[]
+  ponds?: { id: number; name: string }[]
 }
 
-export function EntityAnalyticsBreakdown({ byStation, byPond, aquacultureSummary, daysSelected, fmt }: Props) {
+export function EntityAnalyticsBreakdown({
+  byStation,
+  byPond,
+  aquacultureSummary,
+  daysSelected,
+  fmt,
+  reportStationKey = '',
+  stations = [],
+  ponds = [],
+}: Props) {
   if (byStation.length === 0 && byPond.length === 0) return null
+
+  const stationTotalLabel = resolveReportTotalLabel(
+    'station',
+    reportStationKey,
+    stations,
+    ponds,
+    { singleName: byStation.length === 1 ? byStation[0].entity_name : null }
+  )
+  const pondTotalLabel = resolveReportTotalLabel('pond', reportStationKey, stations, ponds, {
+    singleName: byPond.length === 1 ? byPond[0].entity_name : null,
+  })
 
   const stationNetIncomeBars = byStation.map((r) => ({
     name: r.entity_name,
@@ -272,7 +312,7 @@ export function EntityAnalyticsBreakdown({ byStation, byPond, aquacultureSummary
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <StationListTable rows={byStation} fmt={fmt} />
+          <StationListTable rows={byStation} fmt={fmt} totalLabel={stationTotalLabel} />
         </div>
       ) : null}
 
@@ -313,7 +353,7 @@ export function EntityAnalyticsBreakdown({ byStation, byPond, aquacultureSummary
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <PondListTable rows={byPond} fmt={fmt} />
+          <PondListTable rows={byPond} fmt={fmt} totalLabel={pondTotalLabel} />
         </div>
       ) : null}
     </div>

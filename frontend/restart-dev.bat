@@ -1,8 +1,10 @@
 @echo off
 cd /d "%~dp0"
-set "NPM=%LOCALAPPDATA%\Programs\nodejs-portable\npm.cmd"
+set "PATH=%ProgramFiles%\nodejs;%PATH%"
+
+set "NPM=%ProgramFiles%\nodejs\npm.cmd"
 if not exist "%NPM%" (
-  echo ERROR: npm not found at %NPM%
+  echo ERROR: npm not found. Install Node.js from https://nodejs.org/
   exit /b 1
 )
 

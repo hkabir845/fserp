@@ -288,7 +288,7 @@ export function AdvicePlanCard(props: {
     <button
       type="button"
       onClick={onSelect}
-      aria-selected={selected}
+      aria-pressed={selected}
       className={`group w-full rounded-xl border p-3.5 text-left shadow-sm transition outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 sm:p-4 ${
         selected
           ? 'border-teal-400 bg-gradient-to-br from-teal-50 to-white ring-2 ring-teal-500/25'

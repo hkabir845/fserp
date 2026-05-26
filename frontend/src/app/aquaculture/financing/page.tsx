@@ -1,13 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Landmark, RefreshCw, Trash2, Wallet } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { suggestedAquacultureProfitTransferAccountIds } from '@/lib/coaDefaults'
 
 type FinancingLoan = {
   id: number
@@ -86,6 +87,7 @@ export default function AquacultureFinancingPage() {
   const [transferDate, setTransferDate] = useState(isoToday)
   const [debitAccountId, setDebitAccountId] = useState<number | ''>('')
   const [creditAccountId, setCreditAccountId] = useState<number | ''>('')
+  const repayGlTouchedRef = useRef(new Set<string>())
   const [alsoRepayLoan, setAlsoRepayLoan] = useState(true)
   const [postTransfers, setPostTransfers] = useState(true)
 
@@ -103,7 +105,15 @@ export default function AquacultureFinancingPage() {
         api.get<CoaRow[]>('/chart-of-accounts/'),
       ])
       setOverview(ov.data)
-      setCoa(coaRes.data.filter((a) => a.account_type === 'asset' || a.account_type === 'liability'))
+      setCoa(
+        (coaRes.data || []).filter(
+          (a) =>
+            a.is_active !== false &&
+            ['asset', 'liability', 'equity', 'bank_account', 'income', 'expense'].includes(
+              a.account_type
+            )
+        )
+      )
       const firstLoan = ov.data.loans[0]
       if (firstLoan) {
         setSelectedLoanId((prev) => (prev === '' ? firstLoan.id : prev))
@@ -120,6 +130,18 @@ export default function AquacultureFinancingPage() {
     document.title = 'Aquaculture financing · FSERP'
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (coa.length === 0) return
+    const touched = repayGlTouchedRef.current
+    const defaults = suggestedAquacultureProfitTransferAccountIds(coa)
+    if (!touched.has('debit') && !debitAccountId && defaults.debit_account_id) {
+      setDebitAccountId(parseInt(defaults.debit_account_id, 10) || '')
+    }
+    if (!touched.has('credit') && !creditAccountId && defaults.credit_account_id) {
+      setCreditAccountId(parseInt(defaults.credit_account_id, 10) || '')
+    }
+  }, [coa, debitAccountId, creditAccountId])
 
   const selectedLoan = useMemo(
     () => overview?.loans.find((l) => l.id === selectedLoanId),
@@ -574,7 +596,10 @@ export default function AquacultureFinancingPage() {
                     <select
                       className="mt-1 w-full rounded border px-2 py-1.5"
                       value={debitAccountId === '' ? '' : String(debitAccountId)}
-                      onChange={(e) => setDebitAccountId(e.target.value === '' ? '' : Number(e.target.value))}
+                      onChange={(e) => {
+                        repayGlTouchedRef.current.add('debit')
+                        setDebitAccountId(e.target.value === '' ? '' : Number(e.target.value))
+                      }}
                     >
                       <option value="">—</option>
                       {coa.map((a) => (
@@ -589,7 +614,10 @@ export default function AquacultureFinancingPage() {
                     <select
                       className="mt-1 w-full rounded border px-2 py-1.5"
                       value={creditAccountId === '' ? '' : String(creditAccountId)}
-                      onChange={(e) => setCreditAccountId(e.target.value === '' ? '' : Number(e.target.value))}
+                      onChange={(e) => {
+                        repayGlTouchedRef.current.add('credit')
+                        setCreditAccountId(e.target.value === '' ? '' : Number(e.target.value))
+                      }}
                     >
                       <option value="">—</option>
                       {coa.map((a) => (

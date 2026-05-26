@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from 'next'
+import Script from 'next/script'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/components/Providers'
 import { ErrorFilter } from '@/components/ErrorFilter'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { SuppressWarnings } from '@/components/SuppressWarnings'
-import { EXTENSION_NOISE_FILTER_INSTALL_SCRIPT } from '@/lib/extensionNoiseFilterInstallScript'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -49,17 +49,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        {/* SSR inline: must run before extension content scripts and React */}
-        <script
-          dangerouslySetInnerHTML={{ __html: EXTENSION_NOISE_FILTER_INSTALL_SCRIPT }}
-          suppressHydrationWarning
-        />
-      </head>
       <body
         className={`${inter.className} min-h-screen min-h-[100dvh] bg-gray-50 antialiased`}
         suppressHydrationWarning
       >
+        {/* Hoisted to <head> by Next — suppresses extension onMessage console noise */}
+        <Script src="/extension-noise-filter.js" strategy="beforeInteractive" />
         <noscript>
           <div style={{ padding: '2rem', textAlign: 'center', background: '#f3f4f6' }}>
             Please enable JavaScript to run this app.

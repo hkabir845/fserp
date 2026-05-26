@@ -3,7 +3,11 @@
  * Matches backend `api.services.gl_posting` (4100/4200/5100/5120/1200/1220/6900).
  */
 
-export const ITEM_GL_REV_FUEL = '4100'
+import { coaIdForCode, COA_FUEL_REV, COA_OFFICE_EXP } from '@/lib/coaDefaults'
+
+export { coaIdForCode }
+
+export const ITEM_GL_REV_FUEL = COA_FUEL_REV
 export const ITEM_GL_REV_SHOP = '4200'
 export const ITEM_GL_REV_AQ_HARVEST = '4240'
 export const ITEM_GL_REV_AQ_FINGERLING = '4241'
@@ -12,7 +16,7 @@ export const ITEM_GL_COGS_SHOP = '5120'
 export const ITEM_GL_INV_FUEL = '1200'
 export const ITEM_GL_INV_SHOP = '1220'
 export const ITEM_GL_INV_AQ_BIO = '1581'
-export const ITEM_GL_EXP_OFFICE = '6900'
+export const ITEM_GL_EXP_OFFICE = COA_OFFICE_EXP
 
 export interface ItemGlSuggestContext {
   pos_category: string
@@ -89,15 +93,6 @@ export function suggestedInventoryCoaCode(ctx: ItemGlSuggestContext): string {
 
 export function suggestedExpenseCoaCode(_ctx: ItemGlSuggestContext): string {
   return ITEM_GL_EXP_OFFICE
-}
-
-export function coaIdForCode(
-  code: string,
-  coaOptions: CoaPickForItemDefault[]
-): string {
-  const normalized = code.trim()
-  const match = coaOptions.find((a) => String(a.account_code || '').trim() === normalized)
-  return match && match.id > 0 ? String(match.id) : ''
 }
 
 export function suggestItemGlAccountIds(

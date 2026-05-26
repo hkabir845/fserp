@@ -336,7 +336,7 @@ export function FinancialAnalyticsPanel({
     return {
       headline: 'P&L from general ledger: All sites & ponds',
       detail:
-        'Posted activity includes every site and pond-tagged GL. Clear the site filter on Reports to see station and pond comparison charts below. Choose a station or pond to focus one location.',
+        'All sites and ponds. Use Site scope on Reports to focus one location.',
     }
   }, [filterGlStationId, filterGlPondId, filterGlPondName, stationList, pondList])
 
@@ -781,11 +781,6 @@ export function FinancialAnalyticsPanel({
                           Refresh
                         </button>
                       </div>
-                      <p className="max-w-xl text-xs text-blue-600">
-                        Revenue uses non-draft invoices; P&amp;L lines follow posted journals (same basis as
-                        the Income Statement). Profit mix shows total sales, COGS, expenses, and net income as
-                        % of period revenue.
-                      </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-medium text-blue-800">Quick period:</span>
@@ -915,6 +910,9 @@ export function FinancialAnalyticsPanel({
                   aquacultureSummary={aquacultureSummary}
                   daysSelected={daysSelected}
                   fmt={fmt}
+                  reportStationKey={reportStationKey}
+                  stations={stationList}
+                  ponds={pondList}
                 />
               ) : null}
 

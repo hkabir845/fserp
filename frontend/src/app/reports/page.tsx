@@ -31,8 +31,39 @@ import {
   isPersistedReportSiteScopeKey,
   isValidReportSiteScopeKey,
   parseReportSiteScopeKey,
+  resolveGrandTotalLabel,
+  resolveReportTotalLabel,
+  resolveEffectiveAquaculturePondId,
+  isPondLockedBySiteScope,
 } from './reportSiteScope'
+import {
+  inferSegmentFromHomeStation,
+  parseReportBusinessSegment,
+  REPORT_BUSINESS_SEGMENT_STORAGE_KEY,
+  type ReportBusinessSegment,
+  type ReportStationForSegment,
+} from './reportBusinessSegment'
+import { BusinessSegmentFilter } from './BusinessSegmentFilter'
+import { SalesPurchasePeriodFilter } from './SalesPurchasePeriodFilter'
+import {
+  inferSalesPurchasePreset,
+  persistSalesPurchasePeriod,
+  loadStoredSalesPurchasePeriod,
+  salesPurchaseRangeForPreset,
+  type SalesPurchasePeriodPreset,
+} from './salesPurchasePeriod'
 import { EXTRA_FINANCIAL_REPORT_IDS, renderExtraFinancialReport } from '@/components/reports/ExtraFinancialReportPanels'
+import { getApiBaseUrl } from '@/lib/api'
+
+const SALES_PURCHASE_REPORT_IDS = new Set<ReportType>(['sales-report', 'purchase-report'])
+const BUSINESS_LINE_REPORT_IDS = new Set<ReportType>([
+  'sales-report',
+  'purchase-report',
+  'daily-summary',
+])
+
+/** Reports rendered entirely in the browser — no `/api/reports/<id>/` call. */
+const CLIENT_ONLY_REPORT_IDS = new Set<ReportType>(['analytics-kpi', 'aquaculture-pl-management'])
 
 type ItemScopeTableProps = {
   reportType: ReportType
@@ -46,6 +77,27 @@ type ItemScopeTableProps = {
   visibleItemOptions: { id: number; name: string; item_number?: string; category?: string }[]
   categoryList: string[]
   fetchReport: (id: ReportType) => void | Promise<void>
+}
+
+type BusinessSegmentTableProps = {
+  value: ReportBusinessSegment
+  onChange: (segment: ReportBusinessSegment) => void
+  stations: ReportStationForSegment[]
+  lockedSegment: ReportBusinessSegment | null
+}
+
+type SalesPurchasePeriodTableProps = {
+  dateRange: { startDate: string; endDate: string }
+  preset: SalesPurchasePeriodPreset
+  onPresetChange: (preset: SalesPurchasePeriodPreset) => void
+  onDateChange: (field: 'startDate' | 'endDate', value: string) => void
+}
+
+type ReportScopeTableProps = {
+  reportStationKey: string
+  stations: { id: number; station_name: string }[]
+  ponds: { id: number; name: string }[]
+  aquaculturePondId: string
 }
 
 type ReportType = 
@@ -74,6 +126,8 @@ type ReportType =
   | 'meter-readings'
   | 'sales-by-nozzle'
   | 'sales-by-station'
+  | 'sales-report'
+  | 'purchase-report'
   | 'daily-summary'
   | 'inventory-sku-valuation'
   | 'item-master-by-category'
@@ -308,7 +362,8 @@ const reports: ReportCard[] = [
   {
     id: 'daily-summary',
     title: 'Daily Summary',
-    description: 'Complete daily operations overview',
+    description:
+      'Fuel forecourt vs aquaculture shop (Premium Agro): sales, shifts, dips, tanks, and POS categories',
     icon: Calendar,
     category: 'operational'
   },
@@ -331,6 +386,22 @@ const reports: ReportCard[] = [
     title: 'Sales by station',
     description: 'Invoice totals by selling location (POS / invoice station)',
     icon: MapPin,
+    category: 'operational'
+  },
+  {
+    id: 'sales-report',
+    title: 'Sales Report',
+    description:
+      'Sales by customer (cash vs credit). Filter by shop site — e.g. Premium Agro — for aquaculture POS and retail',
+    icon: CreditCard,
+    category: 'operational'
+  },
+  {
+    id: 'purchase-report',
+    title: 'Purchase Report',
+    description:
+      'Purchases by vendor (cash vs credit). Filter by shop receipt site — e.g. Premium Agro feed & supplies',
+    icon: ShoppingCart,
     category: 'operational'
   },
   {
@@ -499,6 +570,11 @@ const reports: ReportCard[] = [
   },
 ]
 
+function isApiBackedReportId(reportId: string): reportId is ReportType {
+  if (CLIENT_ONLY_REPORT_IDS.has(reportId as ReportType)) return false
+  return reports.some((r) => r.id === reportId)
+}
+
 const SUMMARY_EXCLUDED_REPORTS: ReportType[] = [
   'daily-summary',
   'shift-summary',
@@ -548,6 +624,8 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'daily-summary',
   'fuel-sales',
   'sales-by-station',
+  'sales-report',
+  'purchase-report',
   'shift-summary',
   'aquaculture-pl-management',
   'aquaculture-fish-sales',
@@ -590,6 +668,8 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'shift-summary',
   'daily-summary',
   'sales-by-station',
+  'sales-report',
+  'purchase-report',
   'sales-by-nozzle',
   'meter-readings',
   'tank-dip-variance',
@@ -642,6 +722,8 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'shift-summary',
   'sales-by-nozzle',
   'sales-by-station',
+  'sales-report',
+  'purchase-report',
   'fuel-sales',
   'tank-inventory',
   'tank-dip-variance',
@@ -693,9 +775,7 @@ function getReportSiteScopeDisplay(
     const name = stations.find((s) => s.id === fid)?.station_name?.trim() || `Station #${fid}`
     return {
       headline: `Site: ${name}`,
-      detail: gl
-        ? 'Trial balance and P&L use posted journal lines tagged to this site. Entries without a site tag are excluded.'
-        : 'Figures in this run are for this site only.',
+      detail: gl ? 'GL lines tagged to this site only.' : 'This site only.',
     }
   }
   if (userHasHomeStation) {
@@ -705,9 +785,7 @@ function getReportSiteScopeDisplay(
       (homeStationId != null ? `Station #${homeStationId}` : 'Assigned site')
     return {
       headline: `Site: ${name}`,
-      detail: gl
-        ? 'Your account is limited to this site; GL figures are for this location only.'
-        : 'Your account is limited to this site for these reports.',
+      detail: gl ? 'Limited to your assigned site (GL).' : 'Limited to your assigned site.',
     }
   }
   if (reportStationId && /^\d+$/.test(reportStationId)) {
@@ -715,17 +793,297 @@ function getReportSiteScopeDisplay(
     const name = stations.find((s) => s.id === id)?.station_name?.trim() || `Station #${id}`
     return {
       headline: `Site: ${name}`,
-      detail: gl
-        ? 'Using the site selected above. Only posted GL lines for that site are included.'
-        : 'Using the site selected in the filter above.',
+      detail: gl ? 'Site scope filter · GL-tagged lines only.' : 'Site scope filter.',
     }
   }
   return {
     headline: 'All sites',
     detail: gl
-      ? 'All posted journal lines in the date range (every site). Pick a site above to see that location’s GL activity only.'
-      : 'This run includes every station. Use the site filter to narrow to one location.',
+      ? 'All sites · use Site scope to focus GL activity.'
+      : 'All sites · use Site scope to narrow.',
   }
+}
+
+function getAquacultureReportScopeDisplay(
+  reportStationId: string,
+  stations: { id: number; station_name: string }[],
+  ponds: { id: number; name: string }[],
+  effectivePondId: string
+): { headline: string; detail: string } {
+  if (effectivePondId && /^\d+$/.test(effectivePondId)) {
+    const id = parseInt(effectivePondId, 10)
+    const name = ponds.find((p) => p.id === id)?.name?.trim() || `Pond #${id}`
+    return { headline: `Pond: ${name}`, detail: 'This report shows this pond only.' }
+  }
+  const scope = parseReportSiteScopeKey(reportStationId)
+  if (scope.kind === 'station') {
+    const name =
+      stations.find((s) => s.id === scope.id)?.station_name?.trim() || `Station #${scope.id}`
+    return {
+      headline: `Site: ${name}`,
+      detail: 'Shop/station filter applies to shop inventory reports; pond lists show all ponds unless a pond is selected.',
+    }
+  }
+  return { headline: 'All ponds', detail: 'Company-wide aquaculture totals for every pond.' }
+}
+
+/** Scope label for Sales / Purchase reports (business line — not the global Site picker). */
+function getSalesPurchaseScopeDisplay(
+  reportData: { business_segment?: string; business_segment_label?: string; business_segment_station_names?: string[] } | null | undefined,
+  userHasHomeStation: boolean
+): { headline: string; detail: string } | null {
+  if (!reportData || typeof reportData !== 'object') return null
+
+  const segment = (reportData.business_segment || 'all').toLowerCase()
+  const label = (reportData.business_segment_label || '').trim()
+  const names = Array.isArray(reportData.business_segment_station_names)
+    ? reportData.business_segment_station_names.filter(Boolean)
+    : []
+  const nameList = names.length > 0 ? names.join(', ') : ''
+
+  if (segment === 'fuel') {
+    return {
+      headline: label || 'Fuel Station',
+      detail: nameList ? `Forecourt at ${nameList}.` : 'Fuel forecourt only.',
+    }
+  }
+  if (segment === 'aquaculture') {
+    return {
+      headline: label || 'Aquaculture (Premium Agro)',
+      detail: nameList ? `Shop hub at ${nameList}.` : 'Aquaculture shop hub only.',
+    }
+  }
+  if (segment === 'single') {
+    return {
+      headline: label ? `Business line: ${label}` : 'Assigned site',
+      detail: userHasHomeStation
+        ? 'Limited to your assigned site.'
+        : nameList
+          ? `${nameList} only.`
+          : 'Selected site only.',
+    }
+  }
+  return {
+    headline: 'All business lines',
+    detail: 'Company-wide fuel and aquaculture totals.',
+  }
+}
+
+function buildDailySummaryLinePrintHtml(bl: Record<string, unknown>): string {
+  const isFuel = bl.line === 'fuel'
+  const sales = (bl.sales || {}) as Record<string, unknown>
+  const shifts = (bl.shifts || {}) as Record<string, unknown>
+  const dips = (bl.dips || {}) as Record<string, unknown>
+  const tanks = Array.isArray(bl.tanks) ? bl.tanks : []
+  const byFuel = (bl.by_product_fuel || {}) as Record<string, { line_count?: number; liters?: number; amount?: number }>
+  const byCat = (bl.by_pos_category || {}) as Record<string, { line_count?: number; quantity?: number; amount?: number }>
+  const aq = (bl.aquaculture || {}) as Record<string, unknown>
+  const stationLabel = Array.isArray(bl.station_names) ? (bl.station_names as string[]).join(', ') : ''
+  const label = String(bl.label || (isFuel ? 'Fuel Station' : 'Aquaculture (Premium Agro)'))
+
+  let html = `<h2>${escapeHtml(label)}</h2>`
+  if (stationLabel) {
+    html += `<p><em>${escapeHtml(stationLabel)}</em></p>`
+  }
+  html += '<table><tbody>'
+  html += `<tr><td><strong>Transactions</strong></td><td>${sales.total_transactions ?? 0}</td></tr>`
+  if (isFuel) {
+    html += `<tr><td><strong>Fuel liters</strong></td><td>${formatNumber(Number(sales.total_liters ?? 0))} L</td></tr>`
+    html += `<tr><td><strong>Fuel sales</strong></td><td>${formatCurrency(sales.fuel_amount ?? sales.total_amount)}</td></tr>`
+    html += `<tr><td><strong>Shop / other</strong></td><td>${formatCurrency(sales.shop_amount ?? 0)}</td></tr>`
+    html += `<tr><td><strong>Cash sales</strong></td><td>${formatCurrency(sales.cash_sales_total ?? 0)}</td></tr>`
+    html += `<tr><td><strong>Shifts</strong></td><td>${shifts.total_shifts ?? 0}</td></tr>`
+    html += `<tr><td><strong>Cash variance</strong></td><td>${formatCurrency(shifts.total_cash_variance)}</td></tr>`
+    html += `<tr><td><strong>Dip readings</strong></td><td>${dips.total_readings ?? 0}</td></tr>`
+    html += `<tr><td><strong>Net dip variance (L)</strong></td><td>${formatNumber(Number(dips.net_variance_liters ?? dips.net_variance ?? 0))}</td></tr>`
+  } else {
+    html += `<tr><td><strong>Shop sales</strong></td><td>${formatCurrency(sales.shop_amount ?? sales.total_amount)}</td></tr>`
+    html += `<tr><td><strong>Cash (walk-in)</strong></td><td>${formatCurrency(sales.cash_sales_total ?? 0)}</td></tr>`
+    html += `<tr><td><strong>Credit (pond POS)</strong></td><td>${formatCurrency(sales.credit_sales_total ?? 0)}</td></tr>`
+    html += `<tr><td><strong>Pond POS invoices</strong></td><td>${aq.pond_pos_invoice_count ?? 0}</td></tr>`
+    html += `<tr><td><strong>Pond POS total</strong></td><td>${formatCurrency(aq.pond_pos_sales_total ?? 0)}</td></tr>`
+    html += `<tr><td><strong>Average sale</strong></td><td>${formatCurrency(sales.average_sale)}</td></tr>`
+  }
+  html += '</tbody></table>'
+
+  const fuelKeys = Object.keys(byFuel)
+  if (isFuel && fuelKeys.length > 0) {
+    html +=
+      '<h3>Fuel by product</h3><table><thead><tr><th>Product</th><th style="text-align:right">Lines</th><th style="text-align:right">Liters</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
+    fuelKeys.forEach((k) => {
+      const m = byFuel[k]
+      html += `<tr><td>${escapeHtml(k)}</td><td style="text-align:right">${m.line_count ?? 0}</td><td style="text-align:right">${formatNumber(Number(m.liters ?? 0))}</td><td style="text-align:right">${formatCurrency(m.amount ?? 0)}</td></tr>`
+    })
+    html += '</tbody></table>'
+  }
+
+  const catKeys = Object.keys(byCat)
+  if (!isFuel && catKeys.length > 0) {
+    html +=
+      '<h3>Sales by product category (POS)</h3><table><thead><tr><th>Category</th><th style="text-align:right">Lines</th><th style="text-align:right">Qty</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
+    catKeys.forEach((k) => {
+      const m = byCat[k]
+      html += `<tr><td>${escapeHtml(k)}</td><td style="text-align:right">${m.line_count ?? 0}</td><td style="text-align:right">${formatNumber(Number(m.quantity ?? 0))}</td><td style="text-align:right">${formatCurrency(m.amount ?? 0)}</td></tr>`
+    })
+    html += '</tbody></table>'
+  }
+
+  if (isFuel && tanks.length > 0) {
+    html +=
+      '<h3>Tank levels</h3><table><thead><tr><th>Tank</th><th>Product</th><th style="text-align:right">Capacity</th><th style="text-align:right">Stock</th><th style="text-align:right">Fill %</th></tr></thead><tbody>'
+    tanks.forEach((tank: Record<string, unknown>) => {
+      html += `<tr><td>${escapeHtml(String(tank.tank_name ?? ''))}</td><td>${escapeHtml(String(tank.product ?? ''))}</td><td style="text-align:right">${Number(tank.capacity ?? 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.current_stock ?? 0).toLocaleString()}</td><td style="text-align:right">${formatNumber(Number(tank.fill_percentage ?? 0))}%</td></tr>`
+    })
+    html += '</tbody></table>'
+  }
+
+  return html
+}
+
+function buildDailySummaryPrintHtml(reportData: Record<string, unknown>): string {
+  const businessLines: Record<string, unknown>[] = Array.isArray(reportData.business_lines)
+    ? (reportData.business_lines as Record<string, unknown>[])
+    : []
+  const sales = (reportData.sales || {}) as Record<string, unknown>
+  let html = ''
+
+  if (businessLines.length > 1) {
+    html += '<h2>Company total</h2><table><tbody>'
+    html += `<tr><td><strong>Total transactions</strong></td><td>${sales.total_transactions ?? 0}</td></tr>`
+    html += `<tr><td><strong>Total amount</strong></td><td>${formatCurrency(sales.total_amount)}</td></tr>`
+    if (Number(sales.total_liters ?? 0) > 0) {
+      html += `<tr><td><strong>Total fuel liters</strong></td><td>${formatNumber(Number(sales.total_liters ?? 0))} L</td></tr>`
+    }
+    html += '</tbody></table>'
+  }
+
+  if (businessLines.length > 0) {
+    businessLines.forEach((bl) => {
+      html += buildDailySummaryLinePrintHtml(bl)
+    })
+  } else {
+    html += buildDailySummaryLinePrintHtml({
+      line: 'fuel',
+      label: 'Operations',
+      sales: reportData.sales || {},
+      shifts: reportData.shifts || {},
+      dips: reportData.dips || {},
+      tanks: reportData.tanks || [],
+      by_product_fuel: (reportData.sales as Record<string, unknown> | undefined)?.by_product || {},
+      by_pos_category: {},
+      aquaculture: {},
+    })
+  }
+
+  if (reportData.accounting_note) {
+    html += `<p><em>${escapeHtml(String(reportData.accounting_note))}</em></p>`
+  }
+  return html
+}
+
+function buildDailySummaryCsv(reportData: Record<string, unknown>): string {
+  const csvEscape = (value: unknown): string => {
+    if (value === null || value === undefined) return '""'
+    const str = String(value).replace(/"/g, '""')
+    return `"${str}"`
+  }
+  const businessLines: Record<string, unknown>[] = Array.isArray(reportData.business_lines)
+    ? (reportData.business_lines as Record<string, unknown>[])
+    : []
+  const lines: string[] = ['Business line,Metric,Value']
+
+  const pushRow = (lineLabel: string, metric: string, value: string | number) => {
+    lines.push([csvEscape(lineLabel), csvEscape(metric), csvEscape(String(value))].join(','))
+  }
+
+  if (businessLines.length > 1) {
+    const sales = (reportData.sales || {}) as Record<string, unknown>
+    pushRow('Company total', 'Transactions', sales.total_transactions ?? 0)
+    pushRow('Company total', 'Total amount', sales.total_amount ?? 0)
+    if (Number(sales.total_liters ?? 0) > 0) {
+      pushRow('Company total', 'Fuel liters', sales.total_liters ?? 0)
+    }
+  }
+
+  const exportLine = (bl: Record<string, unknown>) => {
+    const isFuel = bl.line === 'fuel'
+    const label = String(bl.label || (isFuel ? 'Fuel Station' : 'Aquaculture (Premium Agro)'))
+    const sales = (bl.sales || {}) as Record<string, unknown>
+    const shifts = (bl.shifts || {}) as Record<string, unknown>
+    const dips = (bl.dips || {}) as Record<string, unknown>
+    const aq = (bl.aquaculture || {}) as Record<string, unknown>
+
+    pushRow(label, 'Transactions', sales.total_transactions ?? 0)
+    if (isFuel) {
+      pushRow(label, 'Fuel liters', sales.total_liters ?? 0)
+      pushRow(label, 'Fuel sales', sales.fuel_amount ?? sales.total_amount ?? 0)
+      pushRow(label, 'Shop / other', sales.shop_amount ?? 0)
+      pushRow(label, 'Cash sales', sales.cash_sales_total ?? 0)
+      pushRow(label, 'Shifts', shifts.total_shifts ?? 0)
+      pushRow(label, 'Cash variance', shifts.total_cash_variance ?? 0)
+      pushRow(label, 'Dip readings', dips.total_readings ?? 0)
+      pushRow(label, 'Net dip variance (L)', dips.net_variance_liters ?? dips.net_variance ?? 0)
+      const byFuel = (bl.by_product_fuel || {}) as Record<string, { line_count?: number; liters?: number; amount?: number }>
+      Object.entries(byFuel).forEach(([name, m]) => {
+        pushRow(label, `Fuel product: ${name} (L)`, m.liters ?? 0)
+        pushRow(label, `Fuel product: ${name} (amount)`, m.amount ?? 0)
+      })
+    } else {
+      pushRow(label, 'Shop sales', sales.shop_amount ?? sales.total_amount ?? 0)
+      pushRow(label, 'Cash (walk-in)', sales.cash_sales_total ?? 0)
+      pushRow(label, 'Credit (pond POS)', sales.credit_sales_total ?? 0)
+      pushRow(label, 'Pond POS invoices', aq.pond_pos_invoice_count ?? 0)
+      pushRow(label, 'Pond POS total', aq.pond_pos_sales_total ?? 0)
+      pushRow(label, 'Average sale', sales.average_sale ?? 0)
+      const byCat = (bl.by_pos_category || {}) as Record<string, { line_count?: number; quantity?: number; amount?: number }>
+      Object.entries(byCat).forEach(([cat, m]) => {
+        pushRow(label, `POS category: ${cat} (qty)`, m.quantity ?? 0)
+        pushRow(label, `POS category: ${cat} (amount)`, m.amount ?? 0)
+      })
+    }
+  }
+
+  if (businessLines.length > 0) {
+    businessLines.forEach(exportLine)
+  } else {
+    exportLine({
+      line: 'fuel',
+      label: 'Operations',
+      sales: reportData.sales || {},
+      shifts: reportData.shifts || {},
+      dips: reportData.dips || {},
+      by_product_fuel: (reportData.sales as Record<string, unknown> | undefined)?.by_product || {},
+      by_pos_category: {},
+      aquaculture: {},
+    })
+  }
+
+  return lines.join('\n')
+}
+
+function getReportScopeForExport(
+  reportId: ReportType | null,
+  reportData: Parameters<typeof getReportSiteScopeDisplay>[1],
+  stations: { id: number; station_name: string }[],
+  userHasHomeStation: boolean,
+  homeStationId: number | null,
+  homeStationName: string | null,
+  reportStationId: string
+): { headline: string; detail: string; prefix: string } | null {
+  if (reportId && BUSINESS_LINE_REPORT_IDS.has(reportId)) {
+    const sp = getSalesPurchaseScopeDisplay(reportData, userHasHomeStation)
+    return sp ? { ...sp, prefix: 'Business line' } : null
+  }
+  const site = getReportSiteScopeDisplay(
+    reportId,
+    reportData,
+    stations,
+    userHasHomeStation,
+    homeStationId,
+    homeStationName,
+    reportStationId
+  )
+  return site ? { ...site, prefix: 'Site scope' } : null
 }
 
 export default function ReportsPage() {
@@ -764,8 +1122,18 @@ export default function ReportsPage() {
     { id: number; name: string; item_number?: string; category?: string }[]
   >([])
   const [itemFilterCategoryList, setItemFilterCategoryList] = useState<string[]>([])
-  const [reportStationList, setReportStationList] = useState<{ id: number; station_name: string }[]>([])
+  const [reportStationList, setReportStationList] = useState<ReportStationForSegment[]>([])
   const [reportStationId, setReportStationId] = useState('')
+  const [businessSegment, setBusinessSegment] = useState<ReportBusinessSegment>('all')
+  const todayIso = localDateISO()
+  const [salesPurchaseDateRange, setSalesPurchaseDateRange] = useState({
+    startDate: todayIso,
+    endDate: todayIso,
+  })
+  const [salesPurchaseDatePreset, setSalesPurchaseDatePreset] =
+    useState<SalesPurchasePeriodPreset>('today')
+  const salesPurchaseDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reportDisplayRef = useRef<HTMLDivElement>(null)
   const [userHasHomeStation, setUserHasHomeStation] = useState(false)
   const [homeStationMeta, setHomeStationMeta] = useState<{
     id: number | null
@@ -854,7 +1222,7 @@ export default function ReportsPage() {
         if (typeof d.aquaculture_enabled === 'boolean') {
           setCompanyAquacultureEnabled(d.aquaculture_enabled)
         } else {
-          setCompanyAquacultureEnabled(true)
+          setCompanyAquacultureEnabled(false)
         }
       })
       .catch(() => {})
@@ -927,13 +1295,14 @@ export default function ReportsPage() {
     if (!t) return
     let cancelled = false
     api
-      .get<{ id: number; station_name: string }[]>('/stations/')
+      .get<{ id: number; station_name: string; operates_fuel_retail?: boolean }[]>('/stations/')
       .then((res) => {
         if (cancelled) return
         const rows = Array.isArray(res.data) ? res.data : []
         const mapped = rows.map((s) => ({
           id: s.id,
           station_name: s.station_name || `Station ${s.id}`,
+          operates_fuel_retail: s.operates_fuel_retail !== false,
         }))
         setReportStationList(mapped)
         const saved = localStorage.getItem('fserp_report_station_id')?.trim() || ''
@@ -962,7 +1331,17 @@ export default function ReportsPage() {
     const saved = localStorage.getItem('fserp_report_station_id')?.trim() || ''
     if (saved && isPersistedReportSiteScopeKey(saved)) setReportStationId(saved)
     else setReportStationId('')
+    const savedSeg = localStorage.getItem(REPORT_BUSINESS_SEGMENT_STORAGE_KEY)
+    setBusinessSegment(parseReportBusinessSegment(savedSeg))
+    const storedPeriod = loadStoredSalesPurchasePeriod()
+    setSalesPurchaseDateRange(storedPeriod.range)
+    setSalesPurchaseDatePreset(storedPeriod.preset)
   }, [selectedCompany?.id])
+
+  const lockedBusinessSegment = useMemo(
+    () => inferSegmentFromHomeStation(reportStationList, homeStationMeta?.id ?? null),
+    [reportStationList, homeStationMeta?.id]
+  )
 
   useEffect(() => {
     if (!reportStationId || !isPersistedReportSiteScopeKey(reportStationId)) return
@@ -980,6 +1359,10 @@ export default function ReportsPage() {
   }, [reportStationId, reportStationList, aquaculturePonds])
 
   useEffect(() => {
+    if (companyAquacultureEnabled !== true) {
+      setAquaculturePonds([])
+      return
+    }
     let cancelled = false
     api
       .get<{ id: number; name: string }[]>('/aquaculture/ponds/')
@@ -993,7 +1376,7 @@ export default function ReportsPage() {
     return () => {
       cancelled = true
     }
-  }, [selectedCompany?.id])
+  }, [selectedCompany?.id, companyAquacultureEnabled])
 
   useEffect(() => {
     if (!aquaculturePondId || selectedReport !== 'aquaculture-pond-pl') {
@@ -1042,19 +1425,47 @@ export default function ReportsPage() {
 
   const showPondsInSiteScope = showAquacultureReports && aquaculturePonds.length > 0
 
-  const reportSiteScope = useMemo(
-    () =>
-      getReportSiteScopeDisplay(
-        selectedReport,
-        reportData,
-        reportStationList,
-        userHasHomeStation,
-        homeStationMeta.id,
-        homeStationMeta.name,
-        reportStationId
-      ),
-    [selectedReport, reportData, reportStationList, userHasHomeStation, homeStationMeta, reportStationId]
+  const effectiveAquaculturePondId = useMemo(
+    () => resolveEffectiveAquaculturePondId(reportStationId, aquaculturePondId),
+    [reportStationId, aquaculturePondId]
   )
+
+  const pondLockedBySiteScope = useMemo(
+    () => isPondLockedBySiteScope(reportStationId),
+    [reportStationId]
+  )
+
+  const reportSiteScope = useMemo(() => {
+    if (selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) {
+      return null
+    }
+    if (selectedReport && String(selectedReport).startsWith('aquaculture-')) {
+      return getAquacultureReportScopeDisplay(
+        reportStationId,
+        reportStationList,
+        aquaculturePonds,
+        effectiveAquaculturePondId
+      )
+    }
+    return getReportSiteScopeDisplay(
+      selectedReport,
+      reportData,
+      reportStationList,
+      userHasHomeStation,
+      homeStationMeta.id,
+      homeStationMeta.name,
+      reportStationId
+    )
+  }, [
+    selectedReport,
+    reportData,
+    reportStationList,
+    userHasHomeStation,
+    homeStationMeta,
+    reportStationId,
+    aquaculturePonds,
+    effectiveAquaculturePondId,
+  ])
   
   // Filter reports based on user role and category
   const getFilteredReports = () => {
@@ -1071,6 +1482,8 @@ export default function ReportsPage() {
         report.id === 'fuel-sales' ||
         report.id === 'sales-by-nozzle' ||
         report.id === 'sales-by-station' ||
+        report.id === 'sales-report' ||
+        report.id === 'purchase-report' ||
         report.id === 'shift-summary' ||
         report.id === 'tank-inventory' ||
         report.id === 'tank-dip-register' ||
@@ -1122,9 +1535,28 @@ export default function ReportsPage() {
   
   const filteredReports = getFilteredReports()
 
-  const fetchReport = useCallback(async (reportId: ReportType) => {
+  const scrollReportPanelIntoView = useCallback(() => {
+    if (typeof window === 'undefined') return
+    requestAnimationFrame(() => {
+      const el = reportDisplayRef.current
+      if (!el) return
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      el.scrollTop = 0
+    })
+  }, [])
+
+  const fetchReport = useCallback(async (
+    reportId: ReportType,
+    opts?: {
+      businessSegment?: ReportBusinessSegment
+      salesPurchaseDateRange?: { startDate: string; endDate: string }
+    }
+  ) => {
     setLoading(true)
     setReportData(null) // Clear previous data
+    scrollReportPanelIntoView()
+    const segmentForFetch = opts?.businessSegment ?? businessSegment
+    const spRangeForFetch = opts?.salesPurchaseDateRange ?? salesPurchaseDateRange
 
     if (reportId === 'analytics-kpi') {
       const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
@@ -1152,10 +1584,21 @@ export default function ReportsPage() {
       return
     }
 
+    if (!isApiBackedReportId(reportId)) {
+      alert(`Unknown report "${reportId}". Choose a report from the list on the left.`)
+      setLoading(false)
+      return
+    }
+
     const params: Record<string, string> = {}
     if (REPORTS_WITH_PERIOD.has(reportId)) {
-      params.start_date = dateRange.startDate
-      params.end_date = dateRange.endDate
+      if (SALES_PURCHASE_REPORT_IDS.has(reportId)) {
+        params.start_date = spRangeForFetch.startDate
+        params.end_date = spRangeForFetch.endDate
+      } else {
+        params.start_date = dateRange.startDate
+        params.end_date = dateRange.endDate
+      }
     }
     if (
       reportId === 'item-sales-custom' ||
@@ -1169,8 +1612,9 @@ export default function ReportsPage() {
     }
 
     if (String(reportId).startsWith('aquaculture-')) {
-      if (aquaculturePondId && /^\d+$/.test(aquaculturePondId)) {
-        params.pond_id = aquaculturePondId
+      const pondFilter = resolveEffectiveAquaculturePondId(reportStationId, aquaculturePondId)
+      if (pondFilter) {
+        params.pond_id = pondFilter
       }
       if (reportId === 'aquaculture-pond-pl') {
         if (aquacultureCycleId && /^\d+$/.test(aquacultureCycleId)) {
@@ -1182,7 +1626,20 @@ export default function ReportsPage() {
       }
     }
 
-    if (REPORTS_STATION_SCOPED.has(reportId)) {
+    if (BUSINESS_LINE_REPORT_IDS.has(reportId)) {
+      let homeId: number | null = null
+      try {
+        const u = JSON.parse(localStorage.getItem('user') || '{}') as { home_station_id?: unknown }
+        if (u?.home_station_id != null && String(u.home_station_id).trim() !== '') {
+          homeId = Number(u.home_station_id)
+        }
+      } catch {
+        /* ignore */
+      }
+      if (homeId == null) {
+        params.business_segment = segmentForFetch
+      }
+    } else if (REPORTS_STATION_SCOPED.has(reportId)) {
       let homeId: number | null = null
       try {
         const u = JSON.parse(localStorage.getItem('user') || '{}') as { home_station_id?: unknown }
@@ -1218,7 +1675,17 @@ export default function ReportsPage() {
         throw new Error('Invalid response data')
       }
     } catch (error: any) {
-      console.error('Error fetching report:', error)
+      const reqUrl =
+        error?.config?.baseURL && error?.config?.url
+          ? `${String(error.config.baseURL).replace(/\/+$/, '')}/${String(error.config.url).replace(/^\/+/, '')}`
+          : `${getApiBaseUrl().replace(/\/+$/, '')}/reports/${reportId}/`
+      console.error('Error fetching report:', {
+        reportId,
+        url: reqUrl,
+        status: error?.response?.status,
+        detail: error?.response?.data?.detail,
+        error,
+      })
 
       // Stale super-admin company picker (invalid X-Selected-Company-Id) → clear and retry once
       if (error?.response?.status === 403 && typeof window !== 'undefined') {
@@ -1256,7 +1723,16 @@ export default function ReportsPage() {
         return
       }
       
-      const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to load report. Please try again.'
+      const backendDetail = String(error?.response?.data?.detail ?? '').trim()
+      let errorMessage =
+        backendDetail || error?.message || 'Failed to load report. Please try again.'
+      if (error?.response?.status === 404) {
+        errorMessage =
+          backendDetail === 'Unknown report' || backendDetail === ''
+            ? `Report "${reportId}" is not registered on the API (${reqUrl}). ` +
+              'Restart the Django server if you added this report recently, and confirm the frontend is calling your local API (http://localhost:8000/api in dev).'
+            : `${backendDetail} (${reportId})`
+      }
       alert(errorMessage)
       setReportData(null)
     } finally {
@@ -1271,7 +1747,76 @@ export default function ReportsPage() {
     aquaculturePondId,
     aquacultureCycleId,
     aquacultureIncludeCycleBreakdown,
+    businessSegment,
+    salesPurchaseDateRange,
+    scrollReportPanelIntoView,
   ])
+
+  useEffect(() => {
+    if (!selectedReport || loading) return
+    scrollReportPanelIntoView()
+  }, [selectedReport, loading, scrollReportPanelIntoView])
+
+  const onSalesPurchasePresetChange = useCallback(
+    (preset: SalesPurchasePeriodPreset) => {
+      if (preset === 'custom') {
+        setSalesPurchaseDatePreset('custom')
+        persistSalesPurchasePeriod('custom', salesPurchaseDateRange)
+        return
+      }
+      const nextRange = salesPurchaseRangeForPreset(preset)
+      setSalesPurchaseDatePreset(preset)
+      setSalesPurchaseDateRange(nextRange)
+      persistSalesPurchasePeriod(preset, nextRange)
+      if (selectedReport && SALES_PURCHASE_REPORT_IDS.has(selectedReport)) {
+        void fetchReport(selectedReport, {
+          businessSegment,
+          salesPurchaseDateRange: nextRange,
+        })
+      }
+    },
+    [businessSegment, fetchReport, salesPurchaseDateRange, selectedReport]
+  )
+
+  const onSalesPurchaseDateChange = useCallback(
+    (field: 'startDate' | 'endDate', value: string) => {
+      const nextRange = {
+        startDate: field === 'startDate' ? value : salesPurchaseDateRange.startDate,
+        endDate: field === 'endDate' ? value : salesPurchaseDateRange.endDate,
+      }
+      const nextPreset = inferSalesPurchasePreset(nextRange)
+      setSalesPurchaseDateRange(nextRange)
+      setSalesPurchaseDatePreset(nextPreset)
+      persistSalesPurchasePeriod(nextPreset, nextRange)
+      if (salesPurchaseDebounceRef.current) {
+        clearTimeout(salesPurchaseDebounceRef.current)
+      }
+      salesPurchaseDebounceRef.current = setTimeout(() => {
+        if (selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) {
+          void fetchReport(selectedReport, {
+            businessSegment,
+            salesPurchaseDateRange: nextRange,
+          })
+        }
+      }, 500)
+    },
+    [businessSegment, fetchReport, salesPurchaseDateRange, selectedReport]
+  )
+
+  const onBusinessSegmentChange = useCallback(
+    (segment: ReportBusinessSegment) => {
+      setBusinessSegment(segment)
+      try {
+        localStorage.setItem(REPORT_BUSINESS_SEGMENT_STORAGE_KEY, segment)
+      } catch {
+        /* ignore */
+      }
+    if (selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) {
+      void fetchReport(selectedReport, { businessSegment: segment })
+    }
+    },
+    [fetchReport, selectedReport]
+  )
 
   const deepLinkReportKeyRef = useRef<string | null>(null)
   useEffect(() => {
@@ -1292,19 +1837,28 @@ export default function ReportsPage() {
     }
     const linkKey = `${reportParam}|${cat ?? ''}`
     if (deepLinkReportKeyRef.current === linkKey) return
-    if (reportParam === 'aquaculture-pl-management' || reportParam === 'analytics-kpi') {
-      deepLinkReportKeyRef.current = linkKey
-      const archiveStart = (searchParams.get('start_date') || '').trim().slice(0, 10)
-      const archiveEnd = (searchParams.get('end_date') || '').trim().slice(0, 10)
-      if (
-        reportParam === 'aquaculture-pl-management' &&
-        /^\d{4}-\d{2}-\d{2}$/.test(archiveStart) &&
-        /^\d{4}-\d{2}-\d{2}$/.test(archiveEnd)
-      ) {
-        setDateRange({ startDate: archiveStart, endDate: archiveEnd })
-        const archivePond = (searchParams.get('pond_id') || '').trim()
-        if (/^\d+$/.test(archivePond)) setAquaculturePondId(archivePond)
+    const segParam = searchParams.get('business_segment')
+    if (segParam) {
+      setBusinessSegment(parseReportBusinessSegment(segParam))
+    }
+    const archiveStart = (searchParams.get('start_date') || '').trim().slice(0, 10)
+    const archiveEnd = (searchParams.get('end_date') || '').trim().slice(0, 10)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(archiveStart) && /^\d{4}-\d{2}-\d{2}$/.test(archiveEnd)) {
+      setDateRange({ startDate: archiveStart, endDate: archiveEnd })
+      if (SALES_PURCHASE_REPORT_IDS.has(reportParam as ReportType)) {
+        setSalesPurchaseDateRange({ startDate: archiveStart, endDate: archiveEnd })
+        setSalesPurchaseDatePreset(inferSalesPurchasePreset({ startDate: archiveStart, endDate: archiveEnd }))
       }
+    }
+    const archivePond = (searchParams.get('pond_id') || '').trim()
+    if (/^\d+$/.test(archivePond)) setAquaculturePondId(archivePond)
+
+    const isKnownReport =
+      reportParam === 'analytics-kpi' ||
+      reportParam === 'aquaculture-pl-management' ||
+      isApiBackedReportId(reportParam)
+    if (isKnownReport) {
+      deepLinkReportKeyRef.current = linkKey
       void fetchReport(reportParam as ReportType)
     }
   }, [searchParams, reportRbacHydrated, fetchReport])
@@ -1313,19 +1867,28 @@ export default function ReportsPage() {
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const v = e.target.value
       persistReportStation(v)
+      const scope = parseReportSiteScopeKey(v)
+      if (scope.kind === 'pond') {
+        setAquaculturePondId(String(scope.id))
+        setAquacultureCycleId('')
+      } else {
+        setAquaculturePondId('')
+        setAquacultureCycleId('')
+      }
+      if (!selectedReport) return
+      if (selectedReport === 'analytics-kpi') {
+        setReportData({ _analytics: true as const })
+        return
+      }
+      if (selectedReport === 'aquaculture-pl-management') {
+        setReportData({ _aquaculturePlManagement: true as const })
+        return
+      }
       if (
-        selectedReport &&
-        (REPORTS_STATION_SCOPED.has(selectedReport) ||
-          selectedReport === 'analytics-kpi' ||
-          selectedReport === 'aquaculture-pl-management')
+        REPORTS_STATION_SCOPED.has(selectedReport) ||
+        String(selectedReport).startsWith('aquaculture-')
       ) {
-        if (selectedReport === 'analytics-kpi') {
-          setReportData({ _analytics: true as const })
-        } else if (selectedReport === 'aquaculture-pl-management') {
-          setReportData({ _aquaculturePlManagement: true as const })
-        } else {
-          void fetchReport(selectedReport)
-        }
+        void fetchReport(selectedReport)
       }
     },
     [persistReportStation, selectedReport, fetchReport]
@@ -1363,7 +1926,7 @@ export default function ReportsPage() {
     if (!reportData || !selectedReport) return
 
     const reportTitle = reports.find(r => r.id === selectedReport)?.title || selectedReport
-    const siteScopeForPrint = getReportSiteScopeDisplay(
+    const siteScopeForPrint = getReportScopeForExport(
       selectedReport,
       reportData,
       reportStationList,
@@ -1508,6 +2071,34 @@ export default function ReportsPage() {
       const st = srows.reduce((s: number, r: any) => s + Number(r.total ?? 0), 0)
       const ic = srows.reduce((s: number, r: any) => s + Number(r.invoice_count ?? 0), 0)
       contentHTML += `<tfoot><tr><td style="text-align:right"><strong>Total</strong></td><td style="text-align:right"><strong>${ic}</strong></td><td style="text-align:right"><strong>${formatCurrency(st)}</strong></td></tr></tfoot></tbody></table>`
+    } else if (selectedReport === 'sales-report' && (reportData.cash_customers || reportData.credit_customers)) {
+      const renderSalesReportSection = (title: string, rows: any[]) => {
+        contentHTML += `<h2>${escapeHtml(title)}</h2><table><thead><tr><th>Customer #</th><th>Customer</th><th style="text-align:right">Invoices</th><th style="text-align:right">Total</th></tr></thead><tbody>`
+        rows.forEach((r: any) => {
+          contentHTML += `<tr><td>${escapeHtml(String(r.customer_number || ''))}</td><td>${escapeHtml(String(r.display_name || ''))}</td><td style="text-align:right">${r.invoice_count ?? 0}</td><td style="text-align:right">${formatCurrency(r.total ?? 0)}</td></tr>`
+        })
+        const st = rows.reduce((s: number, r: any) => s + Number(r.total ?? 0), 0)
+        const ic = rows.reduce((s: number, r: any) => s + Number(r.invoice_count ?? 0), 0)
+        contentHTML += `<tfoot><tr><td colspan="2" style="text-align:right"><strong>Subtotal</strong></td><td style="text-align:right"><strong>${ic}</strong></td><td style="text-align:right"><strong>${formatCurrency(st)}</strong></td></tr></tfoot></tbody></table>`
+      }
+      renderSalesReportSection('Cash customers', reportData.cash_customers || [])
+      renderSalesReportSection('Credit customers', reportData.credit_customers || [])
+      const sum = reportData.summary || {}
+      contentHTML += `<p><strong>Grand total:</strong> ${formatCurrency(sum.grand_total ?? 0)} (${sum.total_invoices ?? 0} invoices)</p>`
+    } else if (selectedReport === 'purchase-report' && (reportData.cash_vendors || reportData.credit_vendors)) {
+      const renderPurchaseReportSection = (title: string, rows: any[]) => {
+        contentHTML += `<h2>${escapeHtml(title)}</h2><table><thead><tr><th>Vendor #</th><th>Vendor</th><th style="text-align:right">Bills</th><th style="text-align:right">Total</th></tr></thead><tbody>`
+        rows.forEach((r: any) => {
+          contentHTML += `<tr><td>${escapeHtml(String(r.vendor_number || ''))}</td><td>${escapeHtml(String(r.display_name || ''))}</td><td style="text-align:right">${r.bill_count ?? 0}</td><td style="text-align:right">${formatCurrency(r.total ?? 0)}</td></tr>`
+        })
+        const st = rows.reduce((s: number, r: any) => s + Number(r.total ?? 0), 0)
+        const bc = rows.reduce((s: number, r: any) => s + Number(r.bill_count ?? 0), 0)
+        contentHTML += `<tfoot><tr><td colspan="2" style="text-align:right"><strong>Subtotal</strong></td><td style="text-align:right"><strong>${bc}</strong></td><td style="text-align:right"><strong>${formatCurrency(st)}</strong></td></tr></tfoot></tbody></table>`
+      }
+      renderPurchaseReportSection('Cash vendors', reportData.cash_vendors || [])
+      renderPurchaseReportSection('Credit vendors', reportData.credit_vendors || [])
+      const sum = reportData.summary || {}
+      contentHTML += `<p><strong>Grand total:</strong> ${formatCurrency(sum.grand_total ?? 0)} (${sum.total_bills ?? 0} bill portions)</p>`
     } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
       contentHTML += '<h2>Tank Inventory</h2><table><thead><tr><th>Tank</th><th>Station</th><th>Product</th><th style="text-align:right">Capacity (L)</th><th style="text-align:right">Stock (L)</th><th style="text-align:right">Fill %</th><th>Needs Refill</th></tr></thead><tbody>'
       reportData.inventory.forEach((tank: any) => {
@@ -1625,40 +2216,8 @@ export default function ReportsPage() {
         contentHTML += `<tr><td>${date}</td><td>${dip.tank_name || ''}</td><td>${dip.product_name || ''}</td><td style="text-align:right">${formatNumber(sys)}</td><td style="text-align:right">${formatNumber(meas)}</td><td style="text-align:right">${vt === 'GAIN' ? '+' : ''}${formatNumber(vq)}</td><td style="text-align:right">${formatCurrency(dip.variance_value)}</td><td>${vt}</td><td>${dip.recorded_by || '—'}</td></tr>`
       })
       contentHTML += '</tbody></table>'
-    } else if (selectedReport === 'daily-summary' && reportData.sales) {
-      const s = reportData.sales || {}
-      const sh = reportData.shifts || {}
-      const dp = reportData.dips || {}
-      contentHTML += '<h2>Summary</h2><table><tbody>'
-      contentHTML += `<tr><td><strong>Total transactions</strong></td><td>${s.total_transactions ?? 0}</td></tr>`
-      contentHTML += `<tr><td><strong>Total liters</strong></td><td>${formatNumber(Number(s.total_liters ?? 0))}</td></tr>`
-      contentHTML += `<tr><td><strong>Total amount</strong></td><td>${formatCurrency(s.total_amount)}</td></tr>`
-      contentHTML += `<tr><td><strong>Average sale</strong></td><td>${formatCurrency(s.average_sale)}</td></tr>`
-      contentHTML += `<tr><td><strong>Total shifts</strong></td><td>${sh.total_shifts ?? 0}</td></tr>`
-      contentHTML += `<tr><td><strong>Total cash variance</strong></td><td>${formatCurrency(sh.total_cash_variance)}</td></tr>`
-      contentHTML += `<tr><td><strong>Dip readings</strong></td><td>${dp.total_readings ?? 0}</td></tr>`
-      contentHTML += `<tr><td><strong>Net dip variance (L)</strong></td><td>${formatNumber(Number(dp.net_variance ?? 0))}</td></tr>`
-      contentHTML += '</tbody></table>'
-      const bp = s.by_product || {}
-      const keys = Object.keys(bp)
-      if (keys.length > 0) {
-        contentHTML +=
-          '<h2>Sales by product</h2><table><thead><tr><th>Product</th><th style="text-align:right">Lines</th><th style="text-align:right">Liters</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
-        keys.forEach((k) => {
-          const m = bp[k] as { line_count?: number; liters?: number; amount?: number }
-          contentHTML += `<tr><td>${escapeHtml(k)}</td><td style="text-align:right">${m.line_count ?? 0}</td><td style="text-align:right">${formatNumber(Number(m.liters ?? 0))}</td><td style="text-align:right">${formatCurrency(m.amount ?? 0)}</td></tr>`
-        })
-        contentHTML += '</tbody></table>'
-      }
-      const tanks = Array.isArray(reportData.tanks) ? reportData.tanks : []
-      if (tanks.length > 0) {
-        contentHTML +=
-          '<h2>Tank status</h2><table><thead><tr><th>Tank</th><th>Product</th><th style="text-align:right">Capacity</th><th style="text-align:right">Stock</th><th style="text-align:right">Fill %</th></tr></thead><tbody>'
-        tanks.forEach((tank: any) => {
-          contentHTML += `<tr><td>${escapeHtml(String(tank.tank_name ?? ''))}</td><td>${escapeHtml(String(tank.product ?? ''))}</td><td style="text-align:right">${Number(tank.capacity ?? 0).toLocaleString()}</td><td style="text-align:right">${Number(tank.current_stock ?? 0).toLocaleString()}</td><td style="text-align:right">${formatNumber(Number(tank.fill_percentage ?? 0))}%</td></tr>`
-        })
-        contentHTML += '</tbody></table>'
-      }
+    } else if (selectedReport === 'daily-summary' && reportData) {
+      contentHTML += buildDailySummaryPrintHtml(reportData as Record<string, unknown>)
     } else if (selectedReport === 'fuel-sales' && reportData) {
       contentHTML += '<h2>Fuel sales (invoice fuel lines)</h2><table><tbody>'
       contentHTML += `<tr><td><strong>Fuel line count</strong></td><td>${reportData.total_sales ?? 0}</td></tr>`
@@ -1714,7 +2273,7 @@ export default function ReportsPage() {
         ? `<strong>Period:</strong> ${escapeHtml(reportData.period.start_date)} to ${escapeHtml(reportData.period.end_date)}`
         : ''
     const siteScopeLine = siteScopeForPrint
-      ? `${escapeHtml(siteScopeForPrint.headline)} — ${escapeHtml(siteScopeForPrint.detail)}`
+      ? `${escapeHtml(siteScopeForPrint.prefix)}: ${escapeHtml(siteScopeForPrint.headline)} — ${escapeHtml(siteScopeForPrint.detail)}`
       : ''
 
     const ok = printDocument({
@@ -1739,7 +2298,11 @@ export default function ReportsPage() {
     if (!reportData || !selectedReport) return
     
     const reportTitle = reports.find(r => r.id === selectedReport)?.title || selectedReport
-    const fileName = `${reportTitle.replace(/\s+/g, '_')}_${dateRange.endDate}`
+    const fileName = `${reportTitle.replace(/\s+/g, '_')}_${
+      selectedReport && SALES_PURCHASE_REPORT_IDS.has(selectedReport)
+        ? salesPurchaseDateRange.endDate
+        : dateRange.endDate
+    }`
     
     if (format === 'json') {
       const dataStr = JSON.stringify(reportData, null, 2)
@@ -1762,7 +2325,7 @@ export default function ReportsPage() {
       if (reportData.period) {
         csvContent += `Period: ${reportData.period.start_date} to ${reportData.period.end_date}\n`
       }
-      const siteScopeCsv = getReportSiteScopeDisplay(
+      const siteScopeCsv = getReportScopeForExport(
         selectedReport,
         reportData,
         reportStationList,
@@ -1772,7 +2335,7 @@ export default function ReportsPage() {
         reportStationId
       )
       if (siteScopeCsv) {
-        csvContent += `Site scope: ${siteScopeCsv.headline} — ${siteScopeCsv.detail}\n`
+        csvContent += `${siteScopeCsv.prefix}: ${siteScopeCsv.headline} — ${siteScopeCsv.detail}\n`
       }
       csvContent += '\n'
       
@@ -1824,6 +2387,26 @@ export default function ReportsPage() {
         srows.forEach((r: any) => {
           csvContent += `${escapeCsv(r.station_name)},${r.invoice_count ?? 0},${r.total ?? 0}\n`
         })
+      } else if (selectedReport === 'sales-report' && (reportData.cash_customers || reportData.credit_customers)) {
+        const exportSalesSection = (section: string, rows: any[]) => {
+          csvContent += `\n${section}\n`
+          csvContent += 'Customer #,Customer,Invoices,Total\n'
+          rows.forEach((r: any) => {
+            csvContent += `${escapeCsv(r.customer_number)},${escapeCsv(r.display_name)},${r.invoice_count ?? 0},${r.total ?? 0}\n`
+          })
+        }
+        exportSalesSection('Cash customers', reportData.cash_customers || [])
+        exportSalesSection('Credit customers', reportData.credit_customers || [])
+      } else if (selectedReport === 'purchase-report' && (reportData.cash_vendors || reportData.credit_vendors)) {
+        const exportPurchaseSection = (section: string, rows: any[]) => {
+          csvContent += `\n${section}\n`
+          csvContent += 'Vendor #,Vendor,Bills,Total\n'
+          rows.forEach((r: any) => {
+            csvContent += `${escapeCsv(r.vendor_number)},${escapeCsv(r.display_name)},${r.bill_count ?? 0},${r.total ?? 0}\n`
+          })
+        }
+        exportPurchaseSection('Cash vendors', reportData.cash_vendors || [])
+        exportPurchaseSection('Credit vendors', reportData.credit_vendors || [])
       } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
         csvContent += 'Tank,Station,Product,Capacity (L),Current Stock (L),Fill %,Needs Refill\n'
         reportData.inventory.forEach((tank: any) => {
@@ -2078,21 +2661,7 @@ export default function ReportsPage() {
         dump('borrowed', reportData.borrowed || [])
         dump('lent', reportData.lent || [])
       } else if (selectedReport === 'daily-summary') {
-        csvContent += 'Metric,Value\n'
-        if (reportData.sales) {
-          csvContent += `Total Transactions,${reportData.sales.total_transactions || 0}\n`
-          csvContent += `Total Liters,${reportData.sales.total_liters || 0}\n`
-          csvContent += `Total Amount,${reportData.sales.total_amount || 0}\n`
-          csvContent += `Average Sale,${reportData.sales.average_sale || 0}\n`
-        }
-        if (reportData.shifts) {
-          csvContent += `Total Shifts,${reportData.shifts.total_shifts || 0}\n`
-          csvContent += `Cash Variance,${reportData.shifts.total_cash_variance || 0}\n`
-        }
-        if (reportData.dips) {
-          csvContent += `Total Dip Readings,${reportData.dips.total_readings || 0}\n`
-          csvContent += `Net Dip Variance,${reportData.dips.net_variance || 0}\n`
-        }
+        csvContent += buildDailySummaryCsv(reportData as Record<string, unknown>)
       } else if (selectedReport === 'fuel-sales') {
         csvContent += 'Metric,Value\n'
         csvContent += `Fuel line count,${reportData.total_sales ?? 0}\n`
@@ -2184,25 +2753,7 @@ export default function ReportsPage() {
           {/* Header */}
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
-            <p className="text-gray-600 mt-1">Generate comprehensive business and operational reports</p>
-            <div className="mt-3 max-w-4xl rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              <p className="font-semibold text-slate-900">Financial coverage by site and pond</p>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>
-                  <span className="font-medium">Each station / pond (GL):</span> Run{' '}
-                  <span className="font-medium">All Entities — P&amp;L</span>, <span className="font-medium">Balance Sheet</span>, and <span className="font-medium">Trial Balance</span> for every site and pond; or use Income Statement / Balance Sheet / Trial Balance with a site filter for one station&apos;s account detail.
-                </li>
-                <li>
-                  <span className="font-medium">Each pond (management):</span> Aquaculture — Pond P&amp;L (one row per pond when no pond filter), plus sales, expense, and operations registers with optional pond filter.
-                </li>
-                <li>
-                  <span className="font-medium">Receivables / payables:</span> Customer or Vendor Balances (current snapshot) and AR/AP Aging (open documents in day buckets).
-                </li>
-                <li>
-                  <span className="font-medium">Cash flow (all entities):</span> Cash Flow Summary with site filter cleared shows every station, every pond, and head-office/unassigned rows.
-                </li>
-              </ul>
-            </div>
+            <p className="text-gray-600 mt-1">Business, operational, and aquaculture reports</p>
           </div>
 
           {/* Category Filters - Hide for cashiers */}
@@ -2285,18 +2836,18 @@ export default function ReportsPage() {
 
           {userRole != null &&
             userRole !== 'operator' &&
-            (reportStationList.length > 0 || showPondsInSiteScope) && (
+            (reportStationList.length > 0 || showPondsInSiteScope) &&
+            !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) && (
               <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-2 text-sm text-slate-600">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                   <div>
                     <p className="font-medium text-slate-800">Site scope (operations, inventory, and GL)</p>
                     {userHasHomeStation ? (
-                      <p className="text-slate-500">Your login is limited to your assigned site; totals match that location.</p>
+                      <p className="text-slate-500">Limited to your assigned site.</p>
                     ) : (
                       <p className="text-slate-500">
-                        <strong>All</strong> includes every station and pond. Pick a station for fuel, inventory, and
-                        site-tagged GL reports; pick a pond for Analytics &amp; KPIs (pond-tagged GL).
+                        Filter site-scoped reports by station or pond. <strong>All</strong> = company-wide.
                       </p>
                     )}
                   </div>
@@ -2336,16 +2887,16 @@ export default function ReportsPage() {
                       </select>
                     </div>
                     <p className="text-xs text-slate-500 sm:text-right">
-                      Applies when you run a site-scoped report (saved for this browser)
+                      Saved in this browser · refreshes the open report
                     </p>
                   </div>
                 )}
               </div>
             )}
 
-          <div className="flex min-h-0 w-full min-w-0 flex-col gap-6 lg:flex-row lg:items-start lg:gap-6 xl:gap-8">
+          <div className="flex min-h-0 w-full min-w-0 flex-col gap-6 lg:max-h-[calc(100dvh-11rem)] lg:flex-row lg:items-stretch lg:gap-6 xl:gap-8">
             {/* Report list: fixed max width; main pane uses flex-1 for full usable width (especially for Analytics) */}
-            <aside className="w-full min-w-0 shrink-0 space-y-3 lg:max-w-[20rem] xl:max-w-[22rem]">
+            <aside className="w-full min-w-0 shrink-0 space-y-3 lg:max-h-full lg:max-w-[20rem] lg:overflow-y-auto lg:overscroll-y-contain lg:pr-1 xl:max-w-[22rem]">
               {filteredReports.map((report) => {
                 const Icon = report.icon
                 return (
@@ -2387,7 +2938,11 @@ export default function ReportsPage() {
             </aside>
 
             {/* Report Display — flex-1 so charts and tables use the full right-hand workspace */}
-            <div className="min-h-0 w-full min-w-0 flex-1">
+            <div
+              ref={reportDisplayRef}
+              id="report-display-panel"
+              className="min-h-0 w-full min-w-0 flex-1 scroll-mt-4 lg:max-h-full lg:overflow-y-auto lg:overscroll-y-contain"
+            >
               <div className="min-h-[600px] w-full min-w-0 max-w-full rounded-lg border border-gray-200 bg-white">
                 {loading ? (
                   <div className="flex h-[600px] items-center justify-center">
@@ -2405,7 +2960,7 @@ export default function ReportsPage() {
                   '_aquaculturePlManagement' in reportData &&
                   reportData._aquaculturePlManagement ? (
                   <div className="w-full min-w-0 p-0">
-                    <AquaculturePlManagementPanel embedInReports />
+                    <AquaculturePlManagementPanel embedInReports reportStationKey={reportStationId} />
                   </div>
                 ) : selectedReport && reportData ? (
                   <div className="p-6">
@@ -2418,44 +2973,6 @@ export default function ReportsPage() {
                     <p className="text-sm text-gray-500 mt-1">
                       Generated on {formatDate(new Date())}
                     </p>
-                    {selectedReport && REPORTS_STATION_SCOPED.has(selectedReport) && reportStationList.length > 0 && (
-                      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
-                        <MapPin className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
-                        {userHasHomeStation ? (
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium text-gray-800">Site (fixed):</span>{' '}
-                            {homeStationMeta.name?.trim() ||
-                              reportStationList.find((s) => s.id === homeStationMeta.id)?.station_name ||
-                              (homeStationMeta.id != null ? `Station #${homeStationMeta.id}` : 'Your assigned site')}
-                          </p>
-                        ) : (
-                          <>
-                            <label className="text-sm font-medium text-gray-700" htmlFor="report-station-preview">
-                              Site
-                            </label>
-                            <select
-                              id="report-station-preview"
-                              aria-label="Filter this report by site or All"
-                              value={reportStationId}
-                              onChange={onReportStationSelectChange}
-                              className="min-w-[16rem] rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                            >
-                              <option value="">All</option>
-                              {reportStationList.map((s) => (
-                                <option key={s.id} value={String(s.id)}>
-                                  {s.station_name}
-                                </option>
-                              ))}
-                            </select>
-                            <span className="text-xs text-gray-500">
-                              {selectedReport === 'trial-balance' || selectedReport === 'income-statement'
-                                ? 'All = every posted line; one site = only GL lines tagged to that location'
-                                : 'All = company-wide for this report type'}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    )}
                   </div>
                   <div className="flex items-center space-x-2">
                     <button
@@ -2501,8 +3018,10 @@ export default function ReportsPage() {
                         <div className="mb-6 rounded-lg border border-cyan-200 bg-cyan-50/90 px-4 py-3 text-sm text-cyan-950 shadow-sm">
                           <p className="font-semibold text-cyan-900">Aquaculture filters</p>
                           <p className="mt-1 text-cyan-800/90">
-                            All amounts in this section are shown in <strong>BDT</strong>. Use Refresh after changing
-                            filters.
+                            Amounts in BDT — refresh after changing filters.
+                            {pondLockedBySiteScope ? (
+                              <span className="ml-1 font-medium">Pond is set by Site scope above.</span>
+                            ) : null}
                           </p>
                           <div className="mt-3 flex flex-wrap items-end gap-3">
                             <div className="flex flex-col gap-1">
@@ -2511,13 +3030,14 @@ export default function ReportsPage() {
                               </label>
                               <select
                                 id="aq-report-pond"
-                                value={aquaculturePondId}
+                                value={effectiveAquaculturePondId}
+                                disabled={pondLockedBySiteScope}
                                 onChange={(e) => {
                                   const v = e.target.value
                                   setAquaculturePondId(v)
                                   setAquacultureCycleId('')
                                 }}
-                                className="min-w-[12rem] rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm"
+                                className="min-w-[12rem] rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
                               >
                                 <option value="">All ponds</option>
                                 {aquaculturePonds.map((p) => (
@@ -2537,7 +3057,7 @@ export default function ReportsPage() {
                                     id="aq-report-cycle"
                                     value={aquacultureCycleId}
                                     onChange={(e) => setAquacultureCycleId(e.target.value)}
-                                    disabled={!aquaculturePondId}
+                                    disabled={!effectiveAquaculturePondId}
                                     className="min-w-[12rem] rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
                                   >
                                     <option value="">All cycles (pond scope)</option>
@@ -2650,7 +3170,29 @@ export default function ReportsPage() {
                               categoryList: itemFilterCategoryList,
                               fetchReport,
                             }
-                          : undefined
+                          : undefined,
+                        BUSINESS_LINE_REPORT_IDS.has(selectedReport)
+                          ? {
+                              value: businessSegment,
+                              onChange: onBusinessSegmentChange,
+                              stations: reportStationList,
+                              lockedSegment: lockedBusinessSegment,
+                            }
+                          : undefined,
+                        SALES_PURCHASE_REPORT_IDS.has(selectedReport)
+                          ? {
+                              dateRange: salesPurchaseDateRange,
+                              preset: salesPurchaseDatePreset,
+                              onPresetChange: onSalesPurchasePresetChange,
+                              onDateChange: onSalesPurchaseDateChange,
+                            }
+                          : undefined,
+                        {
+                          reportStationKey: reportStationId,
+                          stations: reportStationList,
+                          ponds: aquaculturePonds,
+                          aquaculturePondId: effectiveAquaculturePondId,
+                        }
                       )}
 
                       {/* Alerts */}
@@ -2910,12 +3452,45 @@ function renderReportTable(
   setDateRange?: (range: { startDate: string; endDate: string }) => void,
   fetchReport?: (reportId: ReportType) => Promise<void>,
   handleReportDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: string) => void,
-  itemScope?: ItemScopeTableProps
+  itemScope?: ItemScopeTableProps,
+  businessSegmentProps?: BusinessSegmentTableProps,
+  salesPurchasePeriodProps?: SalesPurchasePeriodTableProps,
+  scopeLabels?: ReportScopeTableProps
 ) {
+  const pondTotal = (singleName?: string | null) =>
+    scopeLabels
+      ? resolveReportTotalLabel(
+          'pond',
+          scopeLabels.reportStationKey,
+          scopeLabels.stations,
+          scopeLabels.ponds,
+          { aquaculturePondId: scopeLabels.aquaculturePondId, singleName }
+        )
+      : singleName
+        ? `Total — ${singleName}`
+        : 'Total — all ponds'
+
+  const grandPondTotal = (singleName?: string | null) =>
+    scopeLabels
+      ? resolveGrandTotalLabel(
+          'pond',
+          scopeLabels.reportStationKey,
+          scopeLabels.stations,
+          scopeLabels.ponds,
+          { aquaculturePondId: scopeLabels.aquaculturePondId, singleName }
+        )
+      : singleName
+        ? `Grand total — ${singleName}`
+        : 'Grand total — all ponds'
+
   const period = data?.period || {}
+  const periodDateRange = salesPurchasePeriodProps?.dateRange ?? dateRange
   const hasPeriod =
     REPORTS_WITH_PERIOD.has(reportType) &&
-    (period.start_date || period.end_date || dateRange?.startDate || dateRange?.endDate)
+    (period.start_date ||
+      period.end_date ||
+      periodDateRange?.startDate ||
+      periodDateRange?.endDate)
 
   if (EXTRA_FINANCIAL_REPORT_IDS.includes(reportType as (typeof EXTRA_FINANCIAL_REPORT_IDS)[number])) {
     const extra = renderExtraFinancialReport(reportType, data, {
@@ -3126,39 +3701,73 @@ function renderReportTable(
     )
   }
 
-  // Daily Summary
+  // Daily Summary — fuel forecourt vs aquaculture shop hub
   if (reportType === 'daily-summary' && data) {
-    const summary = data.sales || {}
-    const shifts = data.shifts || {}
-    const dips = data.dips || {}
-    const tanks = Array.isArray(data.tanks) ? data.tanks : []
-    const byProduct = summary.by_product || {}
     const period = data?.period || {}
+    const businessLines: any[] = Array.isArray(data.business_lines) ? data.business_lines : []
+    const segmentLabel = data.business_segment_label as string | undefined
+    const segmentStationNames = Array.isArray(data.business_segment_station_names)
+      ? (data.business_segment_station_names as string[])
+      : undefined
 
-    return (
-      <div className="space-y-8">
-        {/* Report Period - Date Range */}
-        {hasPeriod && renderPeriodFilter(
-          period,
-          dateRange,
-          reportType,
-          handleReportDateChange,
-          "Daily summary data is shown for this date range."
-        )}
+    const renderDailyLineBlock = (bl: any, key: string) => {
+      const isFuel = bl.line === 'fuel'
+      const sales = bl.sales || {}
+      const shifts = bl.shifts || {}
+      const dips = bl.dips || {}
+      const tanks = Array.isArray(bl.tanks) ? bl.tanks : []
+      const byFuel = bl.by_product_fuel || {}
+      const byCat = bl.by_pos_category || {}
+      const aq = bl.aquaculture || {}
+      const stationLabel = Array.isArray(bl.station_names) && bl.station_names.length
+        ? bl.station_names.join(', ')
+        : bl.label || ''
 
-        <div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-4">Summary</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              { label: 'Total Transactions', value: summary.total_transactions ?? 0, icon: BarChart3, color: 'blue' },
-              { label: 'Total Liters', value: `${formatNumber(Number(summary.total_liters ?? 0))} L`, icon: Droplet, color: 'blue' },
-              { label: 'Total Amount', value: formatCurrency(summary.total_amount), icon: DollarSign, color: 'green' },
-              { label: 'Average Sale', value: formatCurrency(summary.average_sale), icon: TrendingUp, color: 'purple' },
-              { label: 'Total Shifts', value: shifts.total_shifts ?? 0, icon: Users, color: 'indigo' },
-              { label: 'Total Cash Variance', value: formatCurrency(shifts.total_cash_variance), icon: DollarSign, color: 'yellow' },
-              { label: 'Total Dip Readings', value: dips.total_readings ?? 0, icon: Calendar, color: 'pink' },
-              { label: 'Net Dip Variance', value: formatCurrency(dips.net_variance), icon: TrendingUp, color: 'red' },
-            ].map((item, idx) => {
+      const kpiCards = isFuel
+        ? [
+            { label: 'Transactions', value: sales.total_transactions ?? 0, icon: BarChart3, color: 'blue' },
+            { label: 'Fuel liters', value: `${formatNumber(Number(sales.total_liters ?? 0))} L`, icon: Droplet, color: 'blue' },
+            { label: 'Fuel sales', value: formatCurrency(sales.fuel_amount ?? sales.total_amount), icon: DollarSign, color: 'green' },
+            { label: 'Shop / other', value: formatCurrency(sales.shop_amount ?? 0), icon: Package, color: 'purple' },
+            { label: 'Cash sales', value: formatCurrency(sales.cash_sales_total ?? 0), icon: Banknote, color: 'green' },
+            { label: 'Shifts', value: shifts.total_shifts ?? 0, icon: Users, color: 'indigo' },
+            { label: 'Cash variance', value: formatCurrency(shifts.total_cash_variance), icon: DollarSign, color: 'yellow' },
+            { label: 'Dip readings', value: dips.total_readings ?? 0, icon: Calendar, color: 'pink' },
+            { label: 'Dip variance', value: `${formatNumber(Number(dips.net_variance_liters ?? dips.net_variance ?? 0))} L`, icon: TrendingUp, color: 'red' },
+          ]
+        : [
+            { label: 'Transactions', value: sales.total_transactions ?? 0, icon: BarChart3, color: 'teal' },
+            { label: 'Shop sales', value: formatCurrency(sales.shop_amount ?? sales.total_amount), icon: DollarSign, color: 'green' },
+            { label: 'Cash (walk-in)', value: formatCurrency(sales.cash_sales_total ?? 0), icon: Banknote, color: 'green' },
+            { label: 'Credit (pond POS)', value: formatCurrency(sales.credit_sales_total ?? 0), icon: CreditCard, color: 'amber' },
+            { label: 'Pond POS invoices', value: aq.pond_pos_invoice_count ?? 0, icon: Fish, color: 'teal' },
+            { label: 'Pond POS total', value: formatCurrency(aq.pond_pos_sales_total ?? 0), icon: Fish, color: 'teal' },
+            { label: 'Average sale', value: formatCurrency(sales.average_sale), icon: TrendingUp, color: 'purple' },
+          ]
+
+      return (
+        <div key={key} className="space-y-5 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-gray-100 pb-3">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                {isFuel ? <Droplet className="h-5 w-5 text-amber-600" /> : <Fish className="h-5 w-5 text-teal-600" />}
+                {bl.label || (isFuel ? 'Fuel Station' : 'Aquaculture shop')}
+              </h3>
+              {stationLabel ? (
+                <p className="text-sm text-gray-500 mt-0.5">{stationLabel}</p>
+              ) : null}
+            </div>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                isFuel ? 'bg-amber-100 text-amber-800' : 'bg-teal-100 text-teal-800'
+              }`}
+            >
+              {isFuel ? 'Forecourt & general retail' : 'Aquaculture products & pond POS'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {kpiCards.map((item) => {
               const colorMap: Record<string, string> = {
                 blue: 'from-blue-50 to-blue-100 border-blue-200 text-blue-600 bg-blue-200',
                 green: 'from-green-50 to-green-100 border-green-200 text-green-600 bg-green-200',
@@ -3166,128 +3775,176 @@ function renderReportTable(
                 indigo: 'from-indigo-50 to-indigo-100 border-indigo-200 text-indigo-600 bg-indigo-200',
                 yellow: 'from-yellow-50 to-yellow-100 border-yellow-200 text-yellow-600 bg-yellow-200',
                 pink: 'from-pink-50 to-pink-100 border-pink-200 text-pink-600 bg-pink-200',
-                red: 'from-red-50 to-red-100 border-red-200 text-red-600 bg-red-200'
+                red: 'from-red-50 to-red-100 border-red-200 text-red-600 bg-red-200',
+                teal: 'from-teal-50 to-teal-100 border-teal-200 text-teal-600 bg-teal-200',
+                amber: 'from-amber-50 to-amber-100 border-amber-200 text-amber-600 bg-amber-200',
               }
               const colors = colorMap[item.color] || colorMap.blue
               const [gradient, border, text, bg] = colors.split(' ')
               const Icon = item.icon
-              
               return (
-                <div key={idx} className={`bg-gradient-to-br ${gradient} ${border} border rounded-lg p-4 shadow-sm`}>
+                <div key={item.label} className={`bg-gradient-to-br ${gradient} ${border} border rounded-lg p-3 shadow-sm`}>
                   <div className="flex items-center justify-between">
-                    <div className="flex-1">
+                    <div>
                       <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
-                      <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.value}</p>
-              </div>
-                    <div className={`${bg} rounded-full p-2 ml-2`}>
-                      <Icon className={`h-5 w-5 ${text}`} />
+                      <p className={`text-xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.value}</p>
+                    </div>
+                    <div className={`${bg} rounded-full p-1.5`}>
+                      <Icon className={`h-4 w-4 ${text}`} />
                     </div>
                   </div>
                 </div>
               )
             })}
           </div>
+
+          {isFuel && Object.keys(byFuel).length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-800 mb-2">Fuel by product</h4>
+              <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Lines</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Liters</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {Object.entries(byFuel as Record<string, { line_count?: number; liters?: number; amount?: number }>).map(
+                      ([name, m]) => (
+                        <tr key={name}>
+                          <td className="px-3 py-2 font-medium text-gray-900">{name}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{m.line_count ?? 0}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(m.liters ?? 0))} L</td>
+                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(m.amount ?? 0)}</td>
+                        </tr>
+                      )
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {!isFuel && Object.keys(byCat).length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-800 mb-2">Sales by product category (POS)</h4>
+              <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Lines</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {Object.entries(byCat as Record<string, { line_count?: number; quantity?: number; amount?: number }>).map(
+                      ([cat, m]) => (
+                        <tr key={cat}>
+                          <td className="px-3 py-2 font-medium text-gray-900">{cat}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{m.line_count ?? 0}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(m.quantity ?? 0))}</td>
+                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(m.amount ?? 0)}</td>
+                        </tr>
+                      )
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {isFuel && tanks.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-800 mb-2">Tank levels</h4>
+              <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tank</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Capacity</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Stock</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Fill %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {tanks.map((tank: any, idx: number) => (
+                      <tr key={`${tank.tank_name}-${idx}`}>
+                        <td className="px-3 py-2 font-medium text-gray-900">{tank.tank_name}</td>
+                        <td className="px-3 py-2 text-gray-600">{tank.product}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{Number(tank.capacity ?? 0).toLocaleString()} L</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{Number(tank.current_stock ?? 0).toLocaleString()} L</td>
+                        <td className="px-3 py-2 text-right font-semibold">{formatNumber(Number(tank.fill_percentage ?? 0))}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
+      )
+    }
 
-        {Object.keys(byProduct).length > 0 && (
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Sales by Product</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Transactions</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Liters</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {Object.entries(
-                    byProduct as Record<string, { line_count?: number; transactions?: number; liters?: number; amount?: number }>
-                  ).map(([product, metrics], pIdx) => (
-                    <tr key={`${pIdx}-${product}`}>
-                      <td className="px-4 py-3 text-sm text-gray-900">{product}</td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-600">
-                        {metrics.line_count ?? metrics.transactions ?? '—'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-600">
-                        {formatNumber(Number(metrics.liters ?? 0))} L
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-900">
-                        {formatCurrency(metrics.amount ?? 0)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-gray-50">
-                  <tr>
-                    <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Totals</td>
-                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                      {Object.values(byProduct as Record<string, { line_count?: number }>).reduce((s, m) => s + Number(m.line_count ?? 0), 0)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                      {formatNumber(Number(summary.total_liters ?? 0))} L
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
-                      {formatCurrency(Number(summary.total_amount ?? 0))}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
+    return (
+      <div className="space-y-6">
+        {businessSegmentProps ? (
+          <BusinessSegmentFilter
+            value={businessSegmentProps.value}
+            onChange={businessSegmentProps.onChange}
+            stations={businessSegmentProps.stations}
+            lockedSegment={businessSegmentProps.lockedSegment}
+            activeLabel={segmentLabel}
+            activeStationNames={segmentStationNames}
+            hint="Fuel Station = forecourt, tanks, dips, and general retail. Aquaculture = Premium Agro shop (feed, medicine, fish, pond POS)."
+          />
+        ) : null}
+
+        {hasPeriod && renderPeriodFilter(
+          period,
+          dateRange,
+          reportType,
+          handleReportDateChange,
+          'Operations and sales for invoice dates in this range (non-draft).'
         )}
 
-        {Array.isArray(tanks) && tanks.length > 0 && (
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Tank Status</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tank</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Capacity</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Current Stock</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Fill %</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {tanks.map((tank: any, idx: number) => (
-                    <tr key={idx}>
-                      <td className="px-4 py-3 text-sm text-gray-900">{tank.tank_name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{tank.product}</td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-600">
-                        {Number(tank.capacity ?? 0).toLocaleString()} L
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-600">
-                        {Number(tank.current_stock ?? 0).toLocaleString()} L
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
-                        {formatNumber(Number(tank.fill_percentage ?? 0))}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-gray-50">
-                  <tr>
-                    <td colSpan={2} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
-                      Totals
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                      {tanks.reduce((s: number, t: any) => s + Number(t.capacity ?? 0), 0).toLocaleString()} L
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                      {tanks.reduce((s: number, t: any) => s + Number(t.current_stock ?? 0), 0).toLocaleString()} L
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">—</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+        {businessLines.length > 1 ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <span className="font-semibold text-slate-900">Company total:</span>{' '}
+            {formatCurrency(data.sales?.total_amount ?? 0)} across {data.sales?.total_transactions ?? 0} transactions
+            {Number(data.sales?.total_liters ?? 0) > 0 ? (
+              <span> · {formatNumber(Number(data.sales.total_liters))} L fuel</span>
+            ) : null}
           </div>
+        ) : null}
+
+        {businessLines.length > 0 ? (
+          businessLines.map((bl, idx) => renderDailyLineBlock(bl, `bl-${bl.line}-${idx}`))
+        ) : (
+          renderDailyLineBlock(
+            {
+              line: 'fuel',
+              label: 'Operations',
+              sales: data.sales || {},
+              shifts: data.shifts || {},
+              dips: data.dips || {},
+              tanks: data.tanks || [],
+              by_product_fuel: data.sales?.by_product || {},
+              by_pos_category: {},
+              aquaculture: {},
+            },
+            'legacy'
+          )
         )}
+
+        {data.accounting_note ? (
+          <p className="text-xs text-gray-500 border-t border-gray-100 pt-3">{data.accounting_note}</p>
+        ) : null}
       </div>
     )
   }
@@ -5460,6 +6117,288 @@ function renderReportTable(
     )
   }
 
+  // Sales Report (cash vs credit customers)
+  if (reportType === 'sales-report' && data) {
+    const summary = data.summary || {}
+    const cashRows = Array.isArray(data.cash_customers) ? data.cash_customers : []
+    const creditRows = Array.isArray(data.credit_customers) ? data.credit_customers : []
+    const segmentLabel = data.business_segment_label as string | undefined
+    const segmentStationNames = Array.isArray(data.business_segment_station_names)
+      ? (data.business_segment_station_names as string[])
+      : undefined
+
+    const renderCustomerTable = (title: string, rows: any[], titleClass: string, showPondBadge = false) => {
+      const totalInv = rows.reduce((s: number, r: any) => s + Number(r.invoice_count ?? 0), 0)
+      const totalAmt = rows.reduce((s: number, r: any) => s + Number(r.total ?? 0), 0)
+      return (
+        <div className="space-y-3">
+          <h3 className={`text-sm font-semibold uppercase tracking-wide ${titleClass}`}>{title}</h3>
+          <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer #</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Invoices</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {rows.length > 0 ? (
+                  rows.map((r: any, idx: number) => (
+                    <tr
+                      key={r.customer_id != null ? `cust-${r.customer_id}` : `cust-row-${idx}`}
+                      className="hover:bg-gray-50"
+                    >
+                      <td className="px-4 py-3 text-sm text-gray-600">{r.customer_number || '—'}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                        <span>{r.display_name || '—'}</span>
+                        {showPondBadge && r.is_pond_pos_customer ? (
+                          <span className="ml-2 inline-flex items-center rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800">
+                            Pond POS
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">{r.invoice_count ?? 0}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                        {formatCurrency(r.total ?? 0)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                      No sales in this section for the selected period.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {rows.length > 0 && (
+                <tfoot className="bg-gray-50">
+                  <tr>
+                    <td colSpan={2} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                      Subtotal
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {totalInv}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
+                      {formatCurrency(totalAmt)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-6">
+        {businessSegmentProps ? (
+          <BusinessSegmentFilter
+            value={businessSegmentProps.value}
+            onChange={businessSegmentProps.onChange}
+            stations={businessSegmentProps.stations}
+            lockedSegment={businessSegmentProps.lockedSegment}
+            activeLabel={segmentLabel}
+            activeStationNames={segmentStationNames}
+          />
+        ) : null}
+
+        {salesPurchasePeriodProps ? (
+          <SalesPurchasePeriodFilter
+            dateRange={salesPurchasePeriodProps.dateRange}
+            preset={salesPurchasePeriodProps.preset}
+            onPresetChange={salesPurchasePeriodProps.onPresetChange}
+            onDateChange={salesPurchasePeriodProps.onDateChange}
+            period={period}
+            description="Invoice totals by customer for invoice dates in this range (non-draft)."
+          />
+        ) : null}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Cash sales', value: formatCurrency(summary.cash_sales_total ?? 0), sub: `${summary.cash_invoice_count ?? 0} invoices`, icon: Banknote, color: 'green' },
+            { label: 'Credit sales', value: formatCurrency(summary.credit_sales_total ?? 0), sub: `${summary.credit_invoice_count ?? 0} invoices`, icon: CreditCard, color: 'amber' },
+            { label: 'Total invoices', value: summary.total_invoices ?? 0, sub: 'in period', icon: FileText, color: 'blue' },
+            { label: 'Grand total', value: formatCurrency(summary.grand_total ?? 0), sub: 'cash + credit', icon: DollarSign, color: 'indigo' },
+          ].map((item) => {
+            const colorMap: Record<string, string> = {
+              green: 'from-green-50 to-green-100 border-green-200 text-green-600 bg-green-200',
+              amber: 'from-amber-50 to-amber-100 border-amber-200 text-amber-600 bg-amber-200',
+              blue: 'from-blue-50 to-blue-100 border-blue-200 text-blue-600 bg-blue-200',
+              indigo: 'from-indigo-50 to-indigo-100 border-indigo-200 text-indigo-600 bg-indigo-200',
+            }
+            const colors = colorMap[item.color] || colorMap.blue
+            const [gradient, border, text, bg] = colors.split(' ')
+            const Icon = item.icon
+            return (
+              <div key={item.label} className={`bg-gradient-to-br ${gradient} ${border} border rounded-lg p-4 shadow-sm`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
+                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.value}</p>
+                    <p className="text-xs text-gray-600 mt-1">{item.sub}</p>
+                  </div>
+                  <div className={`${bg} rounded-full p-2 ml-2`}>
+                    <Icon className={`h-5 w-5 ${text}`} />
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {renderCustomerTable('Cash customers', cashRows, 'text-green-800')}
+        {renderCustomerTable('Credit customers', creditRows, 'text-amber-800', true)}
+
+        {data.accounting_note && (
+          <p className="text-xs text-gray-500 border-t border-gray-100 pt-3">{data.accounting_note}</p>
+        )}
+      </div>
+    )
+  }
+
+  // Purchase Report (cash vs credit vendors)
+  if (reportType === 'purchase-report' && data) {
+    const summary = data.summary || {}
+    const cashRows = Array.isArray(data.cash_vendors) ? data.cash_vendors : []
+    const creditRows = Array.isArray(data.credit_vendors) ? data.credit_vendors : []
+    const segmentLabel = data.business_segment_label as string | undefined
+    const segmentStationNames = Array.isArray(data.business_segment_station_names)
+      ? (data.business_segment_station_names as string[])
+      : undefined
+
+    const renderVendorTable = (title: string, rows: any[], titleClass: string) => {
+      const totalBills = rows.reduce((s: number, r: any) => s + Number(r.bill_count ?? 0), 0)
+      const totalAmt = rows.reduce((s: number, r: any) => s + Number(r.total ?? 0), 0)
+      return (
+        <div className="space-y-3">
+          <h3 className={`text-sm font-semibold uppercase tracking-wide ${titleClass}`}>{title}</h3>
+          <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor #</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Bills</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {rows.length > 0 ? (
+                  rows.map((r: any, idx: number) => (
+                    <tr
+                      key={r.vendor_id != null ? `vend-${r.vendor_id}` : `vend-row-${idx}`}
+                      className="hover:bg-gray-50"
+                    >
+                      <td className="px-4 py-3 text-sm text-gray-600">{r.vendor_number || '—'}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.display_name || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">{r.bill_count ?? 0}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                        {formatCurrency(r.total ?? 0)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                      No purchases in this section for the selected period.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {rows.length > 0 && (
+                <tfoot className="bg-gray-50">
+                  <tr>
+                    <td colSpan={2} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                      Subtotal
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {totalBills}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
+                      {formatCurrency(totalAmt)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-6">
+        {businessSegmentProps ? (
+          <BusinessSegmentFilter
+            value={businessSegmentProps.value}
+            onChange={businessSegmentProps.onChange}
+            stations={businessSegmentProps.stations}
+            lockedSegment={businessSegmentProps.lockedSegment}
+            activeLabel={segmentLabel}
+            activeStationNames={segmentStationNames}
+            hint="Fuel Station = forecourt vendor bills. Aquaculture = Premium Agro shop receipts (feed, medicine, supplies)."
+          />
+        ) : null}
+
+        {salesPurchasePeriodProps ? (
+          <SalesPurchasePeriodFilter
+            dateRange={salesPurchasePeriodProps.dateRange}
+            preset={salesPurchasePeriodProps.preset}
+            onPresetChange={salesPurchasePeriodProps.onPresetChange}
+            onDateChange={salesPurchasePeriodProps.onDateChange}
+            period={period}
+            description="Bill totals by vendor for bill dates in this range (non-draft, non-void)."
+          />
+        ) : null}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Cash purchases', value: formatCurrency(summary.cash_purchase_total ?? 0), sub: `${summary.cash_bill_count ?? 0} bill portions`, icon: Banknote, color: 'green' },
+            { label: 'Credit purchases', value: formatCurrency(summary.credit_purchase_total ?? 0), sub: `${summary.credit_bill_count ?? 0} bill portions`, icon: CreditCard, color: 'amber' },
+            { label: 'Total bill portions', value: summary.total_bills ?? 0, sub: 'cash + credit rows', icon: FileText, color: 'blue' },
+            { label: 'Grand total', value: formatCurrency(summary.grand_total ?? 0), sub: 'cash + credit', icon: DollarSign, color: 'indigo' },
+          ].map((item) => {
+            const colorMap: Record<string, string> = {
+              green: 'from-green-50 to-green-100 border-green-200 text-green-600 bg-green-200',
+              amber: 'from-amber-50 to-amber-100 border-amber-200 text-amber-600 bg-amber-200',
+              blue: 'from-blue-50 to-blue-100 border-blue-200 text-blue-600 bg-blue-200',
+              indigo: 'from-indigo-50 to-indigo-100 border-indigo-200 text-indigo-600 bg-indigo-200',
+            }
+            const colors = colorMap[item.color] || colorMap.blue
+            const [gradient, border, text, bg] = colors.split(' ')
+            const Icon = item.icon
+            return (
+              <div key={item.label} className={`bg-gradient-to-br ${gradient} ${border} border rounded-lg p-4 shadow-sm`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
+                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.value}</p>
+                    <p className="text-xs text-gray-600 mt-1">{item.sub}</p>
+                  </div>
+                  <div className={`${bg} rounded-full p-2 ml-2`}>
+                    <Icon className={`h-5 w-5 ${text}`} />
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {renderVendorTable('Cash vendors', cashRows, 'text-green-800')}
+        {renderVendorTable('Credit vendors', creditRows, 'text-amber-800')}
+
+        {data.accounting_note && (
+          <p className="text-xs text-gray-500 border-t border-gray-100 pt-3">{data.accounting_note}</p>
+        )}
+      </div>
+    )
+  }
+
   // Customer & Vendor Balances
   if ((reportType === 'customer-balances' || reportType === 'vendor-balances') && data) {
     const isCustomer = reportType === 'customer-balances'
@@ -6483,7 +7422,9 @@ function renderReportTable(
               </tbody>
               <tfoot className="bg-slate-100">
                 <tr>
-                  <td className="px-3 py-2 font-bold text-slate-900">Total — all ponds</td>
+                  <td className="px-3 py-2 font-bold text-slate-900">
+                    {pondTotal(ponds.length === 1 ? ponds[0]?.pond_name : null)}
+                  </td>
                   <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{aqBdt(t.revenue)}</td>
                   <td className="px-3 py-2 text-right text-slate-500">—</td>
                   <td className="px-3 py-2 text-right text-slate-500">—</td>
@@ -6949,7 +7890,7 @@ function renderReportTable(
         ))}
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3">
           <div className="flex flex-wrap justify-between gap-2 text-sm font-bold text-slate-900">
-            <span>Total — all ponds</span>
+            <span>{pondTotal(groups.length === 1 ? groups[0]?.pond_name : null)}</span>
             <span className="tabular-nums">
               {reportType === 'aquaculture-fish-sales'
                 ? aqBdt(totals.total_amount)
@@ -7170,7 +8111,7 @@ function renderReportTable(
         })}
         <div className="rounded-lg border-2 border-teal-400 bg-teal-50 px-4 py-4">
           <div className="flex flex-wrap justify-between gap-2 text-base font-bold text-teal-950">
-            <span>Grand total — all ponds</span>
+            <span>{grandPondTotal(groups.length === 1 ? groups[0]?.pond_name : null)}</span>
             <span className="tabular-nums">{aqBdt(totals.grand_total_bdt)}</span>
           </div>
           <p className="mt-1 text-xs text-teal-800">{totals.pond_count ?? groups.length} pond(s) in report</p>
@@ -7253,7 +8194,7 @@ function renderReportTable(
           ))
         )}
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
-          <span>Total — all ponds</span>
+          <span>{pondTotal(groups.length === 1 ? groups[0]?.pond_name : null)}</span>
           <span className="float-right tabular-nums">{aqBdt(totals.total_value)}</span>
         </div>
       </div>

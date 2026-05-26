@@ -1,0 +1,9 @@
+{
+  "name": "fserp",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "install:frontend": "npm install --prefix frontend"
+  }
+}

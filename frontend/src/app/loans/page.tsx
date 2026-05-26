@@ -6,6 +6,16 @@ import Sidebar from '@/components/Sidebar'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import {
+  COA_BANK_OP,
+  COA_CASH,
+  COA_INTEREST_EXPENSE,
+  COA_INTEREST_INCOME,
+  pickCoaIdInSubset,
+  suggestedLoanInterestAccountId,
+  suggestedLoanPrincipalAccountId,
+  suggestedLoanSettlementAccountId,
+} from '@/lib/coaDefaults'
+import {
   Plus,
   X,
   Landmark,
@@ -595,6 +605,7 @@ export default function LoansPage() {
   /** True when edit session started on a closed loan — save uses minimal payload until reopened. */
   const [loanEditInitiallyClosed, setLoanEditInitiallyClosed] = useState(false)
   const [loanForm, setLoanForm] = useState<LoanFormState>(() => emptyLoanForm())
+  const loanGlTouchedRef = useRef(new Set<string>())
   const [cpForm, setCpForm] = useState({
     name: '',
     role_type: 'other',
@@ -780,21 +791,55 @@ export default function LoansPage() {
   )
 
   useEffect(() => {
-    if (!loanModalOpen || loanModalMode !== 'new' || !selectedCounterparty) return
-    if (loanForm.principal_account_id) return
-    const d =
+    if (!loanModalOpen || loanModalMode !== 'new' || coa.length === 0) return
+    const touched = loanGlTouchedRef.current
+    const coaPick = coa.map((a) => ({ id: a.id, account_code: a.account_code }))
+    const cpPrincipal =
       loanForm.direction === 'lent'
-        ? selectedCounterparty.default_lent_principal_account_id
-        : selectedCounterparty.default_borrowed_principal_account_id
-    if (d && d > 0) {
-      setLoanForm((f) => ({ ...f, principal_account_id: d }))
-    }
+        ? selectedCounterparty?.default_lent_principal_account_id
+        : selectedCounterparty?.default_borrowed_principal_account_id
+
+    setLoanForm((f) => {
+      const next = { ...f }
+      if (!touched.has('principal_account_id') && !f.principal_account_id) {
+        const pid = suggestedLoanPrincipalAccountId(f.direction, coaPick, cpPrincipal)
+        if (pid) next.principal_account_id = parseInt(pid, 10) || 0
+      }
+      if (!touched.has('settlement_account_id') && !f.settlement_account_id) {
+        const settlement = coa.filter(isLoanSettlementCoa)
+        const sid = pickCoaIdInSubset(settlement, coaPick, [COA_BANK_OP, COA_CASH])
+        if (!sid) {
+          const fallback = suggestedLoanSettlementAccountId(coaPick)
+          if (fallback) next.settlement_account_id = parseInt(fallback, 10) || 0
+        } else {
+          next.settlement_account_id = sid
+        }
+      }
+      if (!touched.has('interest_account_id') && !f.interest_account_id) {
+        const interest = coa.filter((a) => isInterestCoaForDirection(a, f.direction))
+        const iid = pickCoaIdInSubset(interest, coaPick, [
+          f.direction === 'lent' ? COA_INTEREST_INCOME : COA_INTEREST_EXPENSE,
+        ])
+        if (!iid) {
+          const fallback = suggestedLoanInterestAccountId(f.direction, coaPick)
+          if (fallback) next.interest_account_id = parseInt(fallback, 10) || 0
+        } else {
+          next.interest_account_id = iid
+        }
+      }
+      if (!touched.has('interest_accrual_account_id') && !f.interest_accrual_account_id) {
+        const accrual = coa.filter((a) => isAccrualCoaForDirection(a, f.direction))
+        const aid = accrual[0]?.id
+        if (aid) next.interest_accrual_account_id = aid
+      }
+      return next
+    })
   }, [
     loanModalOpen,
     loanModalMode,
+    coa,
     selectedCounterparty,
     loanForm.direction,
-    loanForm.principal_account_id,
   ])
 
   const coaFilteredForLoan = useMemo(() => {
@@ -1023,6 +1068,7 @@ export default function LoansPage() {
     setLoanModalLoading(false)
     setLoanModalHasActivity(false)
     setLoanEditInitiallyClosed(false)
+    loanGlTouchedRef.current.clear()
     setLoanForm(emptyLoanForm())
   }
 
@@ -1032,6 +1078,7 @@ export default function LoansPage() {
     setLoanModalHasActivity(false)
     setLoanEditInitiallyClosed(false)
     setLoanModalLoading(false)
+    loanGlTouchedRef.current.clear()
     setLoanForm(emptyLoanForm())
     setLoanModalOpen(true)
   }
@@ -3485,9 +3532,13 @@ export default function LoansPage() {
                         <select
                           className="w-full border rounded-lg px-3 py-2"
                           value={loanForm.principal_account_id || ''}
-                          onChange={(e) =>
-                            setLoanForm({ ...loanForm, principal_account_id: parseInt(e.target.value, 10) || 0 })
-                          }
+                          onChange={(e) => {
+                            loanGlTouchedRef.current.add('principal_account_id')
+                            setLoanForm({
+                              ...loanForm,
+                              principal_account_id: parseInt(e.target.value, 10) || 0,
+                            })
+                          }}
                           required={loanModalMode === 'new' || !loanModalHasActivity}
                         >
                           <option value="">Select…</option>
@@ -3523,9 +3574,13 @@ export default function LoansPage() {
                         <select
                           className="w-full border rounded-lg px-3 py-2"
                           value={loanForm.settlement_account_id || ''}
-                          onChange={(e) =>
-                            setLoanForm({ ...loanForm, settlement_account_id: parseInt(e.target.value, 10) || 0 })
-                          }
+                          onChange={(e) => {
+                            loanGlTouchedRef.current.add('settlement_account_id')
+                            setLoanForm({
+                              ...loanForm,
+                              settlement_account_id: parseInt(e.target.value, 10) || 0,
+                            })
+                          }}
                           required={loanModalMode === 'new' || !loanModalHasActivity}
                         >
                           <option value="">Select…</option>
@@ -3556,12 +3611,13 @@ export default function LoansPage() {
                         <select
                           className="w-full border rounded-lg px-3 py-2"
                           value={loanForm.interest_account_id || ''}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            loanGlTouchedRef.current.add('interest_account_id')
                             setLoanForm({
                               ...loanForm,
                               interest_account_id: parseInt(e.target.value, 10) || 0,
                             })
-                          }
+                          }}
                         >
                           <option value="">None</option>
                           {coaFilteredForLoan.interest.map((a) => (
@@ -3586,12 +3642,13 @@ export default function LoansPage() {
                         <select
                           className="w-full border rounded-lg px-3 py-2"
                           value={loanForm.interest_accrual_account_id || ''}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            loanGlTouchedRef.current.add('interest_accrual_account_id')
                             setLoanForm({
                               ...loanForm,
                               interest_accrual_account_id: parseInt(e.target.value, 10) || 0,
                             })
-                          }
+                          }}
                         >
                           <option value="">None</option>
                           {coaFilteredForLoan.accrual.map((a) => (

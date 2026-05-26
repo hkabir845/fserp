@@ -17,12 +17,17 @@ if (-not $python) {
     exit 1
 }
 
-if (-not (Test-Path ".venv\Scripts\python.exe")) {
-    Write-Host "Creating .venv ..." -ForegroundColor Cyan
-    & $python -m venv .venv
+. (Join-Path $repoRoot "scripts\resolve-venv.ps1")
+$venvPy = Get-FserpVenvPython -Root $repoRoot
+if (-not $venvPy) {
+    Write-Host "Creating .venv-local ..." -ForegroundColor Cyan
+    & $python -m venv (Join-Path $repoRoot ".venv-local")
+    $venvPy = Get-FserpVenvPython -Root $repoRoot
 }
-
-$venvPy = Join-Path $repoRoot ".venv\Scripts\python.exe"
+if (-not $venvPy) {
+    Write-Host "ERROR: Could not create a working venv." -ForegroundColor Red
+    exit 1
+}
 Write-Host "Installing Python packages ..." -ForegroundColor Cyan
 & $venvPy -m pip install --upgrade pip
 & $venvPy -m pip install -r (Join-Path $repoRoot "requirements-django.txt")
@@ -48,5 +53,5 @@ Write-Host "Running migrations ..." -ForegroundColor Cyan
 
 Write-Host ""
 Write-Host "Backend environment ready." -ForegroundColor Green
-Write-Host "  Run: cd backend; ..\.venv\Scripts\python.exe manage.py runserver" -ForegroundColor Cyan
+Write-Host "  Run: cd backend; .\run-backend.ps1" -ForegroundColor Cyan
 Write-Host "  Or:  .\runserver.ps1" -ForegroundColor Cyan

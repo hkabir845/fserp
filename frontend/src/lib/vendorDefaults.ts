@@ -1,10 +1,12 @@
 /** Default expense COA codes when setting a vendor's default receiving location. */
 
+import { COA_AQ_MISC_EXP, COA_OFFICE_EXP, coaIdForCode } from '@/lib/coaDefaults'
+
 /** Fuel / shop site bills without line-level GL (matches backend CODE_OFFICE_EXP). */
-export const VENDOR_DEFAULT_EXPENSE_COA_STATION = '6900'
+export const VENDOR_DEFAULT_EXPENSE_COA_STATION = COA_OFFICE_EXP
 
 /** Pond-tagged vendor bills without category (aquaculture "other", matches backend 6725). */
-export const VENDOR_DEFAULT_EXPENSE_COA_POND = '6725'
+export const VENDOR_DEFAULT_EXPENSE_COA_POND = COA_AQ_MISC_EXP
 
 export interface CoaPickForVendorDefault {
   id: number
@@ -26,7 +28,5 @@ export function suggestVendorDefaultExpenseAccountId(
 ): string {
   const code = coaAccountCodeForVendorDefaultReceiving(defaultReceiving)
   if (!code) return ''
-  const normalized = code.trim()
-  const match = coaOptions.find((a) => String(a.account_code || '').trim() === normalized)
-  return match && match.id > 0 ? String(match.id) : ''
+  return coaIdForCode(code, coaOptions)
 }

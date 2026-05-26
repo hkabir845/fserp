@@ -366,15 +366,24 @@ export default function ItemsPage() {
     ]
   )
 
+  const glFieldsTouchedRef = useRef(new Set<string>())
+
   const mergeItemGlSuggestions = useCallback(
     (prev: ItemFormData, ctx: ItemGlSuggestContext): ItemFormData => {
+      const touched = glFieldsTouchedRef.current
       const s = suggestItemGlAccountIds(ctx, coaAccounts)
       return {
         ...prev,
-        revenue_account_id: s.revenue_account_id,
-        cogs_account_id: s.cogs_account_id,
-        inventory_account_id: s.inventory_account_id,
-        expense_account_id: s.expense_account_id,
+        revenue_account_id: touched.has('revenue_account_id')
+          ? prev.revenue_account_id
+          : s.revenue_account_id,
+        cogs_account_id: touched.has('cogs_account_id') ? prev.cogs_account_id : s.cogs_account_id,
+        inventory_account_id: touched.has('inventory_account_id')
+          ? prev.inventory_account_id
+          : s.inventory_account_id,
+        expense_account_id: touched.has('expense_account_id')
+          ? prev.expense_account_id
+          : s.expense_account_id,
       }
     },
     [coaAccounts]
@@ -386,6 +395,7 @@ export default function ItemsPage() {
   useEffect(() => {
     if (!showModal) {
       glSuggestionsBootstrappedRef.current = false
+      glFieldsTouchedRef.current.clear()
       return
     }
     if (coaAccounts.length === 0 || glSuggestionsBootstrappedRef.current) return
@@ -1136,6 +1146,14 @@ export default function ItemsPage() {
   }
 
   const populateEditorFromItem = useCallback((item: Item) => {
+    glFieldsTouchedRef.current.clear()
+    const markGlTouchedIfSet = (key: string, raw: unknown) => {
+      if (raw != null && String(raw).trim() !== '') glFieldsTouchedRef.current.add(key)
+    }
+    markGlTouchedIfSet('revenue_account_id', (item as Item).revenue_account_id)
+    markGlTouchedIfSet('cogs_account_id', (item as Item).cogs_account_id)
+    markGlTouchedIfSet('inventory_account_id', (item as Item).inventory_account_id)
+    markGlTouchedIfSet('expense_account_id', (item as Item).expense_account_id)
     setEditingId(item.id)
     itemEditAggregateQohRef.current = parseInventoryQty(item.quantity_on_hand)
     const up = Number(item.unit_price)
@@ -1258,6 +1276,7 @@ export default function ItemsPage() {
     setSelectedShopStationId(null)
     setMoveShopStockToSelected(false)
     userPickedShopStationRef.current = null
+    glFieldsTouchedRef.current.clear()
   }, [])
 
   useEffect(() => {
@@ -2624,9 +2643,10 @@ export default function ItemsPage() {
                         <select
                           className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
                           value={formData.revenue_account_id}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            glFieldsTouchedRef.current.add('revenue_account_id')
                             setFormData((prev) => ({ ...prev, revenue_account_id: e.target.value }))
-                          }
+                          }}
                         >
                           <option value="">
                             {templateDefaultOptionLabel(
@@ -2646,9 +2666,10 @@ export default function ItemsPage() {
                         <select
                           className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
                           value={formData.cogs_account_id}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            glFieldsTouchedRef.current.add('cogs_account_id')
                             setFormData((prev) => ({ ...prev, cogs_account_id: e.target.value }))
-                          }
+                          }}
                         >
                           <option value="">
                             {templateDefaultOptionLabel(suggestedCogsCoaCode(itemGlCtx), coaAccounts)}
@@ -2665,9 +2686,10 @@ export default function ItemsPage() {
                         <select
                           className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
                           value={formData.inventory_account_id}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            glFieldsTouchedRef.current.add('inventory_account_id')
                             setFormData((prev) => ({ ...prev, inventory_account_id: e.target.value }))
-                          }
+                          }}
                         >
                           <option value="">
                             {templateDefaultOptionLabel(
@@ -2689,9 +2711,10 @@ export default function ItemsPage() {
                         <select
                           className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
                           value={formData.expense_account_id}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            glFieldsTouchedRef.current.add('expense_account_id')
                             setFormData((prev) => ({ ...prev, expense_account_id: e.target.value }))
-                          }
+                          }}
                         >
                           <option value="">
                             {templateDefaultOptionLabel(

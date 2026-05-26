@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Archive, RefreshCw } from 'lucide-react'
 import { useToast } from '@/components/Toast'
@@ -11,6 +11,8 @@ import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { suggestedAquacultureProfitTransferAccountIds } from '@/lib/coaDefaults'
+import { parseReportSiteScopeKey } from '../reportSiteScope'
 
 interface Pond {
   id: number
@@ -149,9 +151,14 @@ function monthStartEnd(): { start: string; end: string } {
 type AquaculturePlManagementPanelProps = {
   /** When true, rendered inside Reports (no outer max-width page shell). */
   embedInReports?: boolean
+  /** Global Site scope from Reports page (`station id` or `p:{pondId}`). */
+  reportStationKey?: string
 }
 
-export function AquaculturePlManagementPanel({ embedInReports = false }: AquaculturePlManagementPanelProps) {
+export function AquaculturePlManagementPanel({
+  embedInReports = false,
+  reportStationKey = '',
+}: AquaculturePlManagementPanelProps) {
   const toast = useToast()
   const searchParams = useSearchParams()
   const archiveFromUrl = useMemo(
@@ -186,13 +193,17 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
     memo: '',
     post: true,
   })
+  const xferGlTouchedRef = useRef(new Set<string>())
 
   const [plScope, setPlScope] = useState<PlScopeTab>('ponds')
-  const [fuelStations, setFuelStations] = useState<{ id: number; station_name: string }[]>([])
-  const [fuelStationId, setFuelStationId] = useState('')
   const [fuelData, setFuelData] = useState<FuelSiteIncomeStatement | null>(null)
   const [fuelLoading, setFuelLoading] = useState(false)
   const [canViewFuelGlReports, setCanViewFuelGlReports] = useState(true)
+
+  const fuelStationId = useMemo(() => {
+    const scope = parseReportSiteScopeKey(reportStationKey)
+    return scope.kind === 'station' ? String(scope.id) : ''
+  }, [reportStationKey])
 
   useEffect(() => {
     if (!archiveFromUrl) return
@@ -211,6 +222,23 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
     return [...activePonds, archived]
   }, [activePonds, archiveFromUrl, ponds])
   const activeCoa = useMemo(() => accounts.filter((a) => a.is_active !== false), [accounts])
+
+  useEffect(() => {
+    if (activeCoa.length === 0) return
+    const touched = xferGlTouchedRef.current
+    const defaults = suggestedAquacultureProfitTransferAccountIds(activeCoa)
+    setXferForm((f) => ({
+      ...f,
+      debit_account_id:
+        touched.has('debit_account_id') || f.debit_account_id
+          ? f.debit_account_id
+          : defaults.debit_account_id,
+      credit_account_id:
+        touched.has('credit_account_id') || f.credit_account_id
+          ? f.credit_account_id
+          : defaults.credit_account_id,
+    }))
+  }, [activeCoa])
 
   useEffect(() => {
     if (pondId && !pondsForScope.some((p) => String(p.id) === pondId)) {
@@ -361,32 +389,9 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
   }, [])
 
   useEffect(() => {
-    if (plScope !== 'fuel_site') return
-    void (async () => {
-      try {
-        const { data } = await api.get<unknown>('/stations/')
-        const rows = Array.isArray(data) ? data : []
-        setFuelStations(
-          rows
-            .filter((r): r is Record<string, unknown> => r != null && typeof r === 'object')
-            .flatMap((r) => {
-              const id = typeof r.id === 'number' ? r.id : Number(r.id)
-              if (!Number.isFinite(id)) return []
-              const nm = String(r.station_name ?? '').trim() || `Station ${id}`
-              if (r.is_active === false) return []
-              return [{ id, station_name: nm }]
-            }),
-        )
-      } catch {
-        setFuelStations([])
-      }
-    })()
-  }, [plScope])
-
-  useEffect(() => {
     if (plScope !== 'fuel_site' || !canViewFuelGlReports) return
     void loadFuelIs()
-  }, [plScope, canViewFuelGlReports, loadFuelIs])
+  }, [plScope, canViewFuelGlReports, loadFuelIs, fuelStationId])
 
   const sym = getCurrencySymbol(currency)
 
@@ -538,10 +543,8 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
           </>
         ) : (
           <>
-            Same engine as <strong className="text-slate-800">Reports → Income statement</strong>. Amounts are{' '}
-            <strong className="text-slate-800">posted</strong> journal activity only. When you pick a site, only lines
-            tagged with that station are included; leave the site empty to sum every station-tagged line in range
-            (company-wide site dimension, not per-pond aquaculture P&amp;L).
+            Posted GL income statement (same as Reports → P&amp;L). Use <strong>Site scope</strong> at the top to filter
+            by station, or leave <strong>All</strong> for every station-tagged line in range.
           </>
         )}
       </p>
@@ -580,22 +583,6 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
                 aria-label="Fuel P and L end date"
               />
             </label>
-            <label className="text-sm text-slate-700">
-              <span className="block text-xs font-medium uppercase tracking-wide text-slate-500">Site (station)</span>
-              <select
-                className="mt-1 min-w-[14rem] rounded-lg border border-slate-300 px-2 py-1.5"
-                value={fuelStationId}
-                onChange={(e) => setFuelStationId(e.target.value)}
-                aria-label="Filter GL P and L by station"
-              >
-                <option value="">All sites (station-tagged lines only)</option>
-                {fuelStations.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.station_name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <button
               type="button"
               onClick={() => void loadFuelIs()}
@@ -607,15 +594,8 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
             </button>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Per-pond costs and harvest sales tie to each pond under <strong>Ponds</strong>. Record pond costs on{' '}
-            <Link href="/aquaculture/expenses" className="text-teal-800 underline">
-              Pond costs
-            </Link>{' '}
-            and harvest revenue on{' '}
-            <Link href="/aquaculture/sales" className="text-teal-800 underline">
-              Pond &amp; fish sales
-            </Link>
-            .
+            Site filter uses <strong>Site scope</strong> at the top of Reports.
+            {fuelStationId ? ` Station #${fuelStationId} selected.` : ' All station-tagged lines in range.'}
           </p>
 
           {fuelData && (
@@ -822,7 +802,10 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
               <select
                 className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
                 value={xferForm.debit_account_id}
-                onChange={(e) => setXferForm((f) => ({ ...f, debit_account_id: e.target.value }))}
+                onChange={(e) => {
+                  xferGlTouchedRef.current.add('debit_account_id')
+                  setXferForm((f) => ({ ...f, debit_account_id: e.target.value }))
+                }}
               >
                 <option value="">Select account</option>
                 {activeCoa.map((a) => (
@@ -837,7 +820,10 @@ export function AquaculturePlManagementPanel({ embedInReports = false }: Aquacul
               <select
                 className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
                 value={xferForm.credit_account_id}
-                onChange={(e) => setXferForm((f) => ({ ...f, credit_account_id: e.target.value }))}
+                onChange={(e) => {
+                  xferGlTouchedRef.current.add('credit_account_id')
+                  setXferForm((f) => ({ ...f, credit_account_id: e.target.value }))
+                }}
               >
                 <option value="">Select account</option>
                 {activeCoa.map((a) => (

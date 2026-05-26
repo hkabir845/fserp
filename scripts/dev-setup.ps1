@@ -29,20 +29,17 @@ if (-not $npm) {
 }
 
 # --- Python / Django ---
-$venvHealthy = $true
-if (Test-Path ".venv\Scripts\python.exe") {
-    $cfg = Get-Content ".venv\pyvenv.cfg" -ErrorAction SilentlyContinue | Where-Object { $_ -match '^home\s*=' } | Select-Object -First 1
-    if ($cfg -match '=\s*(.+)') {
-        $homePy = Join-Path ($Matches[1].Trim()) "python.exe"
-        if (-not (Test-Path $homePy)) { $venvHealthy = $false }
-    }
+. (Join-Path $repoRoot "scripts\resolve-venv.ps1")
+$venvPy = Get-FserpVenvPython -Root $repoRoot
+if (-not $venvPy) {
+  foreach ($broken in @(".venv", ".venv-local")) {
+    $dir = Join-Path $repoRoot $broken
+    if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+  }
+  Write-Host "Creating .venv-local ..." -ForegroundColor Cyan
+  & $python -m venv (Join-Path $repoRoot ".venv-local")
+  $venvPy = Get-FserpVenvPython -Root $repoRoot
 }
-if (-not (Test-Path ".venv\Scripts\python.exe") -or -not $venvHealthy) {
-    if (Test-Path ".venv") { Remove-Item ".venv" -Recurse -Force }
-    Write-Host "Creating .venv ..." -ForegroundColor Cyan
-    & $python -m venv .venv
-}
-$venvPy = Join-Path $repoRoot ".venv\Scripts\python.exe"
 & $venvPy -m pip install --upgrade pip
 & $venvPy -m pip install -r (Join-Path $repoRoot "requirements-django.txt")
 

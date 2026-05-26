@@ -1,83 +1,46 @@
-# Finish FSERP git + GitHub setup on this PC.
+# Finish FSERP GitHub push (commit already prepared in writable clone if needed).
 # Run: powershell -ExecutionPolicy Bypass -File scripts\git-finish.ps1
-# If commit fails with "unable to write index", run this script as Administrator once.
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ((Split-Path -Leaf $repoRoot) -eq "scripts") { $repoRoot = Split-Path -Parent $repoRoot }
 
 $env:Path = "C:\Program Files\Git\cmd;C:\Program Files\Git\bin;C:\Program Files\GitHub CLI;$env:Path"
-$safe = "safe.directory=$repoRoot"
+$safe = (Resolve-Path $repoRoot).Path -replace '\\', '/'
+$git = @("-c", "safe.directory=$safe", "-C", $repoRoot)
+$work = Join-Path $env:LOCALAPPDATA "FSERP-github"
 
-function Invoke-Git {
-    & git -c $safe @args
-}
+function Invoke-RepoGit { & git @git @args }
 
-Set-Location $repoRoot
+Write-Host "=== FSERP Git + GitHub ===" -ForegroundColor Cyan
+Invoke-RepoGit --version
 
-Write-Host "=== Git + GitHub finish setup ===" -ForegroundColor Cyan
-Write-Host "Repo: $repoRoot`n"
-
-# 1) PATH / version
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Host "ERROR: git not on PATH. Restart terminal or reinstall Git." -ForegroundColor Red
-    exit 1
-}
-Invoke-Git --version
-
-# 2) Fix .git permissions (needs admin if repo was copied from another PC)
-$gitDir = Join-Path $repoRoot ".git"
-$testIndex = Join-Path $gitDir "index.test-write"
-try {
-    [IO.File]::WriteAllText($testIndex, "test")
-    Remove-Item $testIndex -Force
-    Write-Host "[OK] .git folder is writable" -ForegroundColor Green
-} catch {
-    Write-Host "[FIX] .git not writable for current user — taking ownership (Admin)..." -ForegroundColor Yellow
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    if (-not $isAdmin) {
-        Write-Host "Re-run as Administrator:" -ForegroundColor Red
-        Write-Host "  powershell -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -ForegroundColor Yellow
-        exit 1
-    }
-    takeown /F $gitDir /R /D Y | Out-Null
-    icacls $gitDir /grant "$($env:USERNAME):(OI)(CI)F" /T | Out-Null
-    Write-Host "[OK] Permissions fixed" -ForegroundColor Green
-}
-
-# 3) Git identity (per-command only; no global or repo config changes)
-$script:GitUser = @("-c", "user.name=hkabir845", "-c", "user.email=62505027+hkabir845@users.noreply.github.com")
-function Invoke-GitCommit {
-    & git -c $safe @GitUser @args
-}
-Write-Host "[OK] Using commit author from existing FSERP history" -ForegroundColor Green
-
-# 4) GitHub CLI login
-$authOk = $false
-try {
-    gh auth status 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { $authOk = $true }
-} catch { }
-if (-not $authOk) {
-    Write-Host "`nLog in to GitHub (browser will open):" -ForegroundColor Yellow
+# GitHub login (required once on this PC)
+try { gh auth status 2>$null | Out-Null; if ($LASTEXITCODE -ne 0) { throw "not logged in" } }
+catch {
+    Write-Host "`nLog in to GitHub (browser):" -ForegroundColor Yellow
     gh auth login -h github.com -p https -w
 }
 gh auth status
 
-# 5) Commit local dev fixes
-Write-Host "`n=== Commit ===" -ForegroundColor Cyan
-Invoke-Git add .gitignore backend/run-backend.ps1 backend/runserver.ps1 `
-    frontend/node.cmd frontend/run-dev.ps1 frontend/run.bat frontend/start.bat scripts/dev-setup.ps1
-$status = Invoke-Git status --porcelain
-if ($status) {
-    Invoke-GitCommit commit -m "Fix Windows local dev: Python venv-local, Next.js PATH, and gitignore"
-    Write-Host "[OK] Committed" -ForegroundColor Green
+Write-Host "`n=== Repo status (D:\ITProjects\FSERP) ===" -ForegroundColor Cyan
+Invoke-RepoGit status -sb
+$ahead = Invoke-RepoGit rev-list --count origin/main..main 2>$null
+if ($ahead -and [int]$ahead -gt 0) {
+    Write-Host "Pushing $ahead commit(s) to origin/main ..." -ForegroundColor Green
+    Invoke-RepoGit push origin main
+} elseif (Test-Path $work) {
+    Set-Location $work
+    $workAhead = git rev-list --count origin/main..main 2>$null
+    if ($workAhead -and [int]$workAhead -gt 0) {
+        Write-Host "Pushing from work clone ($work) ..." -ForegroundColor Green
+        git push origin main
+    } else {
+        Write-Host "Already up to date with GitHub." -ForegroundColor Green
+    }
 } else {
-    Write-Host "Nothing to commit (already clean)" -ForegroundColor DarkGray
+    Write-Host "Nothing to push." -ForegroundColor DarkGray
 }
 
-# 6) Push
-Write-Host "`n=== Push to origin ===" -ForegroundColor Cyan
-Invoke-Git remote -v
-Invoke-Git push origin main
-Write-Host "`nDone. Remote: https://github.com/hkabir845/fserp" -ForegroundColor Green
+Write-Host "`nRemote: https://github.com/hkabir845/fserp" -ForegroundColor Cyan
+Write-Host "Tip: use .\git.ps1 instead of git in this folder (safe.directory)." -ForegroundColor DarkGray

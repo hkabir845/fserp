@@ -1,4 +1,4 @@
-# Django backend (do NOT ignore the whole backend/ tree — source must be tracked)
+﻿# Django backend (do NOT ignore the whole backend/ tree ΓÇö source must be tracked)
 backend/venv/
 backend/.env
 backend/.env.*
@@ -39,3 +39,7 @@ Thumbs.db
 # Windows: reserved name `nul` cannot be versioned; breaks `git add` (see e.g. accidental `> nul` in wrong cwd)
 nul
 **/nul
+
+.git.broken/
+.git.bak/
+

@@ -1,7 +1,7 @@
 # FSERP — one-time local environment setup (Windows).
 # Run from repo root:  pwsh -File scripts/dev-setup.ps1
 #
-# Stack: Django 5 API (backend/) + Next.js 16 UI (frontend/)
+# Stack: Django 5 API (backend/) + Next.js UI (frontend/) + SQLite (dev)
 # After setup: Terminal → Run Task → "FSERP: Run backend + frontend"
 
 $ErrorActionPreference = "Stop"
@@ -20,14 +20,25 @@ if (-not $python) {
     exit 1
 }
 
-$nodeDir = "$env:LOCALAPPDATA\Programs\nodejs-portable"
-$npm = "$nodeDir\npm.cmd"
+$npm = "$env:ProgramFiles\nodejs\npm.cmd"
 if (-not (Test-Path $npm)) {
-    Write-Host "WARN: Portable Node not at $nodeDir — install Node 20+ or fix PATH." -ForegroundColor Yellow
+    $npm = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
+}
+if (-not $npm) {
+    Write-Host "WARN: npm not found — install Node.js (Next.js runtime) or fix PATH." -ForegroundColor Yellow
 }
 
 # --- Python / Django ---
-if (-not (Test-Path ".venv\Scripts\python.exe")) {
+$venvHealthy = $true
+if (Test-Path ".venv\Scripts\python.exe") {
+    $cfg = Get-Content ".venv\pyvenv.cfg" -ErrorAction SilentlyContinue | Where-Object { $_ -match '^home\s*=' } | Select-Object -First 1
+    if ($cfg -match '=\s*(.+)') {
+        $homePy = Join-Path ($Matches[1].Trim()) "python.exe"
+        if (-not (Test-Path $homePy)) { $venvHealthy = $false }
+    }
+}
+if (-not (Test-Path ".venv\Scripts\python.exe") -or -not $venvHealthy) {
+    if (Test-Path ".venv") { Remove-Item ".venv" -Recurse -Force }
     Write-Host "Creating .venv ..." -ForegroundColor Cyan
     & $python -m venv .venv
 }

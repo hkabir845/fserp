@@ -22,6 +22,7 @@ frontend/.env*.local
 # Repo root venv (if used)
 venv/
 .venv/
+.venv-local/
 ENV/
 
 # IDE / OS

@@ -2,7 +2,10 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-$venvPy = Join-Path (Split-Path $PSScriptRoot -Parent) ".venv\Scripts\python.exe"
+$venvPy = Join-Path (Split-Path $PSScriptRoot -Parent) ".venv-local\Scripts\python.exe"
+if (-not (Test-Path $venvPy)) {
+    $venvPy = Join-Path (Split-Path $PSScriptRoot -Parent) ".venv\Scripts\python.exe"
+}
 if (-not (Test-Path $venvPy)) {
     Write-Host "ERROR: Missing $venvPy" -ForegroundColor Red
     Write-Host "Run from repo root:  powershell -File scripts\dev-setup.ps1" -ForegroundColor Yellow

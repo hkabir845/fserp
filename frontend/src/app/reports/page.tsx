@@ -1294,7 +1294,7 @@ export default function ReportsPage() {
           setUserHasHomeStation(false)
           setHomeStationMeta({ id: null, name: null })
         }
-        if (r === 'operator') {
+        if (r === 'operator' || r === 'pump_attendant') {
           router.replace('/cashier')
         }
       }
@@ -2858,6 +2858,7 @@ export default function ReportsPage() {
 
           {userRole != null &&
             userRole !== 'operator' &&
+            userRole !== 'pump_attendant' &&
             (reportStationList.length > 0 || showPondsInSiteScope) &&
             !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) && (
               <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">

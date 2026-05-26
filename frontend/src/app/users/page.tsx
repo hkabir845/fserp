@@ -33,10 +33,20 @@ import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl } from '@/lib/api'
 import { formatDate } from '@/utils/date'
 import {
+  BUILTIN_JOB_TYPE_SEEDS,
+  defaultPosScopeForRole,
+  jobTypeHint,
+  mergeJobTypesFromApi,
+  ROLES_WITH_POS_SALE_SCOPE,
+  TENANT_JOB_TYPE_OPTIONS,
+  type TenantJobTypeOption,
+} from '@/constants/tenantJobTypes'
+import {
   getAccessProfileSeedLabel,
   getAccessProfileSeedOptionLabel,
   getRoleBadgeColor,
   getRoleDisplayName,
+  isPosStaffRole,
 } from '@/utils/rbac'
 
 interface SystemUser {
@@ -61,29 +71,6 @@ interface CompanyOption {
   id: number
   name: string
 }
-
-const JOB_TITLE_HINT: Record<string, string> = {
-  admin: 'Company admin: can manage people, company settings, and all modules (unless a custom access profile below overrides).',
-  manager:
-    'Runs fuel station, shop, and aquaculture: operations, reports, and company settings. Cannot manage user accounts (use Admin for that).',
-  accountant:
-    'Back office: GL, AR/AP, fuel and shop inventory, HR, reports, and aquaculture when the module is enabled.',
-  supervisor:
-    'Pond operations: sampling, feeding, pond costs, fish sales, and aquaculture reports. No full GL or user management.',
-  cashier:
-    'Register, customers, and basic reports. Choose their POS location when you have more than one site; sales stay at that site only. Set lane (fuel + shop, etc.) below.',
-  operator:
-    'Fuel-station POS only: new sale and donation at their assigned site. Fuel lane is selected by default below.',
-}
-
-const TENANT_JOB_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'admin', label: 'Admin' },
-  { value: 'manager', label: 'Manager (Fuel Station, Shop & Aquaculture)' },
-  { value: 'accountant', label: 'Accountant (Fuel Station, Shop & Aquaculture)' },
-  { value: 'supervisor', label: 'Supervisor (Ponds)' },
-  { value: 'cashier', label: 'Cashier' },
-  { value: 'operator', label: 'Operator (Fuel Station)' },
-]
 
 const CREATE_STEPS = [
   { n: 1, title: 'Account', sub: 'Who is this person?', icon: User },
@@ -142,6 +129,7 @@ export default function UsersPage() {
   const [createStep, setCreateStep] = useState(1)
   const [showAdvancedPerms, setShowAdvancedPerms] = useState(false)
   const [roleDefaults, setRoleDefaults] = useState<Record<string, string[]>>({})
+  const [jobTypeOptions, setJobTypeOptions] = useState<TenantJobTypeOption[]>(TENANT_JOB_TYPE_OPTIONS)
   const [newProfileStartFrom, setNewProfileStartFrom] = useState<string>('')
   /** Default must match SSR; hydrate from localStorage after mount to avoid hydration mismatch. */
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
@@ -192,8 +180,29 @@ export default function UsersPage() {
   }, [isCompanyOwner, isSuperAdminSession, showModal, formData.company_id])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!isCompanyOwner && !isSuperAdminSession) return
+    const t = localStorage.getItem('access_token')?.trim()
+    if (!t) return
+    let cancelled = false
+    void api
+      .get('/permission-catalog/')
+      .then((res) => {
+        if (cancelled) return
+        const rows = (res.data as { job_types?: TenantJobTypeOption[] })?.job_types
+        setJobTypeOptions(mergeJobTypesFromApi(rows))
+      })
+      .catch(() => {
+        if (!cancelled) setJobTypeOptions(TENANT_JOB_TYPE_OPTIONS)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isCompanyOwner, isSuperAdminSession])
+
+  useEffect(() => {
     if (!showModal) return
-    if (formData.role !== 'cashier' && formData.role !== 'operator') return
+    if (!isPosStaffRole(formData.role)) return
     if (!hasAccessContext) return
     if (stationOptions.length !== 1) return
     const onlyId = stationOptions[0].id
@@ -261,12 +270,19 @@ export default function UsersPage() {
     void (async () => {
       try {
         const res = await api.get('/permission-catalog/')
-        const d = res.data as { permissions?: PermDef[]; role_defaults?: Record<string, string[]> }
+        const d = res.data as {
+          permissions?: PermDef[]
+          role_defaults?: Record<string, string[]>
+          job_types?: TenantJobTypeOption[]
+        }
         const p = d?.permissions
         setPermCatalog(Array.isArray(p) ? p : [])
         setRoleDefaults(
           d?.role_defaults && typeof d.role_defaults === 'object' ? d.role_defaults : {}
         )
+        if (Array.isArray(d?.job_types) && d.job_types.length) {
+          setJobTypeOptions(mergeJobTypesFromApi(d.job_types))
+        }
       } catch {
         setPermCatalog([])
         setRoleDefaults({})
@@ -518,11 +534,11 @@ export default function UsersPage() {
 
     if (
       hasAccessContext &&
-      (formData.role === 'cashier' || formData.role === 'operator') &&
+      isPosStaffRole(formData.role) &&
       stationOptions.length > 1
     ) {
       if (formData.home_station_id === '' || formData.home_station_id == null) {
-        toast.error('Select a location for this cashier or operator.')
+        toast.error('Select a location for this POS staff member (shopkeeper, cashier, pump attendant, or operator).')
         return
       }
     }
@@ -547,7 +563,7 @@ export default function UsersPage() {
               : formData.custom_role_id
         }
       }
-      if (formData.role === 'cashier' || formData.role === 'operator') {
+      if (isPosStaffRole(formData.role)) {
         payload.pos_sale_scope = formData.pos_sale_scope || 'both'
       }
       if (hasAccessContext) {
@@ -615,11 +631,11 @@ export default function UsersPage() {
 
     if (
       hasAccessContext &&
-      (formData.role === 'cashier' || formData.role === 'operator') &&
+      isPosStaffRole(formData.role) &&
       stationOptions.length > 1
     ) {
       if (formData.home_station_id === '' || formData.home_station_id == null) {
-        toast.error('Select a location for this cashier or operator.')
+        toast.error('Select a location for this POS staff member (shopkeeper, cashier, pump attendant, or operator).')
         return
       }
     }
@@ -645,7 +661,7 @@ export default function UsersPage() {
               ? parseInt(String(formData.custom_role_id), 10)
               : formData.custom_role_id
       }
-      if (formData.role === 'cashier' || formData.role === 'operator') {
+      if (isPosStaffRole(formData.role)) {
         updateData.pos_sale_scope = formData.pos_sale_scope || 'both'
       } else {
         updateData.pos_sale_scope = 'both'
@@ -1441,12 +1457,14 @@ export default function UsersPage() {
                           setFormData((fd) => ({
                             ...fd,
                             role,
-                            ...(role === 'operator' ? { pos_sale_scope: 'fuel' } : {}),
+                            ...(ROLES_WITH_POS_SALE_SCOPE.has(role)
+                              ? { pos_sale_scope: defaultPosScopeForRole(role) }
+                              : { pos_sale_scope: 'both' }),
                           }))
                         }}
                         className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
                       >
-                        {TENANT_JOB_TYPE_OPTIONS.map((opt) => (
+                        {jobTypeOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.label}
                           </option>
@@ -1454,9 +1472,10 @@ export default function UsersPage() {
                       </select>
                       <p className="mt-1.5 flex items-start gap-1 text-xs text-gray-600">
                         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                        {JOB_TITLE_HINT[formData.role] || 'Default app areas apply when no custom profile is selected.'}
+                        {jobTypeHint(formData.role) ||
+                          'Default app areas apply when no custom profile is selected.'}
                       </p>
-                      {(formData.role === 'cashier' || formData.role === 'operator') && (
+                      {ROLES_WITH_POS_SALE_SCOPE.has(formData.role) && (
                         <div className="mt-4 max-w-4xl rounded-xl border border-gray-200 bg-gray-50/80 p-4">
                           <PosSaleScopeSelector
                             name="tenant-user-pos-scope"
@@ -1468,7 +1487,7 @@ export default function UsersPage() {
                         </div>
                       )}
                       {hasAccessContext &&
-                        (formData.role === 'cashier' || formData.role === 'operator') && (
+                        isPosStaffRole(formData.role) && (
                           <div className="mt-4 max-w-xl">
                             <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-700">
                               <MapPin className="h-4 w-4 text-amber-600" />
@@ -1507,7 +1526,7 @@ export default function UsersPage() {
                                 </select>
                                 <p className="mt-1.5 text-xs text-gray-500">
                                   {stationOptions.length > 1
-                                    ? 'This cashier or operator can sell and use registers only at the selected site.'
+                                    ? 'This user can sell and use registers only at the selected site.'
                                     : 'Only one site exists; it is assigned automatically.'}
                                 </p>
                               </>
@@ -1515,8 +1534,7 @@ export default function UsersPage() {
                           </div>
                         )}
                       {hasAccessContext &&
-                        formData.role !== 'cashier' &&
-                        formData.role !== 'operator' &&
+                        !isPosStaffRole(formData.role) &&
                         stationOptions.length > 0 && (
                           <div className="mt-4 max-w-xl">
                             <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -1822,17 +1840,7 @@ export default function UsersPage() {
                     }}
                   >
                     <option value="">— Build from scratch (or deny all) —</option>
-                    {(
-                      [
-                        'aquaculture_only',
-                        'admin',
-                        'manager',
-                        'accountant',
-                        'supervisor',
-                        'cashier',
-                        'operator',
-                      ] as const
-                    ).map((k) => (
+                    {BUILTIN_JOB_TYPE_SEEDS.map((k) => (
                       <option key={k} value={k}>
                         {getAccessProfileSeedOptionLabel(k)}
                       </option>

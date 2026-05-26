@@ -3,14 +3,29 @@
  * Helper functions for checking user roles and permissions
  */
 
+import {
+  BUILTIN_JOB_TYPE_SEEDS,
+  LIMITED_POS_REGISTER_ROLES,
+  ROLES_REQUIRING_HOME_STATION,
+  TENANT_JOB_TYPE_OPTIONS,
+} from '@/constants/tenantJobTypes'
+import { PAGE_PERMISSION_PARENT_BY_ID } from '@/navigation/appPagePermissions'
+
 export type UserRole =
   | 'super_admin'
   | 'admin'
   | 'manager'
   | 'accountant'
+  | 'auditor'
+  | 'forecourt_supervisor'
   | 'supervisor'
+  | 'inventory_clerk'
+  | 'sales_clerk'
+  | 'shopkeeper'
   | 'cashier'
+  | 'pump_attendant'
   | 'operator'
+  | 'hr_officer'
 
 /** What this login may sell at POS (from login / user API). */
 export type PosSaleScope = 'both' | 'general' | 'fuel'
@@ -42,7 +57,7 @@ export function getPosSaleScope(): PosSaleScope {
 export function getPosHomeStationId(): number | null {
   if (typeof window === 'undefined') return null
   const role = getCurrentUserRole()
-  if (role !== 'cashier' && role !== 'operator') return null
+  if (!role || !ROLES_REQUIRING_HOME_STATION.has(role)) return null
   const userStr = localStorage.getItem('user')
   if (!userStr || userStr === 'undefined' || userStr === 'null') return null
   try {
@@ -83,6 +98,11 @@ export function hasPermission(key: string): boolean {
   if (p == null) return true
   if (p.includes('*')) return true
   if (p.includes(key)) return true
+  if (key.startsWith('app.page.')) {
+    const parent = PAGE_PERMISSION_PARENT_BY_ID[key]
+    if (parent && p.includes(parent)) return true
+    if (key === 'app.page.customers' && p.includes('app.sales')) return true
+  }
   if (key.startsWith('app.aquaculture.') && (p.includes('app.aquaculture') || p.includes(key))) {
     return true
   }
@@ -175,7 +195,7 @@ export function canViewInventorySkuReport(userRole: string | null): boolean {
     if (p.includes('report.inventory_sku')) return true
     return [...INVENTORY_REPORT_IDS].some((id) => p.includes(reportPermissionKey(id)))
   }
-  return ['super_admin', 'admin', 'accountant', 'manager'].includes(r)
+  return ['super_admin', 'admin', 'accountant', 'manager', 'auditor', 'inventory_clerk'].includes(r)
 }
 
 export function getCurrentUserRole(): UserRole | null {
@@ -198,23 +218,21 @@ export function getCurrentUserRole(): UserRole | null {
 /** Register staff limited to New sale + Donation on POS (not full cashier tools). */
 export function isLimitedPosRegisterUser(): boolean {
   const role = getCurrentUserRole()
-  return role === 'operator'
+  return role != null && LIMITED_POS_REGISTER_ROLES.has(role)
 }
 
 export function getRoleDisplayName(role: UserRole | string | null): string {
   if (!role) return 'Unknown'
 
+  const fromCatalog = TENANT_JOB_TYPE_OPTIONS.find((o) => o.value === role.toLowerCase())?.label
+  if (fromCatalog) return fromCatalog
+
   const roleMap: Record<string, string> = {
     super_admin: 'Super Admin',
-    admin: 'Admin',
-    manager: 'Manager (Fuel Station, Shop & Aquaculture)',
-    accountant: 'Accountant (Fuel Station, Shop & Aquaculture)',
-    supervisor: 'Supervisor (Ponds)',
-    cashier: 'Cashier',
-    operator: 'Operator (Fuel Station)',
+    user: 'User',
   }
 
-  return roleMap[role.toLowerCase()] || role
+  return roleMap[role.toLowerCase()] || role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 /** Labels for optional access-profile seeds from ``/permission-catalog/`` (includes ``aquaculture_only``). */
@@ -222,8 +240,7 @@ export function getAccessProfileSeedLabel(seedKey: string): string {
   if (seedKey === 'aquaculture_only') {
     return 'Aquaculture only (ponds & fish — no fuel station or shop POS)'
   }
-  const builtIn = ['admin', 'manager', 'accountant', 'supervisor', 'cashier', 'operator'] as const
-  if ((builtIn as readonly string[]).includes(seedKey)) {
+  if ((BUILTIN_JOB_TYPE_SEEDS as readonly string[]).includes(seedKey)) {
     return `Same as ${getRoleDisplayName(seedKey)} default`
   }
   return seedKey
@@ -234,11 +251,14 @@ export function getAccessProfileSeedOptionLabel(seedKey: string): string {
   if (seedKey === 'aquaculture_only') {
     return getAccessProfileSeedLabel(seedKey)
   }
-  const builtIn = ['admin', 'manager', 'accountant', 'supervisor', 'cashier', 'operator'] as const
-  if ((builtIn as readonly string[]).includes(seedKey)) {
+  if ((BUILTIN_JOB_TYPE_SEEDS as readonly string[]).includes(seedKey)) {
     return `Match ${getRoleDisplayName(seedKey)} defaults`
   }
   return seedKey
+}
+
+export function isPosStaffRole(role: string | null | undefined): boolean {
+  return !!role && ROLES_REQUIRING_HOME_STATION.has(role.toLowerCase())
 }
 
 export function getRoleBadgeColor(role: UserRole | string | null): string {
@@ -249,9 +269,16 @@ export function getRoleBadgeColor(role: UserRole | string | null): string {
     admin: 'bg-blue-100 text-blue-800',
     manager: 'bg-indigo-100 text-indigo-800',
     accountant: 'bg-green-100 text-green-800',
+    auditor: 'bg-emerald-100 text-emerald-900',
+    forecourt_supervisor: 'bg-sky-100 text-sky-800',
     supervisor: 'bg-cyan-100 text-cyan-800',
+    inventory_clerk: 'bg-teal-100 text-teal-900',
+    sales_clerk: 'bg-rose-100 text-rose-800',
+    shopkeeper: 'bg-amber-100 text-amber-900',
     cashier: 'bg-orange-100 text-orange-800',
+    pump_attendant: 'bg-lime-100 text-lime-900',
     operator: 'bg-teal-100 text-teal-800',
+    hr_officer: 'bg-violet-100 text-violet-800',
   }
 
   return colorMap[role.toLowerCase()] || 'bg-gray-100 text-gray-800'

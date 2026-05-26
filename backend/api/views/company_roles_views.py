@@ -15,6 +15,7 @@ from api.services.permission_service import (
     role_default_permissions_for_catalog,
     sanitize_tenant_role_permissions,
 )
+from api.services.tenant_job_types import tenant_job_types_for_api
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.views.common import require_company_id
 
@@ -74,6 +75,7 @@ def permission_catalog(request):
         {
             "permissions": PERMISSION_CATALOG,
             "role_defaults": role_default_permissions_for_catalog(),
+            "job_types": tenant_job_types_for_api(),
         }
     )
 

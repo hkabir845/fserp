@@ -5,6 +5,7 @@ from django.http import JsonResponse
 
 from api.models import Station, User
 from api.services.permission_service import normalize_role_key
+from api.services.tenant_job_types import ROLES_REQUIRING_HOME_STATION
 
 
 def enforce_pos_home_station(
@@ -72,7 +73,7 @@ def effective_report_station_id(request, company_id: int) -> tuple[int | None, J
 
     rk = normalize_role_key(getattr(u, "role", None))
     n_active = Station.objects.filter(company_id=company_id, is_active=True).count()
-    if rk in ("cashier", "operator") and n_active == 0:
+    if rk in ROLES_REQUIRING_HOME_STATION and n_active == 0:
         return None, JsonResponse(
             {
                 "detail": (
@@ -82,7 +83,7 @@ def effective_report_station_id(request, company_id: int) -> tuple[int | None, J
             status=403,
         )
     # Site staff must be tied to a site when the tenant has more than one; otherwise they could see all stations.
-    if rk in ("cashier", "operator") and n_active > 1:
+    if rk in ROLES_REQUIRING_HOME_STATION and n_active > 1:
         return None, JsonResponse(
             {
                 "detail": (
@@ -92,7 +93,7 @@ def effective_report_station_id(request, company_id: int) -> tuple[int | None, J
             },
             status=403,
         )
-    if rk in ("cashier", "operator") and n_active == 1:
+    if rk in ROLES_REQUIRING_HOME_STATION and n_active == 1:
         one = Station.objects.filter(company_id=company_id, is_active=True).only("id").order_by("id").first()
         if one:
             return int(one.id), None

@@ -28,6 +28,7 @@ import {
   Tags,
 } from 'lucide-react'
 
+import { buildAppPageHrefPermissionMap } from '@/navigation/appPagePermissions'
 import { getAquacultureMenuItemsFlatWithGroup } from '@/navigation/aquacultureNavConfig'
 import { hasAnyAquacultureModuleInList, menuHrefAllowedForAquaculture } from '@/navigation/aquaculturePermissions'
 import { canAccessBackup } from '@/utils/rbac'
@@ -104,40 +105,10 @@ const PERM_WILDCARD = '*'
  * At least one listed permission is required to show a nav item when using the permission-based path.
  * (Super Admin uses wildcard from the API; legacy logins use role-based menu until they sign in again.)
  */
+const APP_PAGE_HREF_PERMISSIONS = buildAppPageHrefPermissionMap()
+
 export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
-  '/apps': ['app.launcher'],
-  '/dashboard': ['app.launcher'],
-  '/cashier': ['app.pos'],
-  '/stations': ['app.station'],
-  '/tanks': ['app.station'],
-  '/islands': ['app.station'],
-  '/dispensers': ['app.station'],
-  '/meters': ['app.station'],
-  '/nozzles': ['app.station'],
-  '/shift-management': ['app.operations'],
-  '/tank-dips': ['app.operations'],
-  '/chart-of-accounts': ['app.accounting'],
-  '/journal-entries': ['app.accounting'],
-  '/fund-transfers': ['app.accounting'],
-  '/loans': ['app.accounting'],
-  '/customers': ['app.customers', 'app.sales'],
-  '/vendors': ['app.sales'],
-  '/invoices': ['app.sales'],
-  '/bills': ['app.sales'],
-  '/payments': ['app.sales'],
-  '/items': ['app.inventory'],
-  '/inventory': ['app.inventory'],
-  '/employees': ['app.hr'],
-  '/payroll': ['app.hr'],
-  '/company': ['app.settings'],
-  '/subscriptions': ['app.settings'],
-  '/users': ['app.users'],
-  '/roles': ['app.roles'],
-  '/tax': ['app.settings'],
-  '/backup': ['app.backup'],
-  '/reporting-categories': ['app.settings'],
-  '/reports': ['app.reports'],
-  '/reports/analytics': ['app.reports'],
+  ...APP_PAGE_HREF_PERMISSIONS,
   '/aquaculture': ['app.aquaculture', 'app.aquaculture.dashboard'],
   '/aquaculture/ponds': ['app.aquaculture', 'app.aquaculture.ponds'],
   '/aquaculture/expenses': ['app.aquaculture', 'app.aquaculture.expenses'],
@@ -150,6 +121,7 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
     'app.aquaculture',
     'app.aquaculture.report_pl',
     'app.reports',
+    'app.page.reports',
   ],
   '/aquaculture/cycles': ['app.aquaculture', 'app.aquaculture.cycles'],
   '/aquaculture/transfers': ['app.aquaculture', 'app.aquaculture.transfers'],
@@ -157,6 +129,7 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   '/aquaculture/landlords': ['app.aquaculture', 'app.aquaculture.landlords'],
   '/aquaculture/financing': ['app.aquaculture', 'app.aquaculture.financing'],
   '/aquaculture/data-bank': ['app.aquaculture', 'app.aquaculture.data_bank'],
+  '/reports/analytics': ['app.reports', 'app.page.reports'],
 }
 
 function menuItemAllowedByPermissions(href: string, perms: string[]): boolean {
@@ -294,7 +267,7 @@ export function getFilteredMenuItems(
     return fsmsErpMenuItems.filter((item) => menuItemAllowedByPermissions(item.href, effectivePermissions))
   }
 
-  if (role === 'operator') {
+  if (role === 'operator' || role === 'pump_attendant') {
     return menuItems.filter((item) => item.href === '/cashier')
   }
 
@@ -307,6 +280,74 @@ export function getFilteredMenuItems(
         item.href === '/customers' ||
         item.href === '/reports'
     )
+  }
+
+  if (role === 'shopkeeper') {
+    return menuItems.filter(
+      (item) =>
+        item.href === '/apps' ||
+        item.href === '/dashboard' ||
+        item.href === '/cashier' ||
+        item.href === '/customers' ||
+        item.href === '/items' ||
+        item.href === '/inventory' ||
+        item.href === '/reports'
+    )
+  }
+
+  if (role === 'inventory_clerk') {
+    return menuItems.filter(
+      (item) =>
+        item.href === '/apps' ||
+        item.href === '/dashboard' ||
+        item.href === '/items' ||
+        item.href === '/inventory' ||
+        item.href === '/reports'
+    )
+  }
+
+  if (role === 'sales_clerk') {
+    return menuItems.filter(
+      (item) =>
+        item.href === '/apps' ||
+        item.href === '/dashboard' ||
+        item.href === '/customers' ||
+        item.href === '/vendors' ||
+        item.href === '/invoices' ||
+        item.href === '/bills' ||
+        item.href === '/payments'
+    )
+  }
+
+  if (role === 'forecourt_supervisor') {
+    return menuItems.filter((item) => {
+      const stationItems = ['/stations', '/tanks', '/islands', '/dispensers', '/meters', '/nozzles']
+      if (stationItems.includes(item.href)) return true
+      if (item.href === '/apps' || item.href === '/dashboard') return true
+      if (item.href === '/shift-management' || item.href === '/tank-dips') return true
+      if (item.href === '/reports') return true
+      return false
+    })
+  }
+
+  if (role === 'hr_officer') {
+    return menuItems.filter(
+      (item) =>
+        item.href === '/apps' ||
+        item.href === '/dashboard' ||
+        item.href === '/employees' ||
+        item.href === '/payroll'
+    )
+  }
+
+  if (role === 'auditor') {
+    return menuItems.filter((item) => {
+      if (item.href === '/users' || item.href === '/roles' || item.href === '/backup') return false
+      if (item.href === '/cashier') return false
+      const stationItems = ['/stations', '/tanks', '/islands', '/dispensers', '/meters', '/nozzles']
+      if (stationItems.includes(item.href)) return false
+      return true
+    })
   }
 
   if (role === 'accountant') {

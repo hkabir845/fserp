@@ -13,23 +13,27 @@ from api.utils.password_reset_tokens import (
 from api.utils.recovery_email import profile_allows_password_recovery
 from api.models import BroadcastRead, Company, CompanyRole, Station, User
 from api.services.permission_service import user_client_dict, POS_SALE_SCOPES, normalize_role_key
+from api.services.tenant_job_types import (
+    DEFAULT_POS_SALE_SCOPE_BY_ROLE,
+    ROLES_REQUIRING_HOME_STATION,
+    ROLES_WITH_POS_SALE_SCOPE,
+    TENANT_USER_ROLES,
+)
 
 logger = logging.getLogger(__name__)
 
-TENANT_USER_ROLES = frozenset(
-    {"admin", "manager", "accountant", "supervisor", "cashier", "operator"}
-)
+_POS_STAFF_LABEL = "cashier, shopkeeper, pump attendant, or operator"
 
 
 def _set_pos_sale_scope_cashier_operator(user: User, data: dict, force_default: bool) -> "JsonResponse|None":
-    """Set User.pos_sale_scope. force_default: create user when key omitted (use 'both')."""
+    """Set User.pos_sale_scope. force_default: create user when key omitted (role default)."""
     r = normalize_role_key(user.role)
-    if r not in ("cashier", "operator"):
+    if r not in ROLES_WITH_POS_SALE_SCOPE:
         user.pos_sale_scope = "both"
         return None
     if not force_default and "pos_sale_scope" not in data:
         return None
-    raw = data.get("pos_sale_scope", "both")
+    raw = data.get("pos_sale_scope", DEFAULT_POS_SALE_SCOPE_BY_ROLE.get(r, "both"))
     val = (str(raw) if raw is not None else "both").strip().lower()
     if val not in POS_SALE_SCOPES:
         return JsonResponse(
@@ -72,7 +76,7 @@ def _ensure_pos_staff_home_station(user: User, company_id: int | None) -> "JsonR
     active sites; if there is exactly one site, assign it when unset.
     """
     rk = normalize_role_key(user.role)
-    if rk not in ("cashier", "operator"):
+    if rk not in ROLES_REQUIRING_HOME_STATION:
         return None
     if company_id is None:
         return None
@@ -83,7 +87,7 @@ def _ensure_pos_staff_home_station(user: User, company_id: int | None) -> "JsonR
             {
                 "detail": (
                     "Add at least one active site (location) for this company before assigning "
-                    "cashier or operator users."
+                    f"{_POS_STAFF_LABEL} users."
                 )
             },
             status=400,
@@ -97,7 +101,7 @@ def _ensure_pos_staff_home_station(user: User, company_id: int | None) -> "JsonR
         return JsonResponse(
             {
                 "detail": (
-                    "Location is required for cashier and operator when the company has more than one active site. "
+                    f"Location is required for {_POS_STAFF_LABEL} when the company has more than one active site. "
                     "Set home_station_id to the station where this user works (POS / register scope)."
                 )
             },
@@ -236,8 +240,9 @@ def users_list_or_create(request):
             return JsonResponse(
                 {
                     "detail": (
-                        "Role must be one of: admin, manager, accountant, supervisor, cashier, operator "
-                        "for company users."
+                        "Role must be one of: "
+                        + ", ".join(sorted(TENANT_USER_ROLES))
+                        + " for company users."
                     ),
                 },
                 status=400,
@@ -378,7 +383,7 @@ def user_detail(request, user_id):
                 return JsonResponse(
                     {
                         "detail": (
-                            "Role must be one of: admin, manager, accountant, supervisor, cashier, operator."
+                            "Role must be one of: " + ", ".join(sorted(TENANT_USER_ROLES)) + "."
                         ),
                     },
                     status=400,

@@ -5,6 +5,16 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+from api.services.app_page_permissions import (
+    PAGE_PERMISSION_PARENT_BY_ID,
+    page_permission_catalog_entries_for_group,
+    page_permission_granted,
+)
+from api.services.tenant_job_types import (
+    DEFAULT_POS_SALE_SCOPE_BY_ROLE,
+    ROLES_WITH_POS_SALE_SCOPE,
+    tenant_job_type_seed_keys,
+)
 from api.utils.auth import user_is_super_admin
 
 
@@ -250,46 +260,92 @@ REPORT_PERMISSION_IDS: frozenset[str] = frozenset(
     report_permission_key(d["report_id"]) for d in REPORT_PERMISSION_DEFINITIONS
 )
 
-# ——— Catalog (UI + API): stable string keys ———
-PERMISSION_CATALOG: list[dict[str, str]] = [
-    {"id": "app.launcher", "label": "Apps & dashboard", "group": "Core"},
-    {"id": "app.pos", "label": "POS / Cashier", "group": "Core"},
-    {"id": "app.station", "label": "Stations, tanks, forecourt", "group": "Operations"},
-    {"id": "app.operations", "label": "Shifts & tank dips", "group": "Operations"},
-    {"id": "app.accounting", "label": "GL, journal, fund transfers, loans", "group": "Accounting"},
-    {"id": "app.sales", "label": "AR/AP: customers, vendors, invoices, bills, payments", "group": "Sales"},
-    {"id": "app.customers", "label": "Customers (directory)", "group": "Sales"},
-    {"id": "app.inventory", "label": "Products & services (catalog / SKU)", "group": "Inventory"},
-    {"id": "app.hr", "label": "HR & payroll", "group": "HR"},
-    {"id": "app.settings", "label": "Company, tax, subscription", "group": "Settings"},
-    {"id": "app.users", "label": "User accounts", "group": "Settings"},
-    {"id": "app.roles", "label": "Custom roles", "group": "Settings"},
-    {"id": "app.backup", "label": "Backup & restore", "group": "Settings"},
-    {
-        "id": "app.reports",
-        "label": "Reports hub — all financial, operational & analytical reports",
-        "group": "Reports",
-    },
-    {
-        "id": "report.inventory_sku",
-        "label": "All inventory & item reports (shortcut)",
-        "group": "Reports",
-    },
-    *[
+def _build_permission_catalog() -> list[dict[str, str]]:
+    """Roles UI catalog: app bundles, every launcher app, reports, aquaculture modules."""
+    return [
         {
-            "id": report_permission_key(d["report_id"]),
-            "label": d["label"],
-            "group": d["group"],
-        }
-        for d in REPORT_PERMISSION_DEFINITIONS
-    ],
-    {
-        "id": "app.aquaculture",
-        "label": "Aquaculture — all modules",
-        "group": "Aquaculture",
-    },
-    *[{"id": p["id"], "label": p["label"], "group": "Aquaculture"} for p in AQUACULTURE_MODULE_PERMISSIONS],
-]
+            "id": "app.launcher",
+            "label": "App launcher (all Main apps)",
+            "group": "Apps — Main",
+        },
+        {"id": "app.pos", "label": "POS / Cashier (all Main POS access)", "group": "Apps — Main"},
+        *page_permission_catalog_entries_for_group("Apps — Main"),
+        {
+            "id": "app.station",
+            "label": "All station apps (Stations, tanks, islands, dispensers, meters, nozzles)",
+            "group": "Apps — Station",
+        },
+        *page_permission_catalog_entries_for_group("Apps — Station"),
+        {
+            "id": "app.operations",
+            "label": "All operations apps (Shifts & tank dips)",
+            "group": "Apps — Operations",
+        },
+        *page_permission_catalog_entries_for_group("Apps — Operations"),
+        {
+            "id": "app.accounting",
+            "label": "All accounting apps (COA, journal, fund transfers, loans)",
+            "group": "Apps — Accounting",
+        },
+        *page_permission_catalog_entries_for_group("Apps — Accounting"),
+        {
+            "id": "app.sales",
+            "label": "All sales apps (vendors, invoices, bills, payments)",
+            "group": "Apps — Sales",
+        },
+        {
+            "id": "app.customers",
+            "label": "Customers directory (all customer access)",
+            "group": "Apps — Sales",
+        },
+        *page_permission_catalog_entries_for_group("Apps — Sales"),
+        {
+            "id": "app.inventory",
+            "label": "All inventory apps (products & stock transfers)",
+            "group": "Apps — Inventory",
+        },
+        *page_permission_catalog_entries_for_group("Apps — Inventory"),
+        {"id": "app.hr", "label": "All HR apps (employees & payroll)", "group": "Apps — HR"},
+        *page_permission_catalog_entries_for_group("Apps — HR"),
+        {
+            "id": "app.settings",
+            "label": "All settings apps (company, tax, subscription, reporting categories)",
+            "group": "Apps — Management",
+        },
+        {"id": "app.users", "label": "User accounts (all user management)", "group": "Apps — Management"},
+        {"id": "app.roles", "label": "Roles & access (all role management)", "group": "Apps — Management"},
+        {"id": "app.backup", "label": "Backup & restore (all backup access)", "group": "Apps — Management"},
+        *page_permission_catalog_entries_for_group("Apps — Management"),
+        {
+            "id": "app.reports",
+            "label": "Reports hub — all financial, operational & analytical reports",
+            "group": "Apps — Reports",
+        },
+        *page_permission_catalog_entries_for_group("Apps — Reports"),
+        {
+            "id": "report.inventory_sku",
+            "label": "All inventory & item reports (shortcut)",
+            "group": "Reports",
+        },
+        *[
+            {
+                "id": report_permission_key(d["report_id"]),
+                "label": d["label"],
+                "group": d["group"],
+            }
+            for d in REPORT_PERMISSION_DEFINITIONS
+        ],
+        {
+            "id": "app.aquaculture",
+            "label": "Aquaculture — all modules",
+            "group": "Aquaculture",
+        },
+        *[{"id": p["id"], "label": p["label"], "group": "Aquaculture"} for p in AQUACULTURE_MODULE_PERMISSIONS],
+    ]
+
+
+# ——— Catalog (UI + API): stable string keys ———
+PERMISSION_CATALOG: list[dict[str, str]] = _build_permission_catalog()
 
 # Legacy map: report slug → parent permission that also grants access (see ``can_access_report``).
 REPORT_ID_EXTRA_PERMISSION: dict[str, str] = {
@@ -319,8 +375,7 @@ _GENERIC_USER_ROLE_PERMS: list[str] = ["app.launcher", "app.pos"]
 
 def role_default_permissions_for_catalog() -> dict[str, list[str]]:
     """Default permission sets per job title, for the permission editor (same as `default_permissions_for_role` when no custom role)."""
-    keys = ("admin", "manager", "accountant", "supervisor", "cashier", "operator", "user")
-    out = {k: list(_DEFAULT_ROLE_PERMS[k]) for k in keys if k in _DEFAULT_ROLE_PERMS}
+    out = {k: list(_DEFAULT_ROLE_PERMS[k]) for k in tenant_job_type_seed_keys() if k in _DEFAULT_ROLE_PERMS}
     out["user"] = list(_GENERIC_USER_ROLE_PERMS)
     out["aquaculture_only"] = list(AQUACULTURE_ONLY_DEFAULT_PERMISSIONS)
     return out
@@ -361,6 +416,43 @@ _DEFAULT_ROLE_PERMS: dict[str, list[str]] = {
         "app.reports",
     ],
     "operator": ["app.pos"],
+    "pump_attendant": ["app.pos"],
+    "shopkeeper": [
+        "app.launcher",
+        "app.pos",
+        "app.customers",
+        "app.inventory",
+        "app.reports",
+    ],
+    "inventory_clerk": [
+        "app.launcher",
+        "app.inventory",
+        "report.inventory_sku",
+    ],
+    "sales_clerk": [
+        "app.launcher",
+        "app.sales",
+        "app.customers",
+    ],
+    "forecourt_supervisor": [
+        "app.launcher",
+        "app.station",
+        "app.operations",
+        "app.reports",
+    ],
+    "hr_officer": [
+        "app.launcher",
+        "app.hr",
+    ],
+    "auditor": [
+        "app.launcher",
+        "app.accounting",
+        "app.sales",
+        "app.customers",
+        "app.inventory",
+        "app.reports",
+        "report.inventory_sku",
+    ],
 }
 
 
@@ -429,6 +521,11 @@ def has_permission(effective: list[str], *need: str) -> bool:
     for n in need:
         if n in eff:
             return True
+        if n.startswith("app.page.") and page_permission_granted(effective, n):
+            return True
+        parent = PAGE_PERMISSION_PARENT_BY_ID.get(n)
+        if parent and parent in eff:
+            return True
         if n.startswith("app.aquaculture.") and has_aquaculture_module_permission(effective, n):
             return True
     return False
@@ -461,15 +558,16 @@ def custom_role_belongs_to_user_company(user, role_company_id: int | None) -> bo
 def user_pos_sale_scope(user) -> str:
     """
     What the user may sell at POST /api/cashier/pos/: general lines, fuel lines, or both.
-    Exposed in login / user JSON. Non-cashier/operator always 'both' (ignores column).
+    Exposed in login / user JSON. Non-POS job types always 'both' (ignores column).
     """
     rk = normalize_role_key(getattr(user, "role", None))
-    if rk not in ("cashier", "operator"):
+    if rk not in ROLES_WITH_POS_SALE_SCOPE:
         return "both"
-    raw = (getattr(user, "pos_sale_scope", None) or "both").strip().lower()
+    fallback = DEFAULT_POS_SALE_SCOPE_BY_ROLE.get(rk, "both")
+    raw = (getattr(user, "pos_sale_scope", None) or fallback).strip().lower()
     if raw in POS_SALE_SCOPES:
         return raw
-    return "both"
+    return fallback if fallback in POS_SALE_SCOPES else "both"
 
 
 def user_client_dict(user) -> dict[str, Any]:

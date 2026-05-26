@@ -8,6 +8,7 @@ import api from '@/lib/api'
 import { ChevronLeft, Info, Pencil, Plus, Shield, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import PermissionMatrix, { type PermItem } from '@/components/users/PermissionMatrix'
+import { BUILTIN_JOB_TYPE_SEEDS } from '@/constants/tenantJobTypes'
 import { getAccessProfileSeedLabel, getRoleDisplayName } from '@/utils/rbac'
 
 type PermDef = { id: string; label: string; group: string }
@@ -208,8 +209,9 @@ export default function RolesPage() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Roles & access</h1>
               <p className="mt-1 text-sm text-slate-600">
-                Create named roles and allow or block each module or app. Assign a role on the Users page; unchecked
-                items are denied in the app launcher and sidebar.
+                Create named roles and allow or block each app in the launcher, plus reports and aquaculture modules.
+                Use section shortcuts (e.g. &quot;All station apps&quot;) or tick individual apps. Assign a role on the
+                Users page; unchecked items are hidden in the app launcher and sidebar.
               </p>
             </div>
             <button
@@ -305,12 +307,13 @@ export default function RolesPage() {
                   />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-600">Modules, apps & reports</p>
+                  <p className="text-xs font-medium text-slate-600">Apps, modules & reports</p>
                   <p className="mt-0.5 flex items-start gap-1 text-[11px] text-slate-500">
                     <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                    Search to find a module or report. Use &quot;Reports hub&quot; or group shortcuts for all financial,
-                    inventory, or aquaculture reports, or tick individual reports. Optional: pre-fill from a built-in job
-                    type when creating a new profile.
+                    Every app in the launcher is listed under Apps — Main, Station, Operations, and so on. Section
+                    shortcuts grant all apps in that group; individual checkboxes grant one app only. Reports and
+                    aquaculture modules are listed separately. Optional: pre-fill from a built-in job type when creating a
+                    new profile.
                   </p>
                   {!editing && (
                     <div className="mt-2">
@@ -324,17 +327,7 @@ export default function RolesPage() {
                         onChange={(e) => applySeedRole(e.target.value)}
                       >
                         <option value="">— From scratch (or add checks below) —</option>
-                        {(
-                          [
-                            'aquaculture_only',
-                            'admin',
-                            'manager',
-                            'accountant',
-                            'supervisor',
-                            'cashier',
-                            'operator',
-                          ] as const
-                        ).map((k) => (
+                        {BUILTIN_JOB_TYPE_SEEDS.map((k) => (
                           <option key={k} value={k}>
                             {getAccessProfileSeedLabel(k)}
                           </option>

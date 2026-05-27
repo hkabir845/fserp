@@ -13,7 +13,7 @@ import { useErpNavigationMenu } from '@/hooks/useErpNavigationMenu'
  */
 export default function AppsPage() {
   const router = useRouter()
-  const { menuItemsForNav: visibleApps, sectionsForNav: sections } = useErpNavigationMenu({
+  const { navReady, menuItemsForNav: visibleApps, sectionsForNav: sections } = useErpNavigationMenu({
     excludeHrefs: ['/apps'],
   })
 
@@ -34,7 +34,13 @@ export default function AppsPage() {
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-[#eceff2]">
           <div className="mx-auto max-w-6xl px-4 py-4 pb-10 sm:px-5 sm:py-6">
-            {sections.map((section) => {
+            {!navReady ? (
+              <div className="py-16 text-center text-sm text-gray-500" aria-busy="true">
+                Loading apps…
+              </div>
+            ) : null}
+            {navReady
+              ? sections.map((section) => {
               const items = visibleApps.filter((a) => a.section === section.id)
               if (items.length === 0) return null
               return (
@@ -65,7 +71,8 @@ export default function AppsPage() {
                   </div>
                 </div>
               )
-            })}
+            })
+              : null}
           </div>
         </div>
       </div>

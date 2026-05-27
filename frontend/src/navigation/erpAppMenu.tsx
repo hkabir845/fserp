@@ -31,8 +31,6 @@ import {
 import { buildAppPageHrefPermissionMap } from '@/navigation/appPagePermissions'
 import { getAquacultureMenuItemsFlatWithGroup } from '@/navigation/aquacultureNavConfig'
 import { hasAnyAquacultureModuleInList, menuHrefAllowedForAquaculture } from '@/navigation/aquaculturePermissions'
-import { canAccessBackup } from '@/utils/rbac'
-
 /** Sidebar search hints (unchanged from Sidebar) */
 export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
   main: 'home apps launcher dashboard pos cashier point of sale register',
@@ -420,6 +418,11 @@ export function isAquacultureNavUnlocked(
   return false
 }
 
+function roleAllowsBackupByDefault(role: string): boolean {
+  const r = role.toLowerCase()
+  return r === 'admin' || r === 'super_admin' || r === 'manager'
+}
+
 export function filterTenantBackupMenuItem(
   items: ErpAppMenuItem[],
   role: string,
@@ -430,7 +433,8 @@ export function filterTenantBackupMenuItem(
     if (effectivePermissions != null) {
       return effectivePermissions.includes(PERM_WILDCARD) || effectivePermissions.includes('app.backup')
     }
-    return canAccessBackup(role)
+    // Role only — never read localStorage here (SSR/hydration must match first client paint).
+    return roleAllowsBackupByDefault(role)
   })
 }
 

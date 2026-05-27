@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Building2, Crown, Shield, Menu, Search, X, LogOut, KeyRound } from 'lucide-react'
+import { Building2, Crown, Shield, Menu, Search, X, KeyRound } from 'lucide-react'
+import { AppHeaderLogout } from '@/components/LogoutButton'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useSidebarNav } from '@/contexts/SidebarNavContext'
 import CompanySwitcher from '@/components/CompanySwitcher'
@@ -327,14 +328,9 @@ export default function Sidebar() {
     [pathname, menuItemsForNav, navReady, mobileNavOpen, isDesktopLayout, activeNavHref]
   )
 
-  const handleLogout = () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    localStorage.removeItem('user')
-    window.location.href = '/login'
-  }
-  
   return (
+    <>
+    <AppHeaderLogout />
     <div
       className={`relative flex h-full min-h-0 max-h-full shrink-0 flex-col overflow-hidden ${isDesktopLayout ? '' : 'w-0'}`}
       style={isDesktopLayout ? { width: sidebarWidthPx } : undefined}
@@ -624,14 +620,6 @@ export default function Sidebar() {
           <KeyRound className="h-5 w-5" />
           <span className="text-sm font-medium">Change password</span>
         </Link>
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="flex items-center space-x-3 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors w-full"
-        >
-          <LogOut className="h-5 w-5" />
-          <span className="text-sm font-medium">Logout</span>
-        </button>
       </div>
     </aside>
 
@@ -651,5 +639,6 @@ export default function Sidebar() {
       />
 
     </div>
+    </>
   )
 }

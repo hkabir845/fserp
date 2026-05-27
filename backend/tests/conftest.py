@@ -115,6 +115,64 @@ def auth_accountant_headers(api_client, user_accountant):
 
 
 @pytest.fixture
+def user_operator(db, company_tenant):
+    from api.models import User
+
+    u = User(
+        username="audit_operator@test.com",
+        email="audit_operator@test.com",
+        full_name="Audit Operator",
+        role="operator",
+        is_active=True,
+        company_id=company_tenant.id,
+    )
+    u.set_password("AuditTest#99")
+    u.save()
+    return u
+
+
+@pytest.fixture
+def auth_operator_headers(api_client, user_operator):
+    r = api_client.post(
+        "/api/auth/login/",
+        data=json.dumps({"username": user_operator.username, "password": "AuditTest#99"}),
+        content_type="application/json",
+    )
+    assert r.status_code == 200, r.content.decode()
+    data = json.loads(r.content)
+    return {"HTTP_AUTHORIZATION": f"Bearer {data['access_token']}"}
+
+
+@pytest.fixture
+def user_inventory_clerk(db, company_tenant):
+    from api.models import User
+
+    u = User(
+        username="audit_inv_clerk@test.com",
+        email="audit_inv_clerk@test.com",
+        full_name="Audit Inventory Clerk",
+        role="inventory_clerk",
+        is_active=True,
+        company_id=company_tenant.id,
+    )
+    u.set_password("AuditTest#99")
+    u.save()
+    return u
+
+
+@pytest.fixture
+def auth_inventory_clerk_headers(api_client, user_inventory_clerk):
+    r = api_client.post(
+        "/api/auth/login/",
+        data=json.dumps({"username": user_inventory_clerk.username, "password": "AuditTest#99"}),
+        content_type="application/json",
+    )
+    assert r.status_code == 200, r.content.decode()
+    data = json.loads(r.content)
+    return {"HTTP_AUTHORIZATION": f"Bearer {data['access_token']}"}
+
+
+@pytest.fixture
 def auth_super_headers(api_client, user_super):
     r = api_client.post(
         "/api/auth/login/",

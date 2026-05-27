@@ -95,6 +95,11 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
         "label": "All Stations — P&L Summary",
         "group": "Reports — Financial",
     },
+    {
+        "report_id": "ponds-pl-summary",
+        "label": "All Ponds — P&L Summary (GL)",
+        "group": "Reports — Financial",
+    },
     {"report_id": "liabilities-detail", "label": "Liabilities (GL detail)", "group": "Reports — Financial"},
     {"report_id": "loan-receivable-gl", "label": "Loan receivable (GL)", "group": "Reports — Financial"},
     {"report_id": "loan-payable-gl", "label": "Loan payable (GL)", "group": "Reports — Financial"},

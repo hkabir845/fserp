@@ -181,13 +181,16 @@ export function buildExtraFinancialReportCsv(
     return out
   }
 
-  if (reportId === 'stations-financial-summary') {
-    const rows = (data.stations as Record<string, unknown>[]) ?? []
+  if (reportId === 'stations-financial-summary' || reportId === 'ponds-pl-summary') {
+    const isPond = reportId === 'ponds-pl-summary'
+    const rows = (isPond
+      ? (data.ponds as Record<string, unknown>[])
+      : (data.stations as Record<string, unknown>[])) ?? []
     const co = (data.company_total as Record<string, number>) ?? {}
-    let out = 'Station,Income,COGS,Expenses,Gross profit,Net income\n'
+    let out = `${isPond ? 'Pond' : 'Station'},Income,COGS,Expenses,Gross profit,Net income\n`
     rows.forEach((r) => {
       out += [
-        escapeCsvValue(r.station_name),
+        escapeCsvValue(isPond ? r.pond_name : r.station_name),
         r.income ?? 0,
         r.cost_of_goods_sold ?? 0,
         r.expenses ?? 0,
@@ -370,18 +373,28 @@ export function buildExtraFinancialPrintHtml(
     )
   }
 
-  if (reportId === 'stations-financial-summary') {
-    const rows = ((data.stations as Record<string, unknown>[]) ?? []).map((r) => [
-      String(r.station_name ?? ''),
-      fmtMoney(r.income),
-      fmtMoney(r.cost_of_goods_sold),
-      fmtMoney(r.expenses),
-      fmtMoney(r.gross_profit),
-      fmtMoney(r.net_income),
-    ])
+  if (reportId === 'stations-financial-summary' || reportId === 'ponds-pl-summary') {
+    const isPond = reportId === 'ponds-pl-summary'
+    const rows = ((isPond ? data.ponds : data.stations) as Record<string, unknown>[] | undefined ?? []).map(
+      (r) => [
+        String(isPond ? r.pond_name : r.station_name ?? ''),
+        fmtMoney(r.income),
+        fmtMoney(r.cost_of_goods_sold),
+        fmtMoney(r.expenses),
+        fmtMoney(r.gross_profit),
+        fmtMoney(r.net_income),
+      ],
+    )
     return htmlTable(
-      'Station P&L',
-      ['Station', 'Income (right)', 'COGS (right)', 'Expenses (right)', 'Gross (right)', 'Net (right)'],
+      isPond ? 'Pond P&L' : 'Station P&L',
+      [
+        isPond ? 'Pond' : 'Station',
+        'Income (right)',
+        'COGS (right)',
+        'Expenses (right)',
+        'Gross (right)',
+        'Net (right)',
+      ],
       rows,
     )
   }

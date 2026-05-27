@@ -133,8 +133,28 @@ def _je_lines_base(company_id: int, station_id: int | None = None):
         journal_entry__is_posted=True,
     )
     if station_id is not None:
-        qs = qs.filter(station_id=station_id)
+        # Line tag wins; untagged lines inherit the journal header station (legacy rows).
+        # Exclude pond-tagged lines: aquaculture costs belong on pond P&L even when the
+        # vendor bill receipt station is this site (e.g. feed bought at Main for a pond).
+        qs = qs.filter(
+            Q(station_id=station_id)
+            | Q(
+                station_id__isnull=True,
+                journal_entry__station_id=station_id,
+            )
+        ).filter(aquaculture_pond_id__isnull=True)
     return qs
+
+
+def _je_lines_pl_scope(
+    company_id: int,
+    station_id: int | None = None,
+    pond_id: int | None = None,
+):
+    """Posted journal lines for P&L / GL entity scope (station or pond; not both)."""
+    if pond_id is not None:
+        return _je_lines_pond(company_id, pond_id)
+    return _je_lines_base(company_id, station_id)
 
 
 def _je_lines_pond(company_id: int, pond_id: int):
@@ -235,7 +255,7 @@ def report_trial_balance(
         out["filter_station_id"] = station_id
         out["accounting_note"] = (
             out["accounting_note"]
-            + " Site filter: only journal lines with this station_id are included."
+            + " Site filter: only journal lines for this station (line tag or journal header) are included."
         )
     return out
 
@@ -809,31 +829,24 @@ def _period_pl_amount(
     start: date,
     end: date,
     station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> Decimal:
-    agg = (
-        _je_lines_base(company_id, station_id)
-        .filter(
-            account_id=coa.id,
-            journal_entry__entry_date__gte=start,
-            journal_entry__entry_date__lte=end,
-        )
-        .aggregate(
-            td=Coalesce(Sum("debit"), Decimal("0")),
-            tc=Coalesce(Sum("credit"), Decimal("0")),
-        )
-    )
-    d, c = agg["td"], agg["tc"]
-    if is_pl_credit_normal_type(coa.account_type):
-        return c - d
-    return d - c
+    line_qs = _je_lines_pl_scope(company_id, station_id, pond_id)
+    return _period_pl_amount_lines(coa, company_id, start, end, line_qs)
 
 
 def _period_income_statement_totals(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Decimal]:
     """
     P&L totals for [start, end] from posted journal lines (same basis as income statement).
     """
+    if pond_id is not None:
+        return _period_income_statement_totals_pond(company_id, start, end, pond_id)
     ti = tcogs = te = Decimal("0")
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         bucket = _pl_bucket(coa)
@@ -885,34 +898,47 @@ def _period_income_statement_totals_pond(
     }
 
 
-def _sum_invoice_totals(company_id: int, start: date, end: date) -> Decimal:
-    r = Invoice.objects.filter(
+def _sum_invoice_totals(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> Decimal:
+    qs = Invoice.objects.filter(
         company_id=company_id,
         invoice_date__gte=start,
         invoice_date__lte=end,
-    ).aggregate(t=Coalesce(Sum("total"), Decimal("0")))
+    )
+    if station_id is not None:
+        qs = qs.filter(station_id=station_id)
+    r = qs.aggregate(t=Coalesce(Sum("total"), Decimal("0")))
     return _d(r["t"])
 
 
-def _sum_bill_totals(company_id: int, start: date, end: date) -> Decimal:
-    r = Bill.objects.filter(
+def _sum_bill_totals(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> Decimal:
+    qs = Bill.objects.filter(
         company_id=company_id,
         bill_date__gte=start,
         bill_date__lte=end,
-    ).aggregate(t=Coalesce(Sum("total"), Decimal("0")))
+    )
+    if station_id is not None:
+        qs = qs.filter(
+            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
+        ).distinct()
+    r = qs.aggregate(t=Coalesce(Sum("total"), Decimal("0")))
     return _d(r["t"])
 
 
-def _sum_invoice_totals_non_draft(company_id: int, start: date, end: date) -> Decimal:
-    r = (
-        Invoice.objects.filter(
-            company_id=company_id,
-            invoice_date__gte=start,
-            invoice_date__lte=end,
-        )
-        .exclude(status="draft")
-        .aggregate(t=Coalesce(Sum("total"), Decimal("0")))
-    )
+def _sum_invoice_totals_non_draft(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> Decimal:
+    qs = Invoice.objects.filter(
+        company_id=company_id,
+        invoice_date__gte=start,
+        invoice_date__lte=end,
+    ).exclude(status="draft")
+    if station_id is not None:
+        qs = qs.filter(station_id=station_id)
+    r = qs.aggregate(t=Coalesce(Sum("total"), Decimal("0")))
     return _d(r["t"])
 
 
@@ -923,29 +949,33 @@ def _sum_invoice_totals_non_draft_all_time(company_id: int) -> Decimal:
     return _d(r["t"])
 
 
-def _sum_bill_totals_non_draft(company_id: int, start: date, end: date) -> Decimal:
-    r = (
-        Bill.objects.filter(
-            company_id=company_id,
-            bill_date__gte=start,
-            bill_date__lte=end,
-        )
-        .exclude(status="draft")
-        .aggregate(t=Coalesce(Sum("total"), Decimal("0")))
-    )
+def _sum_bill_totals_non_draft(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> Decimal:
+    qs = Bill.objects.filter(
+        company_id=company_id,
+        bill_date__gte=start,
+        bill_date__lte=end,
+    ).exclude(status="draft")
+    if station_id is not None:
+        qs = qs.filter(
+            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
+        ).distinct()
+    r = qs.aggregate(t=Coalesce(Sum("total"), Decimal("0")))
     return _d(r["t"])
 
 
-def _count_invoices_non_draft(company_id: int, start: date, end: date) -> int:
-    return (
-        Invoice.objects.filter(
-            company_id=company_id,
-            invoice_date__gte=start,
-            invoice_date__lte=end,
-        )
-        .exclude(status="draft")
-        .count()
-    )
+def _count_invoices_non_draft(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> int:
+    qs = Invoice.objects.filter(
+        company_id=company_id,
+        invoice_date__gte=start,
+        invoice_date__lte=end,
+    ).exclude(status="draft")
+    if station_id is not None:
+        qs = qs.filter(station_id=station_id)
+    return qs.count()
 
 
 def _iter_month_periods_in_range(start: date, end: date) -> list[tuple[date, date, str]]:
@@ -971,13 +1001,43 @@ def _iter_month_periods_in_range(start: date, end: date) -> list[tuple[date, dat
     return out
 
 
+def _pl_scope_accounting_note(
+    station_id: int | None, pond_id: int | None, *, pond_name: str | None = None
+) -> str:
+    if pond_id is not None:
+        label = (pond_name or "").strip() or f"Pond #{pond_id}"
+        return (
+            f" Pond filter ({label}): amounts use only posted journal lines tagged to this pond. "
+            "Company-wide or other-pond lines are excluded."
+        )
+    if station_id is not None:
+        return (
+            " Site filter: amounts use only posted journal lines for this station "
+            "(line station_id or, when the line is untagged, the journal header station). "
+            "Lines tagged to an aquaculture pond are excluded (use Pond scope or All Ponds — P&L). "
+            "Company-wide untagged lines on other journals are excluded."
+        )
+    return ""
+
+
 def report_income_statement(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     income_rows: list[dict[str, Any]] = []
     cogs_rows: list[dict[str, Any]] = []
     exp_rows: list[dict[str, Any]] = []
     ti = tcogs = te = Decimal("0")
+    line_qs = _je_lines_pl_scope(company_id, station_id, pond_id)
+    pond_name: str | None = None
+    if pond_id is not None:
+        pond = AquaculturePond.objects.filter(
+            pk=pond_id, company_id=company_id, is_active=True
+        ).only("name").first()
+        pond_name = (pond.name or "").strip() if pond else None
     # Include inactive accounts: journals may still post to them; omitting them understates P&L.
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by(
         "account_code"
@@ -985,7 +1045,7 @@ def report_income_statement(
         bucket = _pl_bucket(coa)
         if bucket is None:
             continue
-        amt = _period_pl_amount(coa, company_id, start, end, station_id)
+        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
         if amt == 0:
             continue
         display_name = coa.account_name
@@ -1009,9 +1069,9 @@ def report_income_statement(
     net = gross - te
     # Posted activity in [start, end] should match Δ cumulative P&L unless COA opening balances exist on P&L rows.
     day_before = start - timedelta(days=1)
-    if station_id is not None:
-        ni_before = _cumulative_net_income_site_through(company_id, day_before, station_id)
-        ni_end = _cumulative_net_income_site_through(company_id, end, station_id)
+    if pond_id is not None or station_id is not None:
+        ni_before = _cumulative_net_income_lines_through(company_id, day_before, line_qs)
+        ni_end = _cumulative_net_income_lines_through(company_id, end, line_qs)
     else:
         ni_before = _cumulative_net_income_through(company_id, day_before)
         ni_end = _cumulative_net_income_through(company_id, end)
@@ -1019,13 +1079,12 @@ def report_income_statement(
     period_matches_cumulative = abs(cumulative_change - net) <= Decimal("0.02")
     note = (
         "Posted journal activity in the date range only; opening balances on income/COGS/expense accounts are not added here. "
+        "Income includes sales revenue from posted invoices and other income accounts; COGS includes cost relieved on sales "
+        "(e.g. AUTO-INV-*-COGS) and other cost_of_goods_sold accounts; expenses are operating and other expense accounts. "
+        "Gross profit = income − COGS; net income = gross profit − expenses. "
         "Cumulative change vs net income flags unusual opening-balance or dating issues."
     )
-    if station_id is not None:
-        note += (
-            " Site filter: amounts use only journal lines tagged with this station_id "
-            "(company-wide or untagged lines are excluded)."
-        )
+    note += _pl_scope_accounting_note(station_id, pond_id, pond_name=pond_name)
     out_is: dict[str, Any] = {
         "report_id": "income-statement",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -1039,7 +1098,11 @@ def report_income_statement(
         "cumulative_vs_period_difference": _f(cumulative_change - net),
         "accounting_note": note,
     }
-    if station_id is not None:
+    if pond_id is not None:
+        out_is["filter_pond_id"] = pond_id
+        if pond_name:
+            out_is["filter_pond_name"] = pond_name
+    elif station_id is not None:
         out_is["filter_station_id"] = station_id
     return out_is
 
@@ -1263,15 +1326,26 @@ def report_ap_aging(company_id: int, start: date, end: date) -> dict[str, Any]:
 
 
 def report_expense_detail(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     """Operating and other expense accounts from posted GL activity (P&L expense section only)."""
     exp_rows: list[dict[str, Any]] = []
     te = Decimal("0")
+    line_qs = _je_lines_pl_scope(company_id, station_id, pond_id)
+    pond_name: str | None = None
+    if pond_id is not None:
+        pond = AquaculturePond.objects.filter(
+            pk=pond_id, company_id=company_id, is_active=True
+        ).only("name").first()
+        pond_name = (pond.name or "").strip() if pond else None
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         if _pl_bucket(coa) != "expense":
             continue
-        amt = _period_pl_amount(coa, company_id, start, end, station_id)
+        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
         if amt == 0:
             continue
         display_name = coa.account_name
@@ -1291,29 +1365,43 @@ def report_expense_detail(
         "Cost of goods sold (e.g. fuel 5100, shop 5120) is on Profit & Loss under "
         "Cost of Goods Sold, not in this report."
     )
-    if station_id is not None:
-        note += " Site filter: only journal lines tagged with this station_id."
+    note += _pl_scope_accounting_note(station_id, pond_id, pond_name=pond_name)
     out: dict[str, Any] = {
         "report_id": "expense-detail",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "expenses": {"accounts": exp_rows, "total": _f(te)},
         "accounting_note": note,
     }
-    if station_id is not None:
+    if pond_id is not None:
+        out["filter_pond_id"] = pond_id
+        if pond_name:
+            out["filter_pond_name"] = pond_name
+    elif station_id is not None:
         out["filter_station_id"] = station_id
     return out
 
 
 def report_income_detail(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     """Income accounts from posted GL activity (P&L income section only)."""
     income_rows: list[dict[str, Any]] = []
     ti = Decimal("0")
+    line_qs = _je_lines_pl_scope(company_id, station_id, pond_id)
+    pond_name: str | None = None
+    if pond_id is not None:
+        pond = AquaculturePond.objects.filter(
+            pk=pond_id, company_id=company_id, is_active=True
+        ).only("name").first()
+        pond_name = (pond.name or "").strip() if pond else None
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         if normalize_chart_account_type(coa.account_type) != "income":
             continue
-        amt = _period_pl_amount(coa, company_id, start, end, station_id)
+        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
         if amt == 0:
             continue
         display_name = coa.account_name
@@ -1332,15 +1420,18 @@ def report_income_detail(
         "(same basis as the Income Statement income section). "
         "Cost of goods sold and operating expenses are on Profit & Loss, not in this report."
     )
-    if station_id is not None:
-        note += " Site filter: only journal lines tagged with this station_id."
+    note += _pl_scope_accounting_note(station_id, pond_id, pond_name=pond_name)
     out: dict[str, Any] = {
         "report_id": "income-detail",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "income": {"accounts": income_rows, "total": _f(ti)},
         "accounting_note": note,
     }
-    if station_id is not None:
+    if pond_id is not None:
+        out["filter_pond_id"] = pond_id
+        if pond_name:
+            out["filter_pond_name"] = pond_name
+    elif station_id is not None:
         out["filter_station_id"] = station_id
     return out
 
@@ -2012,9 +2103,11 @@ def _collect_all_entity_financial_rows(
 
 
 _ENTITY_SCOPE_NOTE = (
-    "Station rows use GL lines tagged to that site; pond rows use pond-tagged lines; "
-    "head office uses lines with no site or pond tag. Company total is all GL. "
-    "For account-level detail, run Income Statement, Balance Sheet, or Trial Balance with a site filter."
+    "Stations (fuel sites, shops) and ponds (aquaculture) are separate entities — each row is that "
+    "entity's own P&L from posted GL. Station rows use site-tagged journal lines; pond rows use "
+    "pond-tagged lines; head office uses lines with no site or pond tag. Company total is all GL. "
+    "For account-level detail (income, COGS, expense lines), open Profit & Loss with Site scope set "
+    "to that station or pond."
 )
 
 
@@ -2171,12 +2264,15 @@ def report_entities_financial_summary(
 def report_stations_financial_summary(
     company_id: int, start: date, end: date
 ) -> dict[str, Any]:
-    """Legacy P&L-only view (stations). See entities-pl-summary for all entities."""
-    full = report_entities_financial_summary(company_id, start, end)
+    """Individual P&L per station (fuel site / shop) from posted GL."""
+    full = report_entities_pl_summary(company_id, start, end)
     rows = [
         {
             "station_id": r["station_id"],
             "station_name": r["station_name"],
+            "entity_type": r.get("entity_type", "station"),
+            "entity_id": r.get("entity_id"),
+            "entity_name": r.get("entity_name") or r.get("station_name"),
             "income": r["income"],
             "cost_of_goods_sold": r["cost_of_goods_sold"],
             "expenses": r["expenses"],
@@ -2198,8 +2294,52 @@ def report_stations_financial_summary(
             "net_income": co["net_income"],
         },
         "accounting_note": (
-            "P&L only. For balance sheet and trial balance per station and pond, run "
-            "All Entities — Balance Sheet and All Entities — Trial Balance."
+            "One row per station: income (including posted sales), COGS, operating expenses, "
+            "gross profit, and net income for the selected period. "
+            "Use Profit & Loss with Site scope set to a station for account-level detail. "
+            "Pond P&L is a separate report (All Ponds — P&L Summary)."
+        ),
+    }
+
+
+def report_ponds_pl_summary(company_id: int, start: date, end: date) -> dict[str, Any]:
+    """Individual P&L per aquaculture pond from posted GL (pond-tagged journal lines)."""
+    full = report_entities_pl_summary(company_id, start, end)
+    rows = [
+        {
+            "pond_id": r["pond_id"],
+            "pond_name": r["pond_name"],
+            "entity_type": r.get("entity_type", "pond"),
+            "entity_id": r.get("entity_id"),
+            "entity_name": r.get("entity_name") or r.get("pond_name"),
+            "income": r["income"],
+            "cost_of_goods_sold": r["cost_of_goods_sold"],
+            "expenses": r["expenses"],
+            "gross_profit": r["gross_profit"],
+            "net_income": r["net_income"],
+            "management_revenue_bdt": r.get("management_revenue_bdt"),
+            "management_profit_bdt": r.get("management_profit_bdt"),
+        }
+        for r in full["by_pond"]
+    ]
+    co = full["company_total"]
+    return {
+        "report_id": "ponds-pl-summary",
+        "period": full["period"],
+        "ponds": rows,
+        "company_total": {
+            "income": co["income"],
+            "cost_of_goods_sold": co["cost_of_goods_sold"],
+            "expenses": co["expenses"],
+            "gross_profit": co["gross_profit"],
+            "net_income": co["net_income"],
+        },
+        "accounting_note": (
+            "One row per pond from posted GL lines tagged to that pond (income, COGS, expenses). "
+            "Management revenue/profit columns (when shown) are aquaculture register totals in BDT and "
+            "may differ from GL. Use Profit & Loss with Site scope set to a pond for account detail. "
+            "For operational pond economics (cycles, feed, transfers), use Aquaculture — Pond P&L. "
+            "Station P&L is separate (All Stations — P&L Summary)."
         ),
     }
 
@@ -4902,29 +5042,34 @@ def report_financial_analytics(
         pl = _period_income_statement_totals_pond(company_id, start, end, pond_id)
     else:
         pl = _period_income_statement_totals(company_id, start, end, station_id)
-    sales = _sum_invoice_totals(company_id, start, end)
-    purchases = _sum_bill_totals(company_id, start, end)
+    sales = _sum_invoice_totals(company_id, start, end, station_id)
+    purchases = _sum_bill_totals(company_id, start, end, station_id)
     op_exp = pl["expenses"]  # operating and other P&L expense types
 
     today = timezone.localdate()
-    revenue_nd = _sum_invoice_totals_non_draft(company_id, start, end)
-    purchases_nd = _sum_bill_totals_non_draft(company_id, start, end)
-    inv_period_ct = _count_invoices_non_draft(company_id, start, end)
+    revenue_nd = _sum_invoice_totals_non_draft(company_id, start, end, station_id)
+    purchases_nd = _sum_bill_totals_non_draft(company_id, start, end, station_id)
+    inv_period_ct = _count_invoices_non_draft(company_id, start, end, station_id)
     lifetime_rev = _sum_invoice_totals_non_draft_all_time(company_id)
     lifetime_inv_ct = Invoice.objects.filter(company_id=company_id).exclude(status="draft").count()
 
-    today_sales = _sum_invoice_totals_non_draft(company_id, today, today)
-    today_inv_ct = (
-        Invoice.objects.filter(company_id=company_id, invoice_date=today)
-        .exclude(status="draft")
-        .count()
+    today_sales = _sum_invoice_totals_non_draft(company_id, today, today, station_id)
+    today_inv_qs = Invoice.objects.filter(company_id=company_id, invoice_date=today).exclude(
+        status="draft"
     )
+    if station_id is not None:
+        today_inv_qs = today_inv_qs.filter(station_id=station_id)
+    today_inv_ct = today_inv_qs.count()
 
     bills_qs = Bill.objects.filter(
         company_id=company_id,
         bill_date__gte=start,
         bill_date__lte=end,
     ).exclude(status="draft")
+    if station_id is not None:
+        bills_qs = bills_qs.filter(
+            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
+        ).distinct()
     bills_count_period = bills_qs.count()
     bills_total_period = _d(bills_qs.aggregate(t=Coalesce(Sum("total"), Decimal("0")))["t"])
 
@@ -4995,8 +5140,8 @@ def report_financial_analytics(
                 "label": label,
                 "start_date": seg_s.isoformat(),
                 "end_date": seg_e.isoformat(),
-                "total_sales": _f(_sum_invoice_totals(company_id, seg_s, seg_e)),
-                "total_purchases": _f(_sum_bill_totals(company_id, seg_s, seg_e)),
+                "total_sales": _f(_sum_invoice_totals(company_id, seg_s, seg_e, station_id)),
+                "total_purchases": _f(_sum_bill_totals(company_id, seg_s, seg_e, station_id)),
                 "pl_income": _f(pl_m["income"]),
                 "pl_cogs": _f(pl_m["cogs"]),
                 "pl_expenses": _f(pl_m["expenses"]),
@@ -5082,8 +5227,8 @@ def report_financial_analytics(
         out_fa["filter_station_id"] = station_id
         out_fa["accounting_note"] = (
             out_fa["accounting_note"]
-            + " Site filter: P&L amounts (including timeseries pl_* and net income) use journal lines for this station only; "
-            "invoice/bill/payment KPIs remain company-wide totals. Entity comparison charts are hidden while a site is selected."
+            + " Site filter: P&L and document KPIs (sales, purchases, invoice/bill counts in the period) use this station only. "
+            "Entity comparison charts are hidden while a site is selected."
         )
     else:
         by_station: list[dict[str, Any]] = []

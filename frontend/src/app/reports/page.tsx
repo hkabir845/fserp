@@ -106,6 +106,7 @@ type ReportScopeTableProps = {
   stations: { id: number; station_name: string }[]
   ponds: { id: number; name: string }[]
   aquaculturePondId: string
+  onViewEntityPl?: (entityType: 'station' | 'pond', entityId: number) => void
 }
 
 type ReportType = 
@@ -120,6 +121,7 @@ type ReportType =
   | 'expense-detail'
   | 'income-detail'
   | 'stations-financial-summary'
+  | 'ponds-pl-summary'
   | 'entities-pl-summary'
   | 'entities-balance-sheet-summary'
   | 'entities-trial-balance-summary'
@@ -201,7 +203,8 @@ const reports: ReportCard[] = [
   {
     id: 'income-statement',
     title: 'Profit & Loss (P&L)',
-    description: 'Income, COGS, and expenses from posted journals — optional site filter',
+    description:
+      'Income (including sales), COGS (cost on sales), and expenses from posted GL — Site scope: one station/pond or All for company-wide',
     icon: TrendingUp,
     category: 'financial'
   },
@@ -259,7 +262,8 @@ const reports: ReportCard[] = [
   {
     id: 'entities-pl-summary',
     title: 'All Entities — P&L',
-    description: 'Income, COGS, expenses, and net income for every station, pond, and head office',
+    description:
+      'Separate tables: each station and each pond with income, COGS, expenses, gross, and net (posted GL)',
     icon: TrendingUp,
     category: 'financial',
   },
@@ -288,7 +292,16 @@ const reports: ReportCard[] = [
   {
     id: 'stations-financial-summary',
     title: 'All Stations — P&L Summary',
-    description: 'Income, COGS, expenses, and net income per station only (legacy view)',
+    description:
+      'Individual P&L per station (fuel site / shop): income, COGS, expenses — click Full P&L for account lines',
+    icon: MapPin,
+    category: 'financial',
+  },
+  {
+    id: 'ponds-pl-summary',
+    title: 'All Ponds — P&L Summary (GL)',
+    description:
+      'Individual P&L per aquaculture pond from posted GL: income, COGS, expenses — click Full P&L for account lines',
     icon: MapPin,
     category: 'financial',
   },
@@ -650,6 +663,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'entities-trial-balance-summary',
   'entities-financial-summary',
   'stations-financial-summary',
+  'ponds-pl-summary',
   'daily-summary',
   'fuel-sales',
   'sales-by-station',
@@ -716,6 +730,13 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'aquaculture-shop-station-stock',
 ])
 
+/** GL P&L reports that accept optional pond_id when Site scope is a pond (p:{id}). */
+const REPORTS_GL_POND_SCOPED = new Set<ReportType>([
+  'income-statement',
+  'expense-detail',
+  'income-detail',
+])
+
 /** Subset of station-scoped reports where amounts come from posted GL lines (not invoice subledgers). */
 const REPORTS_GL_STATION_SCOPED = new Set<ReportType>([
   'trial-balance',
@@ -751,6 +772,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'entities-trial-balance-summary',
   'entities-financial-summary',
   'stations-financial-summary',
+  'ponds-pl-summary',
   'daily-summary',
   'shift-summary',
   'sales-by-nozzle',
@@ -791,15 +813,36 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
 /** In-report + export label for which site(s) a station-scoped report covers. */
 function getReportSiteScopeDisplay(
   reportId: ReportType | null,
-  reportData: { filter_station_id?: number } | null | undefined,
+  reportData:
+    | { filter_station_id?: number; filter_pond_id?: number; filter_pond_name?: string }
+    | null
+    | undefined,
   stations: { id: number; station_name: string }[],
   userHasHomeStation: boolean,
   homeStationId: number | null,
   homeStationName: string | null,
-  reportStationId: string
+  reportStationId: string,
+  ponds: { id: number; name: string }[] = []
 ): { headline: string; detail: string } | null {
   if (!reportId || !REPORTS_STATION_SCOPED.has(reportId)) return null
   const gl = REPORTS_GL_STATION_SCOPED.has(reportId)
+  const rawPondFid =
+    reportData && typeof reportData === 'object' && 'filter_pond_id' in reportData
+      ? (reportData as { filter_pond_id?: unknown }).filter_pond_id
+      : undefined
+  const pondFid = typeof rawPondFid === 'number' && rawPondFid > 0 ? rawPondFid : undefined
+  if (pondFid != null) {
+    const fromApi =
+      reportData && typeof reportData === 'object' && 'filter_pond_name' in reportData
+        ? String((reportData as { filter_pond_name?: unknown }).filter_pond_name || '').trim()
+        : ''
+    const name =
+      fromApi || ponds.find((p) => p.id === pondFid)?.name?.trim() || `Pond #${pondFid}`
+    return {
+      headline: `Pond: ${name}`,
+      detail: gl ? 'Posted GL lines for this pond only (income, COGS, expenses).' : 'This pond only.',
+    }
+  }
   const rawFid = reportData && typeof reportData === 'object' && 'filter_station_id' in reportData
     ? (reportData as { filter_station_id?: unknown }).filter_station_id
     : undefined
@@ -808,7 +851,9 @@ function getReportSiteScopeDisplay(
     const name = stations.find((s) => s.id === fid)?.station_name?.trim() || `Station #${fid}`
     return {
       headline: `Site: ${name}`,
-      detail: gl ? 'GL lines tagged to this site only.' : 'This site only.',
+      detail: gl
+        ? 'Posted GL for this site only (income, COGS from sales, expenses).'
+        : 'This site only.',
     }
   }
   if (userHasHomeStation) {
@@ -821,18 +866,28 @@ function getReportSiteScopeDisplay(
       detail: gl ? 'Limited to your assigned site (GL).' : 'Limited to your assigned site.',
     }
   }
-  if (reportStationId && /^\d+$/.test(reportStationId)) {
-    const id = parseInt(reportStationId, 10)
-    const name = stations.find((s) => s.id === id)?.station_name?.trim() || `Station #${id}`
+  const scope = parseReportSiteScopeKey(reportStationId)
+  if (scope.kind === 'pond') {
+    const name = ponds.find((p) => p.id === scope.id)?.name?.trim() || `Pond #${scope.id}`
+    return {
+      headline: `Pond: ${name}`,
+      detail: gl ? 'Pond scope · posted GL for this pond only.' : 'Pond scope filter.',
+    }
+  }
+  if (scope.kind === 'station') {
+    const name =
+      stations.find((s) => s.id === scope.id)?.station_name?.trim() || `Station #${scope.id}`
     return {
       headline: `Site: ${name}`,
-      detail: gl ? 'Site scope filter · GL-tagged lines only.' : 'Site scope filter.',
+      detail: gl
+        ? 'Site scope · income, COGS, and expenses for this site only.'
+        : 'Site scope filter.',
     }
   }
   return {
     headline: 'All sites',
     detail: gl
-      ? 'All sites · use Site scope to focus GL activity.'
+      ? 'All sites · company-wide income, COGS, and expenses from posted GL.'
       : 'All sites · use Site scope to narrow.',
   }
 }
@@ -1114,7 +1169,8 @@ function getReportScopeForExport(
   userHasHomeStation: boolean,
   homeStationId: number | null,
   homeStationName: string | null,
-  reportStationId: string
+  reportStationId: string,
+  ponds: { id: number; name: string }[] = []
 ): { headline: string; detail: string; prefix: string } | null {
   if (reportId && BUSINESS_LINE_REPORT_IDS.has(reportId)) {
     const sp = getSalesPurchaseScopeDisplay(reportData, userHasHomeStation)
@@ -1127,7 +1183,8 @@ function getReportScopeForExport(
     userHasHomeStation,
     homeStationId,
     homeStationName,
-    reportStationId
+    reportStationId,
+    ponds
   )
   return site ? { ...site, prefix: 'Site scope' } : null
 }
@@ -1501,7 +1558,8 @@ export default function ReportsPage() {
       userHasHomeStation,
       homeStationMeta.id,
       homeStationMeta.name,
-      reportStationId
+      reportStationId,
+      aquaculturePonds
     )
   }, [
     selectedReport,
@@ -1557,7 +1615,9 @@ export default function ReportsPage() {
     )
 
     if (!showAquacultureReports) {
-      roleFilteredReports = roleFilteredReports.filter((report) => !AQUACULTURE_REPORT_ID_SET.has(report.id))
+      roleFilteredReports = roleFilteredReports.filter(
+        (report) => !AQUACULTURE_REPORT_ID_SET.has(report.id) && report.id !== 'ponds-pl-summary',
+      )
     }
 
     // Then filter by category
@@ -1597,6 +1657,8 @@ export default function ReportsPage() {
     opts?: {
       businessSegment?: ReportBusinessSegment
       salesPurchaseDateRange?: { startDate: string; endDate: string }
+      /** Override Site scope for this fetch (station id or p:{pondId}). */
+      siteScopeKey?: string
     }
   ) => {
     setLoading(true)
@@ -1659,9 +1721,15 @@ export default function ReportsPage() {
     }
 
     if (String(reportId).startsWith('aquaculture-')) {
-      const pondFilter = resolveEffectiveAquaculturePondId(reportStationId, aquaculturePondId)
+      const aqScopeKey = (opts?.siteScopeKey ?? reportStationId).trim()
+      const pondFilter = resolveEffectiveAquaculturePondId(aqScopeKey, aquaculturePondId)
       if (pondFilter) {
         params.pond_id = pondFilter
+      } else {
+        const aqScope = parseReportSiteScopeKey(aqScopeKey)
+        if (aqScope.kind === 'station') {
+          params.station_id = String(aqScope.id)
+        }
       }
       if (reportId === 'aquaculture-pond-pl') {
         if (aquacultureCycleId && /^\d+$/.test(aquacultureCycleId)) {
@@ -1696,10 +1764,13 @@ export default function ReportsPage() {
       } catch {
         /* ignore */
       }
-      if (homeId == null && reportStationId) {
-        const scope = parseReportSiteScopeKey(reportStationId)
+      const scopeKey = (opts?.siteScopeKey ?? reportStationId).trim()
+      if (homeId == null && scopeKey) {
+        const scope = parseReportSiteScopeKey(scopeKey)
         if (scope.kind === 'station') {
           params.station_id = String(scope.id)
+        } else if (scope.kind === 'pond' && REPORTS_GL_POND_SCOPED.has(reportId)) {
+          params.pond_id = String(scope.id)
         }
       }
     }
@@ -1798,6 +1869,16 @@ export default function ReportsPage() {
     salesPurchaseDateRange,
     scrollReportPanelIntoView,
   ])
+
+  const openEntityPlDetail = useCallback(
+    (entityType: 'station' | 'pond', entityId: number) => {
+      if (!entityId || entityId <= 0) return
+      const scopeKey = entityType === 'pond' ? formatPondScopeKey(entityId) : String(entityId)
+      persistReportStation(scopeKey)
+      void fetchReport('income-statement', { siteScopeKey: scopeKey })
+    },
+    [persistReportStation, fetchReport],
+  )
 
   useEffect(() => {
     if (!selectedReport || loading) return
@@ -1942,7 +2023,7 @@ export default function ReportsPage() {
         REPORTS_STATION_SCOPED.has(selectedReport) ||
         String(selectedReport).startsWith('aquaculture-')
       ) {
-        void fetchReport(selectedReport)
+        void fetchReport(selectedReport, { siteScopeKey: v })
       }
     },
     [persistReportStation, selectedReport, fetchReport]
@@ -1987,7 +2068,8 @@ export default function ReportsPage() {
       userHasHomeStation,
       homeStationMeta.id,
       homeStationMeta.name,
-      reportStationId
+      reportStationId,
+      aquaculturePonds
     )
     const companyName = resolveReportCompanyName()
     const branding: PrintBranding = reportPrintBranding
@@ -2396,7 +2478,8 @@ export default function ReportsPage() {
         userHasHomeStation,
         homeStationMeta.id,
         homeStationMeta.name,
-        reportStationId
+        reportStationId,
+        aquaculturePonds
       )
       if (siteScopeCsv) {
         csvContent += `${siteScopeCsv.prefix}: ${siteScopeCsv.headline} — ${siteScopeCsv.detail}\n`
@@ -3266,6 +3349,7 @@ export default function ReportsPage() {
                           stations: reportStationList,
                           ponds: aquaculturePonds,
                           aquaculturePondId: effectiveAquaculturePondId,
+                          onViewEntityPl: openEntityPlDetail,
                         }
                       )}
 
@@ -3580,6 +3664,7 @@ function renderReportTable(
       period,
       dateRange,
       handleReportDateChange,
+      onViewEntityPl: scopeLabels?.onViewEntityPl,
     })
     if (extra) return extra
   }

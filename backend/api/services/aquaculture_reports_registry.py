@@ -1020,6 +1020,14 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
+    station_filter_id: int | None = None
+    if pond_filter_id is None:
+        from api.services.station_scope import effective_report_station_id
+
+        st_id, st_err = effective_report_station_id(request, company_id)
+        if st_err:
+            return st_err
+        station_filter_id = st_id
     qs = (
         AquacultureExpense.objects.filter(
             company_id=company_id,
@@ -1030,6 +1038,10 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
         .prefetch_related("pond_shares__pond")
         .order_by("pond_id", "expense_date", "id")
     )
+    if pond_filter_id is not None:
+        qs = qs.filter(pond_id=pond_filter_id)
+    elif station_filter_id is not None:
+        qs = qs.filter(source_station_id=station_filter_id)
     rows: list[AquacultureExpense] = list(qs)
 
     def sort_key(e: AquacultureExpense):
@@ -1096,13 +1108,23 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
         "line_count": grand_n,
         "pond_group_count": len(groups),
     }
-    return {
+    out: dict[str, Any] = {
         "period": _period_block(start, end),
         "currency_code": BDT,
         "summary": summary,
         "groups": groups,
         "totals": {"total_amount": str(grand), "line_count": grand_n},
     }
+    if pond_filter_id is not None:
+        out["filter_pond_id"] = pond_filter_id
+    elif station_filter_id is not None:
+        out["filter_station_id"] = station_filter_id
+        out["accounting_note"] = (
+            "Aquaculture expense register rows with source station matching Site scope. "
+            "Posted GL pond costs on vendor bills are on Profit & Loss (pond scope) or All Ponds — P&L Summary, "
+            "not on station P&L when the line is pond-tagged."
+        )
+    return out
 
 
 def _report_sampling(company_id: int, start: date, end: date, request: HttpRequest) -> dict[str, Any]:

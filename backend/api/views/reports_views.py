@@ -21,6 +21,7 @@ from api.services.reporting import (
     report_entities_financial_summary,
     report_entities_pl_summary,
     report_entities_trial_balance_summary,
+    report_ponds_pl_summary,
     report_stations_financial_summary,
     report_inventory_sku_valuation,
     report_item_master_by_category,
@@ -71,6 +72,7 @@ _REPORT_HANDLERS = {
     "entities-trial-balance-summary": report_entities_trial_balance_summary,
     "entities-financial-summary": report_entities_financial_summary,
     "stations-financial-summary": report_stations_financial_summary,
+    "ponds-pl-summary": report_ponds_pl_summary,
     "fuel-sales": report_fuel_sales,
     "tank-inventory": report_tank_inventory,
     "shift-summary": report_shift_summary,
@@ -151,6 +153,41 @@ GL_STATION_AWARE_REPORTS = frozenset(
         "income-detail",
     }
 )
+
+GL_POND_AWARE_REPORTS = frozenset(
+    {
+        "income-statement",
+        "expense-detail",
+        "income-detail",
+    }
+)
+
+
+def _parse_report_pond_id(request, company_id: int):
+    """Optional pond filter for GL P&L reports (mutually exclusive with station_id in callers)."""
+    from api.models import AquaculturePond
+
+    raw = (request.GET.get("pond_id") or "").strip()
+    if not raw or raw.lower() in ("0", "all", "none"):
+        return None, None
+    try:
+        pond_id = int(raw)
+    except (TypeError, ValueError):
+        return None, JsonResponse(
+            {"detail": "pond_id must be a positive integer, or omit for all ponds."},
+            status=400,
+        )
+    if pond_id <= 0:
+        return None, None
+    if not AquaculturePond.objects.filter(
+        pk=pond_id, company_id=company_id, is_active=True
+    ).exists():
+        return None, JsonResponse(
+            {"detail": "Unknown or inactive pond_id for this company."},
+            status=400,
+        )
+    return pond_id, None
+
 
 AQUACULTURE_REPORT_IDS = frozenset(
     {
@@ -326,10 +363,19 @@ def report_by_id(request, report_id: str):
             return st_err
         payload = handler(cid, start, end, st_id)
     elif report_id in GL_STATION_AWARE_REPORTS:
-        st_id, st_err = effective_report_station_id(request, cid)
-        if st_err:
-            return st_err
-        payload = handler(cid, start, end, st_id)
+        pond_id, pond_err = _parse_report_pond_id(request, cid)
+        if pond_err:
+            return pond_err
+        if pond_id is None:
+            st_id, st_err = effective_report_station_id(request, cid)
+            if st_err:
+                return st_err
+        else:
+            st_id = None
+        if report_id in GL_POND_AWARE_REPORTS:
+            payload = handler(cid, start, end, st_id, pond_id=pond_id)
+        else:
+            payload = handler(cid, start, end, st_id)
     else:
         payload = handler(cid, start, end)
     return JsonResponse(payload)

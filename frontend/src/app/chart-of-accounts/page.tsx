@@ -2092,7 +2092,17 @@ export default function ChartOfAccountsPage() {
                     required
                     value={formData.account_type}
                     onChange={(e) => {
-                      setFormData({ ...formData, account_type: e.target.value, account_sub_type: '' })
+                      const nextType = e.target.value
+                      const subTypes = ACCOUNT_SUBTYPES[nextType] || []
+                      const defaultSub =
+                        nextType === 'cost_of_goods_sold' && subTypes.length > 0
+                          ? subTypes[0].value
+                          : ''
+                      setFormData({
+                        ...formData,
+                        account_type: nextType,
+                        account_sub_type: defaultSub,
+                      })
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >

@@ -3,7 +3,13 @@
  * Matches backend `api.services.gl_posting` (4100/4200/5100/5120/1200/1220/6900).
  */
 
-import { coaIdForCode, COA_FUEL_REV, COA_OFFICE_EXP } from '@/lib/coaDefaults'
+import {
+  coaIdForCode,
+  COA_FUEL_REV,
+  COA_OFFICE_EXP,
+  recommendedCoaLabel,
+  templateCoaOptionLabel,
+} from '@/lib/coaDefaults'
 
 export { coaIdForCode }
 
@@ -122,22 +128,55 @@ export function suggestItemGlAccountIds(
   }
 }
 
-function recommendedCoaLabel(
-  code: string,
-  coaOptions: CoaPickForItemDefault[]
-): string {
-  const match = coaOptions.find((a) => String(a.account_code || '').trim() === code.trim())
-  if (match) {
-    const name = String(match.account_name || '').trim()
-    return name ? `${code} — ${name}` : code
-  }
-  return code
-}
-
 export function templateDefaultOptionLabel(
   code: string,
   coaOptions: CoaPickForItemDefault[]
 ): string {
-  const label = recommendedCoaLabel(code, coaOptions)
-  return `— Recommended: ${label} —`
+  return templateCoaOptionLabel(code, coaOptions)
+}
+
+export function itemGlCtxFromItemFields(item: {
+  pos_category?: string
+  item_type?: string
+  category?: string
+  unit?: string
+  name?: string
+}): ItemGlSuggestContext {
+  return {
+    pos_category: String(item.pos_category || 'general'),
+    item_type: String(item.item_type || 'inventory'),
+    category: String(item.category || ''),
+    unit: String(item.unit || ''),
+    name: String(item.name || ''),
+  }
+}
+
+/** COGS account used on sale (item override, else template 5100/5120). */
+export function resolveItemCogsOnSaleLabel(
+  item: {
+    cogs_account_id?: number | null
+    pos_category?: string
+    item_type?: string
+    category?: string
+    unit?: string
+    name?: string
+  },
+  coaOptions: CoaPickForItemDefault[]
+): { label: string; fromItem: boolean } {
+  const id = item.cogs_account_id
+  if (id != null && id > 0) {
+    const acc = coaOptions.find((a) => a.id === id)
+    if (acc) {
+      const name = String(acc.account_name || '').trim()
+      return {
+        label: name ? `${acc.account_code} — ${name}` : String(acc.account_code || id),
+        fromItem: true,
+      }
+    }
+  }
+  const ctx = itemGlCtxFromItemFields(item)
+  return {
+    label: recommendedCoaLabel(suggestedCogsCoaCode(ctx), coaOptions),
+    fromItem: false,
+  }
 }

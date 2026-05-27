@@ -61,3 +61,31 @@ def is_debit_normal_chart_type(
 def is_pl_credit_normal_type(account_type: str | None) -> bool:
     """P&L lines that increase with credits (revenue side)."""
     return normalize_chart_account_type(account_type) == "income"
+
+
+def pl_bucket_for_coa(
+    account_type: str | None,
+    account_sub_type: str | None = None,
+    account_code: str | None = None,
+) -> str | None:
+    """
+    P&L section for a chart row: income, cost_of_goods_sold, or expense.
+    Mis-typed fuel COGS (51xx/52xx or cogs sub-type stored as expense) map to COGS.
+    """
+    t = normalize_chart_account_type(account_type)
+    st = (account_sub_type or "").strip().lower()
+    code = (account_code or "").strip()
+    if t == "income":
+        return "income"
+    if t == "cost_of_goods_sold":
+        return "cost_of_goods_sold"
+    if t == "expense":
+        if st and (
+            "cogs" in st
+            or st in ("cost_of_goods_sold", "supplies_materials_cogs")
+        ):
+            return "cost_of_goods_sold"
+        if code and len(code) >= 4 and code[:2] in ("51", "52") and code[:4].isdigit():
+            return "cost_of_goods_sold"
+        return "expense"
+    return None

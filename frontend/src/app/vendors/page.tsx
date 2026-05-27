@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -27,7 +27,14 @@ import { extractErrorMessage } from '@/utils/errorHandler'
 import { isConnectionError } from '@/utils/connectionError'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
-import { suggestVendorDefaultExpenseAccountId } from '@/lib/vendorDefaults'
+import {
+  suggestVendorDefaultExpenseAccountId,
+  templateVendorDefaultExpenseOptionLabel,
+} from '@/lib/vendorDefaults'
+import {
+  mergeSuggestedStringField,
+  syncBooleanFieldTouchedForAccountPick,
+} from '@/lib/coaSuggestForm'
 
 interface Vendor {
   id: number
@@ -93,6 +100,8 @@ export default function VendorsPage() {
   const [stations, setStations] = useState<StationOption[]>([])
   const [ponds, setPonds] = useState<PondOption[]>([])
   const [coaExpenseOptions, setCoaExpenseOptions] = useState<CoaPickRow[]>([])
+  /** User picked a custom expense account — do not overwrite when receiving location changes. */
+  const vendorExpenseAccountTouchedRef = useRef(false)
   const [listPage, setListPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const [totalCount, setTotalCount] = useState(0)
@@ -199,7 +208,7 @@ export default function VendorsPage() {
             account_name: String(x.account_name || ''),
             account_type: String(x.account_type || ''),
           }))
-          .filter((x) => ['expense', 'cost_of_goods_sold'].includes(x.account_type.toLowerCase()))
+          .filter((x) => x.account_type.toLowerCase() === 'expense')
       )
     } catch {
       setCoaExpenseOptions([])
@@ -210,9 +219,14 @@ export default function VendorsPage() {
     if (showModal) void loadExpenseCoa()
   }, [showModal, loadExpenseCoa])
 
-  /** Fill suggestion when COA loads after site/pond was chosen (onChange may run before options exist). */
+  /** Active suggest: pre-fill expense when usual location is set (editable via dropdown). */
   useEffect(() => {
-    if (!showModal || !formData.default_receiving || formData.default_expense_account_id) return
+    if (!showModal || vendorExpenseAccountTouchedRef.current || !formData.default_receiving) {
+      return
+    }
+    if (String(formData.default_expense_account_id || '').trim() !== '') {
+      return
+    }
     const suggested = suggestVendorDefaultExpenseAccountId(
       formData.default_receiving,
       coaExpenseOptions
@@ -365,6 +379,8 @@ export default function VendorsPage() {
   }
 
   const handleEdit = (vendor: Vendor) => {
+    vendorExpenseAccountTouchedRef.current =
+      vendor.default_expense_account_id != null && vendor.default_expense_account_id > 0
     setEditingVendor(vendor)
     setFormData({
       company_name: vendor.company_name || '',
@@ -445,6 +461,7 @@ export default function VendorsPage() {
   }
 
   const resetForm = () => {
+    vendorExpenseAccountTouchedRef.current = false
     setFormData({
       company_name: '',
       contact_person: '',
@@ -796,11 +813,11 @@ export default function VendorsPage() {
                         setFormData({
                           ...formData,
                           default_receiving,
-                          default_expense_account_id: suggested
-                            ? suggested
-                            : default_receiving
-                              ? formData.default_expense_account_id
-                              : '',
+                          default_expense_account_id: mergeSuggestedStringField(
+                            formData.default_expense_account_id,
+                            suggested,
+                            vendorExpenseAccountTouchedRef.current
+                          ),
                         })
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
@@ -860,12 +877,23 @@ export default function VendorsPage() {
                     </label>
                     <select
                       value={formData.default_expense_account_id}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        syncBooleanFieldTouchedForAccountPick(
+                          vendorExpenseAccountTouchedRef,
+                          e.target.value
+                        )
                         setFormData({ ...formData, default_expense_account_id: e.target.value })
-                      }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                     >
-                      <option value="">— Use system default —</option>
+                      <option value="">
+                        {formData.default_receiving
+                          ? templateVendorDefaultExpenseOptionLabel(
+                              formData.default_receiving,
+                              coaExpenseOptions
+                            )
+                          : '— No vendor override (bill uses line item or system default) —'}
+                      </option>
                       {coaExpenseOptions.map((a) => (
                         <option key={a.id} value={String(a.id)}>
                           {formatCoaOptionLabel(a)}
@@ -873,8 +901,14 @@ export default function VendorsPage() {
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      Suggested when you pick a usual location (site 6900, pond 6725). Used on bills when a line has no
-                      item or line-level expense account.
+                      <strong>Expense category for vendor bills</strong> (P&amp;L), not the account you pay from.
+                      Suggested when you pick a usual location: site → 6900 office expense, pond → 6725 aquaculture
+                      misc. You can change or clear this anytime. To pay from{' '}
+                      <strong>bank or cash</strong>, use{' '}
+                      <Link href="/payments/made/new" className="text-blue-600 hover:underline">
+                        Record vendor payment
+                      </Link>{' '}
+                      and select your bank register there.
                     </p>
                   </div>
                   <div className="col-span-2">

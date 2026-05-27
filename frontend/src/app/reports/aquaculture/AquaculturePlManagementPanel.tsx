@@ -11,7 +11,13 @@ import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
-import { suggestedAquacultureProfitTransferAccountIds } from '@/lib/coaDefaults'
+import {
+  COA_AQ_PROFIT_CLEARING,
+  COA_BANK_OP,
+  COA_CASH,
+  suggestedAquacultureProfitTransferAccountIds,
+  templateCoaOptionLabel,
+} from '@/lib/coaDefaults'
 import { parseReportSiteScopeKey } from '../reportSiteScope'
 
 interface Pond {
@@ -223,6 +229,16 @@ export function AquaculturePlManagementPanel({
   }, [activePonds, archiveFromUrl, ponds])
   const activeCoa = useMemo(() => accounts.filter((a) => a.is_active !== false), [accounts])
 
+  const xferDebitRecommend = useMemo(
+    () => templateCoaOptionLabel(COA_BANK_OP, activeCoa) + ` (or ${COA_CASH})`,
+    [activeCoa]
+  )
+  const xferCreditRecommend = useMemo(
+    () => templateCoaOptionLabel(COA_AQ_PROFIT_CLEARING, activeCoa),
+    [activeCoa]
+  )
+
+  /** Active suggest: pre-fill transfer journal accounts when COA loads. */
   useEffect(() => {
     if (activeCoa.length === 0) return
     const touched = xferGlTouchedRef.current
@@ -803,11 +819,13 @@ export function AquaculturePlManagementPanel({
                 className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
                 value={xferForm.debit_account_id}
                 onChange={(e) => {
-                  xferGlTouchedRef.current.add('debit_account_id')
-                  setXferForm((f) => ({ ...f, debit_account_id: e.target.value }))
+                  const v = e.target.value
+                  if (v) xferGlTouchedRef.current.add('debit_account_id')
+                  else xferGlTouchedRef.current.delete('debit_account_id')
+                  setXferForm((f) => ({ ...f, debit_account_id: v }))
                 }}
               >
-                <option value="">Select account</option>
+                <option value="">{xferDebitRecommend}</option>
                 {activeCoa.map((a) => (
                   <option key={a.id} value={a.id}>
                     {formatCoaOptionLabel(a)}
@@ -821,11 +839,13 @@ export function AquaculturePlManagementPanel({
                 className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
                 value={xferForm.credit_account_id}
                 onChange={(e) => {
-                  xferGlTouchedRef.current.add('credit_account_id')
-                  setXferForm((f) => ({ ...f, credit_account_id: e.target.value }))
+                  const v = e.target.value
+                  if (v) xferGlTouchedRef.current.add('credit_account_id')
+                  else xferGlTouchedRef.current.delete('credit_account_id')
+                  setXferForm((f) => ({ ...f, credit_account_id: v }))
                 }}
               >
-                <option value="">Select account</option>
+                <option value="">{xferCreditRecommend}</option>
                 {activeCoa.map((a) => (
                   <option key={a.id} value={a.id}>
                     {formatCoaOptionLabel(a)}

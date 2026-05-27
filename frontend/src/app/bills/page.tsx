@@ -43,7 +43,10 @@ import {
 import { BillPurposeSection } from '@/components/bills/BillPurposeSection'
 import { BillLineItemSelect } from '@/components/bills/BillLineItemSelect'
 import { BillStationAllocationFields } from '@/components/bills/BillStationAllocationFields'
-import { suggestedBillLineExpenseAccountId } from '@/lib/coaDefaults'
+import { COA_OFFICE_EXP, suggestedBillLineExpenseAccountId, templateCoaOptionLabel } from '@/lib/coaDefaults'
+import { syncLineTouchedForAccount } from '@/lib/coaSuggestForm'
+import { ItemCogsOnSaleHint } from '@/components/items/ItemCogsOnSaleHint'
+import type { CoaPickForItemDefault } from '@/lib/itemGlDefaults'
 
 /** Bill line inputs: fixed height so grid rows align across columns */
 const BILL_LINE_CTL =
@@ -223,6 +226,8 @@ interface Item {
   pos_category?: string  // 'fuel', 'general', 'fish' (Fish Type), etc.
   quantity_on_hand?: number | string
   expense_account_id?: number | null
+  cogs_account_id?: number | null
+  category?: string
   /** Fish / fry: pieces (heads) per 1 kg — Line on item form */
   pieces_per_kg?: number | string | null
 }
@@ -972,6 +977,7 @@ export default function BillsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [items, setItems] = useState<Item[]>([])
   const [expenseAccounts, setExpenseAccounts] = useState<ExpenseAccount[]>([])
+  const [coaForItemHints, setCoaForItemHints] = useState<CoaPickForItemDefault[]>([])
   const [tanks, setTanks] = useState<Tank[]>([])  // All tanks for the company
   const [loading, setLoading] = useState(true)
   const [referenceLoading, setReferenceLoading] = useState(false)
@@ -1088,8 +1094,15 @@ export default function BillsPage() {
     [expenseAccounts]
   )
 
+  const billLineExpenseRecommendLabel = useMemo(() => {
+    const code =
+      expenseAccounts.find((a) => a.id === templateBillExpenseAccountId)?.account_code || COA_OFFICE_EXP
+    return templateCoaOptionLabel(code, expenseAccounts)
+  }, [expenseAccounts, templateBillExpenseAccountId])
+
+  /** Active suggest: pre-fill expense on empty bill lines (create + edit). */
   useEffect(() => {
-    if (!showModal || expenseAccounts.length === 0) return
+    if ((!showModal && !showEditModal) || expenseAccounts.length === 0) return
     const fallback = templateBillExpenseAccountId
     if (!fallback) return
     setFormData((prev) => {
@@ -1102,7 +1115,13 @@ export default function BillsPage() {
       })
       return changed ? { ...prev, lines } : prev
     })
-  }, [showModal, expenseAccounts, templateBillExpenseAccountId])
+  }, [
+    showModal,
+    showEditModal,
+    expenseAccounts.length,
+    templateBillExpenseAccountId,
+    formData.lines.length,
+  ])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -1209,9 +1228,25 @@ export default function BillsPage() {
       }
 
       if (accountsRes.status === 'fulfilled') {
-        const accountsData = accountsRes.value.data
+        const accountsData = Array.isArray(accountsRes.value.data) ? accountsRes.value.data : []
+        const active = accountsData.filter(
+          (acc: { is_active?: boolean }) => acc.is_active !== false
+        )
+        setCoaForItemHints(
+          active.map(
+            (acc: {
+              id: number
+              account_code?: string
+              account_name?: string
+            }): CoaPickForItemDefault => ({
+              id: acc.id,
+              account_code: String(acc.account_code || ''),
+              account_name: String(acc.account_name || ''),
+            })
+          )
+        )
         setExpenseAccounts(
-          accountsData.filter((acc: ExpenseAccount) => acc.account_type.toLowerCase() === 'expense'),
+          active.filter((acc: ExpenseAccount) => acc.account_type.toLowerCase() === 'expense'),
         )
       }
 
@@ -1443,6 +1478,7 @@ export default function BillsPage() {
         templateBillExpenseAccountId || undefined
       )
     } else {
+      billLineExpenseTouchedRef.current.add(newLines[index].line_number)
       const account = expenseAccounts.find((a) => a.id === pick.id)
       newLines[index] = {
         ...newLines[index],
@@ -1558,9 +1594,15 @@ export default function BillsPage() {
       )
     }
 
+    if (field === 'expense_account_id') {
+      syncLineTouchedForAccount(
+        billLineExpenseTouchedRef.current,
+        newLines[index].line_number,
+        value as number | undefined
+      )
+    }
     // If expense account is selected, clear item and tank
     if (field === 'expense_account_id' && value) {
-      billLineExpenseTouchedRef.current.add(newLines[index].line_number)
       newLines[index].item_id = undefined
       newLines[index].tank_id = undefined
       newLines[index].aquaculture_fish_weight_kg = undefined
@@ -1750,6 +1792,12 @@ export default function BillsPage() {
         const fullBill = response.data
         setEditingBill(fullBill)
         setPostDraftBillOnUpdate(false)
+        billLineExpenseTouchedRef.current.clear()
+        for (const line of fullBill.lines || []) {
+          const ln = line.line_number ?? 0
+          const exp = line.expense_account_id != null ? Number(line.expense_account_id) : 0
+          if (ln > 0 && exp > 0) billLineExpenseTouchedRef.current.add(ln)
+        }
         setFormData({
           vendor_id: fullBill.vendor_id,
           bill_date: fullBill.bill_date.split('T')[0],
@@ -2724,6 +2772,19 @@ export default function BillsPage() {
                                   applyBillLinePickerSelection(index, { kind: 'account', id })
                                 }
                               />
+                              {lineItem && (lineItem.item_type || '').toLowerCase() === 'inventory' && (
+                                <ItemCogsOnSaleHint
+                                  item={lineItem}
+                                  coaOptions={coaForItemHints}
+                                  className="mt-1"
+                                />
+                              )}
+                              {!line.item_id && !line.expense_account_id && (
+                                <p className="mt-1 text-[11px] text-slate-600">
+                                  Expense-only line: search and pick an account, or leave blank for{' '}
+                                  {billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.
+                                </p>
+                              )}
                             </div>
                             {availableTanks.length > 0 && (
                               <div className="col-span-12 lg:col-span-2 min-w-0">
@@ -3243,6 +3304,19 @@ export default function BillsPage() {
                                   applyBillLinePickerSelection(index, { kind: 'account', id })
                                 }
                               />
+                              {lineItem && (lineItem.item_type || '').toLowerCase() === 'inventory' && (
+                                <ItemCogsOnSaleHint
+                                  item={lineItem}
+                                  coaOptions={coaForItemHints}
+                                  className="mt-1"
+                                />
+                              )}
+                              {!line.item_id && !line.expense_account_id && (
+                                <p className="mt-1 text-[11px] text-slate-600">
+                                  Expense-only line: search and pick an account, or leave blank for{' '}
+                                  {billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.
+                                </p>
+                              )}
                             </div>
 
                             {isFuelItem && (

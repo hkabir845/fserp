@@ -388,11 +388,13 @@ def _inventory_account_for_item(company_id: int, item) -> Optional[ChartOfAccoun
 
 
 def _cogs_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]:
+    from api.services.coa_constants import pl_bucket_for_coa
+
     if item is not None and getattr(item, "cogs_account_id", None):
         acc = ChartOfAccount.objects.filter(
             pk=item.cogs_account_id, company_id=company_id, is_active=True
         ).first()
-        if acc and normalize_chart_account_type(acc.account_type) == "cost_of_goods_sold":
+        if acc and pl_bucket_for_coa(acc.account_type, acc.account_sub_type, acc.account_code) == "cost_of_goods_sold":
             return acc
     if _is_fuel_item(item):
         return _coa(company_id, CODE_COGS_FUEL)
@@ -720,7 +722,7 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
             continue
         if not item_tracks_physical_stock(it):
             continue
-        cost = it.cost or Decimal("0")
+        cost = item_inventory_unit_cost(it)
         if cost <= 0:
             continue
         qty = line.quantity or Decimal("0")
@@ -783,6 +785,51 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
         )
         is not None
     )
+
+
+def delete_invoice_cogs_journal(company_id: int, invoice_id: int) -> int:
+    """Remove AUTO-INV-{id}-COGS (e.g. before repost after item cost fix)."""
+    deleted, _ = JournalEntry.objects.filter(
+        company_id=company_id,
+        entry_number=f"AUTO-INV-{invoice_id}-COGS",
+    ).delete()
+    return deleted
+
+
+def backfill_invoice_cogs_journals(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    force_repost: bool = False,
+) -> dict[str, int]:
+    """
+    Post missing COGS relief journals for posted invoices in [start, end].
+    Skips draft/zero-total invoices. With force_repost, deletes existing COGS entries first.
+    """
+    posted = 0
+    skipped = 0
+    removed = 0
+    qs = (
+        Invoice.objects.filter(
+            company_id=company_id,
+            invoice_date__gte=start,
+            invoice_date__lte=end,
+        )
+        .exclude(status="draft")
+        .exclude(total__lte=0)
+        .order_by("id")
+    )
+    for inv in qs.iterator(chunk_size=200):
+        en = f"AUTO-INV-{inv.id}-COGS"
+        if JournalEntry.objects.filter(company_id=company_id, entry_number=en).exists():
+            if not force_repost:
+                skipped += 1
+                continue
+            removed += delete_invoice_cogs_journal(company_id, inv.id)
+        if post_invoice_cogs_journal(company_id, inv):
+            posted += 1
+    return {"posted": posted, "skipped_existing": skipped, "removed_for_repost": removed}
 
 
 def post_aquaculture_shop_stock_issue_journal(

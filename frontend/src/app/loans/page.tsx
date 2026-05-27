@@ -7,13 +7,16 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import {
   COA_BANK_OP,
+  COA_BORROWED_PRINCIPAL,
   COA_CASH,
   COA_INTEREST_EXPENSE,
   COA_INTEREST_INCOME,
+  COA_LENT_PRINCIPAL,
   pickCoaIdInSubset,
   suggestedLoanInterestAccountId,
   suggestedLoanPrincipalAccountId,
   suggestedLoanSettlementAccountId,
+  templateCoaOptionLabel,
 } from '@/lib/coaDefaults'
 import {
   Plus,
@@ -849,6 +852,21 @@ export default function LoansPage() {
     const accrual = coa.filter((a) => isAccrualCoaForDirection(a, loanForm.direction))
     return { principal, settlement, interest, accrual }
   }, [coa, loanForm.direction])
+
+  const coaPickForLabels = useMemo(
+    () => coa.map((a) => ({ id: a.id, account_code: a.account_code, account_name: a.account_name })),
+    [coa]
+  )
+
+  const loanPrincipalRecommendLabel = useMemo(() => {
+    const code = loanForm.direction === 'lent' ? COA_LENT_PRINCIPAL : COA_BORROWED_PRINCIPAL
+    return templateCoaOptionLabel(code, coaPickForLabels)
+  }, [loanForm.direction, coaPickForLabels])
+
+  const loanSettlementRecommendLabel = useMemo(
+    () => templateCoaOptionLabel(COA_BANK_OP, coaPickForLabels) + ` (or ${COA_CASH})`,
+    [coaPickForLabels]
+  )
 
   const islamicFacilitiesForParent = useMemo(() => {
     return loans.filter(
@@ -3533,7 +3551,9 @@ export default function LoansPage() {
                           className="w-full border rounded-lg px-3 py-2"
                           value={loanForm.principal_account_id || ''}
                           onChange={(e) => {
-                            loanGlTouchedRef.current.add('principal_account_id')
+                            const v = parseInt(e.target.value, 10) || 0
+                            if (v > 0) loanGlTouchedRef.current.add('principal_account_id')
+                            else loanGlTouchedRef.current.delete('principal_account_id')
                             setLoanForm({
                               ...loanForm,
                               principal_account_id: parseInt(e.target.value, 10) || 0,
@@ -3541,7 +3561,7 @@ export default function LoansPage() {
                           }}
                           required={loanModalMode === 'new' || !loanModalHasActivity}
                         >
-                          <option value="">Select…</option>
+                          <option value="">{loanPrincipalRecommendLabel}</option>
                           {coaFilteredForLoan.principal.map((a) => (
                             <option key={a.id} value={a.id}>
                               {formatCoaOptionLabel(a)}
@@ -3575,7 +3595,9 @@ export default function LoansPage() {
                           className="w-full border rounded-lg px-3 py-2"
                           value={loanForm.settlement_account_id || ''}
                           onChange={(e) => {
-                            loanGlTouchedRef.current.add('settlement_account_id')
+                            const v = parseInt(e.target.value, 10) || 0
+                            if (v > 0) loanGlTouchedRef.current.add('settlement_account_id')
+                            else loanGlTouchedRef.current.delete('settlement_account_id')
                             setLoanForm({
                               ...loanForm,
                               settlement_account_id: parseInt(e.target.value, 10) || 0,
@@ -3583,7 +3605,7 @@ export default function LoansPage() {
                           }}
                           required={loanModalMode === 'new' || !loanModalHasActivity}
                         >
-                          <option value="">Select…</option>
+                          <option value="">{loanSettlementRecommendLabel}</option>
                           {coaFilteredForLoan.settlement.map((a) => (
                             <option key={`s-${a.id}`} value={a.id}>
                               {formatCoaOptionLabel(a)}
@@ -3612,24 +3634,34 @@ export default function LoansPage() {
                           className="w-full border rounded-lg px-3 py-2"
                           value={loanForm.interest_account_id || ''}
                           onChange={(e) => {
-                            loanGlTouchedRef.current.add('interest_account_id')
+                            const v = parseInt(e.target.value, 10) || 0
+                            if (v > 0) loanGlTouchedRef.current.add('interest_account_id')
+                            else loanGlTouchedRef.current.delete('interest_account_id')
                             setLoanForm({
                               ...loanForm,
                               interest_account_id: parseInt(e.target.value, 10) || 0,
                             })
                           }}
                         >
-                          <option value="">None</option>
+                          <option value="">None (optional)</option>
                           {coaFilteredForLoan.interest.map((a) => (
                             <option key={`i-${a.id}`} value={a.id}>
                               {formatCoaOptionLabel(a)}
                             </option>
                           ))}
                         </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Optional. Suggested when needed:{' '}
+                          {templateCoaOptionLabel(
+                            loanForm.direction === 'lent' ? COA_INTEREST_INCOME : COA_INTEREST_EXPENSE,
+                            coaPickForLabels
+                          ).replace(/^— Recommended: | —$/g, '')}
+                          . You can change principal and settlement accounts anytime before saving.
+                        </p>
                         {coaFilteredForLoan.interest.length === 0 && (
-                          <p className="mt-1 text-xs text-gray-500">
-                            Optional. Add an <strong>Expense</strong> (borrowed) or <strong>Income</strong> (lent) line
-                            for {loanForm.banking_model === 'islamic' ? 'profit/return' : 'interest'} in repayments.
+                          <p className="mt-1 text-xs text-amber-700">
+                            Add an <strong>Expense</strong> (borrowed) or <strong>Income</strong> (lent) line for{' '}
+                            {loanForm.banking_model === 'islamic' ? 'profit/return' : 'interest'} in repayments.
                           </p>
                         )}
                       </div>
@@ -3643,7 +3675,9 @@ export default function LoansPage() {
                           className="w-full border rounded-lg px-3 py-2"
                           value={loanForm.interest_accrual_account_id || ''}
                           onChange={(e) => {
-                            loanGlTouchedRef.current.add('interest_accrual_account_id')
+                            const v = parseInt(e.target.value, 10) || 0
+                            if (v > 0) loanGlTouchedRef.current.add('interest_accrual_account_id')
+                            else loanGlTouchedRef.current.delete('interest_accrual_account_id')
                             setLoanForm({
                               ...loanForm,
                               interest_accrual_account_id: parseInt(e.target.value, 10) || 0,

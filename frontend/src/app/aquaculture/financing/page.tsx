@@ -8,7 +8,13 @@ import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
-import { suggestedAquacultureProfitTransferAccountIds } from '@/lib/coaDefaults'
+import {
+  COA_AQ_PROFIT_CLEARING,
+  COA_BANK_OP,
+  COA_CASH,
+  suggestedAquacultureProfitTransferAccountIds,
+  templateCoaOptionLabel,
+} from '@/lib/coaDefaults'
 
 type FinancingLoan = {
   id: number
@@ -137,6 +143,16 @@ export default function AquacultureFinancingPage() {
     void load()
   }, [load])
 
+  const profitXferDebitRecommend = useMemo(
+    () => templateCoaOptionLabel(COA_BANK_OP, coa) + ` (or ${COA_CASH})`,
+    [coa]
+  )
+  const profitXferCreditRecommend = useMemo(
+    () => templateCoaOptionLabel(COA_AQ_PROFIT_CLEARING, coa),
+    [coa]
+  )
+
+  /** Active suggest: pre-fill bank debit + clearing credit for pond profit transfers. */
   useEffect(() => {
     if (coa.length === 0) return
     const touched = repayGlTouchedRef.current
@@ -603,11 +619,13 @@ export default function AquacultureFinancingPage() {
                       className="mt-1 w-full rounded border px-2 py-1.5"
                       value={debitAccountId === '' ? '' : String(debitAccountId)}
                       onChange={(e) => {
-                        repayGlTouchedRef.current.add('debit')
-                        setDebitAccountId(e.target.value === '' ? '' : Number(e.target.value))
+                        const v = e.target.value
+                        if (v) repayGlTouchedRef.current.add('debit')
+                        else repayGlTouchedRef.current.delete('debit')
+                        setDebitAccountId(v === '' ? '' : Number(v))
                       }}
                     >
-                      <option value="">—</option>
+                      <option value="">{profitXferDebitRecommend}</option>
                       {coa.map((a) => (
                         <option key={a.id} value={a.id}>
                           {formatCoaOptionLabel(a)}
@@ -621,11 +639,13 @@ export default function AquacultureFinancingPage() {
                       className="mt-1 w-full rounded border px-2 py-1.5"
                       value={creditAccountId === '' ? '' : String(creditAccountId)}
                       onChange={(e) => {
-                        repayGlTouchedRef.current.add('credit')
-                        setCreditAccountId(e.target.value === '' ? '' : Number(e.target.value))
+                        const v = e.target.value
+                        if (v) repayGlTouchedRef.current.add('credit')
+                        else repayGlTouchedRef.current.delete('credit')
+                        setCreditAccountId(v === '' ? '' : Number(v))
                       }}
                     >
-                      <option value="">—</option>
+                      <option value="">{profitXferCreditRecommend}</option>
                       {coa.map((a) => (
                         <option key={a.id} value={a.id}>
                           {formatCoaOptionLabel(a)}
@@ -634,6 +654,10 @@ export default function AquacultureFinancingPage() {
                     </select>
                   </label>
                 </div>
+                <p className="text-xs text-slate-600">
+                  Debit and credit default to bank ({COA_BANK_OP}) and profit clearing ({COA_AQ_PROFIT_CLEARING}) when
+                  COA loads — change either account anytime.
+                </p>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={postTransfers} onChange={(e) => setPostTransfers(e.target.checked)} />
                   Post profit-transfer journals

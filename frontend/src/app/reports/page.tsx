@@ -4298,11 +4298,18 @@ function renderReportTable(
   // Income Statement
   if (reportType === 'income-statement' && data) {
     const blocks = [
-      { title: 'Income', payload: data.income },
-      { title: 'Cost of Goods Sold', payload: data.cost_of_goods_sold },
-      { title: 'Expenses', payload: data.expenses },
+      { title: 'Income', payload: data.income, accent: 'border-emerald-200 bg-emerald-50/50' },
+      {
+        title: 'Cost of Goods Sold',
+        payload: data.cost_of_goods_sold,
+        accent: 'border-amber-200 bg-amber-50/50',
+      },
+      { title: 'Expenses', payload: data.expenses, accent: 'border-slate-200 bg-slate-50/50' },
     ]
     const period = data?.period || {}
+    const incomeTotal = Number(data.income?.total ?? 0)
+    const cogsTotal = Number(data.cost_of_goods_sold?.total ?? 0)
+    const expenseTotal = Number(data.expenses?.total ?? 0)
 
     return (
       <div className="space-y-8">
@@ -4314,6 +4321,37 @@ function renderReportTable(
           handleReportDateChange,
           "P&L includes posted journal activity from start through end date (not opening balances on revenue/expense accounts)."
         )}
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="rounded-lg border border-emerald-200 bg-white p-3 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Income</p>
+            <p className="mt-1 text-lg font-bold tabular-nums text-emerald-900">{formatCurrency(incomeTotal)}</p>
+          </div>
+          <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-3 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">COGS</p>
+            <p className="mt-1 text-lg font-bold tabular-nums text-amber-950">{formatCurrency(cogsTotal)}</p>
+          </div>
+          <div className="rounded-lg border border-green-300 bg-green-50 p-3 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-green-800">Gross profit</p>
+            <p className="mt-1 text-lg font-bold tabular-nums text-green-900">
+              {formatCurrency(data.gross_profit)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Expenses</p>
+            <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">{formatCurrency(expenseTotal)}</p>
+          </div>
+          <div className="col-span-2 rounded-lg border border-blue-300 bg-blue-50 p-3 shadow-sm sm:col-span-1 lg:col-span-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">Net income</p>
+            <p
+              className={`mt-1 text-lg font-bold tabular-nums ${
+                Number(data.net_income ?? 0) >= 0 ? 'text-blue-900' : 'text-red-600'
+              }`}
+            >
+              {formatCurrency(data.net_income)}
+            </p>
+          </div>
+        </div>
 
         {data.period_matches_cumulative_change === false && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -4328,11 +4366,11 @@ function renderReportTable(
         )}
 
         <div className="space-y-6">
-          {blocks.map(({ title, payload }) => (
-            <div key={title} className="bg-white border border-gray-200 rounded-lg shadow-sm">
-              <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
+          {blocks.map(({ title, payload, accent }) => (
+            <div key={title} className={`rounded-lg border bg-white shadow-sm ${accent}`}>
+              <div className="flex items-center justify-between border-b border-inherit p-4">
                 <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-                <span className="text-sm font-bold text-gray-700">
+                <span className="text-sm font-bold tabular-nums text-gray-900">
                   {formatCurrency(payload?.total)}
                 </span>
               </div>
@@ -4341,28 +4379,46 @@ function renderReportTable(
                   (payload?.accounts ?? []).map((account: any, accIdx: number) => (
                     <div
                       key={`${title}-${accIdx}-${account.account_code ?? 'acct'}`}
-                      className="px-4 py-3 flex justify-between hover:bg-gray-50 transition-colors"
+                      className="flex justify-between px-4 py-3 transition-colors hover:bg-white/80"
                     >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{account.account_name}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-gray-900">{account.account_name}</p>
                         <p className="text-xs text-gray-500">{account.account_code}</p>
                       </div>
-                      <p className="text-sm font-semibold text-gray-900 ml-4 whitespace-nowrap">
+                      <p className="ml-4 whitespace-nowrap text-sm font-semibold tabular-nums text-gray-900">
                         {formatCurrency(account.balance)}
                       </p>
                     </div>
                   ))
                 ) : (
-                  <div className="px-4 py-8 text-center text-gray-400 text-sm">
-                    No {title.toLowerCase()} accounts found
+                  <div className="px-4 py-8 text-center text-sm text-gray-500">
+                    {title === 'Cost of Goods Sold' ? (
+                      <>
+                        <p className="font-medium text-amber-900">No COGS activity in this period</p>
+                        <p className="mt-2 text-xs text-gray-600">
+                          COGS comes from <strong>posted sales</strong> of inventory items (POS / invoices): Dr COGS /
+                          Cr inventory at each item&apos;s <strong>unit cost</strong> × quantity. Assigning a COGS
+                          account on the item alone does not create P&amp;L amounts — you need sales in this date
+                          range and a non-zero cost on the product (Items → Cost). Use chart type{' '}
+                          <strong>Cost of goods sold</strong> (5100 fuel, 5120 shop, 5200 shrinkage). After fixing
+                          costs, run{' '}
+                          <code className="rounded bg-slate-100 px-1">
+                            python manage.py backfill_invoice_cogs
+                          </code>{' '}
+                          for past invoices.
+                        </p>
+                      </>
+                    ) : (
+                      <>No {title.toLowerCase()} accounts with activity in this period</>
+                    )}
                   </div>
                 )}
-                {(payload?.accounts ?? []).length > 0 && (
-                  <div className="flex justify-between items-center px-4 py-3 bg-slate-50 border-t border-slate-200">
-                    <span className="text-sm font-semibold text-slate-800">Sub-total — {title}</span>
-                    <span className="text-sm font-bold tabular-nums text-slate-900">{formatCurrency(payload?.total)}</span>
-                  </div>
-                )}
+                <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/90 px-4 py-3">
+                  <span className="text-sm font-semibold text-slate-800">Sub-total — {title}</span>
+                  <span className="text-sm font-bold tabular-nums text-slate-900">
+                    {formatCurrency(payload?.total ?? 0)}
+                  </span>
+                </div>
               </div>
             </div>
           ))}

@@ -12,7 +12,12 @@ import { getApiBaseUrl } from '@/lib/api'
 import { isTenantAdminAquacultureUser } from '@/navigation/erpAppMenu'
 import { formatBankRegisterLabel } from '@/lib/bankAccountDisplay'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
-import { COA_SALARY_EXP, suggestedPayrollSalaryExpenseAccountId } from '@/lib/coaDefaults'
+import {
+  COA_SALARY_EXP,
+  suggestedPayrollSalaryExpenseAccountId,
+  templateCoaOptionLabel,
+} from '@/lib/coaDefaults'
+import { syncBooleanFieldTouchedForAccountPick } from '@/lib/coaSuggestForm'
 
 interface PayrollRun {
   id: number
@@ -458,7 +463,7 @@ export default function PayrollPage() {
     setEditingId(null)
   }
 
-  /** Pre-select template salary expense (6400) on new payroll runs unless the user picks another account. */
+  /** Active suggest: pre-fill 6400 on new payroll runs until the user picks another account. */
   useEffect(() => {
     if (!showModal || editingId != null || salaryExpenseTouched.current) return
     if (formData.salary_expense_account_id) return
@@ -474,7 +479,8 @@ export default function PayrollPage() {
   ])
 
   const handleEdit = (payroll: PayrollRun) => {
-    salaryExpenseTouched.current = true
+    salaryExpenseTouched.current =
+      payroll.salary_expense_account_id != null && payroll.salary_expense_account_id > 0
     setEditingId(payroll.id)
     setFormData({
       pay_period_start: payroll.pay_period_start || '',
@@ -1277,13 +1283,16 @@ export default function PayrollPage() {
                       <select
                         value={formData.salary_expense_account_id}
                         onChange={(e) => {
-                          salaryExpenseTouched.current = true
+                          syncBooleanFieldTouchedForAccountPick(
+                            salaryExpenseTouched,
+                            e.target.value
+                          )
                           setFormData({ ...formData, salary_expense_account_id: e.target.value })
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                       >
                         <option value="">
-                          Recommended — {COA_SALARY_EXP} Salaries and Wages (template default when posting)
+                          {templateCoaOptionLabel(COA_SALARY_EXP, salaryExpenseAccountOptions)}
                         </option>
                         {salaryExpenseAccountOptions.map((a) => (
                           <option key={a.id} value={String(a.id)}>
@@ -1292,8 +1301,8 @@ export default function PayrollPage() {
                         ))}
                       </select>
                       <p className="mt-1 text-xs text-gray-500">
-                        Chooses which expense GL account is debited for gross pay. Leave blank unless you need a
-                        different account than the default template.
+                        Chooses which expense GL account is debited for gross pay. New runs default to {COA_SALARY_EXP};
+                        you can change to any expense account anytime.
                       </p>
                     </div>
                     <div className="md:col-span-2 rounded-lg border border-gray-200 bg-gray-50/80 p-4">

@@ -118,6 +118,40 @@ def test_income_detail_api_includes_income_excludes_cogs_and_expense(
     assert "income" in note.lower()
 
 
+def test_income_statement_treats_51xx_expense_as_cogs(company_tenant_with_gl):
+    """Mis-typed 51xx accounts stored as expense still appear under COGS on P&L."""
+    mis = ChartOfAccount.objects.create(
+        company_id=company_tenant_with_gl.id,
+        account_code="5199",
+        account_name="Fuel COGS (mis-typed expense)",
+        account_type="expense",
+        is_active=True,
+    )
+    cash = ChartOfAccount.objects.get(company_id=company_tenant_with_gl.id, account_code="1010")
+    je = JournalEntry.objects.create(
+        company_id=company_tenant_with_gl.id,
+        entry_number="COGS-MIS-TYPE",
+        entry_date=date(2026, 3, 18),
+        description="cogs mis-type",
+        is_posted=True,
+        posted_at=timezone.now(),
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je, account=mis, debit=Decimal("45"), credit=Decimal("0")
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je, account=cash, debit=Decimal("0"), credit=Decimal("45")
+    )
+
+    data = report_income_statement(
+        company_tenant_with_gl.id, date(2026, 3, 1), date(2026, 3, 31)
+    )
+    codes = {a["account_code"] for a in data["cost_of_goods_sold"]["accounts"]}
+    assert "5199" in codes
+    assert "5199" not in {a["account_code"] for a in data["expenses"]["accounts"]}
+    assert Decimal(str(data["cost_of_goods_sold"]["total"])) >= Decimal("45.00")
+
+
 def test_income_detail_matches_income_statement_income_section(company_tenant_with_gl):
     start = date(2026, 4, 1)
     end = date(2026, 4, 30)

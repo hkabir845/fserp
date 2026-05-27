@@ -74,7 +74,12 @@ from api.services.coa_constants import (
     is_debit_normal_chart_type,
     is_pl_credit_normal_type,
     normalize_chart_account_type,
+    pl_bucket_for_coa,
 )
+
+
+def _pl_bucket(coa: ChartOfAccount) -> str | None:
+    return pl_bucket_for_coa(coa.account_type, coa.account_sub_type, coa.account_code)
 
 
 def _d(v: Any) -> Decimal:
@@ -831,13 +836,13 @@ def _period_income_statement_totals(
     """
     ti = tcogs = te = Decimal("0")
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        t = normalize_chart_account_type(coa.account_type)
-        if t not in ("income", "cost_of_goods_sold", "expense"):
+        bucket = _pl_bucket(coa)
+        if bucket is None:
             continue
         amt = _period_pl_amount(coa, company_id, start, end, station_id)
-        if t == "income":
+        if bucket == "income":
             ti += amt
-        elif t == "cost_of_goods_sold":
+        elif bucket == "cost_of_goods_sold":
             tcogs += amt
         else:
             te += amt
@@ -859,13 +864,13 @@ def _period_income_statement_totals_pond(
     line_qs = _je_lines_pond(company_id, pond_id)
     ti = tcogs = te = Decimal("0")
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        t = normalize_chart_account_type(coa.account_type)
-        if t not in ("income", "cost_of_goods_sold", "expense"):
+        bucket = _pl_bucket(coa)
+        if bucket is None:
             continue
         amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
-        if t == "income":
+        if bucket == "income":
             ti += amt
-        elif t == "cost_of_goods_sold":
+        elif bucket == "cost_of_goods_sold":
             tcogs += amt
         else:
             te += amt
@@ -977,8 +982,8 @@ def report_income_statement(
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by(
         "account_code"
     ):
-        t = normalize_chart_account_type(coa.account_type)
-        if t not in ("income", "cost_of_goods_sold", "expense"):
+        bucket = _pl_bucket(coa)
+        if bucket is None:
             continue
         amt = _period_pl_amount(coa, company_id, start, end, station_id)
         if amt == 0:
@@ -991,10 +996,10 @@ def report_income_statement(
             "account_name": display_name,
             "balance": _f(amt),
         }
-        if t == "income":
+        if bucket == "income":
             income_rows.append(row)
             ti += amt
-        elif t == "cost_of_goods_sold":
+        elif bucket == "cost_of_goods_sold":
             cogs_rows.append(row)
             tcogs += amt
         else:
@@ -1264,7 +1269,7 @@ def report_expense_detail(
     exp_rows: list[dict[str, Any]] = []
     te = Decimal("0")
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        if normalize_chart_account_type(coa.account_type) != "expense":
+        if _pl_bucket(coa) != "expense":
             continue
         amt = _period_pl_amount(coa, company_id, start, end, station_id)
         if amt == 0:
@@ -1861,13 +1866,13 @@ def _entity_financial_summary_row(
             "net_income": pl_net,
         }
         for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-            t = normalize_chart_account_type(coa.account_type)
-            if t not in ("income", "cost_of_goods_sold", "expense"):
+            bucket = _pl_bucket(coa)
+            if bucket is None:
                 continue
             amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
-            if t == "income":
+            if bucket == "income":
                 pl["income"] += amt
-            elif t == "cost_of_goods_sold":
+            elif bucket == "cost_of_goods_sold":
                 pl["cogs"] += amt
             else:
                 pl["expenses"] += amt
@@ -1881,13 +1886,13 @@ def _entity_financial_summary_row(
         pl_net = _period_net_income_from_lines(company_id, start, end, line_qs)
         pl = {"income": Decimal("0"), "cogs": Decimal("0"), "expenses": Decimal("0"), "gross_profit": Decimal("0"), "net_income": pl_net}
         for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-            t = normalize_chart_account_type(coa.account_type)
-            if t not in ("income", "cost_of_goods_sold", "expense"):
+            bucket = _pl_bucket(coa)
+            if bucket is None:
                 continue
             amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
-            if t == "income":
+            if bucket == "income":
                 pl["income"] += amt
-            elif t == "cost_of_goods_sold":
+            elif bucket == "cost_of_goods_sold":
                 pl["cogs"] += amt
             else:
                 pl["expenses"] += amt

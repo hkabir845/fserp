@@ -21,12 +21,28 @@ export const COA_INTEREST_INCOME = '4410'
 export const COA_INTEREST_EXPENSE = '6620'
 export const COA_AQ_PROFIT_CLEARING = '3190'
 export const COA_AQ_MISC_EXP = '6725'
+export const COA_COGS_FUEL = '5100'
+export const COA_COGS_SHOP = '5120'
 
 export function coaIdForCode(code: string, options: CoaPick[]): string {
   const normalized = String(code || '').trim()
   if (!normalized) return ''
   const match = options.find((a) => String(a.account_code || '').trim() === normalized)
   return match && match.id > 0 ? String(match.id) : ''
+}
+
+export function recommendedCoaLabel(code: string, options: CoaPick[]): string {
+  const match = options.find((a) => String(a.account_code || '').trim() === String(code || '').trim())
+  if (match) {
+    const name = String(match.account_name || '').trim()
+    return name ? `${match.account_code} — ${name}` : String(match.account_code || code)
+  }
+  return code
+}
+
+/** First dropdown option for optional GL overrides (empty value = use template at post time). */
+export function templateCoaOptionLabel(code: string, options: CoaPick[]): string {
+  return `— Recommended: ${recommendedCoaLabel(code, options)} —`
 }
 
 /** First matching code from a preference list (e.g. bank 1030 then cash 1010). */

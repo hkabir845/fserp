@@ -22,6 +22,7 @@ import {
   suggestedRevenueCoaCode,
   templateDefaultOptionLabel,
 } from '@/lib/itemGlDefaults'
+import { syncFieldTouchedForAccountPick } from '@/lib/coaSuggestForm'
 import { formatStockUnitLong, suggestMedicineStockUnit } from '@/lib/aquacultureMedicineUnits'
 
 /** API returns decimals as strings; tanks-backed quantity is merged server-side. */
@@ -331,10 +332,7 @@ export default function ItemsPage() {
     [coaAccounts]
   )
   const expenseCoaOptions = useMemo(
-    () =>
-      coaAccounts.filter((a) =>
-        ['expense', 'cost_of_goods_sold'].includes((a.account_type || '').toLowerCase())
-      ),
+    () => coaAccounts.filter((a) => (a.account_type || '').toLowerCase() === 'expense'),
     [coaAccounts]
   )
   const cogsCoaOptions = useMemo(
@@ -389,25 +387,11 @@ export default function ItemsPage() {
     [coaAccounts]
   )
 
-  const glSuggestionsBootstrappedRef = useRef(false)
-
-  /** Fill GL picks once when COA loads on a new item (all four fields still empty). */
+  /** Active suggest: fill empty GL fields when COA loads or item context changes (respects touched). */
   useEffect(() => {
-    if (!showModal) {
-      glSuggestionsBootstrappedRef.current = false
-      glFieldsTouchedRef.current.clear()
-      return
-    }
-    if (coaAccounts.length === 0 || glSuggestionsBootstrappedRef.current) return
-    const allEmpty =
-      !formData.revenue_account_id &&
-      !formData.cogs_account_id &&
-      !formData.inventory_account_id &&
-      !formData.expense_account_id
-    glSuggestionsBootstrappedRef.current = true
-    if (!allEmpty) return
+    if (!showModal || coaAccounts.length === 0) return
     setFormData((prev) => mergeItemGlSuggestions(prev, itemGlCtx))
-  }, [showModal, coaAccounts, itemGlCtx, mergeItemGlSuggestions, formData.revenue_account_id, formData.cogs_account_id, formData.inventory_account_id, formData.expense_account_id])
+  }, [showModal, coaAccounts.length, itemGlCtx, mergeItemGlSuggestions])
 
   /**
    * Opening /items?edit=123 or ?new=1 must hydrate the modal once. The effect also depends on `items`,
@@ -2411,6 +2395,12 @@ export default function ItemsPage() {
                         Enter BDT for one full sack of feed (same sack size as &quot;Kg per sack&quot; above).
                       </p>
                     )}
+                    {formData.item_type === 'inventory' && !isFeedItemForm && (
+                      <p className="mt-1 text-xs text-slate-600">
+                        Unit cost drives automatic COGS on sales (Dr COGS / Cr inventory). If this is 0, P&amp;L COGS
+                        stays zero until you enter cost or post sales with a price the system can use.
+                      </p>
+                    )}
                   </div>
 
                   {formData.item_type === 'inventory' && (
@@ -2632,6 +2622,10 @@ export default function ItemsPage() {
 
                   <div className="col-span-2 border-t border-gray-200 pt-4 mt-2">
                     <h3 className="text-sm font-semibold text-gray-800 mb-1">Chart of accounts (optional)</h3>
+                    <p className="mb-3 text-xs text-gray-500">
+                      Template accounts (5100, 5120, 4100, etc.) are <strong>filled in automatically</strong> when
+                      empty. Change item type or POS category to refresh suggestions, or pick any account to override.
+                    </p>
                     <p className="text-xs text-gray-500 mb-3">
                       Recommended accounts update when you change <strong className="font-medium">POS category</strong> or{' '}
                       <strong className="font-medium">item type</strong> (fuel → 4100/5100/1200, shop → 4200/5120/1220,
@@ -2644,7 +2638,11 @@ export default function ItemsPage() {
                           className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
                           value={formData.revenue_account_id}
                           onChange={(e) => {
-                            glFieldsTouchedRef.current.add('revenue_account_id')
+                            syncFieldTouchedForAccountPick(
+                              glFieldsTouchedRef.current,
+                              'revenue_account_id',
+                              e.target.value
+                            )
                             setFormData((prev) => ({ ...prev, revenue_account_id: e.target.value }))
                           }}
                         >
@@ -2667,7 +2665,11 @@ export default function ItemsPage() {
                           className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
                           value={formData.cogs_account_id}
                           onChange={(e) => {
-                            glFieldsTouchedRef.current.add('cogs_account_id')
+                            syncFieldTouchedForAccountPick(
+                              glFieldsTouchedRef.current,
+                              'cogs_account_id',
+                              e.target.value
+                            )
                             setFormData((prev) => ({ ...prev, cogs_account_id: e.target.value }))
                           }}
                         >
@@ -2680,6 +2682,13 @@ export default function ItemsPage() {
                             </option>
                           ))}
                         </select>
+                        {formData.item_type === 'inventory' && (
+                          <p className="mt-1 text-xs text-slate-600">
+                            COGS on Profit &amp; Loss posts when you <strong>sell</strong> this SKU (POS / invoice), not
+                            when you save the item. Set <strong>Cost</strong> below; P&amp;L uses cost × quantity
+                            (falls back to selling price only if cost is blank).
+                          </p>
+                        )}
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Inventory asset</label>
@@ -2687,7 +2696,11 @@ export default function ItemsPage() {
                           className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
                           value={formData.inventory_account_id}
                           onChange={(e) => {
-                            glFieldsTouchedRef.current.add('inventory_account_id')
+                            syncFieldTouchedForAccountPick(
+                              glFieldsTouchedRef.current,
+                              'inventory_account_id',
+                              e.target.value
+                            )
                             setFormData((prev) => ({ ...prev, inventory_account_id: e.target.value }))
                           }}
                         >
@@ -2712,7 +2725,11 @@ export default function ItemsPage() {
                           className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
                           value={formData.expense_account_id}
                           onChange={(e) => {
-                            glFieldsTouchedRef.current.add('expense_account_id')
+                            syncFieldTouchedForAccountPick(
+                              glFieldsTouchedRef.current,
+                              'expense_account_id',
+                              e.target.value
+                            )
                             setFormData((prev) => ({ ...prev, expense_account_id: e.target.value }))
                           }}
                         >

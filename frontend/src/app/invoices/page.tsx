@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Eye, Search, X, PlusCircle, Trash2, Send, CheckCircle, Edit2, FileText, Printer } from 'lucide-react'
@@ -14,7 +14,17 @@ import { loadPrintBranding } from '@/utils/printBranding'
 import { printListView } from '@/utils/printListView'
 import { AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
-import { COA_FUEL_REV, suggestedInvoiceRevenueAccountId } from '@/lib/coaDefaults'
+import {
+  COA_FUEL_REV,
+  COA_SHOP_REV,
+  suggestedInvoiceRevenueAccountId,
+  templateCoaOptionLabel,
+} from '@/lib/coaDefaults'
+import {
+  mergeSuggestedLineAccountId,
+  parseSuggestedCoaId,
+  syncLineTouchedForAccount,
+} from '@/lib/coaSuggestForm'
 
 interface InvoiceLineItem {
   id?: number
@@ -187,15 +197,22 @@ export default function InvoicesPage() {
     }
   }, [showModal, showEditModal, loadRevenueCoa])
 
+  const invoiceRevenueRecommendLabel = useMemo(
+    () =>
+      templateCoaOptionLabel(COA_FUEL_REV, revenueCoaOptions) +
+      ' (or item / ' +
+      COA_SHOP_REV +
+      ' shop)',
+    [revenueCoaOptions]
+  )
+
   const defaultInvoiceRevenueAccountId = useCallback((): number | undefined => {
-    const id = suggestedInvoiceRevenueAccountId(revenueCoaOptions)
-    if (!id) return undefined
-    const n = parseInt(id, 10)
-    return Number.isFinite(n) && n > 0 ? n : undefined
+    return parseSuggestedCoaId(suggestedInvoiceRevenueAccountId(revenueCoaOptions))
   }, [revenueCoaOptions])
 
+  /** Active suggest: pre-fill revenue on empty invoice lines (create + edit modals). */
   useEffect(() => {
-    if (!showModal || revenueCoaOptions.length === 0) return
+    if ((!showModal && !showEditModal) || revenueCoaOptions.length === 0) return
     const def = defaultInvoiceRevenueAccountId()
     if (!def) return
     setFormData((prev) => {
@@ -208,7 +225,13 @@ export default function InvoicesPage() {
       })
       return changed ? { ...prev, lines } : prev
     })
-  }, [showModal, revenueCoaOptions, defaultInvoiceRevenueAccountId])
+  }, [
+    showModal,
+    showEditModal,
+    revenueCoaOptions,
+    defaultInvoiceRevenueAccountId,
+    formData.lines.length,
+  ])
 
   const fetchData = async (isRetry = false) => {
     try {
@@ -534,9 +557,13 @@ export default function InvoicesPage() {
           row.item_id = undefined
           row.unit_price = 0
           row.description = ''
-          row.revenue_account_id = invoiceLineRevenueTouchedRef.current.has(row.line_number)
-            ? undefined
-            : defaultInvoiceRevenueAccountId()
+          if (!invoiceLineRevenueTouchedRef.current.has(row.line_number)) {
+            row.revenue_account_id = mergeSuggestedLineAccountId(
+              undefined,
+              defaultInvoiceRevenueAccountId(),
+              false
+            )
+          }
           row.amount = calculateLineAmount(row.quantity || 1, 0)
           newLines[index] = row
           return { ...prev, lines: newLines }
@@ -553,14 +580,20 @@ export default function InvoicesPage() {
           item.unit_price != null && item.unit_price !== undefined
             ? parseFloat(String(item.unit_price))
             : 0
-        const rev =
-          item.revenue_account_id != null && Number(item.revenue_account_id) > 0
-            ? Number(item.revenue_account_id)
-            : defaultInvoiceRevenueAccountId()
         row.item_id = itemId
         row.unit_price = unitPrice
         row.description = item.name || ''
-        row.revenue_account_id = rev
+        if (!invoiceLineRevenueTouchedRef.current.has(row.line_number)) {
+          const itemRev =
+            item.revenue_account_id != null && Number(item.revenue_account_id) > 0
+              ? Number(item.revenue_account_id)
+              : undefined
+          row.revenue_account_id = mergeSuggestedLineAccountId(
+            itemRev,
+            defaultInvoiceRevenueAccountId(),
+            false
+          )
+        }
         row.amount = calculateLineAmount(row.quantity || 1, unitPrice)
         newLines[index] = row
         if (unitPrice === 0) warnItemName = item.name || null
@@ -584,7 +617,7 @@ export default function InvoicesPage() {
 
   const handleAddLine = () => {
     const lineNumber = formData.lines.length + 1
-    const defaultRev = defaultInvoiceRevenueAccountId()
+    const defRev = defaultInvoiceRevenueAccountId()
     setFormData({
       ...formData,
       lines: [
@@ -596,7 +629,7 @@ export default function InvoicesPage() {
           unit_price: 0,
           amount: 0,
           tax_amount: 0,
-          ...(defaultRev ? { revenue_account_id: defaultRev } : {}),
+          ...(defRev ? { revenue_account_id: defRev } : {}),
         },
       ],
     })
@@ -612,7 +645,11 @@ export default function InvoicesPage() {
     const newLines = [...formData.lines]
     newLines[index] = { ...newLines[index], [field]: value }
     if (field === 'revenue_account_id') {
-      invoiceLineRevenueTouchedRef.current.add(newLines[index].line_number)
+      syncLineTouchedForAccount(
+        invoiceLineRevenueTouchedRef.current,
+        newLines[index].line_number,
+        value as number | undefined
+      )
     }
 
     if (field === 'quantity' || field === 'unit_price') {
@@ -825,7 +862,13 @@ export default function InvoicesPage() {
       if (response.status === 200) {
         const fullInvoice = normalizeInvoiceFromApi(response.data as Record<string, unknown>)
         setEditingInvoice(fullInvoice)
+        invoiceLineRevenueTouchedRef.current.clear()
         const li = fullInvoice.line_items || []
+        for (const item of li) {
+          const ln = item.line_number ?? 0
+          const rev = item.revenue_account_id != null ? Number(item.revenue_account_id) : 0
+          if (ln > 0 && rev > 0) invoiceLineRevenueTouchedRef.current.add(ln)
+        }
         setFormData({
           customer_id: fullInvoice.customer_id,
           invoice_date: fullInvoice.invoice_date,
@@ -1532,9 +1575,7 @@ export default function InvoicesPage() {
                             }}
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
                           >
-                            <option value="">
-                              — Recommended: {COA_FUEL_REV} fuel / shop revenue (or item default) —
-                            </option>
+                            <option value="">{invoiceRevenueRecommendLabel}</option>
                             {revenueCoaOptions.map((a) => (
                               <option key={a.id} value={String(a.id)}>
                                 {formatCoaOptionLabel(a)}
@@ -1542,8 +1583,8 @@ export default function InvoicesPage() {
                             ))}
                           </select>
                           <p className="mt-0.5 text-[11px] text-gray-500">
-                            Choosing an item with a default revenue account fills this automatically; you can override
-                            per line.
+                            Auto-fills template revenue (4100 / 4200) or the item&apos;s revenue account; override per
+                            line anytime.
                           </p>
                         </div>
                       </div>
@@ -1960,9 +2001,7 @@ export default function InvoicesPage() {
                             }}
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
                           >
-                            <option value="">
-                              — Recommended: {COA_FUEL_REV} fuel / shop revenue (or item default) —
-                            </option>
+                            <option value="">{invoiceRevenueRecommendLabel}</option>
                             {revenueCoaOptions.map((a) => (
                               <option key={a.id} value={String(a.id)}>
                                 {formatCoaOptionLabel(a)}
@@ -1970,8 +2009,8 @@ export default function InvoicesPage() {
                             ))}
                           </select>
                           <p className="mt-0.5 text-[11px] text-gray-500">
-                            Choosing an item with a default revenue account fills this automatically; you can override
-                            per line.
+                            Auto-fills template revenue (4100 / 4200) or the item&apos;s revenue account; override per
+                            line anytime.
                           </p>
                         </div>
                       </div>

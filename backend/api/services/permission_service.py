@@ -73,6 +73,7 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
     {"report_id": "ap-aging", "label": "Accounts Payable Aging", "group": "Reports — Financial"},
     {"report_id": "cash-flow", "label": "Cash Flow Summary", "group": "Reports — Financial"},
     {"report_id": "expense-detail", "label": "Expense Detail (GL)", "group": "Reports — Financial"},
+    {"report_id": "income-detail", "label": "Income Detail (GL)", "group": "Reports — Financial"},
     {"report_id": "entities-pl-summary", "label": "All Entities — P&L", "group": "Reports — Financial"},
     {
         "report_id": "entities-balance-sheet-summary",

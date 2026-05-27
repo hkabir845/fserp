@@ -1299,6 +1299,47 @@ def report_expense_detail(
     return out
 
 
+def report_income_detail(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
+    """Income accounts from posted GL activity (P&L income section only)."""
+    income_rows: list[dict[str, Any]] = []
+    ti = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        if normalize_chart_account_type(coa.account_type) != "income":
+            continue
+        amt = _period_pl_amount(coa, company_id, start, end, station_id)
+        if amt == 0:
+            continue
+        display_name = coa.account_name
+        if not coa.is_active:
+            display_name = f"{display_name} (inactive)"
+        income_rows.append(
+            {
+                "account_code": coa.account_code,
+                "account_name": display_name,
+                "balance": _f(amt),
+            }
+        )
+        ti += amt
+    note = (
+        "Posted journal activity on income-type chart accounts in the date range "
+        "(same basis as the Income Statement income section). "
+        "Cost of goods sold and operating expenses are on Profit & Loss, not in this report."
+    )
+    if station_id is not None:
+        note += " Site filter: only journal lines tagged with this station_id."
+    out: dict[str, Any] = {
+        "report_id": "income-detail",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "income": {"accounts": income_rows, "total": _f(ti)},
+        "accounting_note": note,
+    }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
+
+
 def _bank_cash_balance_as_of(
     coa: ChartOfAccount, company_id: int, as_of: date, station_id: int | None
 ) -> Decimal:

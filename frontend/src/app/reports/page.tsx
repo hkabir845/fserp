@@ -118,6 +118,7 @@ type ReportType =
   | 'ap-aging'
   | 'cash-flow'
   | 'expense-detail'
+  | 'income-detail'
   | 'stations-financial-summary'
   | 'entities-pl-summary'
   | 'entities-balance-sheet-summary'
@@ -245,6 +246,14 @@ const reports: ReportCard[] = [
     description:
       'Operating expenses only (excludes COGS — use Profit & Loss for cost of goods sold) — optional site filter',
     icon: DollarSign,
+    category: 'financial'
+  },
+  {
+    id: 'income-detail',
+    title: 'Income Detail (GL)',
+    description:
+      'Income accounts only (excludes COGS and operating expenses — use Profit & Loss for the full picture) — optional site filter',
+    icon: TrendingUp,
     category: 'financial'
   },
   {
@@ -635,6 +644,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'ap-aging',
   'cash-flow',
   'expense-detail',
+  'income-detail',
   'entities-pl-summary',
   'entities-balance-sheet-summary',
   'entities-trial-balance-summary',
@@ -678,6 +688,7 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'income-statement',
   'cash-flow',
   'expense-detail',
+  'income-detail',
   'liabilities-detail',
   'loan-receivable-gl',
   'loan-payable-gl',
@@ -712,6 +723,7 @@ const REPORTS_GL_STATION_SCOPED = new Set<ReportType>([
   'income-statement',
   'cash-flow',
   'expense-detail',
+  'income-detail',
   'liabilities-detail',
   'loan-receivable-gl',
   'loan-payable-gl',
@@ -733,6 +745,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'ap-aging',
   'cash-flow',
   'expense-detail',
+  'income-detail',
   'entities-pl-summary',
   'entities-balance-sheet-summary',
   'entities-trial-balance-summary',

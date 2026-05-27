@@ -90,6 +90,17 @@ export function buildExtraFinancialReportCsv(
     return out
   }
 
+  if (reportId === 'income-detail') {
+    const income = data.income as { accounts?: Record<string, unknown>[]; total?: number } | undefined
+    const accounts = income?.accounts ?? []
+    let out = 'Account code,Account name,Balance\n'
+    accounts.forEach((a) => {
+      out += `${escapeCsvValue(a.account_code)},${escapeCsvValue(a.account_name)},${a.balance ?? 0}\n`
+    })
+    out += `Total,,${income?.total ?? 0}\n`
+    return out
+  }
+
   if (reportId === 'cash-flow') {
     const op = (data.operating as Record<string, number>) ?? {}
     const cash = (data.cash_summary as Record<string, number>) ?? {}
@@ -344,6 +355,16 @@ export function buildExtraFinancialPrintHtml(
       ((data.expenses as { accounts?: Record<string, unknown>[] })?.accounts as Record<string, unknown>[]) ?? []
     return htmlTable(
       'Operating expenses',
+      ['Code', 'Account', 'Balance (right)'],
+      accounts.map((a) => [String(a.account_code ?? ''), String(a.account_name ?? ''), fmtMoney(a.balance)]),
+    )
+  }
+
+  if (reportId === 'income-detail') {
+    const accounts =
+      ((data.income as { accounts?: Record<string, unknown>[] })?.accounts as Record<string, unknown>[]) ?? []
+    return htmlTable(
+      'Income',
       ['Code', 'Account', 'Balance (right)'],
       accounts.map((a) => [String(a.account_code ?? ''), String(a.account_name ?? ''), fmtMoney(a.balance)]),
     )

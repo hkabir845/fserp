@@ -8,6 +8,7 @@ type ReportType =
   | 'ap-aging'
   | 'cash-flow'
   | 'expense-detail'
+  | 'income-detail'
   | 'stations-financial-summary'
   | 'entities-pl-summary'
   | 'entities-balance-sheet-summary'
@@ -225,6 +226,47 @@ export function renderExtraFinancialReport(
               ))
             ) : (
               <div className="px-4 py-8 text-center text-gray-400 text-sm">No expense activity in this period</div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'income-detail') {
+    const income = data.income as
+      | { accounts?: { account_code?: string; account_name?: string; balance?: number }[]; total?: number }
+      | undefined
+    const accounts = income?.accounts ?? []
+    return (
+      <div className="space-y-6">
+        {periodFilter(
+          'Income accounts only (Income Statement income section). COGS and operating expenses appear on Profit & Loss.'
+        )}
+        {typeof data.accounting_note === 'string' && (
+          <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
+        )}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+          <div className="p-4 border-b bg-gray-50 flex justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">Income</h3>
+            <span className="text-sm font-bold text-gray-700">{formatCurrency(Number(income?.total ?? 0))}</span>
+          </div>
+          <div className="divide-y divide-gray-200">
+            {accounts.length > 0 ? (
+              accounts.map((account, accIdx) => (
+                <div
+                  key={`inc-${accIdx}-${account.account_code ?? 'acct'}`}
+                  className="px-4 py-3 flex justify-between hover:bg-gray-50"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{account.account_name}</p>
+                    <p className="text-xs text-gray-500">{account.account_code}</p>
+                  </div>
+                  <p className="text-sm font-semibold text-gray-900 ml-4">{formatCurrency(Number(account.balance ?? 0))}</p>
+                </div>
+              ))
+            ) : (
+              <div className="px-4 py-8 text-center text-gray-400 text-sm">No income activity in this period</div>
             )}
           </div>
         </div>
@@ -608,6 +650,7 @@ export const EXTRA_FINANCIAL_REPORT_IDS: readonly ReportType[] = [
   'ap-aging',
   'cash-flow',
   'expense-detail',
+  'income-detail',
   'stations-financial-summary',
   'entities-pl-summary',
   'entities-balance-sheet-summary',

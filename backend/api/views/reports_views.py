@@ -13,6 +13,7 @@ from api.services.reporting import (
     report_customer_balances,
     report_daily_summary,
     report_expense_detail,
+    report_income_detail,
     report_fuel_sales,
     report_financial_analytics,
     report_income_statement,
@@ -64,6 +65,7 @@ _REPORT_HANDLERS = {
     "ap-aging": report_ap_aging,
     "cash-flow": report_cash_flow,
     "expense-detail": report_expense_detail,
+    "income-detail": report_income_detail,
     "entities-pl-summary": report_entities_pl_summary,
     "entities-balance-sheet-summary": report_entities_balance_sheet_summary,
     "entities-trial-balance-summary": report_entities_trial_balance_summary,
@@ -146,6 +148,7 @@ GL_STATION_AWARE_REPORTS = frozenset(
         "loans-borrow-and-lent",
         "cash-flow",
         "expense-detail",
+        "income-detail",
     }
 )
 

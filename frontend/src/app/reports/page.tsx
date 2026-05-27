@@ -54,6 +54,13 @@ import {
   type SalesPurchasePeriodPreset,
 } from './salesPurchasePeriod'
 import { EXTRA_FINANCIAL_REPORT_IDS, renderExtraFinancialReport } from '@/components/reports/ExtraFinancialReportPanels'
+import { ReportStructuredFallback } from '@/components/reports/ReportStructuredFallback'
+import {
+  buildAquacultureGroupsCsv,
+  buildExtraFinancialPrintHtml,
+  buildExtraFinancialReportCsv,
+  buildGenericTabularCsv,
+} from '@/utils/reportExportHelpers'
 import { getApiBaseUrl } from '@/lib/api'
 
 const SALES_PURCHASE_REPORT_IDS = new Set<ReportType>(['sales-report', 'purchase-report'])
@@ -115,6 +122,7 @@ type ReportType =
   | 'entities-pl-summary'
   | 'entities-balance-sheet-summary'
   | 'entities-trial-balance-summary'
+  | 'entities-financial-summary'
   | 'liabilities-detail'
   | 'loan-receivable-gl'
   | 'loan-payable-gl'
@@ -234,7 +242,8 @@ const reports: ReportCard[] = [
   {
     id: 'expense-detail',
     title: 'Expense Detail (GL)',
-    description: 'Posted expense accounts for the period — optional site filter',
+    description:
+      'Operating expenses only (excludes COGS — use Profit & Loss for cost of goods sold) — optional site filter',
     icon: DollarSign,
     category: 'financial'
   },
@@ -257,6 +266,14 @@ const reports: ReportCard[] = [
     title: 'All Entities — Trial Balance',
     description: 'Posted debits and credits in the period for every station, pond, and head office',
     icon: BarChart3,
+    category: 'financial',
+  },
+  {
+    id: 'entities-financial-summary',
+    title: 'All Entities — Financial (combined)',
+    description:
+      'P&L and balance sheet together for every station, pond, and head office (use separate entity reports for detail)',
+    icon: FileText,
     category: 'financial',
   },
   {
@@ -621,6 +638,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'entities-pl-summary',
   'entities-balance-sheet-summary',
   'entities-trial-balance-summary',
+  'entities-financial-summary',
   'stations-financial-summary',
   'daily-summary',
   'fuel-sales',
@@ -718,6 +736,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'entities-pl-summary',
   'entities-balance-sheet-summary',
   'entities-trial-balance-summary',
+  'entities-financial-summary',
   'stations-financial-summary',
   'daily-summary',
   'shift-summary',
@@ -2284,6 +2303,16 @@ export default function ReportsPage() {
         })
         contentHTML += `</tbody><tfoot><tr><td colspan="6" style="text-align:right"><strong>Sub-total</strong></td><td style="text-align:right"><strong>${formatCurrency(Number(g.subtotal_amount ?? 0))}</strong></td></tr></tfoot></table>`
       })
+    } else if (
+      EXTRA_FINANCIAL_REPORT_IDS.includes(
+        selectedReport as (typeof EXTRA_FINANCIAL_REPORT_IDS)[number],
+      )
+    ) {
+      const extraPrint = buildExtraFinancialPrintHtml(
+        selectedReport,
+        reportData as Record<string, unknown>,
+      )
+      contentHTML += extraPrint ?? '<p>Report data not available for printing in this format.</p>'
     } else {
       contentHTML += '<p>Report data not available for printing in this format.</p>'
     }
@@ -2691,9 +2720,20 @@ export default function ReportsPage() {
         csvContent += `Total liters,${reportData.total_quantity_liters ?? 0}\n`
         csvContent += `Total amount,${reportData.total_amount ?? 0}\n`
         csvContent += `Average per fuel line,${reportData.average_sale_amount ?? 0}\n`
+      } else if (
+        EXTRA_FINANCIAL_REPORT_IDS.includes(
+          selectedReport as (typeof EXTRA_FINANCIAL_REPORT_IDS)[number],
+        )
+      ) {
+        const extraCsv = buildExtraFinancialReportCsv(
+          selectedReport,
+          reportData as Record<string, unknown>,
+        )
+        if (extraCsv) csvContent += extraCsv
       } else if (String(selectedReport).startsWith('aquaculture-')) {
-        csvContent += 'Aquaculture report (BDT). See JSON export for full nested structure.\n'
+        csvContent += 'Aquaculture report (BDT).\n'
         if (reportData.summary && typeof reportData.summary === 'object') {
+          csvContent += 'Summary\n'
           Object.entries(reportData.summary as Record<string, unknown>).forEach(([k, v]) => {
             csvContent += `${k},${v}\n`
           })
@@ -2715,47 +2755,38 @@ export default function ReportsPage() {
           const tt = reportData.totals || {}
           csvContent += `Total,,,,,${tt.total_costs ?? ''},${tt.profit ?? ''}\n`
         }
-        if (Array.isArray(reportData.groups)) {
-          csvContent += '\nPond group,Field,Value\n'
-          ;(reportData.groups as any[]).forEach((g: any) => {
-            csvContent += `${escapeCsv(g.pond_name)},subtotal_amount,${g.subtotal_amount ?? g.subtotal_samples ?? ''}\n`
-            ;(g.lines || []).forEach((ln: any) => {
-              csvContent += `${escapeCsv(g.pond_name)},line,${JSON.stringify(ln)}\n`
-            })
-          })
-        }
+        const groupsCsv = buildAquacultureGroupsCsv(reportData as Record<string, unknown>)
+        if (groupsCsv) csvContent += `\n${groupsCsv}`
         if (selectedReport === 'aquaculture-pond-sales-comprehensive' && reportData && typeof reportData === 'object') {
           const rd = reportData as Record<string, unknown>
-          const fish = rd.fish_sales as { groups?: any[] } | undefined
-          const pos = rd.pos_shop_sales as { groups?: any[] } | undefined
-          csvContent += '\n--- fish_sales groups ---\nPond group,Field,Value\n'
-          ;(Array.isArray(fish?.groups) ? fish.groups : []).forEach((g: any) => {
-            csvContent += `${escapeCsv(g.pond_name)},subtotal_amount,${g.subtotal_amount ?? ''}\n`
-            ;(g.lines || []).forEach((ln: any) => {
-              csvContent += `${escapeCsv(g.pond_name)},line,${JSON.stringify(ln)}\n`
-            })
-          })
-          csvContent += '\n--- pos_shop_sales groups (non-fuel lines) ---\nPond group,Field,Value\n'
-          ;(Array.isArray(pos?.groups) ? pos.groups : []).forEach((g: any) => {
-            csvContent += `${escapeCsv(g.pond_name)},subtotal_amount,${g.subtotal_amount ?? ''}\n`
-            ;(g.lines || []).forEach((ln: any) => {
-              csvContent += `${escapeCsv(g.pond_name)},line,${JSON.stringify(ln)}\n`
-            })
-          })
+          const fish = rd.fish_sales as Record<string, unknown> | undefined
+          const pos = rd.pos_shop_sales as Record<string, unknown> | undefined
+          if (fish) {
+            csvContent += '\n--- Fish sales ---\n'
+            csvContent += buildAquacultureGroupsCsv(fish)
+          }
+          if (pos) {
+            csvContent += '\n--- Pond POS (non-fuel) ---\n'
+            csvContent += buildAquacultureGroupsCsv(pos)
+          }
         }
       } else {
-        // Fallback to JSON if CSV not supported
-        const dataStr = JSON.stringify(reportData, null, 2)
-        const dataBlob = new Blob([dataStr], { type: 'application/json' })
-        const url = URL.createObjectURL(dataBlob)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = `${fileName}.json`
-        link.click()
-        URL.revokeObjectURL(url)
-        return
+        const genericCsv = buildGenericTabularCsv(reportData as Record<string, unknown>)
+        if (genericCsv) {
+          csvContent += genericCsv
+        } else {
+          const dataStr = JSON.stringify(reportData, null, 2)
+          const dataBlob = new Blob([dataStr], { type: 'application/json' })
+          const url = URL.createObjectURL(dataBlob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = `${fileName}.json`
+          link.click()
+          URL.revokeObjectURL(url)
+          return
+        }
       }
-      
+
       const dataBlob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
       const url = URL.createObjectURL(dataBlob)
       const link = document.createElement('a')
@@ -8445,18 +8476,10 @@ function renderReportTable(
     )
   }
 
-  // Default: JSON view for other reports
   return (
-    <div className="space-y-4">
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-        <p className="text-yellow-800 font-medium">Report format not yet implemented</p>
-        <p className="text-yellow-600 text-sm mt-1">This report is displaying raw data. A formatted view will be available soon.</p>
-      </div>
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 overflow-auto max-h-96">
-        <pre className="text-sm text-gray-700 font-mono">
-          {JSON.stringify(data, null, 2)}
-        </pre>
-      </div>
-    </div>
+    <ReportStructuredFallback
+      reportType={reportType}
+      data={(data && typeof data === 'object' ? data : {}) as Record<string, unknown>}
+    />
   )
 }

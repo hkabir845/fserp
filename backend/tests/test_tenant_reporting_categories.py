@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -98,6 +100,18 @@ def test_tenant_aquaculture_expense_category_end_to_end(api_client, company_tena
 def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_admin_headers):
     Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
     pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P1", is_active=True)
+    from api.models import AquacultureFishStockLedger
+
+    AquacultureFishStockLedger.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        entry_date=date(2026, 5, 1),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=100,
+        weight_kg_delta=Decimal("20"),
+        memo="Opening stock for custom income sale test",
+    )
 
     api_client.post(
         "/api/reporting-categories/",

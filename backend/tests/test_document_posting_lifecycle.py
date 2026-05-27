@@ -20,17 +20,30 @@ from api.models import (
     Vendor,
 )
 
+from tests.conftest import seed_min_gl_accounts
+
 
 def _enable_aq(c: Company) -> None:
     Company.objects.filter(pk=c.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
 
 
+def _ensure_test_vendor(company_id: int) -> Vendor:
+    vendor = Vendor.objects.filter(company_id=company_id, is_active=True).first()
+    if vendor is not None:
+        return vendor
+    return Vendor.objects.create(
+        company_id=company_id,
+        company_name="Test Vendor",
+        display_name="Test Vendor",
+        vendor_number="V-LIFECYCLE",
+        is_active=True,
+    )
+
+
 @pytest.mark.django_db
 def test_bill_put_material_change_recreates_auto_journal(api_client, company_tenant, auth_admin_headers):
-    vendors = json.loads(api_client.get("/api/vendors/", **auth_admin_headers).content.decode())
-    vendor_id = vendors[0]["id"] if vendors else None
-    if not vendor_id:
-        pytest.skip("no vendors")
+    seed_min_gl_accounts(company_tenant)
+    vendor_id = _ensure_test_vendor(company_tenant.id).id
     coa = json.loads(api_client.get("/api/chart-of-accounts/", **auth_admin_headers).content.decode())
     exp = next((a for a in coa if (a.get("account_type") or "").lower() == "expense"), None)
     assert exp
@@ -136,6 +149,18 @@ def test_create_fish_harvest_sale_via_api_syncs_biomass_sample(
     """POST harvest sale must not 500 — biomass sync calls apply_aquaculture_biomass_sample_extrapolation."""
     _enable_aq(company_tenant)
     pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="Sale-API", is_active=True)
+    from api.models import AquacultureFishStockLedger
+
+    AquacultureFishStockLedger.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        entry_date=date(2026, 5, 1),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=12000,
+        weight_kg_delta=Decimal("4000"),
+        memo="Opening stock for harvest API test",
+    )
     r = api_client.post(
         "/api/aquaculture/sales/",
         data=json.dumps(
@@ -173,14 +198,14 @@ def test_put_expense_with_inventory_reposts_journal(company_tenant):
 
     _enable_aq(company_tenant)
     cid = company_tenant.id
+    seed_min_gl_accounts(company_tenant)
     inv_acc = ChartOfAccount.objects.filter(
         company_id=cid, account_type="asset", is_active=True
     ).first()
     cogs_acc = ChartOfAccount.objects.filter(
         company_id=cid, account_type="cost_of_goods_sold", is_active=True
     ).first()
-    if not inv_acc or not cogs_acc:
-        pytest.skip("need asset and COGS accounts")
+    assert inv_acc is not None and cogs_acc is not None
     pond = AquaculturePond.objects.create(company_id=cid, name="P-inv", is_active=True)
     item = Item.objects.create(
         company_id=cid,

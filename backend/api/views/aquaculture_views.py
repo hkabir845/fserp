@@ -52,6 +52,7 @@ from api.services.aquaculture_transfer_cost import (
 )
 from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
 from api.services.aquaculture_stock_service import (
+    assert_outbound_fish_within_implied_stock,
     compute_fish_stock_position_breakdown_rows,
     compute_fish_stock_position_rows,
 )
@@ -2523,6 +2524,16 @@ def aquaculture_sales_list_or_create(request):
                 status=400,
             )
         fso = normalize_fish_species_other(body.get("fish_species_other"), fs)
+        stock_err = assert_outbound_fish_within_implied_stock(
+            cid,
+            pond.id,
+            production_cycle_id=cycle_obj.id if cycle_obj else None,
+            fish_species=fs,
+            fish_count=fc_int,
+            weight_kg=wk,
+        )
+        if stock_err:
+            return JsonResponse({"detail": stock_err}, status=400)
     s = AquacultureFishSale(
         company_id=cid,
         pond=pond,
@@ -2652,6 +2663,18 @@ def aquaculture_sale_detail(request, sale_id: int):
             )
         elif s.fish_count is None or s.fish_count <= 0:
             return JsonResponse({"detail": "fish_count is required and must be greater than zero"}, status=400)
+        if not income_type_is_non_biological_for_company(cid, s.income_type):
+            stock_err = assert_outbound_fish_within_implied_stock(
+                cid,
+                s.pond_id,
+                production_cycle_id=s.production_cycle_id,
+                fish_species=s.fish_species or "tilapia",
+                fish_count=int(s.fish_count),
+                weight_kg=s.weight_kg,
+                exclude_sale_id=s.id,
+            )
+            if stock_err:
+                return JsonResponse({"detail": stock_err}, status=400)
         material_sale = any(
             k in body
             for k in (
@@ -3880,7 +3903,12 @@ def _fish_transfer_to_json(t: AquacultureFishPondTransfer) -> dict:
     }
 
 
-def _parse_fish_transfer_payload(cid: int, body: dict) -> tuple[JsonResponse | None, dict | None]:
+def _parse_fish_transfer_payload(
+    cid: int,
+    body: dict,
+    *,
+    exclude_transfer_id: int | None = None,
+) -> tuple[JsonResponse | None, dict | None]:
     """Shared validation for POST (create) and PUT (replace). Returns (error_response, None) or (None, data)."""
     try:
         from_pond_id = int(body.get("from_pond_id"))
@@ -3996,6 +4024,19 @@ def _parse_fish_transfer_payload(cid: int, body: dict) -> tuple[JsonResponse | N
                 cost_amount=cost_amt,
             )
         )
+
+    total_fish = sum(int(ln.fish_count or 0) for ln in line_models)
+    stock_err = assert_outbound_fish_within_implied_stock(
+        cid,
+        from_pond_id,
+        production_cycle_id=from_cycle_obj.id if from_cycle_obj else None,
+        fish_species=sp,
+        fish_count=total_fish,
+        weight_kg=total_transfer_weight,
+        exclude_transfer_id=exclude_transfer_id,
+    )
+    if stock_err:
+        return JsonResponse({"detail": stock_err}, status=400), None
 
     return None, {
         "from_pond": from_pond,
@@ -4136,7 +4177,7 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
         body, e = parse_json_body(request)
         if e:
             return e
-        err, data = _parse_fish_transfer_payload(cid, body)
+        err, data = _parse_fish_transfer_payload(cid, body, exclude_transfer_id=t.pk)
         if err:
             return err
         assert data is not None

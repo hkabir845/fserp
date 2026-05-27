@@ -99,37 +99,45 @@ def build_aquaculture_report(
     if gate:
         return gate
 
+    payload: dict[str, Any] | JsonResponse | None = None
     if report_id == "aquaculture-pond-pl":
-        return _report_pond_pl(company_id, start, end, request)
-    if report_id == "aquaculture-fish-sales":
-        return _report_fish_sales(company_id, start, end, request)
-    if report_id == "aquaculture-pond-sales-comprehensive":
-        return _report_pond_sales_comprehensive(company_id, start, end, request)
-    if report_id == "aquaculture-expenses":
-        return _report_expenses(company_id, start, end, request)
-    if report_id == "aquaculture-sampling":
-        return _report_sampling(company_id, start, end, request)
-    if report_id == "aquaculture-production-cycles":
-        return _report_production_cycles(company_id, start, end, request)
-    if report_id == "aquaculture-profit-transfers":
-        return _report_profit_transfers(company_id, start, end, request)
-    if report_id == "aquaculture-fish-transfers":
-        return _report_fish_transfers(company_id, start, end, request)
-    if report_id == "aquaculture-pond-feed-stock":
-        return _report_pond_warehouse_stock(company_id, end, request, stock_kind="feed")
-    if report_id == "aquaculture-pond-medicine-stock":
-        return _report_pond_warehouse_stock(company_id, end, request, stock_kind="medicine")
-    if report_id == "aquaculture-pond-supplies-stock":
-        return _report_pond_warehouse_stock(company_id, end, request, stock_kind="supplies")
-    if report_id == "aquaculture-fish-stock-position":
-        return _report_fish_stock_position(company_id, end, request)
-    if report_id == "aquaculture-shop-station-stock":
-        return _report_shop_station_stock(company_id, end, request)
-    if report_id == "aquaculture-equipment-assets":
-        return _report_equipment_assets(company_id, start, end, request)
-    if report_id == "aquaculture-pond-total-inventory":
-        return _report_pond_total_inventory(company_id, end, request)
-    return JsonResponse({"detail": "Unknown aquaculture report"}, status=404)
+        payload = _report_pond_pl(company_id, start, end, request)
+    elif report_id == "aquaculture-fish-sales":
+        payload = _report_fish_sales(company_id, start, end, request)
+    elif report_id == "aquaculture-pond-sales-comprehensive":
+        payload = _report_pond_sales_comprehensive(company_id, start, end, request)
+    elif report_id == "aquaculture-expenses":
+        payload = _report_expenses(company_id, start, end, request)
+    elif report_id == "aquaculture-sampling":
+        payload = _report_sampling(company_id, start, end, request)
+    elif report_id == "aquaculture-production-cycles":
+        payload = _report_production_cycles(company_id, start, end, request)
+    elif report_id == "aquaculture-profit-transfers":
+        payload = _report_profit_transfers(company_id, start, end, request)
+    elif report_id == "aquaculture-fish-transfers":
+        payload = _report_fish_transfers(company_id, start, end, request)
+    elif report_id == "aquaculture-pond-feed-stock":
+        payload = _report_pond_warehouse_stock(company_id, end, request, stock_kind="feed")
+    elif report_id == "aquaculture-pond-medicine-stock":
+        payload = _report_pond_warehouse_stock(company_id, end, request, stock_kind="medicine")
+    elif report_id == "aquaculture-pond-supplies-stock":
+        payload = _report_pond_warehouse_stock(company_id, end, request, stock_kind="supplies")
+    elif report_id == "aquaculture-fish-stock-position":
+        payload = _report_fish_stock_position(company_id, end, request)
+    elif report_id == "aquaculture-shop-station-stock":
+        payload = _report_shop_station_stock(company_id, end, request)
+    elif report_id == "aquaculture-equipment-assets":
+        payload = _report_equipment_assets(company_id, start, end, request)
+    elif report_id == "aquaculture-pond-total-inventory":
+        payload = _report_pond_total_inventory(company_id, end, request)
+    else:
+        return JsonResponse({"detail": "Unknown aquaculture report"}, status=404)
+
+    if isinstance(payload, JsonResponse):
+        return payload
+    if isinstance(payload, dict):
+        payload.setdefault("report_id", report_id)
+    return payload
 
 
 def _classify_item_stock_kind(item: Item | None) -> str:

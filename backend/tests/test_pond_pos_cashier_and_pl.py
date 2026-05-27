@@ -97,27 +97,25 @@ def test_cashier_pos_rejects_cash_for_pond_customer(
 
 
 @pytest.mark.django_db
-def test_pond_pl_includes_pos_cogs_journal_debits(company_tenant):
+def test_pond_pl_includes_pos_cogs_journal_debits(company_tenant_with_gl):
     from datetime import date
 
     from api.models import ChartOfAccount, Company
 
     p = AquaculturePond.objects.create(
-        company_id=company_tenant.id,
+        company_id=company_tenant_with_gl.id,
         name="PL COGS Pond",
         pond_role="nursing",
         is_active=True,
     )
-    cogs = ChartOfAccount.objects.filter(
-        company_id=company_tenant.id, account_type="cost_of_goods_sold", is_active=True
-    ).first()
-    inv_ac = ChartOfAccount.objects.filter(
-        company_id=company_tenant.id, account_type="asset", is_active=True
-    ).first()
-    if not cogs or not inv_ac:
-        pytest.skip("need COGS and inventory accounts")
+    cogs = ChartOfAccount.objects.get(
+        company_id=company_tenant_with_gl.id, account_code="5100"
+    )
+    inv_ac = ChartOfAccount.objects.get(
+        company_id=company_tenant_with_gl.id, account_code="1200"
+    )
     je = JournalEntry.objects.create(
-        company_id=company_tenant.id,
+        company_id=company_tenant_with_gl.id,
         entry_date=date(2026, 5, 17),
         entry_number="AUTO-INV-99-COGS",
         description="test",
@@ -140,7 +138,7 @@ def test_pond_pl_includes_pos_cogs_journal_debits(company_tenant):
         aquaculture_cost_bucket="medicine",
     )
     total = vendor_bill_pond_operating_total(
-        company_id=company_tenant.id,
+        company_id=company_tenant_with_gl.id,
         pond_id=p.id,
         start=date(2026, 1, 1),
         end=date(2026, 12, 31),

@@ -5,7 +5,9 @@ import json
 
 import pytest
 
-from api.models import BillLine, JournalEntry, JournalEntryLine
+from api.models import BillLine, JournalEntry, JournalEntryLine, Vendor
+
+from tests.conftest import seed_min_gl_accounts
 
 
 @pytest.mark.django_db
@@ -19,6 +21,7 @@ def test_fuel_station_expense_categories_api(api_client, company_tenant, auth_ad
 
 @pytest.mark.django_db
 def test_bill_line_fuel_category_posts_to_journal(api_client, company_tenant, auth_admin_headers):
+    seed_min_gl_accounts(company_tenant)
     api_client.post(
         "/api/reporting-categories/",
         data=json.dumps(
@@ -33,10 +36,16 @@ def test_bill_line_fuel_category_posts_to_journal(api_client, company_tenant, au
         content_type="application/json",
         **auth_admin_headers,
     )
-    vendors = json.loads(api_client.get("/api/vendors/", **auth_admin_headers).content.decode())
-    vendor_id = vendors[0]["id"] if vendors else None
-    if not vendor_id:
-        pytest.skip("no vendors")
+    vendor = Vendor.objects.filter(company_id=company_tenant.id, is_active=True).first()
+    if vendor is None:
+        vendor = Vendor.objects.create(
+            company_id=company_tenant.id,
+            company_name="Fuel Test Vendor",
+            display_name="Fuel Test Vendor",
+            vendor_number="V-FUEL-FS",
+            is_active=True,
+        )
+    vendor_id = vendor.id
     coa = json.loads(api_client.get("/api/chart-of-accounts/", **auth_admin_headers).content.decode())
     exp = next((a for a in coa if (a.get("account_type") or "").lower() == "expense"), None)
     assert exp

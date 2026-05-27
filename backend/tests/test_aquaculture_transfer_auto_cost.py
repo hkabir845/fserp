@@ -10,6 +10,7 @@ import pytest
 from api.models import (
     AquacultureExpense,
     AquacultureFishSale,
+    AquacultureFishStockLedger,
     AquaculturePond,
     AquacultureProductionCycle,
     Company,
@@ -146,6 +147,16 @@ def test_fish_pond_transfer_api_auto_fills_zero_cost(api_client, company_tenant,
         expense_category="fry_stocking",
         amount=Decimal("2000.00"),
         memo="fry",
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=src,
+        entry_date=date(2026, 4, 1),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=3500,
+        weight_kg_delta=Decimal("70"),
+        memo="Opening fry for transfer cost test",
     )
     AquacultureFishSale.objects.create(
         company_id=cid,

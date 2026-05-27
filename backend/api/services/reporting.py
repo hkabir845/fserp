@@ -1282,7 +1282,9 @@ def report_expense_detail(
         te += amt
     note = (
         "Posted journal activity on expense-type chart accounts in the date range "
-        "(same basis as the Income Statement expense section)."
+        "(same basis as the Income Statement expense section). "
+        "Cost of goods sold (e.g. fuel 5100, shop 5120) is on Profit & Loss under "
+        "Cost of Goods Sold, not in this report."
     )
     if station_id is not None:
         note += " Site filter: only journal lines tagged with this station_id."

@@ -138,3 +138,36 @@ def auth_admin_headers(api_client, user_admin):
     data = json.loads(r.content)
     token = data["access_token"]
     return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+
+def seed_min_gl_accounts(company) -> None:
+    """Minimal COA (incl. 5100/5120 COGS) so auto-posting and P&L reports work in tests."""
+    from api.models import ChartOfAccount
+
+    specs = [
+        ("1010", "Cash on Hand", "asset"),
+        ("1030", "Bank Operating", "asset"),
+        ("1100", "Accounts Receivable", "asset"),
+        ("1120", "Card Clearing", "asset"),
+        ("1200", "Inventory Fuel", "asset"),
+        ("1220", "Inventory Shop", "asset"),
+        ("2000", "Accounts Payable", "liability"),
+        ("2100", "VAT Payable", "liability"),
+        ("4100", "Fuel Sales", "income"),
+        ("4200", "Shop Sales", "income"),
+        ("5100", "COGS Fuel", "cost_of_goods_sold"),
+        ("5120", "COGS Shop", "cost_of_goods_sold"),
+        ("6900", "Office Expense", "expense"),
+    ]
+    for code, name, typ in specs:
+        ChartOfAccount.objects.get_or_create(
+            company=company,
+            account_code=code,
+            defaults={"account_name": name, "account_type": typ, "is_active": True},
+        )
+
+
+@pytest.fixture
+def company_tenant_with_gl(company_tenant):
+    seed_min_gl_accounts(company_tenant)
+    return company_tenant

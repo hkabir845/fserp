@@ -9,55 +9,24 @@ import json
 import pytest
 from django.test import Client
 
+from tests.report_registry import ALL_API_REPORT_IDS
 from tests.test_api_production_audit import _audit_master_headers
 
-# Must match api.views.reports_views: _REPORT_HANDLERS + item-scoped branches + financial-analytics
-ALL_REGISTERED_REPORT_IDS: tuple[str, ...] = (
-    "trial-balance",
-    "balance-sheet",
-    "income-statement",
-    "customer-balances",
-    "vendor-balances",
-    "ar-aging",
-    "ap-aging",
-    "cash-flow",
-    "expense-detail",
-    "entities-pl-summary",
-    "entities-balance-sheet-summary",
-    "entities-trial-balance-summary",
-    "entities-financial-summary",
-    "stations-financial-summary",
-    "fuel-sales",
-    "tank-inventory",
-    "shift-summary",
-    "sales-by-nozzle",
-    "tank-dip-variance",
-    "tank-dip-register",
-    "meter-readings",
-    "daily-summary",
-    "sales-by-station",
-    "sales-report",
-    "purchase-report",
-    "financial-analytics",
-    "inventory-sku-valuation",
-    "item-master-by-category",
-    "item-sales-by-category",
-    "item-purchases-by-category",
-    "item-sales-custom",
-    "item-purchases-custom",
-    "item-stock-movement",
-    "item-velocity-analysis",
-    "item-purchase-velocity-analysis",
-)
+# Re-export for scripts that import ALL_REGISTERED_REPORT_IDS from this module.
+ALL_REGISTERED_REPORT_IDS = ALL_API_REPORT_IDS
 
 
-@pytest.mark.parametrize("report_id", ALL_REGISTERED_REPORT_IDS)
+@pytest.mark.parametrize("report_id", ALL_API_REPORT_IDS)
 def test_report_get_json_ok(
     api_client: Client,
     auth_super_headers,
     company_master,
     report_id: str,
 ):
+    company_master.__class__.objects.filter(pk=company_master.id).update(
+        aquaculture_enabled=True,
+        aquaculture_licensed=True,
+    )
     h = _audit_master_headers(auth_super_headers, company_master)
     r = api_client.get(
         f"/api/reports/{report_id}/",

@@ -12,6 +12,7 @@ type ReportType =
   | 'entities-pl-summary'
   | 'entities-balance-sheet-summary'
   | 'entities-trial-balance-summary'
+  | 'entities-financial-summary'
 
 function entitySections(data: Record<string, unknown>) {
   return {
@@ -39,16 +40,24 @@ function entityPlTable(title: string, rows: Record<string, unknown>[]) {
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
-          {rows.map((r) => (
-            <tr key={`pl-${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
-              <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
-              <td className="px-3 py-3 text-right">{formatCurrency(Number(r.income ?? 0))}</td>
-              <td className="px-3 py-3 text-right">{formatCurrency(Number(r.cost_of_goods_sold ?? 0))}</td>
-              <td className="px-3 py-3 text-right">{formatCurrency(Number(r.expenses ?? 0))}</td>
-              <td className="px-3 py-3 text-right">{formatCurrency(Number(r.gross_profit ?? 0))}</td>
-              <td className="px-3 py-3 text-right font-semibold">{formatCurrency(Number(r.net_income ?? 0))}</td>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
+                No entities with posted activity in this period.
+              </td>
             </tr>
-          ))}
+          ) : (
+            rows.map((r) => (
+              <tr key={`pl-${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.income ?? 0))}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.cost_of_goods_sold ?? 0))}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.expenses ?? 0))}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.gross_profit ?? 0))}</td>
+                <td className="px-3 py-3 text-right font-semibold">{formatCurrency(Number(r.net_income ?? 0))}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
@@ -73,15 +82,23 @@ function entityBsTable(title: string, rows: Record<string, unknown>[], bsAsOf: s
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
-          {rows.map((r) => (
-            <tr key={`bs-${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
-              <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
-              <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_assets ?? 0))}</td>
-              <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_liabilities ?? 0))}</td>
-              <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_equity ?? 0))}</td>
-              <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_liabilities_and_equity ?? 0))}</td>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">
+                No balance sheet balances for entities in this period.
+              </td>
             </tr>
-          ))}
+          ) : (
+            rows.map((r) => (
+              <tr key={`bs-${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_assets ?? 0))}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_liabilities ?? 0))}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_equity ?? 0))}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_liabilities_and_equity ?? 0))}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
@@ -102,14 +119,22 @@ function entityTbTable(title: string, rows: Record<string, unknown>[]) {
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
-          {rows.map((r) => (
-            <tr key={`tb-${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
-              <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
-              <td className="px-3 py-3 text-right">{formatCurrency(Number(r.trial_balance_debit ?? 0))}</td>
-              <td className="px-3 py-3 text-right">{formatCurrency(Number(r.trial_balance_credit ?? 0))}</td>
-              <td className="px-3 py-3 text-center text-xs">{r.trial_balance_balanced ? 'Yes' : 'No'}</td>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={4} className="px-4 py-10 text-center text-sm text-gray-500">
+                No trial balance activity for entities in this period.
+              </td>
             </tr>
-          ))}
+          ) : (
+            rows.map((r) => (
+              <tr key={`tb-${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.trial_balance_debit ?? 0))}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.trial_balance_credit ?? 0))}</td>
+                <td className="px-3 py-3 text-center text-xs">{r.trial_balance_balanced ? 'Yes' : 'No'}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
@@ -127,9 +152,9 @@ function renderEntitySectionTables(
     kind === 'pl' ? 'Profit & Loss' : kind === 'bs' ? 'Balance Sheet' : 'Trial Balance'
   return (
     <>
-      {table(`${label} â€” stations`, byStation)}
-      {byPond.length > 0 ? table(`${label} â€” ponds (GL tags)`, byPond) : null}
-      {unscoped ? table(`${label} â€” head office / unassigned`, [unscoped]) : null}
+      {table(`${label} — stations`, byStation)}
+      {byPond.length > 0 ? table(`${label} — ponds (GL tags)`, byPond) : null}
+      {unscoped ? table(`${label} — head office / unassigned`, [unscoped]) : null}
     </>
   )
 }
@@ -173,7 +198,9 @@ export function renderExtraFinancialReport(
     const accounts = expenses?.accounts ?? []
     return (
       <div className="space-y-6">
-        {periodFilter('Posted expense accounts in the date range (Income Statement expense section).')}
+        {periodFilter(
+          'Operating expenses only (Income Statement expense section). COGS accounts (5100, 5120, etc.) appear on Profit & Loss under Cost of Goods Sold.'
+        )}
         {typeof data.accounting_note === 'string' && (
           <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
         )}
@@ -226,7 +253,7 @@ export function renderExtraFinancialReport(
                 {pondCols ? 'Pond sales' : 'Customer rcpts'}
               </th>
               <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Vendor pmt</th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Net cash Î”</th>
+              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Net cash change</th>
               <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Ending cash</th>
             </tr>
           </thead>
@@ -340,17 +367,22 @@ export function renderExtraFinancialReport(
     'entities-pl-summary',
     'entities-balance-sheet-summary',
     'entities-trial-balance-summary',
+    'entities-financial-summary',
   ] as const
   if (entityReportIds.includes(reportType as (typeof entityReportIds)[number])) {
     const sections = entitySections(data)
     const co = sections.companyTotal
-    const kind =
-      reportType === 'entities-pl-summary'
+    const isCombined = reportType === 'entities-financial-summary'
+    const kind = isCombined
+      ? 'combined'
+      : reportType === 'entities-pl-summary'
         ? 'pl'
         : reportType === 'entities-balance-sheet-summary'
           ? 'bs'
           : 'tb'
-    const periodHints: Record<typeof kind, string> = {
+    const periodHints: Record<string, string> = {
+      combined:
+        'Combined P&L and balance sheet for every station, pond, and head office. Prefer the three separate entity reports for focused review.',
       pl: 'Posted P&L for every station, pond, and head office slice. Clear the site filter.',
       bs: 'Balance sheet totals as of the period end date for every entity. Clear the site filter.',
       tb: 'Posted debits and credits in the period for every entity. Clear the site filter.',
@@ -361,10 +393,17 @@ export function renderExtraFinancialReport(
         {typeof data.accounting_note === 'string' && (
           <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
         )}
-        {renderEntitySectionTables(kind, sections)}
+        {isCombined ? (
+          <>
+            {renderEntitySectionTables('pl', sections)}
+            {renderEntitySectionTables('bs', sections)}
+          </>
+        ) : (
+          renderEntitySectionTables(kind as 'pl' | 'bs' | 'tb', sections)
+        )}
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 p-4">
           <h3 className="text-sm font-semibold text-slate-900">Company total (all GL)</h3>
-          {kind === 'pl' ? (
+          {kind === 'pl' || isCombined ? (
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
               <div>
                 <p className="text-gray-500">Income</p>
@@ -387,8 +426,9 @@ export function renderExtraFinancialReport(
                 <p className="font-semibold">{formatCurrency(Number(co.net_income ?? 0))}</p>
               </div>
             </div>
-          ) : kind === 'bs' ? (
-            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          ) : null}
+          {kind === 'bs' || isCombined ? (
+            <div className={`mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm ${isCombined ? 'border-t border-slate-200 pt-4' : ''}`}>
               <div>
                 <p className="text-gray-500">Assets</p>
                 <p className="font-semibold">{formatCurrency(Number(co.total_assets ?? 0))}</p>
@@ -406,7 +446,7 @@ export function renderExtraFinancialReport(
                 <p className="font-semibold">{formatCurrency(Number(co.total_liabilities_and_equity ?? 0))}</p>
               </div>
             </div>
-          ) : (
+          ) : kind === 'tb' ? (
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
               <div>
                 <p className="text-gray-500">TB debits</p>
@@ -421,7 +461,7 @@ export function renderExtraFinancialReport(
                 <p className="font-semibold">{co.trial_balance_balanced ? 'Yes' : 'No'}</p>
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     )
@@ -451,16 +491,24 @@ export function renderExtraFinancialReport(
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {rows.map((r) => (
-                <tr key={`st-pl-${String(r.station_id ?? '')}`} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{String(r.station_name ?? '')}</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(Number(r.income ?? 0))}</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(Number(r.cost_of_goods_sold ?? 0))}</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(Number(r.expenses ?? 0))}</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(Number(r.gross_profit ?? 0))}</td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatCurrency(Number(r.net_income ?? 0))}</td>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
+                    No station-level P&L in this period. Post journals or clear the site filter.
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                rows.map((r) => (
+                  <tr key={`st-pl-${String(r.station_id ?? '')}`} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{String(r.station_name ?? '')}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(Number(r.income ?? 0))}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(Number(r.cost_of_goods_sold ?? 0))}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(Number(r.expenses ?? 0))}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(Number(r.gross_profit ?? 0))}</td>
+                    <td className="px-4 py-3 text-right font-semibold">{formatCurrency(Number(r.net_income ?? 0))}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
             <tfoot className="bg-gray-100 font-semibold">
               <tr>
@@ -485,9 +533,9 @@ export function renderExtraFinancialReport(
     const totals = (data.totals as Record<string, number>) ?? {}
     const bucketLabels: { key: string; label: string }[] = [
       { key: 'current', label: 'Current' },
-      { key: 'days_1_30', label: '1â€“30 days' },
-      { key: 'days_31_60', label: '31â€“60 days' },
-      { key: 'days_61_90', label: '61â€“90 days' },
+      { key: 'days_1_30', label: '1–30 days' },
+      { key: 'days_31_60', label: '31–60 days' },
+      { key: 'days_61_90', label: '61–90 days' },
       { key: 'days_over_90', label: '90+ days' },
     ]
     return (
@@ -564,4 +612,5 @@ export const EXTRA_FINANCIAL_REPORT_IDS: readonly ReportType[] = [
   'entities-pl-summary',
   'entities-balance-sheet-summary',
   'entities-trial-balance-summary',
+  'entities-financial-summary',
 ]

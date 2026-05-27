@@ -580,3 +580,113 @@ def compute_fish_stock_position_breakdown_rows(
             )
         )
     return out_rows
+
+
+def implied_fish_stock_for_outbound_scope(
+    company_id: int,
+    pond_id: int,
+    *,
+    production_cycle_id: int | None,
+    fish_species: str,
+) -> tuple[int, Decimal]:
+    """Implied net fish count and kg for outbound validation (pond / cycle / species scope)."""
+    sp_code, _ = normalize_fish_species(fish_species)
+    rows = compute_fish_stock_position_breakdown_rows(
+        company_id,
+        pond_id=pond_id,
+        production_cycle_id=production_cycle_id,
+        fish_species_filter=sp_code,
+    )
+    if rows:
+        r = rows[0]
+        return (
+            int(r.get("implied_net_fish_count") or 0),
+            _d(r.get("implied_net_weight_kg")),
+        )
+    rows_pond = compute_fish_stock_position_rows(
+        company_id,
+        pond_id=pond_id,
+        production_cycle_id=production_cycle_id,
+        fish_species_filter=sp_code,
+    )
+    if rows_pond:
+        r = rows_pond[0]
+        return (
+            int(r.get("implied_net_fish_count") or 0),
+            _d(r.get("implied_net_weight_kg")),
+        )
+    return 0, Decimal("0")
+
+
+def _outbound_totals_from_transfer(
+    company_id: int,
+    transfer_id: int,
+    from_pond_id: int,
+) -> tuple[int, Decimal]:
+    lines = AquacultureFishPondTransferLine.objects.filter(
+        transfer_id=transfer_id,
+        transfer__company_id=company_id,
+        transfer__from_pond_id=from_pond_id,
+    )
+    fish = sum(int(ln.fish_count or 0) for ln in lines)
+    kg = sum((_d(ln.weight_kg) for ln in lines), Decimal("0"))
+    return fish, kg
+
+
+def _outbound_totals_from_sale(
+    company_id: int,
+    sale_id: int,
+) -> tuple[int, Decimal] | None:
+    s = AquacultureFishSale.objects.filter(pk=sale_id, company_id=company_id).only(
+        "fish_count", "weight_kg", "income_type"
+    ).first()
+    if not s:
+        return None
+    if income_type_is_non_biological_for_company(company_id, getattr(s, "income_type", None) or ""):
+        return None
+    if s.fish_count is None or s.fish_count <= 0:
+        return None
+    return int(s.fish_count), _d(s.weight_kg)
+
+
+def assert_outbound_fish_within_implied_stock(
+    company_id: int,
+    pond_id: int,
+    *,
+    production_cycle_id: int | None,
+    fish_species: str,
+    fish_count: int,
+    weight_kg: Decimal,
+    exclude_transfer_id: int | None = None,
+    exclude_sale_id: int | None = None,
+) -> str | None:
+    """
+    Return a user-facing error when an outbound movement exceeds implied stock; None if OK.
+    Used for inter-pond transfers and biological harvest sales (dual-unit check).
+    """
+    if fish_count <= 0 or weight_kg <= 0:
+        return None
+    avail_c, avail_w = implied_fish_stock_for_outbound_scope(
+        company_id,
+        pond_id,
+        production_cycle_id=production_cycle_id,
+        fish_species=fish_species,
+    )
+    if exclude_transfer_id is not None:
+        exc_c, exc_w = _outbound_totals_from_transfer(company_id, exclude_transfer_id, pond_id)
+        avail_c += exc_c
+        avail_w += exc_w
+    if exclude_sale_id is not None:
+        exc = _outbound_totals_from_sale(company_id, exclude_sale_id)
+        if exc is not None:
+            avail_c += exc[0]
+            avail_w += exc[1]
+    if fish_count <= avail_c and weight_kg <= avail_w:
+        return None
+    scope = "this production cycle" if production_cycle_id else "this pond"
+    return (
+        f"Insufficient fish stock on source {scope}: "
+        f"{avail_w} kg ({avail_c:,} fish) available after prior movements; "
+        f"this transaction requires {weight_kg} kg ({fish_count:,} fish). "
+        "Reduce quantities, record a stock adjustment, or verify fry stocking and transfers."
+    )

@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from api.models import Invoice, Item, Station
+from api.models import Customer, Invoice, Item, Station
 from api.services.reporting import report_daily_summary
 
 
@@ -22,13 +22,18 @@ def test_daily_summary_splits_fuel_and_aquaculture_lines(company_tenant):
         operates_fuel_retail=False,
         is_active=True,
     )
+    customer = Customer.objects.create(
+        company_id=company_tenant.id,
+        display_name="Daily summary buyer",
+        customer_number="DS-01",
+    )
     diesel = Item.objects.create(
         company_id=company_tenant.id,
         name="Diesel",
         pos_category="fuel",
         unit="L",
         cost=Decimal("0"),
-        price=Decimal("100"),
+        unit_price=Decimal("100"),
     )
     feed = Item.objects.create(
         company_id=company_tenant.id,
@@ -36,11 +41,12 @@ def test_daily_summary_splits_fuel_and_aquaculture_lines(company_tenant):
         pos_category="feed",
         unit="kg",
         cost=Decimal("0"),
-        price=Decimal("50"),
+        unit_price=Decimal("50"),
     )
 
     inv_fuel = Invoice.objects.create(
         company_id=company_tenant.id,
+        customer=customer,
         station=fuel_st,
         invoice_number="INV-DS-FUEL",
         invoice_date=date(2026, 5, 10),
@@ -55,6 +61,7 @@ def test_daily_summary_splits_fuel_and_aquaculture_lines(company_tenant):
     agro_st = Station.objects.get(station_name="Premium Agro")
     inv_shop = Invoice.objects.create(
         company_id=company_tenant.id,
+        customer=customer,
         station=agro_st,
         invoice_number="INV-DS-AGRO",
         invoice_date=date(2026, 5, 10),

@@ -453,29 +453,9 @@ def _audit_master_headers(auth_super_headers, company_master):
 
 def _audit_seed_min_gl_accounts(company):
     """Minimal COA so auto-posting (invoices, payments, bills) can create balanced journals in tests."""
-    from api.models import ChartOfAccount
+    from tests.conftest import seed_min_gl_accounts
 
-    specs = [
-        ("1010", "Cash on Hand", "asset"),
-        ("1030", "Bank Operating", "asset"),
-        ("1100", "Accounts Receivable", "asset"),
-        ("1120", "Card Clearing", "asset"),
-        ("1200", "Inventory Fuel", "asset"),
-        ("1220", "Inventory Shop", "asset"),
-        ("2000", "Accounts Payable", "liability"),
-        ("2100", "VAT Payable", "liability"),
-        ("4100", "Fuel Sales", "income"),
-        ("4200", "Shop Sales", "income"),
-        ("5100", "COGS Fuel", "cost_of_goods_sold"),
-        ("5120", "COGS Shop", "cost_of_goods_sold"),
-        ("6900", "Office Expense", "expense"),
-    ]
-    for code, name, typ in specs:
-        ChartOfAccount.objects.get_or_create(
-            company=company,
-            account_code=code,
-            defaults={"account_name": name, "account_type": typ},
-        )
+    seed_min_gl_accounts(company)
 
 
 def _audit_fuel_nozzle(company):
@@ -2157,6 +2137,111 @@ def test_income_statement_treats_revenue_alias_as_income(company_master):
     pl = report_income_statement(company_master.id, date(2026, 6, 1), date(2026, 6, 30))
     inc_codes = [a["account_code"] for a in pl["income"]["accounts"]]
     assert "9997" in inc_codes
+
+
+def test_income_statement_includes_cogs_and_gross_profit(company_master):
+    """COGS debits roll into P&L COGS section; gross profit = income − COGS; expense-detail excludes COGS."""
+    from api.models import ChartOfAccount, Customer, Invoice, InvoiceLine, Item, JournalEntry, JournalEntryLine, Station
+    from django.utils import timezone
+
+    from api.services.gl_posting import sync_invoice_gl
+    from api.services.reporting import report_expense_detail, report_income_statement
+
+    st = Station.objects.create(company_id=company_master.id, station_name="COGS P&L Site")
+    coa_by_code: dict[str, ChartOfAccount] = {}
+    for code, name, typ in [
+        ("1010", "Cash", "asset"),
+        ("4100", "Fuel Sales", "income"),
+        ("1200", "Inventory Fuel", "asset"),
+        ("5100", "COGS Fuel", "cost_of_goods_sold"),
+        ("5125", "Legacy COGS Label", "cogs"),
+    ]:
+        coa, _ = ChartOfAccount.objects.get_or_create(
+            company_id=company_master.id,
+            account_code=code,
+            defaults={"account_name": name, "account_type": typ, "is_active": True},
+        )
+        coa_by_code[code] = coa
+
+    je = JournalEntry.objects.create(
+        company_id=company_master.id,
+        entry_number="TEST-PL-COGS-LEGACY",
+        entry_date=date(2026, 6, 10),
+        description="Legacy cogs alias",
+        is_posted=True,
+        posted_at=timezone.now(),
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je,
+        account=coa_by_code["5125"],
+        debit=Decimal("15.00"),
+        credit=Decimal("0"),
+        description="",
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je,
+        account=coa_by_code["1010"],
+        debit=Decimal("0"),
+        credit=Decimal("15.00"),
+        description="",
+    )
+
+    cust = Customer.objects.create(
+        company_id=company_master.id,
+        customer_number="COGS-PL-C1",
+        display_name="Walk-in",
+        is_active=True,
+    )
+    item = Item.objects.create(
+        company_id=company_master.id,
+        name="Diesel COGS Test",
+        unit_price=Decimal("100"),
+        cost=Decimal("50"),
+        unit="L",
+        category="fuel",
+    )
+    inv = Invoice.objects.create(
+        company_id=company_master.id,
+        customer=cust,
+        station=st,
+        invoice_number="INV-COGS-PL-1",
+        invoice_date=date(2026, 6, 20),
+        status="paid",
+        subtotal=Decimal("100"),
+        tax_total=Decimal("0"),
+        total=Decimal("100"),
+        payment_method="cash",
+    )
+    InvoiceLine.objects.create(
+        invoice=inv,
+        item=item,
+        quantity=Decimal("1"),
+        unit_price=Decimal("100"),
+        amount=Decimal("100"),
+    )
+    sync_invoice_gl(company_master.id, inv)
+
+    start, end = date(2026, 6, 1), date(2026, 6, 30)
+    pl = report_income_statement(company_master.id, start, end)
+    cogs_codes = {a["account_code"] for a in pl["cost_of_goods_sold"]["accounts"]}
+    assert "5100" in cogs_codes
+    assert "5125" in cogs_codes
+
+    income_total = Decimal(str(pl["income"]["total"]))
+    cogs_total = Decimal(str(pl["cost_of_goods_sold"]["total"]))
+    gross = Decimal(str(pl["gross_profit"]))
+    assert income_total == Decimal("100.00")
+    assert cogs_total == Decimal("65.00")  # 50 invoice COGS + 15 legacy alias
+    assert gross == income_total - cogs_total
+
+    exp = report_expense_detail(company_master.id, start, end)
+    exp_codes = {a["account_code"] for a in exp["expenses"]["accounts"]}
+    assert "5100" not in exp_codes
+    assert "5125" not in exp_codes
+
+    pl_site = report_income_statement(company_master.id, start, end, station_id=st.id)
+    assert Decimal(str(pl_site["cost_of_goods_sold"]["total"])) == Decimal("50.00")
+    assert Decimal(str(pl_site["income"]["total"])) == Decimal("100.00")
 
 
 # --- SaaS: station operational purge (super admin) ---

@@ -150,13 +150,15 @@ def get_or_create_master_template_company() -> tuple[Company, bool]:
 
 def seed_general_demo_products_for_company(company_id: int) -> int:
     """Idempotent general POS items (names de-duplicated). Returns number of rows created."""
+    from api.services.item_name_uniqueness import normalize_item_name_for_storage
+
     existing = {
-        (n or "").strip().lower()
+        normalize_item_name_for_storage(n).lower()
         for n in Item.objects.filter(company_id=company_id).values_list("name", flat=True)
     }
     n = 0
     for row in DEFAULT_GENERAL_DEMO_PRODUCTS:
-        key = row["name"].strip().lower()
+        key = normalize_item_name_for_storage(row["name"]).lower()
         if key in existing:
             continue
         pos_cat = "service" if row["item_type"] == "service" else "general"

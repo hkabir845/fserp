@@ -121,6 +121,23 @@ function useNonPassiveWheelPreventRef() {
   }, [])
 }
 
+function normalizeItemNameForCheck(raw: string): string {
+  return raw.trim().replace(/\s+/g, ' ')
+}
+
+function findItemNameConflictInList(
+  name: string,
+  rows: Item[],
+  excludeId?: number | null
+): Item | undefined {
+  const key = normalizeItemNameForCheck(name).toLowerCase()
+  if (!key) return undefined
+  return rows.find(
+    (row) =>
+      row.id !== excludeId && normalizeItemNameForCheck(row.name).toLowerCase() === key
+  )
+}
+
 /** Money fields use plain text + parse at save so large BDT values (e.g. 1900) edit reliably (controlled type="number" often fights paste/step). */
 function parseMoneyField(s: string): number {
   const t = String(s ?? '')
@@ -897,6 +914,15 @@ export default function ItemsPage() {
       // Validate required fields
       if (!formData.name || formData.name.trim() === '') {
         toast.error('Item name is required')
+        return
+      }
+
+      const nameConflict = findItemNameConflictInList(formData.name, items, editingId)
+      if (nameConflict) {
+        const ref = nameConflict.item_number?.trim() || `#${nameConflict.id}`
+        toast.error(
+          `An item named "${nameConflict.name}" already exists (ref ${ref}). Use a different name or edit that product.`
+        )
         return
       }
       

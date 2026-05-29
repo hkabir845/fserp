@@ -14,7 +14,7 @@ type LogoutButtonProps = {
   showLabel?: boolean
 }
 
-/** Sign out — fixed top-right placement is handled by the parent when `variant` is omitted. */
+/** Sign out — pass `className` for placement (sidebar footer, POS header, etc.). */
 export default function LogoutButton({ className = '', showLabel = true }: LogoutButtonProps) {
   return (
     <button
@@ -29,23 +29,5 @@ export default function LogoutButton({ className = '', showLabel = true }: Logou
       <LogOut className="h-4 w-4 shrink-0" aria-hidden />
       {showLabel ? <span>Logout</span> : null}
     </button>
-  )
-}
-
-/** Viewport top-right logout (all ERP pages with Sidebar). */
-export function AppHeaderLogout() {
-  return (
-    <div
-      className="pointer-events-none fixed z-[60] flex justify-end"
-      style={{
-        top: 'max(0.75rem, env(safe-area-inset-top, 0px))',
-        right: 'max(0.75rem, env(safe-area-inset-right, 0px))',
-        left: 'max(3.5rem, env(safe-area-inset-left, 0px))',
-      }}
-    >
-      <div className="pointer-events-auto ml-auto">
-        <LogoutButton />
-      </div>
-    </div>
   )
 }

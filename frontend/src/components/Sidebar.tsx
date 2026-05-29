@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Building2, Crown, Shield, Menu, Search, X, KeyRound } from 'lucide-react'
-import { AppHeaderLogout } from '@/components/LogoutButton'
+import { Building2, Crown, Shield, Menu, Search, X, KeyRound, LogOut } from 'lucide-react'
+import { performLogout } from '@/components/LogoutButton'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useSidebarNav } from '@/contexts/SidebarNavContext'
 import CompanySwitcher from '@/components/CompanySwitcher'
@@ -330,9 +330,8 @@ export default function Sidebar() {
 
   return (
     <>
-    <AppHeaderLogout />
     <div
-      className={`relative flex h-full min-h-0 max-h-full shrink-0 flex-col overflow-hidden ${isDesktopLayout ? '' : 'w-0'}`}
+      className={`sidebar-viewport-height relative flex min-h-0 shrink-0 flex-col self-start overflow-hidden ${isDesktopLayout ? '' : 'w-0'}`}
       style={isDesktopLayout ? { width: sidebarWidthPx } : undefined}
     >
       {/* Mobile menu toggle — sits above main content; sidebar is off-canvas until opened */}
@@ -355,13 +354,13 @@ export default function Sidebar() {
       <aside
         key={`sidebar-${mode}`}
         className={`
-          fixed inset-y-0 left-0 z-[50] flex h-full min-h-0 w-[min(100vw-3rem,20rem)] max-w-[20rem] flex-col overflow-hidden bg-gray-900 text-white shadow-xl transition-transform duration-200 ease-out
-          md:static md:z-auto md:h-full md:min-h-0 md:min-w-0 md:w-full md:max-w-none md:translate-x-0
+          fixed top-0 left-0 bottom-[var(--erp-os-bottom-chrome,0px)] z-[50] flex min-h-0 w-[min(100vw-3rem,20rem)] max-w-[20rem] flex-col overflow-hidden bg-gray-900 text-white shadow-xl transition-transform duration-200 ease-out
+          md:static md:bottom-auto md:z-auto md:h-full md:max-h-full md:min-h-0 md:min-w-0 md:w-full md:max-w-none md:translate-x-0
           ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
       >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-800 p-4 sm:p-6">
+      <div className="flex shrink-0 items-center justify-between border-b border-gray-800 p-4 sm:p-6">
         <div>
           <h1 className="text-xl font-bold text-blue-400 sm:text-2xl">FSMS</h1>
           <p className="mt-1 text-xs text-gray-400">Filling Station ERP</p>
@@ -378,7 +377,7 @@ export default function Sidebar() {
 
       {/* Tab System - Only for Super Admin */}
       {navReady && isSuperAdmin && (
-        <div className="border-b border-gray-800 bg-gradient-to-b from-gray-850 to-gray-900">
+        <div className="shrink-0 border-b border-gray-800 bg-gradient-to-b from-gray-850 to-gray-900">
           {/* Tabs — stack labels on very narrow screens */}
           <div className="flex flex-col gap-1 bg-gray-800/30 p-1 sm:flex-row sm:rounded-t-lg">
             <button
@@ -433,7 +432,7 @@ export default function Sidebar() {
 
       {/* ERP tenant scope: all list/detail APIs use this company (superadmin: header X-Selected-Company-Id). */}
       {showingErpNav && (
-        <div className="border-b border-gray-800 bg-gray-800/40 px-3 py-2.5">
+        <div className="max-h-[min(32vh,14rem)] shrink-0 overflow-y-auto border-b border-gray-800 bg-gray-800/40 px-3 py-2.5 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900">
           {isSuperAdmin && mode === 'fsms_erp' && !selectedCompany?.id ? (
             <p className="text-xs leading-snug text-amber-300">
               Choose a <span className="font-semibold">company</span> below (e.g. Master Filling Station). All ERP pages
@@ -611,15 +610,24 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-gray-800 space-y-1">
+      {/* Footer — always pinned at bottom of sidebar viewport */}
+      <div className="sidebar-footer-pad mt-auto shrink-0 space-y-0.5 border-t border-gray-700 bg-gray-900 p-3 pt-3 shadow-[0_-8px_24px_rgba(0,0,0,0.45)] sm:px-4 sm:pt-4">
         <Link
           href="/account/password"
-          className="flex items-center space-x-3 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors w-full"
+          className="flex w-full items-center space-x-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
         >
-          <KeyRound className="h-5 w-5" />
+          <KeyRound className="h-5 w-5 shrink-0" />
           <span className="text-sm font-medium">Change password</span>
         </Link>
+        <button
+          type="button"
+          onClick={performLogout}
+          className="flex w-full items-center space-x-3 rounded-lg px-3 py-2 text-left text-red-300 transition-colors hover:bg-red-950/40 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+          aria-label="Log out"
+        >
+          <LogOut className="h-5 w-5 shrink-0" aria-hidden />
+          <span className="text-sm font-medium">Logout</span>
+        </button>
       </div>
     </aside>
 

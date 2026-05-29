@@ -27,6 +27,11 @@ from api.services.coa_gl_defaults import (
     ALLOWED_INVENTORY_ASSET,
     parse_optional_chart_account_id,
 )
+from api.services.item_name_uniqueness import (
+    find_item_name_conflict,
+    item_name_conflict_detail,
+    normalize_item_name_for_storage,
+)
 from api.services.station_stock import (
     ensure_item_station_row_for_new_shop_item,
     get_or_create_default_station,
@@ -140,24 +145,15 @@ def _apply_item_gl_accounts_from_body(company_id: int, body: dict, target: Item)
     return None
 
 
-def _normalize_item_name_for_storage(raw) -> str:
-    """Trim, collapse internal whitespace, max 200 chars — used for save + duplicate detection."""
-    s = re.sub(r"\s+", " ", (str(raw or "").strip()))
-    return _truncate(s, 200)
-
-
-def _item_name_conflicts(company_id: int, canonical_name: str, exclude_pk: int | None = None) -> bool:
-    """True if another item in the company already matches this name (case/spacing-insensitive)."""
-    key = _normalize_item_name_for_storage(canonical_name).lower()
-    if not key:
-        return False
-    qs = Item.objects.filter(company_id=company_id).only("id", "name")
-    if exclude_pk is not None:
-        qs = qs.exclude(pk=exclude_pk)
-    for row in qs:
-        if _normalize_item_name_for_storage(row.name).lower() == key:
-            return True
-    return False
+def _item_name_conflict_response(conflict: Item) -> JsonResponse:
+    return JsonResponse(
+        {
+            "detail": item_name_conflict_detail(conflict),
+            "conflicting_item_id": conflict.id,
+            "conflicting_item_name": conflict.name,
+        },
+        status=409,
+    )
 
 
 # Liquid / gaseous / petroleum fuels: used to match legacy rows when name or category
@@ -406,7 +402,7 @@ def items_list_or_create(request):
         body, err = parse_json_body(request)
         if err:
             return err
-        name = _normalize_item_name_for_storage(body.get("name"))
+        name = normalize_item_name_for_storage(body.get("name"))
         if not name:
             return JsonResponse({"detail": "name is required"}, status=400)
         unit_price = _parse_decimal(body.get("unit_price"), "0")
@@ -424,16 +420,9 @@ def items_list_or_create(request):
             return JsonResponse({"detail": "cost cannot be negative"}, status=400)
         if qty < 0:
             return JsonResponse({"detail": "quantity_on_hand cannot be negative"}, status=400)
-        if _item_name_conflicts(request.company_id, name):
-            return JsonResponse(
-                {
-                    "detail": (
-                        "An item with this name already exists for this company. "
-                        "Use a different name or edit the existing product."
-                    )
-                },
-                status=409,
-            )
+        conflict = find_item_name_conflict(request.company_id, name)
+        if conflict:
+            return _item_name_conflict_response(conflict)
         bc = _truncate(body.get("barcode"), 64).strip()
         if bc and Item.objects.filter(company_id=request.company_id, barcode__iexact=bc).exists():
             return JsonResponse(
@@ -608,18 +597,11 @@ def item_detail(request, item_id: int):
         if gl_err:
             return gl_err
         if body.get("name") is not None:
-            nm = _normalize_item_name_for_storage(body.get("name"))
+            nm = normalize_item_name_for_storage(body.get("name"))
             if nm:
-                if _item_name_conflicts(request.company_id, nm, exclude_pk=i.pk):
-                    return JsonResponse(
-                        {
-                            "detail": (
-                                "An item with this name already exists for this company. "
-                                "Use a different name or edit the existing product."
-                            )
-                        },
-                        status=409,
-                    )
+                conflict = find_item_name_conflict(request.company_id, nm, exclude_pk=i.pk)
+                if conflict:
+                    return _item_name_conflict_response(conflict)
                 i.name = nm
             # empty / whitespace-only keeps existing name
         if "description" in body:

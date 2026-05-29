@@ -72,7 +72,6 @@ from api.services.item_catalog import item_tracks_physical_stock
 from api.services.station_stock import get_station_stock, item_uses_station_bins, tanks_exist_for_item
 from api.services.coa_constants import (
     is_debit_normal_chart_type,
-    is_pl_credit_normal_type,
     normalize_chart_account_type,
     pl_bucket_for_coa,
 )
@@ -80,6 +79,79 @@ from api.services.coa_constants import (
 
 def _pl_bucket(coa: ChartOfAccount) -> str | None:
     return pl_bucket_for_coa(coa.account_type, coa.account_sub_type, coa.account_code)
+
+
+def _pl_amount_from_movement(coa: ChartOfAccount, debit: Decimal, credit: Decimal) -> Decimal:
+    """Signed P&L amount from debits/credits (income = credit-normal; COGS/expense = debit-normal)."""
+    bucket = _pl_bucket(coa)
+    if bucket == "income":
+        return credit - debit
+    if bucket in ("cost_of_goods_sold", "expense"):
+        return debit - credit
+    return Decimal("0")
+
+
+def _period_pl_totals_from_line_qs(
+    company_id: int, start: date, end: date, line_qs
+) -> dict[str, Decimal]:
+    """Income, COGS, and expense totals for a journal-line slice (uses _pl_bucket for classification)."""
+    ti = tcogs = te = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        bucket = _pl_bucket(coa)
+        if bucket is None:
+            continue
+        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
+        if bucket == "income":
+            ti += amt
+        elif bucket == "cost_of_goods_sold":
+            tcogs += amt
+        else:
+            te += amt
+    gross = ti - tcogs
+    return {
+        "income": ti,
+        "cogs": tcogs,
+        "expenses": te,
+        "gross_profit": gross,
+        "net_income": gross - te,
+    }
+
+
+def _estimated_cogs_from_invoice_lines(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    station_id: int | None = None,
+    pond_id: int | None = None,
+) -> Decimal:
+    """
+    Subledger COGS estimate (qty × item unit cost) for posted invoices in range.
+    Used to hint when GL COGS journals are missing; does not replace posted GL on P&L.
+    """
+    if pond_id is not None:
+        # Invoices are not pond-tagged at document level; skip subledger estimate for pond scope.
+        return Decimal("0")
+    qs = InvoiceLine.objects.filter(
+        invoice__company_id=company_id,
+        invoice__invoice_date__gte=start,
+        invoice__invoice_date__lte=end,
+        invoice__status__in=("paid", "partial", "sent", "overdue"),
+        item_id__isnull=False,
+    ).select_related("item", "invoice")
+    if station_id is not None:
+        qs = qs.filter(invoice__station_id=station_id)
+    total = Decimal("0")
+    for line in qs:
+        it = line.item
+        if not it or not item_tracks_physical_stock(it):
+            continue
+        cost = item_inventory_unit_cost(it)
+        qty = line.quantity or Decimal("0")
+        if cost <= 0 or qty <= 0:
+            continue
+        total += (qty * cost).quantize(Decimal("0.01"))
+    return total
 
 
 def _d(v: Any) -> Decimal:
@@ -305,16 +377,14 @@ def _cumulative_net_income_through(company_id: int, as_of: date) -> Decimal:
     (each balance as-of `as_of`, including opening_balance on COA rows).
     """
     ni = Decimal("0")
-    # Include inactive accounts: they can still hold JE balances and would otherwise
-    # break Assets = L + E + NI.
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by(
         "account_code"
     ):
-        t = normalize_chart_account_type(coa.account_type)
-        if t not in ("income", "cost_of_goods_sold", "expense"):
+        bucket = _pl_bucket(coa)
+        if bucket is None:
             continue
         bal = _ending_balance(coa, company_id, as_of)
-        if t == "income":
+        if bucket == "income":
             ni += bal
         else:
             ni -= bal
@@ -326,9 +396,7 @@ def _site_pl_activity_balance(
 ) -> Decimal:
     """P&L movement through ``as_of`` on one site (posted lines only; no chart opening balance)."""
     d, c = _movement_through(company_id, coa.id, as_of, station_id)
-    if is_pl_credit_normal_type(coa.account_type):
-        return c - d
-    return d - c
+    return _pl_amount_from_movement(coa, d, c)
 
 
 def _cumulative_net_income_site_through(
@@ -337,11 +405,11 @@ def _cumulative_net_income_site_through(
     """Same sign convention as ``_cumulative_net_income_through`` but journal lines for one site only."""
     ni = Decimal("0")
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        t = normalize_chart_account_type(coa.account_type)
-        if t not in ("income", "cost_of_goods_sold", "expense"):
+        bucket = _pl_bucket(coa)
+        if bucket is None:
             continue
         bal = _site_pl_activity_balance(coa, company_id, as_of, station_id)
-        if t == "income":
+        if bucket == "income":
             ni += bal
         else:
             ni -= bal
@@ -846,56 +914,21 @@ def _period_income_statement_totals(
     P&L totals for [start, end] from posted journal lines (same basis as income statement).
     """
     if pond_id is not None:
-        return _period_income_statement_totals_pond(company_id, start, end, pond_id)
-    ti = tcogs = te = Decimal("0")
-    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        bucket = _pl_bucket(coa)
-        if bucket is None:
-            continue
-        amt = _period_pl_amount(coa, company_id, start, end, station_id)
-        if bucket == "income":
-            ti += amt
-        elif bucket == "cost_of_goods_sold":
-            tcogs += amt
-        else:
-            te += amt
-    gross = ti - tcogs
-    net = gross - te
-    return {
-        "income": ti,
-        "cogs": tcogs,
-        "expenses": te,
-        "gross_profit": gross,
-        "net_income": net,
-    }
+        return _period_pl_totals_from_line_qs(
+            company_id, start, end, _je_lines_pond(company_id, pond_id)
+        )
+    return _period_pl_totals_from_line_qs(
+        company_id, start, end, _je_lines_pl_scope(company_id, station_id)
+    )
 
 
 def _period_income_statement_totals_pond(
     company_id: int, start: date, end: date, pond_id: int
 ) -> dict[str, Decimal]:
     """P&L totals for [start, end] from posted journal lines tagged to one aquaculture pond."""
-    line_qs = _je_lines_pond(company_id, pond_id)
-    ti = tcogs = te = Decimal("0")
-    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        bucket = _pl_bucket(coa)
-        if bucket is None:
-            continue
-        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
-        if bucket == "income":
-            ti += amt
-        elif bucket == "cost_of_goods_sold":
-            tcogs += amt
-        else:
-            te += amt
-    gross = ti - tcogs
-    net = gross - te
-    return {
-        "income": ti,
-        "cogs": tcogs,
-        "expenses": te,
-        "gross_profit": gross,
-        "net_income": net,
-    }
+    return _period_pl_totals_from_line_qs(
+        company_id, start, end, _je_lines_pond(company_id, pond_id)
+    )
 
 
 def _sum_invoice_totals(
@@ -1085,6 +1118,15 @@ def report_income_statement(
         "Cumulative change vs net income flags unusual opening-balance or dating issues."
     )
     note += _pl_scope_accounting_note(station_id, pond_id, pond_name=pond_name)
+    est_cogs = _estimated_cogs_from_invoice_lines(
+        company_id, start, end, station_id=station_id, pond_id=pond_id
+    )
+    if tcogs <= 0 and est_cogs > 0:
+        note += (
+            f" Posted GL COGS is zero but inventory sales in this period imply about {_f(est_cogs)} "
+            "in cost (qty × item cost). Run `python manage.py backfill_invoice_cogs` or re-sync "
+            "invoices so AUTO-INV-*-COGS journals are created."
+        )
     out_is: dict[str, Any] = {
         "report_id": "income-statement",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -1517,23 +1559,11 @@ def _period_pl_amount_lines(
         tc=Coalesce(Sum("credit"), Decimal("0")),
     )
     d, c = agg["td"], agg["tc"]
-    if is_pl_credit_normal_type(coa.account_type):
-        return c - d
-    return d - c
+    return _pl_amount_from_movement(coa, d, c)
 
 
 def _period_net_income_from_lines(company_id: int, start: date, end: date, line_qs) -> Decimal:
-    net = Decimal("0")
-    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        t = normalize_chart_account_type(coa.account_type)
-        if t not in ("income", "cost_of_goods_sold", "expense"):
-            continue
-        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
-        if t == "income":
-            net += amt
-        else:
-            net -= amt
-    return net
+    return _period_pl_totals_from_line_qs(company_id, start, end, line_qs)["net_income"]
 
 
 def _summarize_bank_accounts_for_scope(
@@ -1797,8 +1827,8 @@ def _cumulative_net_income_lines_through(company_id: int, as_of: date, line_qs) 
     """Cumulative P&L through ``as_of`` on a filtered journal-line queryset (pond or unscoped slice)."""
     ni = Decimal("0")
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        t = normalize_chart_account_type(coa.account_type)
-        if t not in ("income", "cost_of_goods_sold", "expense"):
+        bucket = _pl_bucket(coa)
+        if bucket is None:
             continue
         agg = line_qs.filter(
             account_id=coa.id,
@@ -1807,12 +1837,8 @@ def _cumulative_net_income_lines_through(company_id: int, as_of: date, line_qs) 
             td=Coalesce(Sum("debit"), Decimal("0")),
             tc=Coalesce(Sum("credit"), Decimal("0")),
         )
-        d, c = agg["td"], agg["tc"]
-        if is_pl_credit_normal_type(coa.account_type):
-            bal = c - d
-        else:
-            bal = d - c
-        if t == "income":
+        bal = _pl_amount_from_movement(coa, agg["td"], agg["tc"])
+        if bucket == "income":
             ni += bal
         else:
             ni -= bal
@@ -1948,46 +1974,14 @@ def _entity_financial_summary_row(
 ) -> dict[str, Any]:
     if pond_id is not None:
         line_qs = _je_lines_pond(company_id, pond_id)
-        pl_net = _period_net_income_from_lines(company_id, start, end, line_qs)
-        pl = {
-            "income": Decimal("0"),
-            "cogs": Decimal("0"),
-            "expenses": Decimal("0"),
-            "gross_profit": Decimal("0"),
-            "net_income": pl_net,
-        }
-        for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-            bucket = _pl_bucket(coa)
-            if bucket is None:
-                continue
-            amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
-            if bucket == "income":
-                pl["income"] += amt
-            elif bucket == "cost_of_goods_sold":
-                pl["cogs"] += amt
-            else:
-                pl["expenses"] += amt
-        pl["gross_profit"] = pl["income"] - pl["cogs"]
+        pl = _period_pl_totals_from_line_qs(company_id, start, end, line_qs)
         bs = _bs_totals_from_line_qs(company_id, end, line_qs)
         td, tc = _trial_balance_period_totals(
             company_id, start, end, pond_id=pond_id
         )
     elif unscoped_dims:
         line_qs = _je_lines_unscoped_dims(company_id)
-        pl_net = _period_net_income_from_lines(company_id, start, end, line_qs)
-        pl = {"income": Decimal("0"), "cogs": Decimal("0"), "expenses": Decimal("0"), "gross_profit": Decimal("0"), "net_income": pl_net}
-        for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-            bucket = _pl_bucket(coa)
-            if bucket is None:
-                continue
-            amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
-            if bucket == "income":
-                pl["income"] += amt
-            elif bucket == "cost_of_goods_sold":
-                pl["cogs"] += amt
-            else:
-                pl["expenses"] += amt
-        pl["gross_profit"] = pl["income"] - pl["cogs"]
+        pl = _period_pl_totals_from_line_qs(company_id, start, end, line_qs)
         bs = _bs_totals_from_line_qs(company_id, end, line_qs)
         td, tc = _trial_balance_period_totals(
             company_id, start, end, unscoped_dims=True
@@ -4965,25 +4959,7 @@ def _financial_analytics_entity_row(
         row["pond_id"] = pond_id
         row["pond_name"] = entity_name
         line_qs = _je_lines_pond(company_id, pond_id)
-        pl = {
-            "income": Decimal("0"),
-            "cogs": Decimal("0"),
-            "expenses": Decimal("0"),
-            "gross_profit": Decimal("0"),
-            "net_income": _period_net_income_from_lines(company_id, start, end, line_qs),
-        }
-        for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-            t = normalize_chart_account_type(coa.account_type)
-            if t not in ("income", "cost_of_goods_sold", "expense"):
-                continue
-            amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
-            if t == "income":
-                pl["income"] += amt
-            elif t == "cost_of_goods_sold":
-                pl["cogs"] += amt
-            else:
-                pl["expenses"] += amt
-        pl["gross_profit"] = pl["income"] - pl["cogs"]
+        pl = _period_pl_totals_from_line_qs(company_id, start, end, line_qs)
         doc_sales = _d(
             AquacultureFishSale.objects.filter(
                 company_id=company_id,

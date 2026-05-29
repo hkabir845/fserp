@@ -69,6 +69,15 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
+    /* Reserve space above Windows taskbar (browsers do not expose it in safe-area). */
+    --erp-os-bottom-chrome: 0px;
+  }
+
+  @media (min-width: 768px) {
+    :root {
+      /* ~52px — clears Windows taskbar without sitting too high */
+      --erp-os-bottom-chrome: 3.25rem;
+    }
   }
 
   .dark {
@@ -165,6 +174,25 @@
   width: 100%;
   max-width: 100%;
   overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  /* Stop the shell from extending under the Windows taskbar */
+  .page-with-sidebar {
+    height: calc(100dvh - var(--erp-os-bottom-chrome)) !important;
+    max-height: calc(100dvh - var(--erp-os-bottom-chrome)) !important;
+  }
+}
+
+/* Sidebar column + footer — keep Logout above OS taskbar */
+.sidebar-viewport-height {
+  height: calc(100dvh - var(--erp-os-bottom-chrome));
+  max-height: calc(100dvh - var(--erp-os-bottom-chrome));
+}
+
+.sidebar-footer-pad {
+  /* Sidebar height already ends above taskbar; only a little inner pad here */
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
 }
 
 /* Main column: allow flex children to shrink so tables/cards don’t overflow viewport on mobile */

@@ -266,6 +266,81 @@ def test_items_reject_duplicate_name_same_company(
     assert b"already exists" in r2.content
 
 
+def test_items_put_rejects_duplicate_name(api_client: Client, auth_super_headers, company_master):
+    h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
+    base = {"unit_price": "10", "cost": "5", "category": "General"}
+    r1 = api_client.post(
+        "/api/items/",
+        data=json.dumps({**base, "name": "Unique Alpha Product"}),
+        content_type="application/json",
+        **h,
+    )
+    r2 = api_client.post(
+        "/api/items/",
+        data=json.dumps({**base, "name": "Unique Beta Product"}),
+        content_type="application/json",
+        **h,
+    )
+    assert r1.status_code == 201
+    assert r2.status_code == 201
+    item_b_id = r2.json()["id"]
+
+    r_put = api_client.put(
+        f"/api/items/{item_b_id}/",
+        data=json.dumps({**base, "name": "Unique Alpha Product", "unit_price": "99"}),
+        content_type="application/json",
+        **h,
+    )
+    assert r_put.status_code == 409
+    assert b"already exists" in r_put.content
+    body = r_put.json()
+    assert body.get("conflicting_item_id") == r1.json()["id"]
+
+
+def test_dedupe_company_item_names_renames_lower_priority_rows(
+    api_client: Client, auth_super_headers, company_master
+):
+    from api.models import Item
+    from api.services.item_name_uniqueness import dedupe_company_item_names, normalize_item_name_for_storage
+
+    h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
+    base = {"unit_price": "10", "cost": "5", "category": "General"}
+    r1 = api_client.post(
+        "/api/items/",
+        data=json.dumps({**base, "name": "Dedupe Keeper Fuel"}),
+        content_type="application/json",
+        **h,
+    )
+    r2 = api_client.post(
+        "/api/items/",
+        data=json.dumps({**base, "name": "Dedupe Loser Fuel"}),
+        content_type="application/json",
+        **h,
+    )
+    assert r1.status_code == 201
+    assert r2.status_code == 201
+    loser = Item.objects.get(pk=r2.json()["id"])
+    loser.name = "Dedupe Keeper Fuel"
+    loser.save(update_fields=["name"])
+
+    renamed = dedupe_company_item_names(company_master.id)
+    assert renamed == 1
+    loser.refresh_from_db()
+    keeper = Item.objects.get(pk=r1.json()["id"])
+    assert normalize_item_name_for_storage(loser.name).lower() != normalize_item_name_for_storage(
+        keeper.name
+    ).lower()
+    assert loser.name.startswith("Dedupe Keeper Fuel")
+
+    r_put = api_client.put(
+        f"/api/items/{keeper.id}/",
+        data=json.dumps({**base, "name": "Dedupe Keeper Fuel", "unit_price": "88"}),
+        content_type="application/json",
+        **h,
+    )
+    assert r_put.status_code == 200
+
+
 def test_items_same_name_allowed_in_different_companies(
     api_client: Client, auth_super_headers, company_master, company_tenant
 ):

@@ -1119,6 +1119,7 @@ def post_invoice_sale_journal(
     if JournalEntry.objects.filter(
         company_id=company_id, entry_number=entry_number
     ).exists():
+        post_invoice_cogs_journal(company_id, inv)
         return True
 
     vat_acc = _coa(company_id, CODE_VAT)
@@ -2284,6 +2285,7 @@ def sync_invoice_gl(
         payment_method=payment_method,
         bank_account_id=bank_account_id,
     )
+    post_invoice_cogs_journal(company_id, inv)
     if (
         old_status
         and old_status != "paid"

@@ -2220,7 +2220,7 @@ export default function ReportsPage() {
       renderSalesReportSection('Cash customers', reportData.cash_customers || [])
       renderSalesReportSection('Credit customers', reportData.credit_customers || [])
       const sum = reportData.summary || {}
-      contentHTML += `<p><strong>Grand total:</strong> ${formatCurrency(sum.grand_total ?? 0)} (${sum.total_invoices ?? 0} invoices)</p>`
+      contentHTML += `<table><tfoot><tr><td colspan="2" style="text-align:right"><strong>Grand total sales</strong></td><td style="text-align:right"><strong>${sum.total_invoices ?? 0}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.grand_total ?? 0)}</strong></td></tr></tfoot></table>`
     } else if (selectedReport === 'purchase-report' && (reportData.cash_vendors || reportData.credit_vendors)) {
       const renderPurchaseReportSection = (title: string, rows: any[]) => {
         contentHTML += `<h2>${escapeHtml(title)}</h2><table><thead><tr><th>Vendor #</th><th>Vendor</th><th style="text-align:right">Bills</th><th style="text-align:right">Total</th></tr></thead><tbody>`
@@ -2544,6 +2544,8 @@ export default function ReportsPage() {
         }
         exportSalesSection('Cash customers', reportData.cash_customers || [])
         exportSalesSection('Credit customers', reportData.credit_customers || [])
+        const sum = reportData.summary || {}
+        csvContent += `\nGrand total sales,,${sum.total_invoices ?? 0},${sum.grand_total ?? 0}\n`
       } else if (selectedReport === 'purchase-report' && (reportData.cash_vendors || reportData.credit_vendors)) {
         const exportPurchaseSection = (section: string, rows: any[]) => {
           csvContent += `\n${section}\n`
@@ -6468,6 +6470,24 @@ function renderReportTable(
 
         {renderCustomerTable('Cash customers', cashRows, 'text-green-800')}
         {renderCustomerTable('Credit customers', creditRows, 'text-amber-800', true)}
+
+        <div className="overflow-x-auto rounded-lg border-2 border-indigo-300 bg-indigo-50/60 shadow-sm">
+          <table className="min-w-full">
+            <tbody>
+              <tr>
+                <td colSpan={2} className="px-4 py-3 text-right text-sm font-bold uppercase tracking-wide text-indigo-900">
+                  Grand total sales
+                </td>
+                <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-indigo-900">
+                  {summary.total_invoices ?? 0}
+                </td>
+                <td className="px-4 py-3 text-right text-sm font-bold text-indigo-900">
+                  {formatCurrency(summary.grand_total ?? 0)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         {data.accounting_note && (
           <p className="text-xs text-gray-500 border-t border-gray-100 pt-3">{data.accounting_note}</p>

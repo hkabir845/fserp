@@ -149,13 +149,19 @@ def _get_or_create_item(
     pieces_per_kg: str | None = None,
     content_weight_kg: str | None = None,
 ) -> Item:
+    from api.services.item_name_uniqueness import find_item_name_conflict, normalize_item_name_for_storage
+
     item = Item.objects.filter(company_id=company_id, item_number=item_number).first()
     price = Decimal(unit_price)
     c = Decimal(cost)
     if item:
         dirty: list[str] = []
-        if (item.name or "").strip() != name:
-            item.name = name
+        canonical = normalize_item_name_for_storage(name)
+        conflict = find_item_name_conflict(company_id, canonical, exclude_pk=item.pk)
+        if conflict:
+            item = conflict
+        elif canonical and canonical != normalize_item_name_for_storage(item.name):
+            item.name = canonical
             dirty.append("name")
         if item.pos_category != pos_category:
             item.pos_category = pos_category
@@ -163,6 +169,12 @@ def _get_or_create_item(
         if dirty:
             item.save(update_fields=dirty + ["updated_at"])
         return item
+    existing_by_name = find_item_name_conflict(company_id, name)
+    if existing_by_name:
+        if not (existing_by_name.item_number or "").strip():
+            existing_by_name.item_number = item_number
+            existing_by_name.save(update_fields=["item_number", "updated_at"])
+        return existing_by_name
     return Item.objects.create(
         company_id=company_id,
         item_number=item_number,

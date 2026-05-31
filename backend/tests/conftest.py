@@ -216,6 +216,7 @@ def seed_min_gl_accounts(company) -> None:
         ("5100", "COGS Fuel", "cost_of_goods_sold"),
         ("5120", "COGS Shop", "cost_of_goods_sold"),
         ("6900", "Office Expense", "expense"),
+        ("3200", "Opening Balance Equity", "equity"),
     ]
     for code, name, typ in specs:
         ChartOfAccount.objects.get_or_create(

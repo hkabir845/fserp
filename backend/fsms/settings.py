@@ -31,7 +31,8 @@ _seed_management_cmd = _manage_cmd.startswith("seed_")
 _DEV_SECRET_CMDS = frozenset(
     "runserver shell migrate makemigrations createsuperuser test showmigrations dbshell "
     "flush loaddata dumpdata sqlmigrate check changepassword compilemessages "
-    "makemessages ensure_platform_owner_email ensure_saas_superuser create_superuser".split()
+    "makemessages ensure_platform_owner_email ensure_saas_superuser create_superuser "
+    "backfill_invoice_cogs backfill_item_opening_stock_gl".split()
 )
 
 

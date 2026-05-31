@@ -18,7 +18,8 @@ from api.services.reporting import report_income_statement
 pytestmark = pytest.mark.django_db
 
 
-def test_invoice_cogs_uses_unit_price_when_cost_zero(company_tenant_with_gl):
+def test_invoice_cogs_zero_when_item_cost_zero(company_tenant_with_gl):
+    """Blank item cost must NOT post COGS at the selling price (no silent margin collapse)."""
     st = Station.objects.create(
         company_id=company_tenant_with_gl.id, station_name="COGS Test Stn", is_active=True
     )
@@ -62,12 +63,68 @@ def test_invoice_cogs_uses_unit_price_when_cost_zero(company_tenant_with_gl):
         amount=Decimal("50"),
     )
     post_invoice_sale_journal(company_tenant_with_gl.id, inv, payment_method="cash")
+    assert post_invoice_cogs_journal(company_tenant_with_gl.id, inv) is False
+    assert not JournalEntry.objects.filter(
+        company_id=company_tenant_with_gl.id, entry_number=f"AUTO-INV-{inv.id}-COGS"
+    ).exists()
+
+    pl = report_income_statement(
+        company_tenant_with_gl.id, date(2026, 4, 1), date(2026, 4, 30)
+    )
+    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("0.00")
+
+
+def test_invoice_cogs_posts_at_item_cost_when_set(company_tenant_with_gl):
+    """When item cost is set, COGS posts at cost x qty (not the selling price)."""
+    st = Station.objects.create(
+        company_id=company_tenant_with_gl.id, station_name="COGS Cost Stn", is_active=True
+    )
+    cust = Customer.objects.create(
+        company_id=company_tenant_with_gl.id,
+        display_name="Walk-in Cost",
+        customer_number="WALK-COST",
+        is_active=True,
+    )
+    inv_acc = ChartOfAccount.objects.get(company_id=company_tenant_with_gl.id, account_code="1220")
+    cogs_acc = ChartOfAccount.objects.get(company_id=company_tenant_with_gl.id, account_code="5120")
+    item = Item.objects.create(
+        company_id=company_tenant_with_gl.id,
+        name="Shop snack costed",
+        item_type="inventory",
+        unit="piece",
+        cost=Decimal("18.00"),
+        unit_price=Decimal("25.00"),
+        quantity_on_hand=Decimal("100"),
+        inventory_account=inv_acc,
+        cogs_account=cogs_acc,
+        is_active=True,
+    )
+    inv = Invoice.objects.create(
+        company_id=company_tenant_with_gl.id,
+        customer=cust,
+        station=st,
+        invoice_number="INV-COGS-UT-2",
+        invoice_date=date(2026, 4, 6),
+        status="paid",
+        subtotal=Decimal("50"),
+        total=Decimal("50"),
+        payment_method="cash",
+    )
+    InvoiceLine.objects.create(
+        invoice=inv,
+        item=item,
+        description=item.name,
+        quantity=Decimal("2"),
+        unit_price=Decimal("25"),
+        amount=Decimal("50"),
+    )
+    post_invoice_sale_journal(company_tenant_with_gl.id, inv, payment_method="cash")
     assert post_invoice_cogs_journal(company_tenant_with_gl.id, inv) is True
 
     pl = report_income_statement(
         company_tenant_with_gl.id, date(2026, 4, 1), date(2026, 4, 30)
     )
-    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("50.00")
+    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("36.00")
 
 
 def test_sale_journal_idempotent_still_posts_missing_cogs(company_tenant_with_gl):

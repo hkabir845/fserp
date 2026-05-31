@@ -37,7 +37,7 @@ from api.models import (
     TankDip,
     Vendor,
 )
-from api.services.gl_posting import item_inventory_unit_cost
+from api.services.gl_posting import item_inventory_cost_strict, item_inventory_unit_cost
 from api.services.payment_allocation import bill_open_amount, invoice_open_amount
 from api.utils.pos_payment import is_on_account_payment
 from api.services.aquaculture_pond_pos_customer import pond_pos_customer_ids
@@ -146,7 +146,7 @@ def _estimated_cogs_from_invoice_lines(
         it = line.item
         if not it or not item_tracks_physical_stock(it):
             continue
-        cost = item_inventory_unit_cost(it)
+        cost = item_inventory_cost_strict(it)
         qty = line.quantity or Decimal("0")
         if cost <= 0 or qty <= 0:
             continue

@@ -405,6 +405,10 @@ def item_inventory_unit_cost(item: Optional[Item]) -> Decimal:
     """
     Per-unit cost for inventory / wet-stock GL (liters, pieces, etc.).
     Prefer Item.cost; if unset, fall back to unit_price so reports and dip GL are not all zero.
+
+    NOTE: Do NOT use this for COGS-relief journals (Dr COGS / Cr inventory) — use
+    item_inventory_cost_strict so a blank cost posts nothing instead of relieving
+    inventory at the selling price (which would zero out gross margin).
     """
     if not item:
         return Decimal("0")
@@ -412,6 +416,20 @@ def item_inventory_unit_cost(item: Optional[Item]) -> Decimal:
     if c > 0:
         return c
     return item.unit_price or Decimal("0")
+
+
+def item_inventory_cost_strict(item: Optional[Item]) -> Decimal:
+    """
+    Per-unit cost for COGS relief (Dr COGS / Cr inventory) — cost only, no sale-price fallback.
+
+    A blank/zero Item.cost yields 0 so no COGS journal posts. This keeps the missing-cost
+    situation visible (the income-statement hint fires) instead of silently relieving
+    inventory at the selling price and collapsing gross margin to ~0.
+    """
+    if not item:
+        return Decimal("0")
+    c = item.cost or Decimal("0")
+    return c if c > 0 else Decimal("0")
 
 
 def delete_tank_dip_variance_journal(company_id: int, dip_id: int) -> int:
@@ -722,7 +740,7 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
             continue
         if not item_tracks_physical_stock(it):
             continue
-        cost = item_inventory_unit_cost(it)
+        cost = item_inventory_cost_strict(it)
         if cost <= 0:
             continue
         qty = line.quantity or Decimal("0")
@@ -852,7 +870,7 @@ def post_aquaculture_shop_stock_issue_journal(
     for it, qty in line_rows:
         if not item_tracks_physical_stock(it):
             continue
-        uc = item_inventory_unit_cost(it)
+        uc = item_inventory_cost_strict(it)
         if uc <= 0:
             continue
         q = qty if qty is not None else Decimal("0")
@@ -938,7 +956,7 @@ def post_aquaculture_pond_feed_consumption_journal(
     for it, qty in line_rows:
         if not item_tracks_physical_stock(it):
             continue
-        uc = item_inventory_unit_cost(it)
+        uc = item_inventory_cost_strict(it)
         if uc <= 0:
             continue
         q = qty if qty is not None else Decimal("0")

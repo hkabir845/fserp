@@ -3,11 +3,13 @@ import json
 import os
 import re
 import uuid
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from django.db.models import Count, DecimalField, Exists, F, OuterRef, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
@@ -20,6 +22,10 @@ from api.views.common import parse_json_body, require_company_id, _serialize_dec
 from api.models import AquaculturePond, Item, Station, Tank
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.item_catalog import item_tracks_physical_stock, normalize_item_type
+from api.services.item_opening_stock_gl import (
+    item_opening_fields_for_api,
+    post_item_opening_stock_gl,
+)
 from api.services.coa_gl_defaults import (
     ALLOWED_BILL_EXPENSE_DEBIT,
     ALLOWED_COGS,
@@ -306,6 +312,7 @@ def _item_to_json(i, *, company_id: int | None = None, include_location_stocks: 
         "cogs_account_id": int(i.cogs_account_id) if getattr(i, "cogs_account_id", None) else None,
         "inventory_account_id": int(i.inventory_account_id) if getattr(i, "inventory_account_id", None) else None,
         "expense_account_id": int(i.expense_account_id) if getattr(i, "expense_account_id", None) else None,
+        **item_opening_fields_for_api(i),
     }
     cid = company_id if company_id is not None else getattr(i, "company_id", None)
     if include_location_stocks and cid:
@@ -549,6 +556,30 @@ def items_list_or_create(request):
                 except ValueError as e:
                     return JsonResponse({"detail": str(e)}, status=400)
                 i.refresh_from_db()
+        if (
+            item_tracks_physical_stock(i)
+            and (i.pos_category or "").strip().lower() != "fish"
+            and qty > 0
+            and cost > 0
+        ):
+            ob_raw = (body.get("opening_balance_date") or "").strip()
+            ob_date = None
+            if ob_raw:
+                try:
+                    ob_date = datetime.strptime(ob_raw, "%Y-%m-%d").date()
+                except ValueError:
+                    ob_date = None
+            i.opening_stock_quantity = qty
+            i.opening_stock_unit_cost = cost
+            i.opening_balance_date = ob_date or timezone.localdate()
+            i.save(
+                update_fields=[
+                    "opening_stock_quantity",
+                    "opening_stock_unit_cost",
+                    "opening_balance_date",
+                ]
+            )
+            post_item_opening_stock_gl(request.company_id, i)
         if not i.item_number:
             assigned, aerr = assign_string_code_if_empty(
                 request.company_id, Item, "item_number", "ITM", i.pk, None, None

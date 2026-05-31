@@ -419,6 +419,31 @@ class Item(models.Model):
         related_name="items_default_expense",
         help_text="When set, non-inventory vendor bill lines for this SKU debit this expense (else office default).",
     )
+    opening_stock_quantity = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        default=0,
+        help_text="Go-live on-hand quantity treated as opening inventory (capitalized to the inventory asset, offset to Opening Balance Equity). Distinct from later bill receipts.",
+    )
+    opening_stock_unit_cost = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        default=0,
+        help_text="Unit cost used to value opening stock at go-live (opening value = opening_stock_quantity x this).",
+    )
+    opening_balance_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="As-of date for the opening inventory G/L entry (AUTO-ITEM-OB-{id}).",
+    )
+    opening_balance_journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="item_openings",
+        help_text="AUTO-ITEM-OB-{item id} when opening stock is posted to the G/L (Dr inventory / Cr 3200).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -432,6 +432,42 @@ def item_inventory_cost_strict(item: Optional[Item]) -> Decimal:
     return c if c > 0 else Decimal("0")
 
 
+def apply_weighted_average_cost_on_receipt(
+    company_id: int, item_id: int, received_qty: Decimal, received_value: Decimal
+) -> None:
+    """
+    Update Item.cost to the moving weighted average (AVCO) when stock is received on a vendor bill.
+
+        new_cost = (on_hand_before * old_cost + received_value) / (on_hand_before + received_qty)
+
+    AVCO is accepted under IFRS (IAS 2) and US GAAP and is the most widely used perpetual method.
+    Only receipts move the unit cost — issues/sales at average cost leave it unchanged. Must be
+    called BEFORE the receipt increments quantity_on_hand. Fish/biological SKUs are skipped (those
+    are valued via aquaculture cost-per-kg).
+    """
+    if received_qty is None or received_value is None or received_qty <= 0 or received_value <= 0:
+        return
+    it = (
+        Item.objects.filter(pk=item_id, company_id=company_id)
+        .only("id", "cost", "quantity_on_hand", "pos_category", "item_type", "unit", "category", "name")
+        .first()
+    )
+    if not it or not item_tracks_physical_stock(it):
+        return
+    if (it.pos_category or "").strip().lower() == "fish":
+        return
+    old_qty = it.quantity_on_hand or Decimal("0")
+    old_cost = it.cost or Decimal("0")
+    denom = old_qty + received_qty
+    if old_qty <= 0 or old_cost <= 0 or denom <= 0:
+        new_cost = received_value / received_qty
+    else:
+        new_cost = (old_qty * old_cost + received_value) / denom
+    new_cost = new_cost.quantize(Decimal("0.0001"))
+    if new_cost != (it.cost or Decimal("0")):
+        Item.objects.filter(pk=item_id, company_id=company_id).update(cost=new_cost)
+
+
 def delete_tank_dip_variance_journal(company_id: int, dip_id: int) -> int:
     """Remove AUTO-TANKDIP-{id}-VAR if present (e.g. before delete or re-post)."""
     deleted, _ = JournalEntry.objects.filter(
@@ -1616,6 +1652,10 @@ def receipt_inventory_from_posted_bill(
         if not _item_receives_physical_stock(item):
             continue
         applied_lines += 1
+        # Moving weighted-average cost (AVCO): update unit cost BEFORE on-hand is incremented.
+        apply_weighted_average_cost_on_receipt(
+            company_id, item.id, qty, line.amount if line.amount is not None else Decimal("0")
+        )
         tanks_qs = _tanks_for_stock_receipt(company_id, item)
         if tanks_qs.exists():
             tank = _pick_tank_for_bill_line(line, item, tanks_qs)

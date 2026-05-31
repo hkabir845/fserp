@@ -32,7 +32,7 @@ _DEV_SECRET_CMDS = frozenset(
     "runserver shell migrate makemigrations createsuperuser test showmigrations dbshell "
     "flush loaddata dumpdata sqlmigrate check changepassword compilemessages "
     "makemessages ensure_platform_owner_email ensure_saas_superuser create_superuser "
-    "backfill_invoice_cogs backfill_item_opening_stock_gl".split()
+    "backfill_invoice_cogs backfill_item_opening_stock_gl recompute_item_average_cost".split()
 )
 
 

@@ -17,6 +17,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Sum
 
 from api.models import BillLine, Company, Item
+from api.services.gl_posting import recompute_item_average_cost
 from api.services.item_catalog import item_tracks_physical_stock
 
 
@@ -68,7 +69,8 @@ class Command(BaseCommand):
                 f"(opening {base_qty}@{opening_cost} + receipts {recv_qty}@{recv_value})"
             )
             if not dry_run:
-                Item.objects.filter(pk=item.id, company_id=company_id).update(cost=new_cost)
+                # Shared service is the single source of truth for the AVCO formula.
+                recompute_item_average_cost(company_id, item.id)
             updated += 1
 
         self.stdout.write(

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, Building2, Crown, Shield } from 'lucide-react'
 import { useCompany } from '@/contexts/CompanyContext'
@@ -57,6 +58,30 @@ export default function CompanySwitcher() {
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [switcherMode, setSwitcherMode] = useState<SwitcherMode>('single')
   const [readOnlySwitch, setReadOnlySwitch] = useState(false)
+  // The switcher lives inside an overflow-y-auto sidebar section, so an absolutely
+  // positioned menu would be clipped. Render it in a body portal with fixed coords.
+  const triggerRef = useRef<HTMLDivElement | null>(null)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  const updateMenuPos = useCallback(() => {
+    const el = triggerRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setMenuPos({ top: r.bottom + 8, left: r.left, width: r.width })
+  }, [])
+
+  useEffect(() => {
+    if (!isOpen) return
+    updateMenuPos()
+    const onChange = () => updateMenuPos()
+    window.addEventListener('resize', onChange)
+    // Capture phase so scrolling any ancestor (e.g. the sidebar) repositions the menu.
+    window.addEventListener('scroll', onChange, true)
+    return () => {
+      window.removeEventListener('resize', onChange)
+      window.removeEventListener('scroll', onChange, true)
+    }
+  }, [isOpen, updateMenuPos])
 
   const syncSelectionToContext = useCallback(
     (list: Company[], preferredId: number | null) => {
@@ -275,11 +300,13 @@ export default function CompanySwitcher() {
   const openDisabled = readOnlySwitch && companies.length <= 1
 
   return (
-    <div className="relative z-30 w-full min-w-0 max-w-full sm:max-w-sm">
+    <div ref={triggerRef} className="relative z-30 w-full min-w-0 max-w-full sm:max-w-sm">
       <button
         type="button"
         onClick={() => {
-          if (!openDisabled) setIsOpen(!isOpen)
+          if (openDisabled) return
+          if (!isOpen) updateMenuPos()
+          setIsOpen(!isOpen)
         }}
         title={currentLabel}
         className={`flex w-full min-w-0 items-start gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-left hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:items-center sm:px-4 ${openDisabled ? 'cursor-default opacity-95' : ''}`}
@@ -327,10 +354,12 @@ export default function CompanySwitcher() {
         </p>
       )}
 
-      {isOpen && !openDisabled && (
+      {isOpen && !openDisabled && menuPos && typeof document !== 'undefined' && createPortal(
         <>
-          <div className="fixed inset-0 z-[25]" onClick={() => setIsOpen(false)} aria-hidden />
-          <div className="absolute left-0 right-0 top-full z-[35] mt-2 max-h-[min(70vh,24rem)] w-full min-w-0 overflow-y-auto rounded-lg border border-gray-700 bg-gray-800 shadow-lg sm:left-auto sm:right-0 sm:w-80 sm:max-w-[min(100vw-2rem,22rem)]">
+          <div className="fixed inset-0 z-[1000]" onClick={() => setIsOpen(false)} aria-hidden />
+          <div
+            style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: menuPos.width }}
+            className="z-[1001] max-h-[min(70vh,24rem)] min-w-0 overflow-y-auto rounded-lg border border-gray-700 bg-gray-800 shadow-lg">
             {switcherMode === 'fleet' && mode === 'saas_dashboard' && (
               <>
                 <button
@@ -458,7 +487,8 @@ export default function CompanySwitcher() {
               <div className="px-4 py-2 text-center text-xs text-gray-500">No other tenants</div>
             )}
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   )

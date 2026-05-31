@@ -21,6 +21,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Sprout,
   Trash2,
   Package,
@@ -1142,6 +1143,13 @@ function InventoryContent() {
               <Search className="h-4 w-4 shrink-0" />
               Stock by station
             </button>
+            <Link
+              href="/inventory/adjustments"
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-background/80 hover:text-foreground"
+            >
+              <SlidersHorizontal className="h-4 w-4 shrink-0" />
+              Stock adjustments
+            </Link>
           </div>
 
           {loading ? (

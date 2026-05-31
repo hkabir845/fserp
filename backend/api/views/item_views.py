@@ -268,6 +268,64 @@ def _effective_quantity_on_hand(i: Item) -> Decimal:
     return i.quantity_on_hand
 
 
+_OPENING_STOCK_COST_REQUIRED_MSG = (
+    "This inventory item has stock on hand but no unit cost. Enter a 'cost' (cost per unit) so "
+    "opening stock is capitalized to the inventory asset and cost of goods sold posts when it is "
+    "sold. Set a positive cost, or set quantity to 0 if there is no opening stock yet."
+)
+
+
+def _stocked_item_requires_cost(item: Item, qty, cost) -> bool:
+    """True when an inventory (non-fish) item carries stock (qty > 0) without a positive unit cost.
+
+    Without a cost, opening-stock and AUTO-INV-*-COGS journals silently skip: the item would sell
+    at 100% margin and inventory would never be booked. Fish / biological SKUs are exempt — they
+    are capitalized via the aquaculture biological opening (1581) with their own costing.
+    """
+    if qty is None or cost is None:
+        return False
+    if qty <= 0 or cost > 0:
+        return False
+    if not item_tracks_physical_stock(item):
+        return False
+    if (getattr(item, "pos_category", None) or "").strip().lower() == "fish":
+        return False
+    return True
+
+
+def _capitalize_opening_stock_on_update(company_id: int, item: Item) -> None:
+    """Post opening-stock G/L for an inventory item that was never capitalized at create time.
+
+    Closes the gap where editing an item to add stock/cost moved the on-hand quantity but recorded
+    nothing in the ledger. Fires only when the item now carries valid opening stock (qty > 0, cost > 0)
+    and has no opening-balance journal yet, so it can never double-book: once AUTO-ITEM-OB-{id} exists,
+    further saves are a no-op. Fish/biological SKUs are capitalized elsewhere (1581) and are skipped.
+    Restocks after go-live should flow through vendor bills (AVCO), not this path.
+    """
+    if item.opening_balance_journal_id:
+        return
+    if not item_tracks_physical_stock(item):
+        return
+    if (getattr(item, "pos_category", None) or "").strip().lower() == "fish":
+        return
+    qty = item.quantity_on_hand or Decimal("0")
+    cost = item.cost or Decimal("0")
+    if qty <= 0 or cost <= 0:
+        return
+    item.opening_stock_quantity = qty
+    item.opening_stock_unit_cost = cost
+    if not item.opening_balance_date:
+        item.opening_balance_date = timezone.localdate()
+    item.save(
+        update_fields=[
+            "opening_stock_quantity",
+            "opening_stock_unit_cost",
+            "opening_balance_date",
+        ]
+    )
+    post_item_opening_stock_gl(company_id, item)
+
+
 def _coerce_item_type_for_storage(raw) -> str:
     """Normalize API input (e.g. non-inventory → non_inventory) and cap length."""
     s = _truncate(raw or "inventory", 32) or "inventory"
@@ -523,6 +581,8 @@ def items_list_or_create(request):
             return gl_err
         if (i.pos_category or "").strip().lower() in ("non_pos", "fish"):
             i.is_pos_available = False
+        if _stocked_item_requires_cost(i, qty, cost):
+            return JsonResponse({"detail": _OPENING_STOCK_COST_REQUIRED_MSG}, status=400)
         try:
             i.save()
         except ValidationError as e:
@@ -708,6 +768,13 @@ def item_detail(request, item_id: int):
             i.is_active = bool(body["is_active"])
         if "image_url" in body:
             i.image_url = _truncate(body.get("image_url"), 500)
+        if "quantity_on_hand" in body or "cost" in body:
+            if "quantity_on_hand" in body and body["quantity_on_hand"] is not None:
+                intended_qty = _parse_decimal(body["quantity_on_hand"])
+            else:
+                intended_qty = i.quantity_on_hand
+            if _stocked_item_requires_cost(i, intended_qty, i.cost):
+                return JsonResponse({"detail": _OPENING_STOCK_COST_REQUIRED_MSG}, status=400)
         try:
             i.save()
         except ValidationError as e:
@@ -865,6 +932,7 @@ def item_detail(request, item_id: int):
                 },
                 status=400,
             )
+        _capitalize_opening_stock_on_update(request.company_id, i)
         i2 = _items_queryset_with_tank_annotations(Item.objects.filter(pk=i.pk)).first()
         return JsonResponse(
             _item_to_json(

@@ -37,7 +37,11 @@ from api.models import (
     TankDip,
     Vendor,
 )
-from api.services.gl_posting import item_inventory_cost_strict, item_inventory_unit_cost
+from api.services.gl_posting import (
+    backfill_invoice_cogs_journals,
+    item_cogs_unit_cost,
+    item_inventory_unit_cost,
+)
 from api.services.payment_allocation import bill_open_amount, invoice_open_amount
 from api.utils.pos_payment import is_on_account_payment
 from api.services.aquaculture_pond_pos_customer import pond_pos_customer_ids
@@ -146,7 +150,7 @@ def _estimated_cogs_from_invoice_lines(
         it = line.item
         if not it or not item_tracks_physical_stock(it):
             continue
-        cost = item_inventory_cost_strict(it)
+        cost = item_cogs_unit_cost(company_id, it)
         qty = line.quantity or Decimal("0")
         if cost <= 0 or qty <= 0:
             continue
@@ -1071,6 +1075,20 @@ def report_income_statement(
             pk=pond_id, company_id=company_id, is_active=True
         ).only("name").first()
         pond_name = (pond.name or "").strip() if pond else None
+    # Cost of the goods actually sold in this period (subledger: qty x best-available unit cost).
+    est_cogs = _estimated_cogs_from_invoice_lines(
+        company_id, start, end, station_id=station_id, pond_id=pond_id
+    )
+    # Self-heal: every sale must show COGS. If the sold-goods cost exceeds the COGS already posted
+    # to the GL for this scope, post the missing AUTO-INV-*-COGS journals (idempotent, dated at the
+    # sale date) so the P&L never shows goods sold without matching Cost of Goods Sold. Keeping it in
+    # the GL means the Balance Sheet and Trial Balance stay consistent with the P&L.
+    if est_cogs > 0 and pond_id is None:
+        posted_cogs_pre = _period_income_statement_totals(
+            company_id, start, end, station_id
+        )["cogs"]
+        if est_cogs > posted_cogs_pre + Decimal("0.02"):
+            backfill_invoice_cogs_journals(company_id, start, end)
     # Include inactive accounts: journals may still post to them; omitting them understates P&L.
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by(
         "account_code"
@@ -1118,14 +1136,11 @@ def report_income_statement(
         "Cumulative change vs net income flags unusual opening-balance or dating issues."
     )
     note += _pl_scope_accounting_note(station_id, pond_id, pond_name=pond_name)
-    est_cogs = _estimated_cogs_from_invoice_lines(
-        company_id, start, end, station_id=station_id, pond_id=pond_id
-    )
     if tcogs <= 0 and est_cogs > 0:
         note += (
-            f" Posted GL COGS is zero but inventory sales in this period imply about {_f(est_cogs)} "
-            "in cost (qty × item cost). Run `python manage.py backfill_invoice_cogs` or re-sync "
-            "invoices so AUTO-INV-*-COGS journals are created."
+            f" Inventory sales in this period imply about {_f(est_cogs)} in cost (qty × item cost) "
+            "but no COGS journal could be posted — check that the items have COGS (5xxx) and "
+            "inventory (12xx) accounts configured so AUTO-INV-*-COGS journals can be created."
         )
     out_is: dict[str, Any] = {
         "report_id": "income-statement",

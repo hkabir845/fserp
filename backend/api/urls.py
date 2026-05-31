@@ -66,6 +66,7 @@ def api_docs(request):
             "/api/broadcasts/", "/api/broadcasts/my", "/api/stations/",
             "/api/inventory/availability/",
             "/api/inventory/transfers/",
+            "/api/inventory/adjustments/",
             "/api/inventory/pond-warehouse-receipts/",
             "/api/tanks/",
             "/api/items/", "/api/islands/", "/api/dispensers/", "/api/meters/", "/api/nozzles/",
@@ -272,6 +273,19 @@ urlpatterns = [
     path(
         "inventory/transfers/<int:transfer_id>/unpost/",
         inventory_views.inventory_transfer_unpost,
+    ),
+    path("inventory/adjustments/", inventory_views.inventory_adjustments_list_or_create),
+    path(
+        "inventory/adjustments/<int:adjustment_id>/",
+        inventory_views.inventory_adjustment_detail_or_post,
+    ),
+    path(
+        "inventory/adjustments/<int:adjustment_id>/delete/",
+        inventory_views.inventory_adjustment_delete,
+    ),
+    path(
+        "inventory/adjustments/<int:adjustment_id>/unpost/",
+        inventory_views.inventory_adjustment_unpost,
     ),
     path("tanks/", tank_views.tanks_list_or_create),
     path("tanks/<int:tank_id>/", tank_views.tank_detail),

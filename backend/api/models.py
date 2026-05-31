@@ -1198,6 +1198,63 @@ class InventoryTransferLine(models.Model):
         db_table = "inventory_transfer_line"
 
 
+class InventoryAdjustment(models.Model):
+    """Stock-count / adjustment for shop (non-tank) inventory at one station — the C-store analogue
+    of a fuel tank dip.
+
+    Posting sets on-hand to the counted quantity and books the variance to GL at unit cost:
+    loss (counted < book) -> Dr 5210 Inventory Shrinkage / Cr inventory asset; gain (counted > book)
+    -> Dr inventory asset / Cr 5210. Fuel uses tank dips and fish uses the aquaculture stock ledger,
+    so both are excluded here.
+    """
+
+    STATUS_DRAFT = "draft"
+    STATUS_POSTED = "posted"
+
+    REASON_CHOICES = [
+        ("count", "Stock count / cycle count"),
+        ("damage", "Damage / breakage"),
+        ("theft", "Theft / loss"),
+        ("expiry", "Expiry / spoilage"),
+        ("other", "Other"),
+    ]
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="inventory_adjustments"
+    )
+    station = models.ForeignKey(
+        "Station", on_delete=models.PROTECT, related_name="inventory_adjustments"
+    )
+    adjustment_number = models.CharField(max_length=64, blank=True)
+    adjustment_date = models.DateField()
+    reason = models.CharField(max_length=16, default="count")
+    status = models.CharField(max_length=16, default=STATUS_DRAFT)
+    memo = models.CharField(max_length=500, blank=True)
+    posted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "inventory_adjustment"
+        ordering = ["-adjustment_date", "-id"]
+
+
+class InventoryAdjustmentLine(models.Model):
+    adjustment = models.ForeignKey(
+        InventoryAdjustment, on_delete=models.CASCADE, related_name="lines"
+    )
+    item = models.ForeignKey(
+        Item, on_delete=models.PROTECT, related_name="inventory_adjustment_lines"
+    )
+    counted_quantity = models.DecimalField(max_digits=14, decimal_places=4)
+    # Snapshots captured at post time so unpost restores exactly and the GL stays reproducible.
+    book_quantity = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+    unit_cost = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+
+    class Meta:
+        db_table = "inventory_adjustment_line"
+
+
 # ---------------------------------------------------------------------------
 # Sales: Invoices, Bills, Payments
 # ---------------------------------------------------------------------------

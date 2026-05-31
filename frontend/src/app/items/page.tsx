@@ -956,6 +956,20 @@ export default function ItemsPage() {
       const isFuelPos = (formData.pos_category || '').toLowerCase() === 'fuel'
       const isFishPos = (formData.pos_category || '').toLowerCase() === 'fish'
 
+      // Mirror the backend rule: an inventory (non-fish) item with stock on hand must carry a unit
+      // cost, otherwise opening stock and COGS silently skip. Block early with a clear message.
+      if (
+        isInventory &&
+        !isFishPos &&
+        (Number(formData.quantity_on_hand) || 0) > 0 &&
+        costNum <= 0
+      ) {
+        toast.error(
+          'Enter a unit cost for this item. Stock on hand with no cost means opening stock and COGS will not post.'
+        )
+        return
+      }
+
       if (editingId && isInventory && isFuelPos && fuelTanksLoading) {
         toast.error('Loading fuel tank information… please wait a moment, then save again.')
         return

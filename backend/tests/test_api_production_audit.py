@@ -1315,7 +1315,7 @@ def test_cashier_pos_shop_qty_over_qoh_returns_400(
                 "unit_price": "5.00",
                 "quantity_on_hand": "10",
                 "category": "General",
-                "cost": "0",
+                "cost": "3.00",
             }
         ),
         content_type="application/json",
@@ -1602,7 +1602,7 @@ def test_cashier_pos_general_sale(api_client: Client, auth_super_headers, compan
                 "unit_price": "5.00",
                 "quantity_on_hand": "100",
                 "category": "General",
-                "cost": "0",
+                "cost": "3.00",
             }
         ),
         content_type="application/json",
@@ -1659,7 +1659,7 @@ def test_cashier_pos_mixed_fuel_and_general(
                 "unit_price": "4.00",
                 "quantity_on_hand": "50",
                 "category": "General",
-                "cost": "0",
+                "cost": "2.00",
             }
         ),
         content_type="application/json",

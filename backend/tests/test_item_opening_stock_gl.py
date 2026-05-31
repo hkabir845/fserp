@@ -9,6 +9,7 @@ import pytest
 from api.models import ChartOfAccount, Item, JournalEntry, JournalEntryLine
 from api.services.item_opening_stock_gl import post_item_opening_stock_gl
 from api.services.reporting import report_balance_sheet
+from api.views.item_views import _capitalize_opening_stock_on_update
 
 pytestmark = pytest.mark.django_db
 
@@ -135,6 +136,70 @@ def test_opening_repost_after_change(company_tenant_with_gl):
     by_code = {ln.account.account_code: ln for ln in lines}
     assert by_code["1220"].debit == Decimal("80.00")
     assert by_code["3200"].credit == Decimal("80.00")
+
+
+def test_capitalize_on_update_books_gl_for_uncapitalized_item(company_tenant_with_gl):
+    """Editing an item to add stock + cost must post opening-stock G/L (closes the update gap)."""
+    cid = company_tenant_with_gl.id
+    item = _make_item(cid, cost=Decimal("0"), quantity_on_hand=Decimal("0"))
+    assert item.opening_balance_journal_id is None
+
+    # Simulate the PUT path after it has applied the new quantity/cost and saved the item.
+    item.cost = Decimal("5")
+    item.quantity_on_hand = Decimal("10")
+    item.save(update_fields=["cost", "quantity_on_hand"])
+    _capitalize_opening_stock_on_update(cid, item)
+
+    lines = list(_lines(cid, item.id))
+    assert len(lines) == 2
+    by_code = {ln.account.account_code: ln for ln in lines}
+    assert by_code["1220"].debit == Decimal("50.00")
+    assert by_code["3200"].credit == Decimal("50.00")
+    item.refresh_from_db()
+    assert item.opening_balance_journal_id is not None
+
+
+def test_capitalize_on_update_is_idempotent(company_tenant_with_gl):
+    """Re-saving an already-capitalized item must never double-book the opening stock."""
+    cid = company_tenant_with_gl.id
+    item = _make_item(cid, cost=Decimal("4"), quantity_on_hand=Decimal("6"))
+    _capitalize_opening_stock_on_update(cid, item)
+    item.refresh_from_db()
+
+    # A second edit (e.g. changing the price) must not add another opening journal.
+    _capitalize_opening_stock_on_update(cid, item)
+    assert (
+        JournalEntry.objects.filter(
+            company_id=cid, entry_number=f"AUTO-ITEM-OB-{item.id}"
+        ).count()
+        == 1
+    )
+
+
+def test_capitalize_on_update_skips_qty_without_cost(company_tenant_with_gl):
+    """Stock on hand but no cost still books nothing (the API blocks this before saving)."""
+    cid = company_tenant_with_gl.id
+    item = _make_item(cid, cost=Decimal("0"), quantity_on_hand=Decimal("10"))
+    _capitalize_opening_stock_on_update(cid, item)
+    assert not JournalEntry.objects.filter(
+        company_id=cid, entry_number=f"AUTO-ITEM-OB-{item.id}"
+    ).exists()
+
+
+def test_capitalize_on_update_skips_fish(company_tenant_with_gl):
+    """Fish/biological SKUs are capitalized via 1581, never through item opening stock."""
+    cid = company_tenant_with_gl.id
+    item = _make_item(
+        cid,
+        name="Tilapia fingerling",
+        pos_category="fish",
+        cost=Decimal("2"),
+        quantity_on_hand=Decimal("100"),
+    )
+    _capitalize_opening_stock_on_update(cid, item)
+    assert not JournalEntry.objects.filter(
+        company_id=cid, entry_number=f"AUTO-ITEM-OB-{item.id}"
+    ).exists()
 
 
 def test_backfill_command_posts_existing(company_tenant_with_gl):

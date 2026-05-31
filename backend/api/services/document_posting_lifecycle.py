@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from api.models import Bill, Invoice, PaymentInvoiceAllocation
+from api.models import Bill, BillLine, Invoice, PaymentInvoiceAllocation
 from api.services.gl_posting import (
     cleanup_vendor_bill_posting_effects,
+    recompute_item_average_cost,
     rollback_invoice_posting_effects,
     sync_invoice_gl,
     sync_posted_vendor_bill,
@@ -90,6 +91,16 @@ def reconcile_bill_after_material_edit(
             bill,
             acknowledge_tank_overfill=acknowledge_tank_overfill,
         )
+    # The receipt reversal restores quantity but not the blended AVCO cost, so a reverse+repost would
+    # otherwise re-blend the cost on every save. Recompute deterministically from the full receipt
+    # history so re-saving the same bill cannot drift Item.cost (and inventory value / future COGS).
+    affected_item_ids = (
+        BillLine.objects.filter(bill_id=bill.id, item_id__isnull=False)
+        .values_list("item_id", flat=True)
+        .distinct()
+    )
+    for item_id in affected_item_ids:
+        recompute_item_average_cost(company_id, int(item_id))
 
 
 INVOICE_MATERIAL_BODY_KEYS = frozenset(

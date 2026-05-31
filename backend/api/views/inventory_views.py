@@ -13,6 +13,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 
 from api.models import (
+    InventoryAdjustment,
+    InventoryAdjustmentLine,
     InventoryTransfer,
     InventoryTransferLine,
     Item,
@@ -23,13 +25,20 @@ from api.models import (
 )
 from api.exceptions import StockBusinessError
 from api.services.aquaculture_pond_stock_service import reverse_pond_warehouse_stock_receipt
-from api.services.gl_posting import delete_auto_inventory_transfer_journal, post_inventory_transfer_journal
+from api.services.gl_posting import (
+    delete_auto_inventory_adjustment_journal,
+    delete_auto_inventory_transfer_journal,
+    item_inventory_unit_cost,
+    post_inventory_adjustment_journal,
+    post_inventory_transfer_journal,
+)
 from api.services.station_stock import (
     add_station_stock,
     get_station_stock,
     item_uses_station_bins,
     per_pond_quantities,
     per_station_quantities,
+    set_station_stock,
 )
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id, _serialize_decimal
@@ -513,6 +522,307 @@ def inventory_transfer_unpost(request, transfer_id: int):
         .first()
     )
     return JsonResponse(_transfer_to_json(tr2 or tr))
+
+
+_ADJUSTMENT_REASONS = {"count", "damage", "theft", "expiry", "other"}
+
+
+def _inventory_adjustment_visible_for_user(request, adj: InventoryAdjustment) -> bool:
+    h = _user_home_station_id(request)
+    if h is None:
+        return True
+    return int(adj.station_id) == h
+
+
+def _adjustment_to_json(adj: InventoryAdjustment) -> dict:
+    lines = list(adj.lines.all().select_related("item"))
+    posted = adj.status == InventoryAdjustment.STATUS_POSTED
+    return {
+        "id": adj.id,
+        "adjustment_number": adj.adjustment_number or "",
+        "adjustment_date": adj.adjustment_date.isoformat() if adj.adjustment_date else None,
+        "status": adj.status,
+        "reason": adj.reason or "count",
+        "memo": adj.memo or "",
+        "station_id": adj.station_id,
+        "station_name": (adj.station.station_name or "") if adj.station_id else "",
+        "posted_at": adj.posted_at.isoformat() if adj.posted_at else None,
+        "auto_journal_entry_number": (f"AUTO-INVADJ-{adj.id}" if posted else None),
+        "lines": [
+            {
+                "id": ln.id,
+                "item_id": ln.item_id,
+                "item_name": (ln.item.name or "") if ln.item_id else "",
+                "unit": (ln.item.unit or "piece") if ln.item_id else "",
+                "counted_quantity": _serialize_decimal(ln.counted_quantity),
+                "book_quantity": _serialize_decimal(ln.book_quantity)
+                if ln.book_quantity is not None
+                else None,
+                "unit_cost": _serialize_decimal(ln.unit_cost) if ln.unit_cost is not None else None,
+            }
+            for ln in lines
+        ],
+    }
+
+
+def _parse_adjustment_draft_body(*, cid: int, body: dict, request):
+    """Validate JSON for creating/updating a stock-adjustment draft.
+
+    Returns an error JsonResponse, or (station_id, date, reason, memo, [(Item, counted_qty)]).
+    """
+    try:
+        sid = int(body.get("station_id"))
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "station_id is required"}, status=400)
+    if not Station.objects.filter(pk=sid, company_id=cid, is_active=True).exists():
+        return JsonResponse({"detail": "Invalid station for this company"}, status=400)
+    h = _user_home_station_id(request)
+    if h is not None and int(sid) != int(h):
+        return JsonResponse(
+            {"detail": "You can only adjust stock for your assigned home station."}, status=403
+        )
+
+    raw_date = body.get("adjustment_date")
+    if not raw_date:
+        ad = timezone.localdate()
+    else:
+        try:
+            ad = date.fromisoformat(str(raw_date).split("T")[0])
+        except Exception:
+            return JsonResponse({"detail": "Invalid adjustment_date"}, status=400)
+
+    reason = (body.get("reason") or "count").strip().lower()
+    if reason not in _ADJUSTMENT_REASONS:
+        return JsonResponse(
+            {"detail": f"reason must be one of: {', '.join(sorted(_ADJUSTMENT_REASONS))}"},
+            status=400,
+        )
+    memo = (body.get("memo") or "")[:500]
+
+    lines_in = body.get("lines")
+    if not isinstance(lines_in, list) or not lines_in:
+        return JsonResponse(
+            {"detail": "lines must be a non-empty array of {item_id, counted_quantity}"},
+            status=400,
+        )
+    seen: set[int] = set()
+    parsed_lines: list[tuple[Item, Decimal]] = []
+    for row in lines_in:
+        try:
+            iid = int(row.get("item_id"))
+            counted = Decimal(str(row.get("counted_quantity")))
+        except Exception:
+            return JsonResponse({"detail": "Each line needs item_id and counted_quantity"}, status=400)
+        if counted < 0:
+            return JsonResponse({"detail": "counted_quantity cannot be negative"}, status=400)
+        if iid in seen:
+            return JsonResponse(
+                {"detail": "Each item can appear only once per adjustment"}, status=400
+            )
+        seen.add(iid)
+        it = Item.objects.filter(pk=iid, company_id=cid).first()
+        if not it:
+            return JsonResponse({"detail": f"Unknown item_id {iid}"}, status=404)
+        if not item_uses_station_bins(cid, it):
+            return JsonResponse(
+                {
+                    "detail": (
+                        f'"{it.name}" is not a shop (per-station) product. '
+                        "Adjust fuel with tank dips and fish with the aquaculture stock ledger."
+                    )
+                },
+                status=400,
+            )
+        parsed_lines.append((it, counted))
+    return sid, ad, reason, memo, parsed_lines
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@auth_required
+@require_company_id
+def inventory_adjustments_list_or_create(request):
+    cid = request.company_id
+    if request.method == "GET":
+        qs = InventoryAdjustment.objects.filter(company_id=cid).select_related("station")
+        h = _user_home_station_id(request)
+        if h is not None:
+            qs = qs.filter(station_id=h)
+        qs = qs.order_by("-adjustment_date", "-id")[:200]
+        return JsonResponse([_adjustment_to_json(a) for a in qs], safe=False)
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    parsed = _parse_adjustment_draft_body(cid=cid, body=body, request=request)
+    if isinstance(parsed, JsonResponse):
+        return parsed
+    sid, ad, reason, memo, parsed_lines = parsed
+    with transaction.atomic():
+        adj = InventoryAdjustment(
+            company_id=cid,
+            station_id=sid,
+            adjustment_date=ad,
+            reason=reason,
+            status=InventoryAdjustment.STATUS_DRAFT,
+            memo=memo,
+        )
+        adj.save()
+        adj.adjustment_number = f"ADJ-{adj.id}"
+        adj.save(update_fields=["adjustment_number"])
+        for it, counted in parsed_lines:
+            InventoryAdjustmentLine.objects.create(
+                adjustment=adj, item=it, counted_quantity=counted
+            )
+    adj2 = InventoryAdjustment.objects.filter(pk=adj.id).select_related("station").first()
+    return JsonResponse(_adjustment_to_json(adj2 or adj), status=201)
+
+
+def _inventory_adjustment_put_draft(request, adj: InventoryAdjustment) -> JsonResponse:
+    cid = request.company_id
+    if adj.status != InventoryAdjustment.STATUS_DRAFT:
+        return JsonResponse({"detail": "Only draft adjustments can be updated"}, status=400)
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    parsed = _parse_adjustment_draft_body(cid=cid, body=body, request=request)
+    if isinstance(parsed, JsonResponse):
+        return parsed
+    sid, ad, reason, memo, parsed_lines = parsed
+    with transaction.atomic():
+        locked = (
+            InventoryAdjustment.objects.select_for_update()
+            .filter(pk=adj.pk, company_id=cid)
+            .first()
+        )
+        if not locked or locked.status != InventoryAdjustment.STATUS_DRAFT:
+            return JsonResponse({"detail": "Adjustment is not a draft"}, status=400)
+        locked.station_id = sid
+        locked.adjustment_date = ad
+        locked.reason = reason
+        locked.memo = memo
+        locked.save()
+        InventoryAdjustmentLine.objects.filter(adjustment_id=locked.pk).delete()
+        for it, counted in parsed_lines:
+            InventoryAdjustmentLine.objects.create(
+                adjustment=locked, item=it, counted_quantity=counted
+            )
+    adj2 = InventoryAdjustment.objects.filter(pk=adj.pk).select_related("station").first()
+    return JsonResponse(_adjustment_to_json(adj2 or adj))
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST", "PUT"])
+@auth_required
+@require_company_id
+def inventory_adjustment_detail_or_post(request, adjustment_id: int):
+    cid = request.company_id
+    adj = (
+        InventoryAdjustment.objects.filter(pk=adjustment_id, company_id=cid)
+        .select_related("station")
+        .first()
+    )
+    if not adj:
+        return JsonResponse({"detail": "Adjustment not found"}, status=404)
+    if not _inventory_adjustment_visible_for_user(request, adj):
+        return JsonResponse({"detail": "Adjustment not found"}, status=404)
+    if request.method == "GET":
+        return JsonResponse(_adjustment_to_json(adj))
+    if request.method == "PUT":
+        return _inventory_adjustment_put_draft(request, adj)
+    if adj.status == InventoryAdjustment.STATUS_POSTED:
+        return JsonResponse({"detail": "Adjustment is already posted"}, status=400)
+    with transaction.atomic():
+        locked = (
+            InventoryAdjustment.objects.select_for_update()
+            .filter(pk=adj.id, company_id=cid)
+            .first()
+        )
+        if not locked or locked.status != InventoryAdjustment.STATUS_DRAFT:
+            return JsonResponse({"detail": "Adjustment is not a draft"}, status=400)
+        lines = list(
+            InventoryAdjustmentLine.objects.filter(adjustment_id=locked.id).select_related("item")
+        )
+        if not lines:
+            return JsonResponse({"detail": "Add at least one item before posting"}, status=400)
+        for ln in lines:
+            it = ln.item
+            book = get_station_stock(cid, locked.station_id, it.id)
+            counted = ln.counted_quantity if ln.counted_quantity is not None else Decimal("0")
+            ln.book_quantity = book
+            ln.unit_cost = item_inventory_unit_cost(it)
+            ln.save(update_fields=["book_quantity", "unit_cost"])
+            set_station_stock(cid, locked.station_id, it.id, counted)
+        now = timezone.now()
+        InventoryAdjustment.objects.filter(pk=locked.id).update(
+            status=InventoryAdjustment.STATUS_POSTED,
+            posted_at=now,
+        )
+    post_inventory_adjustment_journal(cid, adjustment_id)
+    adj.refresh_from_db()
+    return JsonResponse(_adjustment_to_json(adj))
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@auth_required
+@require_company_id
+def inventory_adjustment_delete(request, adjustment_id: int):
+    cid = request.company_id
+    adj = InventoryAdjustment.objects.filter(pk=adjustment_id, company_id=cid).first()
+    if not adj:
+        return JsonResponse({"detail": "Adjustment not found"}, status=404)
+    if not _inventory_adjustment_visible_for_user(request, adj):
+        return JsonResponse({"detail": "Adjustment not found"}, status=404)
+    if adj.status == InventoryAdjustment.STATUS_POSTED:
+        return JsonResponse({"detail": "Cannot delete a posted adjustment"}, status=400)
+    adj.delete()
+    return JsonResponse({"detail": "Deleted"}, status=200)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def inventory_adjustment_unpost(request, adjustment_id: int):
+    """Roll back a posted stock adjustment: restore each item's on-hand to the booked quantity,
+    remove the AUTO-INVADJ journal, and set the adjustment back to draft (counted lines preserved)."""
+    cid = request.company_id
+    adj = (
+        InventoryAdjustment.objects.filter(pk=adjustment_id, company_id=cid)
+        .select_related("station")
+        .first()
+    )
+    if not adj:
+        return JsonResponse({"detail": "Adjustment not found"}, status=404)
+    if not _inventory_adjustment_visible_for_user(request, adj):
+        return JsonResponse({"detail": "Adjustment not found"}, status=404)
+    if adj.status != InventoryAdjustment.STATUS_POSTED:
+        return JsonResponse({"detail": "Only posted adjustments can be rolled back"}, status=400)
+    with transaction.atomic():
+        locked = (
+            InventoryAdjustment.objects.select_for_update()
+            .filter(pk=adj.id, company_id=cid)
+            .first()
+        )
+        if not locked or locked.status != InventoryAdjustment.STATUS_POSTED:
+            return JsonResponse({"detail": "Adjustment is not posted"}, status=400)
+        lines = list(
+            InventoryAdjustmentLine.objects.filter(adjustment_id=locked.id).select_related("item")
+        )
+        for ln in lines:
+            it = ln.item
+            book = ln.book_quantity if ln.book_quantity is not None else Decimal("0")
+            set_station_stock(cid, locked.station_id, it.id, book)
+            ln.book_quantity = None
+            ln.unit_cost = None
+            ln.save(update_fields=["book_quantity", "unit_cost"])
+        delete_auto_inventory_adjustment_journal(cid, adjustment_id)
+        InventoryAdjustment.objects.filter(pk=locked.id).update(
+            status=InventoryAdjustment.STATUS_DRAFT,
+            posted_at=None,
+        )
+    adj2 = InventoryAdjustment.objects.filter(pk=adjustment_id, company_id=cid).select_related("station").first()
+    return JsonResponse(_adjustment_to_json(adj2 or adj))
 
 
 @csrf_exempt

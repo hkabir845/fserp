@@ -34,6 +34,8 @@ from api.models import (
     ChartOfAccount,
     Customer,
     FundTransfer,
+    InventoryAdjustment,
+    InventoryAdjustmentLine,
     InventoryTransfer,
     InventoryTransferLine,
     Invoice,
@@ -243,6 +245,7 @@ CODE_DONATION_SOCIAL = "6910"
 CODE_COGS_FUEL = "5100"
 CODE_COGS_SHOP = "5120"
 CODE_SHRINK_FUEL = "5200"
+CODE_SHRINK_SHOP = "5210"
 CODE_INV_FUEL = "1200"
 CODE_INV_SHOP = "1220"
 # Aquaculture lease / pond rental (see aquaculture_coa_seed 6711)
@@ -260,6 +263,52 @@ def _coa(company_id: int, code: str) -> Optional[ChartOfAccount]:
             company_id=company_id, account_code=code, is_active=True
         )
         .first()
+    )
+
+
+# Standard COGS/inventory accounts auto-provisioned so a sale can ALWAYS post a balanced COGS
+# journal (double-entry needs both a COGS and an inventory account). Matches the fuel-station
+# template definitions. (code -> name, account_type, account_sub_type).
+_STANDARD_GL_ACCOUNTS: dict[str, tuple[str, str, str]] = {
+    CODE_COGS_FUEL: ("Cost of Fuel Sold", "cost_of_goods_sold", "cost_of_goods_sold"),
+    CODE_COGS_SHOP: ("Cost of C-Store Goods Sold", "cost_of_goods_sold", "cost_of_goods_sold"),
+    CODE_INV_FUEL: ("Inventory — Fuel (Wet Stock at Cost)", "asset", "inventory"),
+    CODE_INV_SHOP: ("Inventory — C-Store / Shop", "asset", "inventory"),
+}
+
+
+def _ensure_standard_account(company_id: int, code: str) -> Optional[ChartOfAccount]:
+    """
+    Return the active standard account for ``code``, creating it from the template if missing.
+    Used only for the COGS-relief fallback accounts so COGS is never skipped for lack of a GL
+    account. Re-activates a soft-disabled standard account rather than leaving COGS unposted.
+    """
+    acc = _coa(company_id, code)
+    if acc:
+        return acc
+    spec = _STANDARD_GL_ACCOUNTS.get(code)
+    if not spec:
+        return None
+    name, acc_type, sub_type = spec
+    existing = ChartOfAccount.objects.filter(
+        company_id=company_id, account_code=code
+    ).first()
+    if existing:
+        if not existing.is_active:
+            existing.is_active = True
+            existing.save(update_fields=["is_active", "updated_at"])
+        return existing
+    return ChartOfAccount.objects.create(
+        company_id=company_id,
+        account_code=code,
+        account_name=name,
+        account_type=acc_type,
+        account_sub_type=sub_type,
+        description="",
+        parent_id=None,
+        opening_balance=Decimal("0"),
+        opening_balance_date=timezone.now().date(),
+        is_active=True,
     )
 
 
@@ -383,8 +432,10 @@ def _inventory_account_for_item(company_id: int, item) -> Optional[ChartOfAccoun
             if nt in ("asset", "bank_account"):
                 return acc
     if _is_fuel_item(item):
-        return _coa(company_id, CODE_INV_FUEL)
-    return _coa(company_id, CODE_INV_SHOP) or _coa(company_id, CODE_INV_FUEL)
+        return _ensure_standard_account(company_id, CODE_INV_FUEL)
+    return _ensure_standard_account(company_id, CODE_INV_SHOP) or _ensure_standard_account(
+        company_id, CODE_INV_FUEL
+    )
 
 
 def _cogs_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]:
@@ -397,8 +448,10 @@ def _cogs_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]:
         if acc and pl_bucket_for_coa(acc.account_type, acc.account_sub_type, acc.account_code) == "cost_of_goods_sold":
             return acc
     if _is_fuel_item(item):
-        return _coa(company_id, CODE_COGS_FUEL)
-    return _coa(company_id, CODE_COGS_SHOP) or _coa(company_id, CODE_COGS_FUEL)
+        return _ensure_standard_account(company_id, CODE_COGS_FUEL)
+    return _ensure_standard_account(company_id, CODE_COGS_SHOP) or _ensure_standard_account(
+        company_id, CODE_COGS_FUEL
+    )
 
 
 def item_inventory_unit_cost(item: Optional[Item]) -> Decimal:
@@ -407,8 +460,7 @@ def item_inventory_unit_cost(item: Optional[Item]) -> Decimal:
     Prefer Item.cost; if unset, fall back to unit_price so reports and dip GL are not all zero.
 
     NOTE: Do NOT use this for COGS-relief journals (Dr COGS / Cr inventory) — use
-    item_inventory_cost_strict so a blank cost posts nothing instead of relieving
-    inventory at the selling price (which would zero out gross margin).
+    item_cogs_unit_cost, which guarantees a COGS amount via the best-available cost.
     """
     if not item:
         return Decimal("0")
@@ -420,16 +472,52 @@ def item_inventory_unit_cost(item: Optional[Item]) -> Decimal:
 
 def item_inventory_cost_strict(item: Optional[Item]) -> Decimal:
     """
-    Per-unit cost for COGS relief (Dr COGS / Cr inventory) — cost only, no sale-price fallback.
-
-    A blank/zero Item.cost yields 0 so no COGS journal posts. This keeps the missing-cost
-    situation visible (the income-statement hint fires) instead of silently relieving
-    inventory at the selling price and collapsing gross margin to ~0.
+    AVCO cost only (Item.cost), no fallback. Kept for callers that specifically need the
+    moving-average value with no estimation. COGS relief uses ``item_cogs_unit_cost`` so a
+    sale always posts a COGS amount.
     """
     if not item:
         return Decimal("0")
     c = item.cost or Decimal("0")
     return c if c > 0 else Decimal("0")
+
+
+def item_cogs_unit_cost(company_id: int, item: Optional[Item]) -> Decimal:
+    """
+    Best-available per-unit cost for COGS relief so that EVERY sale of a stock-tracked item
+    posts a COGS amount (Dr COGS / Cr inventory) — never silently zero.
+
+    Standard perpetual-inventory fallback, most → least reliable:
+      1. Moving-average cost (Item.cost)        — normal AVCO valuation
+      2. Most recent posted purchase unit price — last actual buy price
+      3. Opening stock unit cost                — initial valuation
+      4. Selling price (unit_price)             — last-resort guarantee (zero-margin sale)
+
+    Returns 0 only when the item is missing or has no cost, no purchase history, and no price.
+    """
+    if not item:
+        return Decimal("0")
+    c = item.cost or Decimal("0")
+    if c > 0:
+        return c
+    last_purchase = (
+        BillLine.objects.filter(
+            bill__company_id=company_id,
+            bill__stock_receipt_applied=True,
+            item_id=item.id,
+            quantity__gt=0,
+            unit_price__gt=0,
+        )
+        .order_by("-bill__bill_date", "-id")
+        .values_list("unit_price", flat=True)
+        .first()
+    )
+    if last_purchase and last_purchase > 0:
+        return last_purchase
+    opening = item.opening_stock_unit_cost or Decimal("0")
+    if opening > 0:
+        return opening
+    return item.unit_price or Decimal("0")
 
 
 def apply_weighted_average_cost_on_receipt(
@@ -466,6 +554,63 @@ def apply_weighted_average_cost_on_receipt(
     new_cost = new_cost.quantize(Decimal("0.0001"))
     if new_cost != (it.cost or Decimal("0")):
         Item.objects.filter(pk=item_id, company_id=company_id).update(cost=new_cost)
+
+
+def recompute_item_average_cost(company_id: int, item_id: int) -> Optional[Decimal]:
+    """
+    Deterministically rebuild Item.cost as AVCO from the opening layer + all posted bill receipts:
+
+        cost = (opening_qty * opening_unit_cost + sum(receipt amount)) / (opening_qty + sum(receipt qty))
+
+    Unlike the incremental ``apply_weighted_average_cost_on_receipt`` (which blends one receipt onto the
+    current cost), this is a pure function of the receipt history, so it is idempotent: editing and
+    re-saving the same bill cannot drift the unit cost. Reversing a receipt only restores quantity, not
+    the blended cost, so this must be called after a reverse+repost cycle to keep the average correct.
+
+    Returns the recomputed cost when set, otherwise None (e.g. fish/biological or no costed stock).
+    """
+    item = (
+        Item.objects.filter(pk=item_id, company_id=company_id)
+        .only(
+            "id",
+            "cost",
+            "opening_stock_quantity",
+            "opening_stock_unit_cost",
+            "pos_category",
+            "item_type",
+            "unit",
+            "category",
+            "name",
+        )
+        .first()
+    )
+    if not item or not item_tracks_physical_stock(item):
+        return None
+    if (item.pos_category or "").strip().lower() == "fish":
+        return None
+
+    opening_qty = item.opening_stock_quantity or Decimal("0")
+    opening_cost = item.opening_stock_unit_cost or Decimal("0")
+    base_qty = opening_qty if opening_qty > 0 and opening_cost > 0 else Decimal("0")
+    base_value = (opening_qty * opening_cost) if base_qty > 0 else Decimal("0")
+
+    agg = BillLine.objects.filter(
+        bill__company_id=company_id,
+        bill__stock_receipt_applied=True,
+        item_id=item.id,
+    ).aggregate(q=Sum("quantity"), v=Sum("amount"))
+    recv_qty = agg["q"] or Decimal("0")
+    recv_value = agg["v"] or Decimal("0")
+
+    denom = base_qty + recv_qty
+    total_value = base_value + recv_value
+    if denom <= 0 or total_value <= 0:
+        return None
+
+    new_cost = (total_value / denom).quantize(Decimal("0.0001"))
+    if new_cost != (item.cost or Decimal("0")):
+        Item.objects.filter(pk=item.id, company_id=company_id).update(cost=new_cost)
+    return new_cost
 
 
 def delete_tank_dip_variance_journal(company_id: int, dip_id: int) -> int:
@@ -774,7 +919,7 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
             continue
         if not item_tracks_physical_stock(it):
             continue
-        cost = item_inventory_cost_strict(it)
+        cost = item_cogs_unit_cost(company_id, it)
         if cost <= 0:
             continue
         qty = line.quantity or Decimal("0")
@@ -904,7 +1049,7 @@ def post_aquaculture_shop_stock_issue_journal(
     for it, qty in line_rows:
         if not item_tracks_physical_stock(it):
             continue
-        uc = item_inventory_cost_strict(it)
+        uc = item_cogs_unit_cost(company_id, it)
         if uc <= 0:
             continue
         q = qty if qty is not None else Decimal("0")
@@ -990,7 +1135,7 @@ def post_aquaculture_pond_feed_consumption_journal(
     for it, qty in line_rows:
         if not item_tracks_physical_stock(it):
             continue
-        uc = item_inventory_cost_strict(it)
+        uc = item_cogs_unit_cost(company_id, it)
         if uc <= 0:
             continue
         q = qty if qty is not None else Decimal("0")
@@ -2748,6 +2893,88 @@ def delete_auto_inventory_transfer_journal(company_id: int, transfer_id: int) ->
         company_id=company_id, entry_number=f"AUTO-ISTR-{transfer_id}"
     ).delete()
     return deleted
+
+
+def delete_auto_inventory_adjustment_journal(company_id: int, adjustment_id: int) -> int:
+    deleted, _ = JournalEntry.objects.filter(
+        company_id=company_id, entry_number=f"AUTO-INVADJ-{adjustment_id}"
+    ).delete()
+    return deleted
+
+
+def post_inventory_adjustment_journal(company_id: int, adjustment_id: int) -> bool:
+    """
+    Book a shop stock-count variance (the C-store analogue of the fuel tank-dip variance).
+
+    Per inventory account, net the signed variance value (counted - book) x unit cost:
+      - net gain  -> Dr inventory asset / Cr 5210 Inventory Shrinkage (single adjustment account)
+      - net loss  -> Dr 5210 Inventory Shrinkage / Cr inventory asset
+    5210 absorbs both directions so it nets to the true shrinkage over a period (QuickBooks/Xero style);
+    falls back to 5120 COGS when 5210 is absent. Stock is set by the caller; this only writes GL.
+    Idempotent per adjustment: AUTO-INVADJ-{id}.
+    """
+    from api.services.station_stock import item_uses_station_bins
+
+    adj = (
+        InventoryAdjustment.objects.filter(pk=adjustment_id, company_id=company_id)
+        .select_related("station")
+        .first()
+    )
+    if not adj or adj.status != InventoryAdjustment.STATUS_POSTED:
+        return False
+    en = f"AUTO-INVADJ-{adjustment_id}"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=en).exists():
+        return True
+    shrink = _coa(company_id, CODE_SHRINK_SHOP) or _coa(company_id, CODE_COGS_SHOP)
+    if not shrink:
+        # No shrinkage/COGS account configured: keep the physical stock change, skip GL.
+        return True
+
+    net_by_acc: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    acc_by_id: dict[int, ChartOfAccount] = {}
+    for line in (
+        InventoryAdjustmentLine.objects.filter(adjustment_id=adj.id).select_related("item")
+    ):
+        it = line.item
+        if not it or not item_uses_station_bins(company_id, it):
+            continue
+        cost = line.unit_cost if line.unit_cost is not None else item_inventory_unit_cost(it)
+        cost = cost or Decimal("0")
+        if cost <= 0:
+            continue
+        book = line.book_quantity if line.book_quantity is not None else Decimal("0")
+        counted = line.counted_quantity if line.counted_quantity is not None else Decimal("0")
+        variance = counted - book
+        if variance == 0:
+            continue
+        acc = _inventory_account_for_item(company_id, it)
+        if not acc:
+            continue
+        net_by_acc[acc.id] += variance * cost
+        acc_by_id[acc.id] = acc
+
+    st_id = _gl_station_id(company_id, adj.station_id)
+    st_name = (adj.station.station_name or f"ST-{adj.station_id}")[:80]
+    desc = f"Inventory adjustment {adj.adjustment_number or adj.id} @ {st_name}"[:500]
+    jlines: list[tuple] = []
+    for acc_id, raw_net in sorted(net_by_acc.items()):
+        net = raw_net.quantize(Decimal("0.01"))
+        if net == 0:
+            continue
+        acc = acc_by_id[acc_id]
+        if net > 0:
+            jlines.append((acc, net, Decimal("0"), "Inventory count gain", st_id))
+            jlines.append((shrink, Decimal("0"), net, "Inventory count gain", st_id))
+        else:
+            amt = -net
+            jlines.append((shrink, amt, Decimal("0"), "Inventory shrinkage / loss", st_id))
+            jlines.append((acc, Decimal("0"), amt, "Inventory shrinkage / loss", st_id))
+    if not jlines:
+        return True
+    return (
+        _create_posted_entry(company_id, adj.adjustment_date, en, desc, jlines, gl_station_id=None)
+        is not None
+    )
 
 
 def delete_landlord_lease_payment_journal(company_id: int, landlord_ledger_entry_id: int) -> int:

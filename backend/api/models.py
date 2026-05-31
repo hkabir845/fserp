@@ -152,6 +152,39 @@ class TenantPlatformReleaseEvent(models.Model):
         return f"{self.category} company={self.company_id} @ {self.created_at}"
 
 
+class BackupRestoreAudit(models.Model):
+    """
+    Audit trail for tenant backup (export) and destructive restore operations.
+
+    IT-governance control: records who ran a backup/restore, when, for which company,
+    the outcome, record/byte counts, and the pre-restore safety snapshot path (if any).
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="backup_restore_audits")
+    action = models.CharField(max_length=32, db_index=True, help_text="backup_download | restore")
+    success = models.BooleanField(default=True)
+    actor_user_id = models.IntegerField(null=True, blank=True)
+    actor_label = models.CharField(max_length=255, blank=True, default="")
+    source = models.CharField(max_length=48, blank=True, default="", help_text="tenant | admin")
+    ip_address = models.CharField(max_length=64, blank=True, default="")
+    record_count = models.IntegerField(null=True, blank=True)
+    bytes_size = models.BigIntegerField(null=True, blank=True)
+    safety_snapshot_path = models.CharField(max_length=1024, blank=True, default="")
+    error_message = models.TextField(blank=True)
+    detail = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "backup_restore_audit"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["company", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.action} company={self.company_id} ok={self.success} @ {self.created_at}"
+
+
 class CompanyRole(models.Model):
     """
     Tenant-defined role template: name + permission keys (see api.services.permission_service).

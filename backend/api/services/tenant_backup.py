@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from copy import deepcopy
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -667,6 +668,72 @@ def _parse_bundle(raw: bytes | str) -> dict[str, Any]:
     return data
 
 
+def write_pre_restore_safety_snapshot(company_id: int) -> str | None:
+    """
+    Best-effort safety net: capture the company's current data as a backup file
+    *before* a destructive restore overwrites it, so an accidental restore of the
+    wrong (but valid) file is recoverable.
+
+    Controlled by ``settings.TENANT_SAFETY_BACKUP_DIR``. Never raises — a snapshot
+    failure must not block a restore the admin explicitly requested.
+    """
+    from django.conf import settings
+
+    base_dir = getattr(settings, "TENANT_SAFETY_BACKUP_DIR", None)
+    if not base_dir:
+        return None
+    try:
+        os.makedirs(base_dir, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        path = os.path.join(base_dir, f"company_{company_id}_pre_restore_{ts}.json")
+        with open(path, "wb") as fh:
+            fh.write(backup_bundle_json_bytes(company_id))
+        return path
+    except Exception:
+        logger.exception("pre-restore safety snapshot failed company_id=%s", company_id)
+        return None
+
+
+def record_backup_restore_audit(
+    *,
+    company_id: int,
+    action: str,
+    success: bool,
+    actor_user_id: int | None = None,
+    actor_label: str = "",
+    source: str = "",
+    ip_address: str = "",
+    record_count: int | None = None,
+    bytes_size: int | None = None,
+    safety_snapshot_path: str = "",
+    error_message: str = "",
+    detail: dict[str, Any] | None = None,
+):
+    """Persist a backup/restore audit row. Never raises (audit must not break the operation)."""
+    from api.models import BackupRestoreAudit
+
+    try:
+        return BackupRestoreAudit.objects.create(
+            company_id=company_id,
+            action=(action or "")[:32],
+            success=bool(success),
+            actor_user_id=actor_user_id,
+            actor_label=(actor_label or "")[:255],
+            source=(source or "")[:48],
+            ip_address=(ip_address or "")[:64],
+            record_count=record_count,
+            bytes_size=bytes_size,
+            safety_snapshot_path=(safety_snapshot_path or "")[:1024],
+            error_message=(error_message or "")[:8000],
+            detail=detail,
+        )
+    except Exception:
+        logger.exception(
+            "failed to record backup/restore audit company_id=%s action=%s", company_id, action
+        )
+        return None
+
+
 def restore_bundle(
     bundle: dict[str, Any],
     target_company_id: int,
@@ -689,6 +756,8 @@ def restore_bundle(
 
     schema = int(data.get("schema_version") or 0)
     restore_records, journal_fk_patches = _prepare_restore_records(data["records"])
+    # Safety snapshot of the soon-to-be-replaced data (best-effort, outside the txn).
+    safety_snapshot_path = write_pre_restore_safety_snapshot(target_company_id)
     with transaction.atomic():
         delete_tenant_company_data(target_company_id)
         for obj in serializers.deserialize("python", restore_records):
@@ -702,6 +771,7 @@ def restore_bundle(
         "company_id": target_company_id,
         "restored_objects": len(restore_records),
         "schema_version": schema,
+        "safety_snapshot": safety_snapshot_path,
     }
     if schema < BACKUP_SCHEMA_VERSION:
         result["warning"] = (

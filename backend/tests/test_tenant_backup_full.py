@@ -209,6 +209,9 @@ def test_all_company_scoped_models_in_expected_backup_list():
     excluded = {
         # Intentionally omitted from tenant JSON backups (single-use secrets).
         "api.passwordresettoken",
+        # Security/compliance audit log — never exported or restored, so a tenant
+        # cannot rewrite its own backup/restore history by restoring an old bundle.
+        "api.backuprestoreaudit",
     }
     company_model = apps.get_model("api", "Company")
     missing: list[str] = []

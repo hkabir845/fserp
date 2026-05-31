@@ -314,19 +314,35 @@ export default function Sidebar() {
     }
   }
 
-  /** If menu search hides the current page, clear search so the selection stays visible (Reports-style). */
-  useEffect(() => {
-    if (!pathname || !navSearchQuery.trim() || !navReady || !activeNavHref) return
-    const visible = menuItemsForNav.some((item) => item.href === activeNavHref)
-    if (!visible) setNavSearchQuery('')
-  }, [pathname, navSearchQuery, navReady, activeNavHref, menuItemsForNav])
-
   useCenterActiveListItem(
     navScrollRef,
     '[data-nav-active="true"]',
     Boolean(pathname && navReady),
     [pathname, menuItemsForNav, navReady, mobileNavOpen, isDesktopLayout, activeNavHref]
   )
+
+  const isSearchingMenu = navSearchQuery.trim().length > 0
+
+  const renderNavItem = (item: (typeof menuItemsForNav)[number]) => {
+    const Icon = item.icon
+    const isActive = activeNavHref !== null && item.href === activeNavHref
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        data-nav-active={isActive ? 'true' : undefined}
+        className={`flex items-center space-x-3 rounded-lg border-2 px-3 py-2.5 transition-all duration-200 group ${
+          isActive ? NAV_ITEM_ACTIVE_CLASS : NAV_ITEM_IDLE_CLASS
+        }`}
+      >
+        <Icon className={`h-4.5 w-4.5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'} transition-colors`} />
+        <span className="text-sm font-medium flex-1 truncate">{item.label}</span>
+        {isActive && (
+          <div className="ml-auto h-2 w-2 rounded-full bg-white shadow-sm"></div>
+        )}
+      </Link>
+    )
+  }
 
   return (
     <>
@@ -538,31 +554,12 @@ export default function Sidebar() {
               <p className="text-sm">No menu items available</p>
             )}
           </div>
+        ) : isSearchingMenu ? (
+          <div className="space-y-0.5 pl-1">{menuItemsForNav.map(renderNavItem)}</div>
         ) : (
           sectionsForNav.map((section) => {
             const sectionItems = menuItemsForNav.filter((item) => item.section === section.id)
             if (sectionItems.length === 0) return null
-
-            const renderItem = (item: typeof sectionItems[number]) => {
-              const Icon = item.icon
-              const isActive = activeNavHref !== null && item.href === activeNavHref
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  data-nav-active={isActive ? 'true' : undefined}
-                  className={`flex items-center space-x-3 rounded-lg border-2 px-3 py-2.5 transition-all duration-200 group ${
-                    isActive ? NAV_ITEM_ACTIVE_CLASS : NAV_ITEM_IDLE_CLASS
-                  }`}
-                >
-                  <Icon className={`h-4.5 w-4.5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'} transition-colors`} />
-                  <span className="text-sm font-medium flex-1 truncate">{item.label}</span>
-                  {isActive && (
-                    <div className="ml-auto h-2 w-2 rounded-full bg-white shadow-sm"></div>
-                  )}
-                </Link>
-              )
-            }
 
             // Aquaculture is rendered with sub-group headings (Overview / Site & lease / …);
             // all other sections keep the flat list.
@@ -595,13 +592,13 @@ export default function Sidebar() {
                               {g.label}
                             </p>
                           ) : null}
-                          <div className="space-y-0.5">{g.items.map(renderItem)}</div>
+                          <div className="space-y-0.5">{g.items.map(renderNavItem)}</div>
                         </div>
                       ))
                     })()}
                   </div>
                 ) : (
-                  <div className="space-y-0.5 pl-1">{sectionItems.map(renderItem)}</div>
+                  <div className="space-y-0.5 pl-1">{sectionItems.map(renderNavItem)}</div>
                 )}
               </div>
             )

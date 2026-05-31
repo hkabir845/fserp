@@ -173,18 +173,35 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
   const menuItemsForNav = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     if (!q) return filteredMenuItems
-    return filteredMenuItems.filter((item: ErpAppMenuItem) => {
-      const label = item.label.toLowerCase()
-      const labelPlain = label.replace(/\s*\(\d+\)\s*/g, ' ').replace(/\s+/g, ' ').trim()
-      const href = item.href.toLowerCase()
-      const hints = (MENU_SECTION_SEARCH_HINTS[item.section] || '').toLowerCase()
-      return (
-        label.includes(q) ||
-        labelPlain.includes(q) ||
-        href.includes(q) ||
-        hints.includes(q)
-      )
+    // Rank matches by relevance so the closest match surfaces first:
+    // exact label > label prefix > word-start > label substring > href > section hint.
+    const scored = filteredMenuItems
+      .map((item: ErpAppMenuItem) => {
+        const label = item.label.toLowerCase()
+        const labelPlain = label.replace(/\s*\(\d+\)\s*/g, ' ').replace(/\s+/g, ' ').trim()
+        const href = item.href.toLowerCase()
+        const hints = (MENU_SECTION_SEARCH_HINTS[item.section] || '').toLowerCase()
+
+        let score = 0
+        if (labelPlain === q || label === q) score = 100
+        else if (labelPlain.startsWith(q) || label.startsWith(q)) score = 80
+        else if (labelPlain.split(/\s+/).some((word) => word.startsWith(q))) score = 60
+        else if (label.includes(q)) score = 40
+        else if (href.includes(q)) score = 20
+        else if (hints.includes(q)) score = 10
+
+        return { item, score }
+      })
+      .filter((entry) => entry.score > 0)
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score
+      // Tie-break: shorter (more specific) labels first, then alphabetical for stability.
+      if (a.item.label.length !== b.item.label.length) return a.item.label.length - b.item.label.length
+      return a.item.label.localeCompare(b.item.label)
     })
+
+    return scored.map((entry) => entry.item)
   }, [filteredMenuItems, searchQuery])
 
   const sections = useMemo(() => {

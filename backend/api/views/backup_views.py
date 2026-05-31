@@ -12,6 +12,7 @@ from api.services.tenant_backup import (
     RESTORE_CONFIRM_PHRASE,
     backup_bundle_json_bytes,
     build_backup_bundle,
+    record_backup_restore_audit,
     restore_bundle,
     _parse_bundle,
 )
@@ -19,6 +20,16 @@ from api.services.permission_service import has_permission, resolve_user_permiss
 from api.utils.auth import auth_required, company_context_error_response, get_company_id, user_is_super_admin
 
 logger = logging.getLogger(__name__)
+
+
+def _actor_audit_fields(request):
+    """(actor_user_id, actor_label, ip_address) for backup/restore audit rows."""
+    user = getattr(request, "api_user", None)
+    uid = getattr(user, "id", None)
+    label = getattr(user, "username", "") or getattr(user, "email", "") or ""
+    xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    ip = (xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR", "")) or ""
+    return uid, label, ip
 
 
 def _user_can_backup(user) -> bool:
@@ -59,14 +70,27 @@ def company_backup_download(request):
     if not _ensure_tenant_admin_company_access(request, cid):
         return JsonResponse({"detail": "You can only back up your own company."}, status=403)
 
+    uid, label, ip = _actor_audit_fields(request)
     try:
         payload = backup_bundle_json_bytes(cid)
     except ValueError as e:
+        record_backup_restore_audit(
+            company_id=cid, action="backup_download", success=False, source="tenant",
+            actor_user_id=uid, actor_label=label, ip_address=ip, error_message=str(e),
+        )
         return JsonResponse({"detail": str(e)}, status=404)
     except Exception as e:
         logger.exception("company backup download failed company_id=%s", cid)
+        record_backup_restore_audit(
+            company_id=cid, action="backup_download", success=False, source="tenant",
+            actor_user_id=uid, actor_label=label, ip_address=ip, error_message=str(e),
+        )
         return JsonResponse({"detail": "Backup generation failed.", "error": str(e)}, status=500)
 
+    record_backup_restore_audit(
+        company_id=cid, action="backup_download", success=True, source="tenant",
+        actor_user_id=uid, actor_label=label, ip_address=ip, bytes_size=len(payload),
+    )
     name = f"fserp_company_{cid}_backup.json"
     resp = HttpResponse(payload, content_type="application/json; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{name}"'
@@ -103,15 +127,31 @@ def company_restore_upload(request):
     if not f:
         return JsonResponse({"detail": "Missing backup file (field name: file)."}, status=400)
 
+    uid, label, ip = _actor_audit_fields(request)
     confirm = (request.POST.get("confirm_replace") or "").strip()
     try:
         raw = f.read()
         bundle = _parse_bundle(raw)
         result = restore_bundle(bundle, cid, confirm_replace=confirm)
+        record_backup_restore_audit(
+            company_id=cid, action="restore", success=True, source="tenant",
+            actor_user_id=uid, actor_label=label, ip_address=ip,
+            record_count=result.get("restored_objects"),
+            safety_snapshot_path=result.get("safety_snapshot") or "",
+            detail={"schema_version": result.get("schema_version")},
+        )
         return JsonResponse(result)
     except ValueError as e:
+        record_backup_restore_audit(
+            company_id=cid, action="restore", success=False, source="tenant",
+            actor_user_id=uid, actor_label=label, ip_address=ip, error_message=str(e),
+        )
         return JsonResponse({"detail": str(e)}, status=400)
     except Exception as e:
+        record_backup_restore_audit(
+            company_id=cid, action="restore", success=False, source="tenant",
+            actor_user_id=uid, actor_label=label, ip_address=ip, error_message=str(e),
+        )
         return JsonResponse({"detail": "Restore failed.", "error": str(e)}, status=500)
 
 
@@ -157,14 +197,27 @@ def admin_company_backup_download(request, company_id: int):
     if not Company.objects.filter(pk=company_id, is_deleted=False).exists():
         return JsonResponse({"detail": "Company not found."}, status=404)
 
+    uid, label, ip = _actor_audit_fields(request)
     try:
         payload = backup_bundle_json_bytes(company_id)
     except ValueError as e:
+        record_backup_restore_audit(
+            company_id=company_id, action="backup_download", success=False, source="admin",
+            actor_user_id=uid, actor_label=label, ip_address=ip, error_message=str(e),
+        )
         return JsonResponse({"detail": str(e)}, status=404)
     except Exception as e:
         logger.exception("admin backup download failed company_id=%s", company_id)
+        record_backup_restore_audit(
+            company_id=company_id, action="backup_download", success=False, source="admin",
+            actor_user_id=uid, actor_label=label, ip_address=ip, error_message=str(e),
+        )
         return JsonResponse({"detail": "Backup generation failed.", "error": str(e)}, status=500)
 
+    record_backup_restore_audit(
+        company_id=company_id, action="backup_download", success=True, source="admin",
+        actor_user_id=uid, actor_label=label, ip_address=ip, bytes_size=len(payload),
+    )
     name = f"fserp_company_{company_id}_backup.json"
     resp = HttpResponse(payload, content_type="application/json; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{name}"'
@@ -194,15 +247,31 @@ def admin_company_restore_upload(request, company_id: int):
     if not f:
         return JsonResponse({"detail": "Missing backup file (field name: file)."}, status=400)
 
+    uid, label, ip = _actor_audit_fields(request)
     confirm = (request.POST.get("confirm_replace") or "").strip()
     try:
         raw = f.read()
         bundle = _parse_bundle(raw)
         result = restore_bundle(bundle, company_id, confirm_replace=confirm)
+        record_backup_restore_audit(
+            company_id=company_id, action="restore", success=True, source="admin",
+            actor_user_id=uid, actor_label=label, ip_address=ip,
+            record_count=result.get("restored_objects"),
+            safety_snapshot_path=result.get("safety_snapshot") or "",
+            detail={"schema_version": result.get("schema_version")},
+        )
         return JsonResponse(result)
     except ValueError as e:
+        record_backup_restore_audit(
+            company_id=company_id, action="restore", success=False, source="admin",
+            actor_user_id=uid, actor_label=label, ip_address=ip, error_message=str(e),
+        )
         return JsonResponse({"detail": str(e)}, status=400)
     except Exception as e:
+        record_backup_restore_audit(
+            company_id=company_id, action="restore", success=False, source="admin",
+            actor_user_id=uid, actor_label=label, ip_address=ip, error_message=str(e),
+        )
         return JsonResponse({"detail": "Restore failed.", "error": str(e)}, status=500)
 
 

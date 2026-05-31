@@ -200,6 +200,12 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Optional safety net: when set to a writable directory, a full backup of a tenant's
+# current data is written here immediately before a destructive restore overwrites it,
+# making an accidental restore of the wrong file recoverable. Disabled (no snapshot)
+# when empty. Point this at a path with adequate space/rotation in production.
+TENANT_SAFETY_BACKUP_DIR = (os.environ.get("TENANT_SAFETY_BACKUP_DIR") or "").strip() or None
+
 if _use_whitenoise:
     STORAGES = {
         "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},

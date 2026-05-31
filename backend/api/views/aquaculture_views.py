@@ -81,7 +81,6 @@ from api.services.aquaculture_expense_cleanup import (
 from api.services.aquaculture_landlord_opening import (
     apply_landlord_opening_from_body,
     landlord_opening_fields_for_api,
-    parse_landlord_opening_from_body,
 )
 from api.services.aquaculture_sale_cleanup import (
     cleanup_aquaculture_fish_sale_effects,
@@ -113,7 +112,6 @@ from api.services.party_opening_gl import (
     apply_vendor_opening_gl,
 )
 from api.services.aquaculture_pond_pl_opening import (
-    category_catalog_for_api,
     sync_pond_pl_openings,
 )
 from api.services.aquaculture_pond_pos_customer import (

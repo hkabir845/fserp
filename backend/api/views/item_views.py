@@ -1,7 +1,5 @@
 """Items (products) API: list, create, get, update, delete (company-scoped)."""
-import json
 import os
-import re
 import uuid
 from datetime import datetime
 from decimal import Decimal, InvalidOperation

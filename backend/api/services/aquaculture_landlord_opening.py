@@ -7,7 +7,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 
-from api.models import AquacultureLandlord, AquacultureLandlordLedgerEntry, ChartOfAccount
+from api.models import AquacultureLandlord, AquacultureLandlordLedgerEntry
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 from api.services.aquaculture_cutover import validate_opening_as_of
 from api.services.gl_posting import CODE_AQ_LEASE_EXPENSE, _coa, _create_posted_entry

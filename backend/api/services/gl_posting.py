@@ -631,9 +631,7 @@ def _revenue_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]
         if acc and is_pl_credit_normal_type(acc.account_type):
             return acc
     if item:
-        unit = (item.unit or "").lower()
         pos_cat = (item.pos_category or "").lower()
-        cat = (item.category or "").lower()
         if _is_fuel_item(item):
             return _coa(company_id, CODE_FUEL_REV) or _coa(company_id, CODE_OTHER_REV)
         if pos_cat in ("shop", "c-store", "convenience", "general", "feed"):

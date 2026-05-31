@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from api.models import ChartOfAccount
-from api.services.coa_constants import is_pl_credit_normal_type, normalize_chart_account_type
+from api.services.coa_constants import normalize_chart_account_type
 
 ALLOWED_BILL_EXPENSE_DEBIT = frozenset({"expense", "cost_of_goods_sold"})
 ALLOWED_COGS = frozenset({"cost_of_goods_sold"})

@@ -7,7 +7,6 @@ Usage:
   python manage.py seed_master_chart_of_accounts --profile retail
 """
 from django.core.management.base import BaseCommand
-from api.models import Company
 from api.services.organization_service import ensure_company_organization_shell
 from api.chart_templates.fuel_station import seed_fuel_station_chart
 

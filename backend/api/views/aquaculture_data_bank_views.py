@@ -7,7 +7,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from api.models import AquaculturePond, Company, Station
+from api.models import Company, Station
 from api.services.aquaculture_data_bank_service import (
     close_pond,
     close_station,

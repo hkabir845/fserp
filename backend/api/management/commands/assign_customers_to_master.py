@@ -3,7 +3,7 @@ Assign 12 existing customers from the database to Master Filling Station (develo
 Usage: python manage.py assign_customers_to_master
 """
 from django.core.management.base import BaseCommand
-from api.models import Company, Customer
+from api.models import Customer
 from api.services.organization_service import ensure_company_organization_shell
 
 

@@ -1,8 +1,6 @@
 """Stations API: list, create, get, update, delete (company-scoped)."""
-import json
 from django.db.models.deletion import ProtectedError
 from django.http import JsonResponse
-from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required

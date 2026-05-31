@@ -14,7 +14,7 @@ from api.utils.auth import (
     get_company_id,
     user_is_super_admin,
 )
-from api.models import Company, Organization, Station, User
+from api.models import Company, Organization, User
 from api.chart_templates.fuel_station import seed_fuel_station_if_empty
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 from api.services.aquaculture_medicine_catalog_seed import ensure_aquaculture_medicine_catalog_items

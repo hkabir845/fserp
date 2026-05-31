@@ -1,9 +1,9 @@
 """Chart of accounts API: list, create, get, update, delete, statement (company-scoped)."""
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Sum, Q, Count
+from django.db.models import Q, Count
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 

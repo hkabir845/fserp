@@ -14,7 +14,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Q
 
-from api.models import Customer, Invoice, Station
+from api.models import Invoice, Station
 
 
 class Command(BaseCommand):

@@ -4,7 +4,7 @@ Usage: python manage.py seed_master_customers
 """
 from decimal import Decimal
 from django.core.management.base import BaseCommand
-from api.models import Company, Customer
+from api.models import Customer
 from api.services.organization_service import ensure_company_organization_shell
 
 

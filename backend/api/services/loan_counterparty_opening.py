@@ -5,7 +5,6 @@ import logging
 from decimal import Decimal
 
 from django.db import transaction
-from django.utils import timezone
 
 from api.models import ChartOfAccount, LoanCounterparty
 from api.services.gl_posting import _create_posted_entry

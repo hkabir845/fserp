@@ -216,14 +216,6 @@ export default function TanksPage() {
         const tanksData = tanksRes.value.data
         setTanks(tanksData)
         setError(null)
-        
-        if (tanksData.length === 0) {
-          console.warn('⚠️ No tanks found. This might mean:')
-          console.warn('  1. Sample data not initialized')
-          console.warn('  2. User logged in with wrong company_id')
-          console.warn('  3. Tanks not created for this company')
-          console.warn('  Backend is Django; ensure a company exists (python manage.py create_default_company) and add tanks via API or admin.')
-        }
       } else {
         console.error('❌ Tanks API error:', tanksRes.reason)
         const errorMessage = extractErrorMessage(tanksRes.reason, 'Failed to load tanks')

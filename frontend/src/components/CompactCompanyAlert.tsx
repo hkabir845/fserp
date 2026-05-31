@@ -1,20 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { usePathname } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import { useCompany } from '@/contexts/CompanyContext'
 import { AlertTriangle, Building2, Lock, TestTube, Crown, X } from 'lucide-react'
-import api, { isSuperAdminRole } from '@/lib/api'
-import { isConnectionError } from '@/utils/connectionError'
-import { isPublicAuthRoute } from '@/utils/publicAuthRoutes'
-
-interface ProtectionStatus {
-  is_master: boolean
-  is_locked: boolean
-  is_testing: boolean
-  status: string
-  message: string
-}
+import { useMasterCompanyProtectionStatus } from '@/hooks/useMasterCompanyProtectionStatus'
 
 /**
  * Compact Company Alert
@@ -22,9 +11,8 @@ interface ProtectionStatus {
  * Shows master company status or tenant company info
  */
 export function CompactCompanyAlert() {
-  const pathname = usePathname()
   const { selectedCompany, isMasterCompany } = useCompany()
-  const [protectionStatus, setProtectionStatus] = useState<ProtectionStatus | null>(null)
+  const protectionStatus = useMasterCompanyProtectionStatus()
   const [isDismissed, setIsDismissed] = useState(false)
 
   // Check if dismissed in localStorage (persist dismissal)
@@ -42,43 +30,6 @@ export function CompactCompanyAlert() {
       setIsDismissed(true)
     }
   }, [selectedCompany])
-
-  const fetchProtectionStatus = useCallback(async () => {
-    try {
-      const response = await api.get('/admin/master-company/protection-status/', {
-        params: { company_id: selectedCompany?.id }
-      })
-      setProtectionStatus(response.data)
-    } catch (error: any) {
-      const status = error?.response?.status
-      // 401: session expired / not logged in; 403: not super_admin — both expected for this optional banner
-      if (status === 401 || status === 403) return
-      if (!isConnectionError(error)) {
-        console.debug('Could not fetch protection status:', error)
-      }
-    }
-  }, [selectedCompany?.id])
-
-  useEffect(() => {
-    if (!isMasterCompany || !selectedCompany || typeof window === 'undefined') return
-    if (isPublicAuthRoute(pathname)) return
-
-    // Backend requires JWT + super_admin (see admin_views.admin_master_company_protection_status).
-    // Non–super-admins would get 403; missing/invalid token yields 401 — avoid calling when unauthorized.
-    const token = localStorage.getItem('access_token')?.trim()
-    let role: string | null = null
-    try {
-      const raw = localStorage.getItem('user')
-      if (raw && raw !== 'undefined' && raw !== 'null') {
-        role = JSON.parse(raw)?.role ?? null
-      }
-    } catch {
-      return
-    }
-    if (!token || !isSuperAdminRole(role)) return
-
-    void fetchProtectionStatus()
-  }, [isMasterCompany, selectedCompany, pathname, fetchProtectionStatus])
 
   const handleDismiss = () => {
     setIsDismissed(true)

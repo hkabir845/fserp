@@ -27,7 +27,7 @@ from api.services.aquaculture_production_cycle_service import (
     assign_auto_production_cycles_for_parsed_bill_lines,
 )
 from api.services.station_capabilities import require_fuel_forecourt_station
-from api.services.station_stock import get_or_create_default_station, receipt_station_id_for_vendor
+from api.services.station_stock import receipt_station_id_for_vendor
 from api.services.document_posting_lifecycle import (
     body_has_material_bill_change,
     reconcile_bill_after_material_edit,

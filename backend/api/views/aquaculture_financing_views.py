@@ -1,7 +1,6 @@
 """Aquaculture → Financing API (working-capital loans, allocations, repayment worksheet)."""
 from __future__ import annotations
 
-from datetime import date
 from decimal import Decimal
 
 from django.http import JsonResponse
@@ -9,9 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from api.services.aquaculture_financing_service import (
-    METHOD_EQUAL,
     METHOD_PROFIT_SHARE,
-    METHOD_REVENUE_SHARE,
     apply_repayment_worksheet,
     build_financing_overview,
     compute_repayment_worksheet,

@@ -5,7 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
-from api.models import Nozzle, Meter, Tank, Item, User
+from api.models import Nozzle, Meter, Tank, User
 from api.services.permission_service import normalize_role_key
 from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto

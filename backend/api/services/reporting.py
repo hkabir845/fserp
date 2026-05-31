@@ -2670,7 +2670,6 @@ def report_sales_by_nozzle(company_id: int, start: date, end: date, station_id: 
                 "attribution": "nozzle" if nz.id in by_nozzle else ("product_legacy" if tx else "none"),
             }
         )
-    n_nz = len(out) or 1
     snz: dict[str, Any] = {
         "report_id": "sales-by-nozzle",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},

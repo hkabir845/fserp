@@ -4,7 +4,6 @@ from __future__ import annotations
 from api.services.tenant_reporting_categories import (
     APP_FUEL_STATION,
     FUEL_STATION_EXPENSE_MAP_CODES,
-    KIND_EXPENSE,
     tenant_expense_row,
 )
 

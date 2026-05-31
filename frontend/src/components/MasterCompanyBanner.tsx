@@ -1,18 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
 import { useCompany } from '@/contexts/CompanyContext'
-import { AlertTriangle, Building2, Lock, Unlock, TestTube, Crown } from 'lucide-react'
-import api, { isSuperAdminRole } from '@/lib/api'
-import { isConnectionError } from '@/utils/connectionError'
-
-interface ProtectionStatus {
-  is_master: boolean
-  is_locked: boolean
-  is_testing: boolean
-  status: string
-  message: string
-}
+import { AlertTriangle, Building2, Lock, TestTube, Crown } from 'lucide-react'
+import { useMasterCompanyProtectionStatus } from '@/hooks/useMasterCompanyProtectionStatus'
 
 /**
  * Master Company Banner
@@ -21,38 +11,7 @@ interface ProtectionStatus {
  */
 export function MasterCompanyBanner() {
   const { selectedCompany, isMasterCompany } = useCompany()
-  const [protectionStatus, setProtectionStatus] = useState<ProtectionStatus | null>(null)
-
-  const fetchProtectionStatus = useCallback(async () => {
-    try {
-      const response = await api.get('/admin/master-company/protection-status/', {
-        params: { company_id: selectedCompany?.id }
-      })
-      setProtectionStatus(response.data)
-    } catch (error: any) {
-      // Silently fail - protection status is optional
-      // Don't log connection errors (backend may not be running)
-      if (!isConnectionError(error)) {
-        console.debug('Could not fetch protection status:', error)
-      }
-    }
-  }, [selectedCompany?.id])
-
-  useEffect(() => {
-    if (!isMasterCompany || !selectedCompany || typeof window === 'undefined') return
-    const token = localStorage.getItem('access_token')?.trim()
-    let role: string | null = null
-    try {
-      const raw = localStorage.getItem('user')
-      if (raw && raw !== 'undefined' && raw !== 'null') {
-        role = JSON.parse(raw)?.role ?? null
-      }
-    } catch {
-      return
-    }
-    if (!token || !isSuperAdminRole(role)) return
-    void fetchProtectionStatus()
-  }, [isMasterCompany, selectedCompany, fetchProtectionStatus])
+  const protectionStatus = useMasterCompanyProtectionStatus()
 
   if (!isMasterCompany || !selectedCompany) {
     return null

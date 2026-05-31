@@ -1207,9 +1207,6 @@ export default function BillsPage() {
           const itemsData = itemsRes.value?.data || []
           if (Array.isArray(itemsData)) {
             setItems(itemsData)
-            if (itemsData.length === 0) {
-              console.warn('⚠️ No items found in database')
-            }
           } else {
             console.error('❌ Items data is not an array:', itemsData)
             toast.error('Items data format error')

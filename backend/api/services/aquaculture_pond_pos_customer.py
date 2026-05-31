@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
-from django.db import transaction
 
 from api.models import AquaculturePond, Customer, Station
 from api.services.reference_code import assign_string_code_if_empty

@@ -121,7 +121,6 @@ class Command(BaseCommand):
         call_command("seed_master_full_demo", **fd_kw)
 
         master = resolve_master_company(self.stdout, self.style)
-        cid = master.id
 
         if not options["skip_employees"]:
             self.stdout.write(self.style.NOTICE("==> Employees"))

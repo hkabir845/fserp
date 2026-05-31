@@ -7,7 +7,7 @@ from django.views.decorators.http import require_http_methods
 
 from api.models import User
 from api.services.permission_service import user_client_dict
-from api.utils.auth import create_tokens, get_user_from_request, tenant_company_allows_access
+from api.utils.auth import create_tokens, tenant_company_allows_access
 from api.utils.rate_limit import auth_rate_limits_enabled, client_ip, rate_limit_exceeded
 
 
@@ -103,7 +103,7 @@ def refresh(request):
         data = json.loads(body)
     except json.JSONDecodeError:
         return JsonResponse({"detail": "Invalid JSON"}, status=400)
-    except Exception as e:
+    except Exception:
         return JsonResponse({"detail": "Bad request"}, status=400)
     if not isinstance(data, dict):
         return JsonResponse({"detail": "JSON object required"}, status=400)

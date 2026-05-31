@@ -26,7 +26,6 @@ from api.services.aquaculture_constants import (
 )
 from api.services.tenant_reporting_categories import aquaculture_expense_label, aquaculture_income_label
 from api.services.aquaculture_cost_per_kg import (
-    aquaculture_pl_cost_basis_doc,
     build_pond_cost_per_kg_block,
     landlord_lease_payment_pond_operating_total,
     landlord_lease_payment_pond_operating_total_company,

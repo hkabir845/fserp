@@ -561,10 +561,6 @@ export default function ChartOfAccountsPage() {
       
       if (response.status === 200) {
         if (Array.isArray(accountsData)) {
-          if (accountsData.length === 0) {
-            console.warn('⚠️ API returned empty array - no accounts found for your company')
-          }
-          
           // Ensure all accounts have the correct field names
           const normalizedAccounts = accountsData.map((acc: any) => ({
             ...acc,

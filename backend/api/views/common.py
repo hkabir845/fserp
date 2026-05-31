@@ -1,10 +1,9 @@
 """Shared helpers for API views: JSON serialization, company scoping."""
 import json
 from datetime import date, datetime
-from decimal import Decimal
 from django.http import JsonResponse
 
-from api.utils.auth import company_context_error_response, get_company_id, get_user_from_request
+from api.utils.auth import company_context_error_response, get_company_id
 
 
 def parse_json_body(request):

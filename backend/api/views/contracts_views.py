@@ -3,7 +3,6 @@ import json
 from datetime import date
 from decimal import Decimal
 from django.http import JsonResponse
-from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin

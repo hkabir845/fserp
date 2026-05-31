@@ -72,6 +72,8 @@ from api.models import (
     Employee,
     EmployeeLedgerEntry,
     FundTransfer,
+    InventoryAdjustment,
+    InventoryAdjustmentLine,
     InventoryTransfer,
     InventoryTransferLine,
     Invoice,
@@ -158,6 +160,8 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.shiftsession",
     "api.inventorytransfer",
     "api.inventorytransferline",
+    "api.inventoryadjustment",
+    "api.inventoryadjustmentline",
     "api.pondwarehousestockreceipt",
     "api.pondwarehousestockreceiptline",
     "api.pondwarehouseinterpondtransfer",
@@ -324,6 +328,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     PondWarehouseStockReceiptLine.objects.filter(receipt__company_id=cid).delete()
     PondWarehouseInterPondTransferLine.objects.filter(transfer__company_id=cid).delete()
     InventoryTransferLine.objects.filter(transfer__company_id=cid).delete()
+    InventoryAdjustmentLine.objects.filter(adjustment__company_id=cid).delete()
     AquacultureExpenseInventoryLine.objects.filter(expense__company_id=cid).delete()
     AquacultureExpensePondShare.objects.filter(expense__company_id=cid).delete()
     AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).delete()
@@ -341,6 +346,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     PondWarehouseStockReceipt.objects.filter(company_id=cid).delete()
     PondWarehouseInterPondTransfer.objects.filter(company_id=cid).delete()
     InventoryTransfer.objects.filter(company_id=cid).delete()
+    InventoryAdjustment.objects.filter(company_id=cid).delete()
     BankDeposit.objects.filter(company_id=cid).delete()
     AquacultureFeedingAdvice.objects.filter(company_id=cid).delete()
     AquaculturePondProfitTransfer.objects.filter(company_id=cid).delete()
@@ -438,6 +444,7 @@ def delete_station_operational_data(
     InventoryTransfer.objects.filter(company_id=cid).filter(
         Q(from_station_id=sid) | Q(to_station_id=sid)
     ).delete()
+    InventoryAdjustment.objects.filter(company_id=cid, station_id=sid).delete()
     PondWarehouseStockReceipt.objects.filter(company_id=cid, from_station_id=sid).delete()
 
     _del("shift_sessions", ShiftSession.objects.filter(company_id=cid, station_id=sid))
@@ -548,6 +555,8 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
     _serialize_many(records, ShiftSession.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, InventoryTransfer.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, InventoryTransferLine.objects.filter(transfer__company_id=cid).order_by("id"))
+    _serialize_many(records, InventoryAdjustment.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, InventoryAdjustmentLine.objects.filter(adjustment__company_id=cid).order_by("id"))
     _serialize_many(records, PondWarehouseStockReceipt.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(
         records, PondWarehouseStockReceiptLine.objects.filter(receipt__company_id=cid).order_by("id")

@@ -23,6 +23,7 @@ from django.utils import timezone
 
 from api.models import (
     AquacultureExpense,
+    AquacultureExpenseInventoryLine,
     AquacultureFishSale,
     AquacultureFishStockLedger,
     AquacultureLandlordLedgerEntry,
@@ -54,7 +55,10 @@ from api.models import (
     Vendor,
 )
 from api.exceptions import GlPostingError, StockBusinessError
-from api.services.aquaculture_constants import coa_account_code_for_aquaculture_income_type
+from api.services.aquaculture_constants import (
+    coa_account_code_for_aquaculture_expense_category,
+    coa_account_code_for_aquaculture_income_type,
+)
 from api.services.aquaculture_cost_per_kg import (
     aquaculture_expense_category_to_cost_bucket,
     item_shop_issue_cost_bucket,
@@ -1231,6 +1235,88 @@ def post_aquaculture_pond_feed_consumption_journal(
             lines,
             gl_station_id=None,
             aquaculture_line_costing=aq_costing,
+        )
+        is not None
+    )
+
+
+def post_aquaculture_manual_expense_journal(
+    company_id: int,
+    expense_id: int,
+    entry_date: date,
+) -> bool:
+    """
+    Dr pond operating-expense account / Cr funding account (cash or bank) for a manual pond expense
+    that is NOT backed by inventory consumption or a shop-stock issue.
+
+    Posts only when the expense carries a ``funding_account_code`` and a direct pond (single entity),
+    so inventory-backed (AUTO-AQ-POND/SHOP) and vendor-bill (A/P) paths are never double-counted.
+    Idempotent: entry_number AUTO-AQ-EXP-{expense_id}.
+    """
+    entry_number = f"AUTO-AQ-EXP-{expense_id}"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
+        return True
+
+    exp_row = AquacultureExpense.objects.filter(pk=expense_id, company_id=company_id).first()
+    if not exp_row:
+        return False
+    funding_code = (exp_row.funding_account_code or "").strip()
+    if not funding_code:
+        return False
+    # Inventory-backed or shop-issue costs already post their own COGS journal — never double-post.
+    if exp_row.source_station_id is not None:
+        return False
+    if AquacultureExpenseInventoryLine.objects.filter(expense_id=expense_id).exists():
+        return False
+    if exp_row.pond_id is None:
+        return False
+    amt = (exp_row.amount or Decimal("0")).quantize(Decimal("0.01"))
+    if amt <= 0:
+        return False
+
+    expense_code = coa_account_code_for_aquaculture_expense_category(
+        exp_row.expense_category, company_id=company_id
+    )
+    exp_acc = ChartOfAccount.objects.filter(
+        company_id=company_id, account_code=expense_code, is_active=True
+    ).first()
+    fund_acc = ChartOfAccount.objects.filter(
+        company_id=company_id, account_code=funding_code, is_active=True
+    ).first()
+    if not exp_acc or not fund_acc:
+        logger.warning(
+            "skip aquaculture manual expense journal %s: missing COA (expense %s, funding %s)",
+            entry_number,
+            expense_code,
+            funding_code,
+        )
+        return False
+
+    from api.services.tenant_reporting_categories import aquaculture_expense_label
+
+    label = aquaculture_expense_label(company_id, exp_row.expense_category)
+    line_memo = f"Aquaculture pond expense — {label} (expense {expense_id})"[:300]
+    desc = f"Aquaculture — pond {label} paid from {funding_code} (expense #{expense_id})"[:500]
+    aq_meta = {
+        "pond_id": exp_row.pond_id,
+        "production_cycle_id": exp_row.production_cycle_id,
+        "cost_bucket": aquaculture_expense_category_to_cost_bucket(
+            exp_row.expense_category, company_id=company_id
+        ),
+    }
+    lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = [
+        (exp_acc, amt, Decimal("0"), line_memo),
+        (fund_acc, Decimal("0"), amt, line_memo),
+    ]
+    return (
+        _create_posted_entry(
+            company_id,
+            entry_date,
+            entry_number,
+            desc,
+            lines,
+            gl_station_id=None,
+            aquaculture_line_costing=[aq_meta, None],
         )
         is not None
     )

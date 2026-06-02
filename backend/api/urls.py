@@ -85,8 +85,9 @@ def api_docs(request):
             "/api/aquaculture/financing/repayment-apply/", "/api/aquaculture/financing/allocations/",
             "/api/aquaculture/landlords/", "/api/aquaculture/data-bank/",
             "/api/shifts/", "/api/tank-dips", "/api/taxes/",             "/api/reports/<id>",
-            "/api/company/backup/", "/api/company/restore/",
-            "/api/admin/companies/<id>/backup/", "/api/admin/companies/<id>/restore/",
+            "/api/company/backup/", "/api/company/backup/history/", "/api/company/restore/",
+            "/api/admin/companies/<id>/backup/", "/api/admin/companies/<id>/backup/history/",
+            "/api/admin/companies/<id>/restore/",
             "/api/admin/companies/<id>/stations/", "/api/admin/companies/<id>/stations/<sid>/purge/",
         ],
     })
@@ -164,6 +165,7 @@ urlpatterns = [
         subscription_portal_views.subscriptions_my_subscription_reactivate,
     ),
     path("company/backup/", backup_views.company_backup_download),
+    path("company/backup/history/", backup_views.company_backup_restore_history),
     path("company/restore/", backup_views.company_restore_upload),
     path("backup/constants/", backup_views.backup_restore_constants),
     # Users (Super Admin)
@@ -226,6 +228,10 @@ urlpatterns = [
         backup_views.admin_company_backup_preview,
     ),
     path("admin/companies/<int:company_id>/backup/", backup_views.admin_company_backup_download),
+    path(
+        "admin/companies/<int:company_id>/backup/history/",
+        backup_views.admin_company_backup_restore_history,
+    ),
     path("admin/companies/<int:company_id>/restore/", backup_views.admin_company_restore_upload),
     path(
         "admin/companies/<int:company_id>/stations/",

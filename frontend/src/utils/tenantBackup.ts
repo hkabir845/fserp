@@ -144,3 +144,36 @@ export async function fetchBackupPreviewForAdminCompany(api: AxiosInstance, comp
   )
   return data
 }
+
+export interface BackupAuditEntry {
+  id: number
+  company_id: number
+  action: string
+  success: boolean
+  actor_label: string
+  source: string
+  ip_address: string
+  record_count: number | null
+  bytes_size: number | null
+  safety_snapshot_path: string
+  error_message: string
+  detail: Record<string, unknown> | null
+  created_at: string | null
+}
+
+export interface BackupAuditHistoryPayload {
+  results: BackupAuditEntry[]
+  limit: number
+}
+
+export async function fetchBackupHistoryForCurrentCompany(api: AxiosInstance) {
+  const { data } = await api.get<BackupAuditHistoryPayload>('/company/backup/history/')
+  return data
+}
+
+export async function fetchBackupHistoryForAdminCompany(api: AxiosInstance, companyId: number) {
+  const { data } = await api.get<BackupAuditHistoryPayload>(
+    `/admin/companies/${companyId}/backup/history/`
+  )
+  return data
+}

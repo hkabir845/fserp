@@ -6,7 +6,7 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 
-from api.models import Company
+from api.models import BackupRestoreAudit, Company
 from api.services.tenant_backup import (
     BACKUP_SCHEMA_VERSION,
     RESTORE_CONFIRM_PHRASE,
@@ -16,6 +16,9 @@ from api.services.tenant_backup import (
     restore_bundle,
     _parse_bundle,
 )
+
+# Recent backup/restore audit rows surfaced in the UI; bounded to keep the payload small.
+BACKUP_HISTORY_LIMIT = 50
 from api.services.permission_service import has_permission, resolve_user_permissions
 from api.utils.auth import auth_required, company_context_error_response, get_company_id, user_is_super_admin
 
@@ -273,6 +276,70 @@ def admin_company_restore_upload(request, company_id: int):
             actor_user_id=uid, actor_label=label, ip_address=ip, error_message=str(e),
         )
         return JsonResponse({"detail": "Restore failed.", "error": str(e)}, status=500)
+
+
+def _serialize_audit(row: BackupRestoreAudit) -> dict:
+    return {
+        "id": row.id,
+        "company_id": row.company_id,
+        "action": row.action,
+        "success": row.success,
+        "actor_label": row.actor_label,
+        "source": row.source,
+        "ip_address": row.ip_address,
+        "record_count": row.record_count,
+        "bytes_size": row.bytes_size,
+        "safety_snapshot_path": row.safety_snapshot_path,
+        "error_message": row.error_message,
+        "detail": row.detail,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def _audit_history_payload(company_id: int) -> dict:
+    rows = list(
+        BackupRestoreAudit.objects.filter(company_id=company_id).order_by("-created_at")[
+            :BACKUP_HISTORY_LIMIT
+        ]
+    )
+    return {"results": [_serialize_audit(r) for r in rows], "limit": BACKUP_HISTORY_LIMIT}
+
+
+@csrf_exempt
+@auth_required
+@require_GET
+def company_backup_restore_history(request):
+    """GET /api/company/backup/history/ — recent backup/restore audit rows for the current tenant."""
+    user = request.api_user
+    if not _user_can_backup(user):
+        return JsonResponse({"detail": "Only company administrators can view backup history."}, status=403)
+
+    cid = get_company_id(request)
+    err = company_context_error_response(request)
+    if err:
+        return err
+    if not cid:
+        return JsonResponse({"detail": "Company context required."}, status=400)
+
+    if not _ensure_tenant_admin_company_access(request, cid):
+        return JsonResponse({"detail": "You can only view your own company's history."}, status=403)
+
+    return JsonResponse(_audit_history_payload(cid))
+
+
+@csrf_exempt
+@auth_required
+@require_GET
+def admin_company_backup_restore_history(request, company_id: int):
+    """GET /api/admin/companies/<id>/backup/history/ — audit rows for any tenant (super admin only)."""
+    user = request.api_user
+    if not user_is_super_admin(user):
+        return JsonResponse({"detail": "Super admin only."}, status=403)
+
+    if not Company.objects.filter(pk=company_id, is_deleted=False).exists():
+        return JsonResponse({"detail": "Company not found."}, status=404)
+
+    return JsonResponse(_audit_history_payload(company_id))
 
 
 # Expose confirmation phrase for API docs / frontend constants

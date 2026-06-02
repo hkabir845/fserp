@@ -1,16 +1,19 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AxiosInstance } from 'axios'
-import { AlertTriangle, Download, Info, RefreshCw, Upload } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, History, Info, RefreshCw, Upload, XCircle } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import {
   RESTORE_CONFIRM_PHRASE,
   downloadTenantBackupForAdminCompany,
   downloadTenantBackupForCurrentCompany,
+  fetchBackupHistoryForAdminCompany,
+  fetchBackupHistoryForCurrentCompany,
   fetchBackupPreviewForAdminCompany,
   restoreTenantBackupForAdminCompany,
   restoreTenantBackupForCurrentCompany,
+  type BackupAuditEntry,
   type BackupPreviewPayload,
 } from '@/utils/tenantBackup'
 import { safeLogError } from '@/utils/connectionError'
@@ -43,6 +46,18 @@ function extractErrorMessage(err: unknown, fallback: string): string {
   return typeof msg === 'string' ? msg : fallback
 }
 
+function formatAuditTimestamp(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
+}
+
+function actionLabel(action: string): string {
+  if (action === 'backup_download') return 'Backup'
+  if (action === 'restore') return 'Restore'
+  return action || '—'
+}
+
 export default function BackupRestorePanel(props: BackupRestorePanelProps) {
   const toast = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -51,6 +66,8 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [confirmText, setConfirmText] = useState('')
   const [preview, setPreview] = useState<BackupPreviewPayload | null>(null)
+  const [history, setHistory] = useState<BackupAuditEntry[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   const isSaas = props.scope === 'saas'
   const companyLabel = isSaas
@@ -58,6 +75,30 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
     : props.companyLabel
   const targetCompanyId = isSaas ? props.targetCompanyId : null
   const canOperate = isSaas ? targetCompanyId != null : true
+
+  const api = props.api
+  const loadHistory = useCallback(async () => {
+    if (isSaas && targetCompanyId == null) {
+      setHistory([])
+      return
+    }
+    setHistoryLoading(true)
+    try {
+      const data =
+        isSaas && targetCompanyId != null
+          ? await fetchBackupHistoryForAdminCompany(api, targetCompanyId)
+          : await fetchBackupHistoryForCurrentCompany(api)
+      setHistory(data.results || [])
+    } catch (e: unknown) {
+      safeLogError('backup history', e)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [api, isSaas, targetCompanyId])
+
+  useEffect(() => {
+    void loadHistory()
+  }, [loadHistory])
 
   const loadPreview = async () => {
     if (!isSaas || targetCompanyId == null) return
@@ -84,6 +125,7 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
         await downloadTenantBackupForCurrentCompany(props.api)
       }
       toast.success('Backup downloaded')
+      void loadHistory()
     } catch (e: unknown) {
       toast.error(extractErrorMessage(e, 'Failed to download backup'))
       safeLogError('backup download', e)
@@ -266,6 +308,90 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
             <Upload className="h-4 w-4" />
             {restoring ? 'Restoring…' : 'Choose backup file and restore'}
           </button>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+              <History className="h-5 w-5 text-gray-500" />
+              Activity history
+            </h2>
+            <button
+              type="button"
+              onClick={() => void loadHistory()}
+              disabled={historyLoading || !canOperate}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${historyLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+          <p className="mt-1 text-sm text-gray-600">
+            Audit trail of backup and restore operations (who, when, outcome). Most recent first.
+          </p>
+
+          {!canOperate ? (
+            <p className="mt-4 text-sm text-gray-500">Select a company above to view its history.</p>
+          ) : history.length === 0 ? (
+            <p className="mt-4 text-sm text-gray-500">
+              {historyLoading ? 'Loading…' : 'No backup or restore activity recorded yet.'}
+            </p>
+          ) : (
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead>
+                  <tr className="text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                    <th className="px-3 py-2">When</th>
+                    <th className="px-3 py-2">Action</th>
+                    <th className="px-3 py-2">Result</th>
+                    <th className="px-3 py-2">By</th>
+                    <th className="px-3 py-2">Source</th>
+                    <th className="px-3 py-2 text-right">Records</th>
+                    <th className="px-3 py-2">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {history.map((row) => (
+                    <tr key={row.id} className="text-gray-800">
+                      <td className="whitespace-nowrap px-3 py-2 text-gray-600">
+                        {formatAuditTimestamp(row.created_at)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-medium">{actionLabel(row.action)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {row.success ? (
+                          <span className="inline-flex items-center gap-1 text-green-700">
+                            <CheckCircle2 className="h-4 w-4" /> Success
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-red-700">
+                            <XCircle className="h-4 w-4" /> Failed
+                          </span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-gray-600">{row.actor_label || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-gray-600">{row.source || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right text-gray-600">
+                        {row.record_count ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {row.error_message ? (
+                          <span className="text-red-700" title={row.error_message}>
+                            {row.error_message.length > 80
+                              ? `${row.error_message.slice(0, 80)}…`
+                              : row.error_message}
+                          </span>
+                        ) : row.safety_snapshot_path ? (
+                          <span title={row.safety_snapshot_path}>Safety snapshot saved</span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </>

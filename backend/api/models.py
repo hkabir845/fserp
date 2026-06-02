@@ -2385,6 +2385,16 @@ class AquacultureExpense(models.Model):
         blank=True,
         help_text="Optional total feed weight in kg (equivalent) for reporting.",
     )
+    funding_account_code = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text=(
+            "When set, a manual (non-inventory, non-shop-issue) pond expense auto-posts "
+            "Dr expense / Cr this funding account (e.g. 1010 Cash, 1030 Bank). "
+            "Blank keeps the row register-only (cost flows to GL via Bills or inventory instead)."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

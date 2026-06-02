@@ -90,6 +90,7 @@ from api.services.gl_posting import (
     delete_landlord_lease_payment_journal,
     item_inventory_unit_cost,
     post_aquaculture_fish_stock_ledger_journal,
+    post_aquaculture_manual_expense_journal,
     sync_landlord_lease_payment_journal,
 )
 from api.services.aquaculture_production_cycle_service import cycle_code_conflict, next_automatic_cycle_code
@@ -1578,6 +1579,24 @@ def aquaculture_pond_detail(request, pond_id: int):
     return JsonResponse({"detail": "Deleted"}, status=200)
 
 
+def _resolve_manual_expense_funding_code(body: dict) -> str:
+    """
+    Funding (credit) account for a manual pond expense that auto-posts Dr expense / Cr funding.
+
+    Accepts ``funding_account`` ('cash' | 'bank' | 'none') or an explicit ``funding_account_code``.
+    Defaults to Cash on Hand (1010). 'none' / '' keeps the row register-only (no GL).
+    """
+    raw_code = str(body.get("funding_account_code") or "").strip()
+    if raw_code:
+        return raw_code
+    choice = str(body.get("funding_account") or "cash").strip().lower()
+    if choice in ("", "none", "off", "register", "register_only"):
+        return ""
+    if choice in ("bank", "1030"):
+        return "1030"
+    return "1010"
+
+
 def _expense_to_json(x: AquacultureExpense) -> dict:
     pond_name = ""
     if x.pond_id and getattr(x, "pond", None):
@@ -1616,6 +1635,7 @@ def _expense_to_json(x: AquacultureExpense) -> dict:
         "source_station_name": src_sname,
         "feed_sack_count": str(x.feed_sack_count) if getattr(x, "feed_sack_count", None) is not None else None,
         "feed_weight_kg": str(x.feed_weight_kg) if getattr(x, "feed_weight_kg", None) is not None else None,
+        "funding_account_code": getattr(x, "funding_account_code", "") or "",
         "created_at": x.created_at.isoformat() if x.created_at else "",
     }
 
@@ -2284,6 +2304,8 @@ def aquaculture_expense_detail(request, expense_id: int):
             x.memo = str(body.get("memo") or "")[:5000]
         if "vendor_name" in body:
             x.vendor_name = str(body.get("vendor_name") or "")[:200]
+        if "funding_account" in body or "funding_account_code" in body:
+            x.funding_account_code = _resolve_manual_expense_funding_code(body)
 
         fer = _apply_expense_feed_metrics_from_body(x, body)
         if fer:
@@ -2299,12 +2321,17 @@ def aquaculture_expense_detail(request, expense_id: int):
                 "expense_date",
                 "pond_shares",
                 "shared_equal_pond_ids",
+                "funding_account",
+                "funding_account_code",
             )
         )
 
         with transaction.atomic():
             x.save()
-            if material_expense and aquaculture_expense_has_posting_effects(cid, expense_id):
+            if material_expense and (
+                aquaculture_expense_has_posting_effects(cid, expense_id)
+                or (x.funding_account_code or "").strip()
+            ):
                 cleanup_aquaculture_expense_posting_effects(cid, expense_id)
                 sync_aquaculture_expense_posting_effects(cid, expense_id)
         x = (
@@ -4690,6 +4717,7 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
             memo_in = str(body.get("memo") or "").strip()
             memo = (memo_in + f"\n[Feeding advice #{a.id}]").strip()[:5000]
             vendor = str(body.get("vendor_name") or "")[:200]
+            funding_code = _resolve_manual_expense_funding_code(body)
             x = AquacultureExpense(
                 company_id=cid,
                 pond=pond,
@@ -4700,6 +4728,7 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
                 memo=memo,
                 vendor_name=vendor,
                 feed_weight_kg=applied_kg,
+                funding_account_code=funding_code,
             )
             metrics_payload: dict = {"feed_weight_kg": str(applied_kg)}
             raw_sc = body.get("feed_sack_count")
@@ -4729,6 +4758,12 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
             if fer:
                 return JsonResponse({"detail": fer}, status=400)
             x.save()
+            if funding_code:
+                post_aquaculture_manual_expense_journal(
+                    company_id=cid,
+                    expense_id=x.id,
+                    entry_date=x.expense_date,
+                )
             expense_obj = x
         else:
             do_consume = False

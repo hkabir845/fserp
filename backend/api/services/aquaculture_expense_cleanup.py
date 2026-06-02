@@ -25,6 +25,7 @@ from api.services.aquaculture_pond_stock_service import (
 )
 from api.services.aquaculture_shop_stock import _total_cost_at_issue
 from api.services.gl_posting import (
+    post_aquaculture_manual_expense_journal,
     post_aquaculture_pond_feed_consumption_journal,
     post_aquaculture_shop_stock_issue_journal,
 )
@@ -101,6 +102,7 @@ def cleanup_aquaculture_expense_posting_effects(company_id: int, expense_id: int
             entry_number__in=(
                 f"AUTO-AQ-POND-{expense_id}-COGS",
                 f"AUTO-AQ-SHOP-{expense_id}-COGS",
+                f"AUTO-AQ-EXP-{expense_id}",
             ),
         ).delete()
 
@@ -113,6 +115,7 @@ def aquaculture_expense_has_posting_effects(company_id: int, expense_id: int) ->
         entry_number__in=(
             f"AUTO-AQ-POND-{expense_id}-COGS",
             f"AUTO-AQ-SHOP-{expense_id}-COGS",
+            f"AUTO-AQ-EXP-{expense_id}",
         ),
     ).exists()
 
@@ -135,6 +138,14 @@ def sync_aquaculture_expense_posting_effects(company_id: int, expense_id: int) -
             )
         )
         if not lines:
+            # Manual (non-inventory) pond expense: re-post Dr expense / Cr funding when a funding
+            # account is set. No-op for register-only rows (blank funding_account_code).
+            if (exp.funding_account_code or "").strip():
+                post_aquaculture_manual_expense_journal(
+                    company_id,
+                    expense_id=exp.id,
+                    entry_date=exp.expense_date,
+                )
             return
 
         row_tuples: list[tuple[Item, Decimal]] = []

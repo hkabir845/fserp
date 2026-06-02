@@ -520,6 +520,37 @@ def item_cogs_unit_cost(company_id: int, item: Optional[Item]) -> Decimal:
     return item.unit_price or Decimal("0")
 
 
+def item_has_cost_basis(company_id: int, item: Optional[Item]) -> bool:
+    """
+    True when the item has a real cost (AVCO, posted purchase, or opening cost) — the
+    selling-price last resort does NOT count. Used to relieve COGS for sold items that
+    are not flagged as physical-stock but still carry a known cost, so the P&L shows COGS.
+    """
+    if not item:
+        return False
+    if (item.cost or Decimal("0")) > 0:
+        return True
+    if (item.opening_stock_unit_cost or Decimal("0")) > 0:
+        return True
+    return BillLine.objects.filter(
+        bill__company_id=company_id,
+        bill__stock_receipt_applied=True,
+        item_id=item.id,
+        quantity__gt=0,
+        unit_price__gt=0,
+    ).exists()
+
+
+def item_should_relieve_cogs(company_id: int, item: Optional[Item]) -> bool:
+    """
+    Whether a sold line should post COGS: any physical-stock item, or any item that
+    carries a real cost basis even if it is not stock-tracked.
+    """
+    if not item:
+        return False
+    return item_tracks_physical_stock(item) or item_has_cost_basis(company_id, item)
+
+
 def apply_weighted_average_cost_on_receipt(
     company_id: int, item_id: int, received_qty: Decimal, received_value: Decimal
 ) -> None:
@@ -917,7 +948,7 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
         it = line.item
         if not it:
             continue
-        if not item_tracks_physical_stock(it):
+        if not item_should_relieve_cogs(company_id, it):
             continue
         cost = item_cogs_unit_cost(company_id, it)
         if cost <= 0:

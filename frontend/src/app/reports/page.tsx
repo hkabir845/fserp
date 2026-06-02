@@ -730,9 +730,10 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'aquaculture-shop-station-stock',
 ])
 
-/** GL P&L reports that accept optional pond_id when Site scope is a pond (p:{id}). */
+/** GL reports that accept optional pond_id when Site scope is a pond (p:{id}). */
 const REPORTS_GL_POND_SCOPED = new Set<ReportType>([
   'income-statement',
+  'balance-sheet',
   'expense-detail',
   'income-detail',
 ])
@@ -4512,28 +4513,102 @@ function renderReportTable(
         </div>
 
         {/* Summary Totals */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-br from-green-50 to-white border-2 border-green-300 rounded-lg p-5 shadow-sm">
-            <p className="text-xs text-green-700 uppercase tracking-wide font-semibold">Gross Profit</p>
-            <p className="text-2xl font-bold text-green-800 mt-2">
-              {formatCurrency(data.gross_profit)}
-            </p>
-            <p className="text-xs text-green-600 mt-1">
-              Income - COGS
-            </p>
-          </div>
-          <div className="bg-gradient-to-br from-blue-50 to-white border-2 border-blue-300 rounded-lg p-5 shadow-sm md:col-span-2">
-            <p className="text-xs text-blue-700 uppercase tracking-wide font-semibold">Net Income</p>
-            <p className={`text-3xl font-bold mt-2 ${
-              Number(data.net_income ?? 0) >= 0 ? 'text-blue-800' : 'text-red-600'
-            }`}>
-              {formatCurrency(data.net_income)}
-            </p>
-            <p className="text-xs text-blue-600 mt-1">
-              Gross Profit - Expenses
-            </p>
-          </div>
-        </div>
+        {(() => {
+          const grossProfit = Number(data.gross_profit ?? 0)
+          const netIncome = Number(data.net_income ?? 0)
+          const grossMargin = incomeTotal !== 0 ? (grossProfit / incomeTotal) * 100 : 0
+          const netMargin = incomeTotal !== 0 ? (netIncome / incomeTotal) * 100 : 0
+
+          return (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-gradient-to-br from-green-50 to-white border-2 border-green-300 rounded-lg p-5 shadow-sm">
+                  <p className="text-xs text-green-700 uppercase tracking-wide font-semibold">Gross Profit</p>
+                  <p className="text-2xl font-bold text-green-800 mt-2">
+                    {formatCurrency(grossProfit)}
+                  </p>
+                  <p className="text-xs text-green-600 mt-1">
+                    Income − COGS · {grossMargin.toFixed(1)}% margin
+                  </p>
+                </div>
+                <div className="bg-gradient-to-br from-blue-50 to-white border-2 border-blue-300 rounded-lg p-5 shadow-sm">
+                  <p className="text-xs text-blue-700 uppercase tracking-wide font-semibold">Net Income</p>
+                  <p className={`text-2xl font-bold mt-2 ${
+                    netIncome >= 0 ? 'text-blue-800' : 'text-red-600'
+                  }`}>
+                    {formatCurrency(netIncome)}
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Gross Profit − Expenses
+                  </p>
+                </div>
+                <div className={`bg-gradient-to-br ${
+                  netMargin >= 0 ? 'from-indigo-50' : 'from-red-50'
+                } to-white border-2 ${
+                  netMargin >= 0 ? 'border-indigo-300' : 'border-red-300'
+                } rounded-lg p-5 shadow-sm`}>
+                  <p className={`text-xs uppercase tracking-wide font-semibold ${
+                    netMargin >= 0 ? 'text-indigo-700' : 'text-red-700'
+                  }`}>Net Profit Margin</p>
+                  <p className={`text-2xl font-bold mt-2 ${
+                    netMargin >= 0 ? 'text-indigo-800' : 'text-red-600'
+                  }`}>
+                    {netMargin.toFixed(1)}%
+                  </p>
+                  <p className={`text-xs mt-1 ${netMargin >= 0 ? 'text-indigo-600' : 'text-red-600'}`}>
+                    Net Income ÷ Income
+                  </p>
+                </div>
+              </div>
+
+              {/* Profit & Loss Breakdown (waterfall) */}
+              <div className="bg-white border-2 border-slate-200 rounded-lg shadow-sm overflow-hidden">
+                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
+                  <p className="text-sm font-semibold text-slate-800">Profit &amp; Loss Breakdown</p>
+                  <p className="text-xs text-slate-500 mt-0.5">How net income is derived for this period</p>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  <div className="flex items-center justify-between px-5 py-3">
+                    <span className="text-sm text-slate-700">Income</span>
+                    <span className="text-sm font-semibold tabular-nums text-slate-900">
+                      {formatCurrency(incomeTotal)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between px-5 py-3">
+                    <span className="text-sm text-slate-700">Less: Cost of Goods Sold</span>
+                    <span className="text-sm font-semibold tabular-nums text-amber-700">
+                      ({formatCurrency(cogsTotal)})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between px-5 py-3 bg-green-50/60">
+                    <span className="text-sm font-semibold text-green-800">= Gross Profit</span>
+                    <span className="text-sm font-bold tabular-nums text-green-800">
+                      {formatCurrency(grossProfit)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between px-5 py-3">
+                    <span className="text-sm text-slate-700">Less: Operating Expenses</span>
+                    <span className="text-sm font-semibold tabular-nums text-slate-700">
+                      ({formatCurrency(expenseTotal)})
+                    </span>
+                  </div>
+                  <div className={`flex items-center justify-between px-5 py-3 ${
+                    netIncome >= 0 ? 'bg-blue-50/70' : 'bg-red-50/70'
+                  }`}>
+                    <span className={`text-sm font-bold ${netIncome >= 0 ? 'text-blue-800' : 'text-red-700'}`}>
+                      = Net Income
+                    </span>
+                    <span className={`text-base font-bold tabular-nums ${
+                      netIncome >= 0 ? 'text-blue-800' : 'text-red-700'
+                    }`}>
+                      {formatCurrency(netIncome)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         {Number(data.net_income ?? 0) < 0 && (
           <p className="text-sm text-slate-600 max-w-3xl">

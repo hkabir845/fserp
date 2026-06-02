@@ -338,6 +338,89 @@ def test_cogs_posts_even_when_standard_accounts_missing(company_tenant_with_gl):
     assert ChartOfAccount.objects.filter(company_id=cid, account_code="1220", is_active=True).exists()
 
 
+def test_non_stock_item_with_cost_still_posts_cogs(company_tenant_with_gl):
+    """A sold item that is NOT physical-stock (e.g. non-inventory) but carries a real cost
+    must still post COGS so the P&L shows it. With no cost basis it stays out of COGS."""
+    cid = company_tenant_with_gl.id
+    st = Station.objects.create(company_id=cid, station_name="NonStock COGS", is_active=True)
+    cust = Customer.objects.create(
+        company_id=cid, display_name="NonStock Buyer", customer_number="B-NONSTK", is_active=True
+    )
+    inv_acc = ChartOfAccount.objects.get(company_id=cid, account_code="1220")
+    cogs_acc = ChartOfAccount.objects.get(company_id=cid, account_code="5120")
+    item = Item.objects.create(
+        company_id=cid,
+        name="Non-stock costed",
+        item_type="non_inventory",
+        unit="piece",
+        cost=Decimal("7.00"),
+        unit_price=Decimal("12.00"),
+        inventory_account=inv_acc,
+        cogs_account=cogs_acc,
+        is_active=True,
+    )
+    inv = Invoice.objects.create(
+        company_id=cid,
+        customer=cust,
+        station=st,
+        invoice_number="INV-NONSTK-1",
+        invoice_date=date(2026, 4, 18),
+        status="paid",
+        subtotal=Decimal("36"),
+        total=Decimal("36"),
+        payment_method="cash",
+    )
+    InvoiceLine.objects.create(
+        invoice=inv, item=item, description=item.name,
+        quantity=Decimal("3"), unit_price=Decimal("12"), amount=Decimal("36"),
+    )
+    post_invoice_sale_journal(cid, inv, payment_method="cash")
+    assert post_invoice_cogs_journal(cid, inv) is True
+
+    pl = report_income_statement(cid, date(2026, 4, 1), date(2026, 4, 30))
+    # 3 x 7 cost = 21 even though the item does not track physical stock.
+    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("21.00")
+
+
+def test_non_stock_item_without_cost_basis_skips_cogs(company_tenant_with_gl):
+    """A non-stock service item with no cost basis must NOT post COGS (no selling-price
+    last resort for non-stock lines)."""
+    cid = company_tenant_with_gl.id
+    st = Station.objects.create(company_id=cid, station_name="Service NoCOGS", is_active=True)
+    cust = Customer.objects.create(
+        company_id=cid, display_name="Service Buyer", customer_number="B-SVC", is_active=True
+    )
+    item = Item.objects.create(
+        company_id=cid,
+        name="Labour service",
+        item_type="service",
+        unit="hour",
+        cost=Decimal("0"),
+        unit_price=Decimal("50.00"),
+        is_active=True,
+    )
+    inv = Invoice.objects.create(
+        company_id=cid,
+        customer=cust,
+        station=st,
+        invoice_number="INV-SVC-1",
+        invoice_date=date(2026, 4, 19),
+        status="paid",
+        subtotal=Decimal("100"),
+        total=Decimal("100"),
+        payment_method="cash",
+    )
+    InvoiceLine.objects.create(
+        invoice=inv, item=item, description=item.name,
+        quantity=Decimal("2"), unit_price=Decimal("50"), amount=Decimal("100"),
+    )
+    post_invoice_sale_journal(cid, inv, payment_method="cash")
+    assert post_invoice_cogs_journal(cid, inv) is False
+
+    pl = report_income_statement(cid, date(2026, 4, 1), date(2026, 4, 30))
+    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("0.00")
+
+
 def test_income_statement_self_heals_missing_cogs(company_tenant_with_gl):
     """A posted sale whose COGS journal is missing must still show COGS in the P&L for the
     sale's period — the report self-heals by posting AUTO-INV-*-COGS, no manual backfill."""

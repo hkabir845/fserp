@@ -41,6 +41,7 @@ from api.services.gl_posting import (
     backfill_invoice_cogs_journals,
     item_cogs_unit_cost,
     item_inventory_unit_cost,
+    item_should_relieve_cogs,
 )
 from api.services.payment_allocation import bill_open_amount, invoice_open_amount
 from api.utils.pos_payment import is_on_account_payment
@@ -148,7 +149,7 @@ def _estimated_cogs_from_invoice_lines(
     total = Decimal("0")
     for line in qs:
         it = line.item
-        if not it or not item_tracks_physical_stock(it):
+        if not it or not item_should_relieve_cogs(company_id, it):
             continue
         cost = item_cogs_unit_cost(company_id, it)
         qty = line.quantity or Decimal("0")
@@ -374,6 +375,34 @@ def _balance_sheet_balance_from_site_activity(
     return c - d
 
 
+def _movement_through_pond(
+    company_id: int, account_id: int, as_of: date, pond_id: int
+) -> tuple[Decimal, Decimal]:
+    """Posted debit/credit totals through ``as_of`` on lines tagged to one pond."""
+    agg = (
+        _je_lines_pond(company_id, pond_id)
+        .filter(account_id=account_id, journal_entry__entry_date__lte=as_of)
+        .aggregate(
+            td=Coalesce(Sum("debit"), Decimal("0")),
+            tc=Coalesce(Sum("credit"), Decimal("0")),
+        )
+    )
+    return agg["td"], agg["tc"]
+
+
+def _balance_sheet_balance_from_pond_activity(
+    coa: ChartOfAccount, company_id: int, as_of: date, pond_id: int
+) -> Decimal:
+    """
+    BS account balance from posted lines tagged with ``pond_id`` only (no chart opening).
+    Pond analogue of ``_balance_sheet_balance_from_site_activity``.
+    """
+    d, c = _movement_through_pond(company_id, coa.id, as_of, pond_id)
+    if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
+        return d - c
+    return c - d
+
+
 def _cumulative_net_income_through(company_id: int, as_of: date) -> Decimal:
     """
     P&L rolled to equity for balance-sheet balancing when income/expense/COSG
@@ -413,6 +442,24 @@ def _cumulative_net_income_site_through(
         if bucket is None:
             continue
         bal = _site_pl_activity_balance(coa, company_id, as_of, station_id)
+        if bucket == "income":
+            ni += bal
+        else:
+            ni -= bal
+    return ni
+
+
+def _cumulative_net_income_pond_through(
+    company_id: int, as_of: date, pond_id: int
+) -> Decimal:
+    """Same sign convention as ``_cumulative_net_income_site_through`` but for one pond's tagged lines."""
+    ni = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        bucket = _pl_bucket(coa)
+        if bucket is None:
+            continue
+        d, c = _movement_through_pond(company_id, coa.id, as_of, pond_id)
+        bal = _pl_amount_from_movement(coa, d, c)
         if bucket == "income":
             ni += bal
         else:
@@ -472,9 +519,16 @@ def _balance_sheet_bucket_for_coa(coa: ChartOfAccount) -> str | None:
 
 
 def report_balance_sheet(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     _ = start
+    # station_id and pond_id are mutually exclusive; pond scope wins if both arrive.
+    if pond_id is not None:
+        station_id = None
     assets: list[dict[str, Any]] = []
     liabilities: list[dict[str, Any]] = []
     equity: list[dict[str, Any]] = []
@@ -486,7 +540,9 @@ def report_balance_sheet(
         st = (coa.account_sub_type or "").strip().lower()
         if t in ("income", "cost_of_goods_sold", "expense"):
             continue
-        if station_id is not None:
+        if pond_id is not None:
+            bal = _balance_sheet_balance_from_pond_activity(coa, company_id, end, pond_id)
+        elif station_id is not None:
             bal = _balance_sheet_balance_from_site_activity(coa, company_id, end, station_id)
         else:
             bal = _ending_balance(coa, company_id, end)
@@ -530,7 +586,9 @@ def report_balance_sheet(
             equity.append(row)
             te_plain += bal
 
-    if station_id is not None:
+    if pond_id is not None:
+        ni_cum = _cumulative_net_income_pond_through(company_id, end, pond_id)
+    elif station_id is not None:
         ni_cum = _cumulative_net_income_site_through(company_id, end, station_id)
     else:
         ni_cum = _cumulative_net_income_through(company_id, end)
@@ -567,7 +625,12 @@ def report_balance_sheet(
     note = (
         "Point-in-time as of end date. Unclosed P&L is included in equity as Σ-P&L; Σ-ADJ is an automatic tie-out if a small residual remains."
     )
-    if station_id is not None:
+    if pond_id is not None:
+        note = (
+            note
+            + " Pond filter: balances use only posted journal lines tagged to this pond_id (chart opening balances are excluded); Σ-P&L uses the same pond-tagged activity."
+        )
+    elif station_id is not None:
         note = (
             note
             + " Site filter: balances use only posted journal lines with this station_id (chart opening balances are excluded); Σ-P&L uses the same site-tagged activity."
@@ -591,6 +654,8 @@ def report_balance_sheet(
     }
     if station_id is not None:
         out_bs["filter_station_id"] = station_id
+    if pond_id is not None:
+        out_bs["filter_pond_id"] = pond_id
     return out_bs
 
 

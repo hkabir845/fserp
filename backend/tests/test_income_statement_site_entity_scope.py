@@ -197,6 +197,69 @@ def test_station_pl_excludes_pond_tagged_expense_even_at_receipt_station(company
     assert aquaculture_exp.account_code not in codes
 
 
+def test_entity_pl_rollup_ponds_and_sites_sum_to_company(company_tenant_with_gl):
+    """Each pond/station is an individual entity; together with head office they roll up to the company total."""
+    from api.models import AquaculturePond
+    from api.services.reporting import report_entities_pl_summary
+
+    cid = company_tenant_with_gl.id
+    st1 = Station.objects.create(company_id=cid, station_name="Roll Site 1", is_active=True)
+    st2 = Station.objects.create(company_id=cid, station_name="Roll Site 2", is_active=True)
+    pond1 = AquaculturePond.objects.create(company_id=cid, name="Roll Pond 1", is_active=True)
+    pond2 = AquaculturePond.objects.create(company_id=cid, name="Roll Pond 2", is_active=True)
+
+    income = ChartOfAccount.objects.get(company_id=cid, account_code="4200")
+    cash = ChartOfAccount.objects.get(company_id=cid, account_code="1010")
+    expense = ChartOfAccount.objects.get(company_id=cid, account_code="6900")
+
+    def post_income(amount: str, *, station_id=None, pond_id=None, tag: str) -> None:
+        je = JournalEntry.objects.create(
+            company_id=cid,
+            entry_number=f"ROLL-{tag}",
+            entry_date=date(2026, 9, 5),
+            station_id=station_id,
+            is_posted=True,
+            posted_at=timezone.now(),
+        )
+        JournalEntryLine.objects.create(
+            journal_entry=je, account=cash, station_id=station_id,
+            aquaculture_pond_id=pond_id, debit=Decimal(amount), credit=Decimal("0"),
+        )
+        JournalEntryLine.objects.create(
+            journal_entry=je, account=income, station_id=station_id,
+            aquaculture_pond_id=pond_id, debit=Decimal("0"), credit=Decimal(amount),
+        )
+
+    post_income("100", station_id=st1.id, tag="S1")
+    post_income("200", station_id=st2.id, tag="S2")
+    post_income("300", pond_id=pond1.id, tag="P1")
+    post_income("400", pond_id=pond2.id, tag="P2")
+
+    # Head office / unassigned: fully untagged expense (no station, no pond).
+    je_ho = JournalEntry.objects.create(
+        company_id=cid, entry_number="ROLL-HO", entry_date=date(2026, 9, 6),
+        is_posted=True, posted_at=timezone.now(),
+    )
+    JournalEntryLine.objects.create(journal_entry=je_ho, account=expense, debit=Decimal("50"), credit=Decimal("0"))
+    JournalEntryLine.objects.create(journal_entry=je_ho, account=cash, debit=Decimal("0"), credit=Decimal("50"))
+
+    rep = report_entities_pl_summary(cid, date(2026, 9, 1), date(2026, 9, 30))
+    slices = rep["by_station"] + rep["by_pond"] + [rep["unscoped"]]
+    co = rep["company_total"]
+
+    # Together, every entity slice sums to the company total (the rollup).
+    assert sum(Decimal(str(r["income"])) for r in slices) == Decimal(str(co["income"]))
+    assert sum(Decimal(str(r["expenses"])) for r in slices) == Decimal(str(co["expenses"]))
+    assert sum(Decimal(str(r["net_income"])) for r in slices) == Decimal(str(co["net_income"]))
+
+    # Each pond stands alone as its own entity.
+    pond_rows = {r["pond_name"]: r for r in rep["by_pond"]}
+    assert Decimal(str(pond_rows["Roll Pond 1"]["income"])) == Decimal("300")
+    assert Decimal(str(pond_rows["Roll Pond 2"]["income"])) == Decimal("400")
+    assert Decimal(str(co["income"])) == Decimal("1000")
+    assert Decimal(str(co["net_income"])) == Decimal("950")
+
+
 def test_income_statement_api_honors_station_id(
     api_client, company_tenant_with_gl, auth_admin_headers
 ):

@@ -97,16 +97,8 @@ export default function StationsPage() {
         router.push('/login')
         return
       }
-      const isConnection =
-        errorMessage.includes('ERR_CONNECTION_REFUSED') ||
-        errorMessage.includes('ERR_NETWORK') ||
-        errorMessage.includes('Network Error') ||
-        errorMessage.includes('timeout')
-      const displayMessage = isConnection
-        ? 'Backend server is not running. Please start it with backend\\run.bat or run: cd backend && python manage.py runserver 8000'
-        : errorMessage
-      setError(displayMessage)
-      toast.error(displayMessage)
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }

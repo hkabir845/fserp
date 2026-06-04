@@ -9,6 +9,7 @@ import api, { getBackendOrigin, isSuperAdminRole } from '@/lib/api'
 import { useCompany } from '@/contexts/CompanyContext'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { isConnectionError, safeLogError } from '@/utils/connectionError'
+import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDate, formatDateOnly } from '@/utils/date'
 import { printLedgerStatement, type LedgerStatementPrintInput } from '@/utils/printDocument'
 import { loadPrintBranding, type PrintBranding } from '@/utils/printBranding'
@@ -683,25 +684,14 @@ export default function ChartOfAccountsPage() {
         } else {
           errorMessage = `Error ${status}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`
         }
-      } else if (error?.request) {
-        // Silently handle connection errors
-        if (!isConnectionError(error)) {
-          safeLogError('❌ No response received from server:', {
-            request: error.request,
-            url: error.config?.url,
-            method: error.config?.method
-          })
-        }
-        errorMessage = `Unable to connect to server. Please ensure the backend is running on ${getBackendOrigin()}.`
-      } else if (error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
-        // Silently handle connection errors
-        if (!isConnectionError(error)) {
-          safeLogError('❌ Network error:', error)
-        }
-        errorMessage = `Network error: Cannot connect to the backend server. Please check: 1) Backend is running on ${getBackendOrigin()}, 2) No firewall blocking the connection, 3) Backend is accessible.`
       } else {
-        safeLogError('❌ Request setup error:', error?.message || error)
-        errorMessage = error?.message || 'An unexpected error occurred. Please check the browser console for details.'
+        if (!isConnectionError(error)) {
+          safeLogError('❌ Request error:', error?.message || error)
+        }
+        errorMessage = extractErrorMessage(
+          error,
+          'Could not load chart of accounts. Check your connection and try again.'
+        )
       }
       
       // Only log final error if it's not a connection error

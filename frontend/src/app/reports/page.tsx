@@ -63,6 +63,7 @@ import {
   buildGenericTabularCsv,
 } from '@/utils/reportExportHelpers'
 import { getApiBaseUrl } from '@/lib/api'
+import { extractErrorMessage } from '@/utils/errorHandler'
 
 const SALES_PURCHASE_REPORT_IDS = new Set<ReportType>(['sales-report', 'purchase-report'])
 const BUSINESS_LINE_REPORT_IDS = new Set<ReportType>([
@@ -1863,16 +1864,11 @@ export default function ReportsPage() {
       
       const backendDetail = String(error?.response?.data?.detail ?? '').trim()
       let errorMessage =
-        backendDetail || error?.message || 'Failed to load report. Please try again.'
-      if (
-        !error?.response &&
-        (error?.code === 'ERR_NETWORK' ||
-          error?.code === 'ECONNABORTED' ||
-          String(error?.message || '').includes('Network Error'))
-      ) {
-        errorMessage =
-          'Could not load this report (network or timeout). Try again, use a shorter date range, or select All sites. If it persists, your server may need longer API timeouts.'
-      }
+        backendDetail ||
+        extractErrorMessage(
+          error,
+          'Could not load this report. Try again, use a shorter date range, or select All sites. If it persists, your server may need longer API timeouts.'
+        )
       if (error?.response?.status === 404) {
         errorMessage =
           backendDetail === 'Unknown report' || backendDetail === ''

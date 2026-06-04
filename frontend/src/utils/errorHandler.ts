@@ -1,3 +1,5 @@
+import { connectionErrorUserMessage, isConnectionError } from '@/utils/connectionError'
+
 /**
  * Flatten Django `ValidationError.message_dict` / JsonResponse `{ errors: { field: ["msg"] } }`.
  */
@@ -134,12 +136,25 @@ export function formatApiErrorJson(data: unknown, fallback: string = 'Request fa
   return fallback
 }
 
+function sanitizeRawClientMessage(message: string, fallback: string): string {
+  const t = message.trim()
+  if (!t) return fallback
+  if (/^network\s*error$/i.test(t)) {
+    return connectionErrorUserMessage(undefined, fallback)
+  }
+  return t
+}
+
 /**
  * Extract a user-facing message from an API/Axios error or thrown value.
  */
 export function extractErrorMessage(error: any, fallback: string = 'An error occurred'): string {
   if (typeof error === 'string') {
-    return error
+    return sanitizeRawClientMessage(error, fallback)
+  }
+
+  if (isConnectionError(error)) {
+    return connectionErrorUserMessage(error, fallback)
   }
 
   // AxiosError extends Error — read API body first so we don't show only "Request failed with status code 400"
@@ -148,19 +163,21 @@ export function extractErrorMessage(error: any, fallback: string = 'An error occ
   }
 
   if (error instanceof Error) {
-    return error.message
+    return sanitizeRawClientMessage(error.message, fallback)
   }
 
   if (error && typeof error === 'object' && !Array.isArray(error)) {
     if (error.isAxiosError) {
       const m = error.message
-      return typeof m === 'string' && m.trim() ? m.trim() : fallback
+      return typeof m === 'string' && m.trim()
+        ? sanitizeRawClientMessage(m.trim(), fallback)
+        : fallback
     }
     return formatApiErrorJson(error, fallback)
   }
 
   if (error?.message) {
-    return String(error.message)
+    return sanitizeRawClientMessage(String(error.message), fallback)
   }
 
   try {

@@ -19,6 +19,7 @@ import {
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
+import { messageForAdminListError } from '@/utils/adminApiErrors'
 import { formatDate } from '@/utils/date'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
 import {
@@ -181,7 +182,7 @@ function UsersPageContent() {
           status: error.response?.status,
           data: error.response?.data
         })
-        toast.error(`Failed to load users: ${error.message || 'Unknown error'}`)
+        toast.error(messageForAdminListError(error, 'users'))
       }
       setUsers([])
     } finally {

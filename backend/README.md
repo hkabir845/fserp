@@ -18,7 +18,7 @@ Single backend: **Django** (`api/`, `fsms/`). The web UI is a separate app: **Ne
 
 ### CORS (production)
 
-Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATCH` with custom headers. The frontend sends **`X-Selected-Company-Id`** (tenant scope) and **`X-Selected-Station-Id`** (optional report / multi-site filter from `localStorage`) on API calls. The server must respond with **`Access-Control-Allow-Headers`** that includes `x-selected-company-id` and `x-selected-station-id`.
+Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATCH` with custom headers. The frontend sends **`X-Selected-Company-Id`** (tenant scope) and optionally **`X-Tenant-Subdomain`** on API calls. **Reports site scope** uses query params (`?station_id=` / `?pond_id=`) — not a global `X-Selected-Station-Id` header (avoids CORS failures on nginx/cPanel with narrow `Access-Control-Allow-Headers`). The server must respond with **`Access-Control-Allow-Headers`** that includes `x-selected-company-id`, `x-tenant-subdomain`, and `x-request-id` (and `x-selected-station-id` if you call the API from other clients).
 
 - **Django:** `fsms/settings.py` already extends `CORS_ALLOW_HEADERS` with those headers (and `x-tenant-subdomain`, `x-request-id`). **Redeploy the backend** so production runs this code.
 - **CORS origins** are configured in `fsms/settings.py` (`FSERP_CORS_ALLOWED_ORIGINS` when self-hosting, else MahaSoft defaults). Do not add a second `Access-Control-Allow-Origin` in nginx.

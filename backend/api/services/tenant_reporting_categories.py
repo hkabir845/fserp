@@ -19,18 +19,86 @@ KIND_EXPENSE = "expense"
 KIND_INCOME = "income"
 
 FUEL_STATION_EXPENSE_MAP_TARGETS: tuple[tuple[str, str], ...] = (
-    ("operating", "General station operating expense"),
-    ("cost_of_sales", "Cost of sales / shrink / variance"),
+    ("operating", "Operating & admin"),
+    ("cost_of_sales", "Cost of sales / shrink"),
     ("maintenance", "Maintenance & repairs"),
-    ("utilities", "Utilities & services"),
+    ("utilities", "Utilities & generator fuel"),
     ("other", "Other / miscellaneous"),
 )
 FUEL_STATION_INCOME_MAP_TARGETS: tuple[tuple[str, str], ...] = (
     ("fuel_revenue", "Fuel sales revenue"),
-    ("shop_revenue", "Shop / non-fuel retail revenue"),
+    ("shop_revenue", "Shop / agro retail revenue"),
     ("services_revenue", "Services & fees revenue"),
     ("other", "Other income"),
 )
+
+FUEL_STATION_EXPENSE_MAP_HINTS: dict[str, str] = {
+    "operating": (
+        "Payroll, rent, insurance, bank charges, security, marketing, office supplies, and general admin for the site."
+    ),
+    "cost_of_sales": (
+        "Fuel shrink or variance, inventory write-offs, and direct cost of shop goods sold at the station."
+    ),
+    "maintenance": "Forecourt repairs, pump service, tank maintenance, signage, and building upkeep.",
+    "utilities": "Electricity, generator diesel, water, telecom, and other utility bills.",
+    "other": "One-off or uncategorized station costs that do not fit the groups above.",
+}
+FUEL_STATION_INCOME_MAP_HINTS: dict[str, str] = {
+    "fuel_revenue": "Petrol, diesel, octane, and lubricant sales from dispensers.",
+    "shop_revenue": "Convenience store, agro-input shop, and other non-fuel retail at the site.",
+    "services_revenue": "Car wash, air, commissions, equipment hire, and service fees.",
+    "other": "Miscellaneous station income not counted as fuel, shop, or services revenue.",
+}
+
+AQUACULTURE_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Land & rights", ("lease",)),
+    ("Labor & payroll", ("worker_salary",)),
+    ("Pond development", ("soilcut", "pond_preparation", "fry_stocking")),
+    ("Feed", ("feed_purchase", "feed_consumed")),
+    ("Medicine & health", ("medicine_purchase", "medicine_consumed")),
+    ("Power, equipment & repairs", ("electricity", "equipment", "repair_maintenance")),
+    ("Operations", ("fisherman", "transportation", "other")),
+    ("System (automatic)", ("vendor_bill_pond",)),
+)
+AQUACULTURE_INCOME_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Fish & production sales", ("fish_harvest_sale", "fingerling_sale", "processing_value_add")),
+    (
+        "By-products & scrap",
+        ("empty_feed_sack_sale", "used_material_sale", "rejected_material_sale", "used_equipment_sale"),
+    ),
+    ("Other", ("other_income",)),
+)
+FUEL_STATION_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Operating & admin", ("operating",)),
+    ("Cost of sales", ("cost_of_sales",)),
+    ("Facility & upkeep", ("maintenance", "utilities")),
+    ("Other", ("other",)),
+)
+FUEL_STATION_INCOME_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Sales revenue", ("fuel_revenue", "shop_revenue", "services_revenue")),
+    ("Other income", ("other",)),
+)
+
+_AQUACULTURE_EXPENSE_SUPPLEMENTAL_HINTS: dict[str, str] = {
+    "soilcut": "Earthworks and soil removal when preparing new ponds or expanding existing ones.",
+    "pond_preparation": "Lime, fertiliser, pond drying, and other preparation before stocking.",
+    "fry_stocking": (
+        "Fry and fingerling purchases — prefer vendor bills with pond-tagged fish-type lines rather than manual costs."
+    ),
+    "electricity": "Grid power, prepaid meters, and site electrical costs for pumps and aerators.",
+    "fisherman": "Harvest crew or contract fisherman payments tied to pond operations.",
+    "transportation": "Fish hauling, feed delivery to ponds, and vehicle costs for the aquaculture site.",
+}
+AQUACULTURE_INCOME_TYPE_HINTS: dict[str, str] = {
+    "fish_harvest_sale": "Primary table-fish or market harvest revenue from the pond.",
+    "fingerling_sale": "Sales of fry or fingerlings produced or held at the pond.",
+    "processing_value_add": "Smoked, filleted, or otherwise processed fish sold at a premium.",
+    "empty_feed_sack_sale": "Scrap income from empty feed sacks — does not reduce fish biomass in stock reports.",
+    "used_material_sale": "Scrap materials (netting, drums, etc.) — non-biological pond revenue.",
+    "rejected_material_sale": "Rejected or waste material sold off — non-biological pond revenue.",
+    "used_equipment_sale": "Used or scrap equipment sold — non-biological pond revenue.",
+    "other_income": "Tours, consulting, grants, or other pond income that does not fit a named type above.",
+}
 
 FUEL_STATION_EXPENSE_MAP_CODES: frozenset[str] = frozenset(c for c, _ in FUEL_STATION_EXPENSE_MAP_TARGETS)
 FUEL_STATION_INCOME_MAP_CODES: frozenset[str] = frozenset(c for c, _ in FUEL_STATION_INCOME_MAP_TARGETS)
@@ -228,20 +296,94 @@ def fuel_station_reporting_category_for_journal(
     )
 
 
-def list_map_target_choices(*, application: str, kind: str) -> list[dict]:
+def _group_lookup(groups: tuple[tuple[str, tuple[str, ...]], ...]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for group, codes in groups:
+        for code in codes:
+            out[code] = group
+    return out
+
+
+def _sort_map_targets(rows: list[dict], group_order: tuple[str, ...]) -> list[dict]:
+    order_idx = {g: i for i, g in enumerate(group_order)}
+
+    def _key(row: dict) -> tuple[int, str]:
+        group = str(row.get("group") or "")
+        return (order_idx.get(group, 999), str(row.get("label") or ""))
+
+    return sorted(rows, key=_key)
+
+
+def list_map_target_choices(*, application: str, kind: str, company_id: int | None = None) -> list[dict]:
     if application == APP_AQUACULTURE:
         from api.services.aquaculture_constants import (
             AQUACULTURE_EXPENSE_CATEGORY_CHOICES,
             AQUACULTURE_INCOME_TYPE_CHOICES,
+            EXPENSE_CATEGORY_EXTRA_HELP,
+            NON_BIOLOGICAL_POND_SALE_INCOME_TYPES,
+            coa_account_code_for_aquaculture_expense_category,
         )
 
         if kind == KIND_EXPENSE:
-            return [{"id": c, "label": lbl} for c, lbl in AQUACULTURE_EXPENSE_CATEGORY_CHOICES]
-        return [{"id": c, "label": lbl} for c, lbl in AQUACULTURE_INCOME_TYPE_CHOICES]
+            groups = _group_lookup(AQUACULTURE_EXPENSE_MAP_GROUPS)
+            group_order = tuple(g for g, _ in AQUACULTURE_EXPENSE_MAP_GROUPS)
+            rows: list[dict] = []
+            for code, label in AQUACULTURE_EXPENSE_CATEGORY_CHOICES:
+                hint = EXPENSE_CATEGORY_EXTRA_HELP.get(code) or _AQUACULTURE_EXPENSE_SUPPLEMENTAL_HINTS.get(code)
+                row: dict = {
+                    "id": code,
+                    "label": label,
+                    "group": groups.get(code),
+                    "hint": hint,
+                    "manual_create_allowed": code in MANUAL_AQUACULTURE_EXPENSE_CATEGORY_CODES,
+                }
+                if company_id:
+                    row["coa_code"] = coa_account_code_for_aquaculture_expense_category(
+                        code, company_id=company_id
+                    )
+                rows.append(row)
+            return _sort_map_targets(rows, group_order)
+
+        groups = _group_lookup(AQUACULTURE_INCOME_MAP_GROUPS)
+        group_order = tuple(g for g, _ in AQUACULTURE_INCOME_MAP_GROUPS)
+        rows = [
+            {
+                "id": code,
+                "label": label,
+                "group": groups.get(code),
+                "hint": AQUACULTURE_INCOME_TYPE_HINTS.get(code),
+                "non_biological_sale": code in NON_BIOLOGICAL_POND_SALE_INCOME_TYPES,
+            }
+            for code, label in AQUACULTURE_INCOME_TYPE_CHOICES
+        ]
+        return _sort_map_targets(rows, group_order)
+
     if application == APP_FUEL_STATION:
         if kind == KIND_EXPENSE:
-            return [{"id": c, "label": lbl} for c, lbl in FUEL_STATION_EXPENSE_MAP_TARGETS]
-        return [{"id": c, "label": lbl} for c, lbl in FUEL_STATION_INCOME_MAP_TARGETS]
+            groups = _group_lookup(FUEL_STATION_EXPENSE_MAP_GROUPS)
+            group_order = tuple(g for g, _ in FUEL_STATION_EXPENSE_MAP_GROUPS)
+            rows = [
+                {
+                    "id": code,
+                    "label": label,
+                    "group": groups.get(code),
+                    "hint": FUEL_STATION_EXPENSE_MAP_HINTS.get(code),
+                }
+                for code, label in FUEL_STATION_EXPENSE_MAP_TARGETS
+            ]
+            return _sort_map_targets(rows, group_order)
+        groups = _group_lookup(FUEL_STATION_INCOME_MAP_GROUPS)
+        group_order = tuple(g for g, _ in FUEL_STATION_INCOME_MAP_GROUPS)
+        rows = [
+            {
+                "id": code,
+                "label": label,
+                "group": groups.get(code),
+                "hint": FUEL_STATION_INCOME_MAP_HINTS.get(code),
+            }
+            for code, label in FUEL_STATION_INCOME_MAP_TARGETS
+        ]
+        return _sort_map_targets(rows, group_order)
     return []
 
 

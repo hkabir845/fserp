@@ -1,6 +1,7 @@
 """CRUD for tenant-defined reporting categories (Aquaculture + Fuel station)."""
 from __future__ import annotations
 
+from django.db.utils import OperationalError, ProgrammingError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -19,6 +20,21 @@ from api.services.tenant_reporting_categories import (
 )
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.views.common import parse_json_body, require_company_id
+
+
+def _db_error_response(exc: Exception) -> JsonResponse:
+    msg = str(exc).lower()
+    if "tenant_reporting_category" in msg or "does not exist" in msg:
+        return JsonResponse(
+            {
+                "detail": (
+                    "Reporting categories database table is missing. "
+                    "On the server run: python manage.py migrate"
+                )
+            },
+            status=503,
+        )
+    return JsonResponse({"detail": "Database error loading reporting categories."}, status=503)
 
 
 def _api_user(request):
@@ -70,7 +86,14 @@ def reporting_category_map_targets(request):
         return JsonResponse({"detail": "application must be aquaculture or fuel_station"}, status=400)
     if kind not in (KIND_EXPENSE, KIND_INCOME):
         return JsonResponse({"detail": "kind must be expense or income"}, status=400)
-    return JsonResponse({"map_targets": list_map_target_choices(application=app, kind=kind)})
+    cid = request.company_id
+    return JsonResponse(
+        {
+            "map_targets": list_map_target_choices(
+                application=app, kind=kind, company_id=cid
+            )
+        }
+    )
 
 
 @csrf_exempt
@@ -89,7 +112,11 @@ def reporting_categories_list_or_create(request):
         if kind in (KIND_EXPENSE, KIND_INCOME):
             qs = qs.filter(kind=kind)
         qs = qs.order_by("application", "kind", "sort_order", "code")
-        return JsonResponse([_serialize_row(r) for r in qs], safe=False)
+        try:
+            rows = [_serialize_row(r) for r in qs]
+        except (ProgrammingError, OperationalError) as exc:
+            return _db_error_response(exc)
+        return JsonResponse(rows, safe=False)
 
     if not _may_manage_reporting_categories(api):
         return JsonResponse({"detail": "Permission denied"}, status=403)
@@ -141,7 +168,10 @@ def reporting_categories_list_or_create(request):
 def reporting_category_detail(request, category_id: int):
     api = _api_user(request)
     cid = request.company_id
-    r = TenantReportingCategory.objects.filter(pk=category_id, company_id=cid).first()
+    try:
+        r = TenantReportingCategory.objects.filter(pk=category_id, company_id=cid).first()
+    except (ProgrammingError, OperationalError) as exc:
+        return _db_error_response(exc)
     if not r:
         return JsonResponse({"detail": "Not found"}, status=404)
     if request.method == "GET":
@@ -182,7 +212,8 @@ def reporting_category_detail(request, category_id: int):
 @require_company_id
 def fuel_station_expense_categories(request):
     """Merged built-in + tenant fuel-station expense categories for vendor bills."""
-    return JsonResponse(
-        merged_fuel_station_expense_category_list_for_api(request.company_id),
-        safe=False,
-    )
+    try:
+        rows = merged_fuel_station_expense_category_list_for_api(request.company_id)
+    except (ProgrammingError, OperationalError) as exc:
+        return _db_error_response(exc)
+    return JsonResponse(rows, safe=False)

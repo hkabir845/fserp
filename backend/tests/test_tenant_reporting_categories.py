@@ -150,6 +150,41 @@ def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_ad
 
 
 @pytest.mark.django_db
+def test_reporting_category_map_targets_enriched(api_client, company_tenant, auth_admin_headers):
+    ensure_aquaculture_chart_accounts(company_tenant.id)
+    r = api_client.get(
+        "/api/reporting-categories/map-targets/",
+        {"application": "aquaculture", "kind": "expense"},
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200
+    targets = json.loads(r.content.decode())["map_targets"]
+    assert len(targets) >= 15
+    electricity = next(t for t in targets if t["id"] == "electricity")
+    assert electricity["group"] == "Power, equipment & repairs"
+    assert electricity.get("hint")
+    assert electricity.get("coa_code")
+
+    r2 = api_client.get(
+        "/api/reporting-categories/map-targets/",
+        {"application": "fuel_station", "kind": "expense"},
+        **auth_admin_headers,
+    )
+    assert r2.status_code == 200
+    fuel = json.loads(r2.content.decode())["map_targets"]
+    assert {t["id"] for t in fuel} == {
+        "operating",
+        "cost_of_sales",
+        "maintenance",
+        "utilities",
+        "other",
+    }
+    utilities = next(t for t in fuel if t["id"] == "utilities")
+    assert utilities["group"] == "Facility & upkeep"
+    assert "generator" in (utilities.get("hint") or "").lower()
+
+
+@pytest.mark.django_db
 def test_reporting_categories_non_admin_forbidden(api_client, company_tenant, auth_accountant_headers):
     r = api_client.post(
         "/api/reporting-categories/",

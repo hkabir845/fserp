@@ -14,6 +14,7 @@ import { loadPrintBranding } from '@/utils/printBranding'
 import { printListView } from '@/utils/printListView'
 import { AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { extractErrorMessage } from '@/utils/errorHandler'
 import {
   COA_FUEL_REV,
   COA_SHOP_REV,
@@ -369,14 +370,11 @@ export default function InvoicesPage() {
         } else {
           errorMessage = `Error ${status}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`
         }
-      } else if (error.request) {
-        // Request made but no response
-        console.error('No response received:', error.request)
-        errorMessage = `Unable to connect to server. Please ensure the backend is running on ${getBackendOrigin()}`
       } else {
-        // Error setting up request
-        console.error('Request setup error:', error.message)
-        errorMessage = error.message || 'An unexpected error occurred'
+        errorMessage = extractErrorMessage(
+          error,
+          'Could not load invoices. Check your connection and try again.'
+        )
       }
       
       setError(errorMessage)

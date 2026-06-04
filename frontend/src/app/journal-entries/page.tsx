@@ -285,12 +285,7 @@ export default function JournalEntriesPage() {
         router.push('/login')
         return
       }
-      let userMessage = 'Error connecting to server'
-      if (error.message?.includes('fetch') || error.message?.includes('Failed to fetch')) {
-        userMessage = `Cannot connect to backend server. Please ensure the backend is running on ${getBackendOrigin()}`
-      } else {
-        userMessage = error.response?.data?.detail || error.message || 'Unknown error'
-      }
+      const userMessage = extractErrorMessage(error, 'Could not load journal entries. Check your connection and try again.')
       setError(userMessage)
       toast.error(userMessage)
     } finally {

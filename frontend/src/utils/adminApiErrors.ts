@@ -1,3 +1,5 @@
+import { connectionErrorUserMessage, isConnectionError } from '@/utils/connectionError'
+
 /**
  * Messages for SaaS admin list endpoints after deploy/upgrade.
  * Distinguishes wrong API host, permissions, and auth so operators are not shown a misleading empty list.
@@ -21,11 +23,12 @@ export function messageForAdminListError(
   if (status === 401) {
     return typeof detail === 'string' ? detail : 'Session expired. Sign in again.'
   }
-  if (ax?.code === 'ERR_NETWORK' || ax?.message?.includes('Network Error')) {
-    return (
+  if (isConnectionError(ax)) {
+    return connectionErrorUserMessage(
+      ax,
       'Cannot reach the API. After a deploy or upgrade, set NEXT_PUBLIC_API_BASE_URL to your backend URL ' +
-      '(the same Django instance that uses your existing database), rebuild the frontend, and hard-refresh. ' +
-      'If the browser calls the wrong API host, your existing tenants will not appear here.'
+        '(the same Django instance that uses your existing database), rebuild the frontend, and hard-refresh. ' +
+        'If the browser calls the wrong API host, your existing tenants will not appear here.'
     )
   }
   return typeof detail === 'string' ? detail : `Failed to load ${resource}.`

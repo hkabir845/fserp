@@ -24,16 +24,18 @@ except ImportError:
 
 _manage_cmd = sys.argv[1] if len(sys.argv) > 1 else ""
 _is_runserver = _manage_cmd == "runserver"
-_seed_management_cmd = _manage_cmd.startswith("seed_")
 
-# Commands allowed to use a short dev-only SECRET_KEY (never use that key in production).
-# `collectstatic` is excluded so VPS/CI deploy steps must set DJANGO_SECRET_KEY like Gunicorn does.
-_DEV_SECRET_CMDS = frozenset(
-    "runserver shell migrate makemigrations createsuperuser test showmigrations dbshell "
-    "flush loaddata dumpdata sqlmigrate check changepassword compilemessages "
-    "makemessages ensure_platform_owner_email ensure_saas_superuser create_superuser "
-    "backfill_invoice_cogs backfill_item_opening_stock_gl recompute_item_average_cost".split()
-)
+# manage.py / django-admin is developer/operator context — never the production web server
+# (that boots through wsgi.py under Gunicorn, which does not go through this path). Such
+# invocations may fall back to a throwaway dev-only SECRET_KEY so ANY management command
+# works locally without a real key — no allowlist to maintain that silently breaks every
+# newly added command.
+_argv0 = os.path.basename(sys.argv[0] or "")
+_is_management_entrypoint = _argv0 in ("manage.py", "django-admin", "django-admin.py")
+
+# ...except commands that run during deploy, which must surface a missing production key
+# (like Gunicorn does) so a real DJANGO_SECRET_KEY is always set in production.
+_PROD_SECRET_REQUIRED_CMDS = frozenset({"collectstatic"})
 
 
 def _csv(name: str) -> list[str]:
@@ -77,7 +79,7 @@ _secret = (os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY") o
 if len(_secret) < 32:
     if "pytest" in sys.modules:
         _secret = "pytest-only-secret-key-do-not-use-in-production-32"
-    elif _manage_cmd in _DEV_SECRET_CMDS or _seed_management_cmd:
+    elif _is_management_entrypoint and _manage_cmd not in _PROD_SECRET_REQUIRED_CMDS:
         _secret = "django-insecure-local-manage-only-not-for-production-use-32"
     else:
         raise ImproperlyConfigured(

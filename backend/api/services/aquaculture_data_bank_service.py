@@ -28,6 +28,58 @@ def _actor_user_id(user) -> int | None:
         return None
 
 
+def pond_biological_settlement(company_id: int, pond_id: int, as_of: date) -> dict:
+    """
+    Remaining live-fish position for a pond and its bio-asset book value at close.
+
+    - count/weight: implied net (stocking + transfers + ledger - sales) from the stock service.
+    - bioasset value: posted GL balance of Biological Inventory (1581) tagged to this pond, on or
+      before ``as_of`` (debits minus credits).
+    """
+    from decimal import Decimal
+
+    from django.db.models import Sum
+    from django.db.models.functions import Coalesce
+
+    from api.models import JournalEntryLine
+    from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
+
+    count = 0
+    weight = Decimal("0")
+    rows = compute_fish_stock_position_rows(
+        company_id, pond_id=pond_id, include_inactive_ponds=True
+    )
+    for row in rows:
+        try:
+            count += int(row.get("implied_net_fish_count") or 0)
+        except (TypeError, ValueError):
+            pass
+        try:
+            weight += Decimal(str(row.get("implied_net_weight_kg") or "0"))
+        except (TypeError, ValueError, ArithmeticError):
+            pass
+
+    agg = (
+        JournalEntryLine.objects.filter(
+            journal_entry__company_id=company_id,
+            journal_entry__is_posted=True,
+            journal_entry__entry_date__lte=as_of,
+            aquaculture_pond_id=pond_id,
+            account__account_code="1581",
+        )
+        .aggregate(
+            td=Coalesce(Sum("debit"), Decimal("0")),
+            tc=Coalesce(Sum("credit"), Decimal("0")),
+        )
+    )
+    bioasset = (agg["td"] - agg["tc"]).quantize(Decimal("0.01"))
+    return {
+        "settlement_fish_count": count,
+        "settlement_weight_kg": weight.quantize(Decimal("0.0001")),
+        "settlement_bioasset_value": bioasset,
+    }
+
+
 def user_may_manage_aquaculture_data_bank(user) -> bool:
     """Per-pond year close and reopen/relock: tenant Admin or platform super-admin only."""
     if not user:
@@ -229,6 +281,15 @@ def pond_close_to_dict(close: AquacultureDataBankPondClose) -> dict:
         "closed_at": close.closed_at.isoformat() if close.closed_at else None,
         "closed_by_user_id": close.closed_by_user_id,
         "notes": close.notes or "",
+        "settlement_fish_count": close.settlement_fish_count,
+        "settlement_weight_kg": (
+            str(close.settlement_weight_kg) if close.settlement_weight_kg is not None else None
+        ),
+        "settlement_bioasset_value": (
+            str(close.settlement_bioasset_value)
+            if close.settlement_bioasset_value is not None
+            else None
+        ),
         "reopened_at": close.reopened_at.isoformat() if close.reopened_at else None,
         "reopened_by_user_id": close.reopened_by_user_id,
         "reopen_reason": close.reopen_reason or "",
@@ -320,12 +381,16 @@ def preview_pond_close(
         period_start, period_end = fiscal_period_for_end_date(company, period_end)
     elif period_start > period_end:
         raise ValueError("period_start must be on or before period_end.")
+    settlement = pond_biological_settlement(company.id, pond.id, period_end)
     return {
         "pond_id": pond.id,
         "pond_name": pond.name,
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
         "label": default_period_label(pond.name, period_start, period_end),
+        "settlement_fish_count": settlement["settlement_fish_count"],
+        "settlement_weight_kg": str(settlement["settlement_weight_kg"]),
+        "settlement_bioasset_value": str(settlement["settlement_bioasset_value"]),
     }
 
 
@@ -364,6 +429,8 @@ def close_pond(
         pond.name, period_start, period_end
     )
 
+    settlement = pond_biological_settlement(company_id, pond_id, period_end)
+
     with transaction.atomic():
         # Only one active operational lock per pond; prior closes stay in history.
         AquacultureDataBankPondClose.objects.filter(
@@ -382,6 +449,9 @@ def close_pond(
             reference_access_enabled=False,
             closed_by_user_id=_actor_user_id(user),
             notes=(notes or "")[:5000],
+            settlement_fish_count=settlement["settlement_fish_count"],
+            settlement_weight_kg=settlement["settlement_weight_kg"],
+            settlement_bioasset_value=settlement["settlement_bioasset_value"],
         )
     close = AquacultureDataBankPondClose.objects.select_related("pond").get(pk=close.pk)
     return close, None

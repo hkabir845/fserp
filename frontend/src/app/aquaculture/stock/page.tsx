@@ -69,6 +69,14 @@ interface PositionRow {
   sale_fish_count: number
   ledger_weight_kg_delta: string
   ledger_fish_count_delta: number
+  stocked_weight_kg?: string
+  stocked_fish_count?: number
+  mortality_weight_kg?: string
+  mortality_fish_count?: number
+  adjustment_weight_kg?: string
+  adjustment_fish_count?: number
+  other_adjustment_weight_kg?: string
+  other_adjustment_fish_count?: number
   implied_net_weight_kg: string
   implied_net_fish_count: number
   latest_sample_date: string | null
@@ -258,14 +266,46 @@ function withRunningBalance(rows: MovementRow[]): DetailLedgerRow[] {
   return withBal.reverse()
 }
 
+/** A stacked "weight kg / fish count" movement cell with an em-dash fallback for empty values. */
+function MovementCell({
+  kg,
+  fish,
+  signed = false,
+  tone = 'slate',
+}: {
+  kg: number
+  fish: number
+  signed?: boolean
+  tone?: 'slate' | 'emerald' | 'rose'
+}) {
+  const empty = (signed ? kg === 0 && fish === 0 : kg <= 0 && fish <= 0)
+  if (empty) return <span className="text-slate-300">—</span>
+  const sign = signed && kg > 0 ? '+' : signed && kg < 0 ? '−' : ''
+  const fishSign = signed && fish > 0 ? '+' : signed && fish < 0 ? '−' : ''
+  const tones: Record<string, [string, string]> = {
+    slate: ['text-slate-700', 'text-slate-500'],
+    emerald: ['text-emerald-700', 'text-emerald-500'],
+    rose: ['text-rose-700', 'text-rose-500'],
+  }
+  const [main, sub] = tones[tone] || tones.slate
+  return (
+    <>
+      <div className={main}>
+        {sign}
+        {formatNumber(Math.abs(kg), 2)} kg
+      </div>
+      <div className={`text-xs font-normal ${sub}`}>
+        {fishSign}
+        {formatNumber(Math.abs(fish), 0)} fish
+      </div>
+    </>
+  )
+}
+
 function StockPositionMetricCells({ r }: { r: PositionRow }) {
   const netC = r.implied_net_fish_count
   const samp = r.latest_sample_estimated_fish_count
   const diff = samp != null && netC != null ? samp - netC : null
-  const vol =
-    r.water_volume_cu_ft != null && r.water_volume_cu_ft !== ''
-      ? `${formatNumber(Number(r.water_volume_cu_ft), 0)} cu ft`
-      : '—'
   const densityLine =
     r.stock_density_kg_per_decimal != null && r.stock_density_kg_per_decimal !== ''
       ? `${formatNumber(Number(r.stock_density_kg_per_decimal), 2)} kg/dec`
@@ -283,19 +323,34 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
   }
   const ll = r.load_level || 'unknown'
   const badgeClass = loadBadges[ll] || loadBadges.unknown
+
+  const stockedKg = Number(r.stocked_weight_kg ?? r.vendor_bill_in_weight_kg) || 0
+  const stockedFish = r.stocked_fish_count ?? r.vendor_bill_in_fish_count ?? 0
+  const soldKg = Number(r.sale_weight_kg) || 0
+  const soldFish = r.sale_fish_count || 0
+  const mortalityKg = Math.abs(Number(r.mortality_weight_kg) || 0)
+  const mortalityFish = Math.abs(r.mortality_fish_count || 0)
+  const otherKg = Number(r.other_adjustment_weight_kg ?? r.adjustment_weight_kg ?? r.ledger_weight_kg_delta) || 0
+  const otherFish = r.other_adjustment_fish_count ?? r.adjustment_fish_count ?? r.ledger_fish_count_delta ?? 0
+
   return (
     <>
-      <td className="py-2 pr-4 tabular-nums text-slate-700">{vol}</td>
       <td className="py-2 pr-4 tabular-nums">
-        <div>{formatNumber(Number(r.implied_net_weight_kg), 2)} kg</div>
-        <div className="text-xs font-normal text-slate-500">
-          {formatNumber(r.implied_net_fish_count, 0)} fish (est.)
-        </div>
+        <MovementCell kg={stockedKg} fish={stockedFish} tone="emerald" />
       </td>
-      <td className="py-2 pr-4 tabular-nums text-slate-700">
-        <div>{formatNumber(Number(r.ledger_weight_kg_delta), 2)} kg</div>
-        <div className="text-xs font-normal text-slate-500">
-          {formatNumber(r.ledger_fish_count_delta, 0)} fish Δ
+      <td className="py-2 pr-4 tabular-nums">
+        <MovementCell kg={soldKg} fish={soldFish} tone="slate" />
+      </td>
+      <td className="py-2 pr-4 tabular-nums">
+        <MovementCell kg={mortalityKg} fish={mortalityFish} tone="rose" />
+      </td>
+      <td className="py-2 pr-4 tabular-nums">
+        <MovementCell kg={otherKg} fish={otherFish} signed tone="slate" />
+      </td>
+      <td className="border-l border-slate-200 bg-teal-50/40 py-2 pl-3 pr-4 tabular-nums">
+        <div className="font-semibold text-teal-900">{formatNumber(Number(r.implied_net_weight_kg), 2)} kg</div>
+        <div className="text-xs font-medium text-teal-700/80">
+          {formatNumber(r.implied_net_fish_count, 0)} fish (est.)
         </div>
       </td>
       <td className="py-2 pr-4 text-slate-700">
@@ -318,15 +373,35 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
           ) : null}
         </div>
       </td>
-      <td className="py-2 pr-4 text-slate-600">
-        {r.latest_sample_date ? formatDateOnly(r.latest_sample_date) : '—'}
-        {r.latest_sample_estimated_fish_count != null
-          ? ` · ~${formatNumber(r.latest_sample_estimated_fish_count, 0)} fish`
-          : ''}
-        {r.latest_sample_fish_species_label ? ` · ${r.latest_sample_fish_species_label}` : ''}
-      </td>
       <td className="py-2 text-slate-600">
-        {diff == null ? '—' : `${diff > 0 ? '+' : ''}${formatNumber(diff, 0)} vs implied net`}
+        {r.latest_sample_date ? (
+          <div className="flex flex-col gap-1">
+            <span className="text-slate-700">{formatDateOnly(r.latest_sample_date)}</span>
+            {r.latest_sample_estimated_fish_count != null ? (
+              <span className="text-xs text-slate-500">
+                ~{formatNumber(r.latest_sample_estimated_fish_count, 0)} fish
+                {r.latest_sample_fish_species_label ? ` · ${r.latest_sample_fish_species_label}` : ''}
+              </span>
+            ) : null}
+            {diff != null && diff !== 0 ? (
+              <span
+                className={`inline-flex w-fit items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                  diff > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                }`}
+                title="Difference between the latest physical sample estimate and the system's book (calculated) count. Positive means the pond sampled higher than the books expect."
+              >
+                {diff > 0 ? '+' : '−'}
+                {formatNumber(Math.abs(diff), 0)} fish vs book
+              </span>
+            ) : diff === 0 ? (
+              <span className="text-[11px] text-slate-400" title="Sample matches the system book count.">
+                Matches book
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <span className="text-xs text-slate-400">No sample yet</span>
+        )}
       </td>
     </>
   )
@@ -872,12 +947,12 @@ function AquacultureStockPageContent() {
               onClick={() => setMainTab('fish')}
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                 mainTab === 'fish'
-                  ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+                  ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <span className="inline-flex items-center gap-1.5">
-                <Fish className="h-4 w-4 text-teal-700" aria-hidden />
+                <Fish className="h-4 w-4 text-current opacity-90" aria-hidden />
                 Fish biomass
               </span>
             </button>
@@ -890,12 +965,12 @@ function AquacultureStockPageContent() {
               onClick={() => setMainTab('warehouse')}
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                 mainTab === 'warehouse'
-                  ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+                  ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <span className="inline-flex items-center gap-1.5">
-                <Package className="h-4 w-4 text-teal-700" aria-hidden />
+                <Package className="h-4 w-4 text-current opacity-90" aria-hidden />
                 Feed &amp; supplies
               </span>
             </button>
@@ -1108,7 +1183,7 @@ function AquacultureStockPageContent() {
           onClick={() => setFishSubTab('manual')}
           className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
             fishSubTab === 'manual'
-              ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+              ? 'bg-teal-600 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -1121,7 +1196,7 @@ function AquacultureStockPageContent() {
           onClick={() => setFishSubTab('movements')}
           className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
             fishSubTab === 'movements'
-              ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+              ? 'bg-teal-600 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -1320,8 +1395,11 @@ function AquacultureStockPageContent() {
       <section className="mb-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-900">By species &amp; production cycle</h2>
         <p className="mt-1 text-xs text-slate-500">
-          One row per pond, production cycle, and species. Expand a row for the chronological detail ledger with
-          running head count, weight, and remaining balance after each movement.
+          One row per pond, production cycle, and species. Each row reconciles as{' '}
+          <span className="font-medium text-slate-700">
+            Stocked − Sold − Mortality + Other adj. = Present stock
+          </span>
+          . Expand a row for the chronological detail ledger with running balance after each movement.
         </p>
         <div className="mt-4 overflow-x-auto">
           {positionLoading ? (
@@ -1334,18 +1412,40 @@ function AquacultureStockPageContent() {
                   <th className="py-2 pr-3">Pond</th>
                   <th className="py-2 pr-3">Cycle</th>
                   <th className="py-2 pr-3">Species</th>
-                  <th className="py-2 pr-4">Water vol.</th>
-                  <th className="py-2 pr-4">Net fish / kg</th>
-                  <th className="py-2 pr-4">Manual ledger Δ</th>
+                  <th
+                    className="py-2 pr-4"
+                    title="Opening stock-in for this bucket before sale/mortality/other-adjustment events: vendor purchase bills + transfer-ins + positive (opening/stock-in) ledger adjustments."
+                  >
+                    Stocked
+                  </th>
+                  <th className="py-2 pr-4" title="Fish sold out of this bucket via pond sales.">
+                    Sold
+                  </th>
+                  <th className="py-2 pr-4" title="Mortality and losses (death, predators, theft, etc.).">
+                    Mortality
+                  </th>
+                  <th
+                    className="py-2 pr-4"
+                    title="Remaining adjustments after stock-in: transfer-outs and negative manual adjustments. Signed: + adds, − removes."
+                  >
+                    Other adj.
+                  </th>
+                  <th
+                    className="border-l border-slate-200 py-2 pl-3 pr-4 text-teal-900"
+                    title="Current live balance = Stocked − Sold − Mortality + Other adj."
+                  >
+                    Present stock
+                  </th>
                   <th className="py-2 pr-4">Density / load</th>
-                  <th className="py-2 pr-4">Latest sample</th>
-                  <th className="py-2">Sample vs net</th>
+                  <th className="py-2" title="Latest physical sample and how it compares to the system book count.">
+                    Latest sample
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {positionBreakdown.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="py-8 text-center text-slate-500">
+                    <td colSpan={11} className="py-8 text-center text-slate-500">
                       No cycle × species buckets for this filter yet.
                     </td>
                   </tr>
@@ -1391,7 +1491,7 @@ function AquacultureStockPageContent() {
                         </tr>
                         {open ? (
                           <tr key={`${key}-detail`} className="border-b border-slate-100 bg-slate-50/60">
-                            <td colSpan={10} className="px-3 py-3">
+                            <td colSpan={11} className="px-3 py-3">
                               {detailBusy ? (
                                 <p className="text-xs text-slate-500">Loading detail ledger…</p>
                               ) : detail.length === 0 ? (
@@ -1898,12 +1998,12 @@ function AquacultureStockPageContent() {
               onClick={() => setWhSubTab('on_hand')}
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 whSubTab === 'on_hand'
-                  ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+                  ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <span className="inline-flex items-center gap-1.5">
-                <Package className="h-3.5 w-3.5 text-teal-700" aria-hidden />
+                <Package className="h-3.5 w-3.5 text-current opacity-90" aria-hidden />
                 On hand
               </span>
             </button>
@@ -1914,12 +2014,12 @@ function AquacultureStockPageContent() {
               onClick={() => setWhSubTab('consumed')}
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 whSubTab === 'consumed'
-                  ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+                  ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <span className="inline-flex items-center gap-1.5">
-                <Beaker className="h-3.5 w-3.5 text-teal-700" aria-hidden />
+                <Beaker className="h-3.5 w-3.5 text-current opacity-90" aria-hidden />
                 Consumed (feed &amp; medicine)
               </span>
             </button>

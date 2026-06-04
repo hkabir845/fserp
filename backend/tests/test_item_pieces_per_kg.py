@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from api.models import Item
+from api.models import AquaculturePond, Item
 
 
 @pytest.mark.django_db
@@ -88,6 +88,9 @@ def test_bill_with_fry_item_pieces_per_kg_derives_dims_from_qty_kg(api_client, c
     assert v.status_code == 201
     vendor_id = json.loads(v.content)["id"]
 
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing PPK1", pond_role="nursing", is_active=True
+    )
     fry = Item.objects.create(
         company_id=company_tenant.id,
         name="Tilapia Fry",
@@ -115,6 +118,8 @@ def test_bill_with_fry_item_pieces_per_kg_derives_dims_from_qty_kg(api_client, c
                         "quantity": "12.5",
                         "unit_cost": "400.00",
                         "amount": "5000.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
                         "aquaculture_fish_weight_kg": "12.5",
                         "aquaculture_fish_count": 5000,
                     },
@@ -143,6 +148,9 @@ def test_bill_fish_line_with_ppk_derives_kg_from_heads(api_client, company_tenan
     assert v.status_code == 201
     vendor_id = json.loads(v.content)["id"]
 
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing PPK2", pond_role="nursing", is_active=True
+    )
     fry = Item.objects.create(
         company_id=company_tenant.id,
         name="Tilapia Fry Derive",
@@ -170,6 +178,8 @@ def test_bill_fish_line_with_ppk_derives_kg_from_heads(api_client, company_tenan
                         "quantity": "166.6667",
                         "unit_cost": "2.2",
                         "amount": "366.67",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
                         "aquaculture_fish_weight_kg": "500000",
                         "aquaculture_fish_count": 500000,
                     },
@@ -198,6 +208,9 @@ def test_bill_fish_line_heads_and_amount_derives_billing_kg(api_client, company_
     assert v.status_code == 201
     vendor_id = json.loads(v.content)["id"]
 
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing PPK3", pond_role="nursing", is_active=True
+    )
     fry = Item.objects.create(
         company_id=company_tenant.id,
         name="Tilapia Fry Heads",
@@ -225,6 +238,8 @@ def test_bill_fish_line_heads_and_amount_derives_billing_kg(api_client, company_
                         "quantity": "166.6667",
                         "unit_cost": "6600",
                         "amount": "1100000.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
                         "aquaculture_fish_count": 500000,
                     },
                 ],

@@ -23,6 +23,9 @@ def test_bill_persists_fish_weight_and_count_for_fish_pos_item(api_client, compa
     assert v.status_code == 201
     vendor_id = json.loads(v.content)["id"]
 
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing A", pond_role="nursing", is_active=True
+    )
     fry = Item.objects.create(
         company_id=company_tenant.id,
         name="Tilapia Fry",
@@ -49,6 +52,8 @@ def test_bill_persists_fish_weight_and_count_for_fish_pos_item(api_client, compa
                         "quantity": "1",
                         "unit_cost": "100.00",
                         "amount": "100.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
                         "aquaculture_fish_weight_kg": "12.5",
                         "aquaculture_fish_count": 5000,
                     },
@@ -63,6 +68,8 @@ def test_bill_persists_fish_weight_and_count_for_fish_pos_item(api_client, compa
     line = payload["lines"][0]
     assert line["aquaculture_fish_weight_kg"] == "12.5000"
     assert line["aquaculture_fish_count"] == 5000
+    assert line["aquaculture_fish_species"] == "tilapia"
+    assert line["aquaculture_fish_species_label"] == "Tilapia"
 
 
 @pytest.mark.django_db
@@ -77,6 +84,9 @@ def test_bill_rejects_fish_item_missing_weight_kg(api_client, company_tenant, au
     assert v.status_code == 201
     vendor_id = json.loads(v.content)["id"]
 
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing B", pond_role="nursing", is_active=True
+    )
     fry = Item.objects.create(
         company_id=company_tenant.id,
         name="Tilapia Fry B",
@@ -103,6 +113,8 @@ def test_bill_rejects_fish_item_missing_weight_kg(api_client, company_tenant, au
                         "quantity": "1",
                         "unit_cost": "100.00",
                         "amount": "100.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
                         "aquaculture_fish_count": 1000,
                     },
                 ],
@@ -126,6 +138,9 @@ def test_bill_rejects_fish_item_missing_fish_count(api_client, company_tenant, a
     assert v.status_code == 201
     vendor_id = json.loads(v.content)["id"]
 
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing C", pond_role="nursing", is_active=True
+    )
     fry = Item.objects.create(
         company_id=company_tenant.id,
         name="Tilapia Fry C",
@@ -152,6 +167,8 @@ def test_bill_rejects_fish_item_missing_fish_count(api_client, company_tenant, a
                         "quantity": "1",
                         "unit_cost": "100.00",
                         "amount": "100.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
                         "aquaculture_fish_weight_kg": "5",
                     },
                 ],
@@ -248,6 +265,7 @@ def test_posted_fish_bill_receives_into_pond_not_station_bins(api_client, compan
                         "unit_cost": "0.10",
                         "amount": "100.00",
                         "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
                         "aquaculture_fish_weight_kg": "50",
                         "aquaculture_fish_count": 50000,
                     },
@@ -326,6 +344,7 @@ def test_posted_fish_bill_pond_receipt_prefers_fish_count_over_line_quantity(
                         "unit_cost": "100.00",
                         "amount": "100.00",
                         "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
                         "aquaculture_fish_weight_kg": "100",
                         "aquaculture_fish_count": 300000,
                     },

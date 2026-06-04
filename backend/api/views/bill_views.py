@@ -23,6 +23,11 @@ from api.models import (
     Tank,
     Vendor,
 )
+from api.services.aquaculture_constants import (
+    fish_species_display_label,
+    normalize_fish_species,
+    normalize_fish_species_other,
+)
 from api.services.aquaculture_production_cycle_service import (
     assign_auto_production_cycles_for_parsed_bill_lines,
 )
@@ -285,7 +290,12 @@ def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Opti
     c_raw = row.get("aquaculture_fish_count")
 
     def _empty():
-        return {"aquaculture_fish_weight_kg": None, "aquaculture_fish_count": None}, None
+        return {
+            "aquaculture_fish_weight_kg": None,
+            "aquaculture_fish_count": None,
+            "aquaculture_fish_species": "",
+            "aquaculture_fish_species_other": "",
+        }, None
 
     if not item_id:
         if w_raw not in (None, "") or c_raw not in (None, ""):
@@ -303,6 +313,33 @@ def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Opti
 
     if (item.pos_category or "").strip().lower() != "fish":
         return _empty()
+
+    # Fish purchase lines must stock into a pond and carry an explicit species.
+    raw_pond = row.get("aquaculture_pond_id")
+    if raw_pond is None or str(raw_pond).strip() == "":
+        return None, JsonResponse(
+            {"detail": "Fish purchase lines must stock into a pond (choose a destination pond)."},
+            status=400,
+        )
+    raw_species = row.get("aquaculture_fish_species")
+    if raw_species is None or str(raw_species).strip() == "":
+        return None, JsonResponse(
+            {"detail": "Fish purchase lines require a species (e.g. tilapia, rui, pangas)."},
+            status=400,
+        )
+    sp_code, sp_err = normalize_fish_species(raw_species)
+    if sp_err:
+        return None, JsonResponse({"detail": sp_err}, status=400)
+    if sp_code == "not_applicable":
+        return None, JsonResponse(
+            {"detail": "Choose a fish species for a fish purchase line."},
+            status=400,
+        )
+    sp_other = normalize_fish_species_other(row.get("aquaculture_fish_species_other"), sp_code)
+    species_kw = {
+        "aquaculture_fish_species": sp_code,
+        "aquaculture_fish_species_other": sp_other,
+    }
 
     ppk = getattr(item, "pieces_per_kg", None)
     if ppk is not None and ppk > 0:
@@ -329,7 +366,11 @@ def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Opti
                 {"detail": "Derived weight (kg) must be greater than zero."},
                 status=400,
             )
-        return {"aquaculture_fish_weight_kg": fish_kg, "aquaculture_fish_count": fish_n}, None
+        return {
+            "aquaculture_fish_weight_kg": fish_kg,
+            "aquaculture_fish_count": fish_n,
+            **species_kw,
+        }, None
 
     if w_raw in (None, "") or c_raw in (None, ""):
         return None, JsonResponse(
@@ -365,7 +406,11 @@ def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Opti
             status=400,
         )
 
-    return {"aquaculture_fish_weight_kg": fish_kg, "aquaculture_fish_count": fish_n}, None
+    return {
+        "aquaculture_fish_weight_kg": fish_kg,
+        "aquaculture_fish_count": fish_n,
+        **species_kw,
+    }, None
 
 
 def _bill_line_quantity_from_row(
@@ -455,6 +500,16 @@ def _bill_to_json(b):
                     else None
                 ),
                 "aquaculture_fish_count": getattr(l, "aquaculture_fish_count", None),
+                "aquaculture_fish_species": getattr(l, "aquaculture_fish_species", "") or "",
+                "aquaculture_fish_species_other": getattr(l, "aquaculture_fish_species_other", "") or "",
+                "aquaculture_fish_species_label": (
+                    fish_species_display_label(
+                        getattr(l, "aquaculture_fish_species", "") or "",
+                        getattr(l, "aquaculture_fish_species_other", "") or "",
+                    )
+                    if (getattr(l, "aquaculture_fish_species", "") or "")
+                    else ""
+                ),
                 "expense_account_code": (
                     (l.expense_account.account_code or "").strip()
                     if getattr(l, "expense_account_id", None) and getattr(l, "expense_account", None)
@@ -696,6 +751,8 @@ def bills_create(request):
                     aquaculture_cost_bucket=pl.get("aquaculture_cost_bucket") or "",
                     aquaculture_fish_weight_kg=pl.get("aquaculture_fish_weight_kg"),
                     aquaculture_fish_count=pl.get("aquaculture_fish_count"),
+                    aquaculture_fish_species=pl.get("aquaculture_fish_species") or "",
+                    aquaculture_fish_species_other=pl.get("aquaculture_fish_species_other") or "",
                     expense_account_id=pl.get("expense_account_id"),
                     fuel_station_expense_category=pl.get("fuel_station_expense_category") or "",
                     tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
@@ -862,6 +919,8 @@ def bill_detail(request, bill_id: int):
                             aquaculture_cost_bucket=pl.get("aquaculture_cost_bucket") or "",
                             aquaculture_fish_weight_kg=pl.get("aquaculture_fish_weight_kg"),
                             aquaculture_fish_count=pl.get("aquaculture_fish_count"),
+                            aquaculture_fish_species=pl.get("aquaculture_fish_species") or "",
+                            aquaculture_fish_species_other=pl.get("aquaculture_fish_species_other") or "",
                             expense_account_id=pl.get("expense_account_id"),
                             fuel_station_expense_category=pl.get("fuel_station_expense_category") or "",
                             tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),

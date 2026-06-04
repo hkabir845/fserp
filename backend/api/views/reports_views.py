@@ -156,10 +156,12 @@ GL_STATION_AWARE_REPORTS = frozenset(
 
 GL_POND_AWARE_REPORTS = frozenset(
     {
+        "trial-balance",
         "income-statement",
         "balance-sheet",
         "expense-detail",
         "income-detail",
+        "cash-flow",
     }
 )
 

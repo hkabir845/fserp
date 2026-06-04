@@ -791,7 +791,7 @@ export function FinancialAnalyticsPanel({
                           onClick={() => applyQuickPeriod(d)}
                           className={`rounded-md px-3 py-1.5 text-xs font-semibold tabular-nums transition-colors ${
                             matchingQuickPeriod === d
-                              ? 'bg-white text-blue-600 shadow-sm'
+                              ? 'bg-blue-600 text-white shadow-sm'
                               : 'bg-blue-100/80 text-blue-800 hover:bg-blue-100'
                           }`}
                         >

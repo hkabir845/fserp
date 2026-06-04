@@ -128,6 +128,67 @@ def test_report_balance_sheet_pond_scope(company_tenant):
     assert out["is_balanced"] is True
 
 
+def test_report_trial_balance_pond_scope(company_tenant):
+    """Each pond gets its own account-level trial balance from pond-tagged GL lines only."""
+    from api.models import (
+        AquaculturePond,
+        ChartOfAccount,
+        JournalEntry,
+        JournalEntryLine,
+    )
+    from api.services.reporting import report_trial_balance
+
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="TB-Pond", is_active=True)
+    other = AquaculturePond.objects.create(company_id=cid, name="TB-Other", is_active=True)
+
+    cash = ChartOfAccount.objects.create(
+        company_id=cid, account_code="1010", account_name="Cash", account_type="asset", is_active=True
+    )
+    sales = ChartOfAccount.objects.create(
+        company_id=cid, account_code="4200", account_name="Fish Sales", account_type="income", is_active=True
+    )
+
+    je = JournalEntry.objects.create(
+        company_id=cid,
+        entry_number="PND-TB-1",
+        entry_date=date(2026, 4, 10),
+        description="pond sale",
+        is_posted=True,
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je, account=cash, aquaculture_pond_id=pond.id, debit=Decimal("300"), credit=Decimal("0")
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je, account=sales, aquaculture_pond_id=pond.id, debit=Decimal("0"), credit=Decimal("300")
+    )
+    # Other pond activity must not appear in this pond's trial balance.
+    je2 = JournalEntry.objects.create(
+        company_id=cid,
+        entry_number="PND-TB-2",
+        entry_date=date(2026, 4, 11),
+        description="other pond sale",
+        is_posted=True,
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je2, account=cash, aquaculture_pond_id=other.id, debit=Decimal("999"), credit=Decimal("0")
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je2, account=sales, aquaculture_pond_id=other.id, debit=Decimal("0"), credit=Decimal("999")
+    )
+
+    out = report_trial_balance(cid, date(2026, 4, 1), date(2026, 4, 30), pond_id=pond.id)
+
+    assert out.get("filter_pond_id") == pond.id
+    assert out.get("filter_station_id") is None
+    assert "Pond filter" in (out.get("accounting_note") or "")
+    assert out["total_debit"] == 300.0  # only this pond's debits, not the other pond's 999
+    assert out["total_credit"] == 300.0
+    assert out["debits_equal_credits"] is True
+    codes = {row["account_code"] for row in out["accounts"]}
+    assert codes == {"1010", "4200"}
+
+
 def test_build_statement_transactions_filters_station(company_tenant):
     from api.models import ChartOfAccount, JournalEntry, JournalEntryLine, Station
     from api.services.journal_statement import build_statement_transactions

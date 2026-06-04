@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
-import { Plus, Edit, Trash2, Search, Package, Box, Wrench, Camera, X, Grid3x3, List, ArrowRightLeft } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, Package, Box, Wrench, Camera, X, Grid3x3, List, ArrowRightLeft, ScrollText } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
@@ -1601,7 +1601,7 @@ export default function ItemsPage() {
                 }}
                 className={`p-2 rounded transition-colors ${
                   viewMode === 'card'
-                    ? 'bg-white text-blue-600 shadow-sm'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
                 title="Card View"
@@ -1615,7 +1615,7 @@ export default function ItemsPage() {
                 }}
                 className={`p-2 rounded transition-colors ${
                   viewMode === 'list'
-                    ? 'bg-white text-blue-600 shadow-sm'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
                 title="List View"
@@ -1769,6 +1769,13 @@ export default function ItemsPage() {
                 </div>
 
                 <div className="flex items-center justify-end space-x-2 pt-4 border-t">
+                  <Link
+                    href={`/items/${item.id}/ledger`}
+                    className="p-2 text-slate-600 hover:bg-slate-100 rounded"
+                    title="View stock ledger (in / out)"
+                  >
+                    <ScrollText className="h-4 w-4" />
+                  </Link>
                   {itemHasPerStationShopStock(item) && (
                     <Link
                       href={`/inventory?tab=lookup&item_id=${item.id}`}
@@ -1913,6 +1920,13 @@ export default function ItemsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
+                        <Link
+                          href={`/items/${item.id}/ledger`}
+                          className="p-2 text-slate-600 hover:bg-slate-100 rounded transition-colors"
+                          title="View stock ledger (in / out)"
+                        >
+                          <ScrollText className="h-4 w-4" />
+                        </Link>
                         {itemHasPerStationShopStock(item) && (
                           <Link
                             href={`/inventory?tab=lookup&item_id=${item.id}`}

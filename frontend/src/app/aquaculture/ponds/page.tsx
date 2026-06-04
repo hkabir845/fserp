@@ -798,7 +798,7 @@ export default function AquaculturePondsPage() {
                     onClick={() => setViewMode('list')}
                     aria-pressed={viewMode === 'list'}
                     className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-sm ${
-                      viewMode === 'list' ? 'bg-white font-medium text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      viewMode === 'list' ? 'bg-teal-600 font-medium text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     <List className="h-4 w-4" aria-hidden />
@@ -811,7 +811,7 @@ export default function AquaculturePondsPage() {
                     aria-pressed={viewMode === 'cards'}
                     className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-sm ${
                       viewMode === 'cards'
-                        ? 'bg-white font-medium text-slate-900 shadow-sm'
+                        ? 'bg-teal-600 font-medium text-white shadow-sm'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >

@@ -1,6 +1,6 @@
 import { localDateISO } from '@/utils/date'
 
-export type SalesPurchasePeriodPreset = 'today' | '7d' | '15d' | '30d' | '90d' | 'custom'
+export type SalesPurchasePeriodPreset = 'today' | '3d' | '7d' | '15d' | '30d' | '90d' | 'custom'
 
 export const SALES_PURCHASE_PERIOD_STORAGE_KEY = 'fserp_sales_purchase_period'
 
@@ -9,6 +9,7 @@ export const SALES_PURCHASE_PERIOD_PRESETS: {
   label: string
 }[] = [
   { id: 'today', label: 'Today' },
+  { id: '3d', label: '3 days' },
   { id: '7d', label: '7 days' },
   { id: '15d', label: '15 days' },
   { id: '30d', label: '30 days' },
@@ -26,6 +27,7 @@ export function salesPurchaseRangeForPreset(
     return { startDate: endDate, endDate }
   }
   const daysBack: Record<Exclude<SalesPurchasePeriodPreset, 'today' | 'custom'>, number> = {
+    '3d': 2,
     '7d': 6,
     '15d': 14,
     '30d': 29,
@@ -40,7 +42,7 @@ export function inferSalesPurchasePreset(
   range: { startDate: string; endDate: string },
   today: Date = new Date()
 ): SalesPurchasePeriodPreset {
-  for (const preset of ['today', '7d', '15d', '30d', '90d'] as const) {
+  for (const preset of ['today', '3d', '7d', '15d', '30d', '90d'] as const) {
     const expected = salesPurchaseRangeForPreset(preset, today)
     if (range.startDate === expected.startDate && range.endDate === expected.endDate) {
       return preset

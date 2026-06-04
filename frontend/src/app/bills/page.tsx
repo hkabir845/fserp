@@ -41,7 +41,7 @@ import {
   validateBillLineStationAllocation,
 } from '@/lib/billAllocation'
 import { BillPurposeSection } from '@/components/bills/BillPurposeSection'
-import { BillLineItemSelect } from '@/components/bills/BillLineItemSelect'
+import { BillLineTypePicker, type BillLineKind } from '@/components/bills/BillLineItemSelect'
 import { BillStationAllocationFields } from '@/components/bills/BillStationAllocationFields'
 import { COA_OFFICE_EXP, suggestedBillLineExpenseAccountId, templateCoaOptionLabel } from '@/lib/coaDefaults'
 import { syncLineTouchedForAccount } from '@/lib/coaSuggestForm'
@@ -57,6 +57,8 @@ interface BillLineItem {
   id?: number
   line_number: number
   description?: string
+  /** Explicit QuickBooks-style line kind. Falls back to item_id presence when absent (legacy rows). */
+  line_kind?: BillLineKind
   item_id?: number
   expense_account_id?: number
   tank_id?: number  // For fuel items - specifies which tank to receive fuel into
@@ -69,6 +71,9 @@ interface BillLineItem {
   /** Fish-type items (Item.pos_category === 'fish'): required kg and headcount on the vendor line */
   aquaculture_fish_weight_kg?: number | string | null
   aquaculture_fish_count?: number | string | null
+  /** Fish-type items: required species (fry/fingerling) stocked on this line. */
+  aquaculture_fish_species?: string
+  aquaculture_fish_species_other?: string
   /** Optional: tag line to a pond/cycle for aquaculture P&L when the bill posts (GL). */
   aquaculture_pond_id?: number | '' | null
   aquaculture_production_cycle_id?: number | '' | null
@@ -90,6 +95,12 @@ interface BillLineItem {
 interface AquaculturePondOption {
   id: number
   name: string
+  pond_role?: string
+}
+
+interface FishSpeciesOption {
+  id: string
+  label: string
 }
 
 interface ProductionCycleOption {
@@ -243,6 +254,17 @@ function validateFishTypeBillLines(lines: BillLineItem[], itemList: Item[]): str
     if (!line.item_id) continue
     const item = itemList.find((it) => it.id === line.item_id)
     if (!isFishTypeItem(item)) continue
+    const species = (line.aquaculture_fish_species || '').trim()
+    if (species === '' || species === 'not_applicable') {
+      return `Line ${i + 1} (${item?.name || 'Fish item'}): choose a fish species.`
+    }
+    if (species === 'other' && (line.aquaculture_fish_species_other || '').trim() === '') {
+      return `Line ${i + 1} (${item?.name || 'Fish item'}): enter the species name for "Other".`
+    }
+    const pondId = line.aquaculture_pond_id
+    if (pondId === '' || pondId == null || !Number.isFinite(Number(pondId))) {
+      return `Line ${i + 1} (${item?.name || 'Fish item'}): choose a destination pond (nursing pond suggested).`
+    }
     if (itemPiecesPerKg(item)) {
       const heads = parseFishHeadCount(line)
       if (heads <= 0) {
@@ -286,21 +308,67 @@ function formatFishLinePcsPerKg(item: Item | undefined): string {
   return pcs != null ? formatNumber(pcs) : '—'
 }
 
+/** Per-head (per fry/fingerling) cost = line amount ÷ headcount. Empty when count is missing. */
+function fishCostPerHead(line: BillLineItem): number | null {
+  const heads = parseFishHeadCount(line)
+  if (heads <= 0) return null
+  const amt = Number(line.amount ?? 0)
+  if (!Number.isFinite(amt) || amt <= 0) return null
+  return amt / heads
+}
+
 function FishBillLineDimensionRow({
   line,
   index,
   lineItem,
   fishLineAuto,
+  speciesOptions,
+  currencySymbol,
   onFieldChange,
 }: {
   line: BillLineItem
   index: number
   lineItem: Item | undefined
   fishLineAuto: boolean
+  speciesOptions: FishSpeciesOption[]
+  currencySymbol: string
   onFieldChange: (index: number, field: string, value: unknown) => void
 }) {
+  const speciesValue = (line.aquaculture_fish_species || '').trim()
+  const costPerHead = fishCostPerHead(line)
   return (
     <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-gray-200 pt-2">
+      <div className="w-[9rem] shrink-0">
+        <label className="block text-xs font-medium text-gray-700 mb-1">Species *</label>
+        <select
+          value={speciesValue}
+          onChange={(e) => onFieldChange(index, 'aquaculture_fish_species', e.target.value)}
+          className="w-full px-2 py-1 text-sm border border-sky-300 rounded focus:ring-1 focus:ring-sky-500 bg-white"
+          title="Fish species stocked on this line (fry/fingerling)"
+        >
+          <option value="">Select species…</option>
+          {speciesOptions.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+          {speciesValue !== '' && !speciesOptions.some((s) => s.id === speciesValue) ? (
+            <option value={speciesValue}>{speciesValue}</option>
+          ) : null}
+        </select>
+      </div>
+      {speciesValue === 'other' ? (
+        <div className="w-[10rem] shrink-0">
+          <label className="block text-xs font-medium text-gray-700 mb-1">Species name *</label>
+          <input
+            type="text"
+            value={line.aquaculture_fish_species_other || ''}
+            onChange={(e) => onFieldChange(index, 'aquaculture_fish_species_other', e.target.value)}
+            className="w-full px-2 py-1 text-sm border border-sky-300 rounded focus:ring-1 focus:ring-sky-500 bg-white"
+            placeholder="e.g. Koi carp"
+          />
+        </div>
+      ) : null}
       <div className="w-[7.5rem] shrink-0">
         <label className="block text-xs font-medium text-gray-700 mb-1">Line (pcs/kg)</label>
         <input
@@ -366,6 +434,17 @@ function FishBillLineDimensionRow({
           }
           placeholder="—"
           title={fishLineAuto ? 'Heads ÷ Line (pcs/kg); also used as billing Qty (kg)' : undefined}
+        />
+      </div>
+      <div className="w-[8rem] shrink-0">
+        <label className="block text-xs font-medium text-gray-700 mb-1">Cost / head</label>
+        <input
+          type="text"
+          readOnly
+          tabIndex={-1}
+          value={costPerHead == null ? '—' : `${currencySymbol}${formatNumber(costPerHead, 4)}`}
+          title="Auto: line Amount ÷ total fish (heads) — cost per fry/fingerling"
+          className="w-full px-2 py-1 text-sm border border-gray-200 rounded bg-gray-50 text-gray-800 tabular-nums cursor-default"
         />
       </div>
       <p className="text-xs text-gray-500 flex-1 min-w-[12rem] pb-1">
@@ -443,7 +522,8 @@ function applyItemSelectionToBillLine(
   itemList: Item[],
   tankList: Tank[],
   vendorDefaultExpenseAccountId?: number | null,
-  templateFallbackExpenseId?: number | null
+  templateFallbackExpenseId?: number | null,
+  defaultNursingPondId?: number | null
 ): BillLineItem {
   const item = itemList.find((i) => i.id === itemId)
   if (!item) return line
@@ -476,10 +556,31 @@ function applyItemSelectionToBillLine(
   if (!isFishTypeItem(item)) {
     next.aquaculture_fish_weight_kg = undefined
     next.aquaculture_fish_count = undefined
-  } else if (itemPiecesPerKg(item) && parseFishHeadCount(next) > 0) {
+    next.aquaculture_fish_species = undefined
+    next.aquaculture_fish_species_other = undefined
+    return next
+  }
+  // Fish items: default species to tilapia and suggest a nursing pond when none chosen yet.
+  if (!(line.aquaculture_fish_species || '').trim()) {
+    next.aquaculture_fish_species = 'tilapia'
+  }
+  if (
+    (line.aquaculture_pond_id === '' || line.aquaculture_pond_id == null) &&
+    defaultNursingPondId != null &&
+    Number.isFinite(defaultNursingPondId)
+  ) {
+    next.aquaculture_pond_id = defaultNursingPondId
+  }
+  if (itemPiecesPerKg(item) && parseFishHeadCount(next) > 0) {
     return applyFishBillLineAutoCalc(next, item, 'heads')
   }
   return next
+}
+
+/** Effective line kind: explicit flag, else inferred from whether an inventory/catalog item is set. */
+function billLineKind(line: BillLineItem): BillLineKind {
+  if (line.line_kind === 'item' || line.line_kind === 'expense') return line.line_kind
+  return line.item_id ? 'item' : 'expense'
 }
 
 function serializeBillLineForApi(line: BillLineItem, itemList: Item[]): Record<string, unknown> {
@@ -510,6 +611,11 @@ function serializeBillLineForApi(line: BillLineItem, itemList: Item[]): Record<s
             weightPayload != null && Number.isFinite(weightPayload) ? weightPayload : null,
           aquaculture_fish_count:
             countPayload != null && Number.isInteger(countPayload) ? countPayload : null,
+          aquaculture_fish_species: (line.aquaculture_fish_species || '').trim() || null,
+          aquaculture_fish_species_other:
+            (line.aquaculture_fish_species || '').trim() === 'other'
+              ? (line.aquaculture_fish_species_other || '').trim() || null
+              : null,
         }
       : {}),
     aquaculture_pond_id: (() => {
@@ -1007,6 +1113,22 @@ export default function BillsPage() {
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [stations, setStations] = useState<Station[]>([])
   const [aquaculturePonds, setAquaculturePonds] = useState<AquaculturePondOption[]>([])
+  const [fishSpeciesOptions, setFishSpeciesOptions] = useState<FishSpeciesOption[]>([])
+  // First nursing pond — suggested as the default destination for fry/fingerling purchases.
+  const firstNursingPondId = useMemo<number | null>(() => {
+    const np = aquaculturePonds.find((p) => (p.pond_role || '').toLowerCase() === 'nursing')
+    return np ? np.id : null
+  }, [aquaculturePonds])
+  // Pond options with a "(nursing)" hint so fish purchases can be steered to nursing ponds.
+  const pondOptionsForFish = useMemo<AquaculturePondOption[]>(
+    () =>
+      aquaculturePonds.map((p) =>
+        (p.pond_role || '').toLowerCase() === 'nursing'
+          ? { ...p, name: `${p.name} (nursing)` }
+          : p,
+      ),
+    [aquaculturePonds],
+  )
   const [productionCycles, setProductionCycles] = useState<ProductionCycleOption[]>([])
   const [aquacultureBillCategories, setAquacultureBillCategories] = useState<
     AquacultureBillExpenseCategory[]
@@ -1071,7 +1193,7 @@ export default function BillsPage() {
     setFormData((prev) => {
       const lines = prev.lines.map((line) => {
         if (billLineExpenseTouchedRef.current.has(line.line_number)) return line
-        if (line.expense_account_id || line.item_id) return line
+        if (line.expense_account_id || line.item_id || billLineKind(line) === 'item') return line
         if (!vendorExpense) return line
         return { ...line, expense_account_id: vendorExpense }
       })
@@ -1109,7 +1231,7 @@ export default function BillsPage() {
       let changed = false
       const lines = prev.lines.map((line) => {
         if (billLineExpenseTouchedRef.current.has(line.line_number)) return line
-        if (line.expense_account_id || line.item_id) return line
+        if (line.expense_account_id || line.item_id || billLineKind(line) === 'item') return line
         changed = true
         return { ...line, expense_account_id: fallback }
       })
@@ -1284,23 +1406,37 @@ export default function BillsPage() {
         setStations([])
       }
 
-      const [pondsRes, cyclesRes, aqCatRes, fsCatRes] = await Promise.allSettled([
+      const [pondsRes, cyclesRes, aqCatRes, fsCatRes, speciesRes] = await Promise.allSettled([
         api.get('/aquaculture/ponds/'),
         api.get('/aquaculture/production-cycles/'),
         api.get('/aquaculture/expense-categories/'),
         api.get('/fuel-station/expense-categories/'),
+        api.get('/aquaculture/fish-species/'),
       ])
       if (pondsRes.status === 'fulfilled' && Array.isArray(pondsRes.value.data)) {
         setAquaculturePonds(
           pondsRes.value.data
-            .map((p: { id?: unknown; name?: unknown }) => ({
+            .map((p: { id?: unknown; name?: unknown; pond_role?: unknown }) => ({
               id: typeof p.id === 'number' ? p.id : Number(p.id),
               name: String(p.name || '').trim() || `Pond ${p.id}`,
+              pond_role: String(p.pond_role || '').trim(),
             }))
             .filter((p: AquaculturePondOption) => Number.isFinite(p.id)),
         )
       } else {
         setAquaculturePonds([])
+      }
+      if (speciesRes.status === 'fulfilled' && Array.isArray(speciesRes.value.data)) {
+        setFishSpeciesOptions(
+          speciesRes.value.data
+            .map((s: { id?: unknown; label?: unknown }) => ({
+              id: String(s.id || '').trim(),
+              label: String(s.label || '').trim() || String(s.id || '').trim(),
+            }))
+            .filter((s: FishSpeciesOption) => s.id !== '' && s.id !== 'not_applicable'),
+        )
+      } else {
+        setFishSpeciesOptions([])
       }
       if (cyclesRes.status === 'fulfilled' && Array.isArray(cyclesRes.value.data)) {
         setProductionCycles(
@@ -1417,40 +1553,60 @@ export default function BillsPage() {
     return { subtotal, taxAmount, total }
   }
 
-  const handleAddLine = () => {
-    const rawPond = searchParams.get('pond_id')
-    const rawCat = searchParams.get('expense_category') || 'other'
-    const pondPrefill: number | '' =
-      rawPond && /^\d+$/.test(rawPond.trim()) ? parseInt(rawPond.trim(), 10) : ''
-    const catPrefill = findBillCategory(billExpenseCategories, rawCat)?.id || ''
-    const lineNumber = formData.lines.length + 1
-    let newLine: BillLineItem
-    if (pondPrefill !== '' && catPrefill) {
-      newLine = {
-        ...newAquacultureBillLine(pondPrefill, catPrefill, billExpenseCategories),
-        line_number: lineNumber,
+  const addBillLine = (kind: BillLineKind) => {
+    setFormData((prev) => {
+      const lineNumber = prev.lines.length + 1
+      let newLine: BillLineItem
+      if (kind === 'expense') {
+        const rawPond = searchParams.get('pond_id')
+        const rawCat = searchParams.get('expense_category') || 'other'
+        const pondPrefill: number | '' =
+          rawPond && /^\d+$/.test(rawPond.trim()) ? parseInt(rawPond.trim(), 10) : ''
+        const catPrefill = findBillCategory(billExpenseCategories, rawCat)?.id || ''
+        if (pondPrefill !== '' && catPrefill) {
+          newLine = {
+            ...newAquacultureBillLine(pondPrefill, catPrefill, billExpenseCategories),
+            line_number: lineNumber,
+            line_kind: 'expense',
+          }
+        } else {
+          newLine = {
+            line_number: lineNumber,
+            line_kind: 'expense',
+            description: '',
+            item_id: undefined,
+            expense_account_id: templateBillExpenseAccountId || undefined,
+            tank_id: undefined,
+            quantity: 1,
+            unit_cost: 0,
+            amount: 0,
+            tax_amount: 0,
+            aquaculture_fish_weight_kg: undefined,
+            aquaculture_fish_count: undefined,
+            aquaculture_pond_id: pondPrefill,
+            aquaculture_production_cycle_id: '',
+            aquaculture_expense_category: catPrefill || undefined,
+          }
+        }
+      } else {
+        newLine = {
+          line_number: lineNumber,
+          line_kind: 'item',
+          description: '',
+          item_id: undefined,
+          expense_account_id: undefined,
+          tank_id: undefined,
+          quantity: 1,
+          unit_cost: 0,
+          amount: 0,
+          tax_amount: 0,
+          aquaculture_fish_weight_kg: undefined,
+          aquaculture_fish_count: undefined,
+          aquaculture_pond_id: '',
+          aquaculture_production_cycle_id: '',
+        }
       }
-    } else {
-      newLine = {
-        line_number: lineNumber,
-        description: '',
-        item_id: undefined,
-        expense_account_id: templateBillExpenseAccountId || undefined,
-        tank_id: undefined,
-        quantity: 1,
-        unit_cost: 0,
-        amount: 0,
-        tax_amount: 0,
-        aquaculture_fish_weight_kg: undefined,
-        aquaculture_fish_count: undefined,
-        aquaculture_pond_id: pondPrefill,
-        aquaculture_production_cycle_id: '',
-        aquaculture_expense_category: catPrefill || undefined,
-      }
-    }
-    setFormData({
-      ...formData,
-      lines: [...formData.lines, newLine],
+      return { ...prev, lines: [...prev.lines, newLine] }
     })
   }
 
@@ -1466,25 +1622,60 @@ export default function BillsPage() {
   ) => {
     const newLines = [...formData.lines]
     if (pick.kind === 'item') {
-      newLines[index] = applyItemSelectionToBillLine(
-        newLines[index],
-        pick.id,
-        items,
-        tanks,
-        resolvedVendorDefaultExpenseId,
-        templateBillExpenseAccountId || undefined
-      )
+      newLines[index] = {
+        ...applyItemSelectionToBillLine(
+          newLines[index],
+          pick.id,
+          items,
+          tanks,
+          resolvedVendorDefaultExpenseId,
+          templateBillExpenseAccountId || undefined,
+          firstNursingPondId
+        ),
+        line_kind: 'item',
+      }
     } else {
       billLineExpenseTouchedRef.current.add(newLines[index].line_number)
       const account = expenseAccounts.find((a) => a.id === pick.id)
       newLines[index] = {
         ...newLines[index],
+        line_kind: 'expense',
         expense_account_id: pick.id,
         item_id: undefined,
         tank_id: undefined,
         aquaculture_fish_weight_kg: undefined,
         aquaculture_fish_count: undefined,
+        aquaculture_fish_species: undefined,
+        aquaculture_fish_species_other: undefined,
         description: account?.account_name || '',
+      }
+    }
+    setFormData({ ...formData, lines: newLines })
+  }
+
+  const setBillLineKind = (index: number, kind: BillLineKind) => {
+    const newLines = [...formData.lines]
+    const cur = newLines[index]
+    if (billLineKind(cur) === kind) return
+    if (kind === 'expense') {
+      // Switching to an expense/service line: drop item-only fields, keep any suggested account.
+      newLines[index] = {
+        ...cur,
+        line_kind: 'expense',
+        item_id: undefined,
+        tank_id: undefined,
+        tank_name: null,
+        aquaculture_fish_weight_kg: undefined,
+        aquaculture_fish_count: undefined,
+        aquaculture_fish_species: undefined,
+        aquaculture_fish_species_other: undefined,
+      }
+    } else {
+      // Switching to an item line: clear the expense account so the item picker drives the GL.
+      newLines[index] = {
+        ...cur,
+        line_kind: 'item',
+        expense_account_id: undefined,
       }
     }
     setFormData({ ...formData, lines: newLines })
@@ -1587,7 +1778,8 @@ export default function BillsPage() {
         items,
         tanks,
         resolvedVendorDefaultExpenseId,
-        templateBillExpenseAccountId || undefined
+        templateBillExpenseAccountId || undefined,
+        firstNursingPondId
       )
     }
 
@@ -1824,6 +2016,12 @@ export default function BillsPage() {
               line.aquaculture_fish_count != null && String(line.aquaculture_fish_count) !== ''
                 ? line.aquaculture_fish_count
                 : '',
+            aquaculture_fish_species:
+              (line as BillLineItem & { aquaculture_fish_species?: string })
+                .aquaculture_fish_species || '',
+            aquaculture_fish_species_other:
+              (line as BillLineItem & { aquaculture_fish_species_other?: string })
+                .aquaculture_fish_species_other || '',
             aquaculture_pond_id:
               line.aquaculture_pond_id != null && String(line.aquaculture_pond_id) !== ''
                 ? Number(line.aquaculture_pond_id)
@@ -2702,36 +2900,23 @@ export default function BillsPage() {
                 <div className="mb-6">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold">Line Items</h3>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormData({
-                          ...formData,
-                          lines: [
-                            ...formData.lines,
-                            {
-                              line_number: formData.lines.length + 1,
-                              description: '',
-                              item_id: undefined,
-                              expense_account_id: undefined,
-                              tank_id: undefined,
-                              quantity: 1,
-                              unit_cost: 0,
-                              amount: 0,
-                              tax_amount: 0,
-                              aquaculture_fish_weight_kg: undefined,
-                              aquaculture_fish_count: undefined,
-                              aquaculture_pond_id: '',
-                              aquaculture_production_cycle_id: '',
-                            },
-                          ],
-                        })
-                      }}
-                      className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      <PlusCircle className="h-4 w-4" />
-                      <span>Add Line</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          addBillLine(
+                            formData.lines.length
+                              ? billLineKind(formData.lines[formData.lines.length - 1])
+                              : 'item'
+                          )
+                        }
+                        title="Adds a new line of the same type (Item or Expense) as the last line. Switch a line's type any time with its Item/Expense toggle."
+                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      >
+                        <PlusCircle className="h-4 w-4" />
+                        <span>Add line</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -2757,31 +2942,36 @@ export default function BillsPage() {
                         >
                           <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
                             <div className="col-span-12 lg:col-span-2 min-w-0">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Item</label>
-                              <BillLineItemSelect
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                                {billLineKind(line) === 'item' ? 'Item / product' : 'Expense account'}
+                              </label>
+                              <BillLineTypePicker
+                                kind={billLineKind(line)}
                                 items={items}
                                 expenseAccounts={expenseAccounts}
                                 itemId={line.item_id}
                                 expenseAccountId={line.expense_account_id}
                                 className={`${BILL_LINE_CTL} max-w-full`}
+                                onChangeKind={(k) => setBillLineKind(index, k)}
                                 onSelectItem={(id) => applyBillLinePickerSelection(index, { kind: 'item', id })}
                                 onSelectAccount={(id) =>
                                   applyBillLinePickerSelection(index, { kind: 'account', id })
                                 }
-                              />
-                              {lineItem && (lineItem.item_type || '').toLowerCase() === 'inventory' && (
-                                <ItemCogsOnSaleHint
-                                  item={lineItem}
-                                  coaOptions={coaForItemHints}
-                                  className="mt-1"
-                                />
-                              )}
-                              {!line.item_id && !line.expense_account_id && (
-                                <p className="mt-1 text-[11px] text-slate-600">
-                                  Expense-only line: search and pick an account, or leave blank for{' '}
-                                  {billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.
-                                </p>
-                              )}
+                              >
+                                {lineItem && (lineItem.item_type || '').toLowerCase() === 'inventory' && (
+                                  <ItemCogsOnSaleHint
+                                    item={lineItem}
+                                    coaOptions={coaForItemHints}
+                                    className="mt-1"
+                                  />
+                                )}
+                                {billLineKind(line) === 'expense' && !line.expense_account_id && (
+                                  <p className="mt-1 text-[11px] text-slate-600">
+                                    Pick an expense account, or leave blank for{' '}
+                                    {billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.
+                                  </p>
+                                )}
+                              </BillLineTypePicker>
                             </div>
                             {availableTanks.length > 0 && (
                               <div className="col-span-12 lg:col-span-2 min-w-0">
@@ -2915,14 +3105,16 @@ export default function BillsPage() {
                               index={index}
                               lineItem={lineItem}
                               fishLineAuto={fishLineAuto}
+                              speciesOptions={fishSpeciesOptions}
+                              currencySymbol={currencySymbol}
                               onFieldChange={handleLineChange}
                             />
                           ) : null}
-                          {formData.bill_purpose === 'pond' && showAqTag ? (
+                          {(formData.bill_purpose === 'pond' || showFishDims) && showAqTag ? (
                             <BillPondAllocationFields
                               line={line}
                               index={index}
-                              ponds={aquaculturePonds}
+                              ponds={pondOptionsForFish}
                               cycles={productionCycles}
                               billExpenseCategories={billExpenseCategories}
                               expenseAccounts={expenseAccounts}
@@ -3246,14 +3438,23 @@ export default function BillsPage() {
                 <div className="mb-6">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold">Line Items</h3>
-                    <button
-                      type="button"
-                      onClick={handleAddLine}
-                      className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      <PlusCircle className="h-4 w-4" />
-                      <span>Add Line</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          addBillLine(
+                            formData.lines.length
+                              ? billLineKind(formData.lines[formData.lines.length - 1])
+                              : 'item'
+                          )
+                        }
+                        title="Adds a new line of the same type (Item or Expense) as the last line. Switch a line's type any time with its Item/Expense toggle."
+                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      >
+                        <PlusCircle className="h-4 w-4" />
+                        <span>Add line</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -3289,31 +3490,36 @@ export default function BillsPage() {
                         >
                           <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
                             <div className="col-span-12 lg:col-span-2 min-w-0">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Item</label>
-                              <BillLineItemSelect
+                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                                {billLineKind(line) === 'item' ? 'Item / product' : 'Expense account'}
+                              </label>
+                              <BillLineTypePicker
+                                kind={billLineKind(line)}
                                 items={items}
                                 expenseAccounts={expenseAccounts}
                                 itemId={line.item_id}
                                 expenseAccountId={line.expense_account_id}
                                 className={`${BILL_LINE_CTL} max-w-full`}
+                                onChangeKind={(k) => setBillLineKind(index, k)}
                                 onSelectItem={(id) => applyBillLinePickerSelection(index, { kind: 'item', id })}
                                 onSelectAccount={(id) =>
                                   applyBillLinePickerSelection(index, { kind: 'account', id })
                                 }
-                              />
-                              {lineItem && (lineItem.item_type || '').toLowerCase() === 'inventory' && (
-                                <ItemCogsOnSaleHint
-                                  item={lineItem}
-                                  coaOptions={coaForItemHints}
-                                  className="mt-1"
-                                />
-                              )}
-                              {!line.item_id && !line.expense_account_id && (
-                                <p className="mt-1 text-[11px] text-slate-600">
-                                  Expense-only line: search and pick an account, or leave blank for{' '}
-                                  {billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.
-                                </p>
-                              )}
+                              >
+                                {lineItem && (lineItem.item_type || '').toLowerCase() === 'inventory' && (
+                                  <ItemCogsOnSaleHint
+                                    item={lineItem}
+                                    coaOptions={coaForItemHints}
+                                    className="mt-1"
+                                  />
+                                )}
+                                {billLineKind(line) === 'expense' && !line.expense_account_id && (
+                                  <p className="mt-1 text-[11px] text-slate-600">
+                                    Pick an expense account, or leave blank for{' '}
+                                    {billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.
+                                  </p>
+                                )}
+                              </BillLineTypePicker>
                             </div>
 
                             {isFuelItem && (
@@ -3460,14 +3666,16 @@ export default function BillsPage() {
                               index={index}
                               lineItem={lineItem}
                               fishLineAuto={fishLineAuto}
+                              speciesOptions={fishSpeciesOptions}
+                              currencySymbol={currencySymbol}
                               onFieldChange={handleLineChange}
                             />
                           ) : null}
-                          {formData.bill_purpose === 'pond' && showAqTag ? (
+                          {(formData.bill_purpose === 'pond' || showFishDims) && showAqTag ? (
                             <BillPondAllocationFields
                               line={line}
                               index={index}
-                              ponds={aquaculturePonds}
+                              ponds={pondOptionsForFish}
                               cycles={productionCycles}
                               billExpenseCategories={billExpenseCategories}
                               expenseAccounts={expenseAccounts}

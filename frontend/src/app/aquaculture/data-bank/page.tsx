@@ -34,6 +34,9 @@ type PondClose = {
   closed_at: string | null
   notes: string
   reopen_reason: string
+  settlement_fish_count: number | null
+  settlement_weight_kg: string | null
+  settlement_bioasset_value: string | null
 }
 
 type PondRow = {
@@ -119,6 +122,9 @@ type ClosePreview = {
   period_start: string
   period_end: string
   label: string
+  settlement_fish_count?: number | null
+  settlement_weight_kg?: string | null
+  settlement_bioasset_value?: string | null
 }
 
 type StationClosePreview = {
@@ -596,10 +602,27 @@ export default function AquacultureDataBankPage() {
             </div>
           </div>
           {preview && (
-            <p className="mt-3 text-sm text-slate-700">
-              Preview: <strong>{preview.label}</strong> ({formatDateOnly(preview.period_start)} –{' '}
-              {formatDateOnly(preview.period_end)})
-            </p>
+            <div className="mt-3 text-sm text-slate-700">
+              <p>
+                Preview: <strong>{preview.label}</strong> ({formatDateOnly(preview.period_start)} –{' '}
+                {formatDateOnly(preview.period_end)})
+              </p>
+              {(preview.settlement_fish_count != null ||
+                preview.settlement_bioasset_value != null) && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Closing biomass to be recorded:{' '}
+                  {preview.settlement_fish_count != null
+                    ? `${preview.settlement_fish_count.toLocaleString()} fish`
+                    : '—'}
+                  {preview.settlement_weight_kg != null
+                    ? ` · ${Number(preview.settlement_weight_kg).toLocaleString()} kg`
+                    : ''}
+                  {preview.settlement_bioasset_value != null
+                    ? ` · bio-asset ${Number(preview.settlement_bioasset_value).toLocaleString()}`
+                    : ''}
+                </p>
+              )}
+            </div>
           )}
           <label className="mt-3 block text-sm">
             <span className="font-medium text-slate-700">Notes (optional)</span>
@@ -839,6 +862,23 @@ export default function AquacultureDataBankPage() {
                                     ? ` · closed ${formatDateOnly(c.closed_at.slice(0, 10))}`
                                     : ''}
                                 </div>
+                                {(c.settlement_fish_count != null ||
+                                  c.settlement_bioasset_value != null) && (
+                                  <div className="mt-0.5 text-xs text-slate-500">
+                                    Closing biomass:{' '}
+                                    {c.settlement_fish_count != null
+                                      ? `${c.settlement_fish_count.toLocaleString()} fish`
+                                      : '—'}
+                                    {c.settlement_weight_kg != null
+                                      ? ` · ${Number(c.settlement_weight_kg).toLocaleString()} kg`
+                                      : ''}
+                                    {c.settlement_bioasset_value != null
+                                      ? ` · bio-asset ${Number(
+                                          c.settlement_bioasset_value,
+                                        ).toLocaleString()}`
+                                      : ''}
+                                  </div>
+                                )}
                               </div>
                               <div className="flex flex-wrap items-center gap-2">
                                 <Link

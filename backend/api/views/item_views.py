@@ -17,7 +17,15 @@ from django.views.decorators.http import require_GET
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
 from api.views.common import parse_json_body, require_company_id, _serialize_decimal
-from api.models import AquaculturePond, Item, Station, Tank
+from api.models import (
+    AquaculturePond,
+    BillLine,
+    InventoryAdjustmentLine,
+    InvoiceLine,
+    Item,
+    Station,
+    Tank,
+)
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.item_catalog import item_tracks_physical_stock, normalize_item_type
 from api.services.item_opening_stock_gl import (
@@ -1049,3 +1057,186 @@ def upload_item_image(request):
         f.write(raw)
     url = f"/media/{name}"
     return JsonResponse({"image_url": url, "url": url})
+
+
+def _party_display_name(party) -> str:
+    """Human label for a Vendor/Customer (no single `name` field): display, company, then first name."""
+    if party is None:
+        return ""
+    for attr in ("display_name", "company_name", "first_name"):
+        val = (getattr(party, attr, "") or "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _parse_ledger_date(raw):
+    """Parse an optional YYYY-MM-DD query value; returns (date|None, error_str|None)."""
+    s = (raw or "").strip()
+    if not s:
+        return None, None
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date(), None
+    except (ValueError, TypeError):
+        return None, f"Invalid date '{s}', expected YYYY-MM-DD"
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
+@require_GET
+def item_stock_ledger(request, item_id: int):
+    """
+    GET /api/items/<id>/stock-ledger/ - chronological in/out movements for one product.
+
+    Sources that change on-hand: posted vendor bills (stock in), finalized invoices (stock out),
+    and posted inventory adjustments (count gain/loss). The opening balance is derived so the
+    running balance reconciles to the item's current on-hand. Optional ?start=&end= (YYYY-MM-DD)
+    narrow the displayed rows; balances are always computed from the full history.
+    """
+    company_id = request.company_id
+    item = (
+        Item.objects.filter(id=item_id, company_id=company_id)
+        .only("id", "name", "unit", "quantity_on_hand", "pos_category", "item_type")
+        .first()
+    )
+    if not item:
+        return JsonResponse({"detail": "Item not found"}, status=404)
+
+    start, derr = _parse_ledger_date(request.GET.get("start"))
+    if derr:
+        return JsonResponse({"detail": derr}, status=400)
+    end, derr = _parse_ledger_date(request.GET.get("end"))
+    if derr:
+        return JsonResponse({"detail": derr}, status=400)
+    if start and end and start > end:
+        return JsonResponse({"detail": "start must be on or before end"}, status=400)
+
+    movements: list[dict] = []
+
+    purchase_lines = BillLine.objects.filter(
+        bill__company_id=company_id,
+        bill__stock_receipt_applied=True,
+        item_id=item_id,
+    ).select_related("bill", "bill__vendor")
+    for ln in purchase_lines:
+        qty = _parse_decimal(ln.quantity, "0")
+        if qty == 0:
+            continue
+        movements.append(
+            {
+                "date": ln.bill.bill_date,
+                "sort": 0,
+                "type": "purchase",
+                "type_label": "Purchase (bill)",
+                "reference": (ln.bill.bill_number or "").strip(),
+                "counterparty": _party_display_name(ln.bill.vendor),
+                "memo": (ln.bill.memo or "").strip(),
+                "delta": qty,
+            }
+        )
+
+    sale_lines = (
+        InvoiceLine.objects.filter(
+            invoice__company_id=company_id,
+            item_id=item_id,
+        )
+        .exclude(invoice__status="draft")
+        .select_related("invoice", "invoice__customer")
+    )
+    for ln in sale_lines:
+        qty = _parse_decimal(ln.quantity, "0")
+        if qty == 0:
+            continue
+        movements.append(
+            {
+                "date": ln.invoice.invoice_date,
+                "sort": 2,
+                "type": "sale",
+                "type_label": "Sale (invoice)",
+                "reference": (ln.invoice.invoice_number or "").strip(),
+                "counterparty": _party_display_name(ln.invoice.customer),
+                "memo": "",
+                "delta": -qty,
+            }
+        )
+
+    adj_lines = InventoryAdjustmentLine.objects.filter(
+        adjustment__company_id=company_id,
+        adjustment__status="posted",
+        item_id=item_id,
+        book_quantity__isnull=False,
+    ).select_related("adjustment", "adjustment__station")
+    for ln in adj_lines:
+        delta = _parse_decimal(ln.counted_quantity, "0") - _parse_decimal(ln.book_quantity, "0")
+        if delta == 0:
+            continue
+        adj = ln.adjustment
+        movements.append(
+            {
+                "date": adj.adjustment_date,
+                "sort": 1,
+                "type": "adjustment",
+                "type_label": f"Adjustment ({adj.reason or 'count'})",
+                "reference": (adj.adjustment_number or "").strip(),
+                "counterparty": (getattr(adj.station, "station_name", "") or "").strip(),
+                "memo": (adj.memo or "").strip(),
+                "delta": delta,
+            }
+        )
+
+    movements.sort(key=lambda m: (m["date"], m["sort"], m["reference"]))
+
+    current_qoh = _effective_quantity_on_hand(item)
+    net_all = sum((m["delta"] for m in movements), Decimal("0"))
+    opening_balance = current_qoh - net_all
+
+    rows: list[dict] = []
+    running = opening_balance
+    for m in movements:
+        running += m["delta"]
+        delta = m["delta"]
+        rows.append(
+            {
+                "date": m["date"].isoformat(),
+                "type": m["type"],
+                "type_label": m["type_label"],
+                "reference": m["reference"],
+                "counterparty": m["counterparty"],
+                "memo": m["memo"],
+                "qty_in": _serialize_decimal(delta) if delta > 0 else None,
+                "qty_out": _serialize_decimal(-delta) if delta < 0 else None,
+                "balance": _serialize_decimal(running),
+            }
+        )
+
+    visible = rows
+    if start is not None:
+        visible = [r for r in visible if r["date"] >= start.isoformat()]
+    if end is not None:
+        visible = [r for r in visible if r["date"] <= end.isoformat()]
+
+    total_in = sum((m["delta"] for m in movements if m["delta"] > 0), Decimal("0"))
+    total_out = sum((-m["delta"] for m in movements if m["delta"] < 0), Decimal("0"))
+
+    return JsonResponse(
+        {
+            "item_id": item.id,
+            "item_name": item.name or "",
+            "unit": item.unit or "",
+            "current_quantity_on_hand": _serialize_decimal(current_qoh),
+            "opening_balance": _serialize_decimal(opening_balance),
+            "period": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+            },
+            "summary": {
+                "movement_count": len(movements),
+                "visible_count": len(visible),
+                "total_in": _serialize_decimal(total_in),
+                "total_out": _serialize_decimal(total_out),
+                "net": _serialize_decimal(net_all),
+            },
+            "rows": visible,
+        }
+    )

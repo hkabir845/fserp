@@ -298,6 +298,8 @@ urlpatterns = [
     path("tanks/<int:tank_id>", tank_views.tank_detail),
     path("items/", item_views.items_list_or_create),
     path("items/categories/", item_views.item_reporting_category_suggestions),
+    path("items/<int:item_id>/stock-ledger/", item_views.item_stock_ledger),
+    path("items/<int:item_id>/stock-ledger", item_views.item_stock_ledger),
     path("items/<int:item_id>/", item_views.item_detail),
     path("items/<int:item_id>", item_views.item_detail),
     path("upload/items/image/", item_views.upload_item_image),

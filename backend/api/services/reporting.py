@@ -253,16 +253,26 @@ def _je_lines_unscoped_dims(company_id: int):
 
 
 def report_trial_balance(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Period activity trial balance: sums posted journal lines with entry_date in [start, end].
     Total debits must equal total credits (double-entry). COA opening balances are not included.
 
     When ``station_id`` is set, only lines tagged with that site are included (company-wide / untagged
-    lines are excluded).
+    lines are excluded). When ``pond_id`` is set, only lines tagged with that pond are included (each
+    pond is reported as an individual entity); ``station_id`` is ignored in that case.
     """
-    period_lines = _je_lines_base(company_id, station_id).filter(
+    if pond_id is not None:
+        station_id = None
+        base_lines = _je_lines_pond(company_id, pond_id)
+    else:
+        base_lines = _je_lines_base(company_id, station_id)
+    period_lines = base_lines.filter(
         journal_entry__entry_date__gte=start,
         journal_entry__entry_date__lte=end,
     )
@@ -328,7 +338,14 @@ def report_trial_balance(
             "Total debit and total credit must match for a balanced GL period."
         ),
     }
-    if station_id is not None:
+    if pond_id is not None:
+        out["filter_pond_id"] = pond_id
+        out["accounting_note"] = (
+            out["accounting_note"]
+            + " Pond filter: only journal lines tagged to this pond are included (pond as individual entity); "
+            "chart opening balances and untagged lines (e.g. shared A/P) are not included."
+        )
+    elif station_id is not None:
         out["filter_station_id"] = station_id
         out["accounting_note"] = (
             out["accounting_note"]
@@ -1776,36 +1793,59 @@ def _cash_flow_entity_row(
 
 
 def report_cash_flow(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int, start: date, end: date, station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Cash flow summary: bank register activity, customer/vendor payments, and P&L net income.
     When not site-filtered, includes by_station, by_pond, and unscoped (head office) entity rows.
+
+    When ``pond_id`` is set, the report is scoped to that pond as an individual entity: net income,
+    bank activity, and cash use pond-tagged GL only, with registered pond fish sales (BDT) as the
+    cash-in proxy (payments are not pond-tagged). ``station_id`` is ignored in that case.
     """
-    pl = _period_income_statement_totals(company_id, start, end, station_id)
-    pay_recv = _d(
-        Payment.objects.filter(
-            company_id=company_id,
-            payment_type=Payment.PAYMENT_TYPE_RECEIVED,
-            payment_date__gte=start,
-            payment_date__lte=end,
-        ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
-    )
-    pay_made = _d(
-        Payment.objects.filter(
-            company_id=company_id,
-            payment_type=Payment.PAYMENT_TYPE_MADE,
-            payment_date__gte=start,
-            payment_date__lte=end,
-        ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
-    )
+    if pond_id is not None:
+        station_id = None
+    pond_lines = _je_lines_pond(company_id, pond_id) if pond_id is not None else None
+    if pond_id is not None:
+        pl = _period_pl_totals_from_line_qs(company_id, start, end, pond_lines)
+        pay_recv = _d(
+            AquacultureFishSale.objects.filter(
+                company_id=company_id,
+                pond_id=pond_id,
+                sale_date__gte=start,
+                sale_date__lte=end,
+            ).aggregate(t=Coalesce(Sum("total_amount"), Decimal("0")))["t"]
+        )
+        pay_made = Decimal("0")
+    else:
+        pl = _period_income_statement_totals(company_id, start, end, station_id)
+        pay_recv = _d(
+            Payment.objects.filter(
+                company_id=company_id,
+                payment_type=Payment.PAYMENT_TYPE_RECEIVED,
+                payment_date__gte=start,
+                payment_date__lte=end,
+            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
+        )
+        pay_made = _d(
+            Payment.objects.filter(
+                company_id=company_id,
+                payment_type=Payment.PAYMENT_TYPE_MADE,
+                payment_date__gte=start,
+                payment_date__lte=end,
+            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
+        )
 
     bank_rows: list[dict[str, Any]] = []
     begin_total = end_total = period_in = period_out = Decimal("0")
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         if normalize_chart_account_type(coa.account_type) != "bank_account":
             continue
-        b0, dep, wit, bend = _bank_period_flow(coa, company_id, start, end, station_id)
+        if pond_id is not None:
+            b0, dep, wit, bend = _bank_period_flow_lines(coa, company_id, start, end, pond_lines)
+        else:
+            b0, dep, wit, bend = _bank_period_flow(coa, company_id, start, end, station_id)
         if b0 == 0 and dep == 0 and wit == 0 and bend == 0:
             continue
         nm = coa.account_name
@@ -1852,7 +1892,15 @@ def report_cash_flow(
             "Unscoped is GL and payments without a station tag."
         ),
     }
-    if station_id is not None:
+    if pond_id is not None:
+        out_cf["filter_pond_id"] = pond_id
+        out_cf["operating"]["aquaculture_sales_in_period"] = _f(pay_recv)
+        out_cf["accounting_note"] = (
+            out_cf["accounting_note"]
+            + " Pond filter: this pond is reported as an individual entity using pond-tagged GL "
+            "(net income and bank activity) plus registered pond fish sales as the cash-in proxy."
+        )
+    elif station_id is not None:
         out_cf["filter_station_id"] = station_id
         out_cf["accounting_note"] = (
             out_cf["accounting_note"]

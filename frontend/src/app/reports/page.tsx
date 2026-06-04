@@ -51,6 +51,7 @@ import {
   persistSalesPurchasePeriod,
   loadStoredSalesPurchasePeriod,
   salesPurchaseRangeForPreset,
+  SALES_PURCHASE_PERIOD_PRESETS,
   type SalesPurchasePeriodPreset,
 } from './salesPurchasePeriod'
 import { EXTRA_FINANCIAL_REPORT_IDS, renderExtraFinancialReport } from '@/components/reports/ExtraFinancialReportPanels'
@@ -732,10 +733,12 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
 
 /** GL reports that accept optional pond_id when Site scope is a pond (p:{id}). */
 const REPORTS_GL_POND_SCOPED = new Set<ReportType>([
+  'trial-balance',
   'income-statement',
   'balance-sheet',
   'expense-detail',
   'income-detail',
+  'cash-flow',
 ])
 
 /** Subset of station-scoped reports where amounts come from posted GL lines (not invoice subledgers). */
@@ -1204,7 +1207,7 @@ export default function ReportsPage() {
   /** false until `user` is read in an effect — keeps report list in sync with SSR (no localStorage on server). */
   const [reportRbacHydrated, setReportRbacHydrated] = useState(false)
   const [dateRange, setDateRange] = useState({
-    startDate: localDateISO(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+    startDate: localDateISO(),
     endDate: localDateISO(),
   })
   const [filterCategory, setFilterCategory] = useState<
@@ -1658,6 +1661,8 @@ export default function ReportsPage() {
     opts?: {
       businessSegment?: ReportBusinessSegment
       salesPurchaseDateRange?: { startDate: string; endDate: string }
+      /** Override the period date range for this fetch (non sales/purchase reports). */
+      dateRangeOverride?: { startDate: string; endDate: string }
       /** Override Site scope for this fetch (station id or p:{pondId}). */
       siteScopeKey?: string
     }
@@ -1706,8 +1711,9 @@ export default function ReportsPage() {
         params.start_date = spRangeForFetch.startDate
         params.end_date = spRangeForFetch.endDate
       } else {
-        params.start_date = dateRange.startDate
-        params.end_date = dateRange.endDate
+        const periodRange = opts?.dateRangeOverride ?? dateRange
+        params.start_date = periodRange.startDate
+        params.end_date = periodRange.endDate
       }
     }
     if (
@@ -2033,29 +2039,38 @@ export default function ReportsPage() {
   // Debounced date change handler for all period-based reports
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
-  const handleReportDateChange = useCallback((field: 'startDate' | 'endDate', value: string, reportId?: string) => {
+  const handleReportDateChange = useCallback((field: 'startDate' | 'endDate' | 'range', value: string, reportId?: string) => {
     // All reports now use date range
     const targetReportId = (reportId || selectedReport) as ReportType
-    
-    const newDateRange = {
-      startDate: field === 'startDate' ? value : dateRange.startDate,
-      endDate: field === 'endDate' ? value : dateRange.endDate
-    }
-    
+
+    // `range` carries both bounds as "start|end" (used by the quick-preset buttons).
+    const newDateRange =
+      field === 'range'
+        ? { startDate: value.split('|')[0] ?? '', endDate: value.split('|')[1] ?? '' }
+        : {
+            startDate: field === 'startDate' ? value : dateRange.startDate,
+            endDate: field === 'endDate' ? value : dateRange.endDate,
+          }
+
     // Update state immediately for UI responsiveness
     setDateRange(newDateRange)
-    
+
     // Clear existing timer
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current)
     }
-    
-    // Re-fetch report after a short delay to avoid too many requests
-    debounceTimerRef.current = setTimeout(() => {
+
+    // Presets apply instantly; manual date edits are debounced to avoid request spam.
+    const refetch = () => {
       if (targetReportId && selectedReport === targetReportId) {
-        fetchReport(targetReportId)
+        fetchReport(targetReportId, { dateRangeOverride: newDateRange })
       }
-    }, 500)
+    }
+    if (field === 'range') {
+      refetch()
+    } else {
+      debounceTimerRef.current = setTimeout(refetch, 500)
+    }
   }, [dateRange, fetchReport, selectedReport])
 
   const printReport = () => {
@@ -2915,7 +2930,7 @@ export default function ReportsPage() {
                 onClick={() => setFilterCategory('all')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   filterCategory === 'all'
-                    ? 'bg-white text-blue-600 shadow-sm'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -2925,7 +2940,7 @@ export default function ReportsPage() {
                 onClick={() => setFilterCategory('mix')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   filterCategory === 'mix'
-                    ? 'bg-white text-blue-600 shadow-sm'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -2935,7 +2950,7 @@ export default function ReportsPage() {
                 onClick={() => setFilterCategory('financial')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   filterCategory === 'financial' 
-                    ? 'bg-white text-blue-600 shadow-sm' 
+                    ? 'bg-blue-600 text-white shadow-sm' 
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -2945,7 +2960,7 @@ export default function ReportsPage() {
                 onClick={() => setFilterCategory('operational')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   filterCategory === 'operational' 
-                    ? 'bg-white text-blue-600 shadow-sm' 
+                    ? 'bg-blue-600 text-white shadow-sm' 
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -2955,7 +2970,7 @@ export default function ReportsPage() {
                 onClick={() => setFilterCategory('inventory')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   filterCategory === 'inventory' 
-                    ? 'bg-white text-blue-600 shadow-sm' 
+                    ? 'bg-blue-600 text-white shadow-sm' 
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -2965,7 +2980,7 @@ export default function ReportsPage() {
                 onClick={() => setFilterCategory('analytical')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   filterCategory === 'analytical' 
-                    ? 'bg-white text-blue-600 shadow-sm' 
+                    ? 'bg-blue-600 text-white shadow-sm' 
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -2976,7 +2991,7 @@ export default function ReportsPage() {
                   onClick={() => setFilterCategory('aquaculture')}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     filterCategory === 'aquaculture'
-                      ? 'bg-white text-blue-600 shadow-sm'
+                      ? 'bg-blue-600 text-white shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
@@ -3396,7 +3411,7 @@ function renderPeriodFilter(
   period: { start_date?: string; end_date?: string },
   dateRange?: { startDate: string; endDate: string },
   reportType?: ReportType,
-  onDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: string) => void,
+  onDateChange?: (field: 'startDate' | 'endDate' | 'range', value: string, reportId?: string) => void,
   description?: string
 ) {
   const currentStartDate = period?.start_date
@@ -3405,43 +3420,113 @@ function renderPeriodFilter(
   const currentEndDate = period?.end_date
     ? toDateInputValue(period.end_date)
     : (dateRange?.endDate || '')
-  
-  const defaultDescription = "Data is filtered by this date range."
-  const displayDescription = description || defaultDescription
-  
+
   if (!currentStartDate && !currentEndDate) {
     return null
   }
-  
+
+  return (
+    <PeriodFilter
+      startDate={currentStartDate}
+      endDate={currentEndDate}
+      reportType={reportType}
+      onDateChange={onDateChange}
+      description={description || 'Data is filtered by this date range.'}
+    />
+  )
+}
+
+function PeriodFilter({
+  startDate,
+  endDate,
+  reportType,
+  onDateChange,
+  description,
+}: {
+  startDate: string
+  endDate: string
+  reportType?: ReportType
+  onDateChange?: (field: 'startDate' | 'endDate' | 'range', value: string, reportId?: string) => void
+  description: string
+}) {
+  // Explicit "Custom" selection: the range can still match a preset (e.g. today),
+  // so we track an intentional custom pick separately from range inference.
+  const [explicitCustom, setExplicitCustom] = useState(false)
+
+  // A new report resets the selection back to whatever its range implies.
+  useEffect(() => {
+    setExplicitCustom(false)
+  }, [reportType])
+
+  const activePreset = explicitCustom
+    ? 'custom'
+    : inferSalesPurchasePreset({ startDate, endDate })
+
   return (
     <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center space-x-3 flex-wrap">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <label className="text-sm font-medium text-blue-800 whitespace-nowrap">
             Report Period:
           </label>
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap gap-1.5">
+            {SALES_PURCHASE_PERIOD_PRESETS.map((p) => {
+              const isActive = activePreset === p.id
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    if (p.id === 'custom') {
+                      setExplicitCustom(true)
+                      return
+                    }
+                    setExplicitCustom(false)
+                    const r = salesPurchaseRangeForPreset(p.id)
+                    onDateChange?.('range', `${r.startDate}|${r.endDate}`, reportType)
+                  }}
+                  className={[
+                    'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                    isActive
+                      ? 'bg-blue-700 text-white shadow-sm'
+                      : 'border border-blue-200 bg-white text-blue-800 hover:bg-blue-100',
+                  ].join(' ')}
+                >
+                  {p.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div className="flex items-center justify-between flex-wrap gap-4 border-t border-blue-100 pt-3">
+          <div className="flex items-center space-x-2 flex-wrap">
             <input
               type="date"
-              value={currentStartDate}
-              onChange={(e) => onDateChange?.('startDate', e.target.value, reportType)}
-              max={currentEndDate}
+              value={startDate}
+              onChange={(e) => {
+                setExplicitCustom(true)
+                onDateChange?.('startDate', e.target.value, reportType)
+              }}
+              max={endDate}
               className="px-3 py-1.5 border border-blue-300 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm"
             />
             <span className="text-sm text-blue-600 font-medium">to</span>
             <input
               type="date"
-              value={currentEndDate}
-              onChange={(e) => onDateChange?.('endDate', e.target.value, reportType)}
-              min={currentStartDate}
+              value={endDate}
+              onChange={(e) => {
+                setExplicitCustom(true)
+                onDateChange?.('endDate', e.target.value, reportType)
+              }}
+              min={startDate}
               max={localDateISO()}
               className="px-3 py-1.5 border border-blue-300 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm"
             />
           </div>
+          <p className="text-xs text-blue-600 mt-2 md:mt-0">
+            {description}
+          </p>
         </div>
-        <p className="text-xs text-blue-600 mt-2 md:mt-0">
-          {displayDescription}
-        </p>
       </div>
     </div>
   )
@@ -3612,7 +3697,7 @@ function renderReportTable(
   dateRange?: { startDate: string; endDate: string },
   setDateRange?: (range: { startDate: string; endDate: string }) => void,
   fetchReport?: (reportId: ReportType) => Promise<void>,
-  handleReportDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: string) => void,
+  handleReportDateChange?: (field: 'startDate' | 'endDate' | 'range', value: string, reportId?: string) => void,
   itemScope?: ItemScopeTableProps,
   businessSegmentProps?: BusinessSegmentTableProps,
   salesPurchasePeriodProps?: SalesPurchasePeriodTableProps,
@@ -8547,23 +8632,32 @@ function renderReportTable(
                 <table className="min-w-full">
                   <tbody className="divide-y divide-gray-100">
                     <tr>
-                      <td className="px-2 py-1 text-gray-500">Transfers in (kg)</td>
-                      <td className="px-2 py-1 text-right tabular-nums">{ln.transfer_in_weight_kg}</td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-1 text-gray-500">Transfers out (kg)</td>
-                      <td className="px-2 py-1 text-right tabular-nums">{ln.transfer_out_weight_kg}</td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-1 text-gray-500">Vendor fry in (kg / count)</td>
+                      <td className="px-2 py-1 text-gray-500" title="Opening stock-in before sale/mortality/other-adjustment: vendor bills + transfer-ins + positive (opening) ledger adjustments.">
+                        Stocked (kg / count)
+                      </td>
                       <td className="px-2 py-1 text-right tabular-nums">
-                        {ln.vendor_bill_in_weight_kg} / {ln.vendor_bill_in_fish_count ?? '—'}
+                        {ln.stocked_weight_kg ?? ln.vendor_bill_in_weight_kg} /{' '}
+                        {ln.stocked_fish_count ?? ln.vendor_bill_in_fish_count ?? '—'}
                       </td>
                     </tr>
                     <tr>
                       <td className="px-2 py-1 text-gray-500">Sales (kg / count)</td>
                       <td className="px-2 py-1 text-right tabular-nums">
                         {ln.sale_weight_kg} / {ln.sale_fish_count ?? '—'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-gray-500">Mortality (kg / count)</td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {ln.mortality_weight_kg ?? '0'} / {ln.mortality_fish_count ?? '—'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-gray-500" title="Transfer-outs and negative manual adjustments. Signed: + adds, − removes.">
+                        Other adj. (kg / count)
+                      </td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {ln.other_adjustment_weight_kg ?? '0'} / {ln.other_adjustment_fish_count ?? '—'}
                       </td>
                     </tr>
                     <tr>

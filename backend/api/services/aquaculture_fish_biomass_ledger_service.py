@@ -32,7 +32,8 @@ from api.services.aquaculture_constants import (
 )
 from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
 from api.services.aquaculture_stock_service import (
-    _vendor_bill_fish_matches_species_filter,
+    _bill_line_matches_species_filter,
+    _bill_line_species_code,
 )
 
 
@@ -176,13 +177,22 @@ def compute_fish_biomass_ledger_rows(
             bl_q = bl_q.filter(aquaculture_production_cycle_id=production_cycle_id)
         for ln in bl_q:
             it: Item = ln.item
-            if not it or not _vendor_bill_fish_matches_species_filter(it, species_code):
+            if not it or not _bill_line_matches_species_filter(ln, it, species_code):
                 continue
             bd = ln.bill.bill_date
             if not _date_in_range(bd, date_from, date_to):
                 continue
             wkg = _d(ln.aquaculture_fish_weight_kg)
             fc = int(ln.aquaculture_fish_count or 0)
+            ln_sp_code = _bill_line_species_code(ln, it)
+            ln_sp_label = (
+                fish_species_display_label(
+                    getattr(ln, "aquaculture_fish_species", "") or "",
+                    getattr(ln, "aquaculture_fish_species_other", "") or "",
+                )
+                if (getattr(ln, "aquaculture_fish_species", "") or "")
+                else (it.name or "").strip()
+            )
             rows.append(
                 {
                     "entry_date": bd.isoformat(),
@@ -193,8 +203,8 @@ def compute_fish_biomass_ledger_rows(
                     "pond_id": ln.aquaculture_pond_id,
                     "pond_name": "",
                     "production_cycle_id": ln.aquaculture_production_cycle_id,
-                    "fish_species": "",
-                    "fish_species_label": (it.name or "").strip(),
+                    "fish_species": ln_sp_code,
+                    "fish_species_label": ln_sp_label,
                     "loss_reason": "",
                     "loss_reason_label": None,
                     "fish_count_delta": fc,

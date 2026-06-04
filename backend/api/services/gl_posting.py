@@ -63,7 +63,11 @@ from api.services.aquaculture_cost_per_kg import (
     aquaculture_expense_category_to_cost_bucket,
     item_shop_issue_cost_bucket,
 )
-from api.services.item_catalog import item_tracks_physical_stock
+from api.services.item_catalog import (
+    TYPE_NON_INVENTORY,
+    item_tracks_physical_stock,
+    normalize_item_type,
+)
 from api.services.shift_sales import unrecord_invoice_from_shift
 from api.services.station_stock import add_station_stock, item_uses_station_bins
 from api.utils.customer_display import customer_display_name
@@ -252,6 +256,8 @@ CODE_SHRINK_FUEL = "5200"
 CODE_SHRINK_SHOP = "5210"
 CODE_INV_FUEL = "1200"
 CODE_INV_SHOP = "1220"
+# Aquaculture biological inventory (live fish in ponds) — seeded for aquaculture companies (1581).
+CODE_INV_BIO = "1581"
 # Aquaculture lease / pond rental (see aquaculture_coa_seed 6711)
 CODE_AQ_LEASE_EXPENSE = "6711"
 # Payroll (fuel_station template; optional — posting skips if 6400 missing)
@@ -426,6 +432,11 @@ def _is_fuel_item(item) -> bool:
     return any(tok in name for tok in fuel_name_tokens)
 
 
+def _is_fish_item(item) -> bool:
+    """Fish fry/fingerling SKU — live biomass tracked per pond (pos_category == 'fish')."""
+    return (getattr(item, "pos_category", None) or "").strip().lower() == "fish"
+
+
 def _inventory_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]:
     if item is not None and getattr(item, "inventory_account_id", None):
         acc = ChartOfAccount.objects.filter(
@@ -435,6 +446,13 @@ def _inventory_account_for_item(company_id: int, item) -> Optional[ChartOfAccoun
             nt = normalize_chart_account_type(acc.account_type)
             if nt in ("asset", "bank_account"):
                 return acc
+    # Live fish capitalize into Biological Inventory (1581) so each pond's balance sheet shows the
+    # bio-asset cleanly; relieved on sale/mortality through the same account. Fall back to shop
+    # inventory only when 1581 is not seeded (non-aquaculture companies have no fish items).
+    if _is_fish_item(item):
+        bio = _coa(company_id, CODE_INV_BIO)
+        if bio:
+            return bio
     if _is_fuel_item(item):
         return _ensure_standard_account(company_id, CODE_INV_FUEL)
     return _ensure_standard_account(company_id, CODE_INV_SHOP) or _ensure_standard_account(
@@ -549,10 +567,19 @@ def item_should_relieve_cogs(company_id: int, item: Optional[Item]) -> bool:
     """
     Whether a sold line should post COGS: any physical-stock item, or any item that
     carries a real cost basis even if it is not stock-tracked.
+
+    Gap closure: explicit non-inventory *goods* (item_type="non_inventory") also relieve
+    COGS whenever a unit cost can be determined (incl. the selling-price last resort in
+    ``item_cogs_unit_cost``), so the P&L never shows non-inventory goods sold without a
+    matching Cost of Goods Sold. Services (item_type="service") carry no COGS.
     """
     if not item:
         return False
-    return item_tracks_physical_stock(item) or item_has_cost_basis(company_id, item)
+    if item_tracks_physical_stock(item) or item_has_cost_basis(company_id, item):
+        return True
+    if normalize_item_type(getattr(item, "item_type", None)) == TYPE_NON_INVENTORY:
+        return item_cogs_unit_cost(company_id, item) > 0
+    return False
 
 
 def apply_weighted_average_cost_on_receipt(
@@ -2229,8 +2256,21 @@ def _build_bill_journal_lines(
         je_lines.append((acc, amt, Decimal("0"), desc, line_st))
         aq_costing.append(meta)
 
+    # Pond-as-entity completeness: when every costed debit line of this bill belongs to the SAME
+    # pond, tag the A/P credit to that pond too, so the pond balance sheet carries the matching
+    # liability (otherwise the pond shows the asset/expense but not the payable). Mixed-pond or
+    # partially-tagged bills leave A/P untagged (company-level liability).
+    ap_meta: Optional[dict] = None
+    costed = [m for m in aq_costing if m and m.get("pond_id")]
+    if costed and len(costed) == len(aq_costing):
+        pond_ids = {m.get("pond_id") for m in costed}
+        if len(pond_ids) == 1:
+            only = costed[0]
+            ap_meta = {"pond_id": only.get("pond_id")}
+            if only.get("production_cycle_id"):
+                ap_meta["production_cycle_id"] = only.get("production_cycle_id")
     je_lines.append((ap, Decimal("0"), total, memo_ap))
-    aq_costing.append(None)
+    aq_costing.append(ap_meta)
 
     td = sum(_unpack_gl_line(x)[1] for x in je_lines)
     tc = sum(_unpack_gl_line(x)[2] for x in je_lines)

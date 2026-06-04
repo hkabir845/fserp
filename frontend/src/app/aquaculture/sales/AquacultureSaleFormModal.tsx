@@ -42,6 +42,31 @@ function lineIsNonFish(line: SaleLineDraft, incomeTypes: IncomeTypeOpt[]): boole
   return isNonFishSaleIncome(line.income_type, incomeTypes)
 }
 
+type StockBreakdownRow = {
+  pond_id: number
+  production_cycle_id: number | null
+  fish_species: string
+  implied_net_weight_kg: string
+  implied_net_fish_count: number
+}
+
+type Availability = { weightKg: number; count: number }
+
+function availabilityForLine(line: SaleLineDraft, rows: StockBreakdownRow[]): Availability | null {
+  const species = line.fish_species
+  if (!species || species === 'not_applicable') return null
+  const cycle = line.production_cycle_id.trim()
+  let weightKg = 0
+  let count = 0
+  for (const r of rows) {
+    if (r.fish_species !== species) continue
+    if (cycle !== '' && String(r.production_cycle_id ?? '') !== cycle) continue
+    weightKg += Number(r.implied_net_weight_kg) || 0
+    count += r.implied_net_fish_count || 0
+  }
+  return { weightKg, count }
+}
+
 function computeHeads(weightKg: string, fishPerKgStr: string): string {
   const wn = Number(weightKg)
   const fpkn = Number(fishPerKgStr.trim())
@@ -150,6 +175,7 @@ export function AquacultureSaleFormModal({
   const sym = getCurrencySymbol(currency)
   const isEdit = editing != null
   const [cycles, setCycles] = useState<CycleRow[]>([])
+  const [stockRows, setStockRows] = useState<StockBreakdownRow[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [header, setHeader] = useState<SaleHeaderDraft>({
     pond_id: '',
@@ -217,6 +243,7 @@ export function AquacultureSaleFormModal({
   useEffect(() => {
     if (!open || !header.pond_id) {
       setCycles([])
+      setStockRows([])
       return
     }
     void (async () => {
@@ -227,6 +254,17 @@ export function AquacultureSaleFormModal({
         setCycles(Array.isArray(data) ? data : [])
       } catch {
         setCycles([])
+      }
+    })()
+    void (async () => {
+      try {
+        const { data } = await api.get<{ breakdown_rows?: StockBreakdownRow[] }>(
+          '/aquaculture/fish-stock-position/',
+          { params: { pond_id: header.pond_id, breakdown: 'cycle_species' } }
+        )
+        setStockRows(Array.isArray(data?.breakdown_rows) ? data.breakdown_rows : [])
+      } catch {
+        setStockRows([])
       }
     })()
   }, [open, header.pond_id])
@@ -472,6 +510,14 @@ export function AquacultureSaleFormModal({
                 <tbody>
                   {lines.map((line, idx) => {
                     const nonFish = lineIsNonFish(line, incomeTypes)
+                    const avail = nonFish ? null : availabilityForLine(line, stockRows)
+                    const reqWeight = Number(line.weight_kg)
+                    const reqHeads = Number(line.fish_count)
+                    const overWeight =
+                      avail != null && Number.isFinite(reqWeight) && reqWeight > avail.weightKg + 1e-6
+                    const overHeads =
+                      avail != null && Number.isFinite(reqHeads) && reqHeads > avail.count
+                    const noStock = avail != null && avail.weightKg <= 0 && avail.count <= 0
                     return (
                       <tr key={line.localId} className="border-b border-slate-100 align-top hover:bg-slate-50/80">
                         <td className="px-2 py-2 text-center text-xs font-medium text-slate-400">{idx + 1}</td>
@@ -533,6 +579,24 @@ export function AquacultureSaleFormModal({
                                     updateLine(line.localId, { fish_species_other: e.target.value })
                                   }
                                 />
+                              ) : null}
+                              {avail != null ? (
+                                <p
+                                  className={`text-[11px] font-medium leading-tight ${
+                                    noStock || overWeight || overHeads ? 'text-red-600' : 'text-emerald-700'
+                                  }`}
+                                  title={
+                                    noStock
+                                      ? 'No live biomass on record for this species/cycle — harvest may not be possible'
+                                      : overWeight || overHeads
+                                        ? 'Requested quantity exceeds available biomass'
+                                        : 'Available live biomass for this species/cycle'
+                                  }
+                                >
+                                  {noStock
+                                    ? 'No stock available'
+                                    : `Avail: ${formatNumber(avail.weightKg)} kg • ${formatNumber(avail.count)} pcs`}
+                                </p>
                               ) : null}
                             </div>
                           )}

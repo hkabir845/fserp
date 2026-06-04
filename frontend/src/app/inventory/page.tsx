@@ -1117,7 +1117,7 @@ function InventoryContent() {
               onClick={() => setTabAndUrl('transfers')}
               className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
                 tab === 'transfers'
-                  ? 'bg-card text-foreground shadow-sm ring-1 ring-border/80'
+                  ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-muted-foreground hover:bg-background/80 hover:text-foreground'
               }`}
             >
@@ -1136,7 +1136,7 @@ function InventoryContent() {
               onClick={() => setTabAndUrl('lookup')}
               className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
                 tab === 'lookup'
-                  ? 'bg-card text-foreground shadow-sm ring-1 ring-border/80'
+                  ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-muted-foreground hover:bg-background/80 hover:text-foreground'
               }`}
             >

@@ -1,9 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ChevronDown, Package, Receipt } from 'lucide-react'
 import { formatCoaOptionLabel, type CoaLike } from '@/utils/coaOptionLabel'
 import { formatNumber } from '@/utils/currency'
+
+export type BillLineKind = 'item' | 'expense'
 
 export type BillLineSelectItem = {
   id: number
@@ -71,6 +73,12 @@ type Props = {
   onSelectAccount: (accountId: number) => void
   className?: string
   placeholder?: string
+  /**
+   * Restrict the dropdown to one source so Item lines and Expense lines stay clearly separate
+   * (QuickBooks-style). 'item' shows only catalog products/services, 'expense' only chart
+   * accounts, 'both' (default) merges them for backward compatibility.
+   */
+  mode?: 'item' | 'expense' | 'both'
 }
 
 export function BillLineItemSelect({
@@ -82,6 +90,7 @@ export function BillLineItemSelect({
   onSelectAccount,
   className = '',
   placeholder = 'Select or type to search…',
+  mode = 'both',
 }: Props) {
   const listboxId = useId()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -104,29 +113,33 @@ export function BillLineItemSelect({
 
   const { itemOptions, accountOptions, flatOptions } = useMemo(() => {
     const itemOpts: PickerOption[] = []
-    for (const item of items) {
-      const searchText = buildItemSearchText(item)
-      if (!matchesQuery(searchText, query)) continue
-      itemOpts.push({
-        kind: 'item',
-        id: item.id,
-        label: fishItemOptionLabel(item),
-        searchText,
-      })
-      if (itemOpts.length >= MAX_PER_GROUP) break
+    if (mode !== 'expense') {
+      for (const item of items) {
+        const searchText = buildItemSearchText(item)
+        if (!matchesQuery(searchText, query)) continue
+        itemOpts.push({
+          kind: 'item',
+          id: item.id,
+          label: fishItemOptionLabel(item),
+          searchText,
+        })
+        if (itemOpts.length >= MAX_PER_GROUP) break
+      }
     }
 
     const accountOpts: PickerOption[] = []
-    for (const account of expenseAccounts) {
-      const searchText = buildAccountSearchText(account)
-      if (!matchesQuery(searchText, query)) continue
-      accountOpts.push({
-        kind: 'account',
-        id: account.id,
-        label: formatCoaOptionLabel(account),
-        searchText,
-      })
-      if (accountOpts.length >= MAX_PER_GROUP) break
+    if (mode !== 'item') {
+      for (const account of expenseAccounts) {
+        const searchText = buildAccountSearchText(account)
+        if (!matchesQuery(searchText, query)) continue
+        accountOpts.push({
+          kind: 'account',
+          id: account.id,
+          label: formatCoaOptionLabel(account),
+          searchText,
+        })
+        if (accountOpts.length >= MAX_PER_GROUP) break
+      }
     }
 
     return {
@@ -134,7 +147,7 @@ export function BillLineItemSelect({
       accountOptions: accountOpts,
       flatOptions: [...itemOpts, ...accountOpts],
     }
-  }, [items, expenseAccounts, query])
+  }, [items, expenseAccounts, query, mode])
 
   const trimmedQuery = normalizeSearch(query)
   const itemsTruncated = trimmedQuery === '' && items.length > MAX_PER_GROUP && itemOptions.length >= MAX_PER_GROUP
@@ -309,6 +322,94 @@ export function BillLineItemSelect({
           )}
         </ul>
       )}
+    </div>
+  )
+}
+
+type TypePickerProps = {
+  kind: BillLineKind
+  items: BillLineSelectItem[]
+  expenseAccounts: BillLineSelectAccount[]
+  itemId?: number
+  expenseAccountId?: number
+  onChangeKind: (kind: BillLineKind) => void
+  onSelectItem: (itemId: number) => void
+  onSelectAccount: (accountId: number) => void
+  className?: string
+  /** Optional helper text / hints rendered under the selector. */
+  children?: ReactNode
+}
+
+/**
+ * QuickBooks-style line entry: a segmented "Item vs Expense" toggle on top of a scoped picker.
+ * Item lines pick a catalog product/service; Expense lines pick a chart-of-accounts expense
+ * account (auto-suggested elsewhere, always editable here). One bill can mix both kinds.
+ */
+export function BillLineTypePicker({
+  kind,
+  items,
+  expenseAccounts,
+  itemId,
+  expenseAccountId,
+  onChangeKind,
+  onSelectItem,
+  onSelectAccount,
+  className = '',
+  children,
+}: TypePickerProps) {
+  const isItem = kind === 'item'
+  const baseBtn =
+    'relative z-10 flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 text-xs font-medium transition-colors'
+  return (
+    <div className="min-w-0">
+      <div
+        role="tablist"
+        aria-label="Line type"
+        className="relative mb-1 flex rounded-md border border-gray-200 bg-gray-50 p-0.5"
+      >
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded bg-blue-600 shadow-sm transition-transform duration-200 ease-out ${
+            isItem ? 'translate-x-0' : 'translate-x-full'
+          }`}
+        />
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isItem}
+          onClick={() => !isItem && onChangeKind('item')}
+          className={`${baseBtn} rounded ${
+            isItem ? 'text-white' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Package className="h-3.5 w-3.5" />
+          Item
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!isItem}
+          onClick={() => isItem && onChangeKind('expense')}
+          className={`${baseBtn} rounded ${
+            !isItem ? 'text-white' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Receipt className="h-3.5 w-3.5" />
+          Expense
+        </button>
+      </div>
+      <BillLineItemSelect
+        items={items}
+        expenseAccounts={expenseAccounts}
+        itemId={isItem ? itemId : undefined}
+        expenseAccountId={isItem ? undefined : expenseAccountId}
+        mode={isItem ? 'item' : 'expense'}
+        className={className}
+        placeholder={isItem ? 'Search products / services…' : 'Search expense accounts…'}
+        onSelectItem={onSelectItem}
+        onSelectAccount={onSelectAccount}
+      />
+      {children}
     </div>
   )
 }

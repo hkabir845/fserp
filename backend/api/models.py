@@ -1412,6 +1412,18 @@ class BillLine(models.Model):
         blank=True,
         help_text="For fish-type items: total headcount on this line (optional).",
     )
+    aquaculture_fish_species = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="For fish-type items: species stocked (fry/fingerling), e.g. tilapia, rui, pangas.",
+    )
+    aquaculture_fish_species_other = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="Free-text species name when aquaculture_fish_species is 'other'.",
+    )
     receipt_station = models.ForeignKey(
         "Station",
         null=True,
@@ -1437,6 +1449,23 @@ class BillLine(models.Model):
 
     class Meta:
         db_table = "bill_line"
+
+    def clean(self):
+        """Fish stocking lines must carry headcount and weight together: biomass and bio-asset are
+        derived from both, so a count without a weight (or vice-versa) is rejected. Primary
+        enforcement is the bill API; this guards admin/forms and explicit full_clean callers."""
+        super().clean()
+        count = self.aquaculture_fish_count
+        weight = self.aquaculture_fish_weight_kg
+        has_count = count is not None and count > 0
+        has_weight = weight is not None and weight > 0
+        if has_count != has_weight:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError(
+                "Fish lines must record headcount and weight together (both greater than zero) so "
+                "biomass and bio-asset stay computable."
+            )
 
 
 class Payment(models.Model):
@@ -2876,6 +2905,28 @@ class AquacultureDataBankPondClose(models.Model):
     closed_at = models.DateTimeField(auto_now_add=True)
     closed_by_user_id = models.IntegerField(null=True, blank=True)
     notes = models.TextField(blank=True)
+    # Biological settlement snapshot captured at close: remaining live fish (count + kg) and the
+    # bio-asset (1581) book value tagged to this pond as of period_end. Recorded for audit/closing;
+    # books are not auto-written-off (residual biomass carries to the next cycle unless harvested).
+    settlement_fish_count = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Implied remaining headcount in the pond at close (period_end).",
+    )
+    settlement_weight_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Implied remaining live-fish weight (kg) in the pond at close.",
+    )
+    settlement_bioasset_value = models.DecimalField(
+        max_digits=16,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Bio-asset (1581) book value tagged to this pond as of period_end.",
+    )
     reopened_at = models.DateTimeField(null=True, blank=True)
     reopened_by_user_id = models.IntegerField(null=True, blank=True)
     reopen_reason = models.TextField(blank=True)

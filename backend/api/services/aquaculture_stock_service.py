@@ -64,6 +64,26 @@ def _vendor_bill_fish_matches_species_filter(item: Item, species_filter_code: st
     return False
 
 
+def _bill_line_species_code(line, item: Item) -> str:
+    """Prefer the species stored on the bill line; fall back to item-name inference (legacy lines)."""
+    stored = (getattr(line, "aquaculture_fish_species", "") or "").strip()
+    if stored:
+        code, _ = normalize_fish_species(stored)
+        return code or "tilapia"
+    return _infer_fish_species_code_from_fish_item(item)
+
+
+def _bill_line_matches_species_filter(line, item: Item, species_filter_code: str | None) -> bool:
+    """Match against the stored line species when present, else item-name heuristics (legacy lines)."""
+    if species_filter_code is None:
+        return True
+    stored = (getattr(line, "aquaculture_fish_species", "") or "").strip()
+    if stored:
+        code, _ = normalize_fish_species(stored)
+        return (code or "tilapia") == species_filter_code.strip().lower()
+    return _vendor_bill_fish_matches_species_filter(item, species_filter_code)
+
+
 def compute_fish_stock_position_rows(
     company_id: int,
     *,
@@ -163,14 +183,27 @@ def compute_fish_stock_position_rows(
         ledger_q = ledger_q.filter(entry_date__gt=entries_after_date)
 
     ledger_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
-    for row in ledger_q.only("pond_id", "weight_kg_delta", "fish_count_delta", "fish_species"):
+    mortality_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
+    adj_in_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
+    adj_out_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
+    for row in ledger_q.only("pond_id", "weight_kg_delta", "fish_count_delta", "fish_species", "entry_kind"):
         if species_filter_code is not None:
             sp, _ = normalize_fish_species(getattr(row, "fish_species", None))
             if sp != species_filter_code:
                 continue
         pid = row.pond_id
+        dw = _d(row.weight_kg_delta)
+        dc = int(row.fish_count_delta or 0)
         w, c = ledger_by_pond[pid]
-        ledger_by_pond[pid] = (w + _d(row.weight_kg_delta), c + int(row.fish_count_delta or 0))
+        ledger_by_pond[pid] = (w + dw, c + dc)
+        if (row.entry_kind or "").strip() == "loss":
+            mw, mc = mortality_by_pond[pid]
+            mortality_by_pond[pid] = (mw + dw, mc + dc)
+        else:
+            is_increase = dc > 0 or (dc == 0 and dw > 0)
+            target = adj_in_by_pond if is_increase else adj_out_by_pond
+            aw, ac = target[pid]
+            target[pid] = (aw + dw, ac + dc)
 
     bill_in_w: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     bill_in_c: dict[int, int] = defaultdict(int)
@@ -193,7 +226,7 @@ def compute_fish_stock_position_rows(
         bl_q = bl_q.filter(bill__bill_date__gt=entries_after_date)
     for ln in bl_q:
         it = ln.item
-        if not it or not _vendor_bill_fish_matches_species_filter(it, species_filter_code):
+        if not it or not _bill_line_matches_species_filter(ln, it, species_filter_code):
             continue
         pid = ln.aquaculture_pond_id
         if pid is None:
@@ -229,6 +262,16 @@ def compute_fish_stock_position_rows(
         lw, lc = ledger_by_pond[pid]
         tw += lw
         tc += lc
+        mort_w, mort_c = mortality_by_pond[pid]
+        adj_in_w, adj_in_c = adj_in_by_pond[pid]
+        adj_out_w, adj_out_c = adj_out_by_pond[pid]
+        # Mirror the breakdown view: "Stocked" is the gross opening inflow (vendor bills +
+        # transfer-ins + positive/opening ledger adjustments); "Other adj." is the remaining
+        # reductions (transfer-outs + negative adjustments).
+        stocked_w = bill_in_w[pid] + in_map_w[pid] + adj_in_w
+        stocked_c = bill_in_c[pid] + in_map_c[pid] + adj_in_c
+        other_adj_w = adj_out_w - out_map_w[pid]
+        other_adj_c = adj_out_c - out_map_c[pid]
         smp = latest_sample.get(pid)
         wa_dec = getattr(p, "water_area_decimal", None)
         depth_ft = getattr(p, "pond_depth_ft", None)
@@ -255,6 +298,14 @@ def compute_fish_stock_position_rows(
             "sale_fish_count": sc,
             "ledger_weight_kg_delta": str(lw),
             "ledger_fish_count_delta": lc,
+            "stocked_weight_kg": str(stocked_w),
+            "stocked_fish_count": stocked_c,
+            "mortality_weight_kg": str(mort_w),
+            "mortality_fish_count": mort_c,
+            "adjustment_weight_kg": str(adj_in_w + adj_out_w),
+            "adjustment_fish_count": adj_in_c + adj_out_c,
+            "other_adjustment_weight_kg": str(other_adj_w),
+            "other_adjustment_fish_count": other_adj_c,
             "implied_net_weight_kg": str(tw),
             "implied_net_fish_count": tc,
             "latest_sample_date": smp.sample_date.isoformat() if smp else None,
@@ -294,9 +345,23 @@ def _position_row_from_bucket(
     ledger_w: Decimal,
     ledger_c: int,
     smp: AquacultureBiomassSample | None,
+    mortality_w: Decimal = Decimal("0"),
+    mortality_c: int = 0,
+    adjustment_in_w: Decimal = Decimal("0"),
+    adjustment_in_c: int = 0,
+    adjustment_out_w: Decimal = Decimal("0"),
+    adjustment_out_c: int = 0,
 ) -> dict:
     tw = in_w - out_w + bill_w - sale_w + ledger_w
     tc = in_c - out_c + bill_c - sale_c + ledger_c
+    # "Stocked" is the gross opening inflow that established the position before sale/mortality/
+    # adjustment events: vendor purchase bills + transfer-ins + positive (opening/stock-in) ledger
+    # adjustments. "Other adjustment" then carries the remaining reductions: transfer-outs plus
+    # negative manual adjustments. Together: stocked - sold - mortality + other_adjustment = present.
+    stocked_w = bill_w + in_w + adjustment_in_w
+    stocked_c = bill_c + in_c + adjustment_in_c
+    other_adj_w = adjustment_out_w - out_w
+    other_adj_c = adjustment_out_c - out_c
     wa_dec = getattr(p, "water_area_decimal", None)
     depth_ft = getattr(p, "pond_depth_ft", None)
     vol_cu = compute_water_volume_cu_ft(wa_dec, depth_ft)
@@ -326,6 +391,14 @@ def _position_row_from_bucket(
         "sale_fish_count": sale_c,
         "ledger_weight_kg_delta": str(ledger_w),
         "ledger_fish_count_delta": ledger_c,
+        "stocked_weight_kg": str(stocked_w),
+        "stocked_fish_count": stocked_c,
+        "mortality_weight_kg": str(mortality_w),
+        "mortality_fish_count": mortality_c,
+        "adjustment_weight_kg": str(adjustment_in_w + adjustment_out_w),
+        "adjustment_fish_count": adjustment_in_c + adjustment_out_c,
+        "other_adjustment_weight_kg": str(other_adj_w),
+        "other_adjustment_fish_count": other_adj_c,
         "implied_net_weight_kg": str(tw),
         "implied_net_fish_count": tc,
         "latest_sample_date": smp.sample_date.isoformat() if smp else None,
@@ -381,6 +454,9 @@ def compute_fish_stock_position_breakdown_rows(
     out_map_c: dict[StockBucketKey, int] = defaultdict(int)
     sale_map: dict[StockBucketKey, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
     ledger_map: dict[StockBucketKey, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
+    mortality_map: dict[StockBucketKey, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
+    adjustment_in_map: dict[StockBucketKey, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
+    adjustment_out_map: dict[StockBucketKey, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
     bill_in_w: dict[StockBucketKey, Decimal] = defaultdict(lambda: Decimal("0"))
     bill_in_c: dict[StockBucketKey, int] = defaultdict(int)
     seen: set[StockBucketKey] = set()
@@ -466,7 +542,7 @@ def compute_fish_stock_position_breakdown_rows(
     if entries_after_date is not None:
         ledger_q = ledger_q.filter(entry_date__gt=entries_after_date)
     for row in ledger_q.only(
-        "pond_id", "production_cycle_id", "weight_kg_delta", "fish_count_delta", "fish_species"
+        "pond_id", "production_cycle_id", "weight_kg_delta", "fish_count_delta", "fish_species", "entry_kind"
     ):
         if row.pond_id not in pond_by_id:
             continue
@@ -478,8 +554,21 @@ def compute_fish_stock_position_breakdown_rows(
             continue
         key = _stock_bucket_key(row.pond_id, cyc, sp)
         _track(key)
+        dw = _d(row.weight_kg_delta)
+        dc = int(row.fish_count_delta or 0)
         w, c = ledger_map[key]
-        ledger_map[key] = (w + _d(row.weight_kg_delta), c + int(row.fish_count_delta or 0))
+        ledger_map[key] = (w + dw, c + dc)
+        is_loss = (row.entry_kind or "").strip() == "loss"
+        if is_loss:
+            mw, mc = mortality_map[key]
+            mortality_map[key] = (mw + dw, mc + dc)
+        else:
+            # Positive manual adjustments are opening/stock-in (count STOCKED); negatives are
+            # reductions (count Other adj.). Classify by count, falling back to weight when count is 0.
+            is_increase = dc > 0 or (dc == 0 and dw > 0)
+            target = adjustment_in_map if is_increase else adjustment_out_map
+            aw, ac = target[key]
+            target[key] = (aw + dw, ac + dc)
 
     bl_q = (
         BillLine.objects.filter(
@@ -505,8 +594,8 @@ def compute_fish_stock_position_breakdown_rows(
         it = ln.item
         if not it:
             continue
-        sp = _infer_fish_species_code_from_fish_item(it)
-        if not _vendor_bill_fish_matches_species_filter(it, species_filter_code):
+        sp = _bill_line_species_code(ln, it)
+        if not _bill_line_matches_species_filter(ln, it, species_filter_code):
             continue
         if not _species_ok(sp):
             continue
@@ -557,6 +646,9 @@ def compute_fish_stock_position_breakdown_rows(
         p = pond_by_id[pid]
         sw, sc = sale_map[key]
         lw, lc = ledger_map[key]
+        mort_w, mort_c = mortality_map[key]
+        adj_in_w, adj_in_c = adjustment_in_map[key]
+        adj_out_w, adj_out_c = adjustment_out_map[key]
         smp = latest_sample.get(key)
         cname = cycle_names.get(cyc) if cyc is not None else None
         out_rows.append(
@@ -576,6 +668,12 @@ def compute_fish_stock_position_breakdown_rows(
                 sale_c=sc,
                 ledger_w=lw,
                 ledger_c=lc,
+                mortality_w=mort_w,
+                mortality_c=mort_c,
+                adjustment_in_w=adj_in_w,
+                adjustment_in_c=adj_in_c,
+                adjustment_out_w=adj_out_w,
+                adjustment_out_c=adj_out_c,
                 smp=smp,
             )
         )

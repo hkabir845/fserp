@@ -557,7 +557,7 @@ function ContractsPageContent() {
                   }}
                   className={`p-2 rounded transition-colors ${
                     viewMode === 'card'
-                      ? 'bg-white text-blue-600 shadow-sm'
+                      ? 'bg-blue-600 text-white shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                   title="Card View"
@@ -571,7 +571,7 @@ function ContractsPageContent() {
                   }}
                   className={`p-2 rounded transition-colors ${
                     viewMode === 'list'
-                      ? 'bg-white text-blue-600 shadow-sm'
+                      ? 'bg-blue-600 text-white shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                   title="List View"
@@ -669,7 +669,7 @@ function ContractsPageContent() {
                                 }}
                                 className={`p-1.5 rounded transition-colors ${
                                   viewMode === 'card'
-                                    ? 'bg-white text-blue-600 shadow-sm'
+                                    ? 'bg-blue-600 text-white shadow-sm'
                                     : 'text-gray-600 hover:text-gray-900'
                                 }`}
                                 title="Card View"
@@ -683,7 +683,7 @@ function ContractsPageContent() {
                                 }}
                                 className={`p-1.5 rounded transition-colors ${
                                   viewMode === 'list'
-                                    ? 'bg-white text-blue-600 shadow-sm'
+                                    ? 'bg-blue-600 text-white shadow-sm'
                                     : 'text-gray-600 hover:text-gray-900'
                                 }`}
                                 title="List View"

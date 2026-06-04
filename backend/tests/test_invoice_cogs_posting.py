@@ -463,3 +463,44 @@ def test_income_statement_self_heals_missing_cogs(company_tenant_with_gl):
     assert JournalEntry.objects.filter(
         company_id=cid, entry_number=f"AUTO-INV-{inv.id}-COGS"
     ).exists()
+
+
+def test_non_inventory_goods_relieve_cogs(company_tenant_with_gl):
+    """Gap closure: non-inventory goods (item_type="non_inventory") must show COGS for every
+    sale. With no cost basis, the selling-price last resort still yields a COGS amount, unlike
+    services which carry no COGS."""
+    cid = company_tenant_with_gl.id
+    st = Station.objects.create(company_id=cid, station_name="NonInv Stn", is_active=True)
+    cust = Customer.objects.create(
+        company_id=cid, display_name="NonInv Buyer", customer_number="B-NONINV", is_active=True
+    )
+    item = Item.objects.create(
+        company_id=cid,
+        name="Drop-ship gadget",
+        item_type="non_inventory",
+        unit="piece",
+        cost=Decimal("0"),
+        unit_price=Decimal("40.00"),
+        is_active=True,
+    )
+    inv = Invoice.objects.create(
+        company_id=cid,
+        customer=cust,
+        station=st,
+        invoice_number="INV-NONINV-1",
+        invoice_date=date(2026, 4, 14),
+        status="paid",
+        subtotal=Decimal("80"),
+        total=Decimal("80"),
+        payment_method="cash",
+    )
+    InvoiceLine.objects.create(
+        invoice=inv, item=item, description=item.name,
+        quantity=Decimal("2"), unit_price=Decimal("40"), amount=Decimal("80"),
+    )
+    post_invoice_sale_journal(cid, inv, payment_method="cash")
+    assert post_invoice_cogs_journal(cid, inv) is True
+
+    pl = report_income_statement(cid, date(2026, 4, 1), date(2026, 4, 30))
+    # 2 x 40 selling-price last resort → COGS shows for the non-inventory goods sold.
+    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("80.00")

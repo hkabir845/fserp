@@ -32,6 +32,7 @@ from api.services.party_opening_gl import (
     post_vendor_opening_gl,
 )
 from api.services.tenant_backup import (
+    BACKUP_EXCLUDED_MODELS,
     BACKUP_SCHEMA_VERSION,
     EXPECTED_BACKUP_MODELS,
     RESTORE_CONFIRM_PHRASE,
@@ -206,13 +207,7 @@ def test_all_company_scoped_models_in_expected_backup_list():
     """Every api model with a direct Company FK must be in EXPECTED_BACKUP_MODELS (or documented exclusion)."""
     from django.apps import apps
 
-    excluded = {
-        # Intentionally omitted from tenant JSON backups (single-use secrets).
-        "api.passwordresettoken",
-        # Security/compliance audit log — never exported or restored, so a tenant
-        # cannot rewrite its own backup/restore history by restoring an old bundle.
-        "api.backuprestoreaudit",
-    }
+    excluded = set(BACKUP_EXCLUDED_MODELS)
     company_model = apps.get_model("api", "Company")
     missing: list[str] = []
     for model in apps.get_app_config("api").get_models():
@@ -316,3 +311,55 @@ def test_go_live_opening_journal_fk_backup_restore_roundtrip(company_tenant):
     assert pond.pl_opening_journal_id == pond_je
     assert AquaculturePondPlOpening.objects.filter(company_id=company_tenant.id, pond_id=pond.id).exists()
     assert JournalEntryLine.objects.filter(journal_entry_id=cust_je).exists()
+
+
+def test_journal_line_station_and_pond_backup_restore_roundtrip(company_tenant_with_gl):
+    """Entity tags on manual journal lines survive backup/restore."""
+    from api.models import ChartOfAccount, JournalEntry, JournalEntryLine
+
+    cid = company_tenant_with_gl.id
+    st = Station.objects.create(company_id=cid, station_name="Backup JE Site", is_active=True)
+    pond = AquaculturePond.objects.create(company_id=cid, name="Backup JE Pond", is_active=True)
+    expense = ChartOfAccount.objects.get(company_id=cid, account_code="6900")
+    cash = ChartOfAccount.objects.get(company_id=cid, account_code="1010")
+    je = JournalEntry.objects.create(
+        company_id=cid,
+        entry_number="JE-BK-ENTITY",
+        entry_date=date(2026, 11, 10),
+        station_id=st.id,
+        is_posted=False,
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je,
+        account=expense,
+        station_id=st.id,
+        aquaculture_pond_id=pond.id,
+        debit=Decimal("25"),
+        credit=Decimal("0"),
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je,
+        account=cash,
+        debit=Decimal("0"),
+        credit=Decimal("25"),
+    )
+
+    bundle = json.loads(backup_bundle_json_bytes(cid).decode("utf-8"))
+    restore_bundle(bundle, cid, confirm_replace=RESTORE_CONFIRM_PHRASE)
+
+    line = JournalEntryLine.objects.get(
+        journal_entry__company_id=cid,
+        journal_entry__entry_number="JE-BK-ENTITY",
+        account=expense,
+    )
+    assert line.station_id == st.id
+    assert line.aquaculture_pond_id == pond.id
+
+
+def test_restore_rejects_unknown_model_in_bundle(company_tenant):
+    bundle = json.loads(backup_bundle_json_bytes(company_tenant.id).decode("utf-8"))
+    bundle["records"].append(
+        {"model": "api.notarealmodel", "pk": 1, "fields": {}},
+    )
+    with pytest.raises(ValueError, match="unrecognized model"):
+        restore_bundle(bundle, company_tenant.id, confirm_replace=RESTORE_CONFIRM_PHRASE)

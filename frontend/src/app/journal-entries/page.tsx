@@ -11,6 +11,11 @@ import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_JE_LINE_CLASS } from '@/utils/amountFieldStyles'
+import {
+  accountNeedsEntityTag,
+  lineHasEntityTag,
+  resolveJournalLinePondId,
+} from '@/utils/entityGlScoping'
 
 interface JournalEntryLine {
   id?: number
@@ -25,6 +30,8 @@ interface JournalEntryLine {
   credit_account_code?: string
   station_id?: number | null
   station_name?: string
+  aquaculture_pond_id?: number | null
+  pond_name?: string
 }
 
 interface JournalEntry {
@@ -54,6 +61,7 @@ interface Account {
 }
 
 type StationRow = { id: number; station_name: string; is_active?: boolean }
+type PondRow = { id: number; name: string; is_active?: boolean }
 type LineForm = Omit<
   JournalEntryLine,
   | 'id'
@@ -63,7 +71,9 @@ type LineForm = Omit<
   | 'credit_account_code'
   | 'station_name'
   | 'station_id'
-> & { station_id?: number | '' }
+  | 'pond_name'
+  | 'aquaculture_pond_id'
+> & { station_id?: number | ''; aquaculture_pond_id?: number | '' }
 
 /** Resolve per-line site at save: line override, else entry default, else untagged. */
 function resolveJournalLineStationId(
@@ -75,6 +85,28 @@ function resolveJournalLineStationId(
   }
   if (entryStationId !== '' && entryStationId != null) {
     return Number(entryStationId)
+  }
+  return null
+}
+
+function validateEntityScopingForLines(
+  lines: LineForm[],
+  entryStationId: number | '' | null | undefined,
+  accounts: Account[]
+): string | null {
+  const byId = new Map(accounts.map((a) => [a.id, a]))
+  for (const line of lines) {
+    const accId = line.debit_account_id || line.credit_account_id
+    if (!accId || !(Number(line.amount) > 0)) continue
+    const acc = byId.get(accId)
+    if (!accountNeedsEntityTag(acc)) continue
+    if (!lineHasEntityTag(line, entryStationId)) {
+      const label = acc ? formatCoaOptionLabel(acc) : `account #${accId}`
+      return (
+        `${label} is income, COGS, or expense — assign a site or pond on that line ` +
+        '(or set Default site for the entry). Balance-sheet lines (cash, AP, AR) can stay untagged.'
+      )
+    }
   }
   return null
 }
@@ -94,6 +126,7 @@ export default function JournalEntriesPage() {
   const [viewingEntry, setViewingEntry] = useState<JournalEntry | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [stations, setStations] = useState<StationRow[]>([])
+  const [ponds, setPonds] = useState<PondRow[]>([])
 
   // Filter states
   const [filterColumn, setFilterColumn] = useState<string>('all')
@@ -113,10 +146,30 @@ export default function JournalEntriesPage() {
     description: '',
     station_id: '',
     lines: [
-      { line_number: 1, description: '', debit_account_id: null, credit_account_id: null, amount: 0, station_id: '' },
-      { line_number: 2, description: '', debit_account_id: null, credit_account_id: null, amount: 0, station_id: '' },
+      {
+        line_number: 1,
+        description: '',
+        debit_account_id: null,
+        credit_account_id: null,
+        amount: 0,
+        station_id: '',
+        aquaculture_pond_id: '',
+      },
+      {
+        line_number: 2,
+        description: '',
+        debit_account_id: null,
+        credit_account_id: null,
+        amount: 0,
+        station_id: '',
+        aquaculture_pond_id: '',
+      },
     ],
   })
+
+  const showSiteCol = stations.length > 0
+  const showPondCol = ponds.length > 0
+  const lineTableMetaCols = 4 + (showSiteCol ? 1 : 0) + (showPondCol ? 1 : 0)
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -164,10 +217,11 @@ export default function JournalEntriesPage() {
       const queryString = params.toString()
       const url = `/journal-entries${queryString ? `?${queryString}` : ''}`
 
-      const [entriesRes, accountsRes, stationsRes] = await Promise.allSettled([
+      const [entriesRes, accountsRes, stationsRes, pondsRes] = await Promise.allSettled([
         api.get(url),
         api.get('/chart-of-accounts/'),
         api.get<unknown[]>('/stations/', { timeout: 8000 }),
+        api.get<unknown[]>('/aquaculture/ponds/', { timeout: 8000 }),
       ])
 
       if (entriesRes.status === 'fulfilled') {
@@ -205,6 +259,24 @@ export default function JournalEntriesPage() {
         setStations(parsed)
       } else {
         setStations([])
+      }
+
+      if (pondsRes.status === 'fulfilled') {
+        const raw = pondsRes.value.data
+        const rows = Array.isArray(raw) ? raw : []
+        const parsed: PondRow[] = []
+        for (const r of rows) {
+          const o = r as { id?: number; name?: string; is_active?: boolean }
+          if (typeof o.id !== 'number') continue
+          parsed.push({
+            id: o.id,
+            name: o.name || `Pond #${o.id}`,
+            is_active: o.is_active,
+          })
+        }
+        setPonds(parsed)
+      } else {
+        setPonds([])
       }
     } catch (error: any) {
       console.error('Error fetching data:', error)
@@ -355,6 +427,7 @@ export default function JournalEntriesPage() {
           credit_account_id: null,
           amount: 0,
           station_id: '',
+          aquaculture_pond_id: '',
         },
       ],
     })
@@ -401,6 +474,12 @@ export default function JournalEntriesPage() {
       return
     }
 
+    const scopeErr = validateEntityScopingForLines(linesToSubmit, formData.station_id, accounts)
+    if (scopeErr) {
+      toast.error(scopeErr)
+      return
+    }
+
     try {
       const body: Record<string, unknown> = {
         entry_date: formData.entry_date,
@@ -413,6 +492,7 @@ export default function JournalEntriesPage() {
           credit_account_id: line.credit_account_id || null,
           amount: Number(line.amount),
           station_id: resolveJournalLineStationId(line.station_id, formData.station_id),
+          aquaculture_pond_id: resolveJournalLinePondId(line.aquaculture_pond_id),
         })),
       }
       body.station_id = formData.station_id === '' ? null : Number(formData.station_id)
@@ -445,6 +525,10 @@ export default function JournalEntriesPage() {
           line.station_id != null && line.station_id !== undefined ? Number(line.station_id) : ''
         const matchesEntryDefault =
           entryStationId !== '' && lineStationId !== '' && lineStationId === entryStationId
+        const linePondId =
+          line.aquaculture_pond_id != null && line.aquaculture_pond_id !== undefined
+            ? Number(line.aquaculture_pond_id)
+            : ''
         return {
           line_number: line.line_number,
           description: line.description || '',
@@ -452,6 +536,7 @@ export default function JournalEntriesPage() {
           credit_account_id: line.credit_account_id || null,
           amount: Number(line.amount),
           station_id: matchesEntryDefault ? '' : lineStationId,
+          aquaculture_pond_id: linePondId === '' ? '' : linePondId,
         }
       }),
     })
@@ -476,6 +561,12 @@ export default function JournalEntriesPage() {
       return
     }
 
+    const scopeErr = validateEntityScopingForLines(linesToSubmit, formData.station_id, accounts)
+    if (scopeErr) {
+      toast.error(scopeErr)
+      return
+    }
+
     try {
       const body: Record<string, unknown> = {
         entry_date: formData.entry_date,
@@ -488,6 +579,7 @@ export default function JournalEntriesPage() {
           credit_account_id: line.credit_account_id || null,
           amount: Number(line.amount),
           station_id: resolveJournalLineStationId(line.station_id, formData.station_id),
+          aquaculture_pond_id: resolveJournalLinePondId(line.aquaculture_pond_id),
         })),
       }
       body.station_id = formData.station_id === '' ? null : Number(formData.station_id)
@@ -555,8 +647,24 @@ export default function JournalEntriesPage() {
       description: '',
       station_id: '',
       lines: [
-        { line_number: 1, description: '', debit_account_id: null, credit_account_id: null, amount: 0, station_id: '' },
-        { line_number: 2, description: '', debit_account_id: null, credit_account_id: null, amount: 0, station_id: '' },
+        {
+          line_number: 1,
+          description: '',
+          debit_account_id: null,
+          credit_account_id: null,
+          amount: 0,
+          station_id: '',
+          aquaculture_pond_id: '',
+        },
+        {
+          line_number: 2,
+          description: '',
+          debit_account_id: null,
+          credit_account_id: null,
+          amount: 0,
+          station_id: '',
+          aquaculture_pond_id: '',
+        },
       ],
     })
     setEditingEntry(null)
@@ -954,6 +1062,7 @@ export default function JournalEntriesPage() {
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Pond</th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
                   </tr>
@@ -974,6 +1083,9 @@ export default function JournalEntriesPage() {
                       <td className="px-4 py-2 text-sm text-gray-600">
                         {line.station_name?.trim() ? line.station_name : '—'}
                       </td>
+                      <td className="px-4 py-2 text-sm text-gray-600">
+                        {line.pond_name?.trim() ? line.pond_name : '—'}
+                      </td>
                       <td className="px-4 py-2 text-sm text-right font-medium text-gray-900">
                         {line.debit_account_id ? `${currencySymbol}${formatNumber(Number(line.amount))}` : '-'}
                       </td>
@@ -985,7 +1097,7 @@ export default function JournalEntriesPage() {
                 </tbody>
                 <tfoot className="bg-gray-50">
                   <tr>
-                    <td colSpan={4} className="px-4 py-2 text-sm font-semibold text-gray-900 text-right">Total:</td>
+                    <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-gray-900 text-right">Total:</td>
                     <td className="px-4 py-2 text-sm font-semibold text-gray-900 text-right">
                       {currencySymbol}{formatNumber(Number(viewingEntry.total_debit))}
                     </td>
@@ -1078,7 +1190,8 @@ export default function JournalEntriesPage() {
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
-                      Per-line site overrides the default when set below.
+                      Per-line site or pond overrides the default. Income, COGS, and expense lines need a
+                      site or pond tag for entity P&L reports.
                     </p>
                   </div>
                 ) : null}
@@ -1104,8 +1217,11 @@ export default function JournalEntriesPage() {
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                        {stations.length > 0 ? (
+                        {showSiteCol ? (
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
+                        ) : null}
+                        {showPondCol ? (
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Pond</th>
                         ) : null}
                         <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
                         <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Action</th>
@@ -1176,7 +1292,7 @@ export default function JournalEntriesPage() {
                               placeholder="Optional"
                             />
                           </td>
-                          {stations.length > 0 ? (
+                          {showSiteCol ? (
                             <td className="px-3 py-2 min-w-[8rem]">
                               <select
                                 value={line.station_id === '' || line.station_id === undefined ? '' : String(line.station_id)}
@@ -1193,6 +1309,32 @@ export default function JournalEntriesPage() {
                                 {stations.map((s) => (
                                   <option key={s.id} value={String(s.id)}>
                                     {s.station_name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          ) : null}
+                          {showPondCol ? (
+                            <td className="px-3 py-2 min-w-[8rem]">
+                              <select
+                                value={
+                                  line.aquaculture_pond_id === '' || line.aquaculture_pond_id === undefined
+                                    ? ''
+                                    : String(line.aquaculture_pond_id)
+                                }
+                                onChange={(e) =>
+                                  updateLine(
+                                    index,
+                                    'aquaculture_pond_id',
+                                    e.target.value === '' ? '' : Number(e.target.value)
+                                  )
+                                }
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">— Not set —</option>
+                                {ponds.map((p) => (
+                                  <option key={p.id} value={String(p.id)}>
+                                    {p.name}
                                   </option>
                                 ))}
                               </select>
@@ -1227,7 +1369,7 @@ export default function JournalEntriesPage() {
                     <tfoot className="bg-gray-50">
                       <tr>
                         <td
-                          colSpan={stations.length > 0 ? 5 : 4}
+                          colSpan={lineTableMetaCols}
                           className="px-3 py-2 text-sm font-semibold text-gray-900 text-right"
                         >
                           Total:

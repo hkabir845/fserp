@@ -246,11 +246,18 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
                 </p>
               </>
             ) : (
-              <p className="mt-1">
-                Applies to your signed-in tenant (the company selected in the header switcher when you use multiple
-                contexts). The backup file is tied to your company ID and includes portal organization settings used for
-                login routing.
-              </p>
+              <>
+                <p className="mt-1">
+                  Applies to your signed-in tenant (the company selected in the header switcher when you use multiple
+                  contexts). The backup file is tied to your company ID and includes portal organization settings used for
+                  login routing.
+                </p>
+                <p className="mt-2 text-slate-600">
+                  Schema v2 exports every company table (over 70 model types): GL, stations, inventory, aquaculture, Data
+                  Bank, loans, payroll, and more. Export fails if any table with data is missing from the file. Only
+                  password-reset tokens and this page&apos;s audit log are intentionally omitted (security).
+                </p>
+              </>
             )}
           </div>
         </div>
@@ -262,7 +269,7 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
           <p className="mt-2 text-sm text-gray-600">
             {isSaas
               ? 'JSON snapshot of the tenant. Large exports may take several minutes.'
-              : 'JSON snapshot of this tenant: chart of accounts, stations, customers, journals, loans, aquaculture, Data Bank closes, inventory, and more. Large tenants may take several minutes.'}
+              : 'Full schema v2 JSON snapshot: every company table with data (chart of accounts, stations, journals, loans, aquaculture, Data Bank, inventory, users, roles, etc.). Export is blocked if anything would be skipped. Large tenants may take several minutes.'}
           </p>
           <button
             type="button"

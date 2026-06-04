@@ -1246,14 +1246,55 @@ def report_income_statement(
     return out_is
 
 
-def report_customer_balances(company_id: int, start: date, end: date) -> dict[str, Any]:
+def _invoices_for_subledger_scope(company_id: int, station_id: int | None):
+    qs = Invoice.objects.filter(company_id=company_id)
+    if station_id is not None:
+        qs = qs.filter(station_id=station_id)
+    return qs
+
+
+def _bills_for_subledger_scope(company_id: int, station_id: int | None):
+    qs = Bill.objects.filter(company_id=company_id)
+    if station_id is not None:
+        qs = qs.filter(
+            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
+        ).distinct()
+    return qs
+
+
+def _customer_open_balance_at_station(
+    company_id: int, customer_id: int, station_id: int
+) -> Decimal:
+    total = Decimal("0")
+    for inv in _invoices_for_subledger_scope(company_id, station_id).filter(customer_id=customer_id):
+        total += invoice_open_amount(inv, company_id)
+    return total
+
+
+def _vendor_open_balance_at_station(
+    company_id: int, vendor_id: int, station_id: int
+) -> Decimal:
+    total = Decimal("0")
+    for bill in _bills_for_subledger_scope(company_id, station_id).filter(vendor_id=vendor_id):
+        total += bill_open_amount(bill, company_id)
+    return total
+
+
+def report_customer_balances(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     _ = start
     rows: list[dict[str, Any]] = []
     total_ar = Decimal("0")
     for c in Customer.objects.filter(company_id=company_id, is_active=True).order_by(
         "display_name"
     ):
-        bal = c.current_balance or Decimal("0")
+        if station_id is not None:
+            bal = _customer_open_balance_at_station(company_id, c.id, station_id)
+        else:
+            bal = c.current_balance or Decimal("0")
+        if station_id is not None and bal == 0:
+            continue
         rows.append(
             {
                 "customer_number": c.customer_number or "",
@@ -1267,27 +1308,43 @@ def report_customer_balances(company_id: int, start: date, end: date) -> dict[st
         if bal > 0:
             total_ar += bal
     net_sum = sum((_d(r["balance"]) for r in rows), start=Decimal("0"))
-    return {
+    note = (
+        "Subledger current_balance per customer. total_ar is the sum of positive balances only "
+        "(typical receivable exposure); credit balances are customer prepayments."
+    )
+    if station_id is not None:
+        note += (
+            " Site filter: balance is open invoice exposure at this station only "
+            "(invoice.station_id); company-wide customer opening balances without invoices are excluded."
+        )
+    out: dict[str, Any] = {
         "report_id": "customer-balances",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "customers": rows,
         "total_ar": _f(total_ar),
         "total_net_balance": _f(net_sum),
-        "accounting_note": (
-            "Subledger current_balance per customer. total_ar is the sum of positive balances only "
-            "(typical receivable exposure); credit balances are customer prepayments."
-        ),
+        "accounting_note": note,
     }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
 
 
-def report_vendor_balances(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_vendor_balances(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     _ = start
     rows: list[dict[str, Any]] = []
     total_ap = Decimal("0")
     for v in Vendor.objects.filter(company_id=company_id, is_active=True).order_by(
         "company_name"
     ):
-        bal = v.current_balance or Decimal("0")
+        if station_id is not None:
+            bal = _vendor_open_balance_at_station(company_id, v.id, station_id)
+        else:
+            bal = v.current_balance or Decimal("0")
+        if station_id is not None and bal == 0:
+            continue
         rows.append(
             {
                 "vendor_number": v.vendor_number or "",
@@ -1301,17 +1358,26 @@ def report_vendor_balances(company_id: int, start: date, end: date) -> dict[str,
         if bal > 0:
             total_ap += bal
     net_sum = sum((_d(r["balance"]) for r in rows), start=Decimal("0"))
-    return {
+    note = (
+        "Subledger current_balance per vendor. total_ap is the sum of positive balances owed to vendors; "
+        "negative balances may indicate vendor credits."
+    )
+    if station_id is not None:
+        note += (
+            " Site filter: balance is open bill exposure received at this station "
+            "(bill or line receipt_station_id); company-wide vendor opening balances without bills are excluded."
+        )
+    out: dict[str, Any] = {
         "report_id": "vendor-balances",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "vendors": rows,
         "total_ap": _f(total_ap),
         "total_net_balance": _f(net_sum),
-        "accounting_note": (
-            "Subledger current_balance per vendor. total_ap is the sum of positive balances owed to vendors; "
-            "negative balances may indicate vendor credits."
-        ),
+        "accounting_note": note,
     }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
 
 
 _AGING_BUCKET_KEYS = ("current", "days_1_30", "days_31_60", "days_61_90", "days_over_90")
@@ -1340,7 +1406,9 @@ def _aging_row_from_buckets(buckets: dict[str, Decimal]) -> dict[str, Any]:
     return out
 
 
-def report_ar_aging(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_ar_aging(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     """Open invoice balances by customer, bucketed by days past due as of period end."""
     _ = start
     as_of = end
@@ -1353,7 +1421,8 @@ def report_ar_aging(company_id: int, start: date, end: date) -> dict[str, Any]:
         buckets = _empty_aging_buckets()
         documents: list[dict[str, Any]] = []
         for inv in (
-            Invoice.objects.filter(company_id=company_id, customer_id=c.id)
+            _invoices_for_subledger_scope(company_id, station_id)
+            .filter(customer_id=c.id)
             .exclude(status__in=("draft", "paid", "void"))
             .order_by("due_date", "invoice_date", "id")
         ):
@@ -1388,21 +1457,29 @@ def report_ar_aging(company_id: int, start: date, end: date) -> dict[str, Any]:
         }
         customers_out.append(row)
 
-    return {
+    note = (
+        "Aging uses open invoice balances (total minus payment allocations) as of the end date. "
+        "Days past due = end date minus due date (or invoice date when due date is blank). "
+        "Customer opening balances without invoices are not aged here — see Customer Balances."
+    )
+    if station_id is not None:
+        note += " Site filter: only invoices with this station_id are included."
+    out: dict[str, Any] = {
         "report_id": "ar-aging",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "as_of_date": as_of.isoformat(),
         "customers": customers_out,
         "totals": _aging_row_from_buckets(totals),
-        "accounting_note": (
-            "Aging uses open invoice balances (total minus payment allocations) as of the end date. "
-            "Days past due = end date minus due date (or invoice date when due date is blank). "
-            "Customer opening balances without invoices are not aged here — see Customer Balances."
-        ),
+        "accounting_note": note,
     }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
 
 
-def report_ap_aging(company_id: int, start: date, end: date) -> dict[str, Any]:
+def report_ap_aging(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
     """Open vendor bill balances by vendor, bucketed by days past due as of period end."""
     _ = start
     as_of = end
@@ -1415,7 +1492,8 @@ def report_ap_aging(company_id: int, start: date, end: date) -> dict[str, Any]:
         buckets = _empty_aging_buckets()
         documents: list[dict[str, Any]] = []
         for bill in (
-            Bill.objects.filter(company_id=company_id, vendor_id=v.id)
+            _bills_for_subledger_scope(company_id, station_id)
+            .filter(vendor_id=v.id)
             .exclude(status__in=("draft", "paid", "void"))
             .order_by("due_date", "bill_date", "id")
         ):
@@ -1451,17 +1529,23 @@ def report_ap_aging(company_id: int, start: date, end: date) -> dict[str, Any]:
             }
         )
 
-    return {
+    note = (
+        "Aging uses open bill balances (total minus vendor payment allocations) as of the end date. "
+        "Days past due = end date minus due date (or bill date when due date is blank)."
+    )
+    if station_id is not None:
+        note += " Site filter: only bills received at this station (header or line receipt_station_id)."
+    out: dict[str, Any] = {
         "report_id": "ap-aging",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "as_of_date": as_of.isoformat(),
         "vendors": vendors_out,
         "totals": _aging_row_from_buckets(totals),
-        "accounting_note": (
-            "Aging uses open bill balances (total minus vendor payment allocations) as of the end date. "
-            "Days past due = end date minus due date (or bill date when due date is blank)."
-        ),
+        "accounting_note": note,
     }
+    if station_id is not None:
+        out["filter_station_id"] = station_id
+    return out
 
 
 def report_expense_detail(

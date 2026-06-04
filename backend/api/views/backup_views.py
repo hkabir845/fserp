@@ -8,7 +8,9 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from api.models import BackupRestoreAudit, Company
 from api.services.tenant_backup import (
+    BACKUP_EXCLUDED_MODELS,
     BACKUP_SCHEMA_VERSION,
+    EXPECTED_BACKUP_MODELS,
     RESTORE_CONFIRM_PHRASE,
     backup_bundle_json_bytes,
     build_backup_bundle,
@@ -348,4 +350,15 @@ def admin_company_backup_restore_history(request, company_id: int):
 @require_GET
 def backup_restore_constants(request):
     """GET /api/backup/constants/ — restore confirmation phrase (auth required)."""
-    return JsonResponse({"restore_confirm_phrase": RESTORE_CONFIRM_PHRASE})
+    return JsonResponse(
+        {
+            "restore_confirm_phrase": RESTORE_CONFIRM_PHRASE,
+            "schema_version": BACKUP_SCHEMA_VERSION,
+            "expected_model_count": len(EXPECTED_BACKUP_MODELS),
+            "excluded_models": sorted(BACKUP_EXCLUDED_MODELS),
+            "excluded_reason": (
+                "Password reset tokens are single-use secrets. "
+                "Backup/restore audit rows are never exported so restore cannot rewrite compliance history."
+            ),
+        }
+    )

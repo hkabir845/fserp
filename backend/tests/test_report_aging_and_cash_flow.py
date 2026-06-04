@@ -10,6 +10,7 @@ from api.models import Bill, Customer, Invoice, Station, Vendor
 from api.services.reporting import (
     report_ap_aging,
     report_ar_aging,
+    report_customer_balances,
     report_cash_flow,
     report_entities_balance_sheet_summary,
     report_entities_pl_summary,
@@ -44,6 +45,48 @@ def test_ar_aging_buckets_open_invoice(company_tenant):
     assert row["display_name"] == "Aging Customer"
     assert row["total"] == 1000.0
     assert row["days_1_30"] == 1000.0
+
+
+@pytest.mark.django_db
+def test_ar_aging_station_filter_excludes_other_sites(company_tenant):
+    cid = company_tenant.id
+    st_a = Station.objects.create(company_id=cid, station_name="AR Site A", is_active=True)
+    st_b = Station.objects.create(company_id=cid, station_name="AR Site B", is_active=True)
+    cust = Customer.objects.create(
+        company_id=cid,
+        display_name="Multi-site Customer",
+        customer_number="C-MULTI-1",
+        current_balance=Decimal("0"),
+    )
+    Invoice.objects.create(
+        company_id=cid,
+        customer=cust,
+        station_id=st_a.id,
+        invoice_number="INV-A",
+        invoice_date=date(2026, 1, 1),
+        due_date=date(2026, 1, 15),
+        status="sent",
+        total=Decimal("400.00"),
+    )
+    Invoice.objects.create(
+        company_id=cid,
+        customer=cust,
+        station_id=st_b.id,
+        invoice_number="INV-B",
+        invoice_date=date(2026, 1, 1),
+        due_date=date(2026, 1, 15),
+        status="sent",
+        total=Decimal("600.00"),
+    )
+    scoped = report_ar_aging(cid, date(2026, 1, 1), date(2026, 2, 1), station_id=st_a.id)
+    assert scoped["filter_station_id"] == st_a.id
+    assert len(scoped["customers"]) == 1
+    assert scoped["customers"][0]["total"] == 400.0
+
+    balances = report_customer_balances(
+        cid, date(2026, 1, 1), date(2026, 2, 1), station_id=st_a.id
+    )
+    assert balances["customers"][0]["balance"] == 400.0
 
 
 @pytest.mark.django_db

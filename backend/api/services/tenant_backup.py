@@ -8,8 +8,11 @@ Schema v2 includes full ERP + aquaculture (incl. Data Bank closes) + inventory s
 coverage, plus the tenant group (Organization) for portal settings.
 Schema v1 backups restore but omit aquaculture/stock modules (legacy).
 
-PasswordResetToken rows are intentionally excluded from backups (single-use secrets).
-Tenant delete/restore purges any pending reset tokens for that company's users.
+Intentionally excluded from tenant JSON backups (never exported or restored):
+  - PasswordResetToken (single-use secrets; purged on tenant delete/restore)
+  - BackupRestoreAudit (compliance log — restoring an old bundle must not rewrite history)
+
+Export fails if any other company-scoped table has rows but is missing from the bundle.
 """
 from __future__ import annotations
 
@@ -117,6 +120,14 @@ BACKUP_SCHEMA_VERSION = 2
 SUPPORTED_BACKUP_SCHEMA_VERSIONS = frozenset({1, 2})
 RESTORE_CONFIRM_PHRASE = "DELETE_ALL_TENANT_DATA"
 
+# Never serialized — see module docstring.
+BACKUP_EXCLUDED_MODELS: frozenset[str] = frozenset(
+    {
+        "api.passwordresettoken",
+        "api.backuprestoreaudit",
+    }
+)
+
 # Django app labels present in every serialized record (for coverage checks / tests).
 EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.organization",
@@ -214,6 +225,118 @@ _DEFERRED_JOURNAL_ENTRY_FKS: dict[str, tuple[str, ...]] = {
 }
 
 DeferredJournalFkPatch = tuple[str, int, str, int]
+
+# Models without a direct ``company_id`` column — row-exists checks mirror ``_append_tenant_records``.
+_BACKUP_ROW_EXISTS_OVERRIDES: dict[str, Any] = {}
+
+
+def _init_backup_row_exists_overrides() -> None:
+    if _BACKUP_ROW_EXISTS_OVERRIDES:
+        return
+    _BACKUP_ROW_EXISTS_OVERRIDES.update(
+        {
+            "api.organization": lambda cid: Company.objects.filter(pk=cid).exists(),
+            "api.broadcastread": lambda cid: _tenant_broadcast_reads_qs(cid).exists(),
+            "api.payrollrunpondallocation": lambda cid: PayrollRunPondAllocation.objects.filter(
+                payroll_run__company_id=cid
+            ).exists(),
+            "api.aquaculturelandlordpondshare": lambda cid: AquacultureLandlordPondShare.objects.filter(
+                landlord__company_id=cid
+            ).exists(),
+            "api.journalentryline": lambda cid: JournalEntryLine.objects.filter(
+                journal_entry__company_id=cid
+            ).exists(),
+            "api.invoiceline": lambda cid: InvoiceLine.objects.filter(invoice__company_id=cid).exists(),
+            "api.billline": lambda cid: BillLine.objects.filter(bill__company_id=cid).exists(),
+            "api.paymentinvoiceallocation": lambda cid: PaymentInvoiceAllocation.objects.filter(
+                payment__company_id=cid
+            ).exists(),
+            "api.paymentbillallocation": lambda cid: PaymentBillAllocation.objects.filter(
+                payment__company_id=cid
+            ).exists(),
+            "api.inventorytransferline": lambda cid: InventoryTransferLine.objects.filter(
+                transfer__company_id=cid
+            ).exists(),
+            "api.inventoryadjustmentline": lambda cid: InventoryAdjustmentLine.objects.filter(
+                adjustment__company_id=cid
+            ).exists(),
+            "api.pondwarehousestockreceiptline": lambda cid: PondWarehouseStockReceiptLine.objects.filter(
+                receipt__company_id=cid
+            ).exists(),
+            "api.pondwarehouseinterpondtransferline": lambda cid: PondWarehouseInterPondTransferLine.objects.filter(
+                transfer__company_id=cid
+            ).exists(),
+            "api.aquacultureexpenseinventoryline": lambda cid: AquacultureExpenseInventoryLine.objects.filter(
+                expense__company_id=cid
+            ).exists(),
+            "api.aquacultureexpensepondshare": lambda cid: AquacultureExpensePondShare.objects.filter(
+                expense__company_id=cid
+            ).exists(),
+            "api.aquaculturefishpondtransferline": lambda cid: AquacultureFishPondTransferLine.objects.filter(
+                transfer__company_id=cid
+            ).exists(),
+            "api.aquaculturelandlordledgerentry": lambda cid: AquacultureLandlordLedgerEntry.objects.filter(
+                landlord__company_id=cid
+            ).exists(),
+            "api.employeeledgerentry": lambda cid: EmployeeLedgerEntry.objects.filter(
+                employee__company_id=cid
+            ).exists(),
+            "api.taxrate": lambda cid: TaxRate.objects.filter(tax__company_id=cid).exists(),
+            "api.loandisbursement": lambda cid: LoanDisbursement.objects.filter(loan__company_id=cid).exists(),
+            "api.loanrepayment": lambda cid: LoanRepayment.objects.filter(loan__company_id=cid).exists(),
+            "api.loaninterestaccrual": lambda cid: LoanInterestAccrual.objects.filter(
+                loan__company_id=cid
+            ).exists(),
+        }
+    )
+
+
+def _backup_row_exists(model_label: str, company_id: int) -> bool:
+    """True when the tenant has at least one row that must appear in a full backup."""
+    from django.apps import apps
+    from django.db import models
+
+    _init_backup_row_exists_overrides()
+    override = _BACKUP_ROW_EXISTS_OVERRIDES.get(model_label)
+    if override is not None:
+        return bool(override(company_id))
+
+    model = apps.get_model(*model_label.split(".", 1))
+    for field in model._meta.local_fields:
+        if field.name == "company_id":
+            return model.objects.filter(company_id=company_id).exists()
+        if field.name == "company" and isinstance(field, models.ForeignKey):
+            return model.objects.filter(company_id=company_id).exists()
+    raise ValueError(f"Backup coverage: no row-exists rule for {model_label}")
+
+
+def _find_backup_coverage_gaps(company_id: int, model_labels: Iterable[str]) -> list[str]:
+    """Models with tenant data that were not present in the serialized bundle."""
+    present = set(model_labels)
+    gaps: list[str] = []
+    for label in EXPECTED_BACKUP_MODELS:
+        if label in present:
+            continue
+        if _backup_row_exists(label, company_id):
+            gaps.append(label)
+    return gaps
+
+
+def _validate_restore_record_models(records: list[dict[str, Any]], schema: int) -> None:
+    """Reject bundles that reference unknown models or omit core tenant rows (schema v2+)."""
+    allowed = set(EXPECTED_BACKUP_MODELS) | set(BACKUP_EXCLUDED_MODELS)
+    labels = {r.get("model") for r in records if isinstance(r, dict)}
+    unknown = sorted(l for l in labels if l and l not in allowed)
+    if unknown:
+        raise ValueError(
+            "Backup contains unrecognized model types: "
+            + ", ".join(unknown[:12])
+            + (" …" if len(unknown) > 12 else "")
+        )
+    if schema >= BACKUP_SCHEMA_VERSION:
+        for required in ("api.company", "api.organization"):
+            if required not in labels:
+                raise ValueError(f"Backup is missing required records for {required}.")
 
 
 def _prepare_restore_records(
@@ -629,12 +752,12 @@ def build_backup_bundle(company_id: int) -> dict[str, Any]:
     _append_tenant_records(records, company_id)
 
     model_labels = sorted({r["model"] for r in records})
-    missing = [m for m in EXPECTED_BACKUP_MODELS if m not in model_labels]
-    if missing:
-        logger.warning(
-            "backup company_id=%s missing serialized models (empty tenant?): %s",
-            company_id,
-            ", ".join(missing),
+    gaps = _find_backup_coverage_gaps(company_id, model_labels)
+    if gaps:
+        raise ValueError(
+            "Backup incomplete — tenant data exists but was not exported for: "
+            + ", ".join(gaps)
+            + ". Update tenant_backup._append_tenant_records or EXPECTED_BACKUP_MODELS."
         )
 
     return {
@@ -764,7 +887,9 @@ def restore_bundle(
         )
 
     schema = int(data.get("schema_version") or 0)
-    restore_records, journal_fk_patches = _prepare_restore_records(data["records"])
+    records = data["records"]
+    _validate_restore_record_models(records, schema)
+    restore_records, journal_fk_patches = _prepare_restore_records(records)
     # Safety snapshot of the soon-to-be-replaced data (best-effort, outside the txn).
     safety_snapshot_path = write_pre_restore_safety_snapshot(target_company_id)
     with transaction.atomic():

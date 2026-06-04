@@ -10,6 +10,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Q
 
 from api.models import Company, Invoice, Island, Payment, ShiftSession, Station, Tank
+from api.services.entity_gl_scoping import audit_entity_gl_scoping
 
 
 class Command(BaseCommand):
@@ -83,3 +84,34 @@ class Command(BaseCommand):
                     self.stdout.write(f"      station {sid} {sname!r}: {nt} tank(s), {ni} island(s)")
                 if len(fuel_mismatch) > 15:
                     self.stdout.write(f"      … and {len(fuel_mismatch) - 15} more")
+
+            eg = audit_entity_gl_scoping(c.id)
+            self.stdout.write(
+                f"  entity GL: {eg['active_ponds']} active pond(s); "
+                f"{eg['unscoped_pl_line_count']} posted P&L line(s) with no station/pond tag"
+            )
+            if eg["invoices_posted_missing_station"]:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  NOTE: {eg['invoices_posted_missing_station']} posted invoice(s) lack station_id "
+                        "(run: python manage.py backfill_invoice_station --company-id "
+                        f"{c.id})"
+                    )
+                )
+            if eg["bills_posted_missing_receipt_station"]:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  NOTE: {eg['bills_posted_missing_receipt_station']} posted bill(s) lack receipt_station_id"
+                    )
+                )
+            if eg["unscoped_pl_line_count"]:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "  NOTE: untagged P&L lines appear only in Head office / unassigned on entity reports"
+                    )
+                )
+                for sample in eg["unscoped_pl_samples"]:
+                    self.stdout.write(
+                        f"      JE {sample['entry_number']} ({sample['entry_date']}) "
+                        f"{sample['account_code']} {sample['amount']}"
+                    )

@@ -165,6 +165,16 @@ GL_POND_AWARE_REPORTS = frozenset(
     }
 )
 
+# AR/AP subledger reports: optional station filter on invoices/bills (not GL line tags).
+SUBLEDGER_STATION_AWARE_REPORTS = frozenset(
+    {
+        "customer-balances",
+        "vendor-balances",
+        "ar-aging",
+        "ap-aging",
+    }
+)
+
 
 def _parse_report_pond_id(request, company_id: int):
     """Optional pond filter for GL P&L reports (mutually exclusive with station_id in callers)."""
@@ -365,6 +375,11 @@ def report_by_id(request, report_id: str):
         if st_err:
             return st_err
         payload = handler(cid, start, end, st_id)
+    elif report_id in SUBLEDGER_STATION_AWARE_REPORTS:
+        st_id, st_err = effective_report_station_id(request, cid)
+        if st_err:
+            return st_err
+        payload = handler(cid, start, end, station_id=st_id)
     elif report_id in GL_STATION_AWARE_REPORTS:
         pond_id, pond_err = _parse_report_pond_id(request, cid)
         if pond_err:

@@ -10,7 +10,11 @@ from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from django.utils import timezone as django_timezone
 
-from api.models import JournalEntry, JournalEntryLine, ChartOfAccount
+from api.models import AquaculturePond, JournalEntry, JournalEntryLine, ChartOfAccount
+from api.services.entity_gl_scoping import (
+    manual_je_entity_scoping_warnings,
+    validate_manual_je_entity_scoping_for_post,
+)
 from api.services.gl_posting import _gl_station_id
 from api.services.tenant_reporting_categories import fuel_station_reporting_category_for_journal
 
@@ -30,6 +34,7 @@ def _serialize_datetime(dt):
 def _line_to_json(line):
     acc = getattr(line, "account", None)
     lst = getattr(line, "station", None)
+    pond = getattr(line, "aquaculture_pond", None)
     trc = getattr(line, "tenant_reporting_category", None)
     return {
         "id": line.id,
@@ -47,6 +52,8 @@ def _line_to_json(line):
         "description": line.description or "",
         "station_id": getattr(line, "station_id", None),
         "station_name": (lst.station_name or "") if lst else "",
+        "aquaculture_pond_id": getattr(line, "aquaculture_pond_id", None),
+        "pond_name": (pond.name or "").strip() if pond else "",
         "tenant_reporting_category_id": getattr(line, "tenant_reporting_category_id", None),
         "tenant_reporting_category_label": (
             f"{trc.label} ({trc.code})" if trc else ""
@@ -84,9 +91,35 @@ def _manual_line_station_id(company_id: int, row: dict, entry_station_id: int | 
     return entry_station_id
 
 
+def _coerce_optional_pond_id(company_id: int, raw) -> tuple[int | None, str | None]:
+    if raw in (None, "", 0, "0"):
+        return None, None
+    try:
+        pid = int(raw)
+    except (TypeError, ValueError):
+        return None, "aquaculture_pond_id must be an integer"
+    if pid <= 0:
+        return None, "aquaculture_pond_id must be a positive integer"
+    if not AquaculturePond.objects.filter(pk=pid, company_id=company_id, is_active=True).exists():
+        return None, "Unknown or inactive aquaculture_pond_id for this company"
+    return pid, None
+
+
+def _manual_line_pond_id(company_id: int, row: dict) -> tuple[int | None, str | None]:
+    """Line ``aquaculture_pond_id`` in payload only (no entry-level pond default)."""
+    if "aquaculture_pond_id" in row or "pond_id" in row:
+        raw = row.get("aquaculture_pond_id", row.get("pond_id"))
+        return _coerce_optional_pond_id(company_id, raw)
+    return None, None
+
+
 def _entry_to_json(e):
     st = getattr(e, "station", None)
-    lines = list(e.lines.all().select_related("account", "tenant_reporting_category").order_by("id"))
+    lines = list(
+        e.lines.all()
+        .select_related("account", "station", "aquaculture_pond", "tenant_reporting_category")
+        .order_by("id")
+    )
     total_debit = sum(l.debit or 0 for l in lines)
     total_credit = sum(l.credit or 0 for l in lines)
     line_list = []
@@ -181,7 +214,13 @@ def _journal_entries_list(request):
     qs = (
         JournalEntry.objects.filter(company_id=request.company_id)
         .select_related("station")
-        .prefetch_related("lines", "lines__account", "lines__station", "lines__tenant_reporting_category")
+        .prefetch_related(
+            "lines",
+            "lines__account",
+            "lines__station",
+            "lines__aquaculture_pond",
+            "lines__tenant_reporting_category",
+        )
         .order_by("-entry_date", "-id")
     )
     start = request.GET.get("start_date")
@@ -229,6 +268,9 @@ def journal_entry_create(request):
         if not amount:
             continue
         lsid = _manual_line_station_id(request.company_id, row, st_id)
+        pond_id, pond_err = _manual_line_pond_id(request.company_id, row)
+        if pond_err:
+            return JsonResponse({"detail": pond_err}, status=400)
         trc_id, trc_err = _coerce_optional_tenant_reporting_category_id(
             request.company_id, row.get("tenant_reporting_category_id")
         )
@@ -242,6 +284,7 @@ def journal_entry_create(request):
                 credit=0,
                 description=row.get("description") or "",
                 station_id=lsid,
+                aquaculture_pond_id=pond_id,
                 tenant_reporting_category_id=trc_id,
             )
         if credit_acc and ChartOfAccount.objects.filter(id=credit_acc, company_id=request.company_id).exists():
@@ -252,6 +295,7 @@ def journal_entry_create(request):
                 credit=amount,
                 description=row.get("description") or "",
                 station_id=lsid,
+                aquaculture_pond_id=pond_id,
                 tenant_reporting_category_id=trc_id,
             )
     e.refresh_from_db()
@@ -265,7 +309,13 @@ def journal_entry_detail(request, entry_id: int):
     e = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
         .select_related("station")
-        .prefetch_related("lines", "lines__account", "lines__station", "lines__tenant_reporting_category")
+        .prefetch_related(
+            "lines",
+            "lines__account",
+            "lines__station",
+            "lines__aquaculture_pond",
+            "lines__tenant_reporting_category",
+        )
         .first()
     )
     if not e:
@@ -292,6 +342,9 @@ def journal_entry_detail(request, entry_id: int):
                     credit_acc = row.get("credit_account_id")
                     amount = _decimal(row.get("amount"))
                     lsid = _manual_line_station_id(request.company_id, row, e.station_id)
+                    pond_id, pond_err = _manual_line_pond_id(request.company_id, row)
+                    if pond_err:
+                        return JsonResponse({"detail": pond_err}, status=400)
                     trc_id, trc_err = _coerce_optional_tenant_reporting_category_id(
                         request.company_id, row.get("tenant_reporting_category_id")
                     )
@@ -305,6 +358,7 @@ def journal_entry_detail(request, entry_id: int):
                             credit=0,
                             description=row.get("description") or "",
                             station_id=lsid,
+                            aquaculture_pond_id=pond_id,
                             tenant_reporting_category_id=trc_id,
                         )
                     if amount and credit_acc and ChartOfAccount.objects.filter(id=credit_acc, company_id=request.company_id).exists():
@@ -315,6 +369,7 @@ def journal_entry_detail(request, entry_id: int):
                             credit=amount,
                             description=row.get("description") or "",
                             station_id=lsid,
+                            aquaculture_pond_id=pond_id,
                             tenant_reporting_category_id=trc_id,
                         )
         e.refresh_from_db()
@@ -340,7 +395,13 @@ def journal_entry_post(request, entry_id: int):
         e_out = (
             JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
             .select_related("station")
-            .prefetch_related("lines", "lines__account", "lines__station", "lines__tenant_reporting_category")
+            .prefetch_related(
+            "lines",
+            "lines__account",
+            "lines__station",
+            "lines__aquaculture_pond",
+            "lines__tenant_reporting_category",
+        )
             .first()
         )
         if not e_out:
@@ -354,18 +415,35 @@ def journal_entry_post(request, entry_id: int):
             status=400,
         )
 
+    scope_ok, scope_err = validate_manual_je_entity_scoping_for_post(e)
+    if not scope_ok:
+        return JsonResponse(
+            {"detail": scope_err, "code": "entity_scoping_required"},
+            status=400,
+        )
+
     e.is_posted = True
     e.posted_at = django_timezone.now()
     e.save()
     e_out = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
         .select_related("station")
-        .prefetch_related("lines", "lines__account", "lines__station", "lines__tenant_reporting_category")
+        .prefetch_related(
+            "lines",
+            "lines__account",
+            "lines__station",
+            "lines__aquaculture_pond",
+            "lines__tenant_reporting_category",
+        )
         .first()
     )
     if not e_out:
         return JsonResponse({"detail": "Journal entry not found after post"}, status=500)
-    return JsonResponse(_entry_to_json(e_out))
+    payload = _entry_to_json(e_out)
+    warnings = manual_je_entity_scoping_warnings(e_out)
+    if warnings:
+        payload["entity_scoping_warnings"] = warnings
+    return JsonResponse(payload)
 
 
 @csrf_exempt
@@ -392,7 +470,13 @@ def journal_entry_unpost(request, entry_id: int):
     e = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
         .select_related("station")
-        .prefetch_related("lines", "lines__account", "lines__station", "lines__tenant_reporting_category")
+        .prefetch_related(
+            "lines",
+            "lines__account",
+            "lines__station",
+            "lines__aquaculture_pond",
+            "lines__tenant_reporting_category",
+        )
         .first()
     )
     if not e:

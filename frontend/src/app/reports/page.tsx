@@ -729,6 +729,10 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'item-velocity-analysis',
   'item-purchase-velocity-analysis',
   'aquaculture-shop-station-stock',
+  'customer-balances',
+  'vendor-balances',
+  'ar-aging',
+  'ap-aging',
 ])
 
 /** GL reports that accept optional pond_id when Site scope is a pond (p:{id}). */

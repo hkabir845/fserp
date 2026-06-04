@@ -12,6 +12,7 @@ import { isConnectionError, safeLogError } from '@/utils/connectionError'
 import { formatDate, formatDateOnly } from '@/utils/date'
 import { printLedgerStatement, type LedgerStatementPrintInput } from '@/utils/printDocument'
 import { loadPrintBranding, type PrintBranding } from '@/utils/printBranding'
+import { reportScopeQueryParams } from '@/app/reports/reportSiteScope'
 
 interface AccountUsage {
   journal_lines: number
@@ -799,7 +800,9 @@ export default function ChartOfAccountsPage() {
         typeof window !== 'undefined'
           ? localStorage.getItem('fserp_report_station_id')?.trim()
           : ''
-      if (reportStation) params.append('station_id', reportStation)
+      const scopeParams = reportScopeQueryParams(reportStation || '')
+      if (scopeParams.station_id) params.append('station_id', scopeParams.station_id)
+      if (scopeParams.pond_id) params.append('pond_id', scopeParams.pond_id)
 
       const [response, branding] = await Promise.all([
         api.get(`/chart-of-accounts/${accountId}/statement?${params.toString()}`),

@@ -767,14 +767,14 @@ def _vendor_display_name(vendor) -> str:
 def _outstanding_bill_payload(cid: int, b: Bill, exclude_payment_id: int | None = None):
     """One row for payments/made/outstanding; returns None if nothing due."""
     from api.services.payment_allocation import (
-        total_allocated_to_bill,
+        total_allocated_for_bill,
         total_allocated_to_bill_excluding_payment,
     )
 
     if exclude_payment_id is not None:
         paid = total_allocated_to_bill_excluding_payment(cid, b.id, exclude_payment_id)
     else:
-        paid = total_allocated_to_bill(cid, b.id)
+        paid = total_allocated_for_bill(b, cid)
     total = b.total or Decimal("0")
     bal = max(Decimal("0"), total - paid)
     if bal <= Decimal("0.005"):
@@ -847,7 +847,9 @@ def payments_made_outstanding(request):
         )
 
     # Include draft bills so they appear in the payment UI (allocation remains blocked until Open).
-    qs = Bill.objects.filter(company_id=cid).select_related("vendor")
+    qs = Bill.objects.filter(company_id=cid).select_related("vendor").prefetch_related(
+        "payment_allocations"
+    )
     if vid is not None:
         qs = qs.filter(vendor_id=vid)
     if exclude_pay:

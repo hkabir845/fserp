@@ -389,25 +389,9 @@ api.interceptors.request.use(
       } catch (e) {
         // Ignore localStorage errors
       }
-      // Optional: multi-site report filter (backend ignores if user has home_station in DB)
-      try {
-        const sid = localStorage.getItem('fserp_report_station_id')?.trim()
-        let hasHome = false
-        const ustr = localStorage.getItem('user')
-        if (ustr) {
-          try {
-            const u = JSON.parse(ustr) as { home_station_id?: unknown }
-            if (u?.home_station_id != null && u.home_station_id !== '') hasHome = true
-          } catch {
-            /* ignore */
-          }
-        }
-        if (sid && /^\d+$/.test(sid) && !/^p:\d+$/.test(sid) && !hasHome) {
-          config.headers['X-Selected-Station-Id'] = sid
-        }
-      } catch {
-        /* ignore */
-      }
+      // Site scope for reports uses ?station_id= / ?pond_id= on each request (see Reports page).
+      // Do not send X-Selected-Station-Id globally — it triggers CORS preflight and fails on
+      // nginx/cPanel configs that omit that header from Access-Control-Allow-Headers.
     } catch (e) {
       // Silently handle any errors during interceptor execution
       // Don't log in production to avoid noise

@@ -1263,6 +1263,7 @@ export default function BillsPage() {
   }, [debouncedSearch, pageSize, statusFilter])
 
   const loadBills = useCallback(async () => {
+    setLoading(true)
     try {
       const params = offsetListParams({
         page: listPage,
@@ -1290,6 +1291,8 @@ export default function BillsPage() {
       toast.error('Failed to load bills')
       setBills([])
       setBillsTotal(0)
+    } finally {
+      setLoading(false)
     }
   }, [debouncedSearch, listPage, pageSize, statusFilter, toast])
 
@@ -1492,8 +1495,7 @@ export default function BillsPage() {
   useEffect(() => {
     const token = localStorage.getItem('access_token')
     if (!token) return
-    setLoading(true)
-    void loadCompanyCurrency().finally(() => setLoading(false))
+    void loadCompanyCurrency()
   }, [router, loadCompanyCurrency])
 
   useEffect(() => {

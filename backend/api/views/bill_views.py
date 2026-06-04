@@ -430,23 +430,77 @@ def _bill_line_quantity_from_row(
     return qty
 
 
-def _bill_to_json(b):
-    lines = list(
-        b.lines.all().select_related(
-            "item",
-            "tank",
-            "aquaculture_pond",
-            "aquaculture_production_cycle",
-            "expense_account",
-            "tenant_reporting_category",
-        )
-    )
+def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
+    return {
+        "id": l.id,
+        "line_number": getattr(l, "line_number", 0),
+        "item_id": l.item_id,
+        "description": l.description or "",
+        "quantity": str(l.quantity),
+        "unit_price": str(l.unit_price),
+        "unit_cost": str(l.unit_price),
+        "amount": str(l.amount),
+        "expense_account_id": getattr(l, "expense_account_id", None),
+        "tank_id": getattr(l, "tank_id", None),
+        "tank_name": (
+            l.tank.tank_name
+            if getattr(l, "tank_id", None) and getattr(l, "tank", None)
+            else None
+        ),
+        "tax_amount": str(getattr(l, "tax_amount", 0)),
+        "aquaculture_pond_id": getattr(l, "aquaculture_pond_id", None),
+        "aquaculture_production_cycle_id": getattr(l, "aquaculture_production_cycle_id", None),
+        "aquaculture_cost_bucket": (getattr(l, "aquaculture_cost_bucket", None) or "")[:40],
+        "aquaculture_expense_category": expense_category_from_cost_bucket(
+            getattr(l, "aquaculture_cost_bucket", None)
+        ),
+        "aquaculture_fish_weight_kg": (
+            str(l.aquaculture_fish_weight_kg)
+            if getattr(l, "aquaculture_fish_weight_kg", None) is not None
+            else None
+        ),
+        "aquaculture_fish_count": getattr(l, "aquaculture_fish_count", None),
+        "aquaculture_fish_species": getattr(l, "aquaculture_fish_species", "") or "",
+        "aquaculture_fish_species_other": getattr(l, "aquaculture_fish_species_other", "") or "",
+        "aquaculture_fish_species_label": (
+            fish_species_display_label(
+                getattr(l, "aquaculture_fish_species", "") or "",
+                getattr(l, "aquaculture_fish_species_other", "") or "",
+            )
+            if (getattr(l, "aquaculture_fish_species", "") or "")
+            else ""
+        ),
+        "expense_account_code": (
+            (l.expense_account.account_code or "").strip()
+            if getattr(l, "expense_account_id", None) and getattr(l, "expense_account", None)
+            else ""
+        ),
+        "expense_account_name": (
+            (l.expense_account.account_name or "").strip()
+            if getattr(l, "expense_account_id", None) and getattr(l, "expense_account", None)
+            else ""
+        ),
+        "fuel_station_expense_category": (
+            getattr(l, "fuel_station_expense_category", None) or ""
+        )[:64],
+        "line_receipt_station_id": getattr(l, "receipt_station_id", None),
+        "receipt_station_id": getattr(l, "receipt_station_id", None),
+        "tenant_reporting_category_id": getattr(l, "tenant_reporting_category_id", None),
+        "fuel_station_expense_category_label": _fuel_station_category_label(
+            b.company_id,
+            getattr(l, "fuel_station_expense_category", None) or "",
+            getattr(l, "tenant_reporting_category", None),
+        ),
+    }
+
+
+def _bill_to_json(b, *, include_lines: bool = True):
     total = b.total or Decimal("0")
     tax = b.tax_total or Decimal("0")
     sub = b.subtotal or Decimal("0")
     paid = _amount_paid(b)
     bal = _balance_due(b)
-    return {
+    payload = {
         "id": b.id,
         "bill_number": b.bill_number,
         "bill_date": _serialize_date(b.bill_date),
@@ -470,71 +524,22 @@ def _bill_to_json(b):
         "total_amount": str(total),
         "amount_paid": str(paid),
         "balance_due": str(bal),
-        "lines": [
-            {
-                "id": l.id,
-                "line_number": getattr(l, "line_number", 0),
-                "item_id": l.item_id,
-                "description": l.description or "",
-                "quantity": str(l.quantity),
-                "unit_price": str(l.unit_price),
-                "unit_cost": str(l.unit_price),
-                "amount": str(l.amount),
-                "expense_account_id": getattr(l, "expense_account_id", None),
-                "tank_id": getattr(l, "tank_id", None),
-                "tank_name": (
-                    l.tank.tank_name
-                    if getattr(l, "tank_id", None) and getattr(l, "tank", None)
-                    else None
-                ),
-                "tax_amount": str(getattr(l, "tax_amount", 0)),
-                "aquaculture_pond_id": getattr(l, "aquaculture_pond_id", None),
-                "aquaculture_production_cycle_id": getattr(l, "aquaculture_production_cycle_id", None),
-                "aquaculture_cost_bucket": (getattr(l, "aquaculture_cost_bucket", None) or "")[:40],
-                "aquaculture_expense_category": expense_category_from_cost_bucket(
-                    getattr(l, "aquaculture_cost_bucket", None)
-                ),
-                "aquaculture_fish_weight_kg": (
-                    str(l.aquaculture_fish_weight_kg)
-                    if getattr(l, "aquaculture_fish_weight_kg", None) is not None
-                    else None
-                ),
-                "aquaculture_fish_count": getattr(l, "aquaculture_fish_count", None),
-                "aquaculture_fish_species": getattr(l, "aquaculture_fish_species", "") or "",
-                "aquaculture_fish_species_other": getattr(l, "aquaculture_fish_species_other", "") or "",
-                "aquaculture_fish_species_label": (
-                    fish_species_display_label(
-                        getattr(l, "aquaculture_fish_species", "") or "",
-                        getattr(l, "aquaculture_fish_species_other", "") or "",
-                    )
-                    if (getattr(l, "aquaculture_fish_species", "") or "")
-                    else ""
-                ),
-                "expense_account_code": (
-                    (l.expense_account.account_code or "").strip()
-                    if getattr(l, "expense_account_id", None) and getattr(l, "expense_account", None)
-                    else ""
-                ),
-                "expense_account_name": (
-                    (l.expense_account.account_name or "").strip()
-                    if getattr(l, "expense_account_id", None) and getattr(l, "expense_account", None)
-                    else ""
-                ),
-                "fuel_station_expense_category": (
-                    getattr(l, "fuel_station_expense_category", None) or ""
-                )[:64],
-                "line_receipt_station_id": getattr(l, "receipt_station_id", None),
-                "receipt_station_id": getattr(l, "receipt_station_id", None),
-                "tenant_reporting_category_id": getattr(l, "tenant_reporting_category_id", None),
-                "fuel_station_expense_category_label": _fuel_station_category_label(
-                    b.company_id,
-                    getattr(l, "fuel_station_expense_category", None) or "",
-                    getattr(l, "tenant_reporting_category", None),
-                ),
-            }
-            for l in lines
-        ],
     }
+    if not include_lines:
+        payload["lines"] = []
+        return payload
+    lines = list(
+        b.lines.all().select_related(
+            "item",
+            "tank",
+            "aquaculture_pond",
+            "aquaculture_production_cycle",
+            "expense_account",
+            "tenant_reporting_category",
+        )
+    )
+    payload["lines"] = [_bill_line_to_json(b, l) for l in lines]
+    return payload
 
 
 def _parse_date(val):
@@ -638,14 +643,7 @@ def _bills_list(request):
     qs = (
         Bill.objects.filter(company_id=request.company_id)
         .select_related("vendor", "receipt_station")
-        .prefetch_related(
-            "lines__item",
-            "lines__tank",
-            "lines__aquaculture_pond",
-            "lines__aquaculture_production_cycle",
-            "lines__expense_account",
-            "payment_allocations",
-        )
+        .prefetch_related("payment_allocations")
         .order_by("-bill_date", "-id")
     )
     status_filter = request.GET.get("status_filter", "").strip()
@@ -660,11 +658,16 @@ def _bills_list(request):
             | Q(vendor__company_name__icontains=q)
         )
     if wants_paged_response(request):
-        skip, limit = parse_skip_limit(request, default_limit=25, max_limit=100)
+        skip, limit = parse_skip_limit(request, default_limit=25, max_limit=200)
         total = qs.count()
         page = qs[skip : skip + limit]
-        return json_paged([_bill_to_json(b) for b in page], total=total, skip=skip, limit=limit)
-    return JsonResponse([_bill_to_json(b) for b in qs], safe=False)
+        return json_paged(
+            [_bill_to_json(b, include_lines=False) for b in page],
+            total=total,
+            skip=skip,
+            limit=limit,
+        )
+    return JsonResponse([_bill_to_json(b, include_lines=False) for b in qs], safe=False)
 
 
 @csrf_exempt

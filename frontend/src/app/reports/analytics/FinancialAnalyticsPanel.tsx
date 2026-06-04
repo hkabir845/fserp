@@ -215,7 +215,7 @@ type FinancialAnalyticsPanelProps = {
   embedInReports?: boolean
   /**
    * When embedded, parent passes the site filter value so analytics reloads when the user changes site.
-   * Standalone page can omit (each request still sends `X-Selected-Station-Id` from saved browser preference).
+   * Requests use ?station_id= / ?pond_id= from this key (not a global API header).
    */
   reportStationKey?: string
 }
@@ -357,7 +357,10 @@ export function FinancialAnalyticsPanel({
       }
       if (scope.kind === 'station') params.station_id = scope.id
       if (scope.kind === 'pond') params.pond_id = scope.id
-      const res = await api.get('/reports/financial-analytics/', { params })
+      const res = await api.get('/reports/financial-analytics/', {
+        params,
+        timeout: 120_000,
+      })
       if (res.data?.kpis) {
         setKpi(res.data.kpis as KpiExtended)
       } else {

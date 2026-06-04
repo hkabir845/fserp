@@ -19,6 +19,17 @@ export function parseReportSiteScopeKey(key: string): ReportSiteScope {
   return { kind: 'all' }
 }
 
+/** Query params for API calls that accept Reports → Site scope (station id or p:{pondId}). */
+export function reportScopeQueryParams(scopeKey: string): {
+  station_id?: string
+  pond_id?: string
+} {
+  const scope = parseReportSiteScopeKey(scopeKey)
+  if (scope.kind === 'station') return { station_id: String(scope.id) }
+  if (scope.kind === 'pond') return { pond_id: String(scope.id) }
+  return {}
+}
+
 export function formatPondScopeKey(pondId: number): string {
   return `p:${pondId}`
 }

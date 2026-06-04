@@ -71,6 +71,9 @@ const BUSINESS_LINE_REPORT_IDS = new Set<ReportType>([
   'daily-summary',
 ])
 
+/** Longer timeout for heavy GL / operational reports (especially with site filter). */
+const REPORT_API_TIMEOUT_MS = 120_000
+
 /** Reports rendered entirely in the browser — no `/api/reports/<id>/` call. */
 const CLIENT_ONLY_REPORT_IDS = new Set<ReportType>(['analytics-kpi', 'aquaculture-pl-management'])
 
@@ -1794,7 +1797,10 @@ export default function ReportsPage() {
         return
       }
 
-      const response = await api.get(`/reports/${reportId}`, { params })
+      const response = await api.get(`/reports/${reportId}`, {
+        params,
+        timeout: REPORT_API_TIMEOUT_MS,
+      })
 
       // Ensure we have valid data structure
       if (response.data) {
@@ -1828,7 +1834,10 @@ export default function ReportsPage() {
               const role = (u?.role ?? '').toString().toLowerCase().replace(/[\s-]+/g, '_')
               if (role === 'super_admin' || role === 'superadmin') {
                 localStorage.removeItem('superadmin_selected_company')
-                const retry = await api.get(`/reports/${reportId}`, { params })
+                const retry = await api.get(`/reports/${reportId}`, {
+                  params,
+                  timeout: REPORT_API_TIMEOUT_MS,
+                })
                 if (retry.data) {
                   setReportData(retry.data)
                   setSelectedReport(reportId)
@@ -1855,6 +1864,15 @@ export default function ReportsPage() {
       const backendDetail = String(error?.response?.data?.detail ?? '').trim()
       let errorMessage =
         backendDetail || error?.message || 'Failed to load report. Please try again.'
+      if (
+        !error?.response &&
+        (error?.code === 'ERR_NETWORK' ||
+          error?.code === 'ECONNABORTED' ||
+          String(error?.message || '').includes('Network Error'))
+      ) {
+        errorMessage =
+          'Could not load this report (network or timeout). Try again, use a shorter date range, or select All sites. If it persists, your server may need longer API timeouts.'
+      }
       if (error?.response?.status === 404) {
         errorMessage =
           backendDetail === 'Unknown report' || backendDetail === ''

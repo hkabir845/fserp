@@ -238,6 +238,16 @@ def total_allocated_to_bill(company_id: int, bill_id: int) -> Decimal:
     return s or Decimal("0")
 
 
+def total_allocated_for_bill(bill: Bill, company_id: int) -> Decimal:
+    cache = getattr(bill, "_prefetched_objects_cache", None)
+    if cache and "payment_allocations" in cache:
+        return sum(
+            (a.amount for a in bill.payment_allocations.all()),
+            start=Decimal("0"),
+        )
+    return total_allocated_to_bill(company_id, bill.id)
+
+
 def bill_open_amount(bill: Bill, company_id: int) -> Decimal:
     """Remaining bill total not covered by vendor payment allocations."""
     if bill.status in ("draft", "paid", "void"):

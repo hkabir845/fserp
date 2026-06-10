@@ -1,4 +1,6 @@
 """Unit tests for gap-aware reference code helpers."""
+from datetime import date
+
 import pytest
 
 from api.services import reference_code as rc
@@ -28,6 +30,38 @@ def test_choice_suffixes():
     assert rc.choice_suffixes(set()) == [1]
     assert rc.choice_suffixes({3}) == [1, 2, 4]
     assert rc.choice_suffixes({1, 2, 3}) == [4]
+
+
+def test_next_available_code_fills_gap(db, company_tenant):
+    from api.models import Bill, Vendor
+
+    v = Vendor.objects.create(
+        company_id=company_tenant.id,
+        vendor_number="V-GAP",
+        company_name="Gap Vendor",
+        is_active=True,
+    )
+    Bill.objects.create(
+        company_id=company_tenant.id,
+        vendor=v,
+        bill_number="BILL-1",
+        bill_date=date(2026, 1, 1),
+        status="draft",
+        subtotal=0,
+        tax_total=0,
+        total=0,
+    )
+    Bill.objects.create(
+        company_id=company_tenant.id,
+        vendor=v,
+        bill_number="BILL-3",
+        bill_date=date(2026, 1, 1),
+        status="draft",
+        subtotal=0,
+        tax_total=0,
+        total=0,
+    )
+    assert rc.next_available_code(company_tenant.id, Bill, "bill_number", "BILL") == "BILL-2"
 
 
 def test_suggest_payload_choice_codes(db, company_tenant):

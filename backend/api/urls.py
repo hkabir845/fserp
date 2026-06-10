@@ -44,6 +44,7 @@ from api.views import (
     subscription_portal_views,
     reports_views,
     loan_views,
+    fixed_asset_views,
     backup_views,
     reference_code_views,
     inventory_views,
@@ -73,9 +74,11 @@ def api_docs(request):
             "/api/customers/", "/api/vendors/", "/api/invoices", "/api/bills/",
             "/api/chart-of-accounts/", "/api/chart-of-accounts/templates/fuel-station/",
             "/api/chart-of-accounts/seed-template/", "/api/chart-of-accounts/backfill-descriptions/",
+            "/api/chart-of-accounts/erp-defaults/",
             "/api/bank-accounts/", "/api/journal-entries",
             "/api/fund-transfers/", "/api/payments/received/", "/api/payments/made/",
             "/api/loans/", "/api/loans/counterparties/", "/api/loans/schedule-preview/",
+            "/api/fixed-assets/", "/api/fixed-assets/depreciate-batch/",
             "/api/payroll/",
             "/api/aquaculture/ponds/", "/api/aquaculture/expenses/", "/api/aquaculture/sales/",
             "/api/aquaculture/samples/", "/api/aquaculture/pl-summary/", "/api/aquaculture/expense-categories/",
@@ -330,6 +333,7 @@ urlpatterns = [
     path("vendors/<int:vendor_id>/", vendor_views.vendor_detail),
     # Accounting
     path("chart-of-accounts/templates/fuel-station/", chart_of_accounts_views.chart_of_accounts_template_fuel_station),
+    path("chart-of-accounts/erp-defaults/", chart_of_accounts_views.chart_of_accounts_erp_defaults),
     path("chart-of-accounts/seed-template/", chart_of_accounts_views.chart_of_accounts_seed_template),
     path(
         "chart-of-accounts/backfill-descriptions/",
@@ -375,6 +379,18 @@ urlpatterns = [
         "loans/<int:loan_id>/repayments/<int:repayment_id>/reverse/",
         loan_views.loan_repayment_reverse,
     ),
+    # Fixed assets — register, place-in-service, depreciation
+    path("fixed-assets/depreciate-batch/", fixed_asset_views.fixed_assets_depreciate_batch),
+    path("fixed-assets/", fixed_asset_views.fixed_assets_list_or_create),
+    path("fixed-assets/<int:asset_id>/", fixed_asset_views.fixed_asset_detail),
+    path("fixed-assets/<int:asset_id>/place-in-service/", fixed_asset_views.fixed_asset_place_in_service),
+    path("fixed-assets/<int:asset_id>/depreciate/", fixed_asset_views.fixed_asset_depreciate),
+    path(
+        "fixed-assets/<int:asset_id>/depreciation-runs/<int:run_id>/reverse/",
+        fixed_asset_views.fixed_asset_depreciation_reverse,
+    ),
+    path("fixed-assets/<int:asset_id>/dispose/", fixed_asset_views.fixed_asset_dispose),
+    path("fixed-assets/<int:asset_id>/schedule/", fixed_asset_views.fixed_asset_schedule),
     # Sales: Invoices, Bills, Payments
     path("invoices", invoice_views.invoices_list_or_create),
     path("invoices/", invoice_views.invoices_list_or_create),
@@ -415,6 +431,8 @@ urlpatterns = [
     path("subscription-ledger/invoices/", subscription_ledger_views.subscription_ledger_invoices_list_or_create),
     path("subscription-ledger/invoices/<int:invoice_id>/", subscription_ledger_views.subscription_ledger_invoice_detail),
     # Reports
+    path("reports/drill/invoices/", reports_views.report_drill_invoices),
+    path("reports/drill/bills/", reports_views.report_drill_bills),
     path("reports/<str:report_id>/", reports_views.report_by_id),
     # Master reference code suggestions (gap-aware PREFIX-n)
     path("reference-codes/suggested/", reference_code_views.suggested_reference_codes),

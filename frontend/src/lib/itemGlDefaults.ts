@@ -5,8 +5,15 @@
 
 import {
   coaIdForCode,
+  COA_COGS_FUEL,
+  COA_COGS_LUBE,
+  COA_COGS_SHOP,
   COA_FUEL_REV,
-  COA_OFFICE_EXP,
+  COA_REV_AQ_FINGERLING,
+  COA_REV_AQ_HARVEST,
+  COA_STATION_OPERATING,
+  COA_AQ_FEED,
+  COA_AQ_MEDICINE,
   recommendedCoaLabel,
   templateCoaOptionLabel,
 } from '@/lib/coaDefaults'
@@ -15,14 +22,17 @@ export { coaIdForCode }
 
 export const ITEM_GL_REV_FUEL = COA_FUEL_REV
 export const ITEM_GL_REV_SHOP = '4200'
-export const ITEM_GL_REV_AQ_HARVEST = '4240'
-export const ITEM_GL_REV_AQ_FINGERLING = '4241'
-export const ITEM_GL_COGS_FUEL = '5100'
-export const ITEM_GL_COGS_SHOP = '5120'
+export const ITEM_GL_REV_AQ_HARVEST = COA_REV_AQ_HARVEST
+export const ITEM_GL_REV_AQ_FINGERLING = COA_REV_AQ_FINGERLING
+export const ITEM_GL_COGS_FUEL = COA_COGS_FUEL
+export const ITEM_GL_COGS_LUBE = COA_COGS_LUBE
+export const ITEM_GL_COGS_SHOP = COA_COGS_SHOP
 export const ITEM_GL_INV_FUEL = '1200'
 export const ITEM_GL_INV_SHOP = '1220'
 export const ITEM_GL_INV_AQ_BIO = '1581'
-export const ITEM_GL_EXP_OFFICE = COA_OFFICE_EXP
+export const ITEM_GL_EXP_OFFICE = COA_STATION_OPERATING
+export const ITEM_GL_EXP_AQ_FEED = COA_AQ_FEED
+export const ITEM_GL_EXP_AQ_MEDICINE = COA_AQ_MEDICINE
 
 export interface ItemGlSuggestContext {
   pos_category: string
@@ -88,6 +98,8 @@ export function suggestedRevenueCoaCode(ctx: ItemGlSuggestContext): string {
 
 export function suggestedCogsCoaCode(ctx: ItemGlSuggestContext): string {
   if (isFuelLikeItem(ctx)) return ITEM_GL_COGS_FUEL
+  const hay = `${ctx.category || ''} ${ctx.name || ''} ${ctx.pos_category || ''}`.toLowerCase()
+  if (/lube|lubricant|oil|def|additive/.test(hay)) return ITEM_GL_COGS_LUBE
   return ITEM_GL_COGS_SHOP
 }
 
@@ -97,7 +109,20 @@ export function suggestedInventoryCoaCode(ctx: ItemGlSuggestContext): string {
   return ITEM_GL_INV_SHOP
 }
 
-export function suggestedExpenseCoaCode(_ctx: ItemGlSuggestContext): string {
+function isFeedLike(ctx: ItemGlSuggestContext): boolean {
+  const pc = String(ctx.pos_category || '').toLowerCase()
+  const hay = `${ctx.category || ''} ${ctx.name || ''}`.toLowerCase()
+  return pc === 'feed' || /feed|sack|pellet/.test(hay)
+}
+
+function isMedicineLike(ctx: ItemGlSuggestContext): boolean {
+  const hay = `${ctx.category || ''} ${ctx.name || ''} ${ctx.pos_category || ''}`.toLowerCase()
+  return /medicine|vaccin|veterinar|antibiotic/.test(hay)
+}
+
+export function suggestedExpenseCoaCode(ctx: ItemGlSuggestContext): string {
+  if (isFeedLike(ctx)) return ITEM_GL_EXP_AQ_FEED
+  if (isMedicineLike(ctx)) return ITEM_GL_EXP_AQ_MEDICINE
   return ITEM_GL_EXP_OFFICE
 }
 

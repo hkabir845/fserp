@@ -137,7 +137,25 @@ ERP_AUTOMATION_ACCOUNT_GUIDE: List[Dict[str, str]] = [
     },
     {
         "account_code": "6900",
-        "purpose": "Default expense for vendor bills (full bill amount to expense when bill posts).",
+        "purpose": (
+            "Office & administrative supplies only (postage, small tools). Not the default for station vendor bills — "
+            "use 6920 station operating or a fuel-station cost type on the bill line."
+        ),
+    },
+    {
+        "account_code": "6920",
+        "purpose": (
+            "General station operating expenses: default GL for fuel-station operating rollup and uncategorized "
+            "station vendor bills. Override line GL for payroll (6400), rent (6200), utilities (6100), etc."
+        ),
+    },
+    {
+        "account_code": "6990",
+        "purpose": "Miscellaneous station expenses (fuel-station other rollup on vendor bills).",
+    },
+    {
+        "account_code": "7400",
+        "purpose": "Loss on asset disposal / write-off: default when retiring fixed assets below book value.",
     },
     {
         "account_code": "6910",
@@ -303,6 +321,7 @@ FUEL_STATION_COA_ROWS: List[Dict[str, Any]] = [
     _row("6210", "Lease — Equipment & Vehicles", "expense", "rent_or_lease_of_buildings", "Operating leases for equipment."),
     _row("6300", "Repairs & Maintenance — Dispensing & Site", "expense", "repair_maintenance", "Pump repair, line maintenance, forecourt upkeep."),
     _row("6310", "Repairs & Maintenance — Building & Canopy", "expense", "repair_maintenance", "Structural and cosmetic maintenance."),
+    _row("6320", "Depreciation Expense — Buildings & Equipment", "expense", "other_business_expenses", "Periodic depreciation on fixed assets."),
     _row("6400", "Salaries & Wages", "expense", "payroll_expenses", "Gross wages before employer taxes and benefits."),
     _row("6410", "Payroll Taxes & Employer Contributions", "expense", "payroll_expenses", "Employer payroll taxes and benefits."),
     _row("6420", "Staff Training & Uniforms", "expense", "payroll_expenses", "Training, safety gear, uniforms.", ("full",)),
@@ -314,7 +333,22 @@ FUEL_STATION_COA_ROWS: List[Dict[str, Any]] = [
     _row("6800", "Professional Fees — Legal & Accounting", "expense", "office_general_administrative_expenses", "Auditors, lawyers, consultants."),
     _row("6810", "IT & Software Subscriptions", "expense", "office_general_administrative_expenses", "SaaS, support, cybersecurity.", ("full",)),
     _row("6900", "Office & Administrative", "expense", "office_general_administrative_expenses", "Supplies, postage, small tools not capitalized."),
+    _row(
+        "6920",
+        "General Station Operating Expenses",
+        "expense",
+        "office_general_administrative_expenses",
+        "Default GL for fuel-station operating rollup on vendor bills (payroll, rent, insurance, bank fees, security, marketing, and general overhead). "
+        "Override the bill line for dedicated accounts: 6400 wages, 6200 rent, 6500 insurance, 6600 bank fees, 7000 security, 6700 marketing, 6900 office supplies only.",
+    ),
     _row("6910", "Donation & Social Support", "expense", "other_business_expenses", "Charitable giving and local social support paid from station cash; use POS to debit expense and credit cash in hand (1010) or the active register."),
+    _row(
+        "6990",
+        "Miscellaneous Station Expenses",
+        "expense",
+        "other_business_expenses",
+        "One-off or uncategorized station costs (fuel-station other rollup on vendor bills).",
+    ),
     _row("7000", "Security & Cash Handling Services", "expense", "other_business_expenses", "CIT, alarms, monitoring."),
     _row("7100", "Fuel Freight & Delivery In", "expense", "supplies_materials", "Transport surcharges on wet-stock deliveries."),
     _row("7200", "Licenses, Permits & Memberships", "expense", "other_business_expenses", "Station licenses, industry association dues."),
@@ -467,6 +501,63 @@ def ensure_loan_module_default_accounts(company_id: int) -> Dict[str, Any]:
         "added": added,
         "skipped": len(LOAN_MODULE_DEFAULT_COA_ROWS) - added,
         "codes": [r["account_code"] for r in LOAN_MODULE_DEFAULT_COA_ROWS],
+    }
+
+
+# Same as rows in FUEL_STATION_COA_ROWS — backfill tenants missing reporting rollup defaults.
+FUEL_STATION_REPORTING_ROLLUP_DEFAULT_COA_ROWS: List[Dict[str, Any]] = [
+    _row(
+        "6920",
+        "General Station Operating Expenses",
+        "expense",
+        "office_general_administrative_expenses",
+        "Default GL for fuel-station operating rollup on vendor bills (payroll, rent, insurance, bank fees, security, marketing, and general overhead). "
+        "Override the bill line for dedicated accounts: 6400 wages, 6200 rent, 6500 insurance, 6600 bank fees, 7000 security, 6700 marketing, 6900 office supplies only.",
+    ),
+    _row(
+        "6990",
+        "Miscellaneous Station Expenses",
+        "expense",
+        "other_business_expenses",
+        "One-off or uncategorized station costs (fuel-station other rollup on vendor bills).",
+    ),
+]
+
+
+def ensure_fuel_station_reporting_rollup_accounts(company_id: int) -> Dict[str, Any]:
+    """Idempotently add 6920 and 6990 if missing (reporting-category GL defaults)."""
+    from django.utils import timezone
+
+    from api.models import ChartOfAccount
+
+    today = timezone.now().date()
+    existing_codes = set(
+        ChartOfAccount.objects.filter(company_id=company_id).values_list("account_code", flat=True)
+    )
+    added = 0
+    for item in FUEL_STATION_REPORTING_ROLLUP_DEFAULT_COA_ROWS:
+        code = item["account_code"]
+        if code in existing_codes:
+            continue
+        ChartOfAccount.objects.create(
+            company_id=company_id,
+            account_code=code,
+            account_name=item["account_name"],
+            account_type=item["account_type"],
+            account_sub_type=item.get("account_sub_type") or "",
+            description=item.get("description") or "",
+            parent_id=None,
+            opening_balance=Decimal("0"),
+            opening_balance_date=today,
+            is_active=True,
+        )
+        added += 1
+        existing_codes.add(code)
+    return {
+        "company_id": company_id,
+        "added": added,
+        "skipped": len(FUEL_STATION_REPORTING_ROLLUP_DEFAULT_COA_ROWS) - added,
+        "codes": [r["account_code"] for r in FUEL_STATION_REPORTING_ROLLUP_DEFAULT_COA_ROWS],
     }
 
 

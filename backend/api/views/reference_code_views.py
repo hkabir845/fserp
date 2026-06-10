@@ -4,7 +4,7 @@ from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required
 from api.views.common import require_company_id
-from api.models import Customer, Employee, Item, Nozzle, Tank, Vendor
+from api.models import Customer, Employee, FixedAsset, Item, Loan, LoanCounterparty, Nozzle, PayrollRun, Tank, Vendor
 from api.services.reference_code import suggest_payload
 
 _KINDS = {
@@ -14,6 +14,10 @@ _KINDS = {
     "item": (Item, "item_number", "ITM", None),
     "tank": (Tank, "tank_number", "TNK", None),
     "employee": (Employee, "employee_code", "EMP", 5),
+    "fixed_asset": (FixedAsset, "asset_number", "FA", 5),
+    "loan": (Loan, "loan_no", "LN", 5),
+    "loan_counterparty": (LoanCounterparty, "code", "CP", 5),
+    "payroll": (PayrollRun, "payroll_number", "PR", 5),
 }
 
 

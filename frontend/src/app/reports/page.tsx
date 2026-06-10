@@ -57,6 +57,22 @@ import {
 import { EXTRA_FINANCIAL_REPORT_IDS, renderExtraFinancialReport } from '@/components/reports/ExtraFinancialReportPanels'
 import { ReportStructuredFallback } from '@/components/reports/ReportStructuredFallback'
 import {
+  DrillAmount,
+  glAccountDrill,
+  ReportDrillProvider,
+  type ReportDrillTarget,
+} from '@/components/reports/ReportDrillContext'
+import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
+import {
+  accountsTotalRow,
+  agingBucketTotalRow,
+  contactsTotalRow,
+  documentsTotalRow,
+  itemsTotalRow,
+  loansTotalRow,
+  scopedPlTotalRow,
+} from '@/components/reports/reportDrillAggregate'
+import {
   buildAquacultureGroupsCsv,
   buildExtraFinancialPrintHtml,
   buildExtraFinancialReportCsv,
@@ -2931,6 +2947,13 @@ export default function ReportsPage() {
 
 
   return (
+    <ReportDrillProvider
+      scope={{
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        siteScopeKey: reportStationId,
+      }}
+    >
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto app-scroll-pad">
@@ -3421,6 +3444,7 @@ export default function ReportsPage() {
         </div>
       </div>
     </div>
+    </ReportDrillProvider>
   )
 }
 
@@ -3618,7 +3642,15 @@ function GlLedgerIconLink({
   )
 }
 
-function LoanFacilitiesTable({ rows, tone }: { rows: any[]; tone: 'borrowed' | 'lent' }) {
+function LoanFacilitiesTable({
+  rows,
+  tone,
+  drillScope,
+}: {
+  rows: any[]
+  tone: 'borrowed' | 'lent'
+  drillScope?: import('@/components/reports/reportDrillResolver').ReportDrillScope
+}) {
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200">
       <table className="min-w-full divide-y divide-gray-200">
@@ -3680,13 +3712,13 @@ function LoanFacilitiesTable({ rows, tone }: { rows: any[]; tone: 'borrowed' | '
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 align-top text-sm capitalize text-gray-700">{row.status}</td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                  {formatCurrency(row.outstanding_principal)}
+                  <ReportAmountCell amount={row.outstanding_principal} row={row} field="outstanding_principal" scope={drillScope} />
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm tabular-nums text-gray-800">
-                  {formatCurrency(row.period_disbursements)}
+                  <ReportAmountCell amount={row.period_disbursements} row={row} field="period_disbursements" scope={drillScope} />
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm tabular-nums text-gray-800">
-                  {formatCurrency(row.period_repayments)}
+                  <ReportAmountCell amount={row.period_repayments} row={row} field="period_repayments" scope={drillScope} />
                 </td>
                 <td className="px-1 py-2 text-center align-middle">
                   <GlLedgerIconLink accountId={row.principal_account_id} label="Principal" />
@@ -3756,6 +3788,25 @@ function renderReportTable(
       periodDateRange?.startDate ||
       periodDateRange?.endDate)
 
+  const reportDrillScope = () => {
+    const site = parseReportSiteScopeKey(scopeLabels?.reportStationKey || '')
+    return {
+      startDate: period.start_date || dateRange?.startDate,
+      endDate: period.end_date || dateRange?.endDate,
+      stationId: site.kind === 'station' ? site.id : null,
+      pondId: site.kind === 'pond' ? site.id : null,
+      reportType,
+    }
+  }
+
+  const Money = (amount: unknown, row?: Record<string, unknown>, field?: string) => (
+    <ReportAmountCell amount={Number(amount ?? 0)} row={row} field={field} scope={reportDrillScope()} />
+  )
+
+  const MoneyBdt = (amount: unknown, row?: Record<string, unknown>, field?: string) => (
+    <ReportAmountCell amount={Number(amount ?? 0)} row={row} field={field} scope={reportDrillScope()} currency="BDT" />
+  )
+
   if (EXTRA_FINANCIAL_REPORT_IDS.includes(reportType as (typeof EXTRA_FINANCIAL_REPORT_IDS)[number])) {
     const extra = renderExtraFinancialReport(reportType, data, {
       hasPeriod,
@@ -3771,6 +3822,7 @@ function renderReportTable(
       dateRange,
       handleReportDateChange,
       onViewEntityPl: scopeLabels?.onViewEntityPl,
+      drillScope: reportDrillScope(),
     })
     if (extra) return extra
   }
@@ -3833,7 +3885,7 @@ function renderReportTable(
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-purple-600 uppercase tracking-wide font-medium">Total Amount</p>
-                    <p className="text-xl font-bold text-purple-900 mt-1">{formatCurrency(summary.total_amount)}</p>
+                    <p className="text-xl font-bold text-purple-900 mt-1">{Money(summary.total_amount, summary, "total_amount")}</p>
                   </div>
                   <div className="bg-purple-200 rounded-full p-2 ml-2">
                     <DollarSign className="h-4 w-4 text-purple-600" />
@@ -3845,7 +3897,9 @@ function renderReportTable(
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs text-indigo-600 uppercase tracking-wide font-medium">Average Sale</p>
-                      <p className="text-xl font-bold text-indigo-900 mt-1">{formatCurrency(summary.average_sale)}</p>
+                      <p className="text-xl font-bold text-indigo-900 mt-1">
+                        {Money(summary.average_sale, summary, 'average_sale')}
+                      </p>
                     </div>
                     <div className="bg-indigo-200 rounded-full p-2 ml-2">
                       <BarChart3 className="h-4 w-4 text-indigo-600" />
@@ -3915,7 +3969,7 @@ function renderReportTable(
                           {formatNumber(Number(meter.total_liters || 0))}L
                         </td>
                         <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                          {formatCurrency(meter.total_amount)}
+                          {Money(meter.total_amount, meter, "total_amount")}
                         </td>
                         <td className="px-4 py-3 text-sm">
                           <span className={`px-2 py-1 rounded-full text-xs ${
@@ -3942,7 +3996,11 @@ function renderReportTable(
                         L
                       </td>
                       <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
-                        {formatCurrency(Number(summary.total_amount ?? meters.reduce((s: number, m: any) => s + Number(m.total_amount ?? 0), 0)))}
+                        {Money(
+                          Number(summary.total_amount ?? meters.reduce((s: number, m: any) => s + Number(m.total_amount ?? 0), 0)),
+                          documentsTotalRow(meters, { title: 'Meter sales', entityType: 'customers' }),
+                          'total_amount',
+                        )}
                       </td>
                       <td className="px-4 py-3" />
                     </tr>
@@ -3992,22 +4050,22 @@ function renderReportTable(
         ? [
             { label: 'Transactions', value: sales.total_transactions ?? 0, icon: BarChart3, color: 'blue' },
             { label: 'Fuel liters', value: `${formatNumber(Number(sales.total_liters ?? 0))} L`, icon: Droplet, color: 'blue' },
-            { label: 'Fuel sales', value: formatCurrency(sales.fuel_amount ?? sales.total_amount), icon: DollarSign, color: 'green' },
-            { label: 'Shop / other', value: formatCurrency(sales.shop_amount ?? 0), icon: Package, color: 'purple' },
-            { label: 'Cash sales', value: formatCurrency(sales.cash_sales_total ?? 0), icon: Banknote, color: 'green' },
+            { label: 'Fuel sales', money: true, amount: sales.fuel_amount ?? sales.total_amount, row: sales, field: 'fuel_amount', icon: DollarSign, color: 'green' },
+            { label: 'Shop / other', money: true, amount: sales.shop_amount ?? 0, row: sales, field: 'shop_amount', icon: Package, color: 'purple' },
+            { label: 'Cash sales', money: true, amount: sales.cash_sales_total ?? 0, row: sales, field: 'cash_sales_total', icon: Banknote, color: 'green' },
             { label: 'Shifts', value: shifts.total_shifts ?? 0, icon: Users, color: 'indigo' },
-            { label: 'Cash variance', value: formatCurrency(shifts.total_cash_variance), icon: DollarSign, color: 'yellow' },
+            { label: 'Cash variance', money: true, amount: shifts.total_cash_variance, row: shifts, field: 'total_cash_variance', icon: DollarSign, color: 'yellow' },
             { label: 'Dip readings', value: dips.total_readings ?? 0, icon: Calendar, color: 'pink' },
             { label: 'Dip variance', value: `${formatNumber(Number(dips.net_variance_liters ?? dips.net_variance ?? 0))} L`, icon: TrendingUp, color: 'red' },
           ]
         : [
             { label: 'Transactions', value: sales.total_transactions ?? 0, icon: BarChart3, color: 'teal' },
-            { label: 'Shop sales', value: formatCurrency(sales.shop_amount ?? sales.total_amount), icon: DollarSign, color: 'green' },
-            { label: 'Cash (walk-in)', value: formatCurrency(sales.cash_sales_total ?? 0), icon: Banknote, color: 'green' },
-            { label: 'Credit (pond POS)', value: formatCurrency(sales.credit_sales_total ?? 0), icon: CreditCard, color: 'amber' },
+            { label: 'Shop sales', money: true, amount: sales.shop_amount ?? sales.total_amount, row: sales, field: 'shop_amount', icon: DollarSign, color: 'green' },
+            { label: 'Cash (walk-in)', money: true, amount: sales.cash_sales_total ?? 0, row: sales, field: 'cash_sales_total', icon: Banknote, color: 'green' },
+            { label: 'Credit (pond POS)', money: true, amount: sales.credit_sales_total ?? 0, row: sales, field: 'credit_sales_total', icon: CreditCard, color: 'amber' },
             { label: 'Pond POS invoices', value: aq.pond_pos_invoice_count ?? 0, icon: Fish, color: 'teal' },
-            { label: 'Pond POS total', value: formatCurrency(aq.pond_pos_sales_total ?? 0), icon: Fish, color: 'teal' },
-            { label: 'Average sale', value: formatCurrency(sales.average_sale), icon: TrendingUp, color: 'purple' },
+            { label: 'Pond POS total', money: true, amount: aq.pond_pos_sales_total ?? 0, row: aq, field: 'pond_pos_sales_total', icon: Fish, color: 'teal' },
+            { label: 'Average sale', money: true, amount: sales.average_sale, row: sales, field: 'average_sale', icon: TrendingUp, color: 'purple' },
           ]
 
       return (
@@ -4052,7 +4110,7 @@ function renderReportTable(
                   <div className="flex items-center justify-between">
                     <div>
                       <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
-                      <p className={`text-xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.value}</p>
+                      <p className={`text-xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.money ? Money(item.amount, item.row as Record<string, unknown>, item.field) : item.value}</p>
                     </div>
                     <div className={`${bg} rounded-full p-1.5`}>
                       <Icon className={`h-4 w-4 ${text}`} />
@@ -4083,7 +4141,7 @@ function renderReportTable(
                           <td className="px-3 py-2 font-medium text-gray-900">{name}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{m.line_count ?? 0}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(m.liters ?? 0))} L</td>
-                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(m.amount ?? 0)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{Money(m.amount ?? 0, sales, 'total_amount')}</td>
                         </tr>
                       )
                     )}
@@ -4113,7 +4171,7 @@ function renderReportTable(
                           <td className="px-3 py-2 font-medium text-gray-900">{cat}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{m.line_count ?? 0}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(m.quantity ?? 0))}</td>
-                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(m.amount ?? 0)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{Money(m.amount ?? 0, sales, 'total_amount')}</td>
                         </tr>
                       )
                     )}
@@ -4181,7 +4239,7 @@ function renderReportTable(
         {businessLines.length > 1 ? (
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
             <span className="font-semibold text-slate-900">Company total:</span>{' '}
-            {formatCurrency(data.sales?.total_amount ?? 0)} across {data.sales?.total_transactions ?? 0} transactions
+            {Money(data.sales?.total_amount ?? 0, data.sales, 'total_amount')} across {data.sales?.total_transactions ?? 0} transactions
             {Number(data.sales?.total_liters ?? 0) > 0 ? (
               <span> · {formatNumber(Number(data.sales.total_liters))} L fuel</span>
             ) : null}
@@ -4220,6 +4278,7 @@ function renderReportTable(
     const period = data?.period || {}
     const totalDebit = data?.total_debit || 0
     const totalCredit = data?.total_credit || 0
+    const tbDrill = accountsTotalRow(accounts, 'Trial balance')
 
     return (
       <div className="space-y-6">
@@ -4247,7 +4306,7 @@ function renderReportTable(
               <div>
                 <p className="text-xs text-blue-600 uppercase tracking-wide font-medium">Total Debit</p>
                 <p className="text-2xl font-bold text-blue-900 mt-1">
-                  {formatCurrency(totalDebit)}
+                  {Money(totalDebit, tbDrill, 'total_debit')}
             </p>
           </div>
               <div className="bg-blue-200 rounded-full p-2 ml-2">
@@ -4260,7 +4319,7 @@ function renderReportTable(
               <div>
                 <p className="text-xs text-green-600 uppercase tracking-wide font-medium">Total Credit</p>
                 <p className="text-2xl font-bold text-green-900 mt-1">
-                  {formatCurrency(totalCredit)}
+                  {Money(totalCredit, tbDrill, 'total_credit')}
                 </p>
               </div>
               <div className="bg-green-200 rounded-full p-2 ml-2">
@@ -4285,22 +4344,25 @@ function renderReportTable(
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {accounts.length > 0 ? (
-                accounts.map((account: any, idx: number) => (
+                accounts.map((account: any, idx: number) => {
+                  const glDrill = glAccountDrill(account, reportDrillScope())
+                  return (
                   <tr key={idx}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{account.account_code}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{account.account_name}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{account.account_type}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                      {formatCurrency(account.debit)}
+                      <DrillAmount amount={account.debit} drill={glDrill} disabled={!account.debit} />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                      {formatCurrency(account.credit)}
+                      <DrillAmount amount={account.credit} drill={glDrill} disabled={!account.credit} />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
-                      {formatCurrency(account.balance)}
+                      <DrillAmount amount={account.balance} drill={glDrill} />
                     </td>
                   </tr>
-                ))
+                  )
+                })
               ) : (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center">
@@ -4320,13 +4382,13 @@ function renderReportTable(
                     Totals:
                   </td>
                   <td className="px-6 py-3 text-sm font-medium text-gray-900 text-right">
-                    {formatCurrency(totalDebit)}
+                    {Money(totalDebit, tbDrill, 'total_debit')}
                   </td>
                   <td className="px-6 py-3 text-sm font-medium text-gray-900 text-right">
-                    {formatCurrency(totalCredit)}
+                    {Money(totalCredit, tbDrill, 'total_credit')}
                   </td>
                   <td className="px-6 py-3 text-sm font-medium text-gray-900 text-right">
-                    {formatCurrency(totalDebit - totalCredit)}
+                    {Money(totalDebit - totalCredit, tbDrill, 'balance')}
                   </td>
                 </tr>
               </tfoot>
@@ -4345,6 +4407,10 @@ function renderReportTable(
       { title: 'Equity', payload: data.equity },
     ]
     const period = data?.period || {}
+    const assetAccounts = data.assets?.accounts ?? []
+    const liabilityAccounts = data.liabilities?.accounts ?? []
+    const equityAccounts = data.equity?.accounts ?? []
+    const leAccounts = [...liabilityAccounts, ...equityAccounts]
 
     return (
       <div className="space-y-6">
@@ -4363,12 +4429,14 @@ function renderReportTable(
               <div className="p-4 border-b bg-gray-50">
                 <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
                 <p className="text-sm font-medium text-gray-700 mt-1">
-                  Total: {formatCurrency(payload?.total)}
+                  Total: {Money(payload?.total, accountsTotalRow(payload?.accounts ?? [], title), 'total')}
                 </p>
               </div>
               <div className="divide-y divide-gray-200">
                 {(payload?.accounts ?? []).length > 0 ? (
-                  (payload?.accounts ?? []).map((account: any, accIdx: number) => (
+                  (payload?.accounts ?? []).map((account: any, accIdx: number) => {
+                    const glDrill = glAccountDrill(account, reportDrillScope())
+                    return (
                     <div
                       key={`${title}-${accIdx}-${account.account_code ?? 'acct'}`}
                       className={`px-4 py-3 flex justify-between hover:bg-gray-50 transition-colors ${
@@ -4384,10 +4452,11 @@ function renderReportTable(
                         <p className="text-xs text-gray-500">{account.account_code}</p>
                       </div>
                       <p className="text-sm font-semibold text-gray-900 ml-4 whitespace-nowrap">
-                        {formatCurrency(account.balance)}
+                        <DrillAmount amount={account.balance} drill={glDrill} />
                       </p>
                     </div>
-                  ))
+                    )
+                  })
                 ) : (
                   <div className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center">
@@ -4400,7 +4469,9 @@ function renderReportTable(
                 {(payload?.accounts ?? []).length > 0 && (
                   <div className="flex justify-between items-center px-4 py-3 bg-slate-50 border-t border-slate-200">
                     <span className="text-sm font-semibold text-slate-800">Sub-total — {title}</span>
-                    <span className="text-sm font-bold tabular-nums text-slate-900">{formatCurrency(payload?.total)}</span>
+                    <span className="text-sm font-bold tabular-nums text-slate-900">
+                      {Money(payload?.total, accountsTotalRow(payload?.accounts ?? [], title), 'total')}
+                    </span>
                   </div>
                 )}
               </div>
@@ -4425,7 +4496,7 @@ function renderReportTable(
                 <p className="font-semibold">
                   {gain ? 'Net profit' : 'Net loss'} (cumulative through period end, on balance sheet)
                 </p>
-                <p className="mt-1 tabular-nums text-lg font-bold">{formatCurrency(ni)}</p>
+                <p className="mt-1 tabular-nums text-lg font-bold">{Money(ni, accountsTotalRow(leAccounts, 'Cumulative net income'), 'total')}</p>
                 <p className={`mt-1 text-xs ${gain ? 'text-emerald-800/90' : 'text-rose-800/90'}`}>
                   Included under Equity as &quot;Net income (cumulative P&L — unclosed to equity)&quot; so Assets
                   match Liabilities + Equity. After closing P&amp;L to Retained Earnings, this rollup is usually
@@ -4472,13 +4543,17 @@ function renderReportTable(
           <div className="flex justify-between items-center">
             <p className="text-lg font-semibold text-gray-900">Total Assets</p>
             <p className="text-lg font-bold text-gray-900">
-              {formatCurrency(data.assets?.total)}
+              {Money(data.assets?.total, accountsTotalRow(assetAccounts, 'Total assets'), 'total')}
             </p>
           </div>
           <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-200">
             <p className="text-lg font-semibold text-gray-900">Total Liabilities & Equity</p>
             <p className="text-lg font-bold text-gray-900">
-              {formatCurrency(data.total_liabilities_and_equity)}
+              {Money(
+                data.total_liabilities_and_equity,
+                accountsTotalRow(leAccounts, 'Total liabilities & equity'),
+                'total',
+              )}
             </p>
           </div>
         </div>
@@ -4501,6 +4576,14 @@ function renderReportTable(
     const incomeTotal = Number(data.income?.total ?? 0)
     const cogsTotal = Number(data.cost_of_goods_sold?.total ?? 0)
     const expenseTotal = Number(data.expenses?.total ?? 0)
+    const incomeAccounts = data.income?.accounts ?? []
+    const cogsAccounts = data.cost_of_goods_sold?.accounts ?? []
+    const expenseAccounts = data.expenses?.accounts ?? []
+    const allPlAccounts = [...incomeAccounts, ...cogsAccounts, ...expenseAccounts]
+    const plIncomeDrill = accountsTotalRow(incomeAccounts, 'Income')
+    const plCogsDrill = accountsTotalRow(cogsAccounts, 'COGS')
+    const plExpenseDrill = accountsTotalRow(expenseAccounts, 'Expenses')
+    const plAllDrill = accountsTotalRow(allPlAccounts, 'Profit & Loss')
 
     return (
       <div className="space-y-8">
@@ -4516,21 +4599,21 @@ function renderReportTable(
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <div className="rounded-lg border border-emerald-200 bg-white p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Income</p>
-            <p className="mt-1 text-lg font-bold tabular-nums text-emerald-900">{formatCurrency(incomeTotal)}</p>
+            <p className="mt-1 text-lg font-bold tabular-nums text-emerald-900">{Money(incomeTotal, plIncomeDrill, 'total')}</p>
           </div>
           <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">COGS</p>
-            <p className="mt-1 text-lg font-bold tabular-nums text-amber-950">{formatCurrency(cogsTotal)}</p>
+            <p className="mt-1 text-lg font-bold tabular-nums text-amber-950">{Money(cogsTotal, plCogsDrill, 'total')}</p>
           </div>
           <div className="rounded-lg border border-green-300 bg-green-50 p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-green-800">Gross profit</p>
             <p className="mt-1 text-lg font-bold tabular-nums text-green-900">
-              {formatCurrency(data.gross_profit)}
+              {Money(data.gross_profit, accountsTotalRow([...incomeAccounts, ...cogsAccounts], 'Gross profit'), 'total')}
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Expenses</p>
-            <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">{formatCurrency(expenseTotal)}</p>
+            <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">{Money(expenseTotal, plExpenseDrill, 'total')}</p>
           </div>
           <div className="col-span-2 rounded-lg border border-blue-300 bg-blue-50 p-3 shadow-sm sm:col-span-1 lg:col-span-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">Net income</p>
@@ -4539,7 +4622,7 @@ function renderReportTable(
                 Number(data.net_income ?? 0) >= 0 ? 'text-blue-900' : 'text-red-600'
               }`}
             >
-              {formatCurrency(data.net_income)}
+              {Money(data.net_income, plAllDrill, 'total')}
             </p>
           </div>
         </div>
@@ -4562,12 +4645,14 @@ function renderReportTable(
               <div className="flex items-center justify-between border-b border-inherit p-4">
                 <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
                 <span className="text-sm font-bold tabular-nums text-gray-900">
-                  {formatCurrency(payload?.total)}
+                  {Money(payload?.total, accountsTotalRow(payload?.accounts ?? [], title), 'total')}
                 </span>
               </div>
               <div className="divide-y divide-gray-200">
                 {(payload?.accounts ?? []).length > 0 ? (
-                  (payload?.accounts ?? []).map((account: any, accIdx: number) => (
+                  (payload?.accounts ?? []).map((account: any, accIdx: number) => {
+                    const glDrill = glAccountDrill(account, reportDrillScope())
+                    return (
                     <div
                       key={`${title}-${accIdx}-${account.account_code ?? 'acct'}`}
                       className="flex justify-between px-4 py-3 transition-colors hover:bg-white/80"
@@ -4577,10 +4662,11 @@ function renderReportTable(
                         <p className="text-xs text-gray-500">{account.account_code}</p>
                       </div>
                       <p className="ml-4 whitespace-nowrap text-sm font-semibold tabular-nums text-gray-900">
-                        {formatCurrency(account.balance)}
+                        <DrillAmount amount={account.balance} drill={glDrill} />
                       </p>
                     </div>
-                  ))
+                    )
+                  })
                 ) : (
                   <div className="px-4 py-8 text-center text-sm text-gray-500">
                     {title === 'Cost of Goods Sold' ? (
@@ -4607,7 +4693,7 @@ function renderReportTable(
                 <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/90 px-4 py-3">
                   <span className="text-sm font-semibold text-slate-800">Sub-total — {title}</span>
                   <span className="text-sm font-bold tabular-nums text-slate-900">
-                    {formatCurrency(payload?.total ?? 0)}
+                    {Money(payload?.total ?? 0, accountsTotalRow(payload?.accounts ?? [], title), 'total')}
                   </span>
                 </div>
               </div>
@@ -4628,7 +4714,7 @@ function renderReportTable(
                 <div className="bg-gradient-to-br from-green-50 to-white border-2 border-green-300 rounded-lg p-5 shadow-sm">
                   <p className="text-xs text-green-700 uppercase tracking-wide font-semibold">Gross Profit</p>
                   <p className="text-2xl font-bold text-green-800 mt-2">
-                    {formatCurrency(grossProfit)}
+                    {Money(grossProfit, accountsTotalRow([...incomeAccounts, ...cogsAccounts], 'Gross profit'), 'total')}
                   </p>
                   <p className="text-xs text-green-600 mt-1">
                     Income − COGS · {grossMargin.toFixed(1)}% margin
@@ -4639,7 +4725,7 @@ function renderReportTable(
                   <p className={`text-2xl font-bold mt-2 ${
                     netIncome >= 0 ? 'text-blue-800' : 'text-red-600'
                   }`}>
-                    {formatCurrency(netIncome)}
+                    {Money(netIncome, plAllDrill, 'total')}
                   </p>
                   <p className="text-xs text-blue-600 mt-1">
                     Gross Profit − Expenses
@@ -4674,25 +4760,25 @@ function renderReportTable(
                   <div className="flex items-center justify-between px-5 py-3">
                     <span className="text-sm text-slate-700">Income</span>
                     <span className="text-sm font-semibold tabular-nums text-slate-900">
-                      {formatCurrency(incomeTotal)}
+                      {Money(incomeTotal, plIncomeDrill, 'total')}
                     </span>
                   </div>
                   <div className="flex items-center justify-between px-5 py-3">
                     <span className="text-sm text-slate-700">Less: Cost of Goods Sold</span>
                     <span className="text-sm font-semibold tabular-nums text-amber-700">
-                      ({formatCurrency(cogsTotal)})
+                      ({Money(cogsTotal, plCogsDrill, 'total')})
                     </span>
                   </div>
                   <div className="flex items-center justify-between px-5 py-3 bg-green-50/60">
                     <span className="text-sm font-semibold text-green-800">= Gross Profit</span>
                     <span className="text-sm font-bold tabular-nums text-green-800">
-                      {formatCurrency(grossProfit)}
+                      {Money(grossProfit, accountsTotalRow([...incomeAccounts, ...cogsAccounts], 'Gross profit'), 'total')}
                     </span>
                   </div>
                   <div className="flex items-center justify-between px-5 py-3">
                     <span className="text-sm text-slate-700">Less: Operating Expenses</span>
                     <span className="text-sm font-semibold tabular-nums text-slate-700">
-                      ({formatCurrency(expenseTotal)})
+                      ({Money(expenseTotal, plExpenseDrill, 'total')})
                     </span>
                   </div>
                   <div className={`flex items-center justify-between px-5 py-3 ${
@@ -4704,7 +4790,7 @@ function renderReportTable(
                     <span className={`text-base font-bold tabular-nums ${
                       netIncome >= 0 ? 'text-blue-800' : 'text-red-700'
                     }`}>
-                      {formatCurrency(netIncome)}
+                      {Money(netIncome, plAllDrill, "total")}
                     </span>
                   </div>
                 </div>
@@ -4768,8 +4854,8 @@ function renderReportTable(
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-gray-900">{acc.account_code}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{acc.account_name}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{acc.account_type}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                      {formatCurrency(acc.balance)}
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {Money(acc.balance, acc, 'balance')}
                     </td>
                     <td className="px-4 py-2 text-center">
                       <GlLedgerIconLink accountId={acc.account_id} label={acc.account_name || acc.account_code} />
@@ -4785,7 +4871,7 @@ function renderReportTable(
                     Total liabilities
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">
-                    {formatCurrency(data.total_liabilities ?? 0)}
+                    {Money(data.total_liabilities ?? 0, accountsTotalRow(accounts, 'Total liabilities'), 'total')}
                   </td>
                   <td />
                 </tr>
@@ -4841,8 +4927,8 @@ function renderReportTable(
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-gray-900">{acc.account_code}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{acc.account_name}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{acc.account_sub_type || '—'}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                      {formatCurrency(acc.balance)}
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {Money(acc.balance, acc, 'balance')}
                     </td>
                     <td className="px-4 py-2 text-center">
                       <GlLedgerIconLink accountId={acc.account_id} label={acc.account_name || acc.account_code} />
@@ -4858,7 +4944,7 @@ function renderReportTable(
                     Total loan receivable (GL)
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">
-                    {formatCurrency(data.total_loan_receivable_gl ?? 0)}
+                    {Money(data.total_loan_receivable_gl ?? 0, accountsTotalRow(accounts, 'Loan receivable GL'), 'total')}
                   </td>
                   <td />
                 </tr>
@@ -4914,8 +5000,8 @@ function renderReportTable(
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-gray-900">{acc.account_code}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{acc.account_name}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{acc.account_sub_type || '—'}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
-                      {formatCurrency(acc.balance)}
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {Money(acc.balance, acc, 'balance')}
                     </td>
                     <td className="px-4 py-2 text-center">
                       <GlLedgerIconLink accountId={acc.account_id} label={acc.account_name || acc.account_code} />
@@ -4931,7 +5017,7 @@ function renderReportTable(
                     Total loan payable (GL)
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">
-                    {formatCurrency(data.total_loan_payable_gl ?? 0)}
+                    {Money(data.total_loan_payable_gl ?? 0, accountsTotalRow(accounts, 'Loan payable GL'), 'total')}
                   </td>
                   <td />
                 </tr>
@@ -4949,6 +5035,21 @@ function renderReportTable(
     const lent: any[] = data.lent || []
     const period = data?.period || {}
     const sm = data.summary || {}
+    const borrowedDrill = loansTotalRow(borrowed, 'Borrowed facilities', [
+      'outstanding_principal',
+      'period_disbursements',
+      'period_repayments',
+    ])
+    const lentDrill = loansTotalRow(lent, 'Lent facilities', [
+      'outstanding_principal',
+      'period_disbursements',
+      'period_repayments',
+    ])
+    const allLoansDrill = loansTotalRow([...borrowed, ...lent], 'All loan facilities', [
+      'outstanding_principal',
+      'period_disbursements',
+      'period_repayments',
+    ])
 
     return (
       <div className="space-y-8">
@@ -4967,31 +5068,39 @@ function renderReportTable(
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-rose-100 bg-rose-50/80 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-rose-800">Outstanding borrowed</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-rose-950">{formatCurrency(sm.outstanding_borrowed_principal ?? 0)}</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-rose-950">
+              {Money(sm.outstanding_borrowed_principal ?? 0, { ...sm, ...borrowedDrill }, 'outstanding_principal')}
+            </p>
             <p className="mt-1 text-xs text-rose-800/80">{sm.borrowed_count ?? 0} facilities</p>
           </div>
           <div className="rounded-lg border border-emerald-100 bg-emerald-50/80 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Outstanding lent</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-emerald-950">{formatCurrency(sm.outstanding_lent_principal ?? 0)}</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-emerald-950">
+              {Money(sm.outstanding_lent_principal ?? 0, { ...sm, ...lentDrill }, 'outstanding_principal')}
+            </p>
             <p className="mt-1 text-xs text-emerald-800/80">{sm.lent_count ?? 0} facilities</p>
           </div>
           <div className="rounded-lg border border-blue-100 bg-blue-50/80 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">Period disbursements</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-blue-950">{formatCurrency(sm.period_disbursements_total ?? 0)}</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-blue-950">
+              {Money(sm.period_disbursements_total ?? 0, { ...sm, ...allLoansDrill }, 'period_disbursements')}
+            </p>
           </div>
           <div className="rounded-lg border border-indigo-100 bg-indigo-50/80 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Period repayments</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-indigo-950">{formatCurrency(sm.period_repayments_total ?? 0)}</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-indigo-950">
+              {Money(sm.period_repayments_total ?? 0, { ...sm, ...allLoansDrill }, 'period_repayments')}
+            </p>
           </div>
         </div>
 
         <div>
           <h3 className="mb-3 text-lg font-semibold text-gray-900">Borrowed (you owe principal)</h3>
-          <LoanFacilitiesTable rows={borrowed} tone="borrowed" />
+          <LoanFacilitiesTable rows={borrowed} tone="borrowed" drillScope={reportDrillScope()} />
         </div>
         <div>
           <h3 className="mb-3 text-lg font-semibold text-gray-900">Lent (principal receivable)</h3>
-          <LoanFacilitiesTable rows={lent} tone="lent" />
+          <LoanFacilitiesTable rows={lent} tone="lent" drillScope={reportDrillScope()} />
         </div>
       </div>
     )
@@ -5033,7 +5142,7 @@ function renderReportTable(
                   <div className="flex-1">
                     <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
                     <p className={`text-2xl font-bold mt-2 ${text.replace('600', '900')}`}>
-                      {item.format === 'currency' ? formatCurrency(item.value) :
+                      {item.format === 'currency' ? Money(item.value, data, item.label === 'Total Amount' ? 'total_amount' : 'average_sale_amount') :
                  item.format === 'liters' ? `${formatNumber(item.value)} L` :
                        formatNumber(item.value, 0)}
               </p>
@@ -5175,6 +5284,14 @@ function renderReportTable(
     const period = data?.period || {}
     const rows: any[] = Array.isArray(data.rows) ? data.rows : []
     const s = data.summary || {}
+    const invTotalsRow = itemsTotalRow(rows, 'Inventory totals', [
+      'extended_cost_value',
+      'extended_list_value',
+      'period_revenue',
+      'total_cost_value',
+      'total_list_value',
+      'total_period_revenue',
+    ])
     const statusLabel: Record<string, string> = {
       no_period_sales: 'No period sales',
       sold_out: 'Sold out (period)',
@@ -5219,7 +5336,21 @@ function renderReportTable(
             >
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{k.label}</p>
               <p className="mt-1 text-lg font-semibold text-slate-900">
-                {k.fmt === 'c' ? formatCurrency(Number(k.v) || 0) : formatNumber(Number(k.v) || 0, 2)}
+                {k.fmt === 'c'
+                  ? Money(
+                      Number(k.v) || 0,
+                      { ...s, ...invTotalsRow },
+                      k.label.includes('cost') && !k.label.includes('−')
+                        ? 'total_cost_value'
+                        : k.label.includes('list') && k.label.includes('−')
+                          ? 'implied_list_minus_cost'
+                          : k.label.includes('list')
+                            ? 'total_list_value'
+                            : k.label.includes('revenue')
+                              ? 'total_period_revenue'
+                              : 'total',
+                    )
+                  : formatNumber(Number(k.v) || 0, 2)}
               </p>
             </div>
           ))}
@@ -5269,19 +5400,19 @@ function renderReportTable(
                       {formatNumber(r.quantity_on_hand, 2)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
-                      {formatCurrency(r.unit_cost)}
+                      {Money(r.unit_cost, r, "unit_cost")}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right font-medium text-slate-900">
-                      {formatCurrency(r.extended_cost_value)}
+                      {Money(r.extended_cost_value, r, "extended_cost_value")}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">
-                      {formatCurrency(r.extended_list_value)}
+                      {Money(r.extended_list_value, r, "extended_list_value")}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">
                       {formatNumber(r.period_quantity_sold, 2)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">
-                      {formatCurrency(r.period_revenue)}
+                      {Money(r.period_revenue, r, "period_revenue")}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
                       {formatNumber(r.velocity_per_day, 2)}
@@ -5307,16 +5438,16 @@ function renderReportTable(
                   </td>
                   <td className="px-3 py-2.5" />
                   <td className="px-3 py-2.5 text-right font-semibold text-slate-900">
-                    {formatCurrency(Number(s.total_cost_value ?? 0))}
+                    {Money(Number(s.total_cost_value ?? 0), { ...s, ...invTotalsRow }, 'total_cost_value')}
                   </td>
                   <td className="px-3 py-2.5 text-right font-semibold text-slate-900">
-                    {formatCurrency(Number(s.total_list_value ?? 0))}
+                    {Money(Number(s.total_list_value ?? 0), { ...s, ...invTotalsRow }, 'total_list_value')}
                   </td>
                   <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">
                     {formatNumber(Number(s.total_period_quantity_sold ?? 0), 2)}
                   </td>
                   <td className="px-3 py-2.5 text-right font-semibold text-slate-900">
-                    {formatCurrency(Number(s.total_period_revenue ?? 0))}
+                    {Money(Number(s.total_period_revenue ?? 0), { ...s, ...invTotalsRow }, 'total_period_revenue')}
                   </td>
                   <td colSpan={3} className="px-3 py-2.5" />
                 </tr>
@@ -5400,8 +5531,8 @@ function renderReportTable(
                     <td className="px-3 py-2 text-right tabular-nums">{c.item_count ?? 0}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{c.active_count ?? 0}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatNumber(c.quantity_on_hand, 2)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(c.extended_cost_value)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(c.extended_list_value)}</td>
+                    <td className="px-3 py-2 text-right">{Money(c.extended_cost_value, c, "extended_cost_value")}</td>
+                    <td className="px-3 py-2 text-right">{Money(c.extended_list_value, c, "extended_list_value")}</td>
                   </tr>
                 ))
               )}
@@ -5418,10 +5549,10 @@ function renderReportTable(
                     {formatNumber(Number(ms.total_quantity_on_hand ?? catTotals.qoh), 2)}
                   </td>
                   <td className="px-3 py-2 text-right font-semibold text-slate-900">
-                    {formatCurrency(Number(ms.total_extended_cost_value ?? catTotals.cost))}
+                    {Money(Number(ms.total_extended_cost_value ?? catTotals.cost), itemsTotalRow(rows, 'Catalog cost totals', ['extended_cost_value']), 'extended_cost_value')}
                   </td>
                   <td className="px-3 py-2 text-right font-semibold text-slate-900">
-                    {formatCurrency(Number(ms.total_extended_list_value ?? catTotals.list))}
+                    {Money(Number(ms.total_extended_list_value ?? catTotals.list), itemsTotalRow(rows, 'Catalog list totals', ['extended_list_value']), 'extended_list_value')}
                   </td>
                 </tr>
               </tfoot>
@@ -5476,8 +5607,8 @@ function renderReportTable(
                       )}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(r.extended_cost_value)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(r.extended_list_value)}</td>
+                    <td className="px-3 py-2 text-right">{Money(r.extended_cost_value, r, "extended_cost_value")}</td>
+                    <td className="px-3 py-2 text-right">{Money(r.extended_list_value, r, "extended_list_value")}</td>
                   </tr>
                 ))
               )}
@@ -5491,8 +5622,8 @@ function renderReportTable(
                   <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
                     {formatNumber(detailTotals.qoh, 2)}
                   </td>
-                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(detailTotals.cost)}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(detailTotals.list)}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{Money(detailTotals.cost, itemsTotalRow(rows, 'Item detail cost', ['extended_cost_value']), 'extended_cost_value')}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{Money(detailTotals.list, itemsTotalRow(rows, 'Item detail list', ['extended_list_value']), 'extended_list_value')}</td>
                 </tr>
               </tfoot>
             )}
@@ -5551,7 +5682,7 @@ function renderReportTable(
                     <td className="px-3 py-2 text-right tabular-nums text-slate-800">{c.line_count ?? 0}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-slate-800">{c.distinct_items ?? 0}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatNumber(c.total_quantity, 2)}</td>
-                    <td className="px-3 py-2 text-right font-medium">{formatCurrency(c.total_revenue)}</td>
+                    <td className="px-3 py-2 text-right font-medium">{Money(c.total_revenue, c, "total_revenue")}</td>
                   </tr>
                 ))
               )}
@@ -5566,7 +5697,7 @@ function renderReportTable(
                     {formatNumber(Number(sm.total_quantity ?? subQty), 2)}
                   </td>
                   <td className="px-3 py-2 text-right font-semibold text-slate-900">
-                    {formatCurrency(Number(sm.total_revenue ?? subRev))}
+                    {Money(Number(sm.total_revenue ?? subRev), documentsTotalRow(catRows, { title: 'Sales by category', entityType: 'customers' }), 'total_revenue')}
                   </td>
                 </tr>
               </tfoot>
@@ -5626,7 +5757,7 @@ function renderReportTable(
                     <td className="px-3 py-2 text-right tabular-nums text-slate-800">{c.line_count ?? 0}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-slate-800">{c.distinct_items ?? 0}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatNumber(c.total_quantity, 2)}</td>
-                    <td className="px-3 py-2 text-right font-medium">{formatCurrency(c.total_purchase_amount)}</td>
+                    <td className="px-3 py-2 text-right font-medium">{Money(c.total_purchase_amount, c, "total_purchase_amount")}</td>
                   </tr>
                 ))
               )}
@@ -5641,7 +5772,7 @@ function renderReportTable(
                     {formatNumber(Number(sm.total_quantity ?? subQty), 2)}
                   </td>
                   <td className="px-3 py-2 text-right font-semibold text-slate-900">
-                    {formatCurrency(Number(sm.total_purchase_amount ?? subAmt))}
+                    {Money(Number(sm.total_purchase_amount ?? subAmt), documentsTotalRow(catRows, { title: 'Purchases by category', entityType: 'vendors' }), 'total_purchase_amount')}
                   </td>
                 </tr>
               </tfoot>
@@ -5821,8 +5952,8 @@ function renderReportTable(
                       <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">{r.reporting_category}</td>
                       <td className="px-3 py-2 text-slate-600 text-xs">{r.pos_category}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.period_quantity_sold, 2)}</td>
-                      <td className="px-3 py-2 text-right font-medium">{formatCurrency(r.period_revenue)}</td>
-                      <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.est_cogs)}</td>
+                      <td className="px-3 py-2 text-right font-medium">{Money(r.period_revenue, r, "period_revenue")}</td>
+                      <td className="px-3 py-2 text-right text-slate-700">{Money(r.est_cogs, r, 'est_cogs')}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-800">
                         {r.gross_margin_pct == null ? '—' : `${formatNumber(r.gross_margin_pct, 2)}%`}
                       </td>
@@ -5837,8 +5968,8 @@ function renderReportTable(
                       Totals
                     </td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{formatNumber(tq, 2)}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(tr)}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(tc)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{Money(tr, itemsTotalRow(cRows, 'Item sales revenue', ['period_revenue']), 'period_revenue')}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{Money(tc, itemsTotalRow(cRows, 'Item sales est. COGS', ['est_cogs']), 'est_cogs')}</td>
                     <td className="px-3 py-2" />
                   </tr>
                 </tfoot>
@@ -5893,9 +6024,9 @@ function renderReportTable(
                           <td className="px-3 py-2 text-right tabular-nums">
                             {formatNumber(r.period_quantity_purchased, 2)}
                           </td>
-                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(r.period_purchase_amount)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{Money(r.period_purchase_amount, r, "period_purchase_amount")}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-slate-800">
-                            {r.avg_purchase_unit_cost == null ? '—' : formatCurrency(r.avg_purchase_unit_cost)}
+                            {r.avg_purchase_unit_cost == null ? '—' : Money(r.avg_purchase_unit_cost, r, 'avg_purchase_unit_cost')}
                           </td>
                         </tr>
                       ))
@@ -5908,7 +6039,7 @@ function renderReportTable(
                           Totals
                         </td>
                         <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{formatNumber(tq, 2)}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(ta)}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-slate-900">{Money(ta, itemsTotalRow(cRows, "Item purchases", ["period_purchase_amount"]), "period_purchase_amount")}</td>
                         <td className="px-3 py-2 text-sm text-slate-500">—</td>
                       </tr>
                     </tfoot>
@@ -5961,9 +6092,9 @@ function renderReportTable(
                       </td>
                       <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">{r.reporting_category}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_purchased, 2)}</td>
-                      <td className="px-3 py-2 text-right text-slate-800">{formatCurrency(r.purchase_amount)}</td>
+                      <td className="px-3 py-2 text-right text-slate-800">{Money(r.purchase_amount, r, "purchase_amount")}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_sold, 2)}</td>
-                      <td className="px-3 py-2 text-right text-slate-800">{formatCurrency(r.sales_revenue)}</td>
+                      <td className="px-3 py-2 text-right text-slate-800">{Money(r.sales_revenue, r, "sales_revenue")}</td>
                       <td
                         className={`px-3 py-2 text-right font-medium tabular-nums ${
                           (r.net_quantity_in ?? 0) > 0
@@ -5986,9 +6117,9 @@ function renderReportTable(
                       Totals
                     </td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{formatNumber(tp, 2)}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(tpa)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{Money(tpa, itemsTotalRow(cRows, "Stock movement purchases", ["purchase_amount"]), "purchase_amount")}</td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{formatNumber(ts, 2)}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(tsr)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{Money(tsr, itemsTotalRow(cRows, "Stock movement sales", ["sales_revenue"]), "sales_revenue")}</td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{formatNumber(tn, 2)}</td>
                   </tr>
                 </tfoot>
@@ -6092,7 +6223,7 @@ function renderReportTable(
                               <td className="px-3 py-2 text-xs text-amber-950/90 max-w-[120px] line-clamp-2">{r.reporting_category}</td>
                               <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
                               <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.period_quantity_sold, 2)}</td>
-                              <td className="px-3 py-2 text-right text-slate-800">{formatCurrency(r.period_revenue)}</td>
+                              <td className="px-3 py-2 text-right text-slate-800">{Money(r.period_revenue, r, "period_revenue")}</td>
                               <td className="px-3 py-2 text-right text-slate-800">{formatNumber(r.velocity_per_day, 2)}</td>
                               <td className="px-3 py-2 text-right text-slate-600">{r.velocity_rank || '—'}</td>
                             </tr>
@@ -6107,7 +6238,7 @@ function renderReportTable(
                             <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">
                               {formatNumber(st.pq, 2)}
                             </td>
-                            <td className="px-3 py-2 text-right text-xs font-semibold text-slate-900">{formatCurrency(st.rev)}</td>
+                            <td className="px-3 py-2 text-right text-xs font-semibold text-slate-900">{Money(st.rev, itemsTotalRow(cRows, "Category revenue", ["period_revenue"]), "period_revenue")}</td>
                             <td colSpan={2} className="px-3 py-2 text-xs text-slate-500">
                               {tierRows.length} SKU{tierRows.length === 1 ? '' : 's'}
                             </td>
@@ -6125,7 +6256,7 @@ function renderReportTable(
                       </td>
                       <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatNumber(gt.ooh, 2)}</td>
                       <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatNumber(gt.pq, 2)}</td>
-                      <td className="px-3 py-2.5 text-right font-semibold text-slate-900">{formatCurrency(gt.rev)}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold text-slate-900">{Money(gt.rev, itemsTotalRow(cRows, "Grand revenue", ["period_revenue"]), "period_revenue")}</td>
                       <td colSpan={2} className="px-3 py-2.5" />
                     </tr>
                   </tfoot>
@@ -6235,7 +6366,7 @@ function renderReportTable(
                                     {formatNumber(r.period_quantity_purchased, 2)}
                                   </td>
                                   <td className="px-3 py-2 text-right text-slate-800">
-                                    {formatCurrency(r.period_purchase_amount)}
+                                    {Money(r.period_purchase_amount, r, "period_purchase_amount")}
                                   </td>
                                   <td className="px-3 py-2 text-right text-slate-800">
                                     {formatNumber(r.purchase_velocity_per_day, 2)}
@@ -6253,7 +6384,7 @@ function renderReportTable(
                                 <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">
                                   {formatNumber(st.pq, 2)}
                                 </td>
-                                <td className="px-3 py-2 text-right text-xs font-semibold text-slate-900">{formatCurrency(st.pam)}</td>
+                                <td className="px-3 py-2 text-right text-xs font-semibold text-slate-900">{Money(st.pam, itemsTotalRow(cRows, "Category purchases", ["period_purchase_amount"]), "period_purchase_amount")}</td>
                                 <td colSpan={2} className="px-3 py-2 text-xs text-slate-500">
                                   {tierRows.length} SKU{tierRows.length === 1 ? '' : 's'}
                                 </td>
@@ -6271,7 +6402,7 @@ function renderReportTable(
                           </td>
                           <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatNumber(gt.ooh, 2)}</td>
                           <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatNumber(gt.pq, 2)}</td>
-                          <td className="px-3 py-2.5 text-right font-semibold text-slate-900">{formatCurrency(gt.pam)}</td>
+                          <td className="px-3 py-2.5 text-right font-semibold text-slate-900">{Money(gt.pam, itemsTotalRow(cRows, "Grand purchases", ["period_purchase_amount"]), "period_purchase_amount")}</td>
                           <td colSpan={2} className="px-3 py-2.5" />
                         </tr>
                       </tfoot>
@@ -6313,8 +6444,8 @@ function renderReportTable(
             { label: 'Total Nozzles', value: summary.total_nozzles ?? 0, icon: Package, color: 'blue' },
             { label: 'Total Transactions', value: summary.total_transactions ?? 0, icon: BarChart3, color: 'green' },
             { label: 'Total Liters', value: `${formatNumber(Number(summary.total_liters ?? 0))} L`, icon: Droplet, color: 'purple' },
-            { label: 'Total Amount', value: formatCurrency(summary.total_amount), icon: DollarSign, color: 'indigo' },
-            { label: 'Average Sale', value: formatCurrency(summary.average_sale_amount), icon: TrendingUp, color: 'pink' },
+            { label: 'Total Amount', money: true, amount: summary.total_amount, row: summary, field: 'total_amount', icon: DollarSign, color: 'indigo' },
+            { label: 'Average Sale', money: true, amount: summary.average_sale_amount, row: summary, field: 'average_sale_amount', icon: TrendingUp, color: 'pink' },
           ].map((item) => {
             const colorMap: Record<string, string> = {
               blue: 'from-blue-50 to-blue-100 border-blue-200 text-blue-600 bg-blue-200',
@@ -6332,7 +6463,7 @@ function renderReportTable(
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
-                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.value}</p>
+                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.money ? Money(item.amount, item.row as Record<string, unknown>, item.field) : item.value}</p>
             </div>
                   <div className={`${bg} rounded-full p-2 ml-2`}>
                     <Icon className={`h-5 w-5 ${text}`} />
@@ -6371,10 +6502,10 @@ function renderReportTable(
                       {formatNumber(Number(nozzle.total_liters ?? 0))} L
                     </td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                      {formatCurrency(nozzle.total_amount)}
+                      {Money(nozzle.total_amount, nozzle, "total_amount")}
                     </td>
                     <td className="px-4 py-3 text-sm text-right text-gray-600">
-                      {formatCurrency(nozzle.average_sale_amount)}
+                      {Money(nozzle.average_sale_amount, nozzle, "average_sale_amount")}
                     </td>
                   </tr>
                 ))
@@ -6403,7 +6534,7 @@ function renderReportTable(
                     {formatNumber(Number(summary.total_liters ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_liters ?? 0), 0)))} L
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
-                    {formatCurrency(Number(summary.total_amount ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_amount ?? 0), 0)))}
+                    {Money(Number(summary.total_amount ?? nozzles.reduce((s: number, n: any) => s + Number(n.total_amount ?? 0), 0)), documentsTotalRow(nozzles, { title: 'Nozzle sales', entityType: 'customers' }), 'total_amount')}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">—</td>
                 </tr>
@@ -6421,6 +6552,12 @@ function renderReportTable(
     const rows = Array.isArray(data.rows) ? data.rows : []
     const totalInv = rows.reduce((s: number, r: any) => s + Number(r.invoice_count ?? 0), 0)
     const totalAmt = rows.reduce((s: number, r: any) => s + Number(r.total ?? 0), 0)
+    const stationGrandDrill = documentsTotalRow(rows, {
+      title: 'Sales by station',
+      entityType: 'customers',
+      field: 'grand_total',
+    })
+    const summaryRow = { ...summary, ...stationGrandDrill }
 
     return (
       <div className="space-y-6">
@@ -6436,7 +6573,7 @@ function renderReportTable(
           {[
             { label: 'Stations with sales', value: summary.stations_with_sales ?? '—', icon: MapPin, color: 'teal' },
             { label: 'Invoices in period', value: summary.total_invoices ?? totalInv, icon: FileText, color: 'blue' },
-            { label: 'Total amount', value: formatCurrency(totalAmt), icon: DollarSign, color: 'indigo' },
+            { label: 'Total amount', amount: summary.grand_total ?? totalAmt, field: 'grand_total', icon: DollarSign, color: 'indigo', money: true },
           ].map((item) => {
             const colorMap: Record<string, string> = {
               teal: 'from-teal-50 to-teal-100 border-teal-200 text-teal-600 bg-teal-200',
@@ -6451,7 +6588,11 @@ function renderReportTable(
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
-                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.value}</p>
+                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>
+                      {'money' in item && item.money
+                        ? Money(item.amount ?? 0, summaryRow, item.field || 'total')
+                        : (item.value ?? item.amount ?? '—')}
+                    </p>
                   </div>
                   <div className={`${bg} rounded-full p-2 ml-2`}>
                     <Icon className={`h-5 w-5 ${text}`} />
@@ -6481,7 +6622,7 @@ function renderReportTable(
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.station_name || '—'}</td>
                     <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">{r.invoice_count ?? 0}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                      {formatCurrency(r.total ?? 0)}
+                      {Money(r.total ?? 0, r, "total")}
                     </td>
                   </tr>
                 ))
@@ -6501,7 +6642,7 @@ function renderReportTable(
                     {totalInv}
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
-                    {formatCurrency(totalAmt)}
+                    {Money(totalAmt, summaryRow, 'grand_total')}
                   </td>
                 </tr>
               </tfoot>
@@ -6556,7 +6697,7 @@ function renderReportTable(
                       </td>
                       <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">{r.invoice_count ?? 0}</td>
                       <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                        {formatCurrency(r.total ?? 0)}
+                        {Money(r.total ?? 0, r, "total")}
                       </td>
                     </tr>
                   ))
@@ -6578,7 +6719,7 @@ function renderReportTable(
                       {totalInv}
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
-                      {formatCurrency(totalAmt)}
+                      {Money(totalAmt, documentsTotalRow(rows, { title, entityType: 'customers' }), 'total')}
                     </td>
                   </tr>
                 </tfoot>
@@ -6588,6 +6729,11 @@ function renderReportTable(
         </div>
       )
     }
+
+    const salesGrandDrill = documentsTotalRow(
+      [...cashRows, ...creditRows],
+      { title: 'Grand total sales', entityType: 'customers', field: 'grand_total' },
+    )
 
     return (
       <div className="space-y-6">
@@ -6615,10 +6761,10 @@ function renderReportTable(
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Cash sales', value: formatCurrency(summary.cash_sales_total ?? 0), sub: `${summary.cash_invoice_count ?? 0} invoices`, icon: Banknote, color: 'green' },
-            { label: 'Credit sales', value: formatCurrency(summary.credit_sales_total ?? 0), sub: `${summary.credit_invoice_count ?? 0} invoices`, icon: CreditCard, color: 'amber' },
-            { label: 'Total invoices', value: summary.total_invoices ?? 0, sub: 'in period', icon: FileText, color: 'blue' },
-            { label: 'Grand total', value: formatCurrency(summary.grand_total ?? 0), sub: 'cash + credit', icon: DollarSign, color: 'indigo' },
+            { label: 'Cash sales', amount: summary.cash_sales_total, field: 'cash_sales_total', sub: `${summary.cash_invoice_count ?? 0} invoices`, icon: Banknote, color: 'green' },
+            { label: 'Credit sales', amount: summary.credit_sales_total, field: 'credit_sales_total', sub: `${summary.credit_invoice_count ?? 0} invoices`, icon: CreditCard, color: 'amber' },
+            { label: 'Total invoices', amount: summary.total_invoices, field: '', sub: 'in period', icon: FileText, color: 'blue', count: true },
+            { label: 'Grand total', amount: summary.grand_total, field: 'grand_total', sub: 'cash + credit', icon: DollarSign, color: 'indigo' },
           ].map((item) => {
             const colorMap: Record<string, string> = {
               green: 'from-green-50 to-green-100 border-green-200 text-green-600 bg-green-200',
@@ -6629,12 +6775,17 @@ function renderReportTable(
             const colors = colorMap[item.color] || colorMap.blue
             const [gradient, border, text, bg] = colors.split(' ')
             const Icon = item.icon
+            const summaryRow = { ...summary, ...salesGrandDrill }
             return (
               <div key={item.label} className={`bg-gradient-to-br ${gradient} ${border} border rounded-lg p-4 shadow-sm`}>
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
-                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.value}</p>
+                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>
+                      {item.count
+                        ? (item.amount ?? 0)
+                        : Money(item.amount ?? 0, summaryRow, item.field || 'total')}
+                    </p>
                     <p className="text-xs text-gray-600 mt-1">{item.sub}</p>
                   </div>
                   <div className={`${bg} rounded-full p-2 ml-2`}>
@@ -6660,7 +6811,7 @@ function renderReportTable(
                   {summary.total_invoices ?? 0}
                 </td>
                 <td className="px-4 py-3 text-right text-sm font-bold text-indigo-900">
-                  {formatCurrency(summary.grand_total ?? 0)}
+                  {Money(summary.grand_total ?? 0, { ...summary, ...salesGrandDrill }, 'grand_total')}
                 </td>
               </tr>
             </tbody>
@@ -6711,7 +6862,7 @@ function renderReportTable(
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.display_name || '—'}</td>
                       <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">{r.bill_count ?? 0}</td>
                       <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                        {formatCurrency(r.total ?? 0)}
+                        {Money(r.total ?? 0, r, "total")}
                       </td>
                     </tr>
                   ))
@@ -6733,7 +6884,7 @@ function renderReportTable(
                       {totalBills}
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
-                      {formatCurrency(totalAmt)}
+                      {Money(totalAmt, documentsTotalRow(rows, { title, entityType: 'vendors' }), 'total')}
                     </td>
                   </tr>
                 </tfoot>
@@ -6743,6 +6894,11 @@ function renderReportTable(
         </div>
       )
     }
+
+    const purchaseGrandDrill = documentsTotalRow(
+      [...cashRows, ...creditRows],
+      { title: 'Grand total purchases', entityType: 'vendors', field: 'grand_total' },
+    )
 
     return (
       <div className="space-y-6">
@@ -6771,10 +6927,10 @@ function renderReportTable(
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Cash purchases', value: formatCurrency(summary.cash_purchase_total ?? 0), sub: `${summary.cash_bill_count ?? 0} bill portions`, icon: Banknote, color: 'green' },
-            { label: 'Credit purchases', value: formatCurrency(summary.credit_purchase_total ?? 0), sub: `${summary.credit_bill_count ?? 0} bill portions`, icon: CreditCard, color: 'amber' },
-            { label: 'Total bill portions', value: summary.total_bills ?? 0, sub: 'cash + credit rows', icon: FileText, color: 'blue' },
-            { label: 'Grand total', value: formatCurrency(summary.grand_total ?? 0), sub: 'cash + credit', icon: DollarSign, color: 'indigo' },
+            { label: 'Cash purchases', amount: summary.cash_purchase_total, field: 'cash_purchase_total', sub: `${summary.cash_bill_count ?? 0} bill portions`, icon: Banknote, color: 'green' },
+            { label: 'Credit purchases', amount: summary.credit_purchase_total, field: 'credit_purchase_total', sub: `${summary.credit_bill_count ?? 0} bill portions`, icon: CreditCard, color: 'amber' },
+            { label: 'Total bill portions', amount: summary.total_bills, field: '', sub: 'cash + credit rows', icon: FileText, color: 'blue', count: true },
+            { label: 'Grand total', amount: summary.grand_total, field: 'grand_total', sub: 'cash + credit', icon: DollarSign, color: 'indigo' },
           ].map((item) => {
             const colorMap: Record<string, string> = {
               green: 'from-green-50 to-green-100 border-green-200 text-green-600 bg-green-200',
@@ -6785,12 +6941,17 @@ function renderReportTable(
             const colors = colorMap[item.color] || colorMap.blue
             const [gradient, border, text, bg] = colors.split(' ')
             const Icon = item.icon
+            const summaryRow = { ...summary, ...purchaseGrandDrill }
             return (
               <div key={item.label} className={`bg-gradient-to-br ${gradient} ${border} border rounded-lg p-4 shadow-sm`}>
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
-                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>{item.value}</p>
+                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>
+                      {item.count
+                        ? (item.amount ?? 0)
+                        : Money(item.amount ?? 0, summaryRow, item.field || 'total')}
+                    </p>
                     <p className="text-xs text-gray-600 mt-1">{item.sub}</p>
                   </div>
                   <div className={`${bg} rounded-full p-2 ml-2`}>
@@ -6826,6 +6987,11 @@ function renderReportTable(
     const netListed = entries.reduce((sum: number, entry: any) => sum + Number(entry.balance ?? 0), 0)
     const totalNet = data?.total_net_balance != null ? Number(data.total_net_balance) : netListed
     const period = data?.period || {}
+    const contactDrill = contactsTotalRow(
+      entries,
+      isCustomer ? 'Customer balances' : 'Vendor balances',
+      isCustomer ? 'customers' : 'vendors',
+    )
     
     return (
       <div className="space-y-6">
@@ -6847,7 +7013,7 @@ function renderReportTable(
           <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
             <p className="text-sm text-gray-500 uppercase tracking-wide">Total {isCustomer ? 'Accounts Receivable' : 'Accounts Payable'}</p>
             <p className={`text-2xl font-semibold mt-2 ${totalPositive >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
-                      {formatCurrency(Math.abs(totalPositive))}
+                      {Money(Math.abs(totalPositive), contactDrill, isCustomer ? 'total_ar' : 'total_ap')}
             </p>
           </div>
           <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
@@ -6878,6 +7044,18 @@ function renderReportTable(
               {entries.length > 0 ? (
                 entries.map((entry: any, idx: number) => {
                   const balance = Number(entry.balance ?? 0)
+                  const entityId = Number(isCustomer ? entry.customer_id : entry.vendor_id)
+                  const ledgerDrill: ReportDrillTarget | null =
+                    entityId > 0
+                      ? {
+                          kind: 'contact-ledger',
+                          entity: isCustomer ? 'customers' : 'vendors',
+                          entityId,
+                          label: entry.display_name || entry.company_name || undefined,
+                          startDate: period.start_date || dateRange?.startDate,
+                          endDate: period.end_date || dateRange?.endDate,
+                        }
+                      : null
                   return (
                     <tr
                       key={
@@ -6898,7 +7076,7 @@ function renderReportTable(
                       <td className={`px-4 py-3 text-sm text-right font-semibold ${
                         balance > 0 ? 'text-red-600' : balance < 0 ? 'text-green-600' : 'text-gray-900'
                       }`}>
-                        {formatCurrency(Math.abs(balance))}
+                        <DrillAmount amount={Math.abs(balance)} drill={ledgerDrill} disabled={balance === 0} />
                         {balance > 0 && isCustomer && <span className="block text-xs text-gray-500 mt-1">(Owed to us)</span>}
                         {balance > 0 && !isCustomer && <span className="block text-xs text-gray-500 mt-1">(We owe)</span>}
                         {balance < 0 && <span className="block text-xs text-gray-500 mt-1">(Credit)</span>}
@@ -6927,13 +7105,17 @@ function renderReportTable(
                     Sub-total —{' '}
                     {isCustomer ? 'accounts receivable (balance > 0)' : 'accounts payable (balance > 0)'}
                   </td>
-                  <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(totalPositive)}</td>
+                  <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
+                    {Money(Math.abs(totalPositive), contactDrill, isCustomer ? 'total_ar' : 'total_ap')}
+                  </td>
                 </tr>
                 <tr>
                   <td colSpan={4} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
                     Total — net of all listed balances
                   </td>
-                  <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">{formatCurrency(totalNet)}</td>
+                  <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">
+                    {Money(totalNet, contactDrill, 'total_net_balance')}
+                  </td>
                 </tr>
               </tfoot>
             )}
@@ -6996,7 +7178,7 @@ function renderReportTable(
                   <div>
                     <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Total Sales</p>
                     <p className="text-2xl font-bold text-green-900 mt-2">
-                      {formatCurrency(summary.total_sales)}
+                      {Money(summary.total_sales, summary, 'total_sales')}
                     </p>
                     <p className="text-xs text-green-600 mt-1">
                       {formatNumber(Number(summary.total_liters || 0))} Liters
@@ -7013,10 +7195,10 @@ function renderReportTable(
                   <div>
                     <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">Cash Expected</p>
                     <p className="text-2xl font-bold text-purple-900 mt-2">
-                      {formatCurrency(summary.total_cash_expected)}
+                      {Money(summary.total_cash_expected, summary, 'total_cash_expected')}
                     </p>
                     <p className="text-xs text-purple-600 mt-1">
-                      Counted: {formatCurrency(summary.total_cash_counted || 0)}
+                      Counted: {Money(summary.total_cash_counted || 0, summary, 'total_cash_counted')}
                     </p>
                   </div>
                   <div className="bg-purple-200 rounded-full p-3">
@@ -7040,7 +7222,7 @@ function renderReportTable(
                     <p className={`text-2xl font-bold mt-2 ${
                       (summary.total_variance || 0) >= 0 ? 'text-green-900' : 'text-red-900'
                     }`}>
-                      {formatCurrency(Math.abs(summary.total_variance || 0))}
+                      {Money(Math.abs(summary.total_variance || 0), summary, 'total_variance')}
                     </p>
                     <p className={`text-xs mt-1 ${
                       (summary.total_variance || 0) >= 0 ? 'text-green-600' : 'text-red-600'
@@ -7079,7 +7261,7 @@ function renderReportTable(
                     <div className="flex justify-between items-center pb-2 border-b border-gray-100">
                       <span className="text-sm text-gray-600">Total Sales</span>
                       <span className="text-base font-semibold text-gray-900">
-                        {formatCurrency(stats.total_sales)}
+                        {Money(stats.total_sales, { ...stats, documents: stats.documents }, 'total_sales')}
                       </span>
                     </div>
                     
@@ -7094,7 +7276,7 @@ function renderReportTable(
                       <div className="flex justify-between items-center pb-2 border-b border-gray-100">
                         <span className="text-sm text-gray-600">Cash Sales</span>
                         <span className="text-base font-semibold text-green-700">
-                          {formatCurrency(stats.total_cash_sales || 0)}
+                          {Money(stats.total_cash_sales || 0, stats, 'total_cash_sales')}
                         </span>
                       </div>
                     )}
@@ -7103,7 +7285,7 @@ function renderReportTable(
                       <div className="flex justify-between items-center pb-2 border-b border-gray-100">
                         <span className="text-sm text-gray-600">Non-Cash Sales</span>
                         <span className="text-base font-semibold text-blue-700">
-                          {formatCurrency(stats.total_non_cash_sales || 0)}
+                          {Money(stats.total_non_cash_sales || 0, stats, 'total_non_cash_sales')}
                         </span>
                       </div>
                     )}
@@ -7114,7 +7296,7 @@ function renderReportTable(
                         <span className={`text-base font-bold ${
                           (stats.cash_variance || 0) >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {formatCurrency(Math.abs(Number(stats.cash_variance || 0)))}
+                          {Money(Math.abs(Number(stats.cash_variance || 0)), stats, 'cash_variance')}
                         </span>
                       </div>
                       {stats.variance_percentage !== undefined && (
@@ -7209,7 +7391,7 @@ function renderReportTable(
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <span className="text-sm font-semibold text-gray-900">
-                          {formatCurrency(session.total_sales)}
+                          {Money(session.total_sales, session, 'total_sales')}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -7219,19 +7401,19 @@ function renderReportTable(
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <span className="text-sm text-gray-700">
-                          {formatCurrency(session.cash_expected || 0)}
+                          {Money(session.cash_expected || 0, session, "cash_expected")}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <span className="text-sm text-gray-700">
-                          {formatCurrency(session.cash_counted || 0)}
+                          {Money(session.cash_counted || 0, session, "cash_counted")}
                         </span>
                       </td>
                       <td className={`px-6 py-4 whitespace-nowrap text-right`}>
                         <span className={`text-sm font-semibold ${
                           (session.variance || 0) >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {formatCurrency(session.variance || 0)}
+                          {Money(session.variance || 0, session, "variance")}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -7255,13 +7437,13 @@ function renderReportTable(
                         Totals — all sessions
                       </td>
                       <td className="px-6 py-3 text-right text-sm font-bold tabular-nums text-gray-900">{sessTotals.tx}</td>
-                      <td className="px-6 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(sessTotals.sales)}</td>
+                      <td className="px-6 py-3 text-right text-sm font-bold text-gray-900">{Money(sessTotals.sales, documentsTotalRow(sessions, { title: 'Session sales', entityType: 'customers' }), 'total_sales')}</td>
                       <td className="px-6 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
                         {formatNumber(sessTotals.L)} L
                       </td>
-                      <td className="px-6 py-3 text-right text-sm font-semibold text-gray-900">{formatCurrency(sessTotals.exp)}</td>
-                      <td className="px-6 py-3 text-right text-sm font-semibold text-gray-900">{formatCurrency(sessTotals.cnt)}</td>
-                      <td className="px-6 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(sessTotals.var)}</td>
+                      <td className="px-6 py-3 text-right text-sm font-semibold text-gray-900">{Money(sessTotals.exp, summary, 'total_cash_expected')}</td>
+                      <td className="px-6 py-3 text-right text-sm font-semibold text-gray-900">{Money(sessTotals.cnt, summary, 'total_cash_counted')}</td>
+                      <td className="px-6 py-3 text-right text-sm font-bold text-gray-900">{Money(Math.abs(sessTotals.var), summary, 'total_variance')}</td>
                       <td className="px-6 py-3" />
                     </tr>
                   </tfoot>
@@ -7470,7 +7652,7 @@ function renderReportTable(
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-gray-800">
                           {row.variance_value_estimate != null && row.variance_value_estimate !== ''
-                            ? formatCurrency(row.variance_value_estimate)
+                            ? Money(row.variance_value_estimate, row, "variance_value_estimate")
                             : '—'}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
@@ -7497,7 +7679,7 @@ function renderReportTable(
                       {formatNumber(entryVarSum)}
                     </td>
                     <td className="px-3 py-2.5 text-sm text-slate-500">—</td>
-                    <td className="px-3 py-2.5 text-right text-xs font-bold text-slate-900">{formatCurrency(entryValSum)}</td>
+                    <td className="px-3 py-2.5 text-right text-xs font-bold text-slate-900">{Money(entryValSum, itemsTotalRow(entries, "Dip variance value", ["variance_value_estimate"]), "variance_value_estimate")}</td>
                     <td colSpan={3} className="px-3 py-2.5" />
                   </tr>
                 </tfoot>
@@ -7592,7 +7774,7 @@ function renderReportTable(
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-green-600 uppercase tracking-wide font-medium">Total Gain (Value)</p>
-                    <p className="text-xl font-bold text-green-900 mt-1">{formatCurrency(summary.total_gain_value)}</p>
+                    <p className="text-xl font-bold text-green-900 mt-1">{Money(summary.total_gain_value, summary, "total_gain_value")}</p>
                   </div>
                   <div className="bg-green-200 rounded-full p-2 ml-2">
                     <DollarSign className="h-4 w-4 text-green-600" />
@@ -7603,7 +7785,7 @@ function renderReportTable(
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-red-600 uppercase tracking-wide font-medium">Total Loss (Value)</p>
-                    <p className="text-xl font-bold text-red-900 mt-1">{formatCurrency(summary.total_loss_value)}</p>
+                    <p className="text-xl font-bold text-red-900 mt-1">{Money(summary.total_loss_value, summary, "total_loss_value")}</p>
                   </div>
                   <div className="bg-red-200 rounded-full p-2 ml-2">
                     <DollarSign className="h-4 w-4 text-red-600" />
@@ -7617,7 +7799,7 @@ function renderReportTable(
                   Net Variance
                 </p>
                     <p className={`text-xl font-bold mt-1 ${(summary.net_variance_quantity || 0) >= 0 ? 'text-green-900' : 'text-red-900'}`}>
-                      {formatNumber(Number(summary.net_variance_quantity || 0))}L ({formatCurrency(summary.net_variance_value)})
+                      {formatNumber(Number(summary.net_variance_quantity || 0))}L ({Money(summary.net_variance_value, summary, "net_variance_value")})
                 </p>
                   </div>
                   <div className={`${(summary.net_variance_quantity || 0) >= 0 ? 'bg-green-200' : 'bg-red-200'} rounded-full p-2 ml-2`}>
@@ -7639,10 +7821,10 @@ function renderReportTable(
                   <h5 className="font-medium text-gray-900">{tank}</h5>
                   <p className="text-sm text-gray-500">{stats.product}</p>
                   <div className="mt-2 space-y-1 text-sm">
-                    <p className="text-green-600">Gain: {formatNumber(Number(stats.total_gain_qty || 0))}L ({formatCurrency(stats.total_gain_value || 0)})</p>
-                    <p className="text-red-600">Loss: {formatNumber(Number(stats.total_loss_qty || 0))}L ({formatCurrency(stats.total_loss_value || 0)})</p>
+                    <p className="text-green-600">Gain: {formatNumber(Number(stats.total_gain_qty || 0))}L ({Money(stats.total_gain_value || 0, stats, "total_gain_value")})</p>
+                    <p className="text-red-600">Loss: {formatNumber(Number(stats.total_loss_qty || 0))}L ({Money(stats.total_loss_value || 0, stats, "total_loss_value")})</p>
                     <p className={`font-medium ${(stats.net_variance_qty || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      Net: {formatNumber(Number(stats.net_variance_qty || 0))}L ({formatCurrency(stats.net_variance_value || 0)})
+                      Net: {formatNumber(Number(stats.net_variance_qty || 0))}L ({Money(stats.net_variance_value || 0, stats, "net_variance_value")})
                     </p>
                   </div>
                 </div>
@@ -7700,7 +7882,7 @@ function renderReportTable(
                         {vType === 'GAIN' ? '+' : ''}{formatNumber(vq)}L
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-600 tabular-nums">
-                        {formatCurrency(dip.variance_value)}
+                        {Money(dip.variance_value, dip, "variance_value")}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <span className={`px-2 py-1 rounded-full text-xs ${
@@ -7729,7 +7911,7 @@ function renderReportTable(
                       +{formatNumber(Number(summary.total_gain_quantity_liters ?? 0))} L
                     </td>
                     <td className="px-4 py-2 text-right text-xs font-medium text-emerald-800">
-                      {formatCurrency(Number(summary.total_gain_value ?? 0))}
+                      {Money(Number(summary.total_gain_value ?? 0), summary, "total_gain_value")}
                     </td>
                     <td colSpan={3} />
                   </tr>
@@ -7741,7 +7923,7 @@ function renderReportTable(
                       −{formatNumber(Number(summary.total_loss_quantity_liters ?? 0))} L
                     </td>
                     <td className="px-4 py-2 text-right text-xs font-medium text-red-800">
-                      {formatCurrency(Number(summary.total_loss_value ?? 0))}
+                      {Money(Number(summary.total_loss_value ?? 0), summary, "total_loss_value")}
                     </td>
                     <td colSpan={3} />
                   </tr>
@@ -7757,7 +7939,7 @@ function renderReportTable(
                       {dipVq >= 0 ? '+' : ''}
                       {formatNumber(dipVq)} L
                     </td>
-                    <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(dipVval)}</td>
+                    <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">{Money(dipVval, documentsTotalRow(dips, { title: "Tank dip variance", entityType: "customers" }), "net_variance_value")}</td>
                     <td colSpan={2} />
                   </tr>
                 </tfoot>
@@ -7779,7 +7961,6 @@ function renderReportTable(
     )
   }
 
-  const aqBdt = (n: number | string | undefined | null) => formatCurrency(Number(n ?? 0), 'BDT')
 
   if (reportType === 'aquaculture-pond-pl' && data) {
     const ponds: any[] = Array.isArray(data.ponds) ? data.ponds : []
@@ -7824,12 +8005,12 @@ function renderReportTable(
                 {ponds.map((p: any) => (
                   <tr key={p.pond_id}>
                     <td className="px-3 py-2 font-medium text-gray-900">{p.pond_name}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{aqBdt(p.revenue)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{aqBdt(p.direct_operating_expenses)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{aqBdt(p.shared_operating_expenses)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{aqBdt(p.payroll_allocated)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{aqBdt(p.total_costs)}</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{aqBdt(p.profit)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.revenue, p, "revenue")}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.direct_operating_expenses, p, "direct_operating_expenses")}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.shared_operating_expenses, p, "shared_operating_expenses")}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.payroll_allocated, p, "payroll_allocated")}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.total_costs, p, "total_costs")}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{MoneyBdt(p.profit, p, "profit")}</td>
                   </tr>
                 ))}
               </tbody>
@@ -7838,12 +8019,12 @@ function renderReportTable(
                   <td className="px-3 py-2 font-bold text-slate-900">
                     {pondTotal(ponds.length === 1 ? ponds[0]?.pond_name : null)}
                   </td>
-                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{aqBdt(t.revenue)}</td>
+                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{MoneyBdt(t.revenue, scopedPlTotalRow(ponds, "Pond P&L total revenue", "revenue"), "revenue")}</td>
                   <td className="px-3 py-2 text-right text-slate-500">—</td>
                   <td className="px-3 py-2 text-right text-slate-500">—</td>
-                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{aqBdt(t.payroll_allocated)}</td>
-                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{aqBdt(t.total_costs)}</td>
-                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{aqBdt(t.profit)}</td>
+                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{MoneyBdt(t.payroll_allocated, scopedPlTotalRow(ponds, "Pond P&L total payroll_allocated", "payroll_allocated"), "payroll_allocated")}</td>
+                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{MoneyBdt(t.total_costs, scopedPlTotalRow(ponds, "Pond P&L total total_costs", "total_costs"), "total_costs")}</td>
+                  <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">{MoneyBdt(t.profit, scopedPlTotalRow(ponds, "Pond P&L total profit", "profit"), "profit")}</td>
                 </tr>
               </tfoot>
             </table>
@@ -7864,7 +8045,7 @@ function renderReportTable(
                   {byCat.map((r: any) => (
                     <tr key={r.category}>
                       <td className="px-3 py-2">{r.label}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{aqBdt(r.amount)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(r.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -7872,7 +8053,7 @@ function renderReportTable(
                   <tr>
                     <td className="px-3 py-2 font-bold text-slate-900">Sub-total — categories shown</td>
                     <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">
-                      {aqBdt(byCat.reduce((s: number, r: any) => s + Number(r.amount || 0), 0))}
+                      {MoneyBdt(byCat.reduce((s: number, r: any) => s + Number(r.amount || 0), 0))}
                     </td>
                   </tr>
                 </tfoot>
@@ -7899,9 +8080,9 @@ function renderReportTable(
                     <tr key={`${s.pond_id}-${s.production_cycle_id ?? 'u'}-${i}`}>
                       <td className="px-3 py-2">{s.pond_name}</td>
                       <td className="px-3 py-2">{s.production_cycle_name}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{aqBdt(s.revenue)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{aqBdt(s.direct_operating_expenses)}</td>
-                      <td className="px-3 py-2 text-right font-medium tabular-nums">{aqBdt(s.segment_margin)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(s.revenue, s, "revenue")}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(s.direct_operating_expenses, s, "direct_operating_expenses")}</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{MoneyBdt(s.segment_margin, s, "segment_margin")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -7911,13 +8092,13 @@ function renderReportTable(
                       Total — all segments
                     </td>
                     <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">
-                      {aqBdt(segments.reduce((s: number, x: any) => s + Number(x.revenue || 0), 0))}
+                      {MoneyBdt(segments.reduce((s: number, x: any) => s + Number(x.revenue || 0), 0))}
                     </td>
                     <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">
-                      {aqBdt(segments.reduce((s: number, x: any) => s + Number(x.direct_operating_expenses || 0), 0))}
+                      {MoneyBdt(segments.reduce((s: number, x: any) => s + Number(x.direct_operating_expenses || 0), 0))}
                     </td>
                     <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">
-                      {aqBdt(segments.reduce((s: number, x: any) => s + Number(x.segment_margin || 0), 0))}
+                      {MoneyBdt(segments.reduce((s: number, x: any) => s + Number(x.segment_margin || 0), 0))}
                     </td>
                   </tr>
                 </tfoot>
@@ -7956,21 +8137,21 @@ function renderReportTable(
           <div className="rounded-lg border border-cyan-200 bg-cyan-50/80 p-4">
             <p className="text-xs font-medium uppercase text-cyan-900">Registered pond income</p>
             <p className="mt-1 text-xl font-semibold tabular-nums text-cyan-950">
-              {aqBdt(sm.fish_total_amount_bdt)}
+              {MoneyBdt(sm.fish_total_amount_bdt)}
             </p>
             <p className="text-xs text-cyan-800">{sm.fish_line_count ?? 0} line(s)</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs font-medium uppercase text-slate-600">Pond POS (non-fuel)</p>
             <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
-              {aqBdt(sm.pos_non_fuel_total_amount_bdt)}
+              {MoneyBdt(sm.pos_non_fuel_total_amount_bdt)}
             </p>
             <p className="text-xs text-slate-500">{sm.pos_non_fuel_line_count ?? 0} invoice line(s)</p>
           </div>
           <div className="rounded-lg border-2 border-slate-400 bg-slate-50 p-4">
             <p className="text-xs font-medium uppercase text-slate-800">Combined</p>
             <p className="mt-1 text-xl font-bold tabular-nums text-slate-900">
-              {aqBdt(sm.combined_total_amount_bdt)}
+              {MoneyBdt(sm.combined_total_amount_bdt)}
             </p>
           </div>
         </div>
@@ -7991,7 +8172,7 @@ function renderReportTable(
                     <tr key={r.income_type || 'x'}>
                       <td className="px-3 py-2">{r.income_type_label || r.income_type || '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{r.line_count ?? 0}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{aqBdt(r.amount_bdt)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(r.amount_bdt)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -8031,7 +8212,7 @@ function renderReportTable(
                           <td className="px-2 py-1.5 text-right tabular-nums">
                             {Number(ln.weight_kg).toLocaleString()}
                           </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.total_amount)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.total_amount)}</td>
                           <td className="px-2 py-1.5 text-gray-600">{ln.buyer_name || '—'}</td>
                         </tr>
                       ))}
@@ -8042,7 +8223,7 @@ function renderReportTable(
                           Sub-total — {g.pond_name}
                         </td>
                         <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
-                          {aqBdt(g.subtotal_amount)}
+                          {MoneyBdt(g.subtotal_amount)}
                         </td>
                         <td />
                       </tr>
@@ -8055,7 +8236,7 @@ function renderReportTable(
           {fishGroups.length > 0 ? (
             <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
               <span>Total — registered pond sales</span>
-              <span className="float-right tabular-nums">{aqBdt(fishTot.total_amount)}</span>
+              <span className="float-right tabular-nums">{MoneyBdt(fishTot.total_amount)}</span>
             </div>
           ) : null}
         </div>
@@ -8098,7 +8279,7 @@ function renderReportTable(
                           <td className="px-2 py-1.5">{ln.item_name || '—'}</td>
                           <td className="px-2 py-1.5 text-gray-600">{ln.pos_category || '—'}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{ln.quantity}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.amount)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.amount)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -8108,7 +8289,7 @@ function renderReportTable(
                           Sub-total — {g.pond_name}
                         </td>
                         <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
-                          {aqBdt(g.subtotal_amount)}
+                          {MoneyBdt(g.subtotal_amount)}
                         </td>
                       </tr>
                     </tfoot>
@@ -8120,7 +8301,7 @@ function renderReportTable(
           {posGroups.length > 0 ? (
             <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
               <span>Total — pond POS (non-fuel)</span>
-              <span className="float-right tabular-nums">{aqBdt(posTot.total_amount)}</span>
+              <span className="float-right tabular-nums">{MoneyBdt(posTot.total_amount)}</span>
             </div>
           ) : null}
         </div>
@@ -8218,7 +8399,7 @@ function renderReportTable(
                           <td className="px-2 py-1.5">{ln.income_type_label}</td>
                           <td className="px-2 py-1.5">{ln.fish_species_label || '—'}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{Number(ln.weight_kg).toLocaleString()}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.total_amount)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.total_amount)}</td>
                           <td className="px-2 py-1.5 text-gray-600">{ln.buyer_name || '—'}</td>
                         </>
                       ) : null}
@@ -8226,7 +8407,7 @@ function renderReportTable(
                         <>
                           <td className="px-2 py-1.5 whitespace-nowrap">{ln.expense_date}</td>
                           <td className="px-2 py-1.5">{ln.expense_category_label}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.amount)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.amount)}</td>
                           <td className="px-2 py-1.5 text-gray-600">{ln.vendor_name || '—'}</td>
                         </>
                       ) : null}
@@ -8242,7 +8423,7 @@ function renderReportTable(
                       {reportType === 'aquaculture-profit-transfers' ? (
                         <>
                           <td className="px-2 py-1.5 whitespace-nowrap">{ln.transfer_date}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.amount)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.amount)}</td>
                           <td className="px-2 py-1.5 text-gray-600">
                             {ln.debit_account_code} → {ln.credit_account_code}
                           </td>
@@ -8259,7 +8440,7 @@ function renderReportTable(
                         Sub-total — {g.pond_name}
                       </td>
                       <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
-                        {aqBdt(g.subtotal_amount)}
+                        {MoneyBdt(g.subtotal_amount)}
                       </td>
                       <td />
                     </tr>
@@ -8270,7 +8451,7 @@ function renderReportTable(
                         Sub-total — {g.pond_name}
                       </td>
                       <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
-                        {aqBdt(g.subtotal_amount)}
+                        {MoneyBdt(g.subtotal_amount)}
                       </td>
                       <td />
                     </tr>
@@ -8291,7 +8472,7 @@ function renderReportTable(
                         Sub-total — {g.pond_name}
                       </td>
                       <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
-                        {aqBdt(g.subtotal_amount)}
+                        {MoneyBdt(g.subtotal_amount)}
                       </td>
                       <td colSpan={2} />
                     </tr>
@@ -8306,11 +8487,11 @@ function renderReportTable(
             <span>{pondTotal(groups.length === 1 ? groups[0]?.pond_name : null)}</span>
             <span className="tabular-nums">
               {reportType === 'aquaculture-fish-sales'
-                ? aqBdt(totals.total_amount)
+                ? MoneyBdt(totals.total_amount)
                 : reportType === 'aquaculture-expenses' || reportType === 'aquaculture-equipment-assets'
-                  ? aqBdt(totals.total_amount)
+                  ? MoneyBdt(totals.total_amount)
                   : reportType === 'aquaculture-profit-transfers'
-                    ? aqBdt(totals.total_amount)
+                    ? MoneyBdt(totals.total_amount)
                     : `Samples: ${totals.sample_count ?? 0}`}
             </span>
           </div>
@@ -8364,7 +8545,7 @@ function renderReportTable(
                       <td className="px-2 py-1.5">{ln.to_pond_name || '—'}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{Number(ln.weight_kg).toLocaleString()}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{ln.fish_count ?? '—'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.cost_amount)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.cost_amount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -8373,7 +8554,7 @@ function renderReportTable(
                     <td className="px-2 py-2 text-right text-xs font-semibold text-slate-800">Sub-total</td>
                     <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">{Number(g.subtotal_weight_kg).toLocaleString()}</td>
                     <td />
-                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">{aqBdt(g.subtotal_cost_amount)}</td>
+                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">{MoneyBdt(g.subtotal_cost_amount)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -8383,7 +8564,7 @@ function renderReportTable(
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
           <span>Total — {summary.transfer_count ?? groups.length} transfer(s)</span>
           <span className="float-right tabular-nums">
-            {Number(totals.total_weight_kg ?? 0).toLocaleString()} kg · {aqBdt(totals.total_cost_amount)}
+            {Number(totals.total_weight_kg ?? 0).toLocaleString()} kg · {MoneyBdt(totals.total_cost_amount)}
           </span>
         </div>
       </div>
@@ -8434,33 +8615,33 @@ function renderReportTable(
               <div className="border-b border-gray-100 bg-teal-50/90 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-lg font-bold text-teal-950">{g.pond_name}</h4>
                 <span className="text-base font-bold tabular-nums text-teal-900">
-                  Total: {aqBdt(st.total_bdt)}
+                  Total: {MoneyBdt(st.total_bdt)}
                 </span>
               </div>
               <div className="grid gap-2 border-b border-gray-100 bg-slate-50/80 px-4 py-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <span className="text-gray-500">Feed</span>{' '}
-                  <span className="font-semibold tabular-nums">{aqBdt(st.feed_bdt)}</span>
+                  <span className="font-semibold tabular-nums">{MoneyBdt(st.feed_bdt)}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">Medicine</span>{' '}
-                  <span className="font-semibold tabular-nums">{aqBdt(st.medicine_bdt)}</span>
+                  <span className="font-semibold tabular-nums">{MoneyBdt(st.medicine_bdt)}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">Supplies & materials</span>{' '}
-                  <span className="font-semibold tabular-nums">{aqBdt(st.supplies_bdt)}</span>
+                  <span className="font-semibold tabular-nums">{MoneyBdt(st.supplies_bdt)}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">Fish / fry SKU (warehouse)</span>{' '}
-                  <span className="font-semibold tabular-nums">{aqBdt(st.fish_sku_bdt)}</span>
+                  <span className="font-semibold tabular-nums">{MoneyBdt(st.fish_sku_bdt)}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">Live fish (biological)</span>{' '}
-                  <span className="font-semibold tabular-nums">{aqBdt(st.biological_fish_bdt)}</span>
+                  <span className="font-semibold tabular-nums">{MoneyBdt(st.biological_fish_bdt)}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">Equipment & assets</span>{' '}
-                  <span className="font-semibold tabular-nums">{aqBdt(st.equipment_assets_bdt)}</span>
+                  <span className="font-semibold tabular-nums">{MoneyBdt(st.equipment_assets_bdt)}</span>
                 </div>
               </div>
               <div className="space-y-4 p-3">
@@ -8508,7 +8689,7 @@ function renderReportTable(
                                   {ln.cost_per_kg ? `${ln.unit} @ ${ln.cost_per_kg}/kg` : ln.unit}
                                 </td>
                                 <td className="px-2 py-1.5 text-right tabular-nums font-medium">
-                                  {aqBdt(ln.value_bdt)}
+                                  {MoneyBdt(ln.value_bdt)}
                                 </td>
                               </tr>
                             ))}
@@ -8525,7 +8706,7 @@ function renderReportTable(
         <div className="rounded-lg border-2 border-teal-400 bg-teal-50 px-4 py-4">
           <div className="flex flex-wrap justify-between gap-2 text-base font-bold text-teal-950">
             <span>{grandPondTotal(groups.length === 1 ? groups[0]?.pond_name : null)}</span>
-            <span className="tabular-nums">{aqBdt(totals.grand_total_bdt)}</span>
+            <span className="tabular-nums">{MoneyBdt(totals.grand_total_bdt)}</span>
           </div>
           <p className="mt-1 text-xs text-teal-800">{totals.pond_count ?? groups.length} pond(s) in report</p>
         </div>
@@ -8587,7 +8768,7 @@ function renderReportTable(
                         <td className="px-2 py-1.5 text-gray-600">{ln.reporting_category || '—'}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{Number(ln.quantity).toLocaleString()}</td>
                         <td className="px-2 py-1.5 text-gray-600">{ln.unit}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.extended_value)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.extended_value)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -8597,7 +8778,7 @@ function renderReportTable(
                         Sub-total — {g.pond_name}
                       </td>
                       <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
-                        {aqBdt(g.subtotal_value)}
+                        {MoneyBdt(g.subtotal_value)}
                       </td>
                     </tr>
                   </tfoot>
@@ -8608,7 +8789,7 @@ function renderReportTable(
         )}
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
           <span>{pondTotal(groups.length === 1 ? groups[0]?.pond_name : null)}</span>
-          <span className="float-right tabular-nums">{aqBdt(totals.total_value)}</span>
+          <span className="float-right tabular-nums">{MoneyBdt(totals.total_value)}</span>
         </div>
       </div>
     )
@@ -8751,7 +8932,7 @@ function renderReportTable(
                       <td className="px-2 py-1.5 text-gray-600">{ln.stock_kind_label || ln.stock_kind}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{Number(ln.quantity).toLocaleString()}</td>
                       <td className="px-2 py-1.5 text-gray-600">{ln.unit}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{aqBdt(ln.extended_value)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.extended_value)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -8761,7 +8942,7 @@ function renderReportTable(
                       Sub-total — {g.station_name}
                     </td>
                     <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-900">
-                      {aqBdt(g.subtotal_value)}
+                      {MoneyBdt(g.subtotal_value)}
                     </td>
                   </tr>
                 </tfoot>
@@ -8770,7 +8951,7 @@ function renderReportTable(
           </div>
         ))}
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
-          Total value: {aqBdt(totals.total_value)}
+          Total value: {MoneyBdt(totals.total_value)}
         </div>
       </div>
     )
@@ -8841,6 +9022,7 @@ function renderReportTable(
     <ReportStructuredFallback
       reportType={reportType}
       data={(data && typeof data === 'object' ? data : {}) as Record<string, unknown>}
+      drillScope={reportDrillScope()}
     />
   )
 }

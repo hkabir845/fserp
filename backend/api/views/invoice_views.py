@@ -23,6 +23,7 @@ from api.services.invoice_station import (
     resolve_station_id_for_new_invoice,
 )
 from api.services.payment_allocation import invoice_balance_due
+from api.services.reference_code import next_available_code
 
 
 def _serialize_date(d):
@@ -145,7 +146,6 @@ def invoices_list_or_create(request):
         customer_id = body.get("customer_id")
         if not customer_id or not Customer.objects.filter(id=customer_id, company_id=cid).exists():
             return JsonResponse({"detail": "Valid customer_id required"}, status=400)
-        count = Invoice.objects.filter(company_id=cid).count()
         pm = (body.get("payment_method") or "").strip()[:32]
         shift = _resolve_shift(cid, body.get("shift_session_id"))
         st_raw = body.get("station_id", body.get("station"))
@@ -160,7 +160,7 @@ def invoices_list_or_create(request):
             customer_id=customer_id,
             shift_session=shift,
             station_id=station_id,
-            invoice_number=f"INV-{count + 1}",
+            invoice_number=next_available_code(cid, Invoice, "invoice_number", "INV"),
             invoice_date=_parse_date(body.get("invoice_date")) or timezone.localdate(),
             due_date=_parse_date(body.get("due_date")),
             status=body.get("status") or "draft",

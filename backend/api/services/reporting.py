@@ -301,6 +301,7 @@ def report_trial_balance(
             nm = f"{nm} (inactive)"
         accounts_out.append(
             {
+                "account_id": coa.id,
                 "account_code": coa.account_code,
                 "account_name": nm,
                 "account_type": normalize_chart_account_type(coa.account_type),
@@ -315,6 +316,7 @@ def report_trial_balance(
             continue
         accounts_out.append(
             {
+                "account_id": aid,
                 "account_code": f"?{aid}",
                 "account_name": "Journal lines on missing or other-company chart row — reconcile COA",
                 "account_type": "unknown",
@@ -586,6 +588,7 @@ def report_balance_sheet(
             display_name = f"{display_name} (inactive)"
 
         row = {
+            "account_id": coa.id,
             "account_code": coa.account_code,
             "account_name": display_name,
             "balance": _f(bal),
@@ -1185,6 +1188,7 @@ def report_income_statement(
         if not coa.is_active:
             display_name = f"{display_name} (inactive)"
         row = {
+            "account_id": coa.id,
             "account_code": coa.account_code,
             "account_name": display_name,
             "balance": _f(amt),
@@ -1297,6 +1301,7 @@ def report_customer_balances(
             continue
         rows.append(
             {
+                "customer_id": c.id,
                 "customer_number": c.customer_number or "",
                 "display_name": c.display_name or c.company_name or "",
                 "company_name": c.company_name or "",
@@ -1347,6 +1352,7 @@ def report_vendor_balances(
             continue
         rows.append(
             {
+                "vendor_id": v.id,
                 "vendor_number": v.vendor_number or "",
                 "display_name": v.display_name or v.company_name or "",
                 "company_name": v.company_name or "",
@@ -1437,6 +1443,7 @@ def report_ar_aging(
             documents.append(
                 {
                     "document_type": "invoice",
+                    "invoice_id": inv.id,
                     "document_number": inv.invoice_number,
                     "document_date": inv.invoice_date.isoformat(),
                     "due_date": due.isoformat() if due else None,
@@ -1449,6 +1456,7 @@ def report_ar_aging(
         if sum(buckets.values(), start=Decimal("0")) <= 0:
             continue
         row = {
+            "customer_id": c.id,
             "customer_number": c.customer_number or "",
             "display_name": c.display_name or c.company_name or "",
             "company_name": c.company_name or "",
@@ -1508,6 +1516,7 @@ def report_ap_aging(
             documents.append(
                 {
                     "document_type": "bill",
+                    "bill_id": bill.id,
                     "document_number": bill.bill_number,
                     "document_date": bill.bill_date.isoformat(),
                     "due_date": due.isoformat() if due else None,
@@ -1521,6 +1530,7 @@ def report_ap_aging(
             continue
         vendors_out.append(
             {
+                "vendor_id": v.id,
                 "vendor_number": v.vendor_number or "",
                 "display_name": v.display_name or v.company_name or "",
                 "company_name": v.company_name or "",
@@ -1576,6 +1586,7 @@ def report_expense_detail(
             display_name = f"{display_name} (inactive)"
         exp_rows.append(
             {
+                "account_id": coa.id,
                 "account_code": coa.account_code,
                 "account_name": display_name,
                 "balance": _f(amt),
@@ -1632,6 +1643,7 @@ def report_income_detail(
             display_name = f"{display_name} (inactive)"
         income_rows.append(
             {
+                "account_id": coa.id,
                 "account_code": coa.account_code,
                 "account_name": display_name,
                 "balance": _f(amt),
@@ -1937,6 +1949,7 @@ def report_cash_flow(
             nm = f"{nm} (inactive)"
         bank_rows.append(
             {
+                "account_id": coa.id,
                 "account_code": coa.account_code,
                 "account_name": nm,
                 "beginning_balance": _f(b0),
@@ -2586,6 +2599,8 @@ def report_fuel_sales(
         total_qty += line.quantity or Decimal("0")
         total_amt += line.amount or Decimal("0")
     avg = (total_amt / n) if n else Decimal("0")
+    fuel_invs = inv_qs.filter(pk__in=list(inv_with_fuel)).order_by("invoice_date", "id")
+    fuel_docs = _documents_from_invoices(fuel_invs)
     out = {
         "report_id": "fuel-sales",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -2595,11 +2610,19 @@ def report_fuel_sales(
         "total_quantity_liters": _f(total_qty),
         "total_amount": _f(total_amt),
         "average_sale_amount": _f(avg),
+        "documents": fuel_docs,
         "accounting_note": (
             "Fuel lines from invoice line items (liter/gallon unit or fuel category). "
             "Amounts are line extensions, not audited cash — use GL / payments for settlement."
         ),
     }
+    _attach_row_document_drills(
+        out,
+        {
+            "total_amount": (fuel_docs, "Fuel sales", "customers"),
+            "average_sale_amount": (fuel_docs, "Fuel sales (average basis)", "customers"),
+        },
+    )
     if station_id is not None:
         out["filter_station_id"] = station_id
     return out
@@ -2704,6 +2727,9 @@ def report_shift_summary(company_id: int, start: date, end: date, station_id: in
         by_cashier[uid]["total_liters"] += liters
         by_cashier[uid]["cash_variance"] += var if s.closed_at else Decimal("0")
 
+        period_invs_list = list(period_invs.order_by("invoice_date", "id"))
+        session_docs = _documents_from_invoices(period_invs_list)
+
         session_row: dict[str, Any] = {
             "id": s.id,
             "cashier_name": f"User #{s.opened_by_user_id or '-'}",
@@ -2717,7 +2743,15 @@ def report_shift_summary(company_id: int, start: date, end: date, station_id: in
             "cash_counted": _f(counted) if s.closing_cash_counted is not None else 0.0,
             "variance": _f(var),
             "status": "closed" if s.closed_at else "open",
+            "documents": session_docs,
         }
+        if session_docs:
+            _attach_row_document_drills(
+                session_row,
+                {
+                    "total_sales": (session_docs, f"Shift #{s.id} sales", "customers"),
+                },
+            )
         meter_rec = _shift_meter_reconciliation(s, inv_ids)
         if meter_rec:
             session_row["meter_reconciliation"] = meter_rec
@@ -2753,6 +2787,12 @@ def report_shift_summary(company_id: int, start: date, end: date, station_id: in
         "sessions": sessions,
         "by_cashier": bc_out,
     }
+    _attach_summary_document_drills(
+        sh_out["summary"],
+        {
+            "total_sales": (sessions, "Shift sales", "customers"),
+        },
+    )
     if station_id is not None:
         sh_out["filter_station_id"] = station_id
     return sh_out
@@ -2848,6 +2888,23 @@ def report_sales_by_nozzle(company_id: int, start: date, end: date, station_id: 
     nozzles = nz_qs.order_by("id")
     out: list[dict[str, Any]] = []
     tot_tx = tot_l = tot_a = Decimal("0")
+    nozzle_doc_cache: dict[int, list[dict[str, Any]]] = {}
+
+    def _nozzle_invoice_documents(nozzle_id: int) -> list[dict[str, Any]]:
+        if nozzle_id in nozzle_doc_cache:
+            return nozzle_doc_cache[nozzle_id]
+        line_qs = inv_line_qs.filter(nozzle_id=nozzle_id).select_related("invoice").order_by(
+            "invoice__invoice_date", "invoice_id"
+        )
+        seen: dict[int, Invoice] = {}
+        for line in line_qs:
+            inv = line.invoice
+            if inv and inv.id not in seen:
+                seen[inv.id] = inv
+        docs = _documents_from_invoices(seen.values())
+        nozzle_doc_cache[nozzle_id] = docs
+        return docs
+
     for nz in nozzles:
         row = by_nozzle.get(nz.id)
         if row:
@@ -2869,19 +2926,29 @@ def report_sales_by_nozzle(company_id: int, start: date, end: date, station_id: 
             if isl and isl.station:
                 st_name = isl.station.station_name
         avg = (amt / tx) if tx else Decimal("0")
-        out.append(
-            {
-                "nozzle_number": nz.nozzle_code or str(nz.id),
-                "nozzle_name": nz.nozzle_name or nz.nozzle_code or str(nz.id),
-                "product_name": nz.product.name if nz.product_id else "",
-                "station_name": st_name,
-                "total_transactions": tx,
-                "total_liters": _f(liters),
-                "total_amount": _f(amt),
-                "average_sale_amount": _f(avg),
-                "attribution": "nozzle" if nz.id in by_nozzle else ("product_legacy" if tx else "none"),
-            }
-        )
+        nz_docs = _nozzle_invoice_documents(nz.id) if tx and nz.id in by_nozzle else []
+        nz_row: dict[str, Any] = {
+            "nozzle_id": nz.id,
+            "nozzle_number": nz.nozzle_code or str(nz.id),
+            "nozzle_name": nz.nozzle_name or nz.nozzle_code or str(nz.id),
+            "product_name": nz.product.name if nz.product_id else "",
+            "station_name": st_name,
+            "total_transactions": tx,
+            "total_liters": _f(liters),
+            "total_amount": _f(amt),
+            "average_sale_amount": _f(avg),
+            "attribution": "nozzle" if nz.id in by_nozzle else ("product_legacy" if tx else "none"),
+            "documents": nz_docs,
+        }
+        if nz_docs:
+            _attach_row_document_drills(
+                nz_row,
+                {
+                    "total_amount": (nz_docs, f"Nozzle {nz_row['nozzle_name']} sales", "customers"),
+                    "average_sale_amount": (nz_docs, f"Nozzle {nz_row['nozzle_name']} average basis", "customers"),
+                },
+            )
+        out.append(nz_row)
     snz: dict[str, Any] = {
         "report_id": "sales-by-nozzle",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -2894,6 +2961,13 @@ def report_sales_by_nozzle(company_id: int, start: date, end: date, station_id: 
         },
         "nozzles": out,
     }
+    _attach_summary_document_drills(
+        snz["summary"],
+        {
+            "total_amount": (out, "Nozzle sales", "customers"),
+            "average_sale_amount": (out, "Nozzle sales (average basis)", "customers"),
+        },
+    )
     if station_id is not None:
         snz["filter_station_id"] = station_id
     return snz
@@ -3390,24 +3464,35 @@ def _compute_daily_summary_block(
 
     by_product_fuel: dict[str, dict[str, Any]] = {}
     by_pos_category: dict[str, dict[str, Any]] = {}
+    fuel_inv_ids: set[int] = set()
+    shop_inv_ids: set[int] = set()
+    cash_inv_ids: set[int] = set()
+    credit_inv_ids: set[int] = set()
+    pond_pos_inv_ids: set[int] = set()
 
     for inv in invs:
         amt = inv.total or Decimal("0")
         if is_on_account_payment(inv.payment_method):
             credit_amt += amt
             credit_tx += 1
+            credit_inv_ids.add(inv.id)
         else:
             cash_amt += amt
             cash_tx += 1
+            cash_inv_ids.add(inv.id)
         if inv.customer_id and int(inv.customer_id) in pond_pos_ids:
             pond_pos_amt += amt
             pond_pos_tx += 1
+            pond_pos_inv_ids.add(inv.id)
 
     for line in lines:
         amt = line.amount or Decimal("0")
         total_amt += amt
+        inv_id = line.invoice_id
         if _is_fuel_line(line):
             fuel_amt += amt
+            if inv_id:
+                fuel_inv_ids.add(inv_id)
             q = line.quantity or Decimal("0")
             fuel_liters += q
             key = (line.item.name if line.item_id else "Fuel").strip() or "Fuel"
@@ -3422,6 +3507,8 @@ def _compute_daily_summary_block(
             by_product_fuel[key]["liters"] += q
         else:
             shop_amt += amt
+            if inv_id:
+                shop_inv_ids.add(inv_id)
             raw_cat = (line.item.pos_category if line.item_id else "general") or "general"
             cat_key = _pos_category_label(raw_cat)
             if cat_key not in by_pos_category:
@@ -3435,6 +3522,63 @@ def _compute_daily_summary_block(
             by_pos_category[cat_key]["quantity"] += line.quantity or Decimal("0")
 
     avg = (total_amt / n_inv) if n_inv else Decimal("0")
+
+    inv_by_id = {inv.id: inv for inv in invs}
+    all_docs = _documents_from_invoices(invs)
+    sales_block: dict[str, Any] = {
+        "total_transactions": n_inv,
+        "total_liters": _f(fuel_liters),
+        "total_amount": _f(total_amt),
+        "fuel_amount": _f(fuel_amt),
+        "shop_amount": _f(shop_amt),
+        "cash_sales_total": _f(cash_amt),
+        "credit_sales_total": _f(credit_amt),
+        "cash_transaction_count": cash_tx,
+        "credit_transaction_count": credit_tx,
+        "average_sale": _f(avg),
+        "documents": all_docs,
+    }
+    _attach_row_document_drills(
+        sales_block,
+        {
+            "total_amount": (all_docs, f"{line_label} — total sales", "customers"),
+            "average_sale": (all_docs, f"{line_label} — average sale basis", "customers"),
+            "fuel_amount": (
+                _documents_from_invoices([inv_by_id[i] for i in fuel_inv_ids if i in inv_by_id]),
+                f"{line_label} — fuel sales",
+                "customers",
+            ),
+            "shop_amount": (
+                _documents_from_invoices([inv_by_id[i] for i in shop_inv_ids if i in inv_by_id]),
+                f"{line_label} — shop sales",
+                "customers",
+            ),
+            "cash_sales_total": (
+                _documents_from_invoices([inv_by_id[i] for i in cash_inv_ids if i in inv_by_id]),
+                f"{line_label} — cash sales",
+                "customers",
+            ),
+            "credit_sales_total": (
+                _documents_from_invoices([inv_by_id[i] for i in credit_inv_ids if i in inv_by_id]),
+                f"{line_label} — credit sales",
+                "customers",
+            ),
+        },
+    )
+
+    pond_pos_docs = _documents_from_invoices([inv_by_id[i] for i in pond_pos_inv_ids if i in inv_by_id])
+    aq_block: dict[str, Any] = {
+        "pond_pos_invoice_count": pond_pos_tx,
+        "pond_pos_sales_total": _f(pond_pos_amt),
+        "documents": pond_pos_docs,
+    }
+    if pond_pos_docs:
+        _attach_row_document_drills(
+            aq_block,
+            {
+                "pond_pos_sales_total": (pond_pos_docs, f"{line_label} — pond POS", "customers"),
+            },
+        )
 
     bp_fuel_out = {
         k: {
@@ -3457,24 +3601,10 @@ def _compute_daily_summary_block(
         "line": site_kind,
         "label": line_label,
         "station_names": station_names,
-        "sales": {
-            "total_transactions": n_inv,
-            "total_liters": _f(fuel_liters),
-            "total_amount": _f(total_amt),
-            "fuel_amount": _f(fuel_amt),
-            "shop_amount": _f(shop_amt),
-            "cash_sales_total": _f(cash_amt),
-            "credit_sales_total": _f(credit_amt),
-            "cash_transaction_count": cash_tx,
-            "credit_transaction_count": credit_tx,
-            "average_sale": _f(avg),
-        },
+        "sales": sales_block,
         "by_product_fuel": bp_fuel_out,
         "by_pos_category": bp_cat_out,
-        "aquaculture": {
-            "pond_pos_invoice_count": pond_pos_tx,
-            "pond_pos_sales_total": _f(pond_pos_amt),
-        },
+        "aquaculture": aq_block,
     }
 
     if site_kind == "fuel":
@@ -3716,21 +3846,39 @@ def report_sales_by_station(company_id: int, start: date, end: date, station_id:
                 "station_name": name,
                 "invoice_count": 0,
                 "total": Decimal("0"),
+                "documents": [],
             }
         by_key[k]["invoice_count"] += 1
-        by_key[k]["total"] += inv.total or Decimal("0")
+        amt = inv.total or Decimal("0")
+        by_key[k]["total"] += amt
+        by_key[k]["documents"].append(
+            {
+                "document_type": "invoice",
+                "invoice_id": inv.id,
+                "document_number": inv.invoice_number,
+                "document_date": inv.invoice_date.isoformat(),
+                "amount": _f(amt),
+                "status": inv.status,
+            }
+        )
     rows = sorted(by_key.values(), key=lambda r: (r["station_name"], r["station_id"] or 0))
     for r in rows:
         r["total"] = _f(r["total"])
+    grand = sum(Decimal(str(x["total"])) for x in rows)
     sbs: dict[str, Any] = {
         "report_id": "sales-by-station",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "summary": {
             "stations_with_sales": len([x for x in rows if x["station_id"] is not None]),
             "total_invoices": sum(x["invoice_count"] for x in rows),
+            "grand_total": _f(grand),
         },
         "rows": rows,
     }
+    _attach_summary_document_drills(
+        sbs["summary"],
+        {"grand_total": (rows, "Sales by station", "customers")},
+    )
     if station_id is not None:
         sbs["filter_station_id"] = station_id
     return sbs
@@ -3965,6 +4113,16 @@ def report_sales_report(
         bucket[cid_c]["invoice_count"] += 1
         amt = inv.total or Decimal("0")
         bucket[cid_c]["total"] += amt
+        bucket[cid_c].setdefault("documents", []).append(
+            {
+                "document_type": "invoice",
+                "invoice_id": inv.id,
+                "document_number": inv.invoice_number,
+                "document_date": inv.invoice_date.isoformat(),
+                "amount": _f(amt),
+                "status": inv.status,
+            }
+        )
         if is_credit:
             credit_inv_count += 1
             credit_total += amt
@@ -4016,6 +4174,14 @@ def report_sales_report(
             "Use the business line filter for Fuel Station vs Aquaculture (Premium Agro)."
         ),
     }
+    _attach_summary_document_drills(
+        payload["summary"],
+        {
+            "grand_total": ([cash_customers, credit_customers], "All sales", "customers"),
+            "cash_sales_total": ([cash_customers], "Cash sales", "customers"),
+            "credit_sales_total": ([credit_customers], "Credit sales", "customers"),
+        },
+    )
     payload.update(scope_meta)
     return payload
 
@@ -4107,6 +4273,16 @@ def report_purchase_report(
                 cash_by_vendor[vid] = _purchase_report_vendor_row(vid, bill.vendor)
             cash_by_vendor[vid]["bill_count"] += 1
             cash_by_vendor[vid]["total"] += cash_amt
+            cash_by_vendor[vid].setdefault("documents", []).append(
+                {
+                    "document_type": "bill",
+                    "bill_id": bill.id,
+                    "document_number": bill.bill_number,
+                    "document_date": bill.bill_date.isoformat(),
+                    "amount": _f(cash_amt),
+                    "status": bill.status,
+                }
+            )
             cash_bill_count += 1
             cash_total += cash_amt
 
@@ -4115,6 +4291,16 @@ def report_purchase_report(
                 credit_by_vendor[vid] = _purchase_report_vendor_row(vid, bill.vendor)
             credit_by_vendor[vid]["bill_count"] += 1
             credit_by_vendor[vid]["total"] += credit_amt
+            credit_by_vendor[vid].setdefault("documents", []).append(
+                {
+                    "document_type": "bill",
+                    "bill_id": bill.id,
+                    "document_number": bill.bill_number,
+                    "document_date": bill.bill_date.isoformat(),
+                    "amount": _f(credit_amt),
+                    "status": bill.status,
+                }
+            )
             credit_bill_count += 1
             credit_total += credit_amt
 
@@ -4159,6 +4345,14 @@ def report_purchase_report(
             "Bills match when the bill header or any line receipt station is in scope."
         ),
     }
+    _attach_summary_document_drills(
+        payload["summary"],
+        {
+            "grand_total": ([cash_vendors, credit_vendors], "All purchases", "vendors"),
+            "cash_purchase_total": ([cash_vendors], "Cash purchases", "vendors"),
+            "credit_purchase_total": ([credit_vendors], "Credit purchases", "vendors"),
+        },
+    )
     payload.update(scope_meta)
     return payload
 
@@ -4259,6 +4453,7 @@ def report_inventory_sku_valuation(
 
         rows_out.append(
             {
+                "item_id": item.id,
                 "sku": (item.item_number or "").strip() or f"#{item.id}",
                 "name": (item.name or "")[:200],
                 "reporting_category": (getattr(item, "category", None) or "").strip() or "General",
@@ -4375,6 +4570,7 @@ def report_item_master_by_category(
         rc = (getattr(it, "category", None) or "").strip() or "General"
         detail.append(
             {
+                "item_id": it.id,
                 "sku": (it.item_number or "").strip() or f"#{it.id}",
                 "name": (it.name or "")[:200],
                 "reporting_category": rc,
@@ -4549,6 +4745,7 @@ def report_item_sales_custom(
             margin = float((pa - cogs) / pa * Decimal("100"))
         rows_out.append(
             {
+                "item_id": it.id,
                 "sku": (it.item_number or "").strip() or f"#{it.id}",
                 "name": (it.name or "")[:200],
                 "reporting_category": (it.category or "").strip() or "General",
@@ -4668,6 +4865,7 @@ def report_item_stock_movement(
         net_q = pq["q"] - sq["q"]
         rows_out.append(
             {
+                "item_id": it.id,
                 "sku": (it.item_number or "").strip() or f"#{it.id}",
                 "name": (it.name or "")[:200],
                 "reporting_category": (it.category or "").strip() or "General",
@@ -4783,6 +4981,7 @@ def report_item_velocity_analysis(
         daily = (pq / pdd) if pdd else Decimal("0")
         rows.append(
             {
+                "item_id": it.id,
                 "sku": (it.item_number or "").strip() or f"#{it.id}",
                 "name": (it.name or "")[:200],
                 "reporting_category": (it.category or "").strip() or "General",
@@ -4963,6 +5162,7 @@ def report_item_purchases_custom(
         avg_unit = (pa / pq) if pq > 0 else Decimal("0")
         rows_out.append(
             {
+                "item_id": it.id,
                 "sku": (it.item_number or "").strip() or f"#{it.id}",
                 "name": (it.name or "")[:200],
                 "reporting_category": (it.category or "").strip() or "General",
@@ -5075,6 +5275,7 @@ def report_item_purchase_velocity_analysis(
         daily = (pqty / pdd) if pdd else Decimal("0")
         rows.append(
             {
+                "item_id": it.id,
                 "sku": (it.item_number or "").strip() or f"#{it.id}",
                 "name": (it.name or "")[:200],
                 "reporting_category": (it.category or "").strip() or "General",
@@ -5469,3 +5670,160 @@ def report_financial_analytics(
                 "management_* fields are aquaculture pond P&L register totals (may differ from GL)."
             )
     return out_fa
+
+
+def _invoice_document_payload(inv: Invoice) -> dict[str, Any]:
+    amt = inv.total or Decimal("0")
+    return {
+        "document_type": "invoice",
+        "invoice_id": inv.id,
+        "document_number": inv.invoice_number,
+        "document_date": inv.invoice_date.isoformat(),
+        "amount": _f(amt),
+        "status": inv.status,
+    }
+
+
+def _documents_from_invoices(invs) -> list[dict[str, Any]]:
+    return [_invoice_document_payload(inv) for inv in invs]
+
+
+def _attach_row_document_drills(
+    row: dict[str, Any],
+    mapping: dict[str, tuple[list[dict[str, Any]], str, str]],
+) -> None:
+    """Attach ``_drill`` metadata on row money fields (invoice/bill document lists)."""
+    drills: dict[str, Any] = {}
+    for field, (docs, title, entity_type) in mapping.items():
+        if docs:
+            drills[field] = {
+                "kind": "aging-documents",
+                "title": title,
+                "entityType": entity_type,
+                "documents": docs,
+            }
+    if drills:
+        row["_drill"] = drills
+        row["documents"] = drills[next(iter(drills))]["documents"]
+
+
+def _merge_row_documents(*row_lists: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Flatten document drill payloads from grouped report rows."""
+    out: list[dict[str, Any]] = []
+    for rows in row_lists:
+        if not rows:
+            continue
+        for row in rows:
+            out.extend(row.get("documents") or [])
+    return out
+
+
+def _attach_summary_document_drills(
+    summary: dict[str, Any],
+    mapping: dict[str, tuple[list[dict[str, Any]], str, str]],
+) -> None:
+    """Attach ``_drill`` metadata on summary money fields (invoice/bill document lists)."""
+    drills: dict[str, Any] = {}
+    for field, (row_lists, title, entity_type) in mapping.items():
+        docs = _merge_row_documents(*row_lists)
+        if docs:
+            drills[field] = {
+                "kind": "aging-documents",
+                "title": title,
+                "entityType": entity_type,
+                "documents": docs,
+            }
+    if drills:
+        summary["_drill"] = drills
+
+
+def report_drill_invoice_documents(
+    company_id: int,
+    customer_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+) -> dict[str, Any]:
+    """Source invoices for a customer in a period (report drill-down)."""
+    qs = (
+        Invoice.objects.filter(
+            company_id=company_id,
+            customer_id=customer_id,
+            invoice_date__gte=start,
+            invoice_date__lte=end,
+        )
+        .exclude(status="draft")
+        .order_by("invoice_date", "id")
+    )
+    if station_id is not None:
+        qs = qs.filter(station_id=station_id)
+    customer = Customer.objects.filter(pk=customer_id, company_id=company_id).first()
+    documents: list[dict[str, Any]] = []
+    total = Decimal("0")
+    for inv in qs:
+        amt = inv.total or Decimal("0")
+        total += amt
+        documents.append(
+            {
+                "document_type": "invoice",
+                "invoice_id": inv.id,
+                "document_number": inv.invoice_number,
+                "document_date": inv.invoice_date.isoformat(),
+                "amount": _f(amt),
+                "status": inv.status,
+            }
+        )
+    return {
+        "customer_id": customer_id,
+        "display_name": (customer.display_name or customer.company_name or "") if customer else "",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "documents": documents,
+        "total": _f(total),
+    }
+
+
+def report_drill_bill_documents(
+    company_id: int,
+    vendor_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+) -> dict[str, Any]:
+    """Source bills for a vendor in a period (report drill-down)."""
+    qs = (
+        Bill.objects.filter(
+            company_id=company_id,
+            vendor_id=vendor_id,
+            bill_date__gte=start,
+            bill_date__lte=end,
+        )
+        .exclude(status__in=("draft", "void"))
+        .order_by("bill_date", "id")
+    )
+    if station_id is not None:
+        qs = qs.filter(
+            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
+        ).distinct()
+    vendor = Vendor.objects.filter(pk=vendor_id, company_id=company_id).first()
+    documents: list[dict[str, Any]] = []
+    total = Decimal("0")
+    for bill in qs:
+        amt = bill.total or Decimal("0")
+        total += amt
+        documents.append(
+            {
+                "document_type": "bill",
+                "bill_id": bill.id,
+                "document_number": bill.bill_number,
+                "document_date": bill.bill_date.isoformat(),
+                "amount": _f(amt),
+                "status": bill.status,
+            }
+        )
+    return {
+        "vendor_id": vendor_id,
+        "display_name": (vendor.display_name or vendor.company_name or "") if vendor else "",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "documents": documents,
+        "total": _f(total),
+    }

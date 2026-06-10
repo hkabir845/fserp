@@ -49,6 +49,13 @@ APP_PAGE_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
         "href": "/fund-transfers",
     },
     {"id": "app.page.loans", "label": "Loans", "group": "Apps — Accounting", "parent": "app.accounting", "href": "/loans"},
+    {
+        "id": "app.page.fixed_assets",
+        "label": "Fixed Assets",
+        "group": "Apps — Accounting",
+        "parent": "app.accounting",
+        "href": "/fixed-assets",
+    },
     # Sales
     {"id": "app.page.customers", "label": "Customers", "group": "Apps — Sales", "parent": "app.customers", "href": "/customers"},
     {"id": "app.page.vendors", "label": "Vendors", "group": "Apps — Sales", "parent": "app.sales", "href": "/vendors"},

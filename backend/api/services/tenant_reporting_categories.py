@@ -18,6 +18,13 @@ APP_FUEL_STATION = "fuel_station"
 KIND_EXPENSE = "expense"
 KIND_INCOME = "income"
 
+_AUTO_CATEGORY_PREFIX: dict[tuple[str, str], str] = {
+    (APP_AQUACULTURE, KIND_EXPENSE): "aqe",
+    (APP_AQUACULTURE, KIND_INCOME): "aqi",
+    (APP_FUEL_STATION, KIND_EXPENSE): "fse",
+    (APP_FUEL_STATION, KIND_INCOME): "fsi",
+}
+
 FUEL_STATION_EXPENSE_MAP_TARGETS: tuple[tuple[str, str], ...] = (
     ("operating", "Operating & admin"),
     ("cost_of_sales", "Cost of sales / shrink"),
@@ -34,20 +41,29 @@ FUEL_STATION_INCOME_MAP_TARGETS: tuple[tuple[str, str], ...] = (
 
 FUEL_STATION_EXPENSE_MAP_HINTS: dict[str, str] = {
     "operating": (
-        "Payroll, rent, insurance, bank charges, security, marketing, office supplies, and general admin for the site."
+        "Payroll, rent, insurance, bank charges, security, marketing, office supplies, and general admin for the site. "
+        "Default GL 6920 on bills; override line account for 6400 wages, 6200 rent, 6500 insurance, 6600 bank fees, "
+        "7000 security, 6700 marketing, or 6900 office supplies only."
     ),
     "cost_of_sales": (
-        "Fuel shrink or variance, inventory write-offs, and direct cost of shop goods sold at the station."
+        "Fuel shrink or variance, inventory write-offs, and direct cost of shop goods sold at the station. "
+        "Default GL 5200 (fuel wet loss); use 5210 for shop shrink or 5120 COGS when appropriate."
     ),
-    "maintenance": "Forecourt repairs, pump service, tank maintenance, signage, and building upkeep.",
-    "utilities": "Electricity, generator diesel, water, telecom, and other utility bills.",
-    "other": "One-off or uncategorized station costs that do not fit the groups above.",
+    "maintenance": (
+        "Forecourt repairs, pump service, tank maintenance, signage, and building upkeep. "
+        "Default GL 6300 (dispensing & site); use 6310 for building/canopy work."
+    ),
+    "utilities": (
+        "Electricity, generator diesel, water, telecom, and other utility bills. "
+        "Default GL 6100; use 6110 for water/sewer or override when generator fuel is inventoried."
+    ),
+    "other": "One-off or uncategorized station costs that do not fit the groups above. Default GL 6990.",
 }
 FUEL_STATION_INCOME_MAP_HINTS: dict[str, str] = {
-    "fuel_revenue": "Petrol, diesel, octane, and lubricant sales from dispensers.",
-    "shop_revenue": "Convenience store, agro-input shop, and other non-fuel retail at the site.",
-    "services_revenue": "Car wash, air, commissions, equipment hire, and service fees.",
-    "other": "Miscellaneous station income not counted as fuel, shop, or services revenue.",
+    "fuel_revenue": "Petrol, diesel, octane, and lubricant sales from dispensers. Default revenue GL 4100–4140.",
+    "shop_revenue": "Convenience store, agro-input shop, and other non-fuel retail at the site. Default GL 4200.",
+    "services_revenue": "Car wash, air, commissions, equipment hire, and service fees. Default GL 4220.",
+    "other": "Miscellaneous station income not counted as fuel, shop, or services revenue. Default GL 4230.",
 }
 
 AQUACULTURE_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -104,6 +120,24 @@ FUEL_STATION_EXPENSE_MAP_CODES: frozenset[str] = frozenset(c for c, _ in FUEL_ST
 FUEL_STATION_INCOME_MAP_CODES: frozenset[str] = frozenset(c for c, _ in FUEL_STATION_INCOME_MAP_TARGETS)
 
 
+def next_auto_tenant_reporting_category_code(company_id: int, application: str, kind: str) -> str:
+    """Lowest free compact code per app/kind (aqe001, fse002, …); reuses gaps after deletes."""
+    from api.models import TenantReportingCategory
+    from api.services.reference_code import first_free_suffix
+
+    prefix = _AUTO_CATEGORY_PREFIX[(application, kind)]
+    pat = re.compile(rf"^{re.escape(prefix)}(\d+)$", re.IGNORECASE)
+    used: set[int] = set()
+    for raw in TenantReportingCategory.objects.filter(
+        company_id=company_id, application=application, kind=kind
+    ).values_list("code", flat=True):
+        m = pat.match((raw or "").strip())
+        if m:
+            used.add(int(m.group(1)))
+    n = first_free_suffix(used)
+    return f"{prefix}{n:03d}"
+
+
 def normalize_category_code(raw: str | None) -> tuple[str | None, str | None]:
     if raw is None:
         return None, "code is required"
@@ -119,35 +153,43 @@ def normalize_category_code(raw: str | None) -> tuple[str | None, str | None]:
 
 
 def _row(
-    company_id: int, application: str, kind: str, code: str
+    company_id: int, application: str, kind: str, code: str, *, active_only: bool = True
 ) -> Any | None:
     from api.models import TenantReportingCategory
 
-    return (
-        TenantReportingCategory.objects.filter(
-            company_id=company_id,
-            application=application,
-            kind=kind,
-            code__iexact=code,
-            is_active=True,
-        )
-        .first()
+    qs = TenantReportingCategory.objects.filter(
+        company_id=company_id,
+        application=application,
+        kind=kind,
+        code__iexact=code,
     )
+    if active_only:
+        qs = qs.filter(is_active=True)
+    return qs.first()
 
 
 def tenant_expense_row(company_id: int, application: str, code: str) -> Any | None:
-    return _row(company_id, application, KIND_EXPENSE, code)
+    return _row(company_id, application, KIND_EXPENSE, code, active_only=True)
 
 
 def tenant_income_row(company_id: int, application: str, code: str) -> Any | None:
-    return _row(company_id, application, KIND_INCOME, code)
+    return _row(company_id, application, KIND_INCOME, code, active_only=True)
+
+
+def tenant_expense_row_for_stored_code(company_id: int, application: str, code: str) -> Any | None:
+    """Resolve a category code saved on historical transactions (includes inactive rows)."""
+    return _row(company_id, application, KIND_EXPENSE, code, active_only=False)
+
+
+def tenant_income_row_for_stored_code(company_id: int, application: str, code: str) -> Any | None:
+    return _row(company_id, application, KIND_INCOME, code, active_only=False)
 
 
 def resolve_aquaculture_expense_to_builtin(company_id: int, stored_code: str) -> str:
     s = (stored_code or "").strip()
     if s in EXPENSE_CATEGORY_CODES:
         return s
-    r = tenant_expense_row(company_id, APP_AQUACULTURE, s)
+    r = tenant_expense_row_for_stored_code(company_id, APP_AQUACULTURE, s)
     if r and (r.maps_to_code or "").strip() in EXPENSE_CATEGORY_CODES:
         return (r.maps_to_code or "").strip()
     return s
@@ -157,7 +199,7 @@ def resolve_aquaculture_income_to_builtin(company_id: int, stored_code: str) -> 
     s = (stored_code or "").strip()
     if s in INCOME_TYPE_CODES:
         return s
-    r = tenant_income_row(company_id, APP_AQUACULTURE, s)
+    r = tenant_income_row_for_stored_code(company_id, APP_AQUACULTURE, s)
     if r and (r.maps_to_code or "").strip() in INCOME_TYPE_CODES:
         return (r.maps_to_code or "").strip()
     return s
@@ -169,7 +211,7 @@ def aquaculture_expense_label(company_id: int, stored_code: str) -> str:
     s = (stored_code or "").strip()
     if s in EXPENSE_CATEGORY_LABELS:
         return EXPENSE_CATEGORY_LABELS[s]
-    r = tenant_expense_row(company_id, APP_AQUACULTURE, s)
+    r = tenant_expense_row_for_stored_code(company_id, APP_AQUACULTURE, s)
     if r:
         return (r.label or r.code).strip()
     return s or "—"
@@ -181,7 +223,7 @@ def aquaculture_income_label(company_id: int, stored_code: str) -> str:
     s = (stored_code or "").strip()
     if s in INCOME_TYPE_LABELS:
         return INCOME_TYPE_LABELS[s]
-    r = tenant_income_row(company_id, APP_AQUACULTURE, s)
+    r = tenant_income_row_for_stored_code(company_id, APP_AQUACULTURE, s)
     if r:
         return (r.label or r.code).strip()
     return s or "—"
@@ -360,6 +402,10 @@ def list_map_target_choices(*, application: str, kind: str, company_id: int | No
 
     if application == APP_FUEL_STATION:
         if kind == KIND_EXPENSE:
+            from api.services.fuel_station_coa_constants import (
+                coa_account_code_for_fuel_station_expense_rollup,
+            )
+
             groups = _group_lookup(FUEL_STATION_EXPENSE_MAP_GROUPS)
             group_order = tuple(g for g, _ in FUEL_STATION_EXPENSE_MAP_GROUPS)
             rows = [
@@ -368,10 +414,15 @@ def list_map_target_choices(*, application: str, kind: str, company_id: int | No
                     "label": label,
                     "group": groups.get(code),
                     "hint": FUEL_STATION_EXPENSE_MAP_HINTS.get(code),
+                    "coa_code": coa_account_code_for_fuel_station_expense_rollup(
+                        code, company_id=company_id
+                    ),
                 }
                 for code, label in FUEL_STATION_EXPENSE_MAP_TARGETS
             ]
             return _sort_map_targets(rows, group_order)
+        from api.services.fuel_station_coa_constants import coa_account_code_for_fuel_station_income_rollup
+
         groups = _group_lookup(FUEL_STATION_INCOME_MAP_GROUPS)
         group_order = tuple(g for g, _ in FUEL_STATION_INCOME_MAP_GROUPS)
         rows = [
@@ -380,6 +431,9 @@ def list_map_target_choices(*, application: str, kind: str, company_id: int | No
                 "label": label,
                 "group": groups.get(code),
                 "hint": FUEL_STATION_INCOME_MAP_HINTS.get(code),
+                "coa_code": coa_account_code_for_fuel_station_income_rollup(
+                    code, company_id=company_id
+                ),
             }
             for code, label in FUEL_STATION_INCOME_MAP_TARGETS
         ]
@@ -442,9 +496,28 @@ def merged_aquaculture_expense_category_list_for_api(company_id: int) -> list[di
 
 
 def merged_fuel_station_expense_category_list_for_api(company_id: int) -> list[dict]:
-    from api.models import TenantReportingCategory
+    from api.models import ChartOfAccount, TenantReportingCategory
+    from api.services.fuel_station_coa_constants import (
+        chart_account_id_for_fuel_station_expense_rollup,
+        coa_account_code_for_fuel_station_expense_rollup,
+        resolve_fuel_station_expense_to_rollup,
+    )
 
-    def _row(*, code: str, label: str, tenant_defined: bool, maps_to: str | None, trc_id: int | None) -> dict:
+    def _row(
+        *,
+        code: str,
+        label: str,
+        tenant_defined: bool,
+        maps_to: str | None,
+        trc_id: int | None,
+    ) -> dict:
+        rollup = resolve_fuel_station_expense_to_rollup(company_id, maps_to or code)
+        coa_code = coa_account_code_for_fuel_station_expense_rollup(rollup, company_id=company_id)
+        coa_id = chart_account_id_for_fuel_station_expense_rollup(company_id, rollup)
+        coa_name = ""
+        if coa_id:
+            acc = ChartOfAccount.objects.filter(pk=coa_id, company_id=company_id).first()
+            coa_name = (acc.account_name or "").strip() if acc else ""
         return {
             "id": code,
             "label": label,
@@ -452,6 +525,9 @@ def merged_fuel_station_expense_category_list_for_api(company_id: int) -> list[d
             "maps_to_code": maps_to,
             "tenant_reporting_category_id": trc_id,
             "bill_create_allowed": True,
+            "default_coa_account_code": coa_code,
+            "default_coa_account_id": coa_id,
+            "default_coa_account_name": coa_name,
         }
 
     out: list[dict] = [

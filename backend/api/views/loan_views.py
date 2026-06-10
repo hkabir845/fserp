@@ -32,6 +32,7 @@ from api.services.loan_posting import (
     reverse_loan_interest_accrual,
     reverse_loan_repayment,
 )
+from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.loan_interest_basis import (
     interest_basis_label,
     loan_interest_basis_key,
@@ -531,58 +532,32 @@ def loan_counterparties_list_or_create(request):
         ob_fields, post_gl, ob_err = _counterparty_opening_from_body(cid, body)
         if ob_err is not None:
             return ob_err
-        code_in = (body.get("code") or "").strip()[:32]
-        if code_in and LoanCounterparty.objects.filter(company_id=cid, code=code_in).exists():
-            return JsonResponse({"detail": "code already exists"}, status=400)
         try:
             with transaction.atomic():
-                if code_in:
-                    c = LoanCounterparty.objects.create(
-                        company_id=cid,
-                        code=code_in,
-                        name=name,
-                        role_type=(body.get("role_type") or "other").strip()[:32] or "other",
-                        party_kind=_norm_party_kind(body.get("party_kind")),
-                        employee_id=body.get("employee_id") or None,
-                        customer_id=body.get("customer_id") or None,
-                        vendor_id=body.get("vendor_id") or None,
-                        phone=(body.get("phone") or "")[:40],
-                        email=(body.get("email") or "")[:150],
-                        address=body.get("address") or "",
-                        tax_id=(body.get("tax_id") or "")[:80],
-                        notes=body.get("notes") or "",
-                        is_active=bool(body.get("is_active", True)),
-                        **ob_fields,
-                    )
-                else:
-                    temp_code = f"TMP-{uuid.uuid4().hex}"[:32]
-                    c = LoanCounterparty.objects.create(
-                        company_id=cid,
-                        code=temp_code,
-                        name=name,
-                        role_type=(body.get("role_type") or "other").strip()[:32] or "other",
-                        party_kind=_norm_party_kind(body.get("party_kind")),
-                        employee_id=body.get("employee_id") or None,
-                        customer_id=body.get("customer_id") or None,
-                        vendor_id=body.get("vendor_id") or None,
-                        phone=(body.get("phone") or "")[:40],
-                        email=(body.get("email") or "")[:150],
-                        address=body.get("address") or "",
-                        tax_id=(body.get("tax_id") or "")[:80],
-                        notes=body.get("notes") or "",
-                        is_active=bool(body.get("is_active", True)),
-                        **ob_fields,
-                    )
-                    base = f"CP-{c.id:05d}"
-                    candidate = base
-                    suffix = 0
-                    while LoanCounterparty.objects.filter(company_id=cid, code=candidate).exclude(
-                        pk=c.pk
-                    ).exists():
-                        suffix += 1
-                        candidate = f"{base}-{suffix}"[:32]
-                    c.code = candidate
-                    c.save(update_fields=["code"])
+                temp_code = f"TMP-{uuid.uuid4().hex}"[:32]
+                c = LoanCounterparty.objects.create(
+                    company_id=cid,
+                    code=temp_code,
+                    name=name,
+                    role_type=(body.get("role_type") or "other").strip()[:32] or "other",
+                    party_kind=_norm_party_kind(body.get("party_kind")),
+                    employee_id=body.get("employee_id") or None,
+                    customer_id=body.get("customer_id") or None,
+                    vendor_id=body.get("vendor_id") or None,
+                    phone=(body.get("phone") or "")[:40],
+                    email=(body.get("email") or "")[:150],
+                    address=body.get("address") or "",
+                    tax_id=(body.get("tax_id") or "")[:80],
+                    notes=body.get("notes") or "",
+                    is_active=bool(body.get("is_active", True)),
+                    **ob_fields,
+                )
+                assigned, aerr = assign_string_code_if_empty(
+                    cid, LoanCounterparty, "code", "CP", c.pk, None, 5
+                )
+                if aerr:
+                    raise ValidationError(aerr)
+                c.code = assigned
                 c.refresh_from_db()
                 if not post_loan_counterparty_opening(cid, c, post_to_gl=post_gl):
                     raise ValidationError(
@@ -827,48 +802,56 @@ def loans_list_or_create(request):
                     )
                 stn_id = pv
 
-        # Stable unique placeholder, then permanent code from DB id (avoids count-based races/gaps).
+        # Stable unique placeholder, then gap-aware LN-##### (reuses deleted loan numbers).
         temp_no = f"TMP-{uuid.uuid4().hex}"[:64]
-        with transaction.atomic():
-            lo = Loan.objects.create(
-                company_id=cid,
-                loan_no=temp_no,
-                direction=direction,
-                status=(body.get("status") or "draft").strip()[:24] or "draft",
-                counterparty_id=cp_id,
-                station_id=stn_id,
-                title=(body.get("title") or "")[:200],
-                agreement_no=(body.get("agreement_no") or "")[:120],
-                principal_account_id=pa,
-                settlement_account_id=sa,
-                interest_account_id=ia,
-                interest_accrual_account_id=iaa,
-                islamic_contract_variant=icv,
-                sanction_amount=_dec(body.get("sanction_amount")),
-                outstanding_principal=Decimal("0"),
-                start_date=_parse_date(body.get("start_date")),
-                maturity_date=_parse_date(body.get("maturity_date")),
-                annual_interest_rate=ar_val,
-                term_months=tm,
-                notes=body.get("notes") or "",
-                banking_model=bm,
-                product_type=pt,
-                parent_loan=parent_obj,
-                deal_reference=deal_ref,
-                aquaculture_financing=bool(body.get("aquaculture_financing", False)),
-            )
-            base = f"LN-{lo.id:05d}"
-            candidate = base
-            suffix = 0
-            while Loan.objects.filter(company_id=cid, loan_no=candidate).exclude(pk=lo.pk).exists():
-                suffix += 1
-                candidate = f"{base}-{suffix}"[:64]
-            lo.loan_no = candidate
-            extra_save = ["loan_no"]
-            if pt == Loan.PRODUCT_ISLAMIC_DEAL and not (lo.deal_reference or "").strip():
-                lo.deal_reference = f"DEAL-{lo.id:06d}"[:64]
-                extra_save.append("deal_reference")
-            lo.save(update_fields=extra_save)
+        user_loan_no, ln_err = user_supplied_code_or_auto(
+            cid, Loan, "loan_no", "LN", body.get("loan_no"), 5
+        )
+        if ln_err:
+            return JsonResponse({"detail": ln_err}, status=400)
+        try:
+            with transaction.atomic():
+                lo = Loan.objects.create(
+                    company_id=cid,
+                    loan_no=user_loan_no or temp_no,
+                    direction=direction,
+                    status=(body.get("status") or "draft").strip()[:24] or "draft",
+                    counterparty_id=cp_id,
+                    station_id=stn_id,
+                    title=(body.get("title") or "")[:200],
+                    agreement_no=(body.get("agreement_no") or "")[:120],
+                    principal_account_id=pa,
+                    settlement_account_id=sa,
+                    interest_account_id=ia,
+                    interest_accrual_account_id=iaa,
+                    islamic_contract_variant=icv,
+                    sanction_amount=_dec(body.get("sanction_amount")),
+                    outstanding_principal=Decimal("0"),
+                    start_date=_parse_date(body.get("start_date")),
+                    maturity_date=_parse_date(body.get("maturity_date")),
+                    annual_interest_rate=ar_val,
+                    term_months=tm,
+                    notes=body.get("notes") or "",
+                    banking_model=bm,
+                    product_type=pt,
+                    parent_loan=parent_obj,
+                    deal_reference=deal_ref,
+                    aquaculture_financing=bool(body.get("aquaculture_financing", False)),
+                )
+                if not user_loan_no:
+                    assigned, aerr = assign_string_code_if_empty(
+                        cid, Loan, "loan_no", "LN", lo.pk, body.get("loan_no"), 5
+                    )
+                    if aerr:
+                        raise ValidationError(aerr)
+                    lo.loan_no = assigned
+                extra_save = ["loan_no"]
+                if pt == Loan.PRODUCT_ISLAMIC_DEAL and not (lo.deal_reference or "").strip():
+                    lo.deal_reference = f"DEAL-{lo.id:06d}"[:64]
+                    extra_save.append("deal_reference")
+                lo.save(update_fields=extra_save)
+        except ValidationError as e:
+            return JsonResponse({"detail": str(e)}, status=400)
         return JsonResponse(_loan_json(lo), status=201)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 

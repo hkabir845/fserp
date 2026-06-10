@@ -707,8 +707,14 @@ def payroll_list_or_create(request):
         salary_expense_account_id=salary_exp_id,
     )
     p.save()
-    if not p.payroll_number:
-        PayrollRun.objects.filter(pk=p.pk).update(payroll_number=f"PR-{p.id:05d}")
+    if not (p.payroll_number or "").strip():
+        assigned, aerr = assign_string_code_if_empty(
+            cid, PayrollRun, "payroll_number", "PR", p.pk, None, 5
+        )
+        if aerr:
+            p.delete()
+            return JsonResponse({"detail": aerr}, status=400)
+        p.payroll_number = assigned
         p.refresh_from_db()
     p = (
         PayrollRun.objects.filter(pk=p.pk, company_id=cid)

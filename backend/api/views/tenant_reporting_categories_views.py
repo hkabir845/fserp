@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from api.models import TenantReportingCategory
+from api.services.tenant_reporting_category_propagation import propagate_tenant_reporting_category_update
 from api.services.tenant_reporting_categories import (
     APP_AQUACULTURE,
     APP_FUEL_STATION,
@@ -14,7 +15,7 @@ from api.services.tenant_reporting_categories import (
     KIND_INCOME,
     list_map_target_choices,
     merged_fuel_station_expense_category_list_for_api,
-    normalize_category_code,
+    next_auto_tenant_reporting_category_code,
     validate_maps_to,
     validate_tenant_code_not_builtin_conflict,
 )
@@ -129,10 +130,7 @@ def reporting_categories_list_or_create(request):
         return JsonResponse({"detail": "application must be aquaculture or fuel_station"}, status=400)
     if kind not in (KIND_EXPENSE, KIND_INCOME):
         return JsonResponse({"detail": "kind must be expense or income"}, status=400)
-    code, cerr = normalize_category_code(body.get("code"))
-    if cerr:
-        return JsonResponse({"detail": cerr}, status=400)
-    assert code is not None
+    code = next_auto_tenant_reporting_category_code(cid, app, kind)
     conflict = validate_tenant_code_not_builtin_conflict(application=app, kind=kind, code=code)
     if conflict:
         return JsonResponse({"detail": conflict}, status=400)
@@ -184,6 +182,8 @@ def reporting_category_detail(request, category_id: int):
     body, err = parse_json_body(request)
     if err:
         return err
+    old_maps_to_code = r.maps_to_code
+    old_label = r.label
     if "label" in body:
         lab = (body.get("label") or "").strip()
         if not lab:
@@ -203,7 +203,18 @@ def reporting_category_detail(request, category_id: int):
         except (TypeError, ValueError):
             return JsonResponse({"detail": "sort_order must be an integer"}, status=400)
     r.save()
-    return JsonResponse(_serialize_row(r))
+    maps_to_changed = (old_maps_to_code or "").strip() != (r.maps_to_code or "").strip()
+    label_changed = (old_label or "").strip() != (r.label or "").strip()
+    propagation = propagate_tenant_reporting_category_update(
+        r,
+        old_maps_to_code=old_maps_to_code,
+        maps_to_changed=maps_to_changed,
+        label_changed=label_changed,
+    )
+    payload = _serialize_row(r)
+    if any(propagation.values()):
+        payload["propagation"] = propagation
+    return JsonResponse(payload)
 
 
 @csrf_exempt
@@ -212,7 +223,10 @@ def reporting_category_detail(request, category_id: int):
 @require_company_id
 def fuel_station_expense_categories(request):
     """Merged built-in + tenant fuel-station expense categories for vendor bills."""
+    from api.chart_templates.fuel_station import ensure_fuel_station_reporting_rollup_accounts
+
     try:
+        ensure_fuel_station_reporting_rollup_accounts(request.company_id)
         rows = merged_fuel_station_expense_category_list_for_api(request.company_id)
     except (ProgrammingError, OperationalError) as exc:
         return _db_error_response(exc)

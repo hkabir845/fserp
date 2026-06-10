@@ -22,7 +22,6 @@ def test_tenant_aquaculture_expense_category_end_to_end(api_client, company_tena
             {
                 "application": "aquaculture",
                 "kind": "expense",
-                "code": "site_security",
                 "label": "Site security",
                 "maps_to_code": "electricity",
             }
@@ -31,11 +30,13 @@ def test_tenant_aquaculture_expense_category_end_to_end(api_client, company_tena
         **auth_admin_headers,
     )
     assert r0.status_code == 201
+    cat_code = json.loads(r0.content.decode())["code"]
+    assert cat_code == "aqe001"
 
     r1 = api_client.get("/api/aquaculture/expense-categories/", **auth_admin_headers)
     assert r1.status_code == 200
     rows = json.loads(r1.content.decode())
-    sec = next((x for x in rows if x.get("id") == "site_security"), None)
+    sec = next((x for x in rows if x.get("id") == cat_code), None)
     assert sec is not None
     assert sec.get("tenant_defined") is True
     assert sec.get("maps_to_code") == "electricity"
@@ -56,7 +57,7 @@ def test_tenant_aquaculture_expense_category_end_to_end(api_client, company_tena
         data=json.dumps(
             {
                 "pond_id": pond.id,
-                "expense_category": "site_security",
+                "expense_category": cat_code,
                 "expense_date": "2026-05-01",
                 "amount": "50.00",
                 "memo": "CCTV maintenance",
@@ -82,7 +83,7 @@ def test_tenant_aquaculture_expense_category_end_to_end(api_client, company_tena
                         "unit_cost": "50.00",
                         "amount": "50.00",
                         "aquaculture_pond_id": pond.id,
-                        "aquaculture_expense_category": "site_security",
+                        "aquaculture_expense_category": cat_code,
                     }
                 ],
             }
@@ -93,7 +94,8 @@ def test_tenant_aquaculture_expense_category_end_to_end(api_client, company_tena
     assert r2.status_code == 201, r2.content.decode()
     line = json.loads(r2.content.decode())["lines"][0]
     assert line["aquaculture_cost_bucket"] == "electricity"
-    assert line["aquaculture_expense_category"] == "electricity"
+    assert line["aquaculture_expense_category"] == cat_code
+    assert line.get("tenant_reporting_category_id")
 
 
 @pytest.mark.django_db
@@ -113,13 +115,12 @@ def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_ad
         memo="Opening stock for custom income sale test",
     )
 
-    api_client.post(
+    inc = api_client.post(
         "/api/reporting-categories/",
         data=json.dumps(
             {
                 "application": "aquaculture",
                 "kind": "income",
-                "code": "pond_tour_fees",
                 "label": "Pond tour fees",
                 "maps_to_code": "other_income",
             }
@@ -127,13 +128,16 @@ def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_ad
         content_type="application/json",
         **auth_admin_headers,
     )
+    assert inc.status_code == 201
+    income_code = json.loads(inc.content.decode())["code"]
+    assert income_code == "aqi001"
 
     r = api_client.post(
         "/api/aquaculture/sales/",
         data=json.dumps(
             {
                 "pond_id": pond.id,
-                "income_type": "pond_tour_fees",
+                "income_type": income_code,
                 "fish_species": "tilapia",
                 "sale_date": "2026-05-02",
                 "weight_kg": "10",
@@ -146,7 +150,7 @@ def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_ad
     )
     assert r.status_code == 201
     sale = AquacultureFishSale.objects.get(pk=json.loads(r.content.decode())["id"])
-    assert sale.income_type == "pond_tour_fees"
+    assert sale.income_type == income_code
 
 
 @pytest.mark.django_db
@@ -185,6 +189,142 @@ def test_reporting_category_map_targets_enriched(api_client, company_tenant, aut
 
 
 @pytest.mark.django_db
+def test_reporting_category_edit_propagates_to_bill_and_journal(
+    api_client, company_tenant, auth_admin_headers
+):
+    from api.models import BillLine, JournalEntry, JournalEntryLine
+
+    Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    ensure_aquaculture_chart_accounts(company_tenant.id)
+    from tests.conftest import seed_min_gl_accounts
+
+    seed_min_gl_accounts(company_tenant)
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P1", is_active=True)
+    vendor = Vendor.objects.filter(company_id=company_tenant.id).first()
+    if vendor is None:
+        vendor = Vendor.objects.create(
+            company_id=company_tenant.id,
+            company_name="Security Vendor",
+            display_name="Security Vendor",
+            vendor_number="V-SEC-2",
+            is_active=True,
+        )
+
+    create = api_client.post(
+        "/api/reporting-categories/",
+        data=json.dumps(
+            {
+                "application": "aquaculture",
+                "kind": "expense",
+                "label": "Site security",
+                "maps_to_code": "electricity",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert create.status_code == 201
+    created = json.loads(create.content.decode())
+    cat_id = created["id"]
+    cat_code = created["code"]
+
+    bill = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor.id,
+                "bill_date": "2026-05-01",
+                "status": "open",
+                "lines": [
+                    {
+                        "description": "CCTV maintenance",
+                        "quantity": 1,
+                        "unit_cost": "50.00",
+                        "amount": "50.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_expense_category": cat_code,
+                    }
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert bill.status_code == 201, bill.content.decode()
+    bill_id = json.loads(bill.content.decode())["id"]
+    line = BillLine.objects.get(bill_id=bill_id)
+    assert line.tenant_reporting_category_id == cat_id
+    assert line.aquaculture_cost_bucket == "electricity"
+
+    upd = api_client.put(
+        f"/api/reporting-categories/{cat_id}/",
+        data=json.dumps(
+            {
+                "label": "Site security & CCTV",
+                "maps_to_code": "other",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert upd.status_code == 200, upd.content.decode()
+    body = json.loads(upd.content.decode())
+    assert body["label"] == "Site security & CCTV"
+    prop = body.get("propagation", {})
+    assert prop.get("bill_lines_updated", 0) >= 1
+    assert prop.get("journal_lines_updated", 0) >= 1 or prop.get("bills_resynced", 0) >= 1
+
+    line.refresh_from_db()
+    assert line.aquaculture_cost_bucket == "miscellaneous"
+    assert line.tenant_reporting_category_id == cat_id
+
+    je = JournalEntry.objects.filter(entry_number=f"AUTO-BILL-{bill_id}").first()
+    assert je is not None
+    jl = JournalEntryLine.objects.filter(journal_entry_id=je.id, debit__gt=0).first()
+    assert jl is not None
+    assert jl.aquaculture_cost_bucket == "miscellaneous"
+
+
+@pytest.mark.django_db
+def test_reporting_category_auto_code_gap_fill(api_client, company_tenant, auth_admin_headers):
+    payload = {
+        "application": "aquaculture",
+        "kind": "expense",
+        "label": "First",
+        "maps_to_code": "electricity",
+    }
+    r1 = api_client.post(
+        "/api/reporting-categories/",
+        data=json.dumps(payload),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r1.status_code == 201
+    assert json.loads(r1.content.decode())["code"] == "aqe001"
+
+    r2 = api_client.post(
+        "/api/reporting-categories/",
+        data=json.dumps({**payload, "label": "Second"}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r2.status_code == 201
+    assert json.loads(r2.content.decode())["code"] == "aqe002"
+
+    cat1_id = json.loads(r1.content.decode())["id"]
+    assert api_client.delete(f"/api/reporting-categories/{cat1_id}/", **auth_admin_headers).status_code == 200
+
+    r3 = api_client.post(
+        "/api/reporting-categories/",
+        data=json.dumps({**payload, "label": "Third"}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r3.status_code == 201
+    assert json.loads(r3.content.decode())["code"] == "aqe001"
+
+
+@pytest.mark.django_db
 def test_reporting_categories_non_admin_forbidden(api_client, company_tenant, auth_accountant_headers):
     r = api_client.post(
         "/api/reporting-categories/",
@@ -192,7 +332,6 @@ def test_reporting_categories_non_admin_forbidden(api_client, company_tenant, au
             {
                 "application": "fuel_station",
                 "kind": "expense",
-                "code": "misc_tag",
                 "label": "Misc",
                 "maps_to_code": "other",
             }

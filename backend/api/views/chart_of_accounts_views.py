@@ -562,6 +562,20 @@ def chart_of_accounts_seed_template(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+def chart_of_accounts_erp_defaults(request):
+    """GET built-in ERP automation COA purposes with resolved account_id for this company."""
+    if request.method != "GET":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    from api.chart_templates.fuel_station import ensure_fuel_station_reporting_rollup_accounts
+    from api.services.erp_coa_defaults import erp_coa_defaults_payload
+
+    ensure_fuel_station_reporting_rollup_accounts(request.company_id)
+    return JsonResponse(erp_coa_defaults_payload(request.company_id))
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
 def chart_of_accounts_backfill_descriptions(request):
     """POST { only_blank?: bool } — copy built-in template descriptions onto existing accounts (same codes).
 

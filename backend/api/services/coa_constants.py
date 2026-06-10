@@ -50,8 +50,10 @@ def is_debit_normal_chart_type(
 ) -> bool:
     """Normal balance debit: assets, bank registers, expenses, COGS; loan receivable."""
     t = normalize_chart_account_type(account_type)
+    st = (account_sub_type or "").strip().lower()
+    if t == "asset" and st in ("accumulated_depreciation", "allowance_for_bad_debts"):
+        return False
     if t == "loan":
-        st = (account_sub_type or "").strip().lower()
         if st == "loan_payable":
             return False
         return True  # loan_receivable or unset → treat as receivable (debit-normal)

@@ -296,6 +296,38 @@ export default function ShiftManagementPage() {
     )
   }, [allMeters, selectedStation])
 
+  /** Most recent closed shift at the selected station — for opening cash / float hint. */
+  const lastClosedShiftForStation = useMemo(() => {
+    if (selectedStation == null) return null
+    return (
+      sessionHistory.find(
+        (s) => s.station_id === selectedStation && s.closed_at != null && s.closed_at !== '',
+      ) ?? null
+    )
+  }, [sessionHistory, selectedStation])
+
+  const lastCashFloatForStation = useMemo(() => {
+    if (!lastClosedShiftForStation) return null
+    const counted = lastClosedShiftForStation.closing_cash_counted?.trim()
+    if (counted != null && counted !== '') return counted
+    const opening = lastClosedShiftForStation.opening_cash_float?.trim()
+    if (opening != null && opening !== '') return opening
+    return null
+  }, [lastClosedShiftForStation])
+
+  const lastCashFloatSource = useMemo(() => {
+    if (!lastClosedShiftForStation) return null
+    const counted = lastClosedShiftForStation.closing_cash_counted?.trim()
+    if (counted != null && counted !== '') return 'counted' as const
+    return 'opening' as const
+  }, [lastClosedShiftForStation])
+
+  useEffect(() => {
+    if (openSessions.length > 0) return
+    if (selectedStation == null) return
+    setOpeningCash(lastCashFloatForStation ?? '0.00')
+  }, [selectedStation, lastCashFloatForStation, openSessions.length])
+
   useEffect(() => {
     if (openSessions.length > 0) return
     if (selectedStation == null) return
@@ -856,17 +888,53 @@ export default function ShiftManagementPage() {
                   </select>
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Opening cash float *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={openingCash}
-                    onChange={(e) => setOpeningCash(e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="0.00"
-                    required
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Opening cash float *</label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Cash in the drawer at shift start. Prefilled from the last closed shift at this station when
+                    available.
+                  </p>
+                  <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
+                      <div>
+                        <div className="font-medium text-gray-900">Cash drawer float</div>
+                        <div className="text-xs text-gray-500">
+                          {selectedStation == null ? (
+                            <>Select a station to see the previous amount.</>
+                          ) : lastCashFloatForStation != null ? (
+                            <>
+                              Last: {formatCurrency(Number(lastCashFloatForStation))}
+                              {lastClosedShiftForStation?.closed_at ? (
+                                <>
+                                  {' '}
+                                  ·{' '}
+                                  {lastCashFloatSource === 'counted'
+                                    ? 'closing count'
+                                    : 'opening float'}
+                                  ,{' '}
+                                  {formatDate(lastClosedShiftForStation.closed_at)}
+                                </>
+                              ) : null}
+                            </>
+                          ) : (
+                            <>Last: — (no prior closed shift at this station)</>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-600">Opening amount *</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={openingCash}
+                          onChange={(e) => setOpeningCash(e.target.value)}
+                          className="w-full mt-0.5 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          placeholder="0.00"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 {stationMeters.length > 0 && (
                   <div className="md:col-span-2">

@@ -75,6 +75,8 @@ from api.models import (
     Employee,
     EmployeeLedgerEntry,
     FundTransfer,
+    FixedAsset,
+    FixedAssetDepreciationRun,
     InventoryAdjustment,
     InventoryAdjustmentLine,
     InventoryTransfer,
@@ -189,6 +191,8 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.loandisbursement",
     "api.loanrepayment",
     "api.loaninterestaccrual",
+    "api.fixedasset",
+    "api.fixedassetdepreciationrun",
     "api.journalentryline",
     "api.aquacultureexpense",
     "api.aquacultureexpenseinventoryline",
@@ -219,6 +223,8 @@ _DEFERRED_JOURNAL_ENTRY_FKS: dict[str, tuple[str, ...]] = {
     "api.loandisbursement": ("journal_entry",),
     "api.loanrepayment": ("journal_entry", "reversal_journal_entry"),
     "api.loaninterestaccrual": ("journal_entry", "reversal_journal_entry"),
+    "api.fixedasset": ("acquisition_journal_entry", "disposal_journal_entry"),
+    "api.fixedassetdepreciationrun": ("journal_entry", "reversal_journal_entry"),
     "api.aquaculturefishstockledger": ("journal_entry",),
     "api.aquaculturelandlordledgerentry": ("journal_entry",),
     "api.aquaculturepondprofittransfer": ("journal_entry",),
@@ -286,6 +292,10 @@ def _init_backup_row_exists_overrides() -> None:
             "api.loanrepayment": lambda cid: LoanRepayment.objects.filter(loan__company_id=cid).exists(),
             "api.loaninterestaccrual": lambda cid: LoanInterestAccrual.objects.filter(
                 loan__company_id=cid
+            ).exists(),
+            "api.fixedasset": lambda cid: FixedAsset.objects.filter(company_id=cid).exists(),
+            "api.fixedassetdepreciationrun": lambda cid: FixedAssetDepreciationRun.objects.filter(
+                fixed_asset__company_id=cid
             ).exists(),
         }
     )
@@ -446,6 +456,8 @@ def delete_tenant_company_data(company_id: int) -> None:
     InvoiceLine.objects.filter(invoice__company_id=cid).delete()
     JournalEntryLine.objects.filter(journal_entry__company_id=cid).delete()
     LoanInterestAccrual.objects.filter(loan__company_id=cid).delete()
+    FixedAssetDepreciationRun.objects.filter(fixed_asset__company_id=cid).delete()
+    FixedAsset.objects.filter(company_id=cid).delete()
     LoanRepayment.objects.filter(loan__company_id=cid).delete()
     LoanDisbursement.objects.filter(loan__company_id=cid).delete()
     PondWarehouseStockReceiptLine.objects.filter(receipt__company_id=cid).delete()
@@ -698,6 +710,10 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
     _serialize_many(records, LoanRepayment.objects.filter(loan__company_id=cid).order_by("id"))
     _serialize_many(
         records, LoanInterestAccrual.objects.filter(loan__company_id=cid).order_by("id")
+    )
+    _serialize_many(records, FixedAsset.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records, FixedAssetDepreciationRun.objects.filter(fixed_asset__company_id=cid).order_by("id")
     )
     _serialize_many(
         records,

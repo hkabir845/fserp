@@ -17,6 +17,7 @@ import {
   Clock,
   BarChart3,
   Landmark,
+  Boxes,
   BookOpen,
   Receipt,
   Crown,
@@ -184,6 +185,7 @@ export function getFsmsErpMenuItems(): ErpAppMenuItem[] {
     { href: '/journal-entries', label: 'Journal Entries', section: 'accounting', icon: Receipt, tileClass: tile('bg-purple-100', 'text-purple-600') },
     { href: '/fund-transfers', label: 'Fund Transfer', section: 'accounting', icon: TrendingUp, tileClass: tile('bg-blue-100', 'text-blue-600') },
     { href: '/loans', label: 'Loans', section: 'accounting', icon: Landmark, tileClass: tile('bg-slate-100', 'text-slate-700') },
+    { href: '/fixed-assets', label: 'Fixed Assets', section: 'accounting', icon: Boxes, tileClass: tile('bg-stone-100', 'text-stone-700') },
 
     { href: '/customers', label: 'Customers', section: 'sales', icon: Users, tileClass: tile('bg-green-100', 'text-green-600') },
     { href: '/vendors', label: 'Vendors', section: 'sales', icon: Users, tileClass: tile('bg-emerald-100', 'text-emerald-700') },
@@ -217,8 +219,6 @@ export function getFsmsErpMenuItems(): ErpAppMenuItem[] {
     },
     { href: '/backup', label: 'Backup & Restore', section: 'management', icon: Database, tileClass: tile('bg-neutral-100', 'text-neutral-600') },
 
-    { href: '/reports', label: 'Reports', section: 'reports', icon: BarChart3, tileClass: tile('bg-violet-100', 'text-violet-600') },
-
     ...getAquacultureMenuItemsFlatWithGroup().map((item) => ({
       href: item.href,
       label: item.sidebarLabel ?? item.label,
@@ -228,6 +228,8 @@ export function getFsmsErpMenuItems(): ErpAppMenuItem[] {
       subGroupId: item.groupId,
       subGroupLabel: item.groupLabel,
     })),
+
+    { href: '/reports', label: 'Reports', section: 'reports', icon: BarChart3, tileClass: tile('bg-violet-100', 'text-violet-600') },
   ]
 }
 
@@ -447,8 +449,8 @@ const FSMS_SECTIONS_ALL: { id: ErpAppSection; label: string }[] = [
   { id: 'inventory', label: 'Products & services' },
   { id: 'hr', label: 'HR & Payroll' },
   { id: 'management', label: 'Management' },
-  { id: 'reports', label: 'Reports & Analytics' },
   { id: 'aquaculture', label: 'Aquaculture' },
+  { id: 'reports', label: 'Reports & Analytics' },
 ]
 
 export function getSectionDefinitions(

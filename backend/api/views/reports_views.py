@@ -37,6 +37,8 @@ from api.services.reporting import (
     report_loan_payable_gl,
     report_loans_borrow_and_lent,
     report_meter_readings,
+    report_drill_invoice_documents,
+    report_drill_bill_documents,
     report_sales_by_nozzle,
     report_sales_by_station,
     report_sales_report,
@@ -397,3 +399,41 @@ def report_by_id(request, report_id: str):
     else:
         payload = handler(cid, start, end)
     return JsonResponse(payload)
+
+
+@require_GET
+@auth_required
+@require_company_id
+def report_drill_invoices(request):
+    cid = request.company_id
+    start, end = parse_report_dates(request)
+    try:
+        customer_id = int(request.GET.get("customer_id") or 0)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "customer_id required"}, status=400)
+    if customer_id <= 0:
+        return JsonResponse({"detail": "customer_id required"}, status=400)
+    st_id, st_err = effective_report_station_id(request, cid)
+    if st_err:
+        return st_err
+    return JsonResponse(
+        report_drill_invoice_documents(cid, customer_id, start, end, station_id=st_id)
+    )
+
+
+@require_GET
+@auth_required
+@require_company_id
+def report_drill_bills(request):
+    cid = request.company_id
+    start, end = parse_report_dates(request)
+    try:
+        vendor_id = int(request.GET.get("vendor_id") or 0)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "vendor_id required"}, status=400)
+    if vendor_id <= 0:
+        return JsonResponse({"detail": "vendor_id required"}, status=400)
+    st_id, st_err = effective_report_station_id(request, cid)
+    if st_err:
+        return st_err
+    return JsonResponse(report_drill_bill_documents(cid, vendor_id, start, end, station_id=st_id))

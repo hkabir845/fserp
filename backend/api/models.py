@@ -1987,6 +1987,145 @@ class LoanInterestAccrual(models.Model):
         ordering = ["-accrual_date", "-id"]
 
 
+class FixedAsset(models.Model):
+    """Capital asset register with straight-line depreciation and GL posting."""
+
+    STATUS_DRAFT = "draft"
+    STATUS_ACTIVE = "active"
+    STATUS_FULLY_DEPRECIATED = "fully_depreciated"
+    STATUS_DISPOSED = "disposed"
+
+    METHOD_STRAIGHT_LINE = "straight_line"
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="fixed_assets")
+    station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fixed_assets",
+        help_text="Site for depreciation expense tagging (P&L / segment reporting).",
+    )
+    aquaculture_pond = models.ForeignKey(
+        "AquaculturePond",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fixed_assets",
+        help_text="Pond entity for depreciation expense when asset belongs to aquaculture.",
+    )
+    company_wide = models.BooleanField(
+        default=False,
+        help_text=(
+            "Shared / head-office asset (e.g. manager vehicle). Depreciation expense is not tagged "
+            "to a station or pond — appears on company-wide P&L only."
+        ),
+    )
+    asset_number = models.CharField(max_length=64)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    status = models.CharField(max_length=24, default=STATUS_DRAFT)
+    asset_account = models.ForeignKey(
+        ChartOfAccount,
+        on_delete=models.PROTECT,
+        related_name="fixed_assets_asset",
+        help_text="Fixed-asset GL line (e.g. 1510–1540).",
+    )
+    accumulated_depreciation_account = models.ForeignKey(
+        ChartOfAccount,
+        on_delete=models.PROTECT,
+        related_name="fixed_assets_accum_depr",
+        help_text="Contra-asset accumulated depreciation (e.g. 1550).",
+    )
+    depreciation_expense_account = models.ForeignKey(
+        ChartOfAccount,
+        on_delete=models.PROTECT,
+        related_name="fixed_assets_depr_expense",
+        help_text="Depreciation expense P&L line (e.g. 6320).",
+    )
+    settlement_account = models.ForeignKey(
+        ChartOfAccount,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fixed_assets_settlement",
+        help_text="Bank/cash line for acquisition posting when capitalizing a new purchase.",
+    )
+    acquisition_date = models.DateField(null=True, blank=True)
+    in_service_date = models.DateField(null=True, blank=True)
+    disposal_date = models.DateField(null=True, blank=True)
+    acquisition_cost = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    salvage_value = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    useful_life_months = models.PositiveSmallIntegerField(default=60)
+    depreciation_method = models.CharField(max_length=24, default=METHOD_STRAIGHT_LINE)
+    opening_accumulated_depreciation = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Already-depreciated amount when adopting an asset mid-life (no acquisition JE).",
+    )
+    accumulated_depreciation = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Running total posted to accumulated depreciation (includes opening balance).",
+    )
+    last_depreciation_date = models.DateField(null=True, blank=True)
+    acquisition_journal_entry = models.ForeignKey(
+        JournalEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fixed_asset_acquisitions",
+    )
+    disposal_journal_entry = models.ForeignKey(
+        JournalEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fixed_asset_disposals",
+    )
+    memo = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "fixed_asset"
+        unique_together = [["company", "asset_number"]]
+        ordering = ["-created_at", "-id"]
+
+
+class FixedAssetDepreciationRun(models.Model):
+    """Posted depreciation for one asset and period."""
+
+    fixed_asset = models.ForeignKey(FixedAsset, on_delete=models.CASCADE, related_name="depreciation_runs")
+    run_date = models.DateField()
+    period_start = models.DateField(null=True, blank=True)
+    period_end = models.DateField(null=True, blank=True)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    memo = models.TextField(blank=True)
+    journal_entry = models.ForeignKey(
+        JournalEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fixed_asset_depreciation_runs",
+    )
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversal_journal_entry = models.ForeignKey(
+        JournalEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fixed_asset_depreciation_reversals",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "fixed_asset_depreciation_run"
+        ordering = ["-run_date", "-id"]
+
+
 # ---------------------------------------------------------------------------
 # Aquaculture (optional module per company)
 # ---------------------------------------------------------------------------

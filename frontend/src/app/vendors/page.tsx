@@ -902,7 +902,7 @@ export default function VendorsPage() {
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
                       <strong>Expense category for vendor bills</strong> (P&amp;L), not the account you pay from.
-                      Suggested when you pick a usual location: site → 6900 office expense, pond → 6725 aquaculture
+                      Suggested when you pick a usual location: site → 6920 station operating, pond → 6725 aquaculture
                       misc. You can change or clear this anytime. To pay from{' '}
                       <strong>bank or cash</strong>, use{' '}
                       <Link href="/payments/made/new" className="text-blue-600 hover:underline">

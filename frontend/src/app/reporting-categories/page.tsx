@@ -8,12 +8,16 @@ import {
   Loader2,
   Plus,
   Trash2,
+  Edit2,
+  X,
   MapPin,
   Tag,
   Fish,
   Fuel,
   Info,
   Layers,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { useCompany } from '@/contexts/CompanyContext'
@@ -28,8 +32,6 @@ import {
   kindLabel,
   scopeContextBlurb,
   scopeDisplayLabel,
-  suggestCategoryCodeFromLabel,
-  validateCategoryCodeClient,
   groupReportingMapTargets,
   type ReportingApplication,
   type ReportingKind,
@@ -132,12 +134,19 @@ export default function ReportingCategoriesPage() {
   const [scopeKey, setScopeKey] = useState('')
   const [kind, setKind] = useState<ReportingKind>('expense')
   const [form, setForm] = useState({
-    code: '',
     label: '',
     maps_to_code: '',
     sort_order: '0',
   })
-  const [codeManuallyEdited, setCodeManuallyEdited] = useState(false)
+  const [editingRow, setEditingRow] = useState<CategoryRow | null>(null)
+  const [editForm, setEditForm] = useState({
+    label: '',
+    maps_to_code: '',
+    sort_order: '0',
+    is_active: true,
+  })
+  const [editMapTargets, setEditMapTargets] = useState<ReportingMapTarget[]>([])
+  const [editSaving, setEditSaving] = useState(false)
 
   const needsCompanyPick = isSuperAdmin && isClientReady && !selectedCompany?.id
   const canCallApi = isAdmin && !needsCompanyPick
@@ -223,33 +232,12 @@ export default function ReportingCategoriesPage() {
   }
 
   const onLabelChange = (label: string) => {
-    setForm((f) => {
-      const next = { ...f, label }
-      if (!codeManuallyEdited) {
-        next.code = suggestCategoryCodeFromLabel(label)
-      }
-      return next
-    })
-  }
-
-  const onCodeChange = (code: string) => {
-    setCodeManuallyEdited(true)
-    setForm((f) => ({ ...f, code }))
+    setForm((f) => ({ ...f, label }))
   }
 
   const resetCreateForm = () => {
-    setCodeManuallyEdited(false)
-    setForm({ code: '', label: '', maps_to_code: '', sort_order: '0' })
+    setForm({ label: '', maps_to_code: '', sort_order: '0' })
   }
-
-  const codePreview = useMemo(
-    () => suggestCategoryCodeFromLabel(form.label),
-    [form.label]
-  )
-  const codeValidation = useMemo(
-    () => validateCategoryCodeClient(form.code.trim() || codePreview),
-    [form.code, codePreview]
-  )
 
   const loadTargets = useCallback(async () => {
     if (!canCallApi || resolvedApplication == null) {
@@ -310,17 +298,10 @@ export default function ReportingCategoriesPage() {
       toast.error('Display name and rollup are required.')
       return
     }
-    const finalCode = (form.code.trim() || codePreview).trim()
-    const codeErr = validateCategoryCodeClient(finalCode)
-    if (codeErr) {
-      toast.error(codeErr)
-      return
-    }
     try {
       await api.post('/reporting-categories/', {
         application: resolvedApplication,
         kind,
-        code: finalCode,
         label: form.label.trim(),
         maps_to_code: form.maps_to_code,
         sort_order: Number(form.sort_order) || 0,
@@ -344,6 +325,92 @@ export default function ReportingCategoriesPage() {
       toast.error(formatReportingCategoriesError(e, 'Delete failed'))
     }
   }
+
+  const openEdit = async (row: CategoryRow) => {
+    setEditingRow(row)
+    setEditForm({
+      label: row.label,
+      maps_to_code: row.maps_to_code,
+      sort_order: String(row.sort_order),
+      is_active: row.is_active,
+    })
+    try {
+      const { data } = await api.get<{ map_targets: ReportingMapTarget[] }>('/reporting-categories/map-targets/', {
+        params: { application: row.application, kind: row.kind },
+      })
+      setEditMapTargets(Array.isArray(data?.map_targets) ? data.map_targets : [])
+    } catch (e) {
+      setEditMapTargets([])
+      toast.error(formatReportingCategoriesError(e, 'Could not load rollup options'))
+    }
+  }
+
+  const closeEdit = () => {
+    setEditingRow(null)
+    setEditMapTargets([])
+  }
+
+  const onUpdate = async () => {
+    if (!editingRow) return
+    if (!editForm.label.trim() || !editForm.maps_to_code) {
+      toast.error('Display name and rollup are required.')
+      return
+    }
+    setEditSaving(true)
+    try {
+      const { data } = await api.put(`/reporting-categories/${editingRow.id}/`, {
+        label: editForm.label.trim(),
+        maps_to_code: editForm.maps_to_code,
+        sort_order: Number(editForm.sort_order) || 0,
+        is_active: editForm.is_active,
+      })
+      const propagation = data?.propagation as
+        | {
+            bill_lines_linked?: number
+            bill_lines_updated?: number
+            bills_resynced?: number
+            journal_lines_updated?: number
+            aquaculture_expenses_resynced?: number
+          }
+        | undefined
+      if (propagation && Object.values(propagation).some((n) => Number(n) > 0)) {
+        const parts: string[] = []
+        if (propagation.bill_lines_linked) parts.push(`${propagation.bill_lines_linked} bill line(s) linked`)
+        if (propagation.bills_resynced) parts.push(`${propagation.bills_resynced} posted bill journal(s) refreshed`)
+        if (propagation.journal_lines_updated) parts.push(`${propagation.journal_lines_updated} journal line(s) updated`)
+        if (propagation.aquaculture_expenses_resynced) {
+          parts.push(`${propagation.aquaculture_expenses_resynced} pond expense journal(s) refreshed`)
+        }
+        toast.success(
+          parts.length ? `Category updated — ${parts.join('; ')}.` : 'Category updated — linked records refreshed.'
+        )
+      } else {
+        toast.success('Category updated')
+      }
+      closeEdit()
+      await loadRows()
+    } catch (e) {
+      toast.error(formatReportingCategoriesError(e, 'Update failed'))
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  const onToggleActive = async (row: CategoryRow) => {
+    try {
+      await api.put(`/reporting-categories/${row.id}/`, { is_active: !row.is_active })
+      toast.success(row.is_active ? 'Category deactivated' : 'Category activated')
+      await loadRows()
+    } catch (e) {
+      toast.error(formatReportingCategoriesError(e, 'Update failed'))
+    }
+  }
+
+  const groupedEditMapTargets = useMemo(() => groupReportingMapTargets(editMapTargets), [editMapTargets])
+  const selectedEditMapTarget = useMemo(
+    () => editMapTargets.find((m) => m.id === editForm.maps_to_code),
+    [editMapTargets, editForm.maps_to_code]
+  )
 
   const groupedMapTargets = useMemo(() => groupReportingMapTargets(mapTargets), [mapTargets])
   const selectedMapTarget = useMemo(
@@ -518,55 +585,19 @@ export default function ReportingCategoriesPage() {
                       placeholder="Site security"
                     />
                   </label>
-                  <div className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
-                    <span>Internal code</span>
-                    <span className="font-normal text-slate-500">
-                      A short machine ID saved in the database (like a SKU). We fill this from the display name —
-                      you only need to change it if you want a specific ID.
-                    </span>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <input
-                        className="min-w-[12rem] flex-1 rounded-md border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                        value={form.code}
-                        onChange={(e) => onCodeChange(e.target.value)}
-                        disabled={!canCallApi}
-                        placeholder={codePreview || 'site_security'}
-                        aria-describedby="rc-code-hint"
-                      />
-                      {!codeManuallyEdited && form.label.trim() && codePreview ? (
-                        <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800">
-                          Auto
-                        </span>
-                      ) : null}
-                      {codeManuallyEdited && form.label.trim() && codePreview !== form.code ? (
-                        <button
-                          type="button"
-                          className="shrink-0 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
-                          onClick={() => {
-                            setCodeManuallyEdited(false)
-                            setForm((f) => ({ ...f, code: suggestCategoryCodeFromLabel(f.label) }))
-                          }}
-                        >
-                          Reset to suggested
-                        </button>
-                      ) : null}
-                    </div>
-                    <p id="rc-code-hint" className="mt-1 font-normal text-slate-500">
-                      {form.label.trim() ? (
-                        <>
-                          Example: &quot;{form.label.trim()}&quot; →{' '}
-                          <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-slate-800">
-                            {codePreview || '…'}
-                          </code>
-                        </>
-                      ) : (
-                        <>Type a display name first — the code will be suggested automatically.</>
-                      )}
-                    </p>
-                    {codeValidation && form.label.trim() ? (
-                      <p className="font-normal text-amber-700">{codeValidation}</p>
-                    ) : null}
-                  </div>
+                  <p className="text-xs font-normal text-slate-500 sm:col-span-2">
+                    Category code is assigned automatically (e.g.{' '}
+                    <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-slate-800">
+                      {resolvedApplication === 'fuel_station'
+                        ? kind === 'income'
+                          ? 'fsi001'
+                          : 'fse001'
+                        : kind === 'income'
+                          ? 'aqi001'
+                          : 'aqe001'}
+                    </code>
+                    ). Deleted codes are reused in order.
+                  </p>
                   <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
                     Rolls up to
                     <span className="font-normal text-slate-500">
@@ -673,13 +704,23 @@ export default function ReportingCategoriesPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {rows.map((r) => (
-                      <tr key={r.id} className="hover:bg-slate-50/60">
+                      <tr
+                        key={r.id}
+                        className={`hover:bg-slate-50/60 ${!r.is_active ? 'opacity-60' : ''}`}
+                      >
                         {resolvedApplication == null ? (
                           <td className="whitespace-nowrap px-4 py-3 sm:px-5">
                             <ApplicationBadge app={r.application} />
                           </td>
                         ) : null}
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-slate-900 sm:px-5">{r.code}</td>
+                        <td className="whitespace-nowrap px-4 py-3 font-mono text-slate-900 sm:px-5">
+                          {r.code}
+                          {!r.is_active ? (
+                            <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                              Inactive
+                            </span>
+                          ) : null}
+                        </td>
                         <td className="px-4 py-3 text-slate-800 sm:px-5">{r.label}</td>
                         <td className="px-4 py-3 text-slate-600 sm:px-5">
                           <span className="font-mono text-xs text-slate-500">{r.maps_to_code}</span>
@@ -690,14 +731,39 @@ export default function ReportingCategoriesPage() {
                           {r.sort_order}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right sm:px-5">
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
-                            onClick={() => void onDelete(r.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Delete
-                          </button>
+                          <div className="inline-flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              title="Edit category"
+                              aria-label="Edit category"
+                              className="rounded-md p-2 text-slate-600 hover:bg-slate-100 hover:text-blue-700"
+                              onClick={() => void openEdit(r)}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title={r.is_active ? 'Deactivate category' : 'Activate category'}
+                              aria-label={r.is_active ? 'Deactivate category' : 'Activate category'}
+                              className="rounded-md p-2 text-slate-600 hover:bg-slate-100 hover:text-emerald-700"
+                              onClick={() => void onToggleActive(r)}
+                            >
+                              {r.is_active ? (
+                                <ToggleRight className="h-4 w-4 text-emerald-600" />
+                              ) : (
+                                <ToggleLeft className="h-4 w-4 text-slate-400" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              title="Delete category"
+                              aria-label="Delete category"
+                              className="rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700"
+                              onClick={() => void onDelete(r.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -726,6 +792,125 @@ export default function ReportingCategoriesPage() {
             </ul>
           </footer>
         </div>
+
+        {editingRow ? (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rc-edit-title"
+          >
+            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+              <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+                <div>
+                  <h2 id="rc-edit-title" className="text-lg font-semibold text-slate-900">
+                    Edit category
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    <ApplicationBadge app={editingRow.application} />
+                    <span className="mx-2 text-slate-300">·</span>
+                    {kindLabel(editingRow.kind)}
+                    <span className="mx-2 text-slate-300">·</span>
+                    <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-800">
+                      {editingRow.code}
+                    </code>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                  aria-label="Close"
+                  onClick={closeEdit}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4 px-5 py-4">
+                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                  Display name
+                  <input
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    value={editForm.label}
+                    onChange={(e) => setEditForm((f) => ({ ...f, label: e.target.value }))}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                  Rolls up to
+                  <select
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    value={editForm.maps_to_code}
+                    onChange={(e) => setEditForm((f) => ({ ...f, maps_to_code: e.target.value }))}
+                  >
+                    <option value="">— select rollup —</option>
+                    {groupedEditMapTargets.map(({ group, items }) => (
+                      <optgroup key={group || 'default'} label={group}>
+                        {items.map((m) => (
+                          <option key={m.id} value={m.id} title={m.hint || undefined}>
+                            {m.label}
+                            {m.coa_code ? ` (${m.coa_code})` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  {selectedEditMapTarget?.hint ? (
+                    <p className="mt-1 flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 font-normal text-slate-600">
+                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                      <span>{selectedEditMapTarget.hint}</span>
+                    </p>
+                  ) : null}
+                </label>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                    Sort order
+                    <input
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      value={editForm.sort_order}
+                      onChange={(e) => setEditForm((f) => ({ ...f, sort_order: e.target.value }))}
+                      inputMode="numeric"
+                    />
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 pt-5 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/30"
+                      checked={editForm.is_active}
+                      onChange={(e) => setEditForm((f) => ({ ...f, is_active: e.target.checked }))}
+                    />
+                    Active in dropdowns
+                  </label>
+                </div>
+                <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                  Saving updates vendor bills, journal lines, and pond expenses that already use this category
+                  (display name and rollup bucket).
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  onClick={closeEdit}
+                  disabled={editSaving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  onClick={() => void onUpdate()}
+                  disabled={editSaving}
+                >
+                  {editSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Edit2 className="h-4 w-4" />}
+                  Save changes
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     </div>
   )

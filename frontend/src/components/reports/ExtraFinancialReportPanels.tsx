@@ -2,6 +2,15 @@
 
 import type { ReactNode } from 'react'
 import { formatCurrency } from '@/utils/formatting'
+import {
+  DrillAmount,
+  glAccountDrill,
+  useReportDrill,
+  type AgingDrillDocument,
+  type ReportDrillTarget,
+} from '@/components/reports/ReportDrillContext'
+import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
+import { agingBucketTotalRow } from '@/components/reports/reportDrillAggregate'
 
 type ReportType =
   | 'ar-aging'
@@ -33,6 +42,12 @@ function entityPlTable(
   rows: Record<string, unknown>[],
   entityKind: 'station' | 'pond',
   onViewDetail?: EntityPlDrillHandler,
+  drillScope?: {
+    startDate?: string
+    endDate?: string
+    stationId?: number | null
+    pondId?: number | null
+  },
 ) {
   const colSpan = onViewDetail ? 7 : 6
   return (
@@ -70,11 +85,21 @@ function entityPlTable(
               return (
                 <tr key={`pl-${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
-                  <td className="px-3 py-3 text-right">{formatCurrency(Number(r.income ?? 0))}</td>
-                  <td className="px-3 py-3 text-right">{formatCurrency(Number(r.cost_of_goods_sold ?? 0))}</td>
-                  <td className="px-3 py-3 text-right">{formatCurrency(Number(r.expenses ?? 0))}</td>
-                  <td className="px-3 py-3 text-right">{formatCurrency(Number(r.gross_profit ?? 0))}</td>
-                  <td className="px-3 py-3 text-right font-semibold">{formatCurrency(Number(r.net_income ?? 0))}</td>
+                  <td className="px-3 py-3 text-right">
+                    <ReportAmountCell amount={Number(r.income ?? 0)} row={r} field="income" scope={drillScope} />
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <ReportAmountCell amount={Number(r.cost_of_goods_sold ?? 0)} row={r} field="cost_of_goods_sold" scope={drillScope} />
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <ReportAmountCell amount={Number(r.expenses ?? 0)} row={r} field="expenses" scope={drillScope} />
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <ReportAmountCell amount={Number(r.gross_profit ?? 0)} row={r} field="gross_profit" scope={drillScope} />
+                  </td>
+                  <td className="px-3 py-3 text-right font-semibold">
+                    <ReportAmountCell amount={Number(r.net_income ?? 0)} row={r} field="net_income" scope={drillScope} />
+                  </td>
                   {onViewDetail && entityId > 0 ? (
                     <td className="px-3 py-3 text-right">
                       <button
@@ -98,7 +123,7 @@ function entityPlTable(
   )
 }
 
-function entityBsTable(title: string, rows: Record<string, unknown>[], bsAsOf: string) {
+function entityBsTable(title: string, rows: Record<string, unknown>[], bsAsOf: string, drillScope?: { startDate?: string; endDate?: string }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200">
       <h3 className="bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900 border-b">
@@ -126,10 +151,18 @@ function entityBsTable(title: string, rows: Record<string, unknown>[], bsAsOf: s
             rows.map((r) => (
               <tr key={`bs-${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_assets ?? 0))}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_liabilities ?? 0))}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_equity ?? 0))}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.total_liabilities_and_equity ?? 0))}</td>
+                <td className="px-3 py-3 text-right">
+                  <ReportAmountCell amount={Number(r.total_assets ?? 0)} row={r} field="total_assets" scope={drillScope} />
+                </td>
+                <td className="px-3 py-3 text-right">
+                  <ReportAmountCell amount={Number(r.total_liabilities ?? 0)} row={r} field="total_liabilities" scope={drillScope} />
+                </td>
+                <td className="px-3 py-3 text-right">
+                  <ReportAmountCell amount={Number(r.total_equity ?? 0)} row={r} field="total_equity" scope={drillScope} />
+                </td>
+                <td className="px-3 py-3 text-right">
+                  <ReportAmountCell amount={Number(r.total_liabilities_and_equity ?? 0)} row={r} field="total_liabilities_and_equity" scope={drillScope} />
+                </td>
               </tr>
             ))
           )}
@@ -139,7 +172,11 @@ function entityBsTable(title: string, rows: Record<string, unknown>[], bsAsOf: s
   )
 }
 
-function entityTbTable(title: string, rows: Record<string, unknown>[]) {
+function entityTbTable(
+  title: string,
+  rows: Record<string, unknown>[],
+  drillScope?: { startDate?: string; endDate?: string; stationId?: number | null; pondId?: number | null },
+) {
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200">
       <h3 className="bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900 border-b">{title}</h3>
@@ -163,8 +200,12 @@ function entityTbTable(title: string, rows: Record<string, unknown>[]) {
             rows.map((r) => (
               <tr key={`tb-${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.trial_balance_debit ?? 0))}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.trial_balance_credit ?? 0))}</td>
+                <td className="px-3 py-3 text-right">
+                  <ReportAmountCell amount={Number(r.trial_balance_debit ?? 0)} row={r} field="trial_balance_debit" scope={drillScope} />
+                </td>
+                <td className="px-3 py-3 text-right">
+                  <ReportAmountCell amount={Number(r.trial_balance_credit ?? 0)} row={r} field="trial_balance_credit" scope={drillScope} />
+                </td>
                 <td className="px-3 py-3 text-center text-xs">{r.trial_balance_balanced ? 'Yes' : 'No'}</td>
               </tr>
             ))
@@ -179,6 +220,12 @@ function renderEntitySectionTables(
   kind: 'pl' | 'bs' | 'tb',
   sections: ReturnType<typeof entitySections>,
   onViewEntityPl?: EntityPlDrillHandler,
+  drillScope?: {
+    startDate?: string
+    endDate?: string
+    stationId?: number | null
+    pondId?: number | null
+  },
 ) {
   const { byStation, byPond, unscoped, bsAsOf } = sections
   const label =
@@ -186,12 +233,12 @@ function renderEntitySectionTables(
 
   const renderSection = (title: string, rows: Record<string, unknown>[], entityKind?: 'station' | 'pond') => {
     if (kind === 'pl' && entityKind) {
-      return entityPlTable(title, rows, entityKind, onViewEntityPl)
+      return entityPlTable(title, rows, entityKind, onViewEntityPl, drillScope)
     }
     if (kind === 'bs') {
-      return entityBsTable(title, rows, bsAsOf)
+      return entityBsTable(title, rows, bsAsOf, drillScope)
     }
-    return entityTbTable(title, rows)
+    return entityTbTable(title, rows, drillScope)
   }
 
   return (
@@ -221,6 +268,12 @@ export function renderExtraFinancialReport(
     dateRange?: { startDate: string; endDate: string }
     handleReportDateChange?: (field: 'startDate' | 'endDate', value: string, reportId?: string) => void
     onViewEntityPl?: EntityPlDrillHandler
+    drillScope?: {
+      startDate?: string
+      endDate?: string
+      stationId?: number | null
+      pondId?: number | null
+    }
   },
 ): ReactNode | null {
   if (!data) return null
@@ -238,7 +291,7 @@ export function renderExtraFinancialReport(
 
   if (reportType === 'expense-detail') {
     const expenses = data.expenses as
-      | { accounts?: { account_code?: string; account_name?: string; balance?: number }[]; total?: number }
+      | { accounts?: { account_id?: number; account_code?: string; account_name?: string; balance?: number }[]; total?: number }
       | undefined
     const accounts = expenses?.accounts ?? []
     return (
@@ -252,7 +305,34 @@ export function renderExtraFinancialReport(
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
           <div className="p-4 border-b bg-gray-50 flex justify-between">
             <h3 className="text-lg font-semibold text-gray-900">Expenses</h3>
-            <span className="text-sm font-bold text-gray-700">{formatCurrency(Number(expenses?.total ?? 0))}</span>
+            <span className="text-sm font-bold text-gray-700">
+              <ReportAmountCell
+                amount={Number(expenses?.total ?? 0)}
+                row={
+                  expenses?.accounts
+                    ? {
+                        _drill: {
+                          total: {
+                            kind: 'account-breakdown',
+                            title: 'Expenses',
+                            amountField: 'balance',
+                            accounts: (expenses.accounts as { account_id?: number; account_code?: string; account_name?: string; balance?: number }[])
+                              .filter((a) => Number(a.balance ?? 0) !== 0)
+                              .map((a) => ({
+                                account_id: Number(a.account_id),
+                                account_code: a.account_code,
+                                account_name: a.account_name,
+                                amount: a.balance ?? 0,
+                              })),
+                          },
+                        },
+                      }
+                    : undefined
+                }
+                field="total"
+                scope={ctx.drillScope}
+              />
+            </span>
           </div>
           <div className="divide-y divide-gray-200">
             {accounts.length > 0 ? (
@@ -265,7 +345,12 @@ export function renderExtraFinancialReport(
                     <p className="text-sm font-medium text-gray-900 truncate">{account.account_name}</p>
                     <p className="text-xs text-gray-500">{account.account_code}</p>
                   </div>
-                  <p className="text-sm font-semibold text-gray-900 ml-4">{formatCurrency(Number(account.balance ?? 0))}</p>
+                  <p className="text-sm font-semibold text-gray-900 ml-4">
+                    <DrillAmount
+                      amount={Number(account.balance ?? 0)}
+                      drill={glAccountDrill(account as { account_id?: number; account_code?: string; account_name?: string }, ctx.drillScope)}
+                    />
+                  </p>
                 </div>
               ))
             ) : (
@@ -279,7 +364,7 @@ export function renderExtraFinancialReport(
 
   if (reportType === 'income-detail') {
     const income = data.income as
-      | { accounts?: { account_code?: string; account_name?: string; balance?: number }[]; total?: number }
+      | { accounts?: { account_id?: number; account_code?: string; account_name?: string; balance?: number }[]; total?: number }
       | undefined
     const accounts = income?.accounts ?? []
     return (
@@ -293,7 +378,34 @@ export function renderExtraFinancialReport(
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
           <div className="p-4 border-b bg-gray-50 flex justify-between">
             <h3 className="text-lg font-semibold text-gray-900">Income</h3>
-            <span className="text-sm font-bold text-gray-700">{formatCurrency(Number(income?.total ?? 0))}</span>
+            <span className="text-sm font-bold text-gray-700">
+              <ReportAmountCell
+                amount={Number(income?.total ?? 0)}
+                row={
+                  income?.accounts
+                    ? {
+                        _drill: {
+                          total: {
+                            kind: 'account-breakdown',
+                            title: 'Income',
+                            amountField: 'balance',
+                            accounts: (income.accounts as { account_id?: number; account_code?: string; account_name?: string; balance?: number }[])
+                              .filter((a) => Number(a.balance ?? 0) !== 0)
+                              .map((a) => ({
+                                account_id: Number(a.account_id),
+                                account_code: a.account_code,
+                                account_name: a.account_name,
+                                amount: a.balance ?? 0,
+                              })),
+                          },
+                        },
+                      }
+                    : undefined
+                }
+                field="total"
+                scope={ctx.drillScope}
+              />
+            </span>
           </div>
           <div className="divide-y divide-gray-200">
             {accounts.length > 0 ? (
@@ -306,7 +418,12 @@ export function renderExtraFinancialReport(
                     <p className="text-sm font-medium text-gray-900 truncate">{account.account_name}</p>
                     <p className="text-xs text-gray-500">{account.account_code}</p>
                   </div>
-                  <p className="text-sm font-semibold text-gray-900 ml-4">{formatCurrency(Number(account.balance ?? 0))}</p>
+                  <p className="text-sm font-semibold text-gray-900 ml-4">
+                    <DrillAmount
+                      amount={Number(account.balance ?? 0)}
+                      drill={glAccountDrill(account as { account_id?: number; account_code?: string; account_name?: string }, ctx.drillScope)}
+                    />
+                  </p>
                 </div>
               ))
             ) : (
@@ -347,17 +464,21 @@ export function renderExtraFinancialReport(
             {rows.map((r) => (
               <tr key={`${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.net_income ?? 0))}</td>
+                <td className="px-3 py-3 text-right">
+                  <ReportAmountCell amount={Number(r.net_income ?? 0)} row={r} field="net_income" scope={ctx.drillScope} />
+                </td>
                 <td className="px-3 py-3 text-right text-green-800">
-                  {formatCurrency(Number(r.customer_payments_received ?? 0))}
+                  <ReportAmountCell amount={Number(r.customer_payments_received ?? 0)} row={r} field="customer_payments_received" scope={ctx.drillScope} />
                 </td>
                 <td className="px-3 py-3 text-right text-red-700">
-                  {formatCurrency(Number(r.vendor_payments_made ?? 0))}
+                  <ReportAmountCell amount={Number(r.vendor_payments_made ?? 0)} row={r} field="vendor_payments_made" scope={ctx.drillScope} />
                 </td>
                 <td className="px-3 py-3 text-right font-medium">
-                  {formatCurrency(Number(r.net_change_in_cash ?? 0))}
+                  <ReportAmountCell amount={Number(r.net_change_in_cash ?? 0)} row={r} field="net_change_in_cash" scope={ctx.drillScope} />
                 </td>
-                <td className="px-3 py-3 text-right">{formatCurrency(Number(r.ending_cash ?? 0))}</td>
+                <td className="px-3 py-3 text-right">
+                  <ReportAmountCell amount={Number(r.ending_cash ?? 0)} row={r} field="ending_cash" scope={ctx.drillScope} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -374,29 +495,29 @@ export function renderExtraFinancialReport(
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-white border rounded-lg p-4 shadow-sm">
             <p className="text-xs text-gray-500 uppercase">Net income (P&L)</p>
-            <p className="text-xl font-bold mt-1">{formatCurrency(op.net_income)}</p>
+            <p className="text-xl font-bold mt-1"><ReportAmountCell amount={Number(op.net_income ?? 0)} row={op} field="net_income" scope={ctx.drillScope?.() ?? {}} /></p>
           </div>
           <div className="bg-white border rounded-lg p-4 shadow-sm">
             <p className="text-xs text-gray-500 uppercase">Customer payments received</p>
-            <p className="text-xl font-bold mt-1 text-green-800">{formatCurrency(op.customer_payments_received)}</p>
+            <p className="text-xl font-bold mt-1 text-green-800"><ReportAmountCell amount={Number(op.customer_payments_received ?? 0)} row={op} field="customer_payments_received" scope={ctx.drillScope?.() ?? {}} /></p>
           </div>
           <div className="bg-white border rounded-lg p-4 shadow-sm">
             <p className="text-xs text-gray-500 uppercase">Vendor payments made</p>
-            <p className="text-xl font-bold mt-1 text-red-700">{formatCurrency(op.vendor_payments_made)}</p>
+            <p className="text-xl font-bold mt-1 text-red-700"><ReportAmountCell amount={Number(op.vendor_payments_made ?? 0)} row={op} field="vendor_payments_made" scope={ctx.drillScope?.() ?? {}} /></p>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-200 rounded-lg p-4">
             <p className="text-xs text-blue-700 uppercase">Beginning cash</p>
-            <p className="text-2xl font-bold text-blue-900 mt-1">{formatCurrency(cash.beginning_cash)}</p>
+            <p className="text-2xl font-bold text-blue-900 mt-1"><ReportAmountCell amount={Number(cash.beginning_cash ?? 0)} row={cash} field="beginning_cash" scope={ctx.drillScope?.() ?? {}} /></p>
           </div>
           <div className="bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-lg p-4">
             <p className="text-xs text-slate-600 uppercase">Net change in cash</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(cash.net_change_in_cash)}</p>
+            <p className="text-2xl font-bold text-slate-900 mt-1"><ReportAmountCell amount={Number(cash.net_change_in_cash ?? 0)} row={cash} field="net_change_in_cash" scope={ctx.drillScope?.() ?? {}} /></p>
           </div>
           <div className="bg-gradient-to-br from-green-50 to-white border border-green-200 rounded-lg p-4">
             <p className="text-xs text-green-700 uppercase">Ending cash</p>
-            <p className="text-2xl font-bold text-green-900 mt-1">{formatCurrency(cash.ending_cash)}</p>
+            <p className="text-2xl font-bold text-green-900 mt-1"><ReportAmountCell amount={Number(cash.ending_cash ?? 0)} row={cash} field="ending_cash" scope={ctx.drillScope?.() ?? {}} /></p>
           </div>
         </div>
 
@@ -435,10 +556,18 @@ export function renderExtraFinancialReport(
                       <div className="font-medium text-gray-900">{String(b.account_name ?? '')}</div>
                       <div className="text-xs text-gray-500">{String(b.account_code ?? '')}</div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-right">{formatCurrency(Number(b.beginning_balance ?? 0))}</td>
-                    <td className="px-4 py-3 text-sm text-right text-green-800">{formatCurrency(Number(b.deposits ?? 0))}</td>
-                    <td className="px-4 py-3 text-sm text-right text-red-700">{formatCurrency(Number(b.withdrawals ?? 0))}</td>
-                    <td className="px-4 py-3 text-sm text-right font-medium">{formatCurrency(Number(b.ending_balance ?? 0))}</td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      <ReportAmountCell amount={Number(b.beginning_balance ?? 0)} row={b} field="beginning_balance" scope={ctx.drillScope} />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right text-green-800">
+                      <ReportAmountCell amount={Number(b.deposits ?? 0)} row={b} field="deposits" scope={ctx.drillScope} />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right text-red-700">
+                      <ReportAmountCell amount={Number(b.withdrawals ?? 0)} row={b} field="withdrawals" scope={ctx.drillScope} />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right font-medium">
+                      <ReportAmountCell amount={Number(b.ending_balance ?? 0)} row={b} field="ending_balance" scope={ctx.drillScope} />
+                    </td>
                   </tr>
                 ))
               )}
@@ -481,11 +610,11 @@ export function renderExtraFinancialReport(
         )}
         {isCombined ? (
           <>
-            {renderEntitySectionTables('pl', sections, ctx.onViewEntityPl)}
-            {renderEntitySectionTables('bs', sections)}
+            {renderEntitySectionTables('pl', sections, ctx.onViewEntityPl, ctx.drillScope)}
+            {renderEntitySectionTables('bs', sections, ctx.onViewEntityPl, ctx.drillScope)}
           </>
         ) : (
-          renderEntitySectionTables(kind as 'pl' | 'bs' | 'tb', sections, ctx.onViewEntityPl)
+          renderEntitySectionTables(kind as 'pl' | 'bs' | 'tb', sections, ctx.onViewEntityPl, ctx.drillScope)
         )}
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 p-4">
           <h3 className="text-sm font-semibold text-slate-900">Company total (all GL)</h3>
@@ -493,23 +622,23 @@ export function renderExtraFinancialReport(
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
               <div>
                 <p className="text-gray-500">Income</p>
-                <p className="font-semibold">{formatCurrency(Number(co.income ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.income ?? 0)} row={{ _drill: { income: { kind: 'scoped-pl', label: 'Company income' } } }} field="income" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">COGS</p>
-                <p className="font-semibold">{formatCurrency(Number(co.cost_of_goods_sold ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.cost_of_goods_sold ?? 0)} row={{ _drill: { cost_of_goods_sold: { kind: 'scoped-pl', label: 'Company COGS' } } }} field="cost_of_goods_sold" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Expenses</p>
-                <p className="font-semibold">{formatCurrency(Number(co.expenses ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.expenses ?? 0)} row={{ _drill: { expenses: { kind: 'scoped-pl', label: 'Company expenses' } } }} field="expenses" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Gross profit</p>
-                <p className="font-semibold">{formatCurrency(Number(co.gross_profit ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.gross_profit ?? 0)} row={{ _drill: { gross_profit: { kind: 'scoped-pl', label: 'Company gross profit' } } }} field="gross_profit" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Net income</p>
-                <p className="font-semibold">{formatCurrency(Number(co.net_income ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.net_income ?? 0)} row={{ _drill: { net_income: { kind: 'scoped-pl', label: 'Company net income' } } }} field="net_income" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
             </div>
           ) : null}
@@ -517,30 +646,30 @@ export function renderExtraFinancialReport(
             <div className={`mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm ${isCombined ? 'border-t border-slate-200 pt-4' : ''}`}>
               <div>
                 <p className="text-gray-500">Assets</p>
-                <p className="font-semibold">{formatCurrency(Number(co.total_assets ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_assets ?? 0)} row={{ _drill: { total_assets: { kind: 'scoped-pl', label: 'Company assets' } } }} field="total_assets" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Liabilities</p>
-                <p className="font-semibold">{formatCurrency(Number(co.total_liabilities ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_liabilities ?? 0)} row={{ _drill: { total_liabilities: { kind: 'scoped-pl', label: 'Company liabilities' } } }} field="total_liabilities" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Equity</p>
-                <p className="font-semibold">{formatCurrency(Number(co.total_equity ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_equity ?? 0)} row={{ _drill: { total_equity: { kind: 'scoped-pl', label: 'Company equity' } } }} field="total_equity" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">L + E</p>
-                <p className="font-semibold">{formatCurrency(Number(co.total_liabilities_and_equity ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_liabilities_and_equity ?? 0)} row={{ _drill: { total_liabilities_and_equity: { kind: 'scoped-pl', label: 'Company L + E' } } }} field="total_liabilities_and_equity" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
             </div>
           ) : kind === 'tb' ? (
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
               <div>
                 <p className="text-gray-500">TB debits</p>
-                <p className="font-semibold">{formatCurrency(Number(co.trial_balance_debit ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.trial_balance_debit ?? 0)} row={{ _drill: { trial_balance_debit: { kind: 'scoped-pl', label: 'Company TB debits' } } }} field="trial_balance_debit" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">TB credits</p>
-                <p className="font-semibold">{formatCurrency(Number(co.trial_balance_credit ?? 0))}</p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.trial_balance_credit ?? 0)} row={{ _drill: { trial_balance_credit: { kind: 'scoped-pl', label: 'Company TB credits' } } }} field="trial_balance_credit" scope={ctx.drillScope?.() ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Balanced</p>
@@ -574,29 +703,30 @@ export function renderExtraFinancialReport(
           rows,
           isPond ? 'pond' : 'station',
           ctx.onViewEntityPl,
+          ctx.drillScope,
         )}
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 p-4">
           <h3 className="text-sm font-semibold text-slate-900">Company total (all GL)</h3>
           <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
             <div>
               <p className="text-gray-500">Income</p>
-              <p className="font-semibold">{formatCurrency(Number(co.income ?? 0))}</p>
+              <p className="font-semibold"><ReportAmountCell amount={Number(co.income ?? 0)} row={{ _drill: { income: { kind: 'scoped-pl', label: 'Company income' } } }} field="income" scope={ctx.drillScope?.() ?? {}} /></p>
             </div>
             <div>
               <p className="text-gray-500">COGS</p>
-              <p className="font-semibold">{formatCurrency(Number(co.cost_of_goods_sold ?? 0))}</p>
+              <p className="font-semibold"><ReportAmountCell amount={Number(co.cost_of_goods_sold ?? 0)} row={{ _drill: { cost_of_goods_sold: { kind: 'scoped-pl', label: 'Company COGS' } } }} field="cost_of_goods_sold" scope={ctx.drillScope?.() ?? {}} /></p>
             </div>
             <div>
               <p className="text-gray-500">Expenses</p>
-              <p className="font-semibold">{formatCurrency(Number(co.expenses ?? 0))}</p>
+              <p className="font-semibold"><ReportAmountCell amount={Number(co.expenses ?? 0)} row={{ _drill: { expenses: { kind: 'scoped-pl', label: 'Company expenses' } } }} field="expenses" scope={ctx.drillScope?.() ?? {}} /></p>
             </div>
             <div>
               <p className="text-gray-500">Gross profit</p>
-              <p className="font-semibold">{formatCurrency(Number(co.gross_profit ?? 0))}</p>
+              <p className="font-semibold"><ReportAmountCell amount={Number(co.gross_profit ?? 0)} row={{ _drill: { gross_profit: { kind: 'scoped-pl', label: 'Company gross profit' } } }} field="gross_profit" scope={ctx.drillScope?.() ?? {}} /></p>
             </div>
             <div>
               <p className="text-gray-500">Net income</p>
-              <p className="font-semibold">{formatCurrency(Number(co.net_income ?? 0))}</p>
+              <p className="font-semibold"><ReportAmountCell amount={Number(co.net_income ?? 0)} row={{ _drill: { net_income: { kind: 'scoped-pl', label: 'Company net income' } } }} field="net_income" scope={ctx.drillScope?.() ?? {}} /></p>
             </div>
           </div>
         </div>
@@ -605,80 +735,201 @@ export function renderExtraFinancialReport(
   }
 
   if (reportType === 'ar-aging' || reportType === 'ap-aging') {
-    const isAr = reportType === 'ar-aging'
-    const parties = (isAr ? data.customers : data.vendors) as Record<string, unknown>[] | undefined
-    const list = parties ?? []
-    const totals = (data.totals as Record<string, number>) ?? {}
-    const bucketLabels: { key: string; label: string }[] = [
-      { key: 'current', label: 'Current' },
-      { key: 'days_1_30', label: '1–30 days' },
-      { key: 'days_31_60', label: '31–60 days' },
-      { key: 'days_61_90', label: '61–90 days' },
-      { key: 'days_over_90', label: '90+ days' },
-    ]
     return (
-      <div className="space-y-6">
-        {periodFilter(`Open ${isAr ? 'invoices' : 'bills'} aged as of the end date.`)}
-        {typeof data.accounting_note === 'string' && (
-          <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
-        )}
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  {isAr ? 'Customer' : 'Vendor'}
-                </th>
-                {bucketLabels.map((b) => (
-                  <th
-                    key={b.key}
-                    className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap"
-                  >
-                    {b.label}
-                  </th>
-                ))}
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {list.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
-                    No open {isAr ? 'receivables' : 'payables'} in aging buckets.
-                  </td>
-                </tr>
-              ) : (
-                list.map((p, idx) => (
-                  <tr key={`${isAr ? 'ar' : 'ap'}-${idx}-${String(p.display_name ?? '')}`} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{String(p.display_name ?? '')}</td>
-                    {bucketLabels.map((b) => (
-                      <td key={b.key} className="px-3 py-3 text-right">
-                        {formatCurrency(Number(p[b.key] ?? 0))}
-                      </td>
-                    ))}
-                    <td className="px-4 py-3 text-right font-semibold">{formatCurrency(Number(p.total ?? 0))}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-            <tfoot className="bg-gray-100 font-semibold">
-              <tr>
-                <td className="px-4 py-3">Totals</td>
-                {bucketLabels.map((b) => (
-                  <td key={b.key} className="px-3 py-3 text-right">
-                    {formatCurrency(Number(totals[b.key] ?? 0))}
-                  </td>
-                ))}
-                <td className="px-4 py-3 text-right">{formatCurrency(Number(totals.total ?? 0))}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
+      <AgingReportTable
+        reportType={reportType}
+        data={data}
+        periodFilter={periodFilter(`Open ${reportType === 'ar-aging' ? 'invoices' : 'bills'} aged as of the end date.`)}
+        drillScope={ctx.drillScope}
+      />
     )
   }
 
   return null
+}
+
+function AgingReportTable({
+  reportType,
+  data,
+  periodFilter,
+  drillScope,
+}: {
+  reportType: 'ar-aging' | 'ap-aging'
+  data: Record<string, unknown>
+  periodFilter: ReactNode
+  drillScope?: {
+    startDate?: string
+    endDate?: string
+    stationId?: number | null
+    pondId?: number | null
+  }
+}) {
+  const { push } = useReportDrill()
+  const isAr = reportType === 'ar-aging'
+  const parties = (isAr ? data.customers : data.vendors) as Record<string, unknown>[] | undefined
+  const list = parties ?? []
+  const totals = (data.totals as Record<string, number>) ?? {}
+  const bucketLabels: { key: string; label: string }[] = [
+    { key: 'current', label: 'Current' },
+    { key: 'days_1_30', label: '1–30 days' },
+    { key: 'days_31_60', label: '31–60 days' },
+    { key: 'days_61_90', label: '61–90 days' },
+    { key: 'days_over_90', label: '90+ days' },
+  ]
+
+  const pushDocuments = (
+    party: Record<string, unknown>,
+    bucketKey?: string,
+    bucketLabel?: string,
+  ) => {
+    const docs = (party.documents as AgingDrillDocument[]) ?? []
+    const filtered = bucketKey ? docs.filter((d) => d.bucket === bucketKey) : docs
+    if (filtered.length === 0) return
+    const partyName = String(party.display_name ?? '')
+    push({
+      kind: 'aging-documents',
+      title: partyName,
+      subtitle: bucketLabel
+        ? `${bucketLabel} — open ${isAr ? 'invoices' : 'bills'} for ${partyName}`
+        : `Open ${isAr ? 'invoices' : 'bills'} for ${partyName}`,
+      entityType: isAr ? 'customers' : 'vendors',
+      documents: filtered,
+    })
+  }
+
+  const partyLedgerDrill = (party: Record<string, unknown>): ReportDrillTarget | null => {
+    const entityId = Number(isAr ? party.customer_id : party.vendor_id)
+    if (!entityId) return null
+    return {
+      kind: 'contact-ledger',
+      entity: isAr ? 'customers' : 'vendors',
+      entityId,
+      label: String(party.display_name ?? ''),
+      startDate: drillScope?.startDate,
+      endDate: drillScope?.endDate,
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {periodFilter}
+      {typeof data.accounting_note === 'string' && (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
+      )}
+      <p className="text-xs text-gray-500">
+        Click an amount to see underlying {isAr ? 'invoices' : 'bills'}. Use Back or Close in the detail window to return to this report.
+      </p>
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                {isAr ? 'Customer' : 'Vendor'}
+              </th>
+              {bucketLabels.map((b) => (
+                <th
+                  key={b.key}
+                  className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap"
+                >
+                  {b.label}
+                </th>
+              ))}
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {list.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
+                  No open {isAr ? 'receivables' : 'payables'} in aging buckets.
+                </td>
+              </tr>
+            ) : (
+              list.map((p, idx) => (
+                <tr key={`${isAr ? 'ar' : 'ap'}-${idx}-${String(p.display_name ?? '')}`} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <button
+                      type="button"
+                      className="text-left hover:text-blue-800 hover:underline"
+                      onClick={() => {
+                        const drill = partyLedgerDrill(p)
+                        if (drill) push(drill)
+                      }}
+                    >
+                      {String(p.display_name ?? '')}
+                    </button>
+                  </td>
+                  {bucketLabels.map((b) => {
+                    const amt = Number(p[b.key] ?? 0)
+                    return (
+                      <td key={b.key} className="px-3 py-3 text-right">
+                        {amt ? (
+                          <button
+                            type="button"
+                            className="tabular-nums underline decoration-dotted underline-offset-2 hover:text-blue-800"
+                            onClick={() => pushDocuments(p, b.key, b.label)}
+                          >
+                            {formatCurrency(amt)}
+                          </button>
+                        ) : (
+                          formatCurrency(0)
+                        )}
+                      </td>
+                    )
+                  })}
+                  <td className="px-4 py-3 text-right font-semibold">
+                    {Number(p.total ?? 0) ? (
+                      <button
+                        type="button"
+                        className="tabular-nums underline decoration-dotted underline-offset-2 hover:text-blue-800"
+                        onClick={() => pushDocuments(p)}
+                      >
+                        {formatCurrency(Number(p.total ?? 0))}
+                      </button>
+                    ) : (
+                      formatCurrency(0)
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+          <tfoot className="bg-gray-100 font-semibold">
+            <tr>
+              <td className="px-4 py-3">Totals</td>
+              {bucketLabels.map((b) => (
+                <td key={b.key} className="px-3 py-3 text-right">
+                  <ReportAmountCell
+                    amount={Number(totals[b.key] ?? 0)}
+                    row={agingBucketTotalRow(list, {
+                      title: `${b.label} — all ${isAr ? 'customers' : 'vendors'}`,
+                      entityType: isAr ? 'customers' : 'vendors',
+                      field: b.key,
+                      bucketKey: b.key,
+                    })}
+                    field={b.key}
+                    scope={drillScope}
+                  />
+                </td>
+              ))}
+              <td className="px-4 py-3 text-right">
+                <ReportAmountCell
+                  amount={Number(totals.total ?? 0)}
+                  row={agingBucketTotalRow(list, {
+                    title: `All open ${isAr ? 'AR' : 'AP'}`,
+                    entityType: isAr ? 'customers' : 'vendors',
+                    field: 'total',
+                  })}
+                  field="total"
+                  scope={drillScope}
+                />
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
 }
 
 export const EXTRA_FINANCIAL_REPORT_IDS: readonly ReportType[] = [

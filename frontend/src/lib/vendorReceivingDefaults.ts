@@ -3,6 +3,13 @@
  * One vendor record per supplier; bill-level station/pond can differ each time.
  */
 
+import {
+  resolveBillReceiptLocation,
+  resolveReceiptLocationKeyForVendor,
+  type BillReceiptLocationPond,
+  type BillReceiptLocationStation,
+} from '@/lib/billReceiptLocation'
+
 export interface VendorReceivingFields {
   default_station_id?: number | null
   default_aquaculture_pond_id?: number | null
@@ -10,29 +17,31 @@ export interface VendorReceivingFields {
   default_aquaculture_pond_name?: string | null
 }
 
-export interface StationForVendorReceiving {
-  id: number
-  is_active?: boolean
-  default_aquaculture_pond_id?: number | null
+export type StationForVendorReceiving = BillReceiptLocationStation
+
+export { resolveReceiptLocationKeyForVendor }
+
+/** Receipt location key for a new bill (`station id` or `p:{pondId}`), or '' when none applies. */
+export function resolveReceiptLocationKeyForVendorBill(
+  vendor: VendorReceivingFields | null | undefined,
+  stations: BillReceiptLocationStation[],
+  ponds: BillReceiptLocationPond[] = []
+): string {
+  return resolveReceiptLocationKeyForVendor(vendor, stations, ponds)
 }
 
-/** Receipt station id for a new bill, or '' when none applies. */
+/** Legacy: numeric receipt station id only (pond selections resolve to linked shop hub). */
 export function resolveReceiptStationIdForVendor(
   vendor: VendorReceivingFields | null | undefined,
-  stations: StationForVendorReceiving[]
+  stations: BillReceiptLocationStation[],
+  ponds: BillReceiptLocationPond[] = []
 ): number | '' {
-  if (!vendor) return ''
-  const active = stations.filter((s) => s.is_active !== false)
-  const ds = vendor.default_station_id
-  if (ds != null && ds > 0 && active.some((s) => s.id === ds)) {
-    return ds
-  }
-  const pid = vendor.default_aquaculture_pond_id
-  if (pid != null && pid > 0) {
-    const linked = active.find((s) => s.default_aquaculture_pond_id === pid)
-    if (linked) return linked.id
-  }
-  return ''
+  const key = resolveReceiptLocationKeyForVendor(vendor, stations, ponds)
+  if (!key) return ''
+  const resolved = resolveBillReceiptLocation(key, stations, ponds)
+  return resolved.receiptStationId != null && resolved.receiptStationId > 0
+    ? resolved.receiptStationId
+    : ''
 }
 
 export function vendorUsualReceivingLabel(vendor: VendorReceivingFields): string {

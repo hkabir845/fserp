@@ -7,6 +7,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
+from api.services.reference_code import next_available_code
 from api.views.common import parse_json_body, require_company_id
 from django.utils import timezone as django_timezone
 
@@ -249,11 +250,12 @@ def journal_entry_create(request):
         return err
     entry_date = _parse_date(body.get("entry_date")) or date.today()
     desc = (body.get("description") or "").strip()
-    count = JournalEntry.objects.filter(company_id=request.company_id).count()
     st_id = _coerce_optional_station_id(request.company_id, body.get("station_id"))
     e = JournalEntry(
         company_id=request.company_id,
-        entry_number=f"JE-{count + 1}",
+        entry_number=next_available_code(
+            request.company_id, JournalEntry, "entry_number", "JE"
+        ),
         entry_date=entry_date,
         description=desc,
         station_id=st_id,

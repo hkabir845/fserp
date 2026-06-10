@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.models import Contract, Company
+from api.services.reference_code import next_available_code
 
 
 def _super_admin_required(view_func):
@@ -33,18 +34,10 @@ def _company_has_other_active_contract(company_id: int, exclude_contract_id: int
 
 
 def _next_contract_number():
-    """Generate next contract number: CON-YYYY-NNNN."""
+    """Generate next contract number: CON-YYYY-NNNN (lowest free suffix for the year)."""
     today = date.today()
     prefix = f"CON-{today.year}-"
-    last = Contract.objects.filter(contract_number__startswith=prefix).order_by("-contract_number").first()
-    if not last:
-        num = 1
-    else:
-        try:
-            num = int(last.contract_number.split("-")[-1]) + 1
-        except (IndexError, ValueError):
-            num = 1
-    return f"{prefix}{num:04d}"
+    return next_available_code(None, Contract, "contract_number", prefix, width=4)
 
 
 def _contract_to_json(c: Contract) -> dict:

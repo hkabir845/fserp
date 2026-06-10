@@ -94,6 +94,7 @@ from api.services.gl_posting import (
     sync_landlord_lease_payment_journal,
 )
 from api.services.aquaculture_production_cycle_service import cycle_code_conflict, next_automatic_cycle_code
+from api.services.reference_code import assign_string_code_if_empty
 from api.services.aquaculture_cutover import (
     get_stored_cutover_date,
     is_go_live_fish_opening,
@@ -5364,21 +5365,21 @@ def aquaculture_landlords_list_or_create(request):
     name = (body.get("name") or "").strip()
     if not name:
         return JsonResponse({"detail": "name is required"}, status=400)
-    code_in = (body.get("code") or "").strip()[:64]
     ll = AquacultureLandlord(
         company_id=cid,
         name=name[:200],
-        code=code_in,
+        code="",
         phone=(body.get("phone") or "").strip()[:64],
         email=(body.get("email") or "").strip()[:254],
         notes=str(body.get("notes") or "")[:5000],
         is_active=bool(body.get("is_active", True)),
     )
     ll.save()
-    if not (ll.code or "").strip():
-        auto_code = f"LL-{ll.id:04d}"
-        AquacultureLandlord.objects.filter(pk=ll.pk).update(code=auto_code)
-        ll.code = auto_code
+    assigned, aerr = assign_string_code_if_empty(cid, AquacultureLandlord, "code", "LL", ll.pk, None, 4)
+    if aerr:
+        ll.delete()
+        return JsonResponse({"detail": aerr}, status=400)
+    ll.code = assigned
     perr = _replace_pond_shares_from_body(ll, cid, body)
     if perr:
         ll.delete()

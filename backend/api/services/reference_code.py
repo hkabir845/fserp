@@ -15,6 +15,7 @@ __all__ = [
     "choice_suffixes",
     "is_code_available",
     "suggest_payload",
+    "next_available_code",
     "user_supplied_code_or_auto",
     "assign_string_code_if_empty",
 ]
@@ -38,9 +39,12 @@ def format_code(prefix: str, n: int, width: int | None = None) -> str:
     return f"{prefix}-{n}"
 
 
-def collect_used_suffixes(company_id: int, model: type, field: str, prefix: str) -> set[int]:
+def collect_used_suffixes(company_id: int | None, model: type, field: str, prefix: str) -> set[int]:
     used: set[int] = set()
-    for row in model.objects.filter(company_id=company_id).only("id", field):
+    qs = model.objects.all()
+    if company_id is not None:
+        qs = qs.filter(company_id=company_id)
+    for row in qs.only("id", field):
         val = getattr(row, field) or ""
         s = parse_suffix(str(val), prefix)
         if s is not None:
@@ -68,7 +72,7 @@ def choice_suffixes(used: set[int]) -> list[int]:
 
 
 def is_code_available(
-    company_id: int,
+    company_id: int | None,
     model: type,
     field: str,
     prefix: str,
@@ -79,10 +83,30 @@ def is_code_available(
     val = (code or "").strip()
     if not val:
         return False
-    qs = model.objects.filter(company_id=company_id, **{f"{field}__exact": val})
+    qs = model.objects.filter(**{f"{field}__exact": val})
+    if company_id is not None:
+        qs = qs.filter(company_id=company_id)
     if exclude_pk is not None:
         qs = qs.exclude(pk=exclude_pk)
     return not qs.exists()
+
+
+def next_available_code(
+    company_id: int | None,
+    model: type,
+    field: str,
+    prefix: str,
+    width: int | None = None,
+) -> str:
+    """Lowest unused PREFIX-n suffix in ascending order (reuses gaps after deletes)."""
+    used = collect_used_suffixes(company_id, model, field, prefix)
+    n = first_free_suffix(used)
+    for _ in range(10000):
+        code = format_code(prefix, n, width)
+        if is_code_available(company_id, model, field, prefix, code, None):
+            return code
+        n += 1
+    raise ValueError("Could not assign a free reference code.")
 
 
 def user_supplied_code_or_auto(

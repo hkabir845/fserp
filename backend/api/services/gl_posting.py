@@ -72,6 +72,7 @@ from api.services.shift_sales import unrecord_invoice_from_shift
 from api.services.station_stock import add_station_stock, item_uses_station_bins
 from api.utils.customer_display import customer_display_name
 from api.services.coa_constants import is_pl_credit_normal_type, normalize_chart_account_type
+from api.services.erp_coa_defaults import ErpCoaCode
 from api.services.employee_payroll_subledger import sync_payroll_run_to_employee_ledgers
 
 logger = logging.getLogger(__name__)
@@ -2111,6 +2112,9 @@ def _bill_line_aquaculture_meta(company_id: int, line: BillLine) -> Optional[dic
     if not bucket:
         bucket = "equipment"
     meta["cost_bucket"] = bucket[:40]
+    trc_id = getattr(line, "tenant_reporting_category_id", None)
+    if trc_id:
+        meta["tenant_reporting_category_id"] = int(trc_id)
     return meta
 
 
@@ -2124,12 +2128,32 @@ def _bill_line_expense_debit_account(
     vendor: Optional[Vendor],
     office_exp: ChartOfAccount,
 ) -> ChartOfAccount:
-    """Non-inventory bill debits: line override, then item default, then vendor default, else office expense."""
+    """Non-inventory bill debits: line override, fuel-station rollup COA, item default, vendor default, else office expense."""
     lid = getattr(line, "expense_account_id", None)
     if lid:
         acc = ChartOfAccount.objects.filter(pk=lid, company_id=company_id, is_active=True).first()
         if acc and normalize_chart_account_type(acc.account_type) in _EXP_DEBIT_TYPES:
             return acc
+    if not getattr(line, "aquaculture_pond_id", None):
+        fs_cat = (getattr(line, "fuel_station_expense_category", None) or "").strip()
+        if fs_cat or getattr(line, "tenant_reporting_category_id", None):
+            from api.services.fuel_station_coa_constants import (
+                chart_account_id_for_fuel_station_expense_rollup,
+            )
+
+            lookup = fs_cat
+            if not lookup and getattr(line, "tenant_reporting_category_id", None):
+                trc = getattr(line, "tenant_reporting_category", None)
+                if trc is not None:
+                    lookup = (getattr(trc, "code", None) or "").strip()
+            if lookup:
+                aid = chart_account_id_for_fuel_station_expense_rollup(company_id, lookup)
+                if aid:
+                    acc = ChartOfAccount.objects.filter(
+                        pk=aid, company_id=company_id, is_active=True
+                    ).first()
+                    if acc and normalize_chart_account_type(acc.account_type) in _EXP_DEBIT_TYPES:
+                        return acc
     if item and not _item_receives_physical_stock(item):
         iid = getattr(item, "expense_account_id", None)
         if iid:
@@ -2155,7 +2179,7 @@ def _build_bill_journal_lines(
     Returns (lines, aquaculture_line_costing) for _create_posted_entry.
     """
     ap = _coa(company_id, CODE_AP)
-    exp = _coa(company_id, CODE_OFFICE_EXP) or ChartOfAccount.objects.filter(
+    exp = _coa(company_id, ErpCoaCode.STATION_OPERATING) or _coa(company_id, CODE_OFFICE_EXP) or ChartOfAccount.objects.filter(
         company_id=company_id, account_type="expense", is_active=True
     ).first()
     if not ap or not exp:
@@ -2587,6 +2611,65 @@ def post_bill_journal(
             bill.id,
         )
     return je is not None
+
+
+def resync_posted_bill_journal_from_lines(company_id: int, bill_id: int) -> bool:
+    """
+    Refresh an existing AUTO-BILL journal after bill line reporting metadata or expense accounts change.
+    Updates debit lines in order; leaves amounts and the A/P credit line unchanged.
+    """
+    from api.models import Bill, JournalEntry, JournalEntryLine
+
+    bill = Bill.objects.filter(pk=bill_id, company_id=company_id).first()
+    if not bill or not bill_eligible_for_posting(bill):
+        return False
+    entry_number = f"AUTO-BILL-{bill.id}"
+    je = JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).first()
+    if not je:
+        return False
+    built = _build_bill_journal_lines(company_id, bill)
+    if not built:
+        return False
+    lines, aq_cost = built
+    debit_specs: list[tuple] = []
+    meta_specs: list[Optional[dict]] = []
+    for raw, meta in zip(lines, aq_cost):
+        acc, debit, credit, desc, st_opt, explicit = _unpack_gl_line(raw)
+        if debit <= 0:
+            continue
+        debit_specs.append((acc, debit, desc, st_opt, explicit))
+        meta_specs.append(meta)
+
+    existing = list(
+        JournalEntryLine.objects.filter(journal_entry_id=je.id, debit__gt=0).order_by("id")
+    )
+    if len(existing) != len(debit_specs):
+        logger.warning(
+            "skip resync bill %s journal: line count mismatch (%s vs %s)",
+            bill.id,
+            len(existing),
+            len(debit_specs),
+        )
+        if not existing or not debit_specs:
+            return False
+        # Partial refresh: update the overlapping debit lines in order.
+        existing = existing[: len(debit_specs)]
+
+    for jl, (acc, _amt, desc, st_opt, explicit), meta in zip(existing, debit_specs, meta_specs):
+        hdr = _gl_station_id(company_id, bill.receipt_station_id)
+        if explicit:
+            line_st = _gl_station_id(company_id, st_opt) if st_opt is not None else None
+        else:
+            line_st = hdr
+        aq_kw = _journal_line_bill_meta_kwargs(company_id, meta)
+        updates: dict[str, Any] = {
+            "account_id": acc.id,
+            "description": desc[:300],
+            "station_id": line_st,
+            **aq_kw,
+        }
+        JournalEntryLine.objects.filter(pk=jl.pk).update(**updates)
+    return True
 
 
 def post_fund_transfer_journal(company_id: int, ft: FundTransfer) -> bool:

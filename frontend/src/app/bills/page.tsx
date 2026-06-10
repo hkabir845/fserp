@@ -28,9 +28,18 @@ import {
   type FuelStationBillExpenseCategory,
 } from '@/lib/fuelStationBillLine'
 import {
-  resolveReceiptStationIdForVendor,
+  resolveReceiptLocationKeyForVendor,
   vendorUsualReceivingSummary,
 } from '@/lib/vendorReceivingDefaults'
+import {
+  applyHeaderPondToBillLines,
+  clearPondTagsFromNonFishLines,
+  formatPondScopeKey,
+  headerPondIdFromLocationKey,
+  inferReceiptLocationKeyFromBill,
+  resolveBillReceiptLocation,
+} from '@/lib/billReceiptLocation'
+import { BillReceiptLocationSelect } from '@/components/bills/BillReceiptLocationSelect'
 import {
   type BillPurpose,
   billLinePondCostMode,
@@ -96,6 +105,7 @@ interface AquaculturePondOption {
   id: number
   name: string
   pond_role?: string
+  is_active?: boolean
 }
 
 interface FishSpeciesOption {
@@ -115,6 +125,7 @@ interface Station {
   station_number?: string
   default_aquaculture_pond_id?: number | null
   operates_fuel_retail?: boolean
+  is_active?: boolean
 }
 
 interface Bill {
@@ -1146,7 +1157,7 @@ export default function BillsPage() {
       due_date: due.toISOString().split('T')[0],
       vendor_reference: '',
       memo: '',
-      receipt_station_id: '' as number | '',
+      receipt_location_key: '' as string,
       bill_purpose: 'station' as BillPurpose,
       lines: [] as BillLineItem[],
     }
@@ -1180,25 +1191,80 @@ export default function BillsPage() {
   const handleFormVendorChange = (rawVendorId: string) => {
     const vendor_id = parseInt(rawVendorId, 10) || 0
     if (!vendor_id) {
-      setFormData((prev) => ({ ...prev, vendor_id: 0, receipt_station_id: '' }))
+      setFormData((prev) => ({ ...prev, vendor_id: 0, receipt_location_key: '' }))
       return
     }
     const vendor = vendors.find((v) => v.id === vendor_id)
-    const receipt_station_id = resolveReceiptStationIdForVendor(vendor, stations)
+    const receipt_location_key = resolveReceiptLocationKeyForVendor(vendor, stations, aquaculturePonds)
+    const resolved = resolveBillReceiptLocation(receipt_location_key, stations, aquaculturePonds)
     const coaOpts = expenseAccounts.map((a) => ({ id: a.id, account_code: a.account_code }))
     const vendorExpense = suggestedBillLineExpenseAccountId({
       vendorDefaultExpenseId: vendor?.default_expense_account_id,
       options: coaOpts,
     })
     setFormData((prev) => {
-      const lines = prev.lines.map((line) => {
+      const isFishLine = (line: BillLineItem) => {
+        if (!line.item_id) return false
+        return (items.find((i) => i.id === line.item_id)?.pos_category || '').toLowerCase() === 'fish'
+      }
+      let lines = prev.lines.map((line) => {
         if (billLineExpenseTouchedRef.current.has(line.line_number)) return line
         if (line.expense_account_id || line.item_id || billLineKind(line) === 'item') return line
         if (!vendorExpense) return line
         return { ...line, expense_account_id: vendorExpense }
       })
-      return { ...prev, vendor_id, receipt_station_id, lines }
+      if (resolved.headerPondId) {
+        lines = applyHeaderPondToBillLines(lines, resolved.headerPondId, isFishLine)
+      }
+      return {
+        ...prev,
+        vendor_id,
+        receipt_location_key,
+        bill_purpose: receipt_location_key ? resolved.billPurpose : prev.bill_purpose,
+        lines,
+      }
     })
+  }
+
+  const handleReceiptLocationChange = (key: string) => {
+    const resolved = resolveBillReceiptLocation(key, stations, aquaculturePonds)
+    setFormData((prev) => {
+      const isFishLine = (line: BillLineItem) => {
+        if (!line.item_id) return false
+        return (items.find((i) => i.id === line.item_id)?.pos_category || '').toLowerCase() === 'fish'
+      }
+      let lines = prev.lines
+      if (resolved.headerPondId) {
+        lines = applyHeaderPondToBillLines(lines, resolved.headerPondId, isFishLine)
+      } else if (resolved.billPurpose === 'station' && key) {
+        lines = clearPondTagsFromNonFishLines(lines, isFishLine)
+      }
+      return {
+        ...prev,
+        receipt_location_key: key,
+        bill_purpose: key ? resolved.billPurpose : prev.bill_purpose,
+        lines,
+      }
+    })
+  }
+
+  const handleBillPurposeChange = (bill_purpose: BillPurpose) => {
+    setFormData((prev) => ({
+      ...prev,
+      bill_purpose,
+      receipt_location_key: bill_purpose === 'office' ? '' : prev.receipt_location_key,
+    }))
+  }
+
+  const resolveFormReceiptPayload = () => {
+    if (formData.bill_purpose === 'office') {
+      return { receiptStationId: null as number | null, billPurpose: 'office' as BillPurpose }
+    }
+    const resolved = resolveBillReceiptLocation(formData.receipt_location_key, stations, aquaculturePonds)
+    return {
+      receiptStationId: resolved.receiptStationId,
+      billPurpose: formData.receipt_location_key ? resolved.billPurpose : formData.bill_purpose,
+    }
   }
 
   const billExpenseCategories = useMemo(
@@ -1393,6 +1459,8 @@ export default function BillsPage() {
                 station_name?: string
                 station_number?: string
                 default_aquaculture_pond_id?: unknown
+                operates_fuel_retail?: unknown
+                is_active?: unknown
               }) => ({
                 id: typeof s.id === 'number' ? s.id : Number(s.id),
                 station_name: String(s.station_name || '').trim() || 'Station',
@@ -1401,6 +1469,8 @@ export default function BillsPage() {
                   s.default_aquaculture_pond_id != null && s.default_aquaculture_pond_id !== ''
                     ? Number(s.default_aquaculture_pond_id)
                     : null,
+                operates_fuel_retail: s.operates_fuel_retail !== false,
+                is_active: s.is_active !== false,
               }),
             )
             .filter((s: Station) => Number.isFinite(s.id)),
@@ -1419,10 +1489,11 @@ export default function BillsPage() {
       if (pondsRes.status === 'fulfilled' && Array.isArray(pondsRes.value.data)) {
         setAquaculturePonds(
           pondsRes.value.data
-            .map((p: { id?: unknown; name?: unknown; pond_role?: unknown }) => ({
+            .map((p: { id?: unknown; name?: unknown; pond_role?: unknown; is_active?: unknown }) => ({
               id: typeof p.id === 'number' ? p.id : Number(p.id),
               name: String(p.name || '').trim() || `Pond ${p.id}`,
               pond_role: String(p.pond_role || '').trim(),
+              is_active: p.is_active !== false,
             }))
             .filter((p: AquaculturePondOption) => Number.isFinite(p.id)),
         )
@@ -1532,7 +1603,7 @@ export default function BillsPage() {
         due_date: due.toISOString().split('T')[0],
         vendor_reference: '',
         memo: pondId !== '' ? 'Pond operating expense' : '',
-        receipt_station_id: '',
+        receipt_location_key: pondId !== '' ? formatPondScopeKey(pondId) : '',
         bill_purpose: pondId !== '' ? ('pond' as BillPurpose) : ('station' as BillPurpose),
         lines:
           pondId !== '' && catId
@@ -1560,10 +1631,15 @@ export default function BillsPage() {
       const lineNumber = prev.lines.length + 1
       let newLine: BillLineItem
       if (kind === 'expense') {
+        const headerPond = headerPondIdFromLocationKey(prev.receipt_location_key)
         const rawPond = searchParams.get('pond_id')
         const rawCat = searchParams.get('expense_category') || 'other'
         const pondPrefill: number | '' =
-          rawPond && /^\d+$/.test(rawPond.trim()) ? parseInt(rawPond.trim(), 10) : ''
+          headerPond != null && headerPond > 0
+            ? headerPond
+            : rawPond && /^\d+$/.test(rawPond.trim())
+              ? parseInt(rawPond.trim(), 10)
+              : ''
         const catPrefill = findBillCategory(billExpenseCategories, rawCat)?.id || ''
         if (pondPrefill !== '' && catPrefill) {
           newLine = {
@@ -1591,6 +1667,7 @@ export default function BillsPage() {
           }
         }
       } else {
+        const headerPond = headerPondIdFromLocationKey(prev.receipt_location_key)
         newLine = {
           line_number: lineNumber,
           line_kind: 'item',
@@ -1604,7 +1681,7 @@ export default function BillsPage() {
           tax_amount: 0,
           aquaculture_fish_weight_kg: undefined,
           aquaculture_fish_count: undefined,
-          aquaculture_pond_id: '',
+          aquaculture_pond_id: headerPond ?? '',
           aquaculture_production_cycle_id: '',
         }
       }
@@ -1894,15 +1971,15 @@ export default function BillsPage() {
     }
 
     const sendAck = !!(confirm && confirm.acknowledgeTankOverfill)
-    const rsId = formData.receipt_station_id === '' ? null : formData.receipt_station_id
+    const { receiptStationId, billPurpose } = resolveFormReceiptPayload()
     await api.post('/bills/', {
       vendor_id: formData.vendor_id,
       bill_date: formData.bill_date,
       due_date: formData.due_date || null,
       vendor_reference: formData.vendor_reference || null,
       memo: formData.memo || null,
-      receipt_station_id: rsId,
-      bill_purpose: formData.bill_purpose,
+      receipt_station_id: receiptStationId,
+      bill_purpose: billPurpose,
       subtotal: subtotal,
       tax_amount: taxAmount,
       total_amount: total,
@@ -1989,16 +2066,27 @@ export default function BillsPage() {
           const exp = line.expense_account_id != null ? Number(line.expense_account_id) : 0
           if (ln > 0 && exp > 0) billLineExpenseTouchedRef.current.add(ln)
         }
+        const inferredPurpose = inferBillPurposeFromLines(
+            fullBill.lines?.map((line: BillLineItem) => ({
+              ...line,
+              amount: Number(line.amount),
+            })) || [],
+            fullBill.receipt_station_id,
+            aquaculturePonds.length > 0
+          )
         setFormData({
           vendor_id: fullBill.vendor_id,
           bill_date: fullBill.bill_date.split('T')[0],
           due_date: fullBill.due_date ? fullBill.due_date.split('T')[0] : '',
           vendor_reference: fullBill.vendor_reference || '',
           memo: fullBill.memo || '',
-          receipt_station_id:
-            fullBill.receipt_station_id != null && fullBill.receipt_station_id > 0
-              ? fullBill.receipt_station_id
-              : '',
+          receipt_location_key: inferReceiptLocationKeyFromBill({
+            billPurpose: inferredPurpose,
+            receiptStationId: fullBill.receipt_station_id,
+            lines: fullBill.lines || [],
+            stations,
+            ponds: aquaculturePonds,
+          }),
           lines: fullBill.lines?.map((line: BillLineItem) => ({
             id: line.id,
             line_number: line.line_number,
@@ -2045,14 +2133,7 @@ export default function BillsPage() {
                 : '',
             station_cost_mode: 'direct',
           })) || [],
-          bill_purpose: inferBillPurposeFromLines(
-            fullBill.lines?.map((line: BillLineItem) => ({
-              ...line,
-              amount: Number(line.amount),
-            })) || [],
-            fullBill.receipt_station_id,
-            aquaculturePonds.length > 0
-          ),
+          bill_purpose: inferredPurpose,
         })
         setShowEditModal(true)
       } else {
@@ -2089,7 +2170,7 @@ export default function BillsPage() {
     }
 
     const sendAck = !!(confirm && confirm.acknowledgeTankOverfill)
-    const rsIdUpdate = formData.receipt_station_id === '' ? null : formData.receipt_station_id
+    const { receiptStationId: rsIdUpdate, billPurpose: billPurposeUpdate } = resolveFormReceiptPayload()
     await api.put(`/bills/${editingBill.id}`, {
       vendor_id: formData.vendor_id,
       bill_date: formData.bill_date,
@@ -2097,7 +2178,7 @@ export default function BillsPage() {
       vendor_reference: formData.vendor_reference || null,
       memo: formData.memo || null,
       receipt_station_id: rsIdUpdate,
-      bill_purpose: formData.bill_purpose,
+      bill_purpose: billPurposeUpdate,
       subtotal: subtotal,
       tax_amount: taxAmount,
       total_amount: total,
@@ -2275,7 +2356,7 @@ export default function BillsPage() {
       due_date: due.toISOString().split('T')[0],
       vendor_reference: '',
       memo: '',
-      receipt_station_id: '',
+      receipt_location_key: '',
       bill_purpose: 'station' as BillPurpose,
       lines: [],
     })
@@ -2604,11 +2685,44 @@ export default function BillsPage() {
                     <p className="text-sm text-gray-600">Vendor</p>
                     <p className="text-lg">{viewingBill.vendor_name || 'N/A'}</p>
                   </div>
-                  {(viewingBill.receipt_station_name || viewingBill.receipt_station_id) && (
+                  {(viewingBill.receipt_station_name ||
+                    viewingBill.receipt_station_id ||
+                    viewingBill.lines?.some((l) => l.aquaculture_pond_id)) && (
                     <div>
-                      <p className="text-sm text-gray-600">Receipt station (shop stock)</p>
+                      <p className="text-sm text-gray-600">Receiving location</p>
                       <p className="text-lg">
-                        {viewingBill.receipt_station_name || `Station #${viewingBill.receipt_station_id}`}
+                        {(() => {
+                          const pondIds = new Set<number>()
+                          for (const line of viewingBill.lines || []) {
+                            const pid = line.aquaculture_pond_id
+                            if (pid != null && Number(pid) > 0) pondIds.add(Number(pid))
+                          }
+                          if (pondIds.size === 1) {
+                            const pid = [...pondIds][0]
+                            const pond = aquaculturePonds.find((p) => p.id === pid)
+                            const shop =
+                              viewingBill.receipt_station_name ||
+                              (viewingBill.receipt_station_id
+                                ? `Station #${viewingBill.receipt_station_id}`
+                                : '')
+                            return (
+                              <>
+                                Pond: {pond?.name || `Pond #${pid}`}
+                                {shop ? (
+                                  <span className="block text-sm font-normal text-gray-600">
+                                    Shop hub: {shop}
+                                  </span>
+                                ) : null}
+                              </>
+                            )
+                          }
+                          return (
+                            viewingBill.receipt_station_name ||
+                            (viewingBill.receipt_station_id
+                              ? `Station #${viewingBill.receipt_station_id}`
+                              : '—')
+                          )
+                        })()}
                       </p>
                     </div>
                   )}
@@ -2849,33 +2963,26 @@ export default function BillsPage() {
                   </div>
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Receipt station (this bill)
+                      Receiving location (station or pond)
                     </label>
-                    <select
-                      value={formData.receipt_station_id === '' ? '' : String(formData.receipt_station_id)}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setFormData({
-                          ...formData,
-                          receipt_station_id: v === '' ? '' : parseInt(v, 10),
-                        })
-                      }}
+                    <BillReceiptLocationSelect
+                      value={formData.receipt_location_key}
+                      onChange={handleReceiptLocationChange}
+                      stations={stations}
+                      ponds={aquaculturePonds}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">— Not set —</option>
-                      {stations.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.station_name}
-                          {s.station_number ? ` (${s.station_number})` : ''}
-                        </option>
-                      ))}
-                    </select>
+                    />
+                    {formData.receipt_location_key.startsWith('p:') ? (
+                      <p className="mt-1 text-xs text-teal-800">
+                        Pond bill — lines tag this pond for aquaculture P&amp;L (671x). Shop hub for stock is set
+                        automatically for payments and non-pond inventory.
+                      </p>
+                    ) : null}
                     <p className="mt-1 text-xs text-gray-500">
-                      Pre-filled from the vendor&apos;s usual location when set; change for each delivery. Shop hub for{' '}
-                      <strong className="font-medium">non-fuel</strong> SKUs (e.g. feed).{' '}
-                      <strong className="font-medium">Fish-type items</strong> use{' '}
-                      <strong className="font-medium">Pond (P&amp;L tag)</strong> on the line instead. Leave not set for
-                      fuel-only bills or fish with a pond on every line.
+                      Pre-filled from the vendor&apos;s usual pond or site when set. Pick a{' '}
+                      <strong className="font-medium">fuel/shop station</strong> for site costs and tank/shop stock, or
+                      a <strong className="font-medium">pond</strong> for lease, feed, electricity, and other pond
+                      expenses. Head office bills: choose &quot;Head office / general&quot; below and leave this not set.
                     </p>
                   </div>
                   <div className="col-span-2">
@@ -2894,7 +3001,7 @@ export default function BillsPage() {
 
                 <BillPurposeSection
                   value={formData.bill_purpose}
-                  onChange={(bill_purpose) => setFormData({ ...formData, bill_purpose })}
+                  onChange={handleBillPurposeChange}
                   showPondOption={aquaculturePonds.length > 0}
                 />
 
@@ -3388,33 +3495,26 @@ export default function BillsPage() {
                   </div>
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Receipt station (this bill)
+                      Receiving location (station or pond)
                     </label>
-                    <select
-                      value={formData.receipt_station_id === '' ? '' : String(formData.receipt_station_id)}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setFormData({
-                          ...formData,
-                          receipt_station_id: v === '' ? '' : parseInt(v, 10),
-                        })
-                      }}
+                    <BillReceiptLocationSelect
+                      value={formData.receipt_location_key}
+                      onChange={handleReceiptLocationChange}
+                      stations={stations}
+                      ponds={aquaculturePonds}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">— Not set —</option>
-                      {stations.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.station_name}
-                          {s.station_number ? ` (${s.station_number})` : ''}
-                        </option>
-                      ))}
-                    </select>
+                    />
+                    {formData.receipt_location_key.startsWith('p:') ? (
+                      <p className="mt-1 text-xs text-teal-800">
+                        Pond bill — lines tag this pond for aquaculture P&amp;L (671x). Shop hub for stock is set
+                        automatically for payments and non-pond inventory.
+                      </p>
+                    ) : null}
                     <p className="mt-1 text-xs text-gray-500">
-                      Pre-filled from the vendor&apos;s usual location when set; change for each delivery. Shop hub for{' '}
-                      <strong className="font-medium">non-fuel</strong> SKUs (e.g. feed).{' '}
-                      <strong className="font-medium">Fish-type items</strong> use{' '}
-                      <strong className="font-medium">Pond (P&amp;L tag)</strong> on the line instead. Leave not set for
-                      fuel-only bills or fish with a pond on every line.
+                      Pre-filled from the vendor&apos;s usual pond or site when set. Pick a{' '}
+                      <strong className="font-medium">fuel/shop station</strong> for site costs and tank/shop stock, or
+                      a <strong className="font-medium">pond</strong> for lease, feed, electricity, and other pond
+                      expenses. Head office bills: choose &quot;Head office / general&quot; below and leave this not set.
                     </p>
                   </div>
                   <div className="col-span-2">
@@ -3432,7 +3532,7 @@ export default function BillsPage() {
 
                 <BillPurposeSection
                   value={formData.bill_purpose}
-                  onChange={(bill_purpose) => setFormData({ ...formData, bill_purpose })}
+                  onChange={handleBillPurposeChange}
                   showPondOption={aquaculturePonds.length > 0}
                 />
 

@@ -1,7 +1,6 @@
 """Bills API: list, create, get, update, delete (company-scoped)."""
 from __future__ import annotations
 
-import re
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
@@ -73,29 +72,26 @@ from api.services.tenant_reporting_categories import (
     APP_FUEL_STATION,
 )
 
-_BILL_NUMBER_RE = re.compile(r"^BILL-(\d+)$", re.IGNORECASE)
-
-
-def _bill_number_taken(company_id: int, bill_number: str) -> bool:
-    return Bill.objects.filter(company_id=company_id, bill_number__iexact=bill_number).exists()
-
 
 def _next_bill_number(company_id: int) -> str:
-    """
-    Next available BILL-{n} for this company. Uses max existing BILL-* suffix, not row count,
-    so deletes and seeded numbers (e.g. DEMO-BILL-*) do not cause UNIQUE collisions.
-    """
-    max_n = 0
-    for bn in Bill.objects.filter(company_id=company_id).values_list("bill_number", flat=True):
-        m = _BILL_NUMBER_RE.match((bn or "").strip())
-        if m:
-            max_n = max(max_n, int(m.group(1)))
-    n = max_n + 1
-    candidate = f"BILL-{n}"
-    while _bill_number_taken(company_id, candidate):
-        n += 1
-        candidate = f"BILL-{n}"
-    return candidate
+    """Next BILL-n: lowest free suffix (reuses gaps when a bill number is deleted)."""
+    from api.services.reference_code import next_available_code
+
+    return next_available_code(company_id, Bill, "bill_number", "BILL")
+
+
+def _bill_line_aquaculture_expense_category(line: BillLine) -> str | None:
+    trc = getattr(line, "tenant_reporting_category", None)
+    if trc and getattr(trc, "application", None) == "aquaculture" and getattr(trc, "code", None):
+        return (trc.code or "").strip() or None
+    return expense_category_from_cost_bucket(getattr(line, "aquaculture_cost_bucket", None))
+
+
+def _bill_line_tenant_reporting_label(line: BillLine) -> str:
+    trc = getattr(line, "tenant_reporting_category", None)
+    if trc and getattr(trc, "label", None):
+        return (trc.label or "").strip()
+    return ""
 
 
 def _fuel_station_category_label(company_id: int, code: str, trc) -> str:
@@ -451,9 +447,9 @@ def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
         "aquaculture_pond_id": getattr(l, "aquaculture_pond_id", None),
         "aquaculture_production_cycle_id": getattr(l, "aquaculture_production_cycle_id", None),
         "aquaculture_cost_bucket": (getattr(l, "aquaculture_cost_bucket", None) or "")[:40],
-        "aquaculture_expense_category": expense_category_from_cost_bucket(
-            getattr(l, "aquaculture_cost_bucket", None)
-        ),
+        "aquaculture_expense_category": _bill_line_aquaculture_expense_category(l),
+        "tenant_reporting_category_id": getattr(l, "tenant_reporting_category_id", None),
+        "tenant_reporting_category_label": _bill_line_tenant_reporting_label(l),
         "aquaculture_fish_weight_kg": (
             str(l.aquaculture_fish_weight_kg)
             if getattr(l, "aquaculture_fish_weight_kg", None) is not None
@@ -485,7 +481,6 @@ def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
         )[:64],
         "line_receipt_station_id": getattr(l, "receipt_station_id", None),
         "receipt_station_id": getattr(l, "receipt_station_id", None),
-        "tenant_reporting_category_id": getattr(l, "tenant_reporting_category_id", None),
         "fuel_station_expense_category_label": _fuel_station_category_label(
             b.company_id,
             getattr(l, "fuel_station_expense_category", None) or "",

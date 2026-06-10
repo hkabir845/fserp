@@ -1,4 +1,4 @@
-"""Bill auto-number must not collide after deletes or non-sequential seed numbers."""
+"""Bill auto-number reuses the lowest free BILL-n suffix after deletes."""
 from __future__ import annotations
 
 import json
@@ -62,4 +62,4 @@ def test_bill_create_number_after_gap(api_client: Client, auth_super_headers, co
         **h,
     )
     assert r.status_code == 201, r.content
-    assert json.loads(r.content)["bill_number"] == "BILL-4"
+    assert json.loads(r.content)["bill_number"] == "BILL-2"

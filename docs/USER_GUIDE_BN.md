@@ -1,13 +1,21 @@
-# FSERP (Filling Station ERP) — সম্পূর্ণ ব্যবহারকারী নির্দেশিকা (বাংলা)
+# FSERP — কোম্পানি মালিকের সম্পূর্ণ ব্যবহারকারী নির্দেশিকা (বাংলা)
 
-এই নির্দেশিকা **FSERP** ওয়েব অ্যাপ্লিকেশনের **সব মডিউল ও ফিচার** ধাপে ধাপে ব্যাখ্যা করে: ফিলিং স্টেশন (পাম্প), হিসাব, বিক্রয়, ইনভেন্টরি, কর্মী, রিপোর্টিং এবং (চালু থাকলে) **মাছ চাষ (অ্যাকোয়াকালচার)**।
+এই নির্দেশিকা **FSERP (Fuel Station ERP)** সফটওয়্যারের **প্রতিটি মডিউল, প্রতিটি মেনু, প্রতিটি গুরুত্বপূর্ণ অপশন** ধাপে ধাপে বাংলায় ব্যাখ্যা করে। উদাহরণে **ফিলিং স্টেশন (যেমন Adib Filling Station)**, **অ্যাগ্রো/শপ হাব (Premium Agro)**, এবং **মাছ চাষের পুকুর** একসাথে চালানোর কথা ধরে নেওয়া হয়েছে।
 
-**সংস্করণ:** ২০২৬ — কোডবেসের মেনু (`erpAppMenu.tsx`) ও রুট অনুযায়ী।
+**কার জন্য:** কোম্পানির **মালিক / Admin**, যিনি সেটআপ, ব্যবহারকারী, হিসাব, অপারেশন ও রিপোর্ট দেখেন।
+
+**সংস্করণ:** ২০২৬ — অ্যাপ মেনু (`erpAppMenu.tsx`) ও রুট অনুযায়ী।
+
+> **Adib Filling Station + Premium Agro + পুকুর (entity P&L সহ):**  
+> [`USER_GUIDE_ADIB_PREMIUM_AGRO_BN.md`](USER_GUIDE_ADIB_PREMIUM_AGRO_BN.md)
+
+> **দ্রুত শুরু:** নতুন প্রতিষ্ঠান হলে → [§৪ কোম্পানি সেটআপ](#৪-কোম্পানি-স্টেশন-ও-ফরম্যাট) → [§৭ স্টেশন সেটআপ](#৭-স্টেশন-ম্যানেজমেন্ট) → [§৬ POS](#৬-মূল-মেনু-main) → [§১৭ দৈনিক ওয়ার্কফ্লো](#১৭-সাধারণ-ওয়ার্কফ্লো)।
 
 ---
 
 ## সূচিপত্র
 
+0. [কোম্পানি মালিক কী কী করতে পারেন](#০-কোম্পানি-মালিক-কী-কী-করতে-পারেন)
 1. [এটি কী ও কার জন্য](#১-এটি-কী-ও-কার-জন্য)
 2. [শুরু করার আগে](#২-শুরু করার-আগে)
 3. [প্রবেশ ও নিরাপত্তা](#৩-প্রবেশ-ও-নিরাপত্তা)
@@ -30,6 +38,25 @@
 20. [সমস্যা সমাধান](#২০-সমস্যা-সমাধান)
 21. [শব্দকোষ](#২১-শব্দকোষ)
 22. [মডিউল তালিকা (দ্রুত রেফারেন্স)](#২২-মডিউল-তালিকা-দ্রুত-রেফারেন্স)
+
+---
+
+## ০. কোম্পানি মালিক কী কী করতে পারেন
+
+**Admin (কোম্পানি মালিক)** হিসেবে আপনি সাধারণত:
+
+| কাজ | কোথায় |
+|-----|--------|
+| প্রতিষ্ঠানের নাম, ঠিকানা, মুদ্রা, সময় অঞ্চল | **Company** (`/company`) |
+| ফিলিং স্টেশন + শপ হাব + পুকুর সেটআপ | **Stations**, **Aquaculture → Ponds** |
+| কর্মী অ্যাকাউন্ট ও অনুমতি | **Users**, **Roles & access** |
+| দৈনিক বিক্রয় (POS), শিফট, ট্যাঙ্ক ডিপ | **Cashier**, **Shift Management**, **Tank Dips** |
+| হিসাব (COA, জার্নাল, বিল, পেমেন্ট) | **Accounting** ও **Sales** মেনু |
+| কাস্টম খরচ/আয়ের নাম (রিপোর্টিং) | **Reporting categories** |
+| সব রিপোর্ট ও P&L | **Reports** |
+| কোম্পানির ব্যাকআপ | **Backup & Restore** |
+
+**আপনি করতে পারবেন না (Super Admin এর কাজ):** অন্য কোম্পানির ডেটা, প্ল্যাটফর্ম বিলিং, গ্লোবাল ব্যবহারকারী — এগুলো `/admin/*` এ।
 
 ---
 
@@ -108,21 +135,47 @@
 
 ### ৪.৩ মুদ্রা, তারিখ, সংখ্যা
 
-- কোম্পানি সেটিং অনুযায়ী **BDT**, তারিখ ফরম্যাট, দশমিক দেখানো হয়।
+- কোম্পানি সেটিং অনুযায়ী **BDT (৳)**, তারিখ ফরম্যাট, দশমিক দেখানো হয়।
+
+### ৪.৪ Company (`/company`) — প্রতিটি অপশন
+
+| অপশন | ব্যাখ্যা | উদাহরণ |
+|--------|---------|--------|
+| **Legal / company name** | চালান ও রিপোর্টে দেখানো নাম | Adib Enterprise Ltd. |
+| **Tax ID / BIN** | VAT রিটার্নে ব্যবহার | ১২৩৪৫৬৭৮৯ |
+| **Address, phone, email** | প্রিন্ট ও যোগাযোগ | Dhaka, 01XXXXXXXX |
+| **Currency** | সব টাকার ফরম্যাট | BDT |
+| **Fiscal year start** | বছরের হিসাব শুরু | জুলাই বা জানুয়ারি |
+| **Timezone** | তারিখ/সময় | Asia/Dhaka |
+| **Station mode: single / multi** | **single** = এক সাইট; **multi** = Adib + Premium Agro আলাদা স্টেশন | multi |
+| **Aquaculture enabled** | মাছ চাষ মডিউল চালু (লাইসেন্স লাগে) | চালু থাকলে Aquaculture মেনু দেখা যায় |
+| **Subdomain / custom domain** | টেন্যান্ট URL (SaaS) | adib.yourerp.com |
+
+**উদাহরণ — মাল্টি-সাইট ব্যবসা:**  
+- **Adib Filling Station** → `operates_fuel_retail = true` (পেট্রোল/ডিজেল POS)  
+- **Premium Agro** → `operates_fuel_retail = false` (ফিড, ঔষধ, শপ — পুকুরের সাথে লিঙ্ক)
 
 ---
 
 ## ৫. ভূমিকা ও অনুমতি
 
-### ৫.১ রোল সংক্ষেপ
+### ৫.১ রোল সংক্ষেপ (সব চাকরির ধরন)
 
-| রোল | মেনু সীমা (সাধারণ) |
-|------|---------------------|
-| **Super Admin** | সব + SaaS (`/admin/*`) |
-| **Admin** | প্রায় সব ERP + ব্যাকআপ + অ্যাকোয়াকালচার (চালু হলে) |
-| **Accountant** | হিসাব/বিক্রয়; স্টেশন সেটআপ মেনু অনেক সময় লুকানো |
-| **Cashier** | অ্যাপস, ড্যাশবোর্ড, POS, গ্রাহক, রিপোর্ট |
-| **Operator** | শুধু POS |
+| রোল | কাজ | মালিকের জন্য টিপ |
+|------|-----|-------------------|
+| **Admin** | সব ERP + Users + Backup | মালিক নিজে বা বিশ্বস্ত ম্যানেজার |
+| **Manager** | অপারেশন + রিপোর্ট + অ্যাকোয়াকালচার | দৈনন্দিন তত্ত্বাবধান |
+| **Accountant** | COA, বিল, ইনভয়েস, পেমেন্ট, জার্নাল | স্টেশন হার্ডওয়্যার মেনু অনেক সময় লুকানো |
+| **Auditor** | শুধু দেখা — সম্পাদনা সীমিত | বার্ষিক অডিট |
+| **Forecourt supervisor** | শিফট, ট্যাঙ্ক, নজল, রিপোর্ট | পাম্প ফ্লোর |
+| **Cashier** | POS, গ্রাহক | কাউন্টার |
+| **Shopkeeper** | POS + ইনভেন্টরি | Premium Agro দোকান |
+| **Pump attendant / Operator** | শুধু POS (বিক্রয়/দান) | নজলে কাজ |
+| **Inventory clerk** | পণ্য, স্টক, স্থানান্তর | গুদাম |
+| **Sales clerk** | ইনভয়েস, বিল, পেমেন্ট | অফিস বিক্রয় |
+| **HR officer** | কর্মী, পে-রোল | বেতন |
+
+**কাস্টম রোল:** **Roles & access** (`/roles`) → `aquaculture_only` প্রোফাইল দিয়ে শুধু পুকুর টিম তৈরি করা যায়।
 
 ### ৫.২ অনুমতি কী (`permissions`)
 
@@ -160,25 +213,42 @@
 - দ্রুত পরিসংখ্যান।
 - কিছু ব্লকে সার্ভার ডেটার স্ন্যাপশট (রিড-অনলি)।
 
-### ৬.৩ POS / ক্যাশিয়ার (`/cashier`)
+### ৬.৩ POS / ক্যাশিয়ার (`/cashier`) — বিস্তারিত
 
-**উদ্দেশ্য:** দোকান/কাউন্টার থেকে পণ্য বিক্রয়, ফুয়েল (অনুমতি থাকলে), বিল আদায়।
+**উদ্দেশ্য:** কাউন্টার থেকে বিক্রয়, আদায়, কিছু ক্ষেত্রে বিল পরিশোধ।
 
-**ধাপ:**
+#### ট্যাব / কাজ
 
-1. গ্রাহক (ঐচ্ছিক) বেছে নিন।
-2. আইটেম যোগ করুন — স্ক্যান/খুঁজে।
-3. পরিমাণ, দাম যাচাই।
-4. **পেমেন্ট পদ্ধতি:** নগদ, কার্ড, **On account (A/R)** ইত্যাদি।
-5. চেকআউট → রসিদ/প্রিন্ট।
+| ট্যাব | কখন ব্যবহার | উদাহরণ |
+|--------|-------------|--------|
+| **New sale** | পণ্য/ফুয়েল বিক্রি | ২০ লিটার ডিজেল, ২ বস্তা ফিড |
+| **Collect payment** | গ্রাহকের বকেয়া আদায় | পুকুর গ্রাহক ৫,০০০ টাকা দিল |
+| **Pay bills** | কাউন্টার থেকে সরবরাহকারীকে | ছোট ক্যাশ পেমেন্ট |
+| **Donation** | ফোরকোর্ট দান (নির্দিষ্ট রোল) | — |
 
-**পণ্য বিভাগ (`pos_category`):** general, feed, medicine, fish, fuel, service, other — ক্যাশিয়ারে কোন বিভাগ দেখাবে সেটা সেটিং/ফিল্টার অনুযায়ী।
+#### ধাপ (নতুন বিক্রয়)
 
-**অ্যাকোয়াকালচার পুকুর গ্রাহক (গুরুত্বপূর্ণ):**
+1. **গ্রাহক** বেছে নিন (walk-in হলে খালি রাখতে পারেন)।
+2. **আইটেম** সার্চ/স্ক্যান → পরিমাণ।
+3. **মোট** যাচাই → **Payment method:** Cash, Card, বা **On account (A/R)**।
+4. **Complete** → রসিদ প্রিন্ট।
 
-- প্রতিটি পুকুরের জন্য স্বয়ং **POS গ্রাহক** তৈরি হতে পারে।
-- সেই গ্রাহক বেছে **ফিড/ঔষধ** বিক্রি করলে পেমেন্ট **শুধু On account (A/R)** — নগদ/কার্ড নয়।
-- এতে খরচ **পুকুর P&L**-এ যায়; নগদ বিক্রি পুকুর খরচ হিসেবে ধরা হয় না।
+#### ফুয়েল (Adib Filling Station)
+
+- নজল লিঙ্ক থাকলে POS-এ fuel লাইন — লিটার × দাম।
+- `pos_sale_scope = fuel` → শুধু ফুয়েল বিক্রয়।
+
+#### শপ / অ্যাগ্রো (Premium Agro)
+
+- **pos_category:** feed, medicine, fish, general — রিপোর্টে আলাদা।
+- **পুকুর গ্রাহক** বেছে ফিড/ঔষধ → **শুধু On account** → পুকুর P&L-এ খরচ।
+
+#### Users-এ POS সেটিং
+
+| ফিল্ড | অর্থ |
+|--------|------|
+| **home_station_id** | শুধু নির্দিষ্ট স্টেশনে POS |
+| **pos_sale_scope** | both / general / fuel |
 
 **অপারেটর:** সাধারণত সীমিত POS (নতুন বিক্রয়/দান)।
 
@@ -190,7 +260,16 @@
 
 | মডিউল | পথ | কাজ |
 |--------|-----|-----|
-| **Stations** | `/stations` | সাইট/স্টেশন (নাম, ঠিকানা, ডিফল্ট পুকুর ইত্যাদি) |
+| **Stations** | `/stations` | সাইট/স্টেশন (নাম, ঠিকানা, fuel retail vs shop hub) |
+
+#### Stations — প্রতিটি ফিল্ড
+
+| ফিল্ড | ব্যাখ্যা | উদাহরণ |
+|--------|---------|--------|
+| **station_name** | সাইটের নাম | Adib Filling Station |
+| **operates_fuel_retail** | true = পাম্প; false = শপ/অ্যাগ্রো হাব | Premium Agro → false |
+| **default_aquaculture_pond_id** | শপ হাব কোন পুকুরের সাথে | Pond-1 |
+| **is_active** | বন্ধ স্টেশন POS/রিপোর্টে লুকায় | ✓ |
 | **Tanks** | `/tanks` | ট্যাঙ্ক, ধারণক্ষমতা, পণ্য/ফুয়েল লিঙ্ক |
 | **Islands** | `/islands` | পাম্প দ্বীপ |
 | **Dispensers** | `/dispensers` | ডিসপেনসার ইউনিট |
@@ -231,6 +310,7 @@
 | **Journal Entries** | `/journal-entries` | ম্যানুয়াল জার্নাল; পোস্ট/আনপোস্ট |
 | **Fund Transfer** | `/fund-transfers` | এক হিসাব থেকে অন্য হিসাবে টাকা |
 | **Loans** | `/loans` | ঋণ/ধার ট্র্যাকিং |
+| **Fixed Assets** | `/fixed-assets` | Fixed asset register, straight-line depreciation, AUTO-FA GL |
 | **Bank Accounts** | `/bank-accounts` বা COA থেকে লিঙ্ক | ব্যাংক হিসাব তালিকা |
 
 ### ৯.১ চার্ট অফ অ্যাকাউন্টস
@@ -251,6 +331,15 @@
 ### ৯.৪ ঋণ (Loans)
 
 - ধার দেওয়া/নেওয়া, ব্যালেন্স ট্র্যাক।
+
+### ৯.৫ Fixed Assets (স্থায়ী সম্পদ)
+
+- **পথ:** `/fixed-assets`
+- নতুন asset → **Station** (Adib / Premium Agro) অথবা **Pond** ট্যাগ (P&L-এ depreciation যাবে)।
+- **Place in service:** নতুন ক্রয় হলে Dr asset / Cr bank (settlement account); mid-life adoption হলে **opening accum. depr.** + Dr OBE / Cr 1550।
+- **Run depreciation** বা **Batch depreciate:** Dr 6320 expense / Cr 1550 (entity-tagged)।
+- **Dispose:** accumulated depreciation + proceeds + gain/loss।
+- COA: 1510–1540 asset, **1550** accum depr, **6320** expense।
 
 ---
 
@@ -350,31 +439,162 @@
 | **Settings** | `/settings` | সেটিংস হাব (লিঙ্ক) |
 | **Account / Password** | `/account/password` | নিজের পাসওয়ার্ড |
 
-### ১৩.১ Reporting categories (`/reporting-categories`)
+### ১৩.১ Reporting categories (`/reporting-categories`) — সম্পূর্ণ গাইড
 
-- **শুধু Admin।**
-- **Aquaculture** বা **Fuel station** অ্যাপ্লিকেশন বেছে কাস্টম কোড যোগ।
-- বিল্ট-ইন রোলআপের সাথে ম্যাপ — P&L ও GL ধারাবাহিক থাকে।
-- অ্যাকোয়াকালচার বিল/খরচ/বিক্রয়ে কাস্টম লেবেল ব্যবহার।
+**কে ব্যবহার করবেন:** Admin / কোম্পানি মালিক।  
+**উদ্দেশ্য:** নিজের ভাষায় খরচ/আয়ের **নাম** তৈরি, কিন্তু হিসাব **বিল্ট-ইন গ্রুপে** যুক্ত থাকে।
 
-### ১৩.১ ব্যবহারকারী তৈরি
+#### Site (Application) সিলেক্টর — Reports-এর মতো
 
-1. **Users** → নতুন।
-2. ব্যবহারকারী নাম, ইমেইল, রোল, (ঐচ্ছিক) permissions।
-3. শক্ত পাসওয়ার্ড।
-4. POS-এর জন্য `home_station_id`, `pos_sale_scope` সেট করুন।
+| বাছাই | অর্থ |
+|--------|------|
+| **All** | সব ক্যাটাগরি দেখা (নতুন যোগ করা যায় না) |
+| **Adib Filling Station** (স্টেশন) | Fuel station ক্যাটাগরি |
+| **Premium Agro** (shop hub) | Aquaculture-লিঙ্কড শপ |
+| **Pond-2** (`p:2`) | সেই পুকুরের aquaculture ক্যাটাগরি |
+
+#### Kind (Expense / Income)
+
+- **Expense** — বিল, জার্নাল, স্টেশন খরচ ট্যাগ  
+- **Income** — পুকুর বিক্রয়, অন্যান্য আয়
+
+#### ফর্ম ফিল্ড
+
+| ফিল্ড | ব্যাখ্যা | উদাহরণ |
+|--------|---------|--------|
+| **Display name** | ইউজার যা দেখবে | Site security |
+| **Internal code** | ডাটাবেস ID (অটো সাজেশন) | site_security |
+| **Rolls up to** | কোন বিল্ট-ইন P&L বucket-এ যাবে | Electricity (6720) |
+| **Sort order** | তালিকায় ক্রম | 0, 10, 20… |
+
+**Rolls up to** ড্রপডাউন **গ্রুপ + হিন্ট** দেখায় — ভুল বucket বেছে নিলে রিপোর্ট ভুল হবে।
+
+**Fuel station rollup উদাহরণ:**  
+- “Generator diesel” → **Utilities**  
+- “Forecourt security” → **Operating & admin**
+
+**Aquaculture rollup উদাহরণ:**  
+- “Pond aeration” → **Electricity**  
+- “Pond tour fees” → **Other income**
+
+### ১৩.২ Users — ৩ ধাপে তৈরি
+
+1. **Account** — নাম, ইমেইল, username  
+2. **Access** — Job type, Role profile, Home station, POS scope  
+3. **Sign-in** — পাসওয়ার্ড
+
+### ১৩.৩ Roles & access (`/roles`)
+
+- Permission matrix: `app.pos`, `app.sales`, `app.aquaculture.ponds`, `report.*`, `app.backup` ইত্যাদি।
+- **aquaculture_only** সিড — শুধু পুকুর টিম।
+
+### ১৩.৪ Tax (`/tax`)
+
+- Bangladesh preset: VAT ১৫%, Supplementary duty (petrol/diesel), AIT।
+- ইনভয়েস/বিল লাইনে প্রযোজ্য হার।
+
+### ১৩.৫ Backup (`/backup`)
+
+- **Download** — JSON/ZIP এক্সপোর্ট  
+- **Restore** — নিশ্চিতকরণ ফ্রেজ লাগে; **পুরনো ডেটা প্রতিস্থাপিত** হয়।
+
+### ১৩.৬ ব্যবহারকারী তৈরি (সংক্ষেপ)
+
+1. **Users** → নতুন → ৩ ধাপ সম্পন্ন।
+2. POS কর্মীর জন্য **home_station_id** + **pos_sale_scope** অবশ্য সেট করুন।
 
 ---
 
-## ১৪. রিপোর্ট ও অ্যানালিটিক্স
+## ১৪. রিপোর্ট ও অ্যানালিটিক্স (`/reports`)
 
 | মডিউল | পথ | কাজ |
 |--------|-----|-----|
-| **Reports** | `/reports` | স্ট্যান্ডার্ড রিপোর্ট, এক্সপোর্ট |
-| **Analytics** | `/reports/analytics` | আর্থিক অ্যানালিটিক্স প্যানেল |
+| **Reports** | `/reports` | সব রিপোর্ট, প্রিন্ট/CSV |
+| **Analytics** | `/reports/analytics` | KPI চার্ট (Reports-এর ভিতরে) |
+
+### ১৪.১ সাধারণ ফিল্টার (সব রিপোর্টে)
+
+| ফিল্টার | ব্যাখ্যা | উদাহরণ |
+|---------|---------|--------|
+| **Period** | তারিখ রেঞ্জ | ০১/০৬/২০২৬ – ৩০/০৬/২০২৬ |
+| **Site** | All / স্টেশন / পুকুর | Adib বা `Pond-3` |
+| **Business segment** | Fuel vs Aquaculture shop | Daily Summary-তে |
+| **Item/category** | SKU রিপোর্টে | Feed category |
+
+**টিপ:** Site বাছাই করলে শুধু সেই সাইটের GL/POS দেখায় — **Network Error** এড়াতে সাইট query দিয়ে যায় (হেডার নয়)।
+
+### ১৪.২ আর্থিক রিপোর্ট (Financial)
+
+| রিপোর্ট | ID | কখন দেখবেন |
+|---------|-----|-------------|
+| **Trial Balance** | trial-balance | মাস শেষ — সব খাতার ডেবিট/ক্রেডিট |
+| **Balance Sheet** | balance-sheet | সম্পদ, দায়, ইকুইটি |
+| **Profit & Loss** | income-statement | আয়, COGS, খরচ, নিট লাভ |
+| **Customer Balances** | customer-balances | কে কত পাওনা |
+| **AR Aging** | ar-aging | বকেয়া কত দিন পুরনো |
+| **Vendor Balances** | vendor-balances | সরবরাহকারীর কাছে দেনা |
+| **AP Aging** | ap-aging | বিল কত দিন বাকি |
+| **Cash Flow** | cash-flow | ব্যাংক ইন/আউট, নিট ক্যাশ |
+| **Expense Detail** | expense-detail | GL খরচ লাইন |
+| **Income Detail** | income-detail | GL আয় লাইন |
+| **All Entities P&L** | entities-pl-summary | স্টেশন + পুকুর একসাথে |
+| **All Stations P&L** | stations-financial-summary | Adib vs Premium Agro |
+| **All Ponds P&L** | ponds-pl-summary | প্রতি পুকুর GL P&L |
+| **Liabilities Detail** | liabilities-detail | দায়ের বিস্তার |
+| **Loans** | loans-borrow-and-lent | ধার/ঋণ |
+
+**উদাহরণ:** জুন মাসে Adib স্টেশনের P&L → Site = Adib → **income-statement**।
+
+### ১৪.৩ অপারেশনাল রিপোর্ট (Fuel)
+
+| রিপোর্ট | ID | কাজ |
+|---------|-----|-----|
+| **Daily Summary** | daily-summary | দিনের বিক্রয়, শিফট, ট্যাঙ্ক — fuel + shop |
+| **Shift Summary** | shift-summary | শিফট অনুযায়ী নগদ/লিটার |
+| **Sales by Nozzle** | sales-by-nozzle | কোন নজলে কত লিটার |
+| **Sales by Station** | sales-by-station | সাইট তুলনা |
+| **Sales Report** | sales-report | গ্রাহক, নগদ vs ক্রেডিট |
+| **Purchase Report** | purchase-report | ক্রয় তালিকা |
+| **Fuel Sales Analytics** | fuel-sales | লিটার ও টাকা |
+| **Tank Inventory** | tank-inventory | বই স্টক |
+| **Tank Dip Register** | tank-dip-register | ডিপ ইতিহাস |
+
+### ১৪.৪ ইনভেন্টরি রিপোর্ট
+
+| রিপোর্ট | ID | কাজ |
+|---------|-----|-----|
+| **SKU Valuation** | inventory-sku-valuation | স্টক × গড় কস্ট |
+| **Item catalog by category** | item-master-by-category | পণ্য তালিকা |
+| **Sales by category** | item-sales-by-category | POS বিভাগ অনুযায়ী |
+| **Purchases by category** | item-purchases-by-category | ক্রয় বিভাগ |
+| **Stock movement** | item-stock-movement | ইন/আউট |
+| **Fast/slow movers** | item-velocity-analysis | কোন SKU বেশি বিক্রি |
+
+### ১৪.৫ অ্যানালিটিক্স (KPI)
+
+| রিপোর্ট | ID | কাজ |
+|---------|-----|-----|
+| **Analytics & KPIs** | analytics-kpi | চার্ট: বিক্রয়, COGS, খরচ, নিট |
+| **Tank Dip Variance** | tank-dip-variance | ডিপ vs বই পার্থক্য |
+| **Meter Readings** | meter-readings | মিটার রিডিং ইতিহাস |
+
+### ১৪.৬ অ্যাকোয়াকালচার রিপোর্ট (চালু থাকলে)
+
+| রিপোর্ট | ID | কাজ |
+|---------|-----|-----|
+| **P&L: site & ponds** | aquaculture-pl-management | মূল ব্যবস্থাপনা P&L |
+| **Pond sales register** | aquaculture-fish-sales | মাছ বিক্রয় |
+| **All pond revenue** | aquaculture-pond-sales-comprehensive | POS + register |
+| **Pond P&L** | aquaculture-pond-pl | এক পুকুর |
+| **Expense register** | aquaculture-expenses | খরচ তালিকা |
+| **Biomass sampling** | aquaculture-sampling | স্যাম্পল |
+| **Production cycles** | aquaculture-production-cycles | চক্র |
+| **Fish transfers** | aquaculture-fish-transfers | পুকুর থেকে পুকুরে স্থানান্তর |
+| **Pond feed/medicine stock** | aquaculture-pond-feed-stock ইত্যাদি | ওয়ারহাউস |
+| **Fish stock position** | aquaculture-fish-stock-position | kg/পিস |
 
 - রিপোর্টের আগে **কোম্পানি** ও **তারিখ রেঞ্জ** যাচাই করুন।
-- বড় রেঞ্জ = লোড বেশি সময় নিতে পারে।
+- বড় রেঞ্জ = লোড বেশি সময়; Site = All দিয়ে শুরু করুন।
 
 ---
 
@@ -407,15 +627,41 @@
 | **Pond transfers** | `/aquaculture/transfers` | পুকুর থেকে পুকুরে মাছ স্থানান্তর (kg, পিস, খরচ) |
 | **Pond stock** | `/aquaculture/stock` | পুকুরে স্টক পজিশন |
 | **Biomass sampling** | `/aquaculture/sampling` | নমুনা → ঘনত্ব/ওজন অনুমান |
-| **Feeding advice** | `/aquaculture/feeding` | ফিডিং পরামর্শ (স্যাম্পল/স্টক ভিত্তি) |
+| **Feeding advice** | `/aquaculture/feeding` | ফিডিং পরামর্শ; approve করলে স্টক কমে |
+| **Medicine & treatments** | `/aquaculture/medicine` | ঔষধ ব্যবহার/ট্রিটমেন্ট রেকর্ড |
+| **Financing** | `/aquaculture/financing` | পুকুর-স্তরের ঋণ/ফাইন্যান্সিং |
+| **Data Bank** | `/aquaculture/data-bank` | সিজন শেষে আর্কাইভ, নতুন সিজন |
 
-#### অর্থনীতি (Economics)
+#### Economics (আগের অর্থনীতি সেকশন)
 
 | মডিউল | পথ | কাজ |
 |--------|-----|-----|
 | **Pond & fish sales** | `/aquaculture/sales` | আঙুর/মাছ বিক্রয়, আয়ের ধরন |
 | **Pond costs** | `/aquaculture/expenses` | সরাসরি পুকুর খরচ |
-| **P&L: site & ponds** | `/aquaculture/report` | সাইট + পুকুর লাভ-ক্ষতি, খরচ/কেজি |
+| **P&L: site & ponds** | `/reports` → aquaculture-pl-management | সাইট + পুকুর লাভ-ক্ষতি ( `/aquaculture/report` রিডাইরেক্ট) |
+
+### ১৫.১২ Medicine (`/aquaculture/medicine`)
+
+- পুকুরে **ঔষধ প্রয়োগ** রেকর্ড।
+- পুকুর ওয়ারহাউস থেকে **medicine consumed** — COGS ও inventory আপডেট।
+
+**উদাহরণ:** Pond-2-তে ৫০০ গ্রাম ওক্সিট্রasilin → medicine consumed → P&L-এ medicine bucket।
+
+### ১৫.১৩ Financing (`/aquaculture/financing`)
+
+- পুকুর-নির্দিষ্ট **ঋণ/বিনিয়োগ** ট্র্যাক।
+- **Loans** মডিউলের GL-এর সাথে সমন্বয়।
+
+### ১৫.১৪ Data Bank (`/aquaculture/data-bank`)
+
+- **সিজন শেষ:** চক্র আর্কাইভ, ইতিহাস সংরক্ষণ।
+- **নতুন সিজন:** opening balance দিয়ে শুরু — পুকুর কাঠামো থাকে।
+
+### ১৫.১৫ Landlords — ভাড়া পরিশোধ
+
+- **Landlords** → জমির মালিক, চুক্তির শর্ত।
+- **Aquaculture → Landlords** থেকে **lease paid** — ব্যাংক/ক্যাশ দিয়ে; পুকুর **lease_paid** আপডেট।
+- **Pond costs / Add expense**-এ lease টাইপ amount দিয়ে duplicate করবেন না।
 
 ### ১৫.২ পুকুর সেটআপ
 
@@ -601,7 +847,8 @@
 | খালি তালিকা | ভুল **কোম্পানি**; বা ডেটা নেই |
 | মেনু নেই | রোল/`permissions` — **Roles & access** |
 | POS স্টেশন লক | `home_station_id` |
-| `npm run build` backend এ | **frontend** ফোল্ডারে চালান — backend এ `package.json` নেই |
+| Network Error / API পৌঁছায় না | সার্ভার, CORS, migrate; ব্রাউজার hard refresh |
+| Reporting categories লোড হয় না | `python manage.py migrate`; কোম্পানি বেছে নিন |
 | ট্রান্সফার খরচ ০ / Not set | পুকুরে ফ্রাই/ফিড রেকর্ড; তালিকা রিফ্রেশ; Edit → Save |
 | দুই ট্রান্সফারে একই মোট খরচ | পুরনো বাগ — রিফ্রেশ করলে পিস অনুপাতে ভাগ হবে |
 | পাসওয়ার্ড মেইল নেই | SMTP / অ্যাডমিন রিসেট |
@@ -654,33 +901,34 @@
 | 13 | Journal Entries | `/journal-entries` |
 | 14 | Fund Transfer | `/fund-transfers` |
 | 15 | Loans | `/loans` |
-| 16 | Bank Accounts | `/bank-accounts` |
-| 17 | Customers | `/customers` |
-| 18 | Vendors | `/vendors` |
-| 19 | Invoices | `/invoices` |
-| 20 | Bills | `/bills` |
-| 21 | Payments (hub) | `/payments` |
-| 22 | Payments received | `/payments/received` |
-| 23 | New receipt | `/payments/received/new` |
-| 24 | Payments made | `/payments/made` |
-| 25 | New payment | `/payments/made/new` |
-| 26 | Deposits | `/payments/deposits` |
-| 27 | Payment register | `/payments/all` |
-| 28 | Products & services | `/items` |
-| 29 | Inventory & transfers | `/inventory` |
-| 30 | Employees | `/employees` |
-| 31 | Payroll | `/payroll` |
-| 32 | Company | `/company` |
-| 33 | Subscriptions | `/subscriptions` |
-| 34 | Users | `/users` |
-| 35 | Roles & access | `/roles` |
-| 36 | Tax | `/tax` |
-| 37 | Reporting categories | `/reporting-categories` |
-| 38 | Backup & Restore | `/backup` |
-| 39 | Reports | `/reports` |
-| 40 | Analytics | `/reports/analytics` |
-| 41 | Settings | `/settings` |
-| 42 | Account password | `/account/password` |
+| 16 | Fixed Assets | `/fixed-assets` |
+| 17 | Bank Accounts | `/bank-accounts` |
+| 18 | Customers | `/customers` |
+| 19 | Vendors | `/vendors` |
+| 20 | Invoices | `/invoices` |
+| 21 | Bills | `/bills` |
+| 22 | Payments (hub) | `/payments` |
+| 23 | Payments received | `/payments/received` |
+| 24 | New receipt | `/payments/received/new` |
+| 25 | Payments made | `/payments/made` |
+| 26 | New payment | `/payments/made/new` |
+| 27 | Deposits | `/payments/deposits` |
+| 28 | Payment register | `/payments/all` |
+| 29 | Products & services | `/items` |
+| 30 | Inventory & transfers | `/inventory` |
+| 31 | Employees | `/employees` |
+| 32 | Payroll | `/payroll` |
+| 33 | Company | `/company` |
+| 34 | Subscriptions | `/subscriptions` |
+| 35 | Users | `/users` |
+| 36 | Roles & access | `/roles` |
+| 37 | Tax | `/tax` |
+| 38 | Reporting categories | `/reporting-categories` |
+| 39 | Backup & Restore | `/backup` |
+| 40 | Reports | `/reports` |
+| 41 | Analytics | `/reports/analytics` |
+| 42 | Settings | `/settings` |
+| 43 | Account password | `/account/password` |
 
 ### অ্যাকোয়াকালচার (চালু হলে)
 
@@ -698,7 +946,10 @@
 | A10 | Feeding advice | `/aquaculture/feeding` |
 | A11 | Pond & fish sales | `/aquaculture/sales` |
 | A12 | Pond costs | `/aquaculture/expenses` |
-| A13 | P&L report | `/aquaculture/report` |
+| A13 | Medicine | `/aquaculture/medicine` |
+| A14 | Financing | `/aquaculture/financing` |
+| A15 | Data Bank | `/aquaculture/data-bank` |
+| A16 | P&L report | `/reports` → aquaculture-pl-management |
 
 ### SaaS (Super Admin)
 
@@ -732,4 +983,4 @@
 
 ---
 
-*নথি: FSERP সম্পূর্ণ মডিউল তালিকা — বাংলা ব্যবহারকারী নির্দেশিকা, ২০২৬।*
+*নথি: FSERP কোম্পানি মালিকের সম্পূর্ণ নির্দেশিকা — বাংলা, ২০২৬। ফাইল: `docs/USER_GUIDE_BN.md`। ইংরেজি সংক্ষিপ্ত গাইড: `docs/USER_GUIDE_EN.md`।*

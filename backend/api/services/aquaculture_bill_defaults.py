@@ -9,7 +9,11 @@ from api.services.aquaculture_constants import (
     coa_account_code_for_aquaculture_expense_category,
 )
 from api.services.aquaculture_cost_per_kg import aquaculture_expense_category_to_cost_bucket
-from api.services.tenant_reporting_categories import resolve_aquaculture_expense_to_builtin
+from api.services.tenant_reporting_categories import (
+    APP_AQUACULTURE,
+    resolve_aquaculture_expense_to_builtin,
+    tenant_expense_row,
+)
 
 # Categories recorded elsewhere (not on vendor bills).
 BILL_AQUACULTURE_EXPENSE_EXCLUDED: frozenset[str] = frozenset(
@@ -117,6 +121,10 @@ def apply_aquaculture_expense_category_to_bill_line_row(company_id: int, row: di
     raw_cat = row.get("aquaculture_expense_category")
     if raw_cat in (None, ""):
         return None
+    raw_s = str(raw_cat).strip()
+    tr = tenant_expense_row(company_id, APP_AQUACULTURE, raw_s)
+    if tr:
+        row["tenant_reporting_category_id"] = int(tr.id)
     code, err = normalize_bill_expense_category(company_id, raw_cat)
     if err:
         return err

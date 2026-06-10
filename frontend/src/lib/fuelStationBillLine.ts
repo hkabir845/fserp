@@ -7,10 +7,16 @@ export interface FuelStationBillExpenseCategory {
   maps_to_code?: string | null
   tenant_reporting_category_id?: number | null
   bill_create_allowed?: boolean
+  default_coa_account_code?: string
+  default_coa_account_id?: number | null
+  default_coa_account_name?: string
 }
 
 export interface BillLineFuelStationFields {
   fuel_station_expense_category?: string
+  expense_account_id?: number
+  item_id?: number
+  description?: string
 }
 
 export function billFuelCategoriesFromApi(
@@ -37,5 +43,15 @@ export function applyFuelCategoryToBillLine<T extends BillLineFuelStationFields>
   if (!cat) {
     return { ...line, fuel_station_expense_category: undefined }
   }
-  return { ...line, fuel_station_expense_category: cat.id }
+  const next: T = {
+    ...line,
+    fuel_station_expense_category: cat.id,
+  }
+  if (!next.item_id && cat.default_coa_account_id) {
+    next.expense_account_id = cat.default_coa_account_id
+    if (!next.description?.trim()) {
+      next.description = cat.label
+    }
+  }
+  return next
 }

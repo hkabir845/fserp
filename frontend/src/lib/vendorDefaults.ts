@@ -1,9 +1,9 @@
 /** Default expense COA codes when setting a vendor's default receiving location. */
 
-import { COA_AQ_MISC_EXP, COA_OFFICE_EXP, coaIdForCode, templateCoaOptionLabel } from '@/lib/coaDefaults'
+import { COA_AQ_MISC_EXP, COA_STATION_OPERATING, coaIdForCode, templateCoaOptionLabel } from '@/lib/coaDefaults'
 
-/** Fuel / shop site bills without line-level GL (matches backend CODE_OFFICE_EXP). */
-export const VENDOR_DEFAULT_EXPENSE_COA_STATION = COA_OFFICE_EXP
+/** Fuel / shop site bills without line-level GL (matches backend station operating default 6920). */
+export const VENDOR_DEFAULT_EXPENSE_COA_STATION = COA_STATION_OPERATING
 
 /** Pond-tagged vendor bills without category (aquaculture "other", matches backend 6725). */
 export const VENDOR_DEFAULT_EXPENSE_COA_POND = COA_AQ_MISC_EXP

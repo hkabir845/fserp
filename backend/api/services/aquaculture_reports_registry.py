@@ -733,8 +733,8 @@ def _report_equipment_assets(
         "totals": {"total_amount": str(_money_q(grand)), "line_count": summary["line_count"]},
         "accounting_note": (
             "Operating purchases for equipment, repair & maintenance, and miscellaneous pond assets "
-            "(aerators, boats, nets, tools, cameras, wire, etc.). There is no separate fixed-asset register; "
-            "use this register with vendor bills and pond expenses for durable goods."
+            "(aerators, boats, nets, tools, cameras, wire, etc.). Durable items may also be tracked in "
+            "Accounting → Fixed Assets (/fixed-assets) with straight-line depreciation and AUTO-FA-DEP journals."
         ),
     }
 

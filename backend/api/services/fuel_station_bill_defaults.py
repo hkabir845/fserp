@@ -1,6 +1,7 @@
 """Fuel-station reporting categories on vendor bill lines."""
 from __future__ import annotations
 
+from api.services.fuel_station_coa_constants import chart_account_id_for_fuel_station_expense_rollup
 from api.services.tenant_reporting_categories import (
     APP_FUEL_STATION,
     FUEL_STATION_EXPENSE_MAP_CODES,
@@ -24,7 +25,8 @@ def normalize_fuel_station_expense_category(
 def apply_fuel_station_category_to_bill_line_row(company_id: int, row: dict) -> str | None:
     """
     Optional fuel_station_expense_category on non-pond bill lines.
-    Sets tenant_reporting_category_id when the code is a tenant-defined row.
+    Sets tenant_reporting_category_id when the code is a tenant-defined row,
+    and default expense_account_id from rollup → COA mapping when no item line.
     """
     raw_p = row.get("aquaculture_pond_id")
     if raw_p not in (None, ""):
@@ -47,4 +49,8 @@ def apply_fuel_station_category_to_bill_line_row(company_id: int, row: dict) -> 
     row["fuel_station_expense_category"] = code
     tr = tenant_expense_row(company_id, APP_FUEL_STATION, code)
     row["tenant_reporting_category_id"] = int(tr.id) if tr else None
+    if not row.get("item_id") and not row.get("expense_account_id"):
+        aid = chart_account_id_for_fuel_station_expense_rollup(company_id, code)
+        if aid:
+            row["expense_account_id"] = aid
     return None

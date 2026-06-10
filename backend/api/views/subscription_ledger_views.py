@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.views.common import parse_json_body
 from api.models import SubscriptionLedgerInvoice, Company
+from api.services.reference_code import next_available_code
 from api.saas_billing import SAAS_BILLING_PLANS, plan_name_for_code
 
 
@@ -100,12 +101,8 @@ def _subscription_invoice_number_taken(
 
 
 def _next_auto_subscription_invoice_number(company_id: int) -> str:
-    n = SubscriptionLedgerInvoice.objects.filter(company_id=company_id).count() + 1
-    inv_num = f"SUB-{company_id}-{n:04d}"
-    while _subscription_invoice_number_taken(company_id, inv_num):
-        n += 1
-        inv_num = f"SUB-{company_id}-{n:04d}"
-    return _normalize_subscription_invoice_number(inv_num)
+    prefix = f"SUB-{company_id}-"
+    return next_available_code(company_id, SubscriptionLedgerInvoice, "invoice_number", prefix, width=4)
 
 
 def _append_discount_notes(existing: str, body: dict) -> str:
@@ -195,10 +192,9 @@ def subscription_ledger_invoices_list_or_create(request):
             except (TypeError, ValueError):
                 return JsonResponse({"detail": "Invalid subscription_id"}, status=400)
 
-        count = SubscriptionLedgerInvoice.objects.filter(company_id=company_id).count()
         inv_num = (body.get("invoice_number") or body.get("payment_number") or "").strip()
         if not inv_num:
-            inv_num = f"SUB-{company_id}-{count + 1:04d}"
+            inv_num = _next_auto_subscription_invoice_number(company_id)
 
         period_start = _parse_date(body.get("period_start"))
         period_end = _parse_date(body.get("period_end"))

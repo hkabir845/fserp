@@ -1,27 +1,68 @@
 'use client'
 
+import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
+import { documentsTotalRow, itemsTotalRow } from '@/components/reports/reportDrillAggregate'
+import type { ReportDrillScope } from '@/components/reports/reportDrillResolver'
 import { formatCurrency } from '@/utils/formatting'
 
 type Props = {
   reportType: string
   data: Record<string, unknown>
+  drillScope?: ReportDrillScope
 }
 
-function formatCell(value: unknown): string {
+const MONEY_KEY =
+  /amount|balance|total|revenue|cost|value|debit|credit|price|paid|profit|income|expense|cogs|deposit|withdraw|outstanding|payment|sales|purchase/i
+
+function isMoneyColumn(key: string, value: unknown): boolean {
+  if (typeof value !== 'number') return false
+  return MONEY_KEY.test(key)
+}
+
+function formatCell(value: unknown, row: Record<string, unknown>, col: string, scope: ReportDrillScope): React.ReactNode {
   if (value == null) return '—'
-  if (typeof value === 'number') return formatCurrency(value)
+  if (typeof value === 'number') {
+    if (isMoneyColumn(col, value)) {
+      return <ReportAmountCell amount={value} row={row} field={col} scope={scope} />
+    }
+    return String(value)
+  }
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
 }
 
-function AutoTable({ title, rows }: { title: string; rows: Record<string, unknown>[] }) {
+function AutoTable({
+  title,
+  rows,
+  scope,
+}: {
+  title: string
+  rows: Record<string, unknown>[]
+  scope: ReportDrillScope
+}) {
   if (!rows.length) return null
   const cols = Object.keys(rows[0]).filter((k) => {
+    if (k === '_drill') return false
     const v = rows[0][k]
     return v == null || typeof v !== 'object'
   })
   if (cols.length < 1) return null
+  const moneyCols = cols.filter((c) => isMoneyColumn(c, rows[0][c]))
+  const totals = moneyCols.reduce<Record<string, number>>((acc, c) => {
+    acc[c] = rows.reduce((s, r) => s + Number(r[c] ?? 0), 0)
+    return acc
+  }, {})
+  const totalRow =
+    moneyCols.length > 0
+      ? {
+          ...documentsTotalRow(rows, {
+            title: `${title} — total`,
+            entityType: 'customers',
+          }),
+          ...itemsTotalRow(rows, `${title} — total`, moneyCols),
+        }
+      : {}
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
       <h3 className="border-b bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900">{title}</h3>
@@ -40,20 +81,36 @@ function AutoTable({ title, rows }: { title: string; rows: Record<string, unknow
             <tr key={i} className="hover:bg-gray-50">
               {cols.map((c) => (
                 <td key={c} className="whitespace-nowrap px-3 py-2 text-gray-900">
-                  {formatCell(row[c])}
+                  {formatCell(row[c], row, c, scope)}
                 </td>
               ))}
             </tr>
           ))}
         </tbody>
+        {moneyCols.length > 0 && (
+          <tfoot className="bg-gray-50 font-semibold">
+            <tr>
+              {cols.map((c, i) => (
+                <td key={`tot-${c}`} className="whitespace-nowrap px-3 py-2 text-gray-900">
+                  {i === 0 ? 'Total' : moneyCols.includes(c) ? (
+                    <ReportAmountCell amount={totals[c]} row={totalRow} field={c} scope={scope} />
+                  ) : (
+                    ''
+                  )}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   )
 }
 
 /** Renders readable tables from report JSON when no dedicated view exists. */
-export function ReportStructuredFallback({ reportType, data }: Props) {
-  const skip = new Set(['period', 'report_id', 'accounting_note'])
+export function ReportStructuredFallback({ reportType, data, drillScope = {} }: Props) {
+  const scope: ReportDrillScope = { ...drillScope, reportType }
+  const skip = new Set(['period', 'report_id', 'accounting_note', 'filters', 'summary'])
   const summary = data.summary as Record<string, unknown> | undefined
   const tables: { title: string; rows: Record<string, unknown>[] }[] = []
 
@@ -67,8 +124,8 @@ export function ReportStructuredFallback({ reportType, data }: Props) {
   return (
     <div className="space-y-6">
       <p className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-        Structured view for <strong>{reportType}</strong>. Use CSV export for spreadsheets; JSON export
-        retains the full API payload.
+        Structured view for <strong>{reportType}</strong>. Click underlined amounts to drill into source
+        detail. Use CSV/JSON export for spreadsheets.
       </p>
       {typeof data.accounting_note === 'string' && (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -80,13 +137,19 @@ export function ReportStructuredFallback({ reportType, data }: Props) {
           {Object.entries(summary).map(([k, v]) => (
             <div key={k} className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
               <p className="text-xs uppercase text-gray-500">{k.replace(/_/g, ' ')}</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">{formatCell(v)}</p>
+              <p className="mt-1 text-lg font-semibold text-gray-900">
+                {typeof v === 'number' && isMoneyColumn(k, v) ? (
+                  <ReportAmountCell amount={v} row={summary} field={k} scope={scope} />
+                ) : (
+                  formatCell(v, summary, k, scope)
+                )}
+              </p>
             </div>
           ))}
         </div>
       )}
       {tables.length > 0 ? (
-        tables.map((t) => <AutoTable key={t.title} title={t.title} rows={t.rows} />)
+        tables.map((t) => <AutoTable key={t.title} title={t.title} rows={t.rows} scope={scope} />)
       ) : (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-600">
           No tabular sections in this response. Expand JSON below or adjust filters and dates.

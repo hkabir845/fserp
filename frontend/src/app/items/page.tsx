@@ -5,14 +5,26 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Edit, Trash2, Search, Package, Box, Wrench, Camera, X, Grid3x3, List, ArrowRightLeft, ScrollText } from 'lucide-react'
+import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
-import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
+import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
+import { formatDate } from '@/utils/date'
+import {
+  buildItemListCsv,
+  buildItemListPrintHtml,
+  downloadCsvFile,
+  downloadJsonFile,
+  printHtmlDocument,
+  type ItemListExportOptions,
+  type ItemProductExport,
+} from '@/utils/businessDocumentExport'
+import { loadPrintBranding } from '@/utils/printBranding'
 import {
   type ItemGlSuggestContext,
   suggestItemGlAccountIds,
@@ -273,6 +285,12 @@ export default function ItemsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [filterType, setFilterType] = useState<string>('ALL')
+  const [exportOpts, setExportOpts] = useState<ItemListExportOptions>({
+    includeQty: true,
+    includeCost: true,
+    includePrice: true,
+    includeSuppliers: true,
+  })
   const [editingId, setEditingId] = useState<number | null>(null)
   const [itemRefCode, setItemRefCode] = useState('')
   const [createItemCodeNonce, setCreateItemCodeNonce] = useState(0)
@@ -1553,13 +1571,173 @@ export default function ItemsPage() {
     return feedSellingPriceSuspiciousMessage(up, co, kg)
   }, [isFeedItemForm, formData.unit_price, formData.cost, formData.content_weight_kg])
 
+  const itemTypeExtraParams = (): Record<string, string> => {
+    if (filterType === 'ALL') return {}
+    return {
+      item_type:
+        filterType === 'INVENTORY'
+          ? 'inventory'
+          : filterType === 'NON_INVENTORY'
+            ? 'non_inventory'
+            : filterType === 'SERVICE'
+              ? 'service'
+              : '',
+    }
+  }
+
+  const fetchItemsForExport = async (): Promise<Item[]> => {
+    const response = await api.get('/items/', {
+      params: {
+        paged: '1',
+        skip: '0',
+        limit: String(REFERENCE_FETCH_LIMIT),
+        ...(debouncedSearch.trim() ? { q: debouncedSearch.trim() } : {}),
+        sort: 'id',
+        dir: 'asc',
+        ...itemTypeExtraParams(),
+      },
+    })
+    const data = response.data
+    if (isOffsetPagedPayload(data)) return data.results as Item[]
+    return Array.isArray(data) ? (data as Item[]) : []
+  }
+
+  const fetchVendorLabels = async (): Promise<Record<string, string>> => {
+    const res = await api.get<{ labels?: Record<string, string> }>('/items/vendor-labels/')
+    return res.data?.labels ?? {}
+  }
+
+  const itemsAsExport = (
+    rows: Item[],
+    vendorLabels: Record<string, string>,
+  ): ItemProductExport[] =>
+    rows.map((it) => ({
+      item_number: it.item_number,
+      name: it.name,
+      category: (it.category || 'General').trim() || 'General',
+      item_type: it.item_type,
+      pos_category: it.pos_category,
+      unit: it.unit,
+      is_active: it.is_active,
+      quantity_on_hand: it.quantity_on_hand,
+      cost: it.cost,
+      unit_price: it.unit_price,
+      suppliers: vendorLabels[String(it.id)] || '',
+    }))
+
+  const exportSubtitle = () =>
+    [
+      filterType !== 'ALL' ? `Type: ${filterType.replace('_', ' ')}` : '',
+      debouncedSearch.trim() && `Search: ${debouncedSearch.trim()}`,
+      `Generated ${formatDate(new Date(), true)}`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+
+  const handlePrintCatalog = async () => {
+    try {
+      const rows = await fetchItemsForExport()
+      if (rows.length === 0) {
+        toast.error('No products to print for the current filter.')
+        return
+      }
+      const vendorLabels = exportOpts.includeSuppliers ? await fetchVendorLabels() : {}
+      const payload = itemsAsExport(rows, vendorLabels)
+      const branding = await loadPrintBranding(api)
+      const bodyHtml = buildItemListPrintHtml(
+        payload,
+        exportOpts,
+        currencySymbol,
+        exportSubtitle(),
+        totalCount,
+      )
+      const ok = await printHtmlDocument('Product catalog', bodyHtml, branding)
+      if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Print failed'))
+    }
+  }
+
+  const handleDownloadCatalogCsv = async () => {
+    try {
+      const rows = await fetchItemsForExport()
+      if (rows.length === 0) {
+        toast.error('No products to export.')
+        return
+      }
+      const vendorLabels = exportOpts.includeSuppliers ? await fetchVendorLabels() : {}
+      const payload = itemsAsExport(rows, vendorLabels)
+      downloadCsvFile(
+        `products_${new Date().toISOString().slice(0, 10)}.csv`,
+        buildItemListCsv(payload, exportOpts, currencySymbol),
+      )
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Export failed'))
+    }
+  }
+
+  const handleDownloadCatalogJson = async () => {
+    try {
+      const rows = await fetchItemsForExport()
+      if (rows.length === 0) {
+        toast.error('No products to export.')
+        return
+      }
+      const vendorLabels = exportOpts.includeSuppliers ? await fetchVendorLabels() : {}
+      downloadJsonFile(
+        `products_${new Date().toISOString().slice(0, 10)}.json`,
+        itemsAsExport(rows, vendorLabels),
+      )
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Export failed'))
+    }
+  }
+
   return (
     <div className="flex h-screen bg-gray-100 page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Products & Services</h1>
-          <p className="text-gray-600 mt-1">Manage inventory, non-inventory items, and services</p>
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Products & Services</h1>
+            <p className="text-gray-600 mt-1">Manage inventory, non-inventory items, and services</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm max-w-xl w-full">
+            <p className="text-sm font-medium text-gray-900 mb-2">Print / download catalog</p>
+            <p className="text-xs text-gray-500 mb-3">
+              Choose columns, then print or export up to {REFERENCE_FETCH_LIMIT} products matching your
+              current search and type filter.
+            </p>
+            <div className="flex flex-wrap gap-x-4 gap-y-2 mb-3 text-sm text-gray-700">
+              {(
+                [
+                  ['includeQty', 'Quantity on hand'],
+                  ['includeCost', 'Unit cost'],
+                  ['includePrice', 'Unit price (POS)'],
+                  ['includeSuppliers', 'Suppliers (from vendor bills)'],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key} className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={exportOpts[key]}
+                    onChange={(e) =>
+                      setExportOpts((prev) => ({ ...prev, [key]: e.target.checked }))
+                    }
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <DocumentExportButtons
+              size="compact"
+              onPrint={() => void handlePrintCatalog()}
+              onDownloadCsv={() => void handleDownloadCatalogCsv()}
+              onDownloadJson={() => void handleDownloadCatalogJson()}
+              printLabel="Print catalog"
+            />
+          </div>
         </div>
 
         {/* Filter Tabs */}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { ChevronDown, Package, Receipt } from 'lucide-react'
 import { formatCoaOptionLabel, type CoaLike } from '@/utils/coaOptionLabel'
 import { formatNumber } from '@/utils/currency'
+import { safeSelectInput } from '@/utils/safeSelectInput'
 
 export type BillLineKind = 'item' | 'expense'
 
@@ -203,10 +204,10 @@ export function BillLineItemSelect({
           placeholder={placeholder}
           value={inputDisplay}
           className={`${className} pr-8`}
-          onFocus={() => {
+          onFocus={(e) => {
             setOpen(true)
             setQuery(selectedLabel)
-            requestAnimationFrame(() => inputRef.current?.select())
+            safeSelectInput(e.currentTarget)
           }}
           onChange={(e) => {
             setOpen(true)

@@ -154,11 +154,16 @@ def _parse_bill_lines_from_body(
         fs_err = apply_fuel_station_category_to_bill_line_row(company_id, row)
         if fs_err:
             return [], JsonResponse({"detail": fs_err}, status=400)
-        amt = _decimal(
-            row.get("amount"),
-            _decimal(row.get("quantity"), 1)
-            * _decimal(row.get("unit_cost", row.get("unit_price")), 0),
+        computed_amt = _decimal(row.get("quantity"), 1) * _decimal(
+            row.get("unit_cost", row.get("unit_price")), 0
         )
+        raw_amt = row.get("amount")
+        if raw_amt is None or raw_amt == "":
+            amt = computed_amt
+        else:
+            amt = _decimal(raw_amt, computed_amt)
+            if amt == 0 and computed_amt > 0:
+                amt = computed_amt
         item_id = _coerce_item_id(row)
         tank_id, terr = _coerce_line_tank_id(company_id, row, item_id)
         if terr:

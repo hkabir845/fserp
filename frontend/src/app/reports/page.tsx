@@ -74,8 +74,10 @@ import {
 } from '@/components/reports/reportDrillAggregate'
 import {
   buildAquacultureGroupsCsv,
+  buildAquaculturePrintHtml,
   buildExtraFinancialPrintHtml,
   buildExtraFinancialReportCsv,
+  buildGenericPrintHtml,
   buildGenericTabularCsv,
 } from '@/utils/reportExportHelpers'
 import { getApiBaseUrl } from '@/lib/api'
@@ -159,6 +161,7 @@ type ReportType =
   | 'meter-readings'
   | 'sales-by-nozzle'
   | 'sales-by-station'
+  | 'sales-by-products'
   | 'sales-report'
   | 'purchase-report'
   | 'daily-summary'
@@ -450,6 +453,13 @@ const reports: ReportCard[] = [
     category: 'operational'
   },
   {
+    id: 'sales-by-products',
+    title: 'Sales by Products',
+    description: 'Product sales with quantity, price, cost, and profit — cash vs credit',
+    icon: Package,
+    category: 'operational'
+  },
+  {
     id: 'sales-report',
     title: 'Sales Report',
     description:
@@ -688,6 +698,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'daily-summary',
   'fuel-sales',
   'sales-by-station',
+  'sales-by-products',
   'sales-report',
   'purchase-report',
   'shift-summary',
@@ -733,6 +744,7 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'shift-summary',
   'daily-summary',
   'sales-by-station',
+  'sales-by-products',
   'sales-report',
   'purchase-report',
   'sales-by-nozzle',
@@ -805,6 +817,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'shift-summary',
   'sales-by-nozzle',
   'sales-by-station',
+  'sales-by-products',
   'sales-report',
   'purchase-report',
   'fuel-sales',
@@ -1615,6 +1628,7 @@ export default function ReportsPage() {
         report.id === 'fuel-sales' ||
         report.id === 'sales-by-nozzle' ||
         report.id === 'sales-by-station' ||
+        report.id === 'sales-by-products' ||
         report.id === 'sales-report' ||
         report.id === 'purchase-report' ||
         report.id === 'shift-summary' ||
@@ -2257,6 +2271,23 @@ export default function ReportsPage() {
       const st = srows.reduce((s: number, r: any) => s + Number(r.total ?? 0), 0)
       const ic = srows.reduce((s: number, r: any) => s + Number(r.invoice_count ?? 0), 0)
       contentHTML += `<tfoot><tr><td style="text-align:right"><strong>Total</strong></td><td style="text-align:right"><strong>${ic}</strong></td><td style="text-align:right"><strong>${formatCurrency(st)}</strong></td></tr></tfoot></tbody></table>`
+    } else if (selectedReport === 'sales-by-products' && (reportData.cash_products || reportData.credit_products)) {
+      const renderProductSection = (title: string, rows: any[]) => {
+        contentHTML += `<h2>${escapeHtml(title)}</h2><table><thead><tr><th>SKU</th><th>Product</th><th>Category</th><th>Unit</th><th style="text-align:right">Lines</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit cost</th><th style="text-align:right">Avg price</th><th style="text-align:right">Revenue</th><th style="text-align:right">Cost</th><th style="text-align:right">Profit</th></tr></thead><tbody>`
+        rows.forEach((r: any) => {
+          contentHTML += `<tr><td>${escapeHtml(String(r.sku || ''))}</td><td>${escapeHtml(String(r.name || ''))}</td><td>${escapeHtml(String(r.reporting_category || ''))}</td><td>${escapeHtml(String(r.unit || ''))}</td><td style="text-align:right">${r.line_count ?? 0}</td><td style="text-align:right">${formatNumber(Number(r.quantity ?? 0), 2)}</td><td style="text-align:right">${formatCurrency(r.unit_cost ?? 0)}</td><td style="text-align:right">${formatCurrency(r.avg_unit_price ?? 0)}</td><td style="text-align:right">${formatCurrency(r.revenue ?? 0)}</td><td style="text-align:right">${formatCurrency(r.total_cost ?? 0)}</td><td style="text-align:right">${formatCurrency(r.profit ?? 0)}</td></tr>`
+        })
+        const sq = rows.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0)
+        const sr = rows.reduce((s: number, r: any) => s + Number(r.revenue ?? 0), 0)
+        const sc = rows.reduce((s: number, r: any) => s + Number(r.total_cost ?? 0), 0)
+        const sp = rows.reduce((s: number, r: any) => s + Number(r.profit ?? 0), 0)
+        const sl = rows.reduce((s: number, r: any) => s + Number(r.line_count ?? 0), 0)
+        contentHTML += `<tfoot><tr><td colspan="4" style="text-align:right"><strong>Subtotal</strong></td><td style="text-align:right"><strong>${sl}</strong></td><td style="text-align:right"><strong>${formatNumber(sq, 2)}</strong></td><td colspan="2"></td><td style="text-align:right"><strong>${formatCurrency(sr)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sc)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sp)}</strong></td></tr></tfoot></tbody></table>`
+      }
+      renderProductSection('Cash products', reportData.cash_products || [])
+      renderProductSection('Credit products', reportData.credit_products || [])
+      const sum = reportData.summary || {}
+      contentHTML += `<table><tfoot><tr><td colspan="4" style="text-align:right"><strong>Grand total</strong></td><td style="text-align:right"><strong>${sum.total_line_count ?? 0}</strong></td><td style="text-align:right"><strong>${formatNumber(Number(sum.grand_quantity ?? 0), 2)}</strong></td><td colspan="2"></td><td style="text-align:right"><strong>${formatCurrency(sum.grand_revenue ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.grand_total_cost ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.grand_profit ?? 0)}</strong></td></tr></tfoot></table>`
     } else if (selectedReport === 'sales-report' && (reportData.cash_customers || reportData.credit_customers)) {
       const renderSalesReportSection = (title: string, rows: any[]) => {
         contentHTML += `<h2>${escapeHtml(title)}</h2><table><thead><tr><th>Customer #</th><th>Customer</th><th style="text-align:right">Invoices</th><th style="text-align:right">Total</th></tr></thead><tbody>`
@@ -2457,9 +2488,20 @@ export default function ReportsPage() {
         selectedReport,
         reportData as Record<string, unknown>,
       )
-      contentHTML += extraPrint ?? '<p>Report data not available for printing in this format.</p>'
+      contentHTML += extraPrint ?? buildGenericPrintHtml(reportData as Record<string, unknown>) ?? '<p>Report data not available for printing in this format.</p>'
+    } else if (String(selectedReport).startsWith('aquaculture-')) {
+      const aqPrint = buildAquaculturePrintHtml(
+        selectedReport,
+        reportData as Record<string, unknown>,
+      )
+      contentHTML +=
+        aqPrint ??
+        buildGenericPrintHtml(reportData as Record<string, unknown>) ??
+        '<p>Report data not available for printing in this format.</p>'
     } else {
-      contentHTML += '<p>Report data not available for printing in this format.</p>'
+      contentHTML +=
+        buildGenericPrintHtml(reportData as Record<string, unknown>) ??
+        '<p>Report data not available for printing in this format.</p>'
     }
 
     const periodLine =
@@ -2584,6 +2626,31 @@ export default function ReportsPage() {
         srows.forEach((r: any) => {
           csvContent += `${escapeCsv(r.station_name)},${r.invoice_count ?? 0},${r.total ?? 0}\n`
         })
+      } else if (selectedReport === 'sales-by-products' && (reportData.cash_products || reportData.credit_products)) {
+        const exportProductSection = (section: string, rows: any[]) => {
+          csvContent += `\n${section}\n`
+          csvContent += 'SKU,Product,Category,Unit,Lines,Qty,Unit cost,Avg price,Revenue,Total cost,Profit\n'
+          rows.forEach((r: any) => {
+            csvContent += [
+              escapeCsv(r.sku),
+              escapeCsv(r.name),
+              escapeCsv(r.reporting_category),
+              escapeCsv(r.unit),
+              r.line_count ?? 0,
+              r.quantity ?? 0,
+              r.unit_cost ?? 0,
+              r.avg_unit_price ?? 0,
+              r.revenue ?? 0,
+              r.total_cost ?? 0,
+              r.profit ?? 0,
+            ].join(',')
+            csvContent += '\n'
+          })
+        }
+        exportProductSection('Cash products', reportData.cash_products || [])
+        exportProductSection('Credit products', reportData.credit_products || [])
+        const sum = reportData.summary || {}
+        csvContent += `\nGrand total,,,,${sum.total_line_count ?? 0},${sum.grand_quantity ?? 0},,,${sum.grand_revenue ?? 0},${sum.grand_total_cost ?? 0},${sum.grand_profit ?? 0}\n`
       } else if (selectedReport === 'sales-report' && (reportData.cash_customers || reportData.credit_customers)) {
         const exportSalesSection = (section: string, rows: any[]) => {
           csvContent += `\n${section}\n`
@@ -2918,6 +2985,8 @@ export default function ReportsPage() {
             csvContent += buildAquacultureGroupsCsv(pos)
           }
         }
+        const aqGenericCsv = buildGenericTabularCsv(reportData as Record<string, unknown>)
+        if (aqGenericCsv) csvContent += `\n${aqGenericCsv}`
       } else {
         const genericCsv = buildGenericTabularCsv(reportData as Record<string, unknown>)
         if (genericCsv) {
@@ -6649,6 +6718,203 @@ function renderReportTable(
             )}
           </table>
         </div>
+      </div>
+    )
+  }
+
+  // Sales by Products (cash vs credit, cost & profit)
+  if (reportType === 'sales-by-products' && data) {
+    const summary = data.summary || {}
+    const cashRows = Array.isArray(data.cash_products) ? data.cash_products : []
+    const creditRows = Array.isArray(data.credit_products) ? data.credit_products : []
+
+    const renderProductTable = (title: string, rows: any[], titleClass: string) => {
+      const subLines = rows.reduce((s: number, r: any) => s + Number(r.line_count ?? 0), 0)
+      const subQty = rows.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0)
+      const subRev = rows.reduce((s: number, r: any) => s + Number(r.revenue ?? 0), 0)
+      const subCost = rows.reduce((s: number, r: any) => s + Number(r.total_cost ?? 0), 0)
+      const subProfit = rows.reduce((s: number, r: any) => s + Number(r.profit ?? 0), 0)
+      return (
+        <div className="space-y-3">
+          <h3 className={`text-sm font-semibold uppercase tracking-wide ${titleClass}`}>{title}</h3>
+          <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Lines</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Unit cost</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Avg price</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Revenue</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Cost</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Profit</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {rows.length > 0 ? (
+                  rows.map((r: any, idx: number) => (
+                    <tr
+                      key={r.item_id != null ? `prod-${r.item_id}` : `prod-row-${idx}`}
+                      className="hover:bg-gray-50"
+                    >
+                      <td className="px-4 py-3 text-sm text-gray-600">{r.sku || '—'}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.name || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{r.reporting_category || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{r.unit || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">{r.line_count ?? 0}</td>
+                      <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">
+                        {formatNumber(Number(r.quantity ?? 0), 2)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">
+                        {Money(r.unit_cost ?? 0, r, 'unit_cost')}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">
+                        {Money(r.avg_unit_price ?? 0, r, 'avg_unit_price')}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                        {Money(r.revenue ?? 0, r, 'revenue')}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-800">
+                        {Money(r.total_cost ?? 0, r, 'total_cost')}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-emerald-800">
+                        {Money(r.profit ?? 0, r, 'profit')}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
+                      No product sales in this section for the selected period.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {rows.length > 0 && (
+                <tfoot className="bg-gray-50">
+                  <tr>
+                    <td colSpan={4} className="px-4 py-3 text-right text-sm font-semibold text-gray-800">
+                      Subtotal
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {subLines}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">
+                      {formatNumber(subQty, 2)}
+                    </td>
+                    <td colSpan={2} />
+                    <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
+                      {Money(subRev, documentsTotalRow(rows, { title, entityType: 'customers' }), 'revenue')}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
+                      {Money(subCost, documentsTotalRow(rows, { title: `${title} cost`, entityType: 'customers' }), 'total_cost')}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-semibold text-emerald-900">
+                      {Money(subProfit, documentsTotalRow(rows, { title: `${title} profit`, entityType: 'customers' }), 'profit')}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-6">
+        {hasPeriod && renderPeriodFilter(
+          period,
+          dateRange,
+          reportType,
+          handleReportDateChange,
+          'Invoice line totals by product for invoice dates in this range (non-draft).'
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Cash revenue', amount: summary.cash_revenue, sub: `${summary.cash_line_count ?? 0} lines · profit ${formatCurrency(Number(summary.cash_profit ?? 0))}`, icon: Banknote, color: 'green' },
+            { label: 'Credit revenue', amount: summary.credit_revenue, sub: `${summary.credit_line_count ?? 0} lines · profit ${formatCurrency(Number(summary.credit_profit ?? 0))}`, icon: CreditCard, color: 'amber' },
+            { label: 'Grand revenue', amount: summary.grand_revenue, sub: `${summary.total_line_count ?? 0} lines · qty ${formatNumber(Number(summary.grand_quantity ?? 0), 2)}`, icon: DollarSign, color: 'indigo' },
+            { label: 'Grand profit', amount: summary.grand_profit, sub: `cost ${formatCurrency(Number(summary.grand_total_cost ?? 0))}`, icon: TrendingUp, color: 'emerald' },
+          ].map((item) => {
+            const colorMap: Record<string, string> = {
+              green: 'from-green-50 to-green-100 border-green-200 text-green-600 bg-green-200',
+              amber: 'from-amber-50 to-amber-100 border-amber-200 text-amber-600 bg-amber-200',
+              indigo: 'from-indigo-50 to-indigo-100 border-indigo-200 text-indigo-600 bg-indigo-200',
+              emerald: 'from-emerald-50 to-emerald-100 border-emerald-200 text-emerald-600 bg-emerald-200',
+            }
+            const colors = colorMap[item.color] || colorMap.indigo
+            const [gradient, border, text, bg] = colors.split(' ')
+            const Icon = item.icon
+            return (
+              <div key={item.label} className={`bg-gradient-to-br ${gradient} ${border} border rounded-lg p-4 shadow-sm`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className={`text-xs uppercase tracking-wide font-medium ${text}`}>{item.label}</p>
+                    <p className={`text-2xl font-bold mt-1 ${text.replace('600', '900')}`}>
+                      {Money(item.amount ?? 0, summary, item.label === 'Grand profit' ? 'grand_profit' : item.label === 'Grand revenue' ? 'grand_revenue' : item.label === 'Cash revenue' ? 'cash_revenue' : 'credit_revenue')}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">{item.sub}</p>
+                  </div>
+                  <div className={`${bg} rounded-full p-2 ml-2`}>
+                    <Icon className={`h-5 w-5 ${text}`} />
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {renderProductTable('Cash products', cashRows, 'text-green-800')}
+        {renderProductTable('Credit products', creditRows, 'text-amber-800')}
+
+        <div className="overflow-x-auto rounded-lg border-2 border-indigo-300 bg-indigo-50/60 shadow-sm">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-xs uppercase text-indigo-800">
+                <th className="px-4 py-2 text-right" colSpan={4}>Grand total</th>
+                <th className="px-4 py-2 text-right">Lines</th>
+                <th className="px-4 py-2 text-right">Qty</th>
+                <th className="px-4 py-2 text-right" colSpan={2} />
+                <th className="px-4 py-2 text-right">Revenue</th>
+                <th className="px-4 py-2 text-right">Cost</th>
+                <th className="px-4 py-2 text-right">Profit</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colSpan={4} className="px-4 py-3 text-right text-sm font-bold uppercase tracking-wide text-indigo-900">
+                  All products (cash + credit)
+                </td>
+                <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-indigo-900">
+                  {summary.total_line_count ?? 0}
+                </td>
+                <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-indigo-900">
+                  {formatNumber(Number(summary.grand_quantity ?? 0), 2)}
+                </td>
+                <td colSpan={2} />
+                <td className="px-4 py-3 text-right text-sm font-bold text-indigo-900">
+                  {Money(summary.grand_revenue ?? 0, summary, 'grand_revenue')}
+                </td>
+                <td className="px-4 py-3 text-right text-sm font-bold text-indigo-900">
+                  {Money(summary.grand_total_cost ?? 0, summary, 'grand_total_cost')}
+                </td>
+                <td className="px-4 py-3 text-right text-sm font-bold text-emerald-900">
+                  {Money(summary.grand_profit ?? 0, summary, 'grand_profit')}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {data.accounting_note && (
+          <p className="text-xs text-gray-500 border-t border-gray-100 pt-3">{data.accounting_note}</p>
+        )}
       </div>
     )
   }

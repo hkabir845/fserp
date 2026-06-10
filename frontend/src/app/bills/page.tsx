@@ -5,13 +5,27 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText, Ban } from 'lucide-react'
+import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
-import { formatDateOnly } from '@/utils/date'
+import { formatDate, formatDateOnly } from '@/utils/date'
+import {
+  buildBillDetailCsv,
+  buildBillListCsv,
+  buildBillPrintHtml,
+  downloadCsvFile,
+  downloadJsonFile,
+  printHtmlDocument,
+  type BillExport,
+  type BillLineExport,
+} from '@/utils/businessDocumentExport'
+import { escapeHtml } from '@/utils/printDocument'
+import { loadPrintBranding } from '@/utils/printBranding'
+import { printListView } from '@/utils/printListView'
 import { AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import {
@@ -153,32 +167,37 @@ interface Bill {
   lines: BillLineItem[]
 }
 
+type BillAmountSource = Pick<
+  Bill,
+  'total_amount' | 'total' | 'tax_amount' | 'tax_total' | 'amount_paid' | 'balance_due' | 'subtotal'
+>
+
 function parseMoney(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0
   const n = Number(v)
   return Number.isFinite(n) ? n : 0
 }
 
-function billTotal(b: Bill): number {
+function billTotal(b: BillAmountSource): number {
   return parseMoney(b.total_amount ?? b.total)
 }
 
-function billTax(b: Bill): number {
+function billTax(b: BillAmountSource): number {
   return parseMoney(b.tax_amount ?? b.tax_total)
 }
 
-function billPaid(b: Bill): number {
+function billPaid(b: BillAmountSource): number {
   return parseMoney(b.amount_paid)
 }
 
-function billBalance(b: Bill): number {
+function billBalance(b: BillAmountSource): number {
   if (b.balance_due !== undefined && b.balance_due !== null && b.balance_due !== '') {
     return parseMoney(b.balance_due)
   }
   return Math.max(0, billTotal(b) - billPaid(b))
 }
 
-function billSubtotal(b: Bill): number {
+function billSubtotal(b: BillAmountSource): number {
   return parseMoney(b.subtotal)
 }
 
@@ -302,8 +321,39 @@ function validateFishTypeBillLines(lines: BillLineItem[], itemList: Item[]): str
   return null
 }
 
+function roundBillMoney(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+function roundFishWeightKg(n: number): number {
+  return Math.round(n * 10000) / 10000
+}
+
 function billLineRowAmount(quantity: number, unitCost: number): number {
-  return quantity * unitCost
+  const qty = Number(quantity)
+  const uc = Number(unitCost)
+  if (!Number.isFinite(qty) || !Number.isFinite(uc)) return 0
+  return roundBillMoney(qty * uc)
+}
+
+/** Fish fry lines with pcs/kg: amount comes from vendor total + heads, not qty × rate. */
+function isFishBillLineAutoMode(line: BillLineItem, itemList: Item[]): boolean {
+  if (!line.item_id) return false
+  const item = itemList.find((i) => i.id === line.item_id)
+  return isFishTypeItem(item) && itemPiecesPerKg(item) != null
+}
+
+/** Recompute line amount from qty × unit cost (standard item/expense lines). */
+function syncStandardBillLineAmount(line: BillLineItem): BillLineItem {
+  const qty = Number(line.quantity ?? 0)
+  const uc = Number(line.unit_cost ?? 0)
+  return { ...line, amount: billLineRowAmount(qty, uc) }
+}
+
+function finalizeBillLinesForSave(lines: BillLineItem[], itemList: Item[]): BillLineItem[] {
+  return lines.map((line) =>
+    isFishBillLineAutoMode(line, itemList) ? line : syncStandardBillLineAmount(line)
+  )
 }
 
 function itemPiecesPerKg(item: Item | undefined): number | null {
@@ -475,14 +525,6 @@ function FishBillLineDimensionRow({
   )
 }
 
-function roundBillMoney(n: number): number {
-  return Math.round(n * 100) / 100
-}
-
-function roundFishWeightKg(n: number): number {
-  return Math.round(n * 10000) / 10000
-}
-
 function parseFishHeadCount(line: BillLineItem): number {
   const c = line.aquaculture_fish_count
   if (c === undefined || c === '' || c === null) return 0
@@ -538,8 +580,8 @@ function applyItemSelectionToBillLine(
 ): BillLineItem {
   const item = itemList.find((i) => i.id === itemId)
   if (!item) return line
-  const uc = item.cost || 0
-  const qty = Number(line.quantity ?? 0)
+  const uc = Number(item.cost ?? 0) || 0
+  const qty = Number(line.quantity ?? 0) || 1
   const itype = (item.item_type || '').toLowerCase()
   const receivesInventory = itype === 'inventory'
   let defaultExpense: number | undefined
@@ -597,8 +639,9 @@ function billLineKind(line: BillLineItem): BillLineKind {
 function serializeBillLineForApi(line: BillLineItem, itemList: Item[]): Record<string, unknown> {
   const item = line.item_id ? itemList.find((i) => i.id === line.item_id) : undefined
   const fish = isFishTypeItem(item)
-  const w = line.aquaculture_fish_weight_kg
-  const c = line.aquaculture_fish_count
+  const normalized = isFishBillLineAutoMode(line, itemList) ? line : syncStandardBillLineAmount(line)
+  const w = normalized.aquaculture_fish_weight_kg
+  const c = normalized.aquaculture_fish_count
   const weightPayload =
     !fish || w === undefined || w === '' || w === null
       ? null
@@ -608,14 +651,14 @@ function serializeBillLineForApi(line: BillLineItem, itemList: Item[]): Record<s
       ? null
       : parseInt(String(c), 10)
   return {
-    description: line.description || null,
-    item_id: line.item_id || null,
-    expense_account_id: line.expense_account_id || null,
-    tank_id: line.tank_id || null,
-    quantity: line.quantity,
-    unit_cost: line.unit_cost,
-    amount: line.amount,
-    tax_amount: line.tax_amount || 0,
+    description: normalized.description || null,
+    item_id: normalized.item_id || null,
+    expense_account_id: normalized.expense_account_id || null,
+    tank_id: normalized.tank_id || null,
+    quantity: normalized.quantity,
+    unit_cost: normalized.unit_cost,
+    amount: normalized.amount,
+    tax_amount: normalized.tax_amount || 0,
     ...(fish
       ? {
           aquaculture_fish_weight_kg:
@@ -1615,13 +1658,9 @@ export default function BillsPage() {
     })()
   }, [searchParams, billExpenseCategories, ensureBillReferenceData])
 
-  const calculateLineAmount = (quantity: number, unitCost: number) => {
-    return quantity * unitCost
-  }
-
-  const calculateTotals = () => {
-    const subtotal = formData.lines.reduce((sum, line) => sum + (line.amount || 0), 0)
-    const taxAmount = formData.lines.reduce((sum, line) => sum + (line.tax_amount || 0), 0)
+  const calculateTotals = (lines: BillLineItem[] = formData.lines) => {
+    const subtotal = lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0)
+    const taxAmount = lines.reduce((sum, line) => sum + (Number(line.tax_amount) || 0), 0)
     const total = subtotal + taxAmount
     return { subtotal, taxAmount, total }
   }
@@ -1699,247 +1738,248 @@ export default function BillsPage() {
     index: number,
     pick: { kind: 'item'; id: number } | { kind: 'account'; id: number }
   ) => {
-    const newLines = [...formData.lines]
-    if (pick.kind === 'item') {
-      newLines[index] = {
-        ...applyItemSelectionToBillLine(
+    setFormData((prev) => {
+      const newLines = [...prev.lines]
+      if (pick.kind === 'item') {
+        newLines[index] = {
+          ...applyItemSelectionToBillLine(
+            newLines[index],
+            pick.id,
+            items,
+            tanks,
+            resolvedVendorDefaultExpenseId,
+            templateBillExpenseAccountId || undefined,
+            firstNursingPondId
+          ),
+          line_kind: 'item',
+        }
+        if (!isFishBillLineAutoMode(newLines[index], items)) {
+          newLines[index] = syncStandardBillLineAmount(newLines[index])
+        }
+      } else {
+        billLineExpenseTouchedRef.current.add(newLines[index].line_number)
+        const account = expenseAccounts.find((a) => a.id === pick.id)
+        newLines[index] = {
+          ...newLines[index],
+          line_kind: 'expense',
+          expense_account_id: pick.id,
+          item_id: undefined,
+          tank_id: undefined,
+          aquaculture_fish_weight_kg: undefined,
+          aquaculture_fish_count: undefined,
+          aquaculture_fish_species: undefined,
+          aquaculture_fish_species_other: undefined,
+          description: account?.account_name || '',
+        }
+      }
+      return { ...prev, lines: newLines }
+    })
+  }
+
+  const setBillLineKind = (index: number, kind: BillLineKind) => {
+    setFormData((prev) => {
+      const newLines = [...prev.lines]
+      const cur = newLines[index]
+      if (billLineKind(cur) === kind) return prev
+      if (kind === 'expense') {
+        newLines[index] = {
+          ...cur,
+          line_kind: 'expense',
+          item_id: undefined,
+          tank_id: undefined,
+          tank_name: null,
+          aquaculture_fish_weight_kg: undefined,
+          aquaculture_fish_count: undefined,
+          aquaculture_fish_species: undefined,
+          aquaculture_fish_species_other: undefined,
+        }
+      } else {
+        newLines[index] = {
+          ...cur,
+          line_kind: 'item',
+          expense_account_id: undefined,
+        }
+      }
+      return { ...prev, lines: newLines }
+    })
+  }
+
+  const handleLineChange = (index: number, field: string, value: any) => {
+    setFormData((prev) => {
+      const newLines = [...prev.lines]
+
+      if (field === 'aquaculture_cost_mode') {
+        const mode = value as 'direct' | 'shared_equal' | 'shared_manual'
+        const cur = newLines[index]
+        newLines[index] = {
+          ...cur,
+          aquaculture_cost_mode: mode,
+          aquaculture_pond_id: mode === 'direct' ? cur.aquaculture_pond_id ?? '' : '',
+          aquaculture_production_cycle_id:
+            mode === 'direct' ? cur.aquaculture_production_cycle_id ?? '' : '',
+          shared_equal_pond_ids: mode === 'shared_equal' ? cur.shared_equal_pond_ids ?? [] : undefined,
+          pond_shares:
+            mode === 'shared_manual'
+              ? cur.pond_shares?.length
+                ? cur.pond_shares
+                : [
+                    { pond_id: '', amount: 0 },
+                    { pond_id: '', amount: 0 },
+                  ]
+              : undefined,
+        }
+        return { ...prev, lines: newLines }
+      }
+
+      if (field === 'station_cost_mode') {
+        const mode = value as 'direct' | 'shared_equal' | 'shared_manual'
+        const cur = newLines[index]
+        newLines[index] = {
+          ...cur,
+          station_cost_mode: mode,
+          line_receipt_station_id: mode === 'direct' ? cur.line_receipt_station_id ?? '' : '',
+          shared_equal_station_ids: mode === 'shared_equal' ? cur.shared_equal_station_ids ?? [] : undefined,
+          station_shares:
+            mode === 'shared_manual'
+              ? cur.station_shares?.length
+                ? cur.station_shares
+                : [
+                    { station_id: '', amount: 0 },
+                    { station_id: '', amount: 0 },
+                  ]
+              : undefined,
+        }
+        return { ...prev, lines: newLines }
+      }
+
+      if (field === 'aquaculture_pond_id') {
+        const pid = value === '' || value === undefined ? '' : parseInt(String(value), 10)
+        const cleanPond = pid === '' || !Number.isFinite(pid) ? '' : pid
+        newLines[index] = { ...newLines[index], aquaculture_pond_id: cleanPond }
+        if (cleanPond === '') {
+          newLines[index].aquaculture_expense_category = undefined
+          newLines[index].aquaculture_cost_bucket = undefined
+        } else {
+          newLines[index].fuel_station_expense_category = undefined
+        }
+        const cycRaw = newLines[index].aquaculture_production_cycle_id
+        if (cycRaw !== '' && cycRaw != null) {
+          const cid = parseInt(String(cycRaw), 10)
+          if (Number.isFinite(cid)) {
+            const cRow = productionCycles.find((c) => c.id === cid)
+            if (!cRow || cleanPond === '' || cRow.pond_id !== Number(cleanPond)) {
+              newLines[index].aquaculture_production_cycle_id = ''
+            }
+          }
+        }
+        return { ...prev, lines: newLines }
+      }
+
+      if (field === 'aquaculture_expense_category') {
+        const cat = findBillCategory(billExpenseCategories, String(value))
+        newLines[index] = applyAquacultureCategoryToBillLine(newLines[index], cat)
+        return { ...prev, lines: newLines }
+      }
+
+      if (field === 'fuel_station_expense_category') {
+        const cat = findFuelBillCategory(billFuelCategories, String(value))
+        newLines[index] = applyFuelCategoryToBillLine(newLines[index], cat)
+        return { ...prev, lines: newLines }
+      }
+
+      newLines[index] = { ...newLines[index], [field]: value }
+
+      if (field === 'item_id' && value) {
+        newLines[index] = applyItemSelectionToBillLine(
           newLines[index],
-          pick.id,
+          value,
           items,
           tanks,
           resolvedVendorDefaultExpenseId,
           templateBillExpenseAccountId || undefined,
           firstNursingPondId
-        ),
-        line_kind: 'item',
+        )
       }
-    } else {
-      billLineExpenseTouchedRef.current.add(newLines[index].line_number)
-      const account = expenseAccounts.find((a) => a.id === pick.id)
-      newLines[index] = {
-        ...newLines[index],
-        line_kind: 'expense',
-        expense_account_id: pick.id,
-        item_id: undefined,
-        tank_id: undefined,
-        aquaculture_fish_weight_kg: undefined,
-        aquaculture_fish_count: undefined,
-        aquaculture_fish_species: undefined,
-        aquaculture_fish_species_other: undefined,
-        description: account?.account_name || '',
-      }
-    }
-    setFormData({ ...formData, lines: newLines })
-  }
 
-  const setBillLineKind = (index: number, kind: BillLineKind) => {
-    const newLines = [...formData.lines]
-    const cur = newLines[index]
-    if (billLineKind(cur) === kind) return
-    if (kind === 'expense') {
-      // Switching to an expense/service line: drop item-only fields, keep any suggested account.
-      newLines[index] = {
-        ...cur,
-        line_kind: 'expense',
-        item_id: undefined,
-        tank_id: undefined,
-        tank_name: null,
-        aquaculture_fish_weight_kg: undefined,
-        aquaculture_fish_count: undefined,
-        aquaculture_fish_species: undefined,
-        aquaculture_fish_species_other: undefined,
+      if (field === 'expense_account_id') {
+        syncLineTouchedForAccount(
+          billLineExpenseTouchedRef.current,
+          newLines[index].line_number,
+          value as number | undefined
+        )
       }
-    } else {
-      // Switching to an item line: clear the expense account so the item picker drives the GL.
-      newLines[index] = {
-        ...cur,
-        line_kind: 'item',
-        expense_account_id: undefined,
+      if (field === 'expense_account_id' && value) {
+        newLines[index].item_id = undefined
+        newLines[index].tank_id = undefined
+        newLines[index].aquaculture_fish_weight_kg = undefined
+        newLines[index].aquaculture_fish_count = undefined
+        const account = expenseAccounts.find((a) => a.id === value)
+        if (account) {
+          newLines[index].description = account.account_name
+        }
       }
-    }
-    setFormData({ ...formData, lines: newLines })
-  }
 
-  const handleLineChange = (index: number, field: string, value: any) => {
-    const newLines = [...formData.lines]
+      const lineItem = newLines[index].item_id
+        ? items.find((it) => it.id === newLines[index].item_id)
+        : undefined
+      const fishLine = isFishTypeItem(lineItem)
+      const fishLineAuto = fishLine && itemPiecesPerKg(lineItem) != null
 
-    if (field === 'aquaculture_cost_mode') {
-      const mode = value as 'direct' | 'shared_equal' | 'shared_manual'
-      const cur = newLines[index]
-      newLines[index] = {
-        ...cur,
-        aquaculture_cost_mode: mode,
-        aquaculture_pond_id: mode === 'direct' ? cur.aquaculture_pond_id ?? '' : '',
-        aquaculture_production_cycle_id:
-          mode === 'direct' ? cur.aquaculture_production_cycle_id ?? '' : '',
-        shared_equal_pond_ids: mode === 'shared_equal' ? cur.shared_equal_pond_ids ?? [] : undefined,
-        pond_shares:
-          mode === 'shared_manual'
-            ? cur.pond_shares?.length
-              ? cur.pond_shares
-              : [
-                  { pond_id: '', amount: 0 },
-                  { pond_id: '', amount: 0 },
-                ]
-            : undefined,
+      if (field === 'aquaculture_fish_weight_kg' && fishLineAuto) {
+        return { ...prev, lines: newLines }
       }
-      setFormData({ ...formData, lines: newLines })
-      return
-    }
-
-    if (field === 'station_cost_mode') {
-      const mode = value as 'direct' | 'shared_equal' | 'shared_manual'
-      const cur = newLines[index]
-      newLines[index] = {
-        ...cur,
-        station_cost_mode: mode,
-        line_receipt_station_id: mode === 'direct' ? cur.line_receipt_station_id ?? '' : '',
-        shared_equal_station_ids: mode === 'shared_equal' ? cur.shared_equal_station_ids ?? [] : undefined,
-        station_shares:
-          mode === 'shared_manual'
-            ? cur.station_shares?.length
-              ? cur.station_shares
-              : [
-                  { station_id: '', amount: 0 },
-                  { station_id: '', amount: 0 },
-                ]
-            : undefined,
-      }
-      setFormData({ ...formData, lines: newLines })
-      return
-    }
-
-    if (field === 'aquaculture_pond_id') {
-      const pid = value === '' || value === undefined ? '' : parseInt(String(value), 10)
-      const cleanPond = pid === '' || !Number.isFinite(pid) ? '' : pid
-      newLines[index] = { ...newLines[index], aquaculture_pond_id: cleanPond }
-      if (cleanPond === '') {
-        newLines[index].aquaculture_expense_category = undefined
-        newLines[index].aquaculture_cost_bucket = undefined
-      } else {
-        newLines[index].fuel_station_expense_category = undefined
-      }
-      const cycRaw = newLines[index].aquaculture_production_cycle_id
-      if (cycRaw !== '' && cycRaw != null) {
-        const cid = parseInt(String(cycRaw), 10)
-        if (Number.isFinite(cid)) {
-          const cRow = productionCycles.find((c) => c.id === cid)
-          if (!cRow || cleanPond === '' || cRow.pond_id !== Number(cleanPond)) {
-            newLines[index].aquaculture_production_cycle_id = ''
+      if (field === 'aquaculture_fish_count') {
+        if (fishLineAuto) {
+          newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'heads')
+        } else if (fishLine) {
+          const cRaw = newLines[index].aquaculture_fish_count
+          const c =
+            cRaw === undefined || cRaw === '' || cRaw === null
+              ? NaN
+              : parseInt(String(cRaw), 10)
+          const pcs = itemPiecesPerKg(lineItem)
+          if (pcs != null && Number.isInteger(c) && c > 0) {
+            newLines[index].aquaculture_fish_weight_kg = roundFishWeightKg(c / pcs)
           }
         }
-      }
-      setFormData({ ...formData, lines: newLines })
-      return
-    }
-
-    if (field === 'aquaculture_expense_category') {
-      const cat = findBillCategory(billExpenseCategories, String(value))
-      newLines[index] = applyAquacultureCategoryToBillLine(newLines[index], cat)
-      setFormData({ ...formData, lines: newLines })
-      return
-    }
-
-    if (field === 'fuel_station_expense_category') {
-      const cat = findFuelBillCategory(billFuelCategories, String(value))
-      newLines[index] = applyFuelCategoryToBillLine(newLines[index], cat)
-      setFormData({ ...formData, lines: newLines })
-      return
-    }
-
-    newLines[index] = { ...newLines[index], [field]: value }
-
-    // If item is selected, clear expense account, set default tank for fuel, update cost/description
-    if (field === 'item_id' && value) {
-      newLines[index] = applyItemSelectionToBillLine(
-        newLines[index],
-        value,
-        items,
-        tanks,
-        resolvedVendorDefaultExpenseId,
-        templateBillExpenseAccountId || undefined,
-        firstNursingPondId
-      )
-    }
-
-    if (field === 'expense_account_id') {
-      syncLineTouchedForAccount(
-        billLineExpenseTouchedRef.current,
-        newLines[index].line_number,
-        value as number | undefined
-      )
-    }
-    // If expense account is selected, clear item and tank
-    if (field === 'expense_account_id' && value) {
-      newLines[index].item_id = undefined
-      newLines[index].tank_id = undefined
-      newLines[index].aquaculture_fish_weight_kg = undefined
-      newLines[index].aquaculture_fish_count = undefined
-      const account = expenseAccounts.find(a => a.id === value)
-      if (account) {
-        newLines[index].description = account.account_name
-      }
-    }
-    
-    const lineItem = newLines[index].item_id
-      ? items.find((it) => it.id === newLines[index].item_id)
-      : undefined
-    const fishLine = isFishTypeItem(lineItem)
-
-    if (field === 'aquaculture_fish_weight_kg' && fishLine && itemPiecesPerKg(lineItem)) {
-      setFormData({ ...formData, lines: newLines })
-      return
-    }
-    if (field === 'aquaculture_fish_count') {
-      if (fishLine && itemPiecesPerKg(lineItem)) {
-        newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'heads')
-      } else if (fishLine) {
-        const cRaw = newLines[index].aquaculture_fish_count
-        const c =
-          cRaw === undefined || cRaw === '' || cRaw === null
-            ? NaN
-            : parseInt(String(cRaw), 10)
-        const pcs = itemPiecesPerKg(lineItem)
-        if (pcs != null && Number.isInteger(c) && c > 0) {
-          newLines[index].aquaculture_fish_weight_kg = roundFishWeightKg(c / pcs)
+      } else if (field === 'aquaculture_fish_weight_kg' && fishLine) {
+        const wRaw = newLines[index].aquaculture_fish_weight_kg
+        const w = wRaw === undefined || wRaw === '' || wRaw === null ? NaN : Number(wRaw)
+        if (Number.isFinite(w) && w > 0) {
+          const pcs = itemPiecesPerKg(lineItem)
+          newLines[index].aquaculture_fish_count =
+            pcs != null ? Math.max(1, Math.round(w * pcs)) : newLines[index].aquaculture_fish_count
         }
-      }
-    } else if (field === 'aquaculture_fish_weight_kg' && fishLine) {
-      const wRaw = newLines[index].aquaculture_fish_weight_kg
-      const w = wRaw === undefined || wRaw === '' || wRaw === null ? NaN : Number(wRaw)
-      if (Number.isFinite(w) && w > 0) {
-        const pcs = itemPiecesPerKg(lineItem)
-        newLines[index].aquaculture_fish_count =
-          pcs != null ? Math.max(1, Math.round(w * pcs)) : newLines[index].aquaculture_fish_count
-      }
-    } else if (field === 'amount') {
-      if (fishLine && itemPiecesPerKg(lineItem)) {
-        newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'amount')
-      } else {
-        const quantity = Number(newLines[index].quantity ?? 0)
-        const amount = parseFloat(value) || 0
-        newLines[index].amount = amount
-        if (quantity > 0) {
-          newLines[index].unit_cost = roundBillMoney(amount / quantity)
+      } else if (field === 'amount') {
+        if (fishLineAuto) {
+          newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'amount')
+        } else {
+          const quantity = Number(newLines[index].quantity ?? 0)
+          const amount = parseFloat(value) || 0
+          newLines[index].amount = amount
+          if (quantity > 0) {
+            newLines[index].unit_cost = roundBillMoney(amount / quantity)
+          }
         }
-      }
-    } else if (field === 'quantity' || field === 'unit_cost') {
-      if (fishLine && itemPiecesPerKg(lineItem)) {
-        if (field === 'quantity') {
-          setFormData({ ...formData, lines: newLines })
-          return
+      } else if (field === 'quantity' || field === 'unit_cost') {
+        if (fishLineAuto) {
+          if (field === 'quantity') {
+            return { ...prev, lines: newLines }
+          }
+          newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'unit_cost')
+        } else {
+          newLines[index] = syncStandardBillLineAmount(newLines[index])
         }
-        newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'unit_cost')
-      } else {
-        const quantity =
-          field === 'quantity' ? parseFloat(value) || 0 : Number(newLines[index].quantity ?? 0)
-        const unitCost =
-          field === 'unit_cost' ? parseFloat(value) || 0 : Number(newLines[index].unit_cost ?? 0)
-        newLines[index].amount = calculateLineAmount(quantity, unitCost)
+      } else if (
+        field === 'item_id' &&
+        value &&
+        !isFishBillLineAutoMode(newLines[index], items)
+      ) {
+        newLines[index] = syncStandardBillLineAmount(newLines[index])
       }
-    }
 
-    setFormData({ ...formData, lines: newLines })
+      return { ...prev, lines: newLines }
+    })
   }
   
   // Get tanks for a specific item (fuel items)
@@ -1955,9 +1995,10 @@ export default function BillsPage() {
   }
 
   const performCreate = async (confirm?: { acknowledgeTankOverfill: boolean }) => {
-    const { subtotal, taxAmount, total } = calculateTotals()
+    const linesToSave = finalizeBillLinesForSave(formData.lines, items)
+    const { subtotal, taxAmount, total } = calculateTotals(linesToSave)
 
-    const over = buildTankOverfillReview(formData.lines, items, tanks)
+    const over = buildTankOverfillReview(linesToSave, items, tanks)
     if (over && confirm === undefined) {
       setStockReviewPayload({
         mode: 'create',
@@ -1985,7 +2026,7 @@ export default function BillsPage() {
       total_amount: total,
       status: approveBill ? 'open' : 'draft',
       acknowledge_tank_overfill: sendAck ? true : undefined,
-      lines: formData.lines.map((line, idx) => ({
+      lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
         ...serializeBillLineForApi(line, items),
       })),
@@ -2148,7 +2189,8 @@ export default function BillsPage() {
   const performUpdate = async (confirm?: { acknowledgeTankOverfill: boolean }) => {
     if (!editingBill) return
 
-    const { subtotal, taxAmount, total } = calculateTotals()
+    const linesToSave = finalizeBillLinesForSave(formData.lines, items)
+    const { subtotal, taxAmount, total } = calculateTotals(linesToSave)
     const nextStatus =
       editingBill.status === 'draft' && postDraftBillOnUpdate ? 'open' : editingBill.status
 
@@ -2156,7 +2198,7 @@ export default function BillsPage() {
       (nextStatus || '').toLowerCase()
     )
 
-    const over = buildTankOverfillReview(formData.lines, items, tanks)
+    const over = buildTankOverfillReview(linesToSave, items, tanks)
     if (over && confirm === undefined) {
       setStockReviewPayload({
         mode: 'edit',
@@ -2184,7 +2226,7 @@ export default function BillsPage() {
       total_amount: total,
       status: nextStatus,
       acknowledge_tank_overfill: sendAck ? true : undefined,
-      lines: formData.lines.map((line, idx) => ({
+      lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
         ...serializeBillLineForApi(line, items),
       })),
@@ -2338,6 +2380,158 @@ export default function BillsPage() {
     setViewingBill(null)
   }
 
+  const billReceivingLocationLabel = (bill: Bill): string => {
+    const pondIds = new Set<number>()
+    for (const line of bill.lines || []) {
+      const pid = line.aquaculture_pond_id
+      if (pid != null && Number(pid) > 0) pondIds.add(Number(pid))
+    }
+    if (pondIds.size === 1) {
+      const pid = [...pondIds][0]
+      const pond = aquaculturePonds.find((p) => p.id === pid)
+      const shop =
+        bill.receipt_station_name ||
+        (bill.receipt_station_id ? `Station #${bill.receipt_station_id}` : '')
+      return shop ? `Pond: ${pond?.name || `Pond #${pid}`} · Shop hub: ${shop}` : `Pond: ${pond?.name || `Pond #${pid}`}`
+    }
+    return (
+      bill.receipt_station_name ||
+      (bill.receipt_station_id ? `Station #${bill.receipt_station_id}` : '')
+    )
+  }
+
+  const billExportLine = (line: BillLineItem): BillLineExport => {
+    const item = line.item_id ? items.find((i) => i.id === line.item_id) : undefined
+    const pondId =
+      line.aquaculture_pond_id != null && line.aquaculture_pond_id !== ''
+        ? Number(line.aquaculture_pond_id)
+        : null
+    const pond =
+      pondId != null && pondId > 0
+        ? aquaculturePonds.find((p) => p.id === pondId)?.name
+        : undefined
+    return {
+      description: line.description,
+      item_id: line.item_id,
+      item_name: item?.name,
+      tank_name: line.tank_name,
+      aquaculture_pond_id: pondId != null && pondId > 0 ? pondId : null,
+      pond_name: pond,
+      quantity: line.quantity,
+      unit_cost: line.unit_cost,
+      unit_price: line.unit_price,
+      amount: line.amount,
+    }
+  }
+
+  const billAsExport = (bill: Bill): BillExport => ({
+    ...bill,
+    lines: (bill.lines || []).map((line) => billExportLine(line)),
+  })
+
+  const billPrintOpts = () => ({
+    currencySymbol,
+    formatDateOnly,
+    formatDateTime: (d: Date) => formatDate(d, true),
+    formatNumber,
+    resolveItemLabel: (line: BillLineExport) => {
+      if (line.item_id) {
+        return items.find((i) => i.id === line.item_id)?.name || line.item_name || `Item #${line.item_id}`
+      }
+      return line.description || 'Expense'
+    },
+    resolvePondLabel: (line: BillLineExport) => {
+      if (!line.aquaculture_pond_id) return '—'
+      return (
+        line.pond_name ||
+        aquaculturePonds.find((p) => p.id === line.aquaculture_pond_id)?.name ||
+        `Pond #${line.aquaculture_pond_id}`
+      )
+    },
+    totalOf: billTotal,
+    taxOf: billTax,
+    paidOf: billPaid,
+    balanceOf: billBalance,
+    subtotalOf: billSubtotal,
+  })
+
+  const handlePrintBillList = async () => {
+    if (bills.length === 0) {
+      toast.error('No bills to print for the current filter.')
+      return
+    }
+    const sub = [
+      statusFilter && `Status: ${statusFilter}`,
+      debouncedSearch && `Search: ${debouncedSearch}`,
+      `Generated ${formatDate(new Date(), true)}`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    const rows = bills
+      .map(
+        (b) => `<tr>
+        <td>${escapeHtml(b.bill_number)}</td>
+        <td>${escapeHtml(b.vendor_name || '—')}</td>
+        <td>${escapeHtml(formatDateOnly(b.bill_date))}</td>
+        <td>${escapeHtml(b.due_date ? formatDateOnly(b.due_date) : '—')}</td>
+        <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(billTotal(b)))}</td>
+        <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(billBalance(b)))}</td>
+        <td>${escapeHtml(formatBillStatusLabel(b.status))}</td>
+      </tr>`,
+      )
+      .join('')
+    const ok = await printListView({
+      title: 'Vendor bills (list)',
+      subtitle: sub,
+      tableHtml: `<table><thead><tr><th>Bill #</th><th>Vendor</th><th>Date</th><th>Due</th><th class="right">Total</th><th class="right">Balance</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`,
+    })
+    if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
+  }
+
+  const handleDownloadBillListCsv = () => {
+    if (bills.length === 0) {
+      toast.error('No bills to export.')
+      return
+    }
+    downloadCsvFile(
+      `bills_${new Date().toISOString().slice(0, 10)}.csv`,
+      buildBillListCsv(bills.map(billAsExport), {
+        formatDate: formatDateOnly,
+        totalOf: billTotal,
+        balanceOf: billBalance,
+      }),
+    )
+  }
+
+  const handleDownloadBillListJson = () => {
+    if (bills.length === 0) {
+      toast.error('No bills to export.')
+      return
+    }
+    downloadJsonFile(`bills_${new Date().toISOString().slice(0, 10)}.json`, bills.map(billAsExport))
+  }
+
+  const handlePrintViewingBill = async () => {
+    if (!viewingBill) return
+    const branding = await loadPrintBranding(api)
+    const bodyHtml = buildBillPrintHtml(billAsExport(viewingBill), {
+      ...billPrintOpts(),
+      receivingLocation: billReceivingLocationLabel(viewingBill) || undefined,
+    })
+    const ok = await printHtmlDocument(`Bill ${viewingBill.bill_number}`, bodyHtml, branding)
+    if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
+  }
+
+  const handleDownloadViewingBillCsv = () => {
+    if (!viewingBill) return
+    downloadCsvFile(`bill_${viewingBill.bill_number}.csv`, buildBillDetailCsv(billAsExport(viewingBill)))
+  }
+
+  const handleDownloadViewingBillJson = () => {
+    if (!viewingBill) return
+    downloadJsonFile(`bill_${viewingBill.bill_number}.json`, billAsExport(viewingBill))
+  }
+
   const handleCloseEditModal = () => {
     setShowEditModal(false)
     setEditingBill(null)
@@ -2482,17 +2676,26 @@ export default function BillsPage() {
               <option value="overdue">Overdue</option>
             </select>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              resetForm()
-              setShowModal(true)
-            }}
-            className="ml-4 flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="h-5 w-5" />
-            <span>Add Bill</span>
-          </button>
+          <div className="ml-4 flex flex-wrap items-center gap-2">
+            <DocumentExportButtons
+              onPrint={() => void handlePrintBillList()}
+              onDownloadCsv={handleDownloadBillListCsv}
+              onDownloadJson={handleDownloadBillListJson}
+              disabled={bills.length === 0}
+              printLabel="Print list"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                resetForm()
+                setShowModal(true)
+              }}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="h-5 w-5" />
+              <span>Add Bill</span>
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -2660,12 +2863,21 @@ export default function BillsPage() {
             <div className="bg-white rounded-lg app-modal-pad max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Bill Details</h2>
-                <button
-                  onClick={handleCloseViewModal}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <DocumentExportButtons
+                    size="compact"
+                    onPrint={() => void handlePrintViewingBill()}
+                    onDownloadCsv={handleDownloadViewingBillCsv}
+                    onDownloadJson={handleDownloadViewingBillJson}
+                  />
+                  <button
+                    onClick={handleCloseViewModal}
+                    className="text-gray-400 hover:text-gray-600"
+                    aria-label="Close"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-6">

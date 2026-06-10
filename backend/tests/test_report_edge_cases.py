@@ -193,3 +193,71 @@ def test_expense_detail_excludes_cogs_with_mixed_coa_types(company_tenant_with_g
     codes = {a["account_code"] for a in out["expenses"]["accounts"]}
     assert "5100" not in codes
     assert "5120" not in codes
+
+
+def test_sales_by_nozzle_ok_with_active_nozzles(
+    api_client, auth_super_headers, company_master
+):
+    """Summary drill merge must not unpack flat nozzle rows (500 when nozzles exist)."""
+    from tests.test_api_production_audit import _audit_fuel_nozzle, _audit_master_headers
+
+    _audit_fuel_nozzle(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    r = api_client.get(
+        "/api/reports/sales-by-nozzle/",
+        {"start_date": "2026-01-01", "end_date": "2026-01-31"},
+        **h,
+    )
+    assert r.status_code == 200, r.content.decode()
+    data = json.loads(r.content)
+    assert data.get("report_id") == "sales-by-nozzle"
+    assert len(data.get("nozzles") or []) >= 1
+
+
+def test_sales_by_station_ok_with_invoices(
+    api_client, auth_super_headers, company_master
+):
+    """Summary drill merge must not unpack flat station rows when invoices exist."""
+    from decimal import Decimal
+
+    from tests.test_api_production_audit import (
+        _audit_fuel_nozzle,
+        _audit_master_headers,
+        _audit_seed_min_gl_accounts,
+    )
+
+    _audit_seed_min_gl_accounts(company_master)
+    nozzle = _audit_fuel_nozzle(company_master)
+    station = nozzle.tank.station
+    h = _audit_master_headers(auth_super_headers, company_master)
+    api_client.post("/api/customers/add-dummy/", **h)
+    cust = json.loads(api_client.get("/api/customers/", **h).content)[0]
+    inv = api_client.post(
+        "/api/invoices/",
+        {
+            "customer_id": cust["id"],
+            "station_id": station.id,
+            "invoice_date": "2026-01-15",
+            "status": "posted",
+            "lines": [
+                {
+                    "item_id": nozzle.product_id,
+                    "quantity": "10",
+                    "unit_price": "120.50",
+                }
+            ],
+        },
+        content_type="application/json",
+        **h,
+    )
+    assert inv.status_code in (200, 201), inv.content.decode()
+    r = api_client.get(
+        "/api/reports/sales-by-station/",
+        {"start_date": "2026-01-01", "end_date": "2026-01-31"},
+        **h,
+    )
+    assert r.status_code == 200, r.content.decode()
+    data = json.loads(r.content)
+    assert data.get("report_id") == "sales-by-station"
+    assert len(data.get("rows") or []) >= 1
+    assert Decimal(str(data["summary"]["grand_total"])) > 0

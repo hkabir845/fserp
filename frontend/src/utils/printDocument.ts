@@ -420,6 +420,35 @@ export function buildLedgerStatementHtml(
   `
 }
 
+export function buildLedgerStatementCsv(data: LedgerStatementPrintInput): string {
+  let out = `Account,${escapeCsvValue(data.display_name)}\n`
+  if (data.start_date && data.end_date) {
+    out += `Period,${escapeCsvValue(data.start_date)},${escapeCsvValue(data.end_date)}\n`
+  }
+  out += `Period start balance,${data.period_start_balance ?? '0'}\n`
+  out += `Closing balance,${data.closing_balance ?? '0'}\n\n`
+  out += 'Date,Type,Reference,Description,Debit,Credit,Balance\n'
+  for (const row of data.transactions ?? []) {
+    out += [
+      escapeCsvValue(row.date),
+      escapeCsvValue(row.type),
+      escapeCsvValue(row.reference),
+      escapeCsvValue(row.description),
+      row.debit || '0',
+      row.credit || '0',
+      row.balance || '0',
+    ].join(',')
+    out += '\n'
+  }
+  return out
+}
+
+function escapeCsvValue(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  const str = String(value).replace(/"/g, '""')
+  return `"${str}"`
+}
+
 export function printLedgerStatement(
   data: LedgerStatementPrintInput,
   options: Parameters<typeof buildLedgerStatementHtml>[1] & { branding?: PrintBranding }

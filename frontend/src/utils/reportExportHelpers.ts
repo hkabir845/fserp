@@ -2,6 +2,8 @@
  * CSV and print HTML builders for reports that share ExtraFinancialReportPanels shapes.
  */
 
+import { escapeHtml } from '@/utils/printDocument'
+
 export function escapeCsvValue(value: unknown): string {
   if (value === null || value === undefined) return ''
   const str = String(value).replace(/"/g, '""')
@@ -283,27 +285,293 @@ export function buildAquacultureGroupsCsv(data: Record<string, unknown>): string
   return out
 }
 
-/** Best-effort CSV from unknown report payload (arrays of objects). */
+const GENERIC_EXPORT_SKIP_KEYS = new Set([
+  'period',
+  'summary',
+  'report_id',
+  'accounting_note',
+  'company_total',
+  'filters',
+])
+
+function scalarColumns(sample: Record<string, unknown>): string[] {
+  return Object.keys(sample).filter((k) => {
+    if (k === '_drill') return false
+    const v = sample[k]
+    return v == null || typeof v !== 'object'
+  })
+}
+
+function appendArraySectionCsv(
+  out: string,
+  title: string,
+  rows: Record<string, unknown>[],
+): string {
+  if (!rows.length) return out
+  const cols = scalarColumns(rows[0])
+  if (cols.length < 1) return out
+  let section = `\n${title}\n${cols.join(',')}\n`
+  rows.forEach((row) => {
+    section += cols.map((c) => escapeCsvValue(row[c])).join(',')
+    section += '\n'
+  })
+  return out + section
+}
+
+/** Best-effort CSV from unknown report payload (all top-level arrays of objects). */
 export function buildGenericTabularCsv(data: Record<string, unknown>): string | null {
-  const skipKeys = new Set(['period', 'summary', 'report_id', 'accounting_note', 'company_total'])
+  let out = ''
   for (const [key, val] of Object.entries(data)) {
-    if (skipKeys.has(key) || !Array.isArray(val) || val.length === 0) continue
+    if (GENERIC_EXPORT_SKIP_KEYS.has(key) || !Array.isArray(val) || val.length === 0) continue
     const first = val[0]
     if (!first || typeof first !== 'object' || Array.isArray(first)) continue
-    const sample = first as Record<string, unknown>
-    const cols = Object.keys(sample).filter((k) => {
-      const v = sample[k]
-      return v == null || typeof v !== 'string' || v.length < 200
+    out = appendArraySectionCsv(out, key.replace(/_/g, ' '), val as Record<string, unknown>[])
+  }
+  for (const [key, val] of Object.entries(data)) {
+    if (GENERIC_EXPORT_SKIP_KEYS.has(key) || val == null || Array.isArray(val)) continue
+    if (typeof val !== 'object') continue
+    const obj = val as Record<string, unknown>
+    const accounts = obj.accounts
+    if (Array.isArray(accounts) && accounts.length > 0 && typeof accounts[0] === 'object') {
+      out = appendArraySectionCsv(out, key.replace(/_/g, ' '), accounts as Record<string, unknown>[])
+    }
+  }
+  return out.trim() ? out : null
+}
+
+function printGroupsHtml(title: string, groups: Record<string, unknown>[]): string {
+  if (!groups.length) return ''
+  let html = `<h2>${escapeHtml(title)}</h2>`
+  groups.forEach((g) => {
+    const pond = String(g.pond_name ?? '')
+    const lines = Array.isArray(g.lines) ? (g.lines as Record<string, unknown>[]) : []
+    if (!lines.length) return
+    const cols = scalarColumns(lines[0])
+    if (!cols.length) return
+    html += `<h3>${escapeHtml(pond)}</h3><table><thead><tr>`
+    cols.forEach((c) => {
+      html += `<th>${escapeHtml(c.replace(/_/g, ' '))}</th>`
     })
-    if (cols.length < 2) continue
-    let out = `${key}\n${cols.join(',')}\n`
-    ;(val as Record<string, unknown>[]).forEach((row) => {
-      out += cols.map((c) => escapeCsvValue(row[c])).join(',')
+    html += '</tr></thead><tbody>'
+    lines.forEach((ln) => {
+      html += '<tr>'
+      cols.forEach((c) => {
+        html += `<td>${escapeHtml(String(ln[c] ?? ''))}</td>`
+      })
+      html += '</tr>'
+    })
+    html += '</tbody></table>'
+    if (g.subtotal_amount != null || g.subtotal_samples != null) {
+      html += `<p><strong>Subtotal:</strong> ${escapeHtml(String(g.subtotal_amount ?? g.subtotal_samples ?? ''))}</p>`
+    }
+  })
+  return html
+}
+
+/** Print HTML for aquaculture report payloads (groups, pond P&L, nested sections). */
+export function buildAquaculturePrintHtml(
+  reportId: string,
+  data: Record<string, unknown>,
+): string | null {
+  if (reportId === 'aquaculture-pond-pl' && Array.isArray(data.ponds)) {
+    const ponds = data.ponds as Record<string, unknown>[]
+    const headers = [
+      'Pond',
+      'Revenue (right)',
+      'Direct exp (right)',
+      'Shared exp (right)',
+      'Payroll (right)',
+      'Total costs (right)',
+      'Profit (right)',
+    ]
+    const rows = ponds.map((p) => [
+      String(p.pond_name ?? ''),
+      fmtMoney(p.revenue),
+      fmtMoney(p.direct_operating_expenses),
+      fmtMoney(p.shared_operating_expenses),
+      fmtMoney(p.payroll_allocated),
+      fmtMoney(p.total_costs),
+      fmtMoney(p.profit),
+    ])
+    let html = htmlTable('Pond P&L', headers, rows)
+    const totals = (data.totals as Record<string, unknown>) ?? {}
+    if (Object.keys(totals).length) {
+      html += `<div class="summary"><p><strong>Total revenue:</strong> ${fmtMoney(totals.revenue)}</p>`
+      html += `<p><strong>Total costs:</strong> ${fmtMoney(totals.total_costs)}</p>`
+      html += `<p><strong>Total profit:</strong> ${fmtMoney(totals.profit)}</p></div>`
+    }
+    return html
+  }
+
+  if (Array.isArray(data.groups)) {
+    return printGroupsHtml('Detail', data.groups as Record<string, unknown>[])
+  }
+
+  if (reportId === 'aquaculture-pond-sales-comprehensive') {
+    let html = ''
+    const fish = data.fish_sales as Record<string, unknown> | undefined
+    const pos = data.pos_shop_sales as Record<string, unknown> | undefined
+    if (fish && Array.isArray(fish.groups)) {
+      html += printGroupsHtml('Registered pond sales', fish.groups as Record<string, unknown>[])
+    }
+    if (pos && Array.isArray(pos.groups)) {
+      html += printGroupsHtml('Pond POS (non-fuel)', pos.groups as Record<string, unknown>[])
+    }
+    return html || null
+  }
+
+  return buildGenericPrintHtml(data)
+}
+
+/** Auto-table print HTML for any report JSON with array sections (fallback). */
+export function buildGenericPrintHtml(data: Record<string, unknown>): string | null {
+  let html = ''
+  for (const [key, val] of Object.entries(data)) {
+    if (GENERIC_EXPORT_SKIP_KEYS.has(key) || !Array.isArray(val) || val.length === 0) continue
+    const first = val[0]
+    if (!first || typeof first !== 'object' || Array.isArray(first)) continue
+    const rows = val as Record<string, unknown>[]
+    const cols = scalarColumns(rows[0])
+    if (cols.length < 1) continue
+    html += htmlTable(
+      key.replace(/_/g, ' '),
+      cols.map((c) => c.replace(/_/g, ' ')),
+      rows.map((row) => cols.map((c) => String(row[c] ?? ''))),
+    )
+  }
+  for (const [key, val] of Object.entries(data)) {
+    if (GENERIC_EXPORT_SKIP_KEYS.has(key) || val == null || Array.isArray(val)) continue
+    if (typeof val !== 'object') continue
+    const obj = val as Record<string, unknown>
+    const accounts = obj.accounts
+    if (Array.isArray(accounts) && accounts.length > 0 && typeof accounts[0] === 'object') {
+      const rows = accounts as Record<string, unknown>[]
+      const cols = scalarColumns(rows[0])
+      if (cols.length >= 1) {
+        html += htmlTable(
+          key.replace(/_/g, ' '),
+          cols.map((c) => `${c.replace(/_/g, ' ')} (right)`),
+          rows.map((row) => cols.map((c) => fmtMoney(row[c]))),
+        )
+        if (obj.total != null) {
+          html += `<p><strong>Total:</strong> ${fmtMoney(obj.total)}</p>`
+        }
+      }
+    }
+  }
+  return html.trim() ? html : null
+}
+
+/** CSV export for aquaculture management P&L panel (ponds tab + optional fuel site tab). */
+export function buildAquaculturePlManagementCsv(payload: {
+  start: string
+  end: string
+  plScope: string
+  ponds?: Record<string, unknown>[]
+  totals?: Record<string, unknown>
+  expensesByCategory?: Record<string, unknown>[]
+  fuelIncomeStatement?: Record<string, unknown> | null
+}): string {
+  let out = `Aquaculture P&L management\nPeriod,${payload.start},${payload.end}\nScope,${payload.plScope}\n\n`
+  if (payload.ponds?.length) {
+    out += 'Pond,Revenue,Direct exp,Shared exp,Payroll,Total costs,Profit\n'
+    payload.ponds.forEach((p) => {
+      out += [
+        escapeCsvValue(p.pond_name),
+        p.revenue ?? '',
+        p.direct_operating_expenses ?? '',
+        p.shared_operating_expenses ?? '',
+        p.payroll_allocated ?? '',
+        p.total_costs ?? '',
+        p.profit ?? '',
+      ].join(',')
       out += '\n'
     })
-    return out
+    const t = payload.totals ?? {}
+    out += `Total,,,,,${t.total_costs ?? ''},${t.profit ?? ''}\n`
   }
-  return null
+  if (payload.expensesByCategory?.length) {
+    out += '\nExpenses by category\nCategory,Label,Amount\n'
+    payload.expensesByCategory.forEach((r) => {
+      out += `${escapeCsvValue(r.category)},${escapeCsvValue(r.label)},${r.amount ?? ''}\n`
+    })
+  }
+  const fuel = payload.fuelIncomeStatement
+  if (fuel) {
+    out += '\nFuel & shop site P&L\n'
+    out += `Gross profit,${fuel.gross_profit ?? ''}\nNet income,${fuel.net_income ?? ''}\n`
+    for (const section of ['income', 'cost_of_goods_sold', 'expenses']) {
+      const block = fuel[section] as { accounts?: Record<string, unknown>[]; total?: unknown } | undefined
+      if (!block?.accounts?.length) continue
+      out += `\n${section}\nCode,Account,Balance\n`
+      block.accounts.forEach((a) => {
+        out += `${escapeCsvValue(a.account_code)},${escapeCsvValue(a.account_name)},${a.balance ?? ''}\n`
+      })
+      out += `Total,,${block.total ?? ''}\n`
+    }
+  }
+  return out
+}
+
+/** Print HTML for aquaculture management P&L panel. */
+export function buildAquaculturePlManagementPrintHtml(payload: {
+  plScope: string
+  start: string
+  end: string
+  ponds?: Record<string, unknown>[]
+  totals?: Record<string, unknown>
+  expensesByCategory?: Record<string, unknown>[]
+  fuelIncomeStatement?: Record<string, unknown> | null
+}): string {
+  let html = `<p><strong>Scope:</strong> ${escapeHtml(payload.plScope)}</p>`
+  html += `<p><strong>Period:</strong> ${escapeHtml(payload.start)} to ${escapeHtml(payload.end)}</p>`
+  if (payload.ponds?.length) {
+    html += htmlTable(
+      'Pond P&L',
+      ['Pond', 'Revenue (right)', 'Direct exp (right)', 'Shared exp (right)', 'Payroll (right)', 'Total costs (right)', 'Profit (right)'],
+      payload.ponds.map((p) => [
+        String(p.pond_name ?? ''),
+        fmtMoney(p.revenue),
+        fmtMoney(p.direct_operating_expenses),
+        fmtMoney(p.shared_operating_expenses),
+        fmtMoney(p.payroll_allocated),
+        fmtMoney(p.total_costs),
+        fmtMoney(p.profit),
+      ]),
+    )
+  }
+  if (payload.expensesByCategory?.length) {
+    html += htmlTable(
+      'Expenses by category',
+      ['Category', 'Label', 'Amount (right)'],
+      payload.expensesByCategory.map((r) => [
+        String(r.category ?? ''),
+        String(r.label ?? ''),
+        fmtMoney(r.amount),
+      ]),
+    )
+  }
+  const fuel = payload.fuelIncomeStatement
+  if (fuel) {
+    html += `<h2>Fuel &amp; shop site P&amp;L</h2>`
+    html += `<p><strong>Gross profit:</strong> ${fmtMoney(fuel.gross_profit)}</p>`
+    html += `<p><strong>Net income:</strong> ${fmtMoney(fuel.net_income)}</p>`
+    for (const section of ['income', 'cost_of_goods_sold', 'expenses'] as const) {
+      const block = fuel[section] as { accounts?: Record<string, unknown>[]; total?: unknown } | undefined
+      if (!block?.accounts?.length) continue
+      html += htmlTable(
+        section.replace(/_/g, ' '),
+        ['Code', 'Account', 'Balance (right)'],
+        block.accounts.map((a) => [
+          String(a.account_code ?? ''),
+          String(a.account_name ?? ''),
+          fmtMoney(a.balance),
+        ]),
+      )
+      html += `<p><strong>Total:</strong> ${fmtMoney(block.total)}</p>`
+    }
+  }
+  return html
 }
 
 function fmtMoney(n: unknown): string {

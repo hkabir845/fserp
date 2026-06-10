@@ -7,8 +7,19 @@ import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactA
 import { formatBankAccountTitle, normalizeBankAccountsFromApi, type BankAccountLike } from '@/lib/bankAccountDisplay'
 import { getCurrencySymbol, formatAmountPlain, roundToDecimals } from '@/utils/currency'
 import { AlertCircle, Loader2, X } from 'lucide-react'
-import { formatDateOnly } from '@/utils/date'
+import { formatDateOnly, formatDate } from '@/utils/date'
 import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_ALLOCATE_GREEN_CLASS } from '@/utils/amountFieldStyles'
+import { DocumentExportButtons } from '@/components/DocumentExportButtons'
+import {
+  buildPaymentDetailCsv,
+  buildPaymentPrintHtml,
+  downloadCsvFile,
+  downloadJsonFile,
+  paymentDisplayNumber,
+  printHtmlDocument,
+  type PaymentExport,
+} from '@/utils/businessDocumentExport'
+import { loadPrintBranding } from '@/utils/printBranding'
 
 type BankAccount = BankAccountLike & {
   account_name: string
@@ -207,6 +218,7 @@ function roundTwo(n: number): number {
 
 export interface PaymentDetailPayload {
   id: number
+  payment_number?: string
   payment_type: string
   payment_date: string
   payment_method: string
@@ -215,8 +227,11 @@ export interface PaymentDetailPayload {
   reference?: string | null
   memo?: string | null
   bank_account_id?: number | null
+  bank_account_name?: string | null
   customer_id?: number | null
   vendor_id?: number | null
+  customer_name?: string | null
+  vendor_name?: string | null
   allocations?: AllocationRow[]
 }
 
@@ -258,6 +273,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
   const [madeAlloc, setMadeAlloc] = useState<Record<string, number>>({})
   const [madeLinesLoading, setMadeLinesLoading] = useState(false)
   const [contactSnapshot, setContactSnapshot] = useState<ContactSnapshot | null>(null)
+  const [contactDisplayName, setContactDisplayName] = useState('')
   const [currencySymbol, setCurrencySymbol] = useState('৳')
 
   const receivedAllocatedTotal = useMemo(() => {
@@ -279,6 +295,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
       setLoading(true)
       setError('')
       setContactSnapshot(null)
+      setContactDisplayName('')
       setReceivedLines([])
       setReceivedAlloc({})
       setMadeLines([])
@@ -314,6 +331,9 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
               opening_balance_date: c.opening_balance_date ?? null,
               current_balance: String(c.current_balance ?? '0'),
             })
+            setContactDisplayName(
+              String(c.display_name ?? c.customer_name ?? c.company_name ?? `Customer #${p.customer_id}`),
+            )
           } catch {
             if (!cancelled) setContactSnapshot(null)
           }
@@ -355,6 +375,11 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
               opening_balance_date: v.opening_balance_date ?? null,
               current_balance: String(v.current_balance ?? '0'),
             })
+            setContactDisplayName(
+              String(
+                v.display_name ?? v.vendor_name ?? v.company_name ?? `Vendor #${p.vendor_id}`,
+              ),
+            )
           } catch {
             if (!cancelled) setContactSnapshot(null)
           }
@@ -513,6 +538,72 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
     }
   }
 
+  const paymentExportPayload = (): PaymentExport | null => {
+    if (!detail) return null
+    const isReceived = detail.payment_type === 'received'
+    const bankName =
+      detail.bank_account_name ||
+      banks.find((b) => b.id === detail.bank_account_id)?.account_name ||
+      ''
+    return {
+      ...detail,
+      payment_number: detail.payment_number || paymentDisplayNumber(detail),
+      customer_name: isReceived ? contactDisplayName || detail.customer_name || '' : undefined,
+      vendor_name: !isReceived ? contactDisplayName || detail.vendor_name || '' : undefined,
+      bank_account_name: bankName,
+      allocations: (detail.allocations ?? []).map((a) => ({
+        ...a,
+        invoice_number: receivedLines.find((inv) => allocInvoiceId(inv) === Number(a.invoice_id))
+          ?.invoice_number,
+        bill_number: madeLines.find((bill) => allocBillId(bill) === Number(a.bill_id))?.bill_number,
+      })),
+    }
+  }
+
+  const handlePrintPayment = async () => {
+    const payload = paymentExportPayload()
+    if (!payload) return
+    const isReceived = payload.payment_type === 'received'
+    const allocRows = (payload.allocations ?? []).map((a) => {
+      const amt = parseMoneyNumber(a.amount ?? a.allocated_amount)
+      if (isReceived) {
+        const ref =
+          a.invoice_number ||
+          (a.invoice_id ? `INV-${a.invoice_id}` : 'On account')
+        return { label: 'Invoice', reference: ref, amount: amt }
+      }
+      const ref = a.bill_number || (a.bill_id ? `BILL-${a.bill_id}` : 'On account')
+      return { label: 'Bill', reference: ref, amount: amt }
+    })
+    const branding = await loadPrintBranding(api)
+    const bodyHtml = buildPaymentPrintHtml(payload, {
+      currencySymbol,
+      formatDateOnly,
+      formatDateTime: (d) => formatDate(d, true),
+      formatNumber: (n) =>
+        n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      resolveAllocRows: allocRows,
+    })
+    const title = isReceived ? 'Money receipt' : 'Payment voucher'
+    const ok = await printHtmlDocument(`${title} ${paymentDisplayNumber(payload)}`, bodyHtml, branding)
+    if (!ok) window.alert('Allow pop-ups to print this payment.')
+  }
+
+  const handleDownloadPaymentCsv = () => {
+    const payload = paymentExportPayload()
+    if (!payload) return
+    downloadCsvFile(
+      `payment_${paymentDisplayNumber(payload)}.csv`,
+      buildPaymentDetailCsv(payload),
+    )
+  }
+
+  const handleDownloadPaymentJson = () => {
+    const payload = paymentExportPayload()
+    if (!payload) return
+    downloadJsonFile(`payment_${paymentDisplayNumber(payload)}.json`, payload)
+  }
+
   if (!open) return null
 
   return (
@@ -526,14 +617,25 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
       <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <h2 className="text-lg font-semibold text-slate-900">Edit payment</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-            aria-label="Cancel"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {!loading && detail ? (
+              <DocumentExportButtons
+                size="compact"
+                onPrint={() => void handlePrintPayment()}
+                onDownloadCsv={handleDownloadPaymentCsv}
+                onDownloadJson={handleDownloadPaymentJson}
+                printLabel={detail.payment_type === 'received' ? 'Print receipt' : 'Print voucher'}
+              />
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+              aria-label="Cancel"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">

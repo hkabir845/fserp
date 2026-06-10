@@ -159,6 +159,7 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
     {"report_id": "shift-summary", "label": "Shift Summary", "group": "Reports — Operational"},
     {"report_id": "sales-by-nozzle", "label": "Sales by Nozzle", "group": "Reports — Operational"},
     {"report_id": "sales-by-station", "label": "Sales by station", "group": "Reports — Operational"},
+    {"report_id": "sales-by-products", "label": "Sales by Products", "group": "Reports — Operational"},
     {"report_id": "sales-report", "label": "Sales Report", "group": "Reports — Operational"},
     {"report_id": "purchase-report", "label": "Purchase Report", "group": "Reports — Operational"},
     {"report_id": "fuel-sales", "label": "Fuel Sales Analytics", "group": "Reports — Operational"},

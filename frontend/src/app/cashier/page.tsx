@@ -13,6 +13,7 @@ import { formatBankRegisterLabel } from "@/lib/bankAccountDisplay"
 import { useCompany } from "@/contexts/CompanyContext"
 import { getCurrencySymbol, formatNumber } from "@/utils/currency"
 import { formatDate } from "@/utils/date"
+import { safeSelectInput } from "@/utils/safeSelectInput"
 import {
   getPosHomeStationId,
   getPosSaleScope,
@@ -613,7 +614,7 @@ export default function CashierPOSPage() {
         if (!showCatalog) return
         e.preventDefault()
         itemSearchRef.current?.focus()
-        itemSearchRef.current?.select()
+        safeSelectInput(itemSearchRef.current)
         return
       }
       if (e.key === "F9" || ((e.ctrlKey || e.metaKey) && e.key === "Enter")) {

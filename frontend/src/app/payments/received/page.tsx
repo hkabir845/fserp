@@ -11,10 +11,10 @@ import {
   Filter,
   Pencil,
   Plus,
-  Printer,
   Trash2,
   X,
 } from 'lucide-react'
+import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import api from '@/lib/api'
 import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import EditPaymentModal from '../EditPaymentModal'
@@ -23,6 +23,11 @@ import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDate, formatDateOnly } from '@/utils/date'
 import { escapeHtml } from '@/utils/printDocument'
 import { printListView } from '@/utils/printListView'
+import {
+  buildPaymentListCsv,
+  downloadCsvFile,
+  downloadJsonFile,
+} from '@/utils/businessDocumentExport'
 import { ContactArApBalances } from '@/components/ContactArApBalances'
 
 interface OutstandingInvoice {
@@ -240,6 +245,31 @@ export default function PaymentReceivedPage() {
     if (!ok) window.alert('Printing was blocked. Allow pop-ups for this site.')
   }
 
+  const handleDownloadListCsv = () => {
+    const { payments } = displayedData
+    if (payments.length === 0) {
+      window.alert('Nothing to export for the current filter.')
+      return
+    }
+    downloadCsvFile(
+      `payments_received_${new Date().toISOString().slice(0, 10)}.csv`,
+      buildPaymentListCsv(payments, {
+        formatDate: formatDateOnly,
+        partyLabel: (p) => customers.find((c) => c.id === p.customer_id)?.display_name || `Customer #${p.customer_id}`,
+        typeLabel: 'Received',
+      }),
+    )
+  }
+
+  const handleDownloadListJson = () => {
+    const { payments } = displayedData
+    if (payments.length === 0) {
+      window.alert('Nothing to export for the current filter.')
+      return
+    }
+    downloadJsonFile(`payments_received_${new Date().toISOString().slice(0, 10)}.json`, payments)
+  }
+
   const handleDeletePayment = async (payment: CustomerPayment) => {
     const label = payment.payment_number ?? `PAY-${payment.id}`
     if (!confirmDeletePaymentDialog(label)) return
@@ -289,14 +319,12 @@ export default function PaymentReceivedPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => void handlePrintList()}
-                className="inline-flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50"
-              >
-                <Printer className="h-5 w-5" />
-                <span>Print list</span>
-              </button>
+              <DocumentExportButtons
+                onPrint={() => void handlePrintList()}
+                onDownloadCsv={handleDownloadListCsv}
+                onDownloadJson={handleDownloadListJson}
+                printLabel="Print list"
+              />
               <Link
                 href="/payments/received/new"
                 className="inline-flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"

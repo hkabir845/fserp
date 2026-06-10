@@ -3884,6 +3884,155 @@ def report_sales_by_station(company_id: int, start: date, end: date, station_id:
     return sbs
 
 
+def _sales_by_product_bucket_row(item: Item) -> dict[str, Any]:
+    return {
+        "item_id": item.id,
+        "_item": item,
+        "sku": (item.item_number or "").strip() or f"#{item.id}",
+        "name": (item.name or "")[:200],
+        "reporting_category": (item.category or "").strip() or "General",
+        "unit": (item.unit or "")[:24],
+        "line_count": 0,
+        "_qty": Decimal("0"),
+        "_revenue": Decimal("0"),
+    }
+
+
+def _accumulate_sales_by_product_line(
+    bucket: dict[int, dict[str, Any]],
+    line: InvoiceLine,
+) -> None:
+    item = line.item
+    if not item or not line.item_id:
+        return
+    iid = int(line.item_id)
+    if iid not in bucket:
+        bucket[iid] = _sales_by_product_bucket_row(item)
+    row = bucket[iid]
+    row["line_count"] += 1
+    row["_qty"] += line.quantity or Decimal("0")
+    row["_revenue"] += line.amount or Decimal("0")
+
+
+def _finalize_sales_by_product_rows(rows_map: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for iid in sorted(rows_map.keys(), key=lambda x: (rows_map[x]["name"].lower(), x)):
+        row = rows_map[iid]
+        item = row.pop("_item")
+        qty = _d(row.pop("_qty"))
+        revenue = _d(row.pop("_revenue"))
+        uc = item_inventory_unit_cost(item)
+        total_cost = qty * uc
+        profit = revenue - total_cost
+        avg_price = (revenue / qty) if qty else Decimal("0")
+        row.update(
+            {
+                "quantity": _f(qty),
+                "unit_cost": _f(uc),
+                "avg_unit_price": _f(avg_price),
+                "revenue": _f(revenue),
+                "total_cost": _f(total_cost),
+                "profit": _f(profit),
+            }
+        )
+        out.append(row)
+    return out
+
+
+def _sales_by_product_section_summary(rows_map: dict[int, dict[str, Any]]) -> dict[str, Any]:
+    line_count = 0
+    qty = revenue = cost = profit = Decimal("0")
+    for row in rows_map.values():
+        line_count += int(row.get("line_count") or 0)
+        q = _d(row.get("_qty"))
+        r = _d(row.get("_revenue"))
+        uc = item_inventory_unit_cost(row.get("_item"))
+        c = q * uc
+        qty += q
+        revenue += r
+        cost += c
+        profit += r - c
+    return {
+        "line_count": line_count,
+        "quantity": _f(qty),
+        "revenue": _f(revenue),
+        "total_cost": _f(cost),
+        "profit": _f(profit),
+    }
+
+
+def report_sales_by_products(
+    company_id: int, start: date, end: date, station_id: int | None = None
+) -> dict[str, Any]:
+    """
+    Invoice line totals grouped by catalog product, split cash vs credit (on-account).
+    Includes quantity, average selling price, unit cost, revenue, COGS, and gross profit.
+    Excludes draft invoices and lines without a linked item.
+    """
+    line_qs = (
+        InvoiceLine.objects.filter(
+            invoice__company_id=company_id,
+            invoice__invoice_date__gte=start,
+            invoice__invoice_date__lte=end,
+            item_id__isnull=False,
+        )
+        .exclude(invoice__status="draft")
+        .select_related("invoice", "item")
+    )
+    if station_id is not None:
+        line_qs = line_qs.filter(invoice__station_id=station_id)
+
+    cash_by_item: dict[int, dict[str, Any]] = {}
+    credit_by_item: dict[int, dict[str, Any]] = {}
+    for line in line_qs:
+        is_credit = is_on_account_payment(line.invoice.payment_method)
+        bucket = credit_by_item if is_credit else cash_by_item
+        _accumulate_sales_by_product_line(bucket, line)
+
+    cash_sum = _sales_by_product_section_summary(cash_by_item)
+    credit_sum = _sales_by_product_section_summary(credit_by_item)
+    cash_products = _finalize_sales_by_product_rows(cash_by_item)
+    credit_products = _finalize_sales_by_product_rows(credit_by_item)
+
+    grand_qty = _d(cash_sum["quantity"]) + _d(credit_sum["quantity"])
+    grand_rev = _d(cash_sum["revenue"]) + _d(credit_sum["revenue"])
+    grand_cost = _d(cash_sum["total_cost"]) + _d(credit_sum["total_cost"])
+    grand_profit = _d(cash_sum["profit"]) + _d(credit_sum["profit"])
+
+    payload: dict[str, Any] = {
+        "report_id": "sales-by-products",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": {
+            "cash_line_count": cash_sum["line_count"],
+            "cash_quantity": cash_sum["quantity"],
+            "cash_revenue": cash_sum["revenue"],
+            "cash_total_cost": cash_sum["total_cost"],
+            "cash_profit": cash_sum["profit"],
+            "credit_line_count": credit_sum["line_count"],
+            "credit_quantity": credit_sum["quantity"],
+            "credit_revenue": credit_sum["revenue"],
+            "credit_total_cost": credit_sum["total_cost"],
+            "credit_profit": credit_sum["profit"],
+            "total_line_count": cash_sum["line_count"] + credit_sum["line_count"],
+            "grand_quantity": _f(grand_qty),
+            "grand_revenue": _f(grand_rev),
+            "grand_total_cost": _f(grand_cost),
+            "grand_profit": _f(grand_profit),
+        },
+        "cash_products": cash_products,
+        "credit_products": credit_products,
+        "accounting_note": (
+            "Cash products: invoice lines on immediate-tender sales (cash, card, transfer, etc.). "
+            "Credit products: on-account / A/R invoice lines. "
+            "Revenue and quantity come from invoice lines in the period (non-draft). "
+            "Unit cost uses the item inventory cost; profit is revenue minus cost × quantity sold."
+        ),
+    }
+    if station_id is not None:
+        payload["filter_station_id"] = station_id
+    return payload
+
+
 def _report_filter_station_meta(company_id: int, station_id: int | None) -> dict[str, Any]:
     if station_id is None:
         return {}
@@ -5725,7 +5874,12 @@ def _attach_summary_document_drills(
     """Attach ``_drill`` metadata on summary money fields (invoice/bill document lists)."""
     drills: dict[str, Any] = {}
     for field, (row_lists, title, entity_type) in mapping.items():
-        docs = _merge_row_documents(*row_lists)
+        # Callers pass either a flat list of row dicts (nozzle/station/shift rows) or a
+        # list of row groups ([cash_rows, credit_rows]). Only unpack when grouped.
+        if row_lists and isinstance(row_lists[0], list):
+            docs = _merge_row_documents(*row_lists)
+        else:
+            docs = _merge_row_documents(row_lists)
         if docs:
             drills[field] = {
                 "kind": "aging-documents",

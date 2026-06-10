@@ -4,12 +4,24 @@ import { useEffect, useState, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Edit2, Trash2, X, Eye, CheckCircle, XCircle, AlertCircle, Search, Filter, AlertTriangle, RefreshCw } from 'lucide-react'
+import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin } from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
-import { formatDateOnly } from '@/utils/date'
+import { formatDate, formatDateOnly } from '@/utils/date'
+import {
+  buildJournalEntryDetailCsv,
+  buildJournalEntryListCsv,
+  buildJournalEntryPrintHtml,
+  downloadCsvFile,
+  downloadJsonFile,
+  printHtmlDocument,
+} from '@/utils/businessDocumentExport'
+import { loadPrintBranding } from '@/utils/printBranding'
+import { printListView } from '@/utils/printListView'
+import { escapeHtml } from '@/utils/printDocument'
 import { AMOUNT_JE_LINE_CLASS } from '@/utils/amountFieldStyles'
 import {
   accountNeedsEntityTag,
@@ -673,6 +685,86 @@ export default function JournalEntriesPage() {
   const { totalDebit, totalCredit } = calculateTotals()
   const balanceDifference = Math.abs(totalDebit - totalCredit)
 
+  const handlePrintList = async () => {
+    if (entries.length === 0) {
+      toast.error('No journal entries to print for the current filter.')
+      return
+    }
+    const sub = [
+      startDate && `From ${startDate}`,
+      endDate && `To ${endDate}`,
+      filterValue && `Filter: ${filterColumn}=${filterValue}`,
+      `Generated ${formatDate(new Date(), true)}`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    const rows = entries
+      .map(
+        (e) => `<tr>
+          <td>${escapeHtml(e.entry_number)}</td>
+          <td>${escapeHtml(formatDateOnly(e.entry_date))}</td>
+          <td>${escapeHtml(e.reference || '—')}</td>
+          <td>${escapeHtml(e.description || '—')}</td>
+          <td>${escapeHtml(e.station_name?.trim() || '—')}</td>
+          <td>${escapeHtml(e.is_posted ? 'Posted' : 'Draft')}</td>
+          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(e.total_debit)))}</td>
+          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(e.total_credit)))}</td>
+        </tr>`,
+      )
+      .join('')
+    const ok = await printListView({
+      title: 'Journal entries',
+      subtitle: sub,
+      tableHtml: `<table><thead><tr><th>Entry #</th><th>Date</th><th>Reference</th><th>Description</th><th>Site</th><th>Status</th><th class="right">Debit</th><th class="right">Credit</th></tr></thead><tbody>${rows}</tbody></table>`,
+    })
+    if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
+  }
+
+  const handleDownloadListCsv = () => {
+    if (entries.length === 0) {
+      toast.error('No journal entries to export.')
+      return
+    }
+    downloadCsvFile(
+      `journal_entries_${new Date().toISOString().slice(0, 10)}.csv`,
+      buildJournalEntryListCsv(entries, { formatDate: formatDateOnly }),
+    )
+  }
+
+  const handleDownloadListJson = () => {
+    if (entries.length === 0) {
+      toast.error('No journal entries to export.')
+      return
+    }
+    downloadJsonFile(`journal_entries_${new Date().toISOString().slice(0, 10)}.json`, entries)
+  }
+
+  const handlePrintViewingEntry = async () => {
+    if (!viewingEntry) return
+    const branding = await loadPrintBranding(api)
+    const bodyHtml = buildJournalEntryPrintHtml(viewingEntry, {
+      currencySymbol,
+      formatDateOnly,
+      formatDateTime: (d) => formatDate(d, true),
+      formatNumber,
+    })
+    const ok = await printHtmlDocument(`Journal ${viewingEntry.entry_number}`, bodyHtml, branding)
+    if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
+  }
+
+  const handleDownloadViewingEntryCsv = () => {
+    if (!viewingEntry) return
+    downloadCsvFile(
+      `journal_${viewingEntry.entry_number}.csv`,
+      buildJournalEntryDetailCsv(viewingEntry),
+    )
+  }
+
+  const handleDownloadViewingEntryJson = () => {
+    if (!viewingEntry) return
+    downloadJsonFile(`journal_${viewingEntry.entry_number}.json`, viewingEntry)
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -706,7 +798,7 @@ export default function JournalEntriesPage() {
                 <h1 className="text-3xl font-bold text-gray-900">Journal Entries</h1>
                 <p className="text-gray-600 mt-1">Manual accounting entries</p>
               </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
@@ -714,6 +806,12 @@ export default function JournalEntriesPage() {
                 <Filter className="h-5 w-5" />
                 <span>Filter</span>
               </button>
+              <DocumentExportButtons
+                onPrint={() => void handlePrintList()}
+                onDownloadCsv={handleDownloadListCsv}
+                onDownloadJson={handleDownloadListJson}
+                printLabel="Print list"
+              />
               <button
                 onClick={() => {
                   resetForm()
@@ -1004,17 +1102,26 @@ export default function JournalEntriesPage() {
       {showViewModal && viewingEntry && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
           <div className="bg-white rounded-lg app-modal-pad max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-wrap justify-between items-start gap-3 mb-6">
               <h2 className="text-2xl font-bold">Journal Entry: {viewingEntry.entry_number}</h2>
-              <button
-                onClick={() => {
-                  setShowViewModal(false)
-                  setViewingEntry(null)
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-6 w-6" />
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <DocumentExportButtons
+                  size="compact"
+                  onPrint={() => void handlePrintViewingEntry()}
+                  onDownloadCsv={handleDownloadViewingEntryCsv}
+                  onDownloadJson={handleDownloadViewingEntryJson}
+                  printLabel="Print"
+                />
+                <button
+                  onClick={() => {
+                    setShowViewModal(false)
+                    setViewingEntry(null)
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-6">

@@ -3,15 +3,25 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { Plus, Eye, Search, X, PlusCircle, Trash2, Send, CheckCircle, Edit2, FileText, Printer } from 'lucide-react'
+import { Plus, Eye, Search, X, PlusCircle, Trash2, Send, CheckCircle, Edit2, FileText } from 'lucide-react'
+import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDate, formatDateOnly } from '@/utils/date'
-import { escapeHtml, printDocument } from '@/utils/printDocument'
+import { escapeHtml } from '@/utils/printDocument'
 import type { PrintBranding } from '@/utils/printBranding'
 import { loadPrintBranding } from '@/utils/printBranding'
 import { printListView } from '@/utils/printListView'
+import {
+  buildInvoiceDetailCsv,
+  buildInvoiceListCsv,
+  buildInvoicePrintHtml,
+  downloadCsvFile,
+  downloadJsonFile,
+  invoiceDisplayNumber,
+  printHtmlDocument,
+} from '@/utils/businessDocumentExport'
 import { AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -472,10 +482,15 @@ export default function InvoicesPage() {
     return invoice.invoice_number || ''
   }
 
-  const resolveInvoiceCustomerLabel = (invoice: Invoice): string => {
+  const resolveInvoiceCustomerLabel = (invoice: {
+    customer_name?: string | null
+    customer_id?: number
+  }): string => {
     const fromApi = (invoice.customer_name || '').trim()
     if (fromApi) return fromApi
-    const c = customers.find((x) => x.id === invoice.customer_id)
+    const c = invoice.customer_id
+      ? customers.find((x) => x.id === invoice.customer_id)
+      : undefined
     if (c) {
       const label = (c.display_name || c.company_name || c.customer_number || '').trim()
       if (label) return label
@@ -1033,82 +1048,55 @@ export default function InvoicesPage() {
   const handlePrintViewingInvoice = async () => {
     if (!viewingInvoice) return
     const branding = printBranding ?? (await loadPrintBranding(api))
-    const inv = viewingInvoice
-    const displayNo = getDisplayNumber(inv)
-    const glRef =
-      inv.invoice_number && displayNo !== inv.invoice_number
-        ? ` · GL # ${escapeHtml(inv.invoice_number)}`
-        : ''
-    const cust = resolveInvoiceCustomerLabel(inv)
-    const lines = inv.line_items || []
-    const lineRows = lines
-      .map((item) => {
-        const itemLabel =
-          items.find((i) => i.id === item.item_id)?.name ||
-          item.item_name ||
-          (item.item_id ? `Item #${item.item_id}` : '—')
-        return `<tr>
-          <td>${escapeHtml(String(itemLabel))}</td>
-          <td>${escapeHtml(item.description || '—')}</td>
-          <td class="right">${escapeHtml(formatNumber(Number(item.quantity)))}</td>
-          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(item.unit_price || 0)))}</td>
-          <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(item.amount || 0)))}</td>
-        </tr>`
-      })
-      .join('')
-    const disc =
-      inv.discount_amount && inv.discount_amount > 0
-        ? `<tr><td colspan="4" class="right">Discount</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-            formatNumber(Number(inv.discount_amount))
-          )}</td></tr>`
-        : ''
-    const paidBlock =
-      inv.amount_paid != null && Number(inv.amount_paid) > 0
-        ? `<p><strong>Amount paid:</strong> ${escapeHtml(currencySymbol)}${escapeHtml(
-            formatNumber(Number(inv.amount_paid))
-          )} &nbsp;|&nbsp; <strong>Balance due:</strong> ${escapeHtml(currencySymbol)}${escapeHtml(
-            formatNumber(Number(inv.balance_due || 0))
-          )}</p>`
-        : ''
-    const bodyHtml = `
-      <h1>Invoice / receipt</h1>
-      <div class="period">
-        <strong>Invoice #</strong> ${escapeHtml(displayNo)}${glRef}<br/>
-        <strong>Status:</strong> ${escapeHtml(inv.status)} · <strong>Date:</strong> ${escapeHtml(
-      formatDateOnly(inv.invoice_date)
-    )}${inv.due_date ? ` · <strong>Due:</strong> ${escapeHtml(formatDateOnly(inv.due_date))}` : ''}
-        <br/>Printed ${escapeHtml(formatDate(new Date(), true))}
-      </div>
-      <p><strong>Bill to:</strong> ${escapeHtml(cust)}</p>
-      <table>
-        <thead><tr><th>Item</th><th>Description</th><th class="right">Qty</th><th class="right">Unit</th><th class="right">Amount</th></tr></thead>
-        <tbody>
-          ${
-            lineRows ||
-            '<tr><td colspan="5" style="text-align:center;color:#6b7280">No line items</td></tr>'
-          }
-        </tbody>
-        <tfoot>
-          <tr><td colspan="4" class="right">Subtotal</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-      formatNumber(Number(inv.subtotal || 0))
-    )}</td></tr>
-          <tr><td colspan="4" class="right">Tax</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
-      formatNumber(Number(inv.tax_amount || 0))
-    )}</td></tr>
-          ${disc}
-          <tr class="row-total"><td colspan="4" class="right">Total</td><td class="right">${escapeHtml(
-            currencySymbol
-          )}${escapeHtml(formatNumber(Number(inv.total_amount || 0)))}</td></tr>
-        </tfoot>
-      </table>
-      ${paidBlock}
-    `
-    const ok = printDocument({
-      title: `Invoice ${displayNo}`,
-      branding,
-      bodyHtml,
+    const bodyHtml = buildInvoicePrintHtml(viewingInvoice, {
+      currencySymbol,
+      formatDateOnly,
+      formatDateTime: (d) => formatDate(d, true),
+      resolveCustomer: resolveInvoiceCustomerLabel,
+      resolveItemLabel: (item) =>
+        items.find((i) => i.id === item.item_id)?.name ||
+        item.item_name ||
+        (item.item_id ? `Item #${item.item_id}` : '—'),
+      formatNumber,
     })
+    const ok = await printHtmlDocument(
+      `Invoice ${invoiceDisplayNumber(viewingInvoice)}`,
+      bodyHtml,
+      branding,
+    )
     if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
+  }
+
+  const handleDownloadInvoiceListCsv = () => {
+    if (filteredInvoices.length === 0) {
+      toast.error('No invoices to export.')
+      return
+    }
+    downloadCsvFile(
+      `invoices_${new Date().toISOString().slice(0, 10)}.csv`,
+      buildInvoiceListCsv(filteredInvoices, {
+        formatDate: formatDateOnly,
+        resolveCustomer: resolveInvoiceCustomerLabel,
+      }),
+    )
+  }
+
+  const handleDownloadInvoiceListJson = () => {
+    if (filteredInvoices.length === 0) {
+      toast.error('No invoices to export.')
+      return
+    }
+    downloadJsonFile(`invoices_${new Date().toISOString().slice(0, 10)}.json`, filteredInvoices)
+  }
+
+  const handleDownloadViewingInvoiceCsv = () => {
+    if (!viewingInvoice) return
+    downloadCsvFile(`invoice_${invoiceDisplayNumber(viewingInvoice)}.csv`, buildInvoiceDetailCsv(viewingInvoice, currencySymbol))
+  }
+
+  const handleDownloadViewingInvoiceJson = () => {
+    if (!viewingInvoice) return
+    downloadJsonFile(`invoice_${invoiceDisplayNumber(viewingInvoice)}.json`, viewingInvoice)
   }
 
   return (
@@ -1156,15 +1144,13 @@ export default function InvoicesPage() {
             </select>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handlePrintInvoiceList()}
+            <DocumentExportButtons
+              onPrint={() => void handlePrintInvoiceList()}
+              onDownloadCsv={handleDownloadInvoiceListCsv}
+              onDownloadJson={handleDownloadInvoiceListJson}
               disabled={filteredInvoices.length === 0}
-              className="flex items-center space-x-2 px-4 py-2.5 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50 transition-all shadow-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Printer className="h-5 w-5" />
-              <span>Print list</span>
-            </button>
+              printLabel="Print list"
+            />
             <button
               onClick={handleOpenModal}
               className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg font-medium"
@@ -1641,14 +1627,12 @@ export default function InvoicesPage() {
               <div className="flex justify-between items-start gap-3 mb-6 print:hidden">
                 <h2 className="text-2xl font-bold">Invoice Details</h2>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handlePrintViewingInvoice()}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
-                  >
-                    <Printer className="h-4 w-4" />
-                    Print
-                  </button>
+                  <DocumentExportButtons
+                    size="compact"
+                    onPrint={() => void handlePrintViewingInvoice()}
+                    onDownloadCsv={handleDownloadViewingInvoiceCsv}
+                    onDownloadJson={handleDownloadViewingInvoiceJson}
+                  />
                   <button
                     onClick={handleCloseViewModal}
                     className="text-gray-400 hover:text-gray-600 p-1"

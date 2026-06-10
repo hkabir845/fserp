@@ -1240,3 +1240,38 @@ def item_stock_ledger(request, item_id: int):
             "rows": visible,
         }
     )
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
+@require_GET
+def item_vendor_labels(request):
+    """
+    Distinct vendor names per item from posted/open vendor bill lines (historical suppliers).
+    Used for product catalog export/print — items do not store a default supplier field.
+    """
+    from collections import defaultdict
+
+    by_item: dict[int, set[str]] = defaultdict(set)
+    rows = (
+        BillLine.objects.filter(
+            bill__company_id=request.company_id,
+            item_id__isnull=False,
+        )
+        .select_related("bill__vendor")
+        .values_list(
+            "item_id",
+            "bill__vendor__display_name",
+            "bill__vendor__company_name",
+        )
+        .distinct()
+    )
+    for item_id, display_name, company_name in rows:
+        if item_id is None:
+            continue
+        name = (display_name or company_name or "").strip()
+        if name:
+            by_item[int(item_id)].add(name)
+    labels = {str(k): "; ".join(sorted(v)) for k, v in by_item.items()}
+    return JsonResponse({"labels": labels})

@@ -24,8 +24,18 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import EditPaymentModal from '../EditPaymentModal'
 import { confirmDeletePaymentDialog, deletePaymentRequest } from '../paymentMutations'
+import { escapeHtml } from '@/utils/printDocument'
+import { printListView } from '@/utils/printListView'
+import { formatDate } from '@/utils/date'
+import {
+  buildPaymentListCsv,
+  downloadCsvFile,
+  downloadJsonFile,
+  type PaymentExport,
+} from '@/utils/businessDocumentExport'
 
 interface AllocationRow {
   invoice_id?: number | null
@@ -198,6 +208,68 @@ export default function AllPaymentsPage() {
     }
   }
 
+  const partyLabelForPayment = (p: PaymentRow) => {
+    if (p.payment_type === 'received') return p.customer_name || '—'
+    return p.vendor_name || '—'
+  }
+
+  const handlePrintRegister = async () => {
+    if (payments.length === 0) {
+      window.alert('Nothing to print for the current filter.')
+      return
+    }
+    const sub = [
+      typeFilter !== 'all' ? `Type: ${typeFilter}` : '',
+      startDate && `From ${startDate}`,
+      endDate && `To ${endDate}`,
+      debouncedQ && `Search: ${debouncedQ}`,
+      `Generated ${formatDate(new Date(), true)}`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    const rows = payments
+      .map((p) => {
+        const type = p.payment_type === 'received' ? 'Receipt' : 'Disbursement'
+        return `<tr>
+          <td>${escapeHtml(p.payment_number)}</td>
+          <td>${escapeHtml(type)}</td>
+          <td>${escapeHtml(formatDateOnly(p.payment_date))}</td>
+          <td>${escapeHtml(partyLabelForPayment(p))}</td>
+          <td>${escapeHtml((p.payment_method || 'unspecified').replace(/_/g, ' '))}</td>
+          <td class="right">${escapeHtml(formatMoney(currencySymbol, parseAmount(p.amount)))}</td>
+        </tr>`
+      })
+      .join('')
+    const ok = await printListView({
+      title: 'Payment register',
+      subtitle: sub,
+      tableHtml: `<table><thead><tr><th>Payment #</th><th>Type</th><th>Date</th><th>Party</th><th>Method</th><th class="right">Amount</th></tr></thead><tbody>${rows}</tbody></table>`,
+    })
+    if (!ok) window.alert('Printing was blocked. Allow pop-ups for this site.')
+  }
+
+  const handleDownloadRegisterCsv = () => {
+    if (payments.length === 0) {
+      window.alert('Nothing to export for the current filter.')
+      return
+    }
+    let out = buildPaymentListCsv(payments as PaymentExport[], {
+      formatDate: formatDateOnly,
+      partyLabel: (p) => partyLabelForPayment(p as PaymentRow),
+      typeLabel: 'Register',
+    })
+    out = `Type filter,${typeFilter}\n${out}`
+    downloadCsvFile(`payment_register_${new Date().toISOString().slice(0, 10)}.csv`, out)
+  }
+
+  const handleDownloadRegisterJson = () => {
+    if (payments.length === 0) {
+      window.alert('Nothing to export for the current filter.')
+      return
+    }
+    downloadJsonFile(`payment_register_${new Date().toISOString().slice(0, 10)}.json`, payments)
+  }
+
   if (loading && payments.length === 0 && !listError) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
@@ -229,6 +301,12 @@ export default function AllPaymentsPage() {
                   (accounts payable), consistent with a standard general-ledger cash book.
                 </p>
               </div>
+              <DocumentExportButtons
+                onPrint={() => void handlePrintRegister()}
+                onDownloadCsv={handleDownloadRegisterCsv}
+                onDownloadJson={handleDownloadRegisterJson}
+                printLabel="Print register"
+              />
             </div>
           </div>
 

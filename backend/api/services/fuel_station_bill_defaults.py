@@ -33,7 +33,7 @@ def apply_fuel_station_category_to_bill_line_row(company_id: int, row: dict) -> 
         if row.get("fuel_station_expense_category") not in (None, ""):
             return "fuel_station_expense_category cannot be set when aquaculture_pond_id is set"
         row["fuel_station_expense_category"] = ""
-        row["tenant_reporting_category_id"] = None
+        # Pond lines may carry aquaculture tenant_reporting_category_id (set earlier in parsing).
         return None
 
     raw_cat = row.get("fuel_station_expense_category")

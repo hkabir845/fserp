@@ -3,14 +3,19 @@
 import Link from 'next/link'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Archive, RefreshCw } from 'lucide-react'
+import { Archive, Download, Printer, RefreshCw } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { parseArchivePlSearchParams } from '@/lib/aquacultureDataBankArchive'
 import { extractErrorMessage } from '@/utils/errorHandler'
-import { formatDateOnly } from '@/utils/date'
+import { formatDate, formatDateOnly } from '@/utils/date'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { escapeHtml, printDocument } from '@/utils/printDocument'
+import {
+  buildAquaculturePlManagementCsv,
+  buildAquaculturePlManagementPrintHtml,
+} from '@/utils/reportExportHelpers'
 import {
   COA_AQ_PROFIT_CLEARING,
   COA_BANK_OP,
@@ -453,6 +458,75 @@ export function AquaculturePlManagementPanel({
   const expensesByPond = data?.expenses_by_pond ?? []
   const expensesByCategory = data?.expenses_by_category ?? []
 
+  const exportPayload = useMemo(
+    () => ({
+      plScope: plScope === 'ponds' ? 'Ponds (management P&L)' : 'Fuel & shop (GL by site)',
+      start: plScope === 'ponds' ? start : fuelData?.period?.start_date ?? start,
+      end: plScope === 'ponds' ? end : fuelData?.period?.end_date ?? end,
+      ponds: data?.ponds as unknown as Record<string, unknown>[] | undefined,
+      totals: data?.totals as unknown as Record<string, unknown> | undefined,
+      expensesByCategory: expensesByCategory as unknown as Record<string, unknown>[],
+      fuelIncomeStatement: plScope === 'fuel_site' ? (fuelData as unknown as Record<string, unknown>) : null,
+    }),
+    [plScope, start, end, data, expensesByCategory, fuelData],
+  )
+
+  const downloadPlManagement = useCallback(
+    (format: 'json' | 'csv') => {
+      const fileName = `Aquaculture_PL_Management_${exportPayload.end}`
+      if (format === 'json') {
+        const blob = new Blob(
+          [
+            JSON.stringify(
+              {
+                scope: exportPayload.plScope,
+                period: { start: exportPayload.start, end: exportPayload.end },
+                ponds: data,
+                fuel_site_income_statement: fuelData,
+                profit_transfers: transfers,
+              },
+              null,
+              2,
+            ),
+          ],
+          { type: 'application/json' },
+        )
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${fileName}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+        return
+      }
+      const csv = buildAquaculturePlManagementCsv(exportPayload)
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${fileName}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    },
+    [data, exportPayload, fuelData, transfers],
+  )
+
+  const printPlManagement = useCallback(() => {
+    const bodyHtml = buildAquaculturePlManagementPrintHtml(exportPayload)
+    const ok = printDocument({
+      title: 'Aquaculture P&L management',
+      branding: { companyName: '', companyAddress: undefined, stationName: '' },
+      bodyHtml: `
+        <h1>Aquaculture P&amp;L management</h1>
+        <div class="period">
+          <strong>Generated:</strong> ${escapeHtml(formatDate(new Date(), true))}
+        </div>
+        ${bodyHtml || '<p>No data loaded — run the report first.</p>'}
+      `,
+    })
+    if (!ok) toast.error('Printing was blocked. Allow pop-ups for this site and try again.')
+  }, [exportPayload, toast])
+
   const fmtIsMoney = (s: string | undefined) => {
     const n = Number(String(s ?? '').replace(/,/g, ''))
     if (!Number.isFinite(n)) return `${sym}0.00`
@@ -513,6 +587,44 @@ export function AquaculturePlManagementPanel({
             >
               Back to Data Bank
             </Link>
+          </div>
+        </div>
+      ) : null}
+
+      {embedInReports ? (
+        <div className="mb-2 flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">Aquaculture P&amp;L management</h2>
+            <p className="mt-1 text-sm text-slate-500">Generated on {formatDate(new Date())}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={printPlManagement}
+              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+              title="Print report"
+            >
+              <Printer className="h-4 w-4" />
+              Print
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadPlManagement('csv')}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              title="Export as CSV"
+            >
+              <Download className="h-4 w-4" />
+              CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadPlManagement('json')}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+              title="Export as JSON"
+            >
+              <Download className="h-4 w-4" />
+              JSON
+            </button>
           </div>
         </div>
       ) : null}

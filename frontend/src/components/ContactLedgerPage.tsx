@@ -8,9 +8,11 @@ import { CompanyProvider } from '@/contexts/CompanyContext'
 import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDate } from '@/utils/date'
-import { printLedgerStatement } from '@/utils/printDocument'
+import { printLedgerStatement, buildLedgerStatementCsv } from '@/utils/printDocument'
 import { loadPrintBranding } from '@/utils/printBranding'
-import { ArrowLeft, BookOpen, Printer, RefreshCw } from 'lucide-react'
+import { downloadCsvFile, downloadJsonFile } from '@/utils/businessDocumentExport'
+import { DocumentExportButtons } from '@/components/DocumentExportButtons'
+import { ArrowLeft, BookOpen, RefreshCw } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 
 export type LedgerEntity = 'customers' | 'vendors' | 'employees'
@@ -142,6 +144,31 @@ export default function ContactLedgerPage({
       }
     )
     if (!ok) toast.error('Allow pop-ups in your browser to print.')
+  }
+
+  const ledgerExportInput = () => {
+    if (!data) return null
+    return {
+      display_name: data.display_name,
+      period_start_balance: data.period_start_balance,
+      closing_balance: data.closing_balance,
+      start_date: data.start_date ?? null,
+      end_date: data.end_date ?? null,
+      transactions: data.transactions,
+    }
+  }
+
+  const handleDownloadLedgerCsv = () => {
+    const input = ledgerExportInput()
+    if (!input) return
+    const slug = data!.display_name.replace(/[^\w.-]+/g, '_').slice(0, 40)
+    downloadCsvFile(`ledger_${slug}_${new Date().toISOString().slice(0, 10)}.csv`, buildLedgerStatementCsv(input))
+  }
+
+  const handleDownloadLedgerJson = () => {
+    if (!data) return
+    const slug = data.display_name.replace(/[^\w.-]+/g, '_').slice(0, 40)
+    downloadJsonFile(`ledger_${slug}_${new Date().toISOString().slice(0, 10)}.json`, data)
   }
 
   const submitEntry = async (e: React.FormEvent) => {
@@ -299,14 +326,13 @@ export default function ContactLedgerPage({
                   >
                     Clear dates
                   </button>
-                  <button
-                    type="button"
-                    onClick={handlePrintLedger}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50"
-                  >
-                    <Printer className="h-4 w-4" />
-                    Print statement
-                  </button>
+                  <DocumentExportButtons
+                    size="compact"
+                    onPrint={() => void handlePrintLedger()}
+                    onDownloadCsv={handleDownloadLedgerCsv}
+                    onDownloadJson={handleDownloadLedgerJson}
+                    printLabel="Print statement"
+                  />
                 </div>
               </div>
 

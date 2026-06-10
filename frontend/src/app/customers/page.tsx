@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { CompanyProvider } from '@/contexts/CompanyContext'
-import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, Users, UserCheck, DollarSign, X, Mail, Phone, ArrowUpDown, ArrowUp, ArrowDown, Download, BookOpen, Building2 } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, Users, UserCheck, DollarSign, X, Mail, Phone, ArrowUpDown, ArrowUp, ArrowDown, BookOpen, Building2 } from 'lucide-react'
+import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api, { getApiDocsUrl, getBackendOrigin } from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
@@ -15,6 +16,12 @@ import { isConnectionError } from '@/utils/connectionError'
 import { formatJsonApiError } from '@/utils/apiErrors'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
+import { formatDate } from '@/utils/date'
+import {
+  buildCustomerListCsv,
+} from '@/utils/businessDocumentExport'
+import { buildContactListPrintHtml } from '@/utils/listExportHelpers'
+import { usePagedListExport } from '@/hooks/usePagedListExport'
 
 interface Customer {
   id: number
@@ -497,14 +504,48 @@ export default function CustomersPage() {
       : <ArrowDown className="h-4 w-4 ml-1 text-blue-600" />
   }
 
-  const escapeCsvField = (val: string | number | null | undefined): string => {
-    if (val === null || val === undefined) return ''
-    const s = String(val)
-    if (/[",\n\r]/.test(s)) {
-      return `"${s.replace(/"/g, '""')}"`
-    }
-    return s
+  const fetchCustomersForExport = async (): Promise<Customer[]> => {
+    const res = await api.get('/customers/', {
+      params: {
+        paged: '1',
+        skip: '0',
+        limit: String(REFERENCE_FETCH_LIMIT),
+        ...(debouncedSearch.trim() ? { q: debouncedSearch.trim() } : {}),
+        sort: sortField || 'id',
+        dir: sortDirection,
+      },
+    })
+    const data = res.data
+    if (isOffsetPagedPayload(data)) return data.results as Customer[]
+    return Array.isArray(data) ? (data as Customer[]) : []
   }
+
+  const exportSubtitle = () =>
+    [
+      debouncedSearch.trim() && `Search: ${debouncedSearch.trim()}`,
+      sortField && `Sort: ${String(sortField)} (${sortDirection})`,
+      `Generated ${formatDate(new Date(), true)}`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+
+  const { handlePrint: handlePrintList, handleDownloadCsv: handleDownloadListCsv, handleDownloadJson: handleDownloadListJson } =
+    usePagedListExport({
+      fetchRows: fetchCustomersForExport,
+      totalCount,
+      labels: {
+        entity: 'customer',
+        entities: 'customers',
+        emptyPrint: 'No customers to print for the current filter.',
+        emptyExport: 'No customers to export.',
+      },
+      csvFilenamePrefix: 'customers',
+      subtitle: exportSubtitle,
+      printTitle: 'Customer list',
+      buildPrintContent: (rows, cappedTotal) =>
+        buildContactListPrintHtml('customer', rows, currencySymbol, cappedTotal),
+      buildCsv: buildCustomerListCsv,
+    })
 
   return (
     <CompanyProvider>
@@ -514,18 +555,26 @@ export default function CustomersPage() {
           <div className="app-scroll-pad">
             {/* Header */}
             <div className="mb-8">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h1 className="text-3xl font-bold text-gray-900 mb-2">Customers</h1>
                   <p className="text-gray-600">Manage your customer accounts and track receivables</p>
                 </div>
-                <button
-                  onClick={() => setShowDebug(!showDebug)}
-                  className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-                  title="Toggle debug info"
-                >
-                  {showDebug ? 'Hide' : 'Show'} Debug
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <DocumentExportButtons
+                    onPrint={() => void handlePrintList()}
+                    onDownloadCsv={() => void handleDownloadListCsv()}
+                    onDownloadJson={() => void handleDownloadListJson()}
+                    printLabel="Print list"
+                  />
+                  <button
+                    onClick={() => setShowDebug(!showDebug)}
+                    className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    title="Toggle debug info"
+                  >
+                    {showDebug ? 'Hide' : 'Show'} Debug
+                  </button>
+                </div>
               </div>
               {showDebug && (
                 <div className="mt-4 p-4 bg-gray-100 rounded-lg text-xs font-mono">
@@ -944,51 +993,6 @@ export default function CustomersPage() {
                           {sortDirection === 'asc' ? 'ascending' : 'descending'})
                         </p>
                       )}
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const { data } = await api.get<Customer[]>('/customers/', {
-                              params: {
-                                skip: 0,
-                                limit: REFERENCE_FETCH_LIMIT,
-                                ...(debouncedSearch.trim() ? { q: debouncedSearch.trim() } : {}),
-                                sort: sortField || 'id',
-                                dir: sortDirection,
-                              },
-                            })
-                            const rows = Array.isArray(data) ? data : []
-                            const csv = [
-                              ['Customer #', 'Name', 'Default site', 'Email', 'Phone', 'Balance', 'Status'].join(','),
-                              ...rows.map((c) =>
-                                [
-                                  escapeCsvField(c.customer_number),
-                                  escapeCsvField(c.display_name),
-                                  escapeCsvField(c.default_station_name),
-                                  escapeCsvField(c.email),
-                                  escapeCsvField(c.phone),
-                                  c.current_balance ?? 0,
-                                  c.is_active ? 'Active' : 'Inactive',
-                                ].join(','),
-                              ),
-                            ].join('\n')
-                            const blob = new Blob([csv], { type: 'text/csv' })
-                            const url = window.URL.createObjectURL(blob)
-                            const a = document.createElement('a')
-                            a.href = url
-                            a.download = `customers-${new Date().toISOString().split('T')[0]}.csv`
-                            a.click()
-                            window.URL.revokeObjectURL(url)
-                            toast.success('Customers exported successfully!')
-                          } catch (e) {
-                            toast.error(extractErrorMessage(e, 'Export failed'))
-                          }
-                        }}
-                        className="ml-auto flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                      >
-                        <Download className="h-4 w-4" />
-                        <span>Export CSV</span>
-                      </button>
                     </div>
                   </div>
                 )}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { productOptionLabel } from '@/lib/aquacultureMedicineUnits'
+import { safeSelectInput } from '@/utils/safeSelectInput'
 import { isBuiltinMedicineSku } from './medicineUtils'
 
 export type MedicineCatalogItem = {
@@ -155,10 +156,10 @@ export function MedicineProductSelect({
           placeholder={placeholder}
           value={inputDisplay}
           className={`${className} pr-8`}
-          onFocus={() => {
+          onFocus={(e) => {
             setOpen(true)
             setQuery(selectedLabel)
-            requestAnimationFrame(() => inputRef.current?.select())
+            safeSelectInput(e.currentTarget)
           }}
           onChange={(e) => {
             setOpen(true)

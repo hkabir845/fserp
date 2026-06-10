@@ -18,15 +18,23 @@ import {
   Info,
 } from 'lucide-react'
 import { vendorUsualReceivingLabel } from '@/lib/vendorReceivingDefaults'
+import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin } from '@/lib/api'
-import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
+import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { isConnectionError } from '@/utils/connectionError'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { formatDate } from '@/utils/date'
+import {
+  buildVendorListCsv,
+  type VendorContactExport,
+} from '@/utils/businessDocumentExport'
+import { buildContactListPrintHtml } from '@/utils/listExportHelpers'
+import { usePagedListExport } from '@/hooks/usePagedListExport'
 import {
   suggestVendorDefaultExpenseAccountId,
   templateVendorDefaultExpenseOptionLabel,
@@ -495,20 +503,82 @@ export default function VendorsPage() {
     return label || '—'
   }
 
+  const fetchVendorsForExport = async (): Promise<Vendor[]> => {
+    const res = await api.get('/vendors/', {
+      params: {
+        paged: '1',
+        skip: '0',
+        limit: String(REFERENCE_FETCH_LIMIT),
+        ...(debouncedSearch.trim() ? { q: debouncedSearch.trim() } : {}),
+        sort: 'id',
+        dir: 'asc',
+      },
+    })
+    const data = res.data
+    if (isOffsetPagedPayload(data)) return data.results as Vendor[]
+    return Array.isArray(data) ? (data as Vendor[]) : []
+  }
+
+  const vendorsAsExport = (rows: Vendor[]): VendorContactExport[] =>
+    rows.map((v) => ({
+      vendor_number: v.vendor_number,
+      company_name: v.company_name,
+      display_name: v.display_name,
+      usual_location: defaultReceivingLabel(v),
+      email: v.email,
+      phone: v.phone,
+      current_balance: v.current_balance,
+      is_active: v.is_active,
+    }))
+
+  const exportSubtitle = () =>
+    [
+      debouncedSearch.trim() && `Search: ${debouncedSearch.trim()}`,
+      `Generated ${formatDate(new Date(), true)}`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+
+  const { handlePrint: handlePrintList, handleDownloadCsv: handleDownloadListCsv, handleDownloadJson: handleDownloadListJson } =
+    usePagedListExport({
+      fetchRows: fetchVendorsForExport,
+      totalCount,
+      labels: {
+        entity: 'vendor',
+        entities: 'vendors',
+        emptyPrint: 'No vendors to print for the current filter.',
+        emptyExport: 'No vendors to export.',
+      },
+      csvFilenamePrefix: 'vendors',
+      subtitle: exportSubtitle,
+      printTitle: 'Vendor list',
+      buildPrintContent: (rows, cappedTotal) =>
+        buildContactListPrintHtml('vendor', vendorsAsExport(rows), currencySymbol, cappedTotal),
+      buildCsv: (rows) => buildVendorListCsv(vendorsAsExport(rows)),
+    })
+
   return (
     <CompanyProvider>
       <div className="flex h-screen bg-gray-100 page-with-sidebar">
         <Sidebar />
         <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Vendors</h1>
-          <p className="text-gray-600 mt-1">
-            One record per supplier (payables). Where each delivery goes is chosen on{' '}
-            <Link href="/bills" className="text-blue-600 hover:underline">
-              vendor bills
-            </Link>
-            , not by duplicating vendors per pond or site.
-          </p>
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Vendors</h1>
+            <p className="text-gray-600 mt-1">
+              One record per supplier (payables). Where each delivery goes is chosen on{' '}
+              <Link href="/bills" className="text-blue-600 hover:underline">
+                vendor bills
+              </Link>
+              , not by duplicating vendors per pond or site.
+            </p>
+          </div>
+          <DocumentExportButtons
+            onPrint={() => void handlePrintList()}
+            onDownloadCsv={() => void handleDownloadListCsv()}
+            onDownloadJson={() => void handleDownloadListJson()}
+            printLabel="Print list"
+          />
         </div>
 
         <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950">

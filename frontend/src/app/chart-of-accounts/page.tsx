@@ -11,8 +11,9 @@ import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { isConnectionError, safeLogError } from '@/utils/connectionError'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDate, formatDateOnly } from '@/utils/date'
-import { printLedgerStatement, type LedgerStatementPrintInput } from '@/utils/printDocument'
+import { printLedgerStatement, type LedgerStatementPrintInput, buildLedgerStatementCsv } from '@/utils/printDocument'
 import { loadPrintBranding, type PrintBranding } from '@/utils/printBranding'
+import { downloadCsvFile } from '@/utils/businessDocumentExport'
 import { reportScopeQueryParams } from '@/app/reports/reportSiteScope'
 
 interface AccountUsage {
@@ -868,6 +869,16 @@ export default function ChartOfAccountsPage() {
       branding: branding ?? undefined,
     })
     if (!ok) toast.error('Allow pop-ups in your browser to print.')
+  }
+
+  const handleDownloadAccountStatementCsv = () => {
+    if (!statement) return
+    const data = accountStatementToLedgerPrintInput(statement)
+    const code = statement.account.account_code || 'account'
+    downloadCsvFile(
+      `gl_statement_${code}_${new Date().toISOString().slice(0, 10)}.csv`,
+      buildLedgerStatementCsv(data),
+    )
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -1731,6 +1742,13 @@ export default function ChartOfAccountsPage() {
                 >
                   <Printer className="h-4 w-4" />
                   Print
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadAccountStatementCsv}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  CSV
                 </button>
                 <button
                   type="button"

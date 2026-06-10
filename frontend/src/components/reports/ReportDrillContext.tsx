@@ -1784,7 +1784,7 @@ function LoanStatementPanel({
                 <td className="px-3 py-2">{String(row.type || row.description || '—')}</td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   <DrillAmount
-                    amount={row.amount ?? 0}
+                    amount={Number(row.amount ?? 0)}
                     drill={
                       row.journal_entry_id
                         ? {
@@ -1867,7 +1867,7 @@ function ScopedPlPanel({
           <div className="flex justify-between border-b bg-gray-50 px-4 py-2">
             <span className="font-semibold">{title}</span>
             <DrillAmount
-              amount={payload?.total ?? 0}
+              amount={Number(payload?.total ?? 0)}
               drill={null}
               disabled
             />
@@ -1879,7 +1879,7 @@ function ScopedPlPanel({
                   {String(acc.account_code || '')} {String(acc.account_name || '')}
                 </span>
                 <DrillAmount
-                  amount={acc.balance ?? 0}
+                  amount={Number(acc.balance ?? 0)}
                   drill={{
                     kind: 'gl-account',
                     accountId: Number(acc.account_id),

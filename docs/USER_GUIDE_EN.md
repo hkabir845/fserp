@@ -308,9 +308,66 @@ Use **Companies** to enable aquaculture license and manage tenants.
 
 ## 19. Backup and restore
 
-**Backup** (`/backup`) — download tenant export; store securely.
+**Where:** **Management → Backup & Restore** (`/backup`) for company owners; **SaaS → Backup** (`/admin/backup`) for super admins acting on any tenant.
 
-**Restore** — replaces tenant ERP data; confirm with typed acknowledgment. Large restores may take several minutes.
+**Who:** Users with **`app.backup`** permission (typically Admin). Super admins are redirected from `/backup` to `/admin/backup`.
+
+### What is included (schema v2)
+
+Per-tenant JSON export of **all company-scoped ERP data** (70+ model types), including:
+
+- General ledger: chart of accounts, journal entries (with **station** and **pond** tags on lines), bills, invoices, payments
+- Fuel: stations, tanks, islands, dispensers, meters, nozzles, shift sessions, tank dips
+- Aquaculture: ponds, cycles, transfers, sales, mortality ledger, landlords, Data Bank closes, feeding advice
+- Inventory: item master, station bins, pond warehouse stock, transfers, adjustments
+- Fixed assets, loans, payroll, employees, customers, vendors, reporting categories
+- Users, roles, organization (portal routing)
+
+**Intentionally excluded:** password-reset tokens (secrets); backup/restore audit rows (compliance history must not be overwritten by an old bundle).
+
+Export **fails** if any company table contains rows that would be omitted from the file — incomplete backups are blocked by design.
+
+This is **not** a substitute for **PostgreSQL / host-level database backups**. Run both: application JSON for tenant portability and DR drills, plus scheduled DB dumps for infrastructure failure.
+
+### Download backup
+
+1. Open `/backup` (confirm the correct company is selected in the header when using multiple contexts).
+2. Click **Download backup** → `fserp_company_{id}_backup.json`.
+3. Large tenants may take several minutes; do not close the tab.
+4. Store off-site: encrypted storage, dated filename, retention policy (e.g. monthly + year-end).
+
+### Restore (destructive)
+
+Restore **deletes all current data** for that company and reloads from the file. The backup **company_id must match** the target tenant.
+
+1. Take a **fresh backup** of current data first.
+2. Type the confirmation phrase exactly: **`DELETE_ALL_TENANT_DATA`**.
+3. Choose the backup file and confirm the browser dialog.
+4. Reload or log in again when complete.
+
+**Legacy:** schema v1 backups still restore but may omit aquaculture and inventory modules (response includes a warning).
+
+**Safety net:** if the server sets `TENANT_SAFETY_BACKUP_DIR`, a pre-restore snapshot of the current tenant may be written on disk before overwrite (shown in Activity history).
+
+### Activity history
+
+The page lists recent backup and restore operations: timestamp, actor, success/failure, record counts, errors, and safety snapshot paths.
+
+### Professional practice
+
+| When to backup | Why |
+|----------------|-----|
+| Month-end close | Rollback point after reconcile |
+| Before upgrades / migrations | Recover from failed deploy |
+| Before bulk edits or restore tests | Safety net |
+| Auditor / year-end archive | Off-site retention |
+
+| When to restore | Why |
+|-----------------|-----|
+| Staging environment | **Restore drill** (recommended quarterly): verify trial balance and entity P&L |
+| Verified corruption on production | Last known-good backup only — never experiment on live |
+
+**Do not** restore a backup from company A into company B. **Do not** use restore as a casual “undo” — use document void/reversal workflows instead.
 
 ---
 

@@ -495,29 +495,29 @@ export function renderExtraFinancialReport(
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-white border rounded-lg p-4 shadow-sm">
             <p className="text-xs text-gray-500 uppercase">Net income (P&L)</p>
-            <p className="text-xl font-bold mt-1"><ReportAmountCell amount={Number(op.net_income ?? 0)} row={op} field="net_income" scope={ctx.drillScope?.() ?? {}} /></p>
+            <p className="text-xl font-bold mt-1"><ReportAmountCell amount={Number(op.net_income ?? 0)} row={op} field="net_income" scope={ctx.drillScope ?? {}} /></p>
           </div>
           <div className="bg-white border rounded-lg p-4 shadow-sm">
             <p className="text-xs text-gray-500 uppercase">Customer payments received</p>
-            <p className="text-xl font-bold mt-1 text-green-800"><ReportAmountCell amount={Number(op.customer_payments_received ?? 0)} row={op} field="customer_payments_received" scope={ctx.drillScope?.() ?? {}} /></p>
+            <p className="text-xl font-bold mt-1 text-green-800"><ReportAmountCell amount={Number(op.customer_payments_received ?? 0)} row={op} field="customer_payments_received" scope={ctx.drillScope ?? {}} /></p>
           </div>
           <div className="bg-white border rounded-lg p-4 shadow-sm">
             <p className="text-xs text-gray-500 uppercase">Vendor payments made</p>
-            <p className="text-xl font-bold mt-1 text-red-700"><ReportAmountCell amount={Number(op.vendor_payments_made ?? 0)} row={op} field="vendor_payments_made" scope={ctx.drillScope?.() ?? {}} /></p>
+            <p className="text-xl font-bold mt-1 text-red-700"><ReportAmountCell amount={Number(op.vendor_payments_made ?? 0)} row={op} field="vendor_payments_made" scope={ctx.drillScope ?? {}} /></p>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-200 rounded-lg p-4">
             <p className="text-xs text-blue-700 uppercase">Beginning cash</p>
-            <p className="text-2xl font-bold text-blue-900 mt-1"><ReportAmountCell amount={Number(cash.beginning_cash ?? 0)} row={cash} field="beginning_cash" scope={ctx.drillScope?.() ?? {}} /></p>
+            <p className="text-2xl font-bold text-blue-900 mt-1"><ReportAmountCell amount={Number(cash.beginning_cash ?? 0)} row={cash} field="beginning_cash" scope={ctx.drillScope ?? {}} /></p>
           </div>
           <div className="bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-lg p-4">
             <p className="text-xs text-slate-600 uppercase">Net change in cash</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1"><ReportAmountCell amount={Number(cash.net_change_in_cash ?? 0)} row={cash} field="net_change_in_cash" scope={ctx.drillScope?.() ?? {}} /></p>
+            <p className="text-2xl font-bold text-slate-900 mt-1"><ReportAmountCell amount={Number(cash.net_change_in_cash ?? 0)} row={cash} field="net_change_in_cash" scope={ctx.drillScope ?? {}} /></p>
           </div>
           <div className="bg-gradient-to-br from-green-50 to-white border border-green-200 rounded-lg p-4">
             <p className="text-xs text-green-700 uppercase">Ending cash</p>
-            <p className="text-2xl font-bold text-green-900 mt-1"><ReportAmountCell amount={Number(cash.ending_cash ?? 0)} row={cash} field="ending_cash" scope={ctx.drillScope?.() ?? {}} /></p>
+            <p className="text-2xl font-bold text-green-900 mt-1"><ReportAmountCell amount={Number(cash.ending_cash ?? 0)} row={cash} field="ending_cash" scope={ctx.drillScope ?? {}} /></p>
           </div>
         </div>
 
@@ -622,23 +622,23 @@ export function renderExtraFinancialReport(
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
               <div>
                 <p className="text-gray-500">Income</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.income ?? 0)} row={{ _drill: { income: { kind: 'scoped-pl', label: 'Company income' } } }} field="income" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.income ?? 0)} row={{ _drill: { income: { kind: 'scoped-pl', label: 'Company income' } } }} field="income" scope={ctx.drillScope ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">COGS</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.cost_of_goods_sold ?? 0)} row={{ _drill: { cost_of_goods_sold: { kind: 'scoped-pl', label: 'Company COGS' } } }} field="cost_of_goods_sold" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.cost_of_goods_sold ?? 0)} row={{ _drill: { cost_of_goods_sold: { kind: 'scoped-pl', label: 'Company COGS' } } }} field="cost_of_goods_sold" scope={ctx.drillScope ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Expenses</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.expenses ?? 0)} row={{ _drill: { expenses: { kind: 'scoped-pl', label: 'Company expenses' } } }} field="expenses" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.expenses ?? 0)} row={{ _drill: { expenses: { kind: 'scoped-pl', label: 'Company expenses' } } }} field="expenses" scope={ctx.drillScope ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Gross profit</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.gross_profit ?? 0)} row={{ _drill: { gross_profit: { kind: 'scoped-pl', label: 'Company gross profit' } } }} field="gross_profit" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.gross_profit ?? 0)} row={{ _drill: { gross_profit: { kind: 'scoped-pl', label: 'Company gross profit' } } }} field="gross_profit" scope={ctx.drillScope ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Net income</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.net_income ?? 0)} row={{ _drill: { net_income: { kind: 'scoped-pl', label: 'Company net income' } } }} field="net_income" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.net_income ?? 0)} row={{ _drill: { net_income: { kind: 'scoped-pl', label: 'Company net income' } } }} field="net_income" scope={ctx.drillScope ?? {}} /></p>
               </div>
             </div>
           ) : null}
@@ -646,30 +646,30 @@ export function renderExtraFinancialReport(
             <div className={`mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm ${isCombined ? 'border-t border-slate-200 pt-4' : ''}`}>
               <div>
                 <p className="text-gray-500">Assets</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_assets ?? 0)} row={{ _drill: { total_assets: { kind: 'scoped-pl', label: 'Company assets' } } }} field="total_assets" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_assets ?? 0)} row={{ _drill: { total_assets: { kind: 'scoped-pl', label: 'Company assets' } } }} field="total_assets" scope={ctx.drillScope ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Liabilities</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_liabilities ?? 0)} row={{ _drill: { total_liabilities: { kind: 'scoped-pl', label: 'Company liabilities' } } }} field="total_liabilities" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_liabilities ?? 0)} row={{ _drill: { total_liabilities: { kind: 'scoped-pl', label: 'Company liabilities' } } }} field="total_liabilities" scope={ctx.drillScope ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Equity</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_equity ?? 0)} row={{ _drill: { total_equity: { kind: 'scoped-pl', label: 'Company equity' } } }} field="total_equity" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_equity ?? 0)} row={{ _drill: { total_equity: { kind: 'scoped-pl', label: 'Company equity' } } }} field="total_equity" scope={ctx.drillScope ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">L + E</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_liabilities_and_equity ?? 0)} row={{ _drill: { total_liabilities_and_equity: { kind: 'scoped-pl', label: 'Company L + E' } } }} field="total_liabilities_and_equity" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.total_liabilities_and_equity ?? 0)} row={{ _drill: { total_liabilities_and_equity: { kind: 'scoped-pl', label: 'Company L + E' } } }} field="total_liabilities_and_equity" scope={ctx.drillScope ?? {}} /></p>
               </div>
             </div>
           ) : kind === 'tb' ? (
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
               <div>
                 <p className="text-gray-500">TB debits</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.trial_balance_debit ?? 0)} row={{ _drill: { trial_balance_debit: { kind: 'scoped-pl', label: 'Company TB debits' } } }} field="trial_balance_debit" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.trial_balance_debit ?? 0)} row={{ _drill: { trial_balance_debit: { kind: 'scoped-pl', label: 'Company TB debits' } } }} field="trial_balance_debit" scope={ctx.drillScope ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">TB credits</p>
-                <p className="font-semibold"><ReportAmountCell amount={Number(co.trial_balance_credit ?? 0)} row={{ _drill: { trial_balance_credit: { kind: 'scoped-pl', label: 'Company TB credits' } } }} field="trial_balance_credit" scope={ctx.drillScope?.() ?? {}} /></p>
+                <p className="font-semibold"><ReportAmountCell amount={Number(co.trial_balance_credit ?? 0)} row={{ _drill: { trial_balance_credit: { kind: 'scoped-pl', label: 'Company TB credits' } } }} field="trial_balance_credit" scope={ctx.drillScope ?? {}} /></p>
               </div>
               <div>
                 <p className="text-gray-500">Balanced</p>
@@ -710,23 +710,23 @@ export function renderExtraFinancialReport(
           <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
             <div>
               <p className="text-gray-500">Income</p>
-              <p className="font-semibold"><ReportAmountCell amount={Number(co.income ?? 0)} row={{ _drill: { income: { kind: 'scoped-pl', label: 'Company income' } } }} field="income" scope={ctx.drillScope?.() ?? {}} /></p>
+              <p className="font-semibold"><ReportAmountCell amount={Number(co.income ?? 0)} row={{ _drill: { income: { kind: 'scoped-pl', label: 'Company income' } } }} field="income" scope={ctx.drillScope ?? {}} /></p>
             </div>
             <div>
               <p className="text-gray-500">COGS</p>
-              <p className="font-semibold"><ReportAmountCell amount={Number(co.cost_of_goods_sold ?? 0)} row={{ _drill: { cost_of_goods_sold: { kind: 'scoped-pl', label: 'Company COGS' } } }} field="cost_of_goods_sold" scope={ctx.drillScope?.() ?? {}} /></p>
+              <p className="font-semibold"><ReportAmountCell amount={Number(co.cost_of_goods_sold ?? 0)} row={{ _drill: { cost_of_goods_sold: { kind: 'scoped-pl', label: 'Company COGS' } } }} field="cost_of_goods_sold" scope={ctx.drillScope ?? {}} /></p>
             </div>
             <div>
               <p className="text-gray-500">Expenses</p>
-              <p className="font-semibold"><ReportAmountCell amount={Number(co.expenses ?? 0)} row={{ _drill: { expenses: { kind: 'scoped-pl', label: 'Company expenses' } } }} field="expenses" scope={ctx.drillScope?.() ?? {}} /></p>
+              <p className="font-semibold"><ReportAmountCell amount={Number(co.expenses ?? 0)} row={{ _drill: { expenses: { kind: 'scoped-pl', label: 'Company expenses' } } }} field="expenses" scope={ctx.drillScope ?? {}} /></p>
             </div>
             <div>
               <p className="text-gray-500">Gross profit</p>
-              <p className="font-semibold"><ReportAmountCell amount={Number(co.gross_profit ?? 0)} row={{ _drill: { gross_profit: { kind: 'scoped-pl', label: 'Company gross profit' } } }} field="gross_profit" scope={ctx.drillScope?.() ?? {}} /></p>
+              <p className="font-semibold"><ReportAmountCell amount={Number(co.gross_profit ?? 0)} row={{ _drill: { gross_profit: { kind: 'scoped-pl', label: 'Company gross profit' } } }} field="gross_profit" scope={ctx.drillScope ?? {}} /></p>
             </div>
             <div>
               <p className="text-gray-500">Net income</p>
-              <p className="font-semibold"><ReportAmountCell amount={Number(co.net_income ?? 0)} row={{ _drill: { net_income: { kind: 'scoped-pl', label: 'Company net income' } } }} field="net_income" scope={ctx.drillScope?.() ?? {}} /></p>
+              <p className="font-semibold"><ReportAmountCell amount={Number(co.net_income ?? 0)} row={{ _drill: { net_income: { kind: 'scoped-pl', label: 'Company net income' } } }} field="net_income" scope={ctx.drillScope ?? {}} /></p>
             </div>
           </div>
         </div>

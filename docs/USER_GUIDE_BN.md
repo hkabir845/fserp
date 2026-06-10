@@ -493,10 +493,48 @@
 - Bangladesh preset: VAT ১৫%, Supplementary duty (petrol/diesel), AIT।
 - ইনভয়েস/বিল লাইনে প্রযোজ্য হার।
 
-### ১৩.৫ Backup (`/backup`)
+### ১৩.৫ Backup & Restore (`/backup`)
 
-- **Download** — JSON/ZIP এক্সপোর্ট  
-- **Restore** — নিশ্চিতকরণ ফ্রেজ লাগে; **পুরনো ডেটা প্রতিস্থাপিত** হয়।
+**Permission:** `app.backup` (সাধারণত Admin)। Super Admin → `/admin/backup`।
+
+#### কী অন্তর্ভুক্ত (schema v2 JSON)
+
+| অন্তর্ভুক্ত | বাদ |
+|-------------|-----|
+| GL, COA, bills, invoices, payments, users, roles | Password reset tokens |
+| Stations, tanks, shifts, inventory, fixed assets, loans | Backup audit log (compliance) |
+| Aquaculture: ponds, transfers, sales, Data Bank, mortality | |
+| Journal lines-এ **station / pond tag** | |
+
+Export **incomplete হলে fail** — কোনো table-এ data থাকলে bundle-এ থাকতে হবে।
+
+#### Download
+
+1. `/backup` → **Download backup** → `fserp_company_{id}_backup.json`
+2. বড় tenant: কয়েক মিনিট; tab open রাখুন
+3. Off-site, encrypted, dated copy রাখুন
+
+#### Restore (destructive)
+
+- বর্তমান tenant **সম্পূর্ণ replace**
+- Type: **`DELETE_ALL_TENANT_DATA`**
+- Backup **company_id** match করতে হবে
+- আগে fresh backup; restore পর reload/login
+- v1 backup: aquaculture/stock ছাড়া থাকতে পারে
+
+#### Activity history
+
+কে, কখন, backup/restore, success/fail — month-end audit trail।
+
+#### পেশাদারি নীতি
+
+| করুন | করবেন না |
+|-------|----------|
+| মাস শেষ + upgrade-এর আগে backup | Production-এ restore “test” |
+| PostgreSQL/host backup **+** app JSON | শুধু app JSON (server crash risk) |
+| Quarterly restore drill on **staging** | Wrong company backup restore |
+
+**নোট:** JSON/ZIP নয় — **JSON** file। Platform DB dump আলাদা (`/admin/backup` = same tenant JSON; host PostgreSQL = infra)।
 
 ### ১৩.৬ ব্যবহারকারী তৈরি (সংক্ষেপ)
 

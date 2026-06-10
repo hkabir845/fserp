@@ -9,7 +9,7 @@ export type ReportDrillScope = {
   reportType?: string
 }
 
-type DrillMeta = Partial<ReportDrillTarget> & { kind?: string }
+type DrillMeta = Record<string, unknown> & { kind?: string }
 
 function num(v: unknown): number {
   const n = Number(v)

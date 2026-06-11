@@ -242,7 +242,8 @@ const reports: ReportCard[] = [
   {
     id: 'ar-aging',
     title: 'Accounts Receivable Aging',
-    description: 'Open invoices by customer in 30/60/90+ day buckets as of period end',
+    description:
+      'Open invoices by customer in aging buckets — filter by station or pond (pond POS customer)',
     icon: Users,
     category: 'financial'
   },
@@ -256,7 +257,8 @@ const reports: ReportCard[] = [
   {
     id: 'ap-aging',
     title: 'Accounts Payable Aging',
-    description: 'Open vendor bills by vendor in 30/60/90+ day buckets as of period end',
+    description:
+      'Open vendor bills by vendor in aging buckets — filter by station or pond-tagged bill lines',
     icon: Users,
     category: 'financial'
   },
@@ -287,7 +289,7 @@ const reports: ReportCard[] = [
     id: 'entities-pl-summary',
     title: 'All Entities — P&L',
     description:
-      'Separate tables: each station and each pond with income, COGS, expenses, gross, and net (posted GL)',
+      'Each station (fuel / shop hub with combined shop totals) and each pond with income, COGS, expenses, gross, net, inventory & AR/AP hints',
     icon: TrendingUp,
     category: 'financial',
   },
@@ -775,6 +777,14 @@ const REPORTS_GL_POND_SCOPED = new Set<ReportType>([
   'expense-detail',
   'income-detail',
   'cash-flow',
+])
+
+/** AR/AP subledger reports that accept pond_id (pond POS customer / pond-tagged bills). */
+const REPORTS_SUBLEDGER_POND_SCOPED = new Set<ReportType>([
+  'customer-balances',
+  'vendor-balances',
+  'ar-aging',
+  'ap-aging',
 ])
 
 /** Subset of station-scoped reports where amounts come from posted GL lines (not invoice subledgers). */
@@ -1814,7 +1824,10 @@ export default function ReportsPage() {
         const scope = parseReportSiteScopeKey(scopeKey)
         if (scope.kind === 'station') {
           params.station_id = String(scope.id)
-        } else if (scope.kind === 'pond' && REPORTS_GL_POND_SCOPED.has(reportId)) {
+        } else if (
+          scope.kind === 'pond' &&
+          (REPORTS_GL_POND_SCOPED.has(reportId) || REPORTS_SUBLEDGER_POND_SCOPED.has(reportId))
+        ) {
           params.pond_id = String(scope.id)
         }
       }

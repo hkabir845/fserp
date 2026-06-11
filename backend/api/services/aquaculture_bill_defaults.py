@@ -43,6 +43,8 @@ _COST_BUCKET_TO_EXPENSE_CATEGORY: tuple[tuple[str, str], ...] = (
     ("lease", "lease"),
     ("transportation", "transportation"),
     ("fisherman", "fisherman"),
+    ("shop_supplies", "shop_supplies"),
+    ("biological_writeoff", "mortality"),
     ("miscellaneous", "other"),
     ("ancillary", "other"),
 )

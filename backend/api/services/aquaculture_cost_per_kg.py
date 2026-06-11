@@ -221,6 +221,10 @@ def aquaculture_expense_category_to_cost_bucket(category: str, company_id: int |
         return "transportation"
     if c == "fisherman":
         return "fisherman"
+    if c == "shop_supplies":
+        return "shop_supplies"
+    if c == "mortality":
+        return "biological_writeoff"
     if c == "other":
         return "miscellaneous"
     return "ancillary"

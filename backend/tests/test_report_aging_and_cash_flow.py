@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from api.models import Bill, Customer, Invoice, Station, Vendor
+from api.models import AquaculturePond, Bill, BillLine, Customer, Invoice, Station, Vendor
 from api.services.reporting import (
     report_ap_aging,
     report_ar_aging,
@@ -87,6 +87,51 @@ def test_ar_aging_station_filter_excludes_other_sites(company_tenant):
         cid, date(2026, 1, 1), date(2026, 2, 1), station_id=st_a.id
     )
     assert balances["customers"][0]["balance"] == 400.0
+
+
+@pytest.mark.django_db
+def test_ar_aging_pond_filter_uses_pos_customer(company_tenant):
+    cid = company_tenant.id
+    pond_cust = Customer.objects.create(
+        company_id=cid,
+        display_name="Pond 1 Customer",
+        customer_number="C-POND-1",
+        current_balance=Decimal("0"),
+    )
+    other_cust = Customer.objects.create(
+        company_id=cid,
+        display_name="Other Customer",
+        customer_number="C-OTHER-1",
+        current_balance=Decimal("0"),
+    )
+    pond = AquaculturePond.objects.create(
+        company_id=cid,
+        name="Grow-out 1",
+        pos_customer=pond_cust,
+        is_active=True,
+    )
+    Invoice.objects.create(
+        company_id=cid,
+        customer=pond_cust,
+        invoice_number="INV-POND",
+        invoice_date=date(2026, 1, 1),
+        due_date=date(2026, 1, 20),
+        status="sent",
+        total=Decimal("300.00"),
+    )
+    Invoice.objects.create(
+        company_id=cid,
+        customer=other_cust,
+        invoice_number="INV-OTHER",
+        invoice_date=date(2026, 1, 1),
+        due_date=date(2026, 1, 20),
+        status="sent",
+        total=Decimal("900.00"),
+    )
+    scoped = report_ar_aging(cid, date(2026, 1, 1), date(2026, 2, 1), pond_id=pond.id)
+    assert scoped["filter_pond_id"] == pond.id
+    assert len(scoped["customers"]) == 1
+    assert scoped["customers"][0]["total"] == 300.0
 
 
 @pytest.mark.django_db

@@ -137,16 +137,10 @@ export default function ReportingCategoriesPage() {
     label: '',
     maps_to_code: '',
     sort_order: '0',
-  })
-  const [editingRow, setEditingRow] = useState<CategoryRow | null>(null)
-  const [editForm, setEditForm] = useState({
-    label: '',
-    maps_to_code: '',
-    sort_order: '0',
     is_active: true,
   })
-  const [editMapTargets, setEditMapTargets] = useState<ReportingMapTarget[]>([])
-  const [editSaving, setEditSaving] = useState(false)
+  const [editingRow, setEditingRow] = useState<CategoryRow | null>(null)
+  const [formSaving, setFormSaving] = useState(false)
 
   const needsCompanyPick = isSuperAdmin && isClientReady && !selectedCompany?.id
   const canCallApi = isAdmin && !needsCompanyPick
@@ -235,25 +229,29 @@ export default function ReportingCategoriesPage() {
     setForm((f) => ({ ...f, label }))
   }
 
-  const resetCreateForm = () => {
-    setForm({ label: '', maps_to_code: '', sort_order: '0' })
+  const formApplication = editingRow?.application ?? resolvedApplication
+  const formKind = editingRow?.kind ?? kind
+  const formVisible = editingRow != null || resolvedApplication != null
+
+  const resetForm = () => {
+    setForm({ label: '', maps_to_code: '', sort_order: '0', is_active: true })
   }
 
   const loadTargets = useCallback(async () => {
-    if (!canCallApi || resolvedApplication == null) {
+    if (!canCallApi || formApplication == null) {
       setMapTargets([])
       return
     }
     try {
       const { data } = await api.get<{ map_targets: ReportingMapTarget[] }>('/reporting-categories/map-targets/', {
-        params: { application: resolvedApplication, kind },
+        params: { application: formApplication, kind: formKind },
       })
       setMapTargets(Array.isArray(data?.map_targets) ? data.map_targets : [])
     } catch (e) {
       setMapTargets([])
       toast.error(formatReportingCategoriesError(e, 'Could not load rollup options'))
     }
-  }, [resolvedApplication, kind, canCallApi, toast])
+  }, [formApplication, formKind, canCallApi, toast])
 
   const loadRows = useCallback(async () => {
     if (!canCallApi) {
@@ -281,6 +279,11 @@ export default function ReportingCategoriesPage() {
   }, [authReady, canCallApi, loadTargets])
 
   useEffect(() => {
+    setEditingRow(null)
+    resetForm()
+  }, [kind, scopeKey])
+
+  useEffect(() => {
     if (!authReady) return
     void loadRows()
   }, [authReady, loadRows])
@@ -298,6 +301,7 @@ export default function ReportingCategoriesPage() {
       toast.error('Display name and rollup are required.')
       return
     }
+    setFormSaving(true)
     try {
       await api.post('/reporting-categories/', {
         application: resolvedApplication,
@@ -308,10 +312,12 @@ export default function ReportingCategoriesPage() {
         is_active: true,
       })
       toast.success('Category created')
-      resetCreateForm()
+      resetForm()
       await loadRows()
     } catch (e) {
       toast.error(formatReportingCategoriesError(e, 'Create failed'))
+    } finally {
+      setFormSaving(false)
     }
   }
 
@@ -319,6 +325,7 @@ export default function ReportingCategoriesPage() {
     if (!window.confirm('Delete this company-defined category?')) return
     try {
       await api.delete(`/reporting-categories/${id}/`)
+      if (editingRow?.id === id) closeEdit()
       toast.success('Deleted')
       await loadRows()
     } catch (e) {
@@ -326,43 +333,35 @@ export default function ReportingCategoriesPage() {
     }
   }
 
-  const openEdit = async (row: CategoryRow) => {
+  const openEdit = (row: CategoryRow) => {
     setEditingRow(row)
-    setEditForm({
+    setForm({
       label: row.label,
       maps_to_code: row.maps_to_code,
       sort_order: String(row.sort_order),
       is_active: row.is_active,
     })
-    try {
-      const { data } = await api.get<{ map_targets: ReportingMapTarget[] }>('/reporting-categories/map-targets/', {
-        params: { application: row.application, kind: row.kind },
-      })
-      setEditMapTargets(Array.isArray(data?.map_targets) ? data.map_targets : [])
-    } catch (e) {
-      setEditMapTargets([])
-      toast.error(formatReportingCategoriesError(e, 'Could not load rollup options'))
-    }
+    document.getElementById('rc-category-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const closeEdit = () => {
     setEditingRow(null)
-    setEditMapTargets([])
+    resetForm()
   }
 
   const onUpdate = async () => {
     if (!editingRow) return
-    if (!editForm.label.trim() || !editForm.maps_to_code) {
+    if (!form.label.trim() || !form.maps_to_code) {
       toast.error('Display name and rollup are required.')
       return
     }
-    setEditSaving(true)
+    setFormSaving(true)
     try {
       const { data } = await api.put(`/reporting-categories/${editingRow.id}/`, {
-        label: editForm.label.trim(),
-        maps_to_code: editForm.maps_to_code,
-        sort_order: Number(editForm.sort_order) || 0,
-        is_active: editForm.is_active,
+        label: form.label.trim(),
+        maps_to_code: form.maps_to_code,
+        sort_order: Number(form.sort_order) || 0,
+        is_active: form.is_active,
       })
       const propagation = data?.propagation as
         | {
@@ -392,8 +391,13 @@ export default function ReportingCategoriesPage() {
     } catch (e) {
       toast.error(formatReportingCategoriesError(e, 'Update failed'))
     } finally {
-      setEditSaving(false)
+      setFormSaving(false)
     }
+  }
+
+  const onSubmitForm = async () => {
+    if (editingRow) await onUpdate()
+    else await onCreate()
   }
 
   const onToggleActive = async (row: CategoryRow) => {
@@ -405,12 +409,6 @@ export default function ReportingCategoriesPage() {
       toast.error(formatReportingCategoriesError(e, 'Update failed'))
     }
   }
-
-  const groupedEditMapTargets = useMemo(() => groupReportingMapTargets(editMapTargets), [editMapTargets])
-  const selectedEditMapTarget = useMemo(
-    () => editMapTargets.find((m) => m.id === editForm.maps_to_code),
-    [editMapTargets, editForm.maps_to_code]
-  )
 
   const groupedMapTargets = useMemo(() => groupReportingMapTargets(mapTargets), [mapTargets])
   const selectedMapTarget = useMemo(
@@ -551,25 +549,59 @@ export default function ReportingCategoriesPage() {
             </div>
           </div>
 
-          {/* Add form — only when a specific application is resolved */}
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <div className="flex items-center gap-2">
-              <Tag className="h-5 w-5 text-slate-600" />
-              <h2 className="text-lg font-semibold text-slate-900">Add category</h2>
+          {/* Add / edit — one shared form */}
+          <section
+            id="rc-category-form"
+            className={`rounded-xl border bg-white p-4 shadow-sm sm:p-5 ${
+              editingRow ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-200'
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                {editingRow ? <Edit2 className="h-5 w-5 text-blue-600" /> : <Tag className="h-5 w-5 text-slate-600" />}
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {editingRow ? 'Edit category' : 'Add category'}
+                </h2>
+              </div>
+              {editingRow ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  onClick={closeEdit}
+                  disabled={formSaving}
+                >
+                  <X className="h-4 w-4" />
+                  Cancel edit
+                </button>
+              ) : null}
             </div>
-            {resolvedApplication == null ? (
+            {!formVisible ? (
               <p className="mt-3 flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
                 Select a <strong>station</strong> or <strong>pond</strong> above to add a new category. Use{' '}
-                <strong>All</strong> to review everything across the company.
+                <strong>All</strong> to review everything across the company, or click <strong>Edit</strong> on a row.
               </p>
             ) : (
               <>
                 <p className="mt-2 text-sm text-slate-500">
-                  New {kindLabel(kind).toLowerCase()} category for{' '}
-                  <span className="font-medium text-slate-700">{applicationLabel(resolvedApplication)}</span>
-                  {' · '}
-                  {scopeLabel}
+                  {editingRow ? (
+                    <>
+                      <ApplicationBadge app={editingRow.application} />
+                      <span className="mx-2 text-slate-300">·</span>
+                      {kindLabel(editingRow.kind)}
+                      <span className="mx-2 text-slate-300">·</span>
+                      <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-800">
+                        {editingRow.code}
+                      </code>
+                    </>
+                  ) : (
+                    <>
+                      New {kindLabel(kind).toLowerCase()} category for{' '}
+                      <span className="font-medium text-slate-700">{applicationLabel(resolvedApplication!)}</span>
+                      {' · '}
+                      {scopeLabel}
+                    </>
+                  )}
                 </p>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
@@ -581,23 +613,25 @@ export default function ReportingCategoriesPage() {
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       value={form.label}
                       onChange={(e) => onLabelChange(e.target.value)}
-                      disabled={!canCallApi}
+                      disabled={!canCallApi || formSaving}
                       placeholder="Site security"
                     />
                   </label>
-                  <p className="text-xs font-normal text-slate-500 sm:col-span-2">
-                    Category code is assigned automatically (e.g.{' '}
-                    <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-slate-800">
-                      {resolvedApplication === 'fuel_station'
-                        ? kind === 'income'
-                          ? 'fsi001'
-                          : 'fse001'
-                        : kind === 'income'
-                          ? 'aqi001'
-                          : 'aqe001'}
-                    </code>
-                    ). Deleted codes are reused in order.
-                  </p>
+                  {!editingRow ? (
+                    <p className="text-xs font-normal text-slate-500 sm:col-span-2">
+                      Category code is assigned automatically (e.g.{' '}
+                      <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-slate-800">
+                        {resolvedApplication === 'fuel_station'
+                          ? kind === 'income'
+                            ? 'fsi001'
+                            : 'fse001'
+                          : kind === 'income'
+                            ? 'aqi001'
+                            : 'aqe001'}
+                      </code>
+                      ). Deleted codes are reused in order.
+                    </p>
+                  ) : null}
                   <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
                     Rolls up to
                     <span className="font-normal text-slate-500">
@@ -608,7 +642,7 @@ export default function ReportingCategoriesPage() {
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       value={form.maps_to_code}
                       onChange={(e) => setForm((f) => ({ ...f, maps_to_code: e.target.value }))}
-                      disabled={!canCallApi}
+                      disabled={!canCallApi || formSaving}
                     >
                       <option value="">— select rollup —</option>
                       {groupedMapTargets.map(({ group, items }) => (
@@ -641,20 +675,56 @@ export default function ReportingCategoriesPage() {
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       value={form.sort_order}
                       onChange={(e) => setForm((f) => ({ ...f, sort_order: e.target.value }))}
-                      disabled={!canCallApi}
+                      disabled={!canCallApi || formSaving}
                       inputMode="numeric"
                     />
                   </label>
+                  {editingRow ? (
+                    <label className="flex cursor-pointer items-center gap-2 pt-5 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/30"
+                        checked={form.is_active}
+                        onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
+                        disabled={formSaving}
+                      />
+                      Active in dropdowns
+                    </label>
+                  ) : null}
                 </div>
-                <button
-                  type="button"
-                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={() => void onCreate()}
-                  disabled={!canCallApi}
-                >
-                  <Plus className="h-4 w-4" />
-                  Create category
-                </button>
+                {editingRow ? (
+                  <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                    Saving updates vendor bills, journal lines, and pond expenses that already use this category
+                    (display name and rollup bucket).
+                  </p>
+                ) : null}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => void onSubmitForm()}
+                    disabled={!canCallApi || formSaving}
+                  >
+                    {formSaving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : editingRow ? (
+                      <Edit2 className="h-4 w-4" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    {editingRow ? 'Save changes' : 'Create category'}
+                  </button>
+                  {editingRow ? (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      onClick={closeEdit}
+                      disabled={formSaving}
+                    >
+                      Cancel
+                    </button>
+                  ) : null}
+                </div>
               </>
             )}
           </section>
@@ -736,8 +806,10 @@ export default function ReportingCategoriesPage() {
                               type="button"
                               title="Edit category"
                               aria-label="Edit category"
-                              className="rounded-md p-2 text-slate-600 hover:bg-slate-100 hover:text-blue-700"
-                              onClick={() => void openEdit(r)}
+                              className={`rounded-md p-2 hover:bg-slate-100 hover:text-blue-700 ${
+                                editingRow?.id === r.id ? 'bg-blue-50 text-blue-700' : 'text-slate-600'
+                              }`}
+                              onClick={() => openEdit(r)}
                             >
                               <Edit2 className="h-4 w-4" />
                             </button>
@@ -792,125 +864,6 @@ export default function ReportingCategoriesPage() {
             </ul>
           </footer>
         </div>
-
-        {editingRow ? (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="rc-edit-title"
-          >
-            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
-              <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
-                <div>
-                  <h2 id="rc-edit-title" className="text-lg font-semibold text-slate-900">
-                    Edit category
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    <ApplicationBadge app={editingRow.application} />
-                    <span className="mx-2 text-slate-300">·</span>
-                    {kindLabel(editingRow.kind)}
-                    <span className="mx-2 text-slate-300">·</span>
-                    <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-800">
-                      {editingRow.code}
-                    </code>
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                  aria-label="Close"
-                  onClick={closeEdit}
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4 px-5 py-4">
-                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
-                  Display name
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    value={editForm.label}
-                    onChange={(e) => setEditForm((f) => ({ ...f, label: e.target.value }))}
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
-                  Rolls up to
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    value={editForm.maps_to_code}
-                    onChange={(e) => setEditForm((f) => ({ ...f, maps_to_code: e.target.value }))}
-                  >
-                    <option value="">— select rollup —</option>
-                    {groupedEditMapTargets.map(({ group, items }) => (
-                      <optgroup key={group || 'default'} label={group}>
-                        {items.map((m) => (
-                          <option key={m.id} value={m.id} title={m.hint || undefined}>
-                            {m.label}
-                            {m.coa_code ? ` (${m.coa_code})` : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                  {selectedEditMapTarget?.hint ? (
-                    <p className="mt-1 flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 font-normal text-slate-600">
-                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
-                      <span>{selectedEditMapTarget.hint}</span>
-                    </p>
-                  ) : null}
-                </label>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
-                    Sort order
-                    <input
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                      value={editForm.sort_order}
-                      onChange={(e) => setEditForm((f) => ({ ...f, sort_order: e.target.value }))}
-                      inputMode="numeric"
-                    />
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-2 pt-5 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/30"
-                      checked={editForm.is_active}
-                      onChange={(e) => setEditForm((f) => ({ ...f, is_active: e.target.checked }))}
-                    />
-                    Active in dropdowns
-                  </label>
-                </div>
-                <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">
-                  Saving updates vendor bills, journal lines, and pond expenses that already use this category
-                  (display name and rollup bucket).
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
-                <button
-                  type="button"
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  onClick={closeEdit}
-                  disabled={editSaving}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                  onClick={() => void onUpdate()}
-                  disabled={editSaving}
-                >
-                  {editSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Edit2 className="h-4 w-4" />}
-                  Save changes
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
       </main>
     </div>
   )

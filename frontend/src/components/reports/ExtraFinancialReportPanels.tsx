@@ -84,7 +84,25 @@ function entityPlTable(
                   : Number(r.pond_id ?? r.entity_id ?? 0)
               return (
                 <tr key={`pl-${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{String(r.entity_name ?? '')}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <div>{String(r.entity_name ?? '')}</div>
+                    {entityKind === 'station' && r.business_kind_label ? (
+                      <div className="mt-0.5 text-xs font-normal text-slate-500">{String(r.business_kind_label)}</div>
+                    ) : null}
+                    {entityKind === 'station' && r.combined_shop_gross_profit != null ? (
+                      <div className="mt-1 text-xs text-indigo-700">
+                        Shop total (incl. sales to ponds): gross{' '}
+                        {formatCurrency(Number(r.combined_shop_gross_profit ?? 0))}
+                      </div>
+                    ) : null}
+                    {entityKind === 'pond' && r.pond_open_ar_bdt != null ? (
+                      <div className="mt-1 text-xs text-slate-500">
+                        AR {formatCurrency(Number(r.pond_open_ar_bdt ?? 0))} · AP{' '}
+                        {formatCurrency(Number(r.pond_open_ap_bdt ?? 0))} · Stock{' '}
+                        {formatCurrency(Number(r.pond_warehouse_inventory_value_bdt ?? 0))}
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-3 text-right">
                     <ReportAmountCell amount={Number(r.income ?? 0)} row={r} field="income" scope={drillScope} />
                   </td>

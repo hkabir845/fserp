@@ -51,6 +51,8 @@ AQUACULTURE_EXPENSE_CATEGORY_CHOICES: tuple[tuple[str, str], ...] = (
     ("repair_maintenance", "Repair & maintenance"),
     ("fisherman", "Fisherman bills"),
     ("transportation", "Transportation"),
+    ("shop_supplies", "Shop supplies to pond"),
+    ("mortality", "Mortality, predation & shrinkage"),
     ("other", "Miscellaneous"),
 )
 
@@ -144,8 +146,17 @@ EXPENSE_CATEGORY_EXTRA_HELP: dict[str, str] = {
     ),
     "repair_maintenance": (
         "Use for pond dike or yard repairs, pump or aerator service, electrical fixes, vehicle/boat engine work, "
-        "welding, plumbing, and other upkeep that keeps the site running. Capitalized major purchases may belong under "
-        "Equipment or your fixed-asset policy—describe clearly in Memo."
+        "welding, plumbing, and other upkeep that keeps the site running (GL 6722). Capitalized major purchases may "
+        "belong under Equipment or your fixed-asset policy—describe clearly in Memo."
+    ),
+    "shop_supplies": (
+        "Inventoried shop goods issued or sold to a pond (nets, rope, fittings, tools, non-feed supplies). Prefer "
+        "vendor bills with pond tag, POS on account, or internal shop stock issue—posts to the shop_supplies cost bucket."
+    ),
+    "mortality": (
+        "Costs tied to fish loss events: disposal, predator fencing, netting after snake or bird damage, and similar "
+        "shrinkage-related site costs. Biological book-value write-offs from the fish stock ledger post separately "
+        "(Dr 6726 / Cr 1581); use this category for cash expenses linked to mortality management."
     ),
     "other": (
         "Use for feeding boats; electrical wire, fittings, and bulbs; security cameras; engines; aerators; nets; "
@@ -165,6 +176,7 @@ AQUACULTURE_INCOME_TYPE_CHOICES: tuple[tuple[str, str], ...] = (
     ("used_material_sale", "Used / scrap material sale"),
     ("rejected_material_sale", "Rejected material sale"),
     ("used_equipment_sale", "Used / scrap equipment sale"),
+    ("biological_count_gain", "Biological inventory count gain"),
     ("other_income", "Other income"),
 )
 
@@ -363,7 +375,9 @@ def coa_account_code_for_aquaculture_expense_category(
         "feed_medicine": "6716",
         "electricity": "6717",
         "equipment": "6718",
-        "repair_maintenance": "6718",
+        "repair_maintenance": "6722",
+        "shop_supplies": "6725",
+        "mortality": "6726",
         "fisherman": "6719",
         "transportation": "6720",
         "medicine_purchase": "6721",
@@ -391,5 +405,7 @@ def coa_account_code_for_aquaculture_income_type(income_type: str, company_id: i
     if it == "processing_value_add":
         return "4242"
     if it in NON_BIOLOGICAL_POND_SALE_INCOME_TYPES:
+        return "4244"
+    if it == "biological_count_gain":
         return "4244"
     return "4243"

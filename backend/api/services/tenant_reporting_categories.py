@@ -26,44 +26,76 @@ _AUTO_CATEGORY_PREFIX: dict[tuple[str, str], str] = {
 }
 
 FUEL_STATION_EXPENSE_MAP_TARGETS: tuple[tuple[str, str], ...] = (
-    ("operating", "Operating & admin"),
-    ("cost_of_sales", "Cost of sales / shrink"),
-    ("maintenance", "Maintenance & repairs"),
+    ("operating", "Operating & admin (general)"),
+    ("payroll", "Payroll & wages"),
+    ("rent", "Rent & lease"),
+    ("insurance", "Insurance"),
+    ("bank_charges", "Bank & merchant fees"),
+    ("marketing", "Marketing & loyalty"),
+    ("security", "Security & cash handling"),
+    ("office_supplies", "Office & admin supplies"),
+    ("donations", "Donations & social support"),
+    ("licenses_permits", "Licenses & permits"),
+    ("environmental", "Environmental & compliance"),
+    ("freight", "Freight & hauling"),
+    ("asset_disposal", "Asset disposal loss"),
+    ("cost_of_sales", "Fuel shrink & wet-stock variance"),
+    ("shop_shrink", "Shop inventory shrinkage"),
+    ("shop_cogs", "Shop cost of goods sold"),
+    ("maintenance", "Forecourt & equipment maintenance"),
+    ("building_maintenance", "Building & canopy repairs"),
     ("utilities", "Utilities & generator fuel"),
+    ("water_sewer", "Water & sewer"),
     ("other", "Other / miscellaneous"),
 )
 FUEL_STATION_INCOME_MAP_TARGETS: tuple[tuple[str, str], ...] = (
-    ("fuel_revenue", "Fuel sales revenue"),
+    ("fuel_revenue", "Fuel sales revenue (retail)"),
+    ("diesel_revenue", "Diesel sales revenue"),
+    ("premium_fuel_revenue", "Premium / super fuel revenue"),
+    ("other_fuel_revenue", "Other fuel grades & blends"),
+    ("fleet_revenue", "Fleet & commercial (B2B) fuel"),
     ("shop_revenue", "Shop / agro retail revenue"),
-    ("services_revenue", "Services & fees revenue"),
-    ("other", "Other income"),
+    ("services_revenue", "Car wash & services revenue"),
+    ("other", "Other operating revenue"),
 )
 
 FUEL_STATION_EXPENSE_MAP_HINTS: dict[str, str] = {
     "operating": (
-        "Payroll, rent, insurance, bank charges, security, marketing, office supplies, and general admin for the site. "
-        "Default GL 6920 on bills; override line account for 6400 wages, 6200 rent, 6500 insurance, 6600 bank fees, "
-        "7000 security, 6700 marketing, or 6900 office supplies only."
+        "General station overhead not covered by a dedicated rollup below — security contracts, misc admin, "
+        "and catch-all site costs. Default GL 6920."
     ),
-    "cost_of_sales": (
-        "Fuel shrink or variance, inventory write-offs, and direct cost of shop goods sold at the station. "
-        "Default GL 5200 (fuel wet loss); use 5210 for shop shrink or 5120 COGS when appropriate."
+    "payroll": "Gross wages and salaries for station staff. Default GL 6400.",
+    "rent": "Site lease, land rent, and building occupancy. Default GL 6200.",
+    "insurance": "Property, inventory, and business-interruption coverage. Default GL 6500.",
+    "bank_charges": "Card interchange, acquirer fees, and bank service charges. Default GL 6600.",
+    "marketing": "Local advertising, signage, and loyalty programs. Default GL 6700.",
+    "security": "CIT, alarms, monitoring, and cash-handling services. Default GL 7000.",
+    "office_supplies": (
+        "Postage, stationery, and small office tools only — not general station operating. Default GL 6900."
     ),
-    "maintenance": (
-        "Forecourt repairs, pump service, tank maintenance, signage, and building upkeep. "
-        "Default GL 6300 (dispensing & site); use 6310 for building/canopy work."
-    ),
-    "utilities": (
-        "Electricity, generator diesel, water, telecom, and other utility bills. "
-        "Default GL 6100; use 6110 for water/sewer or override when generator fuel is inventoried."
-    ),
-    "other": "One-off or uncategorized station costs that do not fit the groups above. Default GL 6990.",
+    "donations": "Charitable giving and local social support from station cash. Default GL 6910.",
+    "licenses_permits": "Business licenses, environmental permits, and regulatory fees. Default GL 7200.",
+    "environmental": "Tank testing, remediation, and environmental compliance costs. Default GL 7300.",
+    "freight": "Fuel delivery freight and hauling charges. Default GL 7100.",
+    "asset_disposal": "Loss on disposal of equipment or fixtures. Default GL 7400.",
+    "cost_of_sales": "Fuel wet-stock shrink, variance, and dispensing losses. Default GL 5200.",
+    "shop_shrink": "Theft, damage, and count adjustments for shop inventory. Default GL 5210.",
+    "shop_cogs": "Direct cost of shop goods sold at the station. Default GL 5120.",
+    "maintenance": "Pump service, forecourt repairs, tank maintenance, and dispensing equipment. Default GL 6300.",
+    "building_maintenance": "Structural, canopy, and cosmetic building upkeep. Default GL 6310.",
+    "utilities": "Electricity, generator diesel, and telecom for the site. Default GL 6100.",
+    "water_sewer": "Water for wash bays and site use; sewer where billed separately. Default GL 6110.",
+    "other": "One-off or uncategorized station costs. Default GL 6990.",
 }
 FUEL_STATION_INCOME_MAP_HINTS: dict[str, str] = {
-    "fuel_revenue": "Petrol, diesel, octane, and lubricant sales from dispensers. Default revenue GL 4100–4140.",
-    "shop_revenue": "Convenience store, agro-input shop, and other non-fuel retail at the site. Default GL 4200.",
-    "services_revenue": "Car wash, air, commissions, equipment hire, and service fees. Default GL 4220.",
-    "other": "Miscellaneous station income not counted as fuel, shop, or services revenue. Default GL 4230.",
+    "fuel_revenue": "General retail petrol and fuel dispenser sales. Default GL 4100.",
+    "diesel_revenue": "Retail diesel sales from dispensers. Default GL 4110.",
+    "premium_fuel_revenue": "Higher-octane or premium grade fuel sales. Default GL 4120.",
+    "other_fuel_revenue": "E85, biodiesel blends, and other fuel grades. Default GL 4130.",
+    "fleet_revenue": "Fuel sold on credit to fleet and commercial accounts. Default GL 4140.",
+    "shop_revenue": "Convenience store, agro-input shop, and non-fuel retail. Default GL 4200.",
+    "services_revenue": "Car wash, air, commissions, and ancillary services. Default GL 4220.",
+    "other": "Air, vacuum, commissions, and miscellaneous operating revenue. Default GL 4230.",
 }
 
 AQUACULTURE_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -73,6 +105,8 @@ AQUACULTURE_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Feed", ("feed_purchase", "feed_consumed")),
     ("Medicine & health", ("medicine_purchase", "medicine_consumed")),
     ("Power, equipment & repairs", ("electricity", "equipment", "repair_maintenance")),
+    ("Shop & supplies", ("shop_supplies",)),
+    ("Mortality & shrinkage", ("mortality",)),
     ("Operations", ("fisherman", "transportation", "other")),
     ("System (automatic)", ("vendor_bill_pond",)),
 )
@@ -82,16 +116,39 @@ AQUACULTURE_INCOME_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "By-products & scrap",
         ("empty_feed_sack_sale", "used_material_sale", "rejected_material_sale", "used_equipment_sale"),
     ),
+    ("Inventory reconciliation", ("biological_count_gain",)),
     ("Other", ("other_income",)),
 )
 FUEL_STATION_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Operating & admin", ("operating",)),
-    ("Cost of sales", ("cost_of_sales",)),
-    ("Facility & upkeep", ("maintenance", "utilities")),
+    (
+        "Payroll & occupancy",
+        ("payroll", "rent", "insurance"),
+    ),
+    (
+        "Operating & admin",
+        (
+            "operating",
+            "office_supplies",
+            "bank_charges",
+            "marketing",
+            "security",
+            "donations",
+            "licenses_permits",
+            "environmental",
+            "freight",
+            "asset_disposal",
+        ),
+    ),
+    ("Cost of sales", ("cost_of_sales", "shop_shrink", "shop_cogs")),
+    ("Facility & upkeep", ("maintenance", "building_maintenance", "utilities", "water_sewer")),
     ("Other", ("other",)),
 )
 FUEL_STATION_INCOME_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Sales revenue", ("fuel_revenue", "shop_revenue", "services_revenue")),
+    (
+        "Fuel sales",
+        ("fuel_revenue", "diesel_revenue", "premium_fuel_revenue", "other_fuel_revenue", "fleet_revenue"),
+    ),
+    ("Shop & services", ("shop_revenue", "services_revenue")),
     ("Other income", ("other",)),
 )
 
@@ -113,6 +170,10 @@ AQUACULTURE_INCOME_TYPE_HINTS: dict[str, str] = {
     "used_material_sale": "Scrap materials (netting, drums, etc.) — non-biological pond revenue.",
     "rejected_material_sale": "Rejected or waste material sold off — non-biological pond revenue.",
     "used_equipment_sale": "Used or scrap equipment sold — non-biological pond revenue.",
+    "biological_count_gain": (
+        "Upward physical fish count vs books when posted from the fish stock ledger (Dr 1581 / Cr 4244). "
+        "Not a cash sale — use for custom labels tied to inventory reconciliation income."
+    ),
     "other_income": "Tours, consulting, grants, or other pond income that does not fit a named type above.",
 }
 

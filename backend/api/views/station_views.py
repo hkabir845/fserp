@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import AquaculturePond, Company, Island, Station, Tank
+from api.services.station_business_kind import station_business_kind, station_business_kind_label
 from api.services.station_policy import (
     MIN_ONE_ACTIVE_STATION_DETAIL,
     active_station_count,
@@ -35,6 +36,8 @@ def _station_to_json(s):
         "default_aquaculture_pond_id": pond_id,
         "default_aquaculture_pond_name": (pond.name or "").strip() if pond else "",
         "default_aquaculture_pond_sort_order": (pond.sort_order if pond else None),
+        "business_kind": station_business_kind(s),
+        "business_kind_label": station_business_kind_label(station_business_kind(s)),
     }
 
 

@@ -163,7 +163,10 @@ def test_reporting_category_map_targets_enriched(api_client, company_tenant, aut
     )
     assert r.status_code == 200
     targets = json.loads(r.content.decode())["map_targets"]
-    assert len(targets) >= 15
+    assert len(targets) >= 17
+    mortality = next(t for t in targets if t["id"] == "mortality")
+    assert mortality["group"] == "Mortality & shrinkage"
+    assert mortality.get("coa_code") == "6726"
     electricity = next(t for t in targets if t["id"] == "electricity")
     assert electricity["group"] == "Power, equipment & repairs"
     assert electricity.get("hint")
@@ -176,16 +179,38 @@ def test_reporting_category_map_targets_enriched(api_client, company_tenant, aut
     )
     assert r2.status_code == 200
     fuel = json.loads(r2.content.decode())["map_targets"]
-    assert {t["id"] for t in fuel} == {
-        "operating",
-        "cost_of_sales",
-        "maintenance",
-        "utilities",
-        "other",
-    }
+    fuel_ids = {t["id"] for t in fuel}
+    assert "operating" in fuel_ids
+    assert "payroll" in fuel_ids
+    assert "cost_of_sales" in fuel_ids
+    assert "shop_shrink" in fuel_ids
+    assert "utilities" in fuel_ids
+    assert "water_sewer" in fuel_ids
+    assert len(fuel_ids) >= 21
+    payroll = next(t for t in fuel if t["id"] == "payroll")
+    assert payroll["group"] == "Payroll & occupancy"
+    assert payroll.get("coa_code") == "6400"
     utilities = next(t for t in fuel if t["id"] == "utilities")
     assert utilities["group"] == "Facility & upkeep"
     assert "generator" in (utilities.get("hint") or "").lower()
+
+    r3 = api_client.get(
+        "/api/reporting-categories/map-targets/",
+        {"application": "fuel_station", "kind": "income"},
+        **auth_admin_headers,
+    )
+    assert r3.status_code == 200
+    fuel_income = json.loads(r3.content.decode())["map_targets"]
+    assert {t["id"] for t in fuel_income} >= {
+        "fuel_revenue",
+        "diesel_revenue",
+        "fleet_revenue",
+        "shop_revenue",
+        "services_revenue",
+        "other",
+    }
+    fleet = next(t for t in fuel_income if t["id"] == "fleet_revenue")
+    assert fleet.get("coa_code") == "4140"
 
 
 @pytest.mark.django_db

@@ -18,7 +18,7 @@ from api.services.aquaculture_constants import coa_account_code_for_aquaculture_
 @pytest.mark.django_db
 def test_coa_code_for_electricity(company_tenant):
     assert coa_account_code_for_aquaculture_expense_category("electricity", company_id=company_tenant.id) == "6717"
-    assert coa_account_code_for_aquaculture_expense_category("repair_maintenance", company_id=company_tenant.id) == "6718"
+    assert coa_account_code_for_aquaculture_expense_category("repair_maintenance", company_id=company_tenant.id) == "6722"
 
 
 @pytest.mark.django_db

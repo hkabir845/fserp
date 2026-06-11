@@ -1250,16 +1250,28 @@ def report_income_statement(
     return out_is
 
 
-def _invoices_for_subledger_scope(company_id: int, station_id: int | None):
+def _invoices_for_subledger_scope(
+    company_id: int, station_id: int | None = None, pond_id: int | None = None
+):
     qs = Invoice.objects.filter(company_id=company_id)
-    if station_id is not None:
+    if pond_id is not None:
+        pond = AquaculturePond.objects.filter(pk=pond_id, company_id=company_id).first()
+        if pond and pond.pos_customer_id:
+            qs = qs.filter(customer_id=pond.pos_customer_id)
+        else:
+            qs = qs.none()
+    elif station_id is not None:
         qs = qs.filter(station_id=station_id)
     return qs
 
 
-def _bills_for_subledger_scope(company_id: int, station_id: int | None):
+def _bills_for_subledger_scope(
+    company_id: int, station_id: int | None = None, pond_id: int | None = None
+):
     qs = Bill.objects.filter(company_id=company_id)
-    if station_id is not None:
+    if pond_id is not None:
+        qs = qs.filter(lines__aquaculture_pond_id=pond_id).distinct()
+    elif station_id is not None:
         qs = qs.filter(
             Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
         ).distinct()
@@ -1285,7 +1297,11 @@ def _vendor_open_balance_at_station(
 
 
 def report_customer_balances(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     _ = start
     rows: list[dict[str, Any]] = []
@@ -1293,11 +1309,17 @@ def report_customer_balances(
     for c in Customer.objects.filter(company_id=company_id, is_active=True).order_by(
         "display_name"
     ):
-        if station_id is not None:
+        if pond_id is not None:
+            bal = Decimal("0")
+            for inv in _invoices_for_subledger_scope(company_id, pond_id=pond_id).filter(
+                customer_id=c.id
+            ):
+                bal += invoice_open_amount(inv, company_id)
+        elif station_id is not None:
             bal = _customer_open_balance_at_station(company_id, c.id, station_id)
         else:
             bal = c.current_balance or Decimal("0")
-        if station_id is not None and bal == 0:
+        if (station_id is not None or pond_id is not None) and bal == 0:
             continue
         rows.append(
             {
@@ -1317,7 +1339,12 @@ def report_customer_balances(
         "Subledger current_balance per customer. total_ar is the sum of positive balances only "
         "(typical receivable exposure); credit balances are customer prepayments."
     )
-    if station_id is not None:
+    if pond_id is not None:
+        note += (
+            " Pond filter: balance is open invoice exposure for this pond's POS customer only "
+            "(AquaculturePond.pos_customer); other customers are excluded."
+        )
+    elif station_id is not None:
         note += (
             " Site filter: balance is open invoice exposure at this station only "
             "(invoice.station_id); company-wide customer opening balances without invoices are excluded."
@@ -1330,13 +1357,19 @@ def report_customer_balances(
         "total_net_balance": _f(net_sum),
         "accounting_note": note,
     }
-    if station_id is not None:
+    if pond_id is not None:
+        out["filter_pond_id"] = pond_id
+    elif station_id is not None:
         out["filter_station_id"] = station_id
     return out
 
 
 def report_vendor_balances(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     _ = start
     rows: list[dict[str, Any]] = []
@@ -1344,11 +1377,26 @@ def report_vendor_balances(
     for v in Vendor.objects.filter(company_id=company_id, is_active=True).order_by(
         "company_name"
     ):
-        if station_id is not None:
+        if pond_id is not None:
+            bal = Decimal("0")
+            bill_ids = (
+                BillLine.objects.filter(
+                    bill__company_id=company_id,
+                    aquaculture_pond_id=pond_id,
+                    bill__vendor_id=v.id,
+                )
+                .values_list("bill_id", flat=True)
+                .distinct()
+            )
+            for bill in Bill.objects.filter(pk__in=bill_ids).exclude(
+                status__in=("draft", "paid", "void")
+            ):
+                bal += bill_open_amount(bill, company_id)
+        elif station_id is not None:
             bal = _vendor_open_balance_at_station(company_id, v.id, station_id)
         else:
             bal = v.current_balance or Decimal("0")
-        if station_id is not None and bal == 0:
+        if (station_id is not None or pond_id is not None) and bal == 0:
             continue
         rows.append(
             {
@@ -1368,7 +1416,12 @@ def report_vendor_balances(
         "Subledger current_balance per vendor. total_ap is the sum of positive balances owed to vendors; "
         "negative balances may indicate vendor credits."
     )
-    if station_id is not None:
+    if pond_id is not None:
+        note += (
+            " Pond filter: balance is open bill exposure with at least one line tagged to this pond "
+            "(BillLine.aquaculture_pond_id); company-wide vendor opening balances without bills are excluded."
+        )
+    elif station_id is not None:
         note += (
             " Site filter: balance is open bill exposure received at this station "
             "(bill or line receipt_station_id); company-wide vendor opening balances without bills are excluded."
@@ -1381,7 +1434,9 @@ def report_vendor_balances(
         "total_net_balance": _f(net_sum),
         "accounting_note": note,
     }
-    if station_id is not None:
+    if pond_id is not None:
+        out["filter_pond_id"] = pond_id
+    elif station_id is not None:
         out["filter_station_id"] = station_id
     return out
 
@@ -1413,7 +1468,11 @@ def _aging_row_from_buckets(buckets: dict[str, Decimal]) -> dict[str, Any]:
 
 
 def report_ar_aging(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     """Open invoice balances by customer, bucketed by days past due as of period end."""
     _ = start
@@ -1427,7 +1486,7 @@ def report_ar_aging(
         buckets = _empty_aging_buckets()
         documents: list[dict[str, Any]] = []
         for inv in (
-            _invoices_for_subledger_scope(company_id, station_id)
+            _invoices_for_subledger_scope(company_id, station_id=station_id, pond_id=pond_id)
             .filter(customer_id=c.id)
             .exclude(status__in=("draft", "paid", "void"))
             .order_by("due_date", "invoice_date", "id")
@@ -1470,7 +1529,9 @@ def report_ar_aging(
         "Days past due = end date minus due date (or invoice date when due date is blank). "
         "Customer opening balances without invoices are not aged here — see Customer Balances."
     )
-    if station_id is not None:
+    if pond_id is not None:
+        note += " Pond filter: only invoices for this pond's POS customer are included."
+    elif station_id is not None:
         note += " Site filter: only invoices with this station_id are included."
     out: dict[str, Any] = {
         "report_id": "ar-aging",
@@ -1480,13 +1541,19 @@ def report_ar_aging(
         "totals": _aging_row_from_buckets(totals),
         "accounting_note": note,
     }
-    if station_id is not None:
+    if pond_id is not None:
+        out["filter_pond_id"] = pond_id
+    elif station_id is not None:
         out["filter_station_id"] = station_id
     return out
 
 
 def report_ap_aging(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
 ) -> dict[str, Any]:
     """Open vendor bill balances by vendor, bucketed by days past due as of period end."""
     _ = start
@@ -1500,7 +1567,7 @@ def report_ap_aging(
         buckets = _empty_aging_buckets()
         documents: list[dict[str, Any]] = []
         for bill in (
-            _bills_for_subledger_scope(company_id, station_id)
+            _bills_for_subledger_scope(company_id, station_id=station_id, pond_id=pond_id)
             .filter(vendor_id=v.id)
             .exclude(status__in=("draft", "paid", "void"))
             .order_by("due_date", "bill_date", "id")
@@ -1543,7 +1610,9 @@ def report_ap_aging(
         "Aging uses open bill balances (total minus vendor payment allocations) as of the end date. "
         "Days past due = end date minus due date (or bill date when due date is blank)."
     )
-    if station_id is not None:
+    if pond_id is not None:
+        note += " Pond filter: only bills with at least one line tagged to this pond are included."
+    elif station_id is not None:
         note += " Site filter: only bills received at this station (header or line receipt_station_id)."
     out: dict[str, Any] = {
         "report_id": "ap-aging",
@@ -1553,7 +1622,9 @@ def report_ap_aging(
         "totals": _aging_row_from_buckets(totals),
         "accounting_note": note,
     }
-    if station_id is not None:
+    if pond_id is not None:
+        out["filter_pond_id"] = pond_id
+    elif station_id is not None:
         out["filter_station_id"] = station_id
     return out
 
@@ -2262,37 +2333,39 @@ def _collect_all_entity_financial_rows(
     company_id: int, start: date, end: date
 ) -> dict[str, Any]:
     """Build full financial rows for every station, pond, unscoped slice, and company total."""
+    from api.services.entity_financial_metrics import enrich_pond_entity_row, enrich_station_entity_row
+
     by_station: list[dict[str, Any]] = []
     for st in Station.objects.filter(company_id=company_id, is_active=True).order_by(
         "station_name", "id"
     ):
-        by_station.append(
-            _entity_financial_summary_row(
-                company_id,
-                start,
-                end,
-                entity_type="station",
-                entity_id=st.id,
-                entity_name=(st.station_name or "").strip() or f"Station #{st.id}",
-                station_id=st.id,
-            )
+        row = _entity_financial_summary_row(
+            company_id,
+            start,
+            end,
+            entity_type="station",
+            entity_id=st.id,
+            entity_name=(st.station_name or "").strip() or f"Station #{st.id}",
+            station_id=st.id,
         )
+        enrich_station_entity_row(company_id, st, row, start=start, end=end)
+        by_station.append(row)
 
     by_pond: list[dict[str, Any]] = []
     for pond in AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by(
         "sort_order", "name", "id"
     ):
-        by_pond.append(
-            _entity_financial_summary_row(
-                company_id,
-                start,
-                end,
-                entity_type="pond",
-                entity_id=pond.id,
-                entity_name=(pond.name or "").strip() or f"Pond #{pond.id}",
-                pond_id=pond.id,
-            )
+        row = _entity_financial_summary_row(
+            company_id,
+            start,
+            end,
+            entity_type="pond",
+            entity_id=pond.id,
+            entity_name=(pond.name or "").strip() or f"Pond #{pond.id}",
+            pond_id=pond.id,
         )
+        enrich_pond_entity_row(company_id, pond.id, row)
+        by_pond.append(row)
 
     unscoped = _entity_financial_summary_row(
         company_id,
@@ -2344,6 +2417,21 @@ def _entity_pl_row(row: dict[str, Any]) -> dict[str, Any]:
     if row.get("station_id") is not None:
         out["station_id"] = row["station_id"]
         out["station_name"] = row.get("station_name")
+        for key in (
+            "business_kind",
+            "business_kind_label",
+            "shop_inventory_value_bdt",
+            "shop_sales_to_ponds_income",
+            "shop_sales_to_ponds_cogs",
+            "shop_sales_to_ponds_gross_profit",
+            "shop_sales_to_ponds_net_income",
+            "combined_shop_income",
+            "combined_shop_cogs",
+            "combined_shop_gross_profit",
+            "combined_shop_net_income",
+        ):
+            if key in row:
+                out[key] = row[key]
     if row.get("pond_id") is not None:
         out["pond_id"] = row["pond_id"]
         out["pond_name"] = row.get("pond_name")
@@ -2351,6 +2439,13 @@ def _entity_pl_row(row: dict[str, Any]) -> dict[str, Any]:
             out["management_revenue_bdt"] = row["management_revenue_bdt"]
         if "management_profit_bdt" in row:
             out["management_profit_bdt"] = row["management_profit_bdt"]
+        for key in (
+            "pond_warehouse_inventory_value_bdt",
+            "pond_open_ar_bdt",
+            "pond_open_ap_bdt",
+        ):
+            if key in row:
+                out[key] = row[key]
     return out
 
 
@@ -2480,26 +2575,73 @@ def report_entities_financial_summary(
     }
 
 
+_STATION_PL_EXTRA_KEYS: tuple[str, ...] = (
+    "business_kind",
+    "business_kind_label",
+    "shop_inventory_value_bdt",
+    "shop_sales_to_ponds_income",
+    "shop_sales_to_ponds_cogs",
+    "shop_sales_to_ponds_gross_profit",
+    "shop_sales_to_ponds_net_income",
+    "combined_shop_income",
+    "combined_shop_cogs",
+    "combined_shop_gross_profit",
+    "combined_shop_net_income",
+)
+
+_POND_PL_EXTRA_KEYS: tuple[str, ...] = (
+    "management_revenue_bdt",
+    "management_profit_bdt",
+    "pond_warehouse_inventory_value_bdt",
+    "pond_open_ar_bdt",
+    "pond_open_ap_bdt",
+)
+
+
+def _station_pl_summary_row(r: dict[str, Any]) -> dict[str, Any]:
+    row = {
+        "station_id": r["station_id"],
+        "station_name": r["station_name"],
+        "entity_type": r.get("entity_type", "station"),
+        "entity_id": r.get("entity_id"),
+        "entity_name": r.get("entity_name") or r.get("station_name"),
+        "income": r["income"],
+        "cost_of_goods_sold": r["cost_of_goods_sold"],
+        "expenses": r["expenses"],
+        "gross_profit": r["gross_profit"],
+        "net_income": r["net_income"],
+    }
+    for key in _STATION_PL_EXTRA_KEYS:
+        if key in r:
+            row[key] = r[key]
+    return row
+
+
+def _pond_pl_summary_row(r: dict[str, Any]) -> dict[str, Any]:
+    row = {
+        "pond_id": r["pond_id"],
+        "pond_name": r["pond_name"],
+        "entity_type": r.get("entity_type", "pond"),
+        "entity_id": r.get("entity_id"),
+        "entity_name": r.get("entity_name") or r.get("pond_name"),
+        "income": r["income"],
+        "cost_of_goods_sold": r["cost_of_goods_sold"],
+        "expenses": r["expenses"],
+        "gross_profit": r["gross_profit"],
+        "net_income": r["net_income"],
+    }
+    for key in _POND_PL_EXTRA_KEYS:
+        if key in r:
+            row[key] = r[key]
+    return row
+
+
 def report_stations_financial_summary(
     company_id: int, start: date, end: date
 ) -> dict[str, Any]:
     """Individual P&L per station (fuel site / shop) from posted GL."""
     full = report_entities_pl_summary(company_id, start, end)
-    rows = [
-        {
-            "station_id": r["station_id"],
-            "station_name": r["station_name"],
-            "entity_type": r.get("entity_type", "station"),
-            "entity_id": r.get("entity_id"),
-            "entity_name": r.get("entity_name") or r.get("station_name"),
-            "income": r["income"],
-            "cost_of_goods_sold": r["cost_of_goods_sold"],
-            "expenses": r["expenses"],
-            "gross_profit": r["gross_profit"],
-            "net_income": r["net_income"],
-        }
-        for r in full["by_station"]
-    ]
+    rows = [_station_pl_summary_row(r) for r in full["by_station"]]
     co = full["company_total"]
     return {
         "report_id": "stations-financial-summary",
@@ -2513,10 +2655,11 @@ def report_stations_financial_summary(
             "net_income": co["net_income"],
         },
         "accounting_note": (
-            "One row per station: income (including posted sales), COGS, operating expenses, "
-            "gross profit, and net income for the selected period. "
-            "Use Profit & Loss with Site scope set to a station for account-level detail. "
-            "Pond P&L is a separate report (All Ponds — P&L Summary)."
+            "One row per station: direct GL P&L (lines tagged to the station, excluding pond-tagged lines). "
+            "Shop hubs also show combined_shop_* columns: direct shop activity plus sales/COGS attributed to "
+            "ponds but sold from that shop (POS on account to pond customers). "
+            "Fuel filling stations show business_kind=fuel_station. "
+            "Use Profit & Loss with Site scope for account-level detail; pond P&L is All Ponds — P&L Summary."
         ),
     }
 
@@ -2524,23 +2667,7 @@ def report_stations_financial_summary(
 def report_ponds_pl_summary(company_id: int, start: date, end: date) -> dict[str, Any]:
     """Individual P&L per aquaculture pond from posted GL (pond-tagged journal lines)."""
     full = report_entities_pl_summary(company_id, start, end)
-    rows = [
-        {
-            "pond_id": r["pond_id"],
-            "pond_name": r["pond_name"],
-            "entity_type": r.get("entity_type", "pond"),
-            "entity_id": r.get("entity_id"),
-            "entity_name": r.get("entity_name") or r.get("pond_name"),
-            "income": r["income"],
-            "cost_of_goods_sold": r["cost_of_goods_sold"],
-            "expenses": r["expenses"],
-            "gross_profit": r["gross_profit"],
-            "net_income": r["net_income"],
-            "management_revenue_bdt": r.get("management_revenue_bdt"),
-            "management_profit_bdt": r.get("management_profit_bdt"),
-        }
-        for r in full["by_pond"]
-    ]
+    rows = [_pond_pl_summary_row(r) for r in full["by_pond"]]
     co = full["company_total"]
     return {
         "report_id": "ponds-pl-summary",
@@ -2555,8 +2682,10 @@ def report_ponds_pl_summary(company_id: int, start: date, end: date) -> dict[str
         },
         "accounting_note": (
             "One row per pond from posted GL lines tagged to that pond (income, COGS, expenses). "
-            "Management revenue/profit columns (when shown) are aquaculture register totals in BDT and "
-            "may differ from GL. Use Profit & Loss with Site scope set to a pond for account detail. "
+            "pond_open_ar_bdt / pond_open_ap_bdt are open balances for the pond POS customer and pond-tagged "
+            "vendor bills. pond_warehouse_inventory_value_bdt is feed/medicine/supplies on hand at the pond. "
+            "Management revenue/profit columns are aquaculture register totals in BDT and may differ from GL. "
+            "Use Profit & Loss with Site scope set to a pond for account detail; AR/AP Aging also accept pond scope. "
             "For operational pond economics (cycles, feed, transfers), use Aquaculture — Pond P&L. "
             "Station P&L is separate (All Stations — P&L Summary)."
         ),

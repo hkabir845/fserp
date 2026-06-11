@@ -7,6 +7,8 @@ export type ReportStationForSegment = {
   id: number
   station_name: string
   operates_fuel_retail?: boolean
+  business_kind?: 'fuel_station' | 'shop_hub'
+  business_kind_label?: string
 }
 
 export function parseReportBusinessSegment(raw: string | null | undefined): ReportBusinessSegment {

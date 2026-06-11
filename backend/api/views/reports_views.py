@@ -381,10 +381,16 @@ def report_by_id(request, report_id: str):
             return st_err
         payload = handler(cid, start, end, st_id)
     elif report_id in SUBLEDGER_STATION_AWARE_REPORTS:
-        st_id, st_err = effective_report_station_id(request, cid)
-        if st_err:
-            return st_err
-        payload = handler(cid, start, end, station_id=st_id)
+        pond_id, pond_err = _parse_report_pond_id(request, cid)
+        if pond_err:
+            return pond_err
+        if pond_id is None:
+            st_id, st_err = effective_report_station_id(request, cid)
+            if st_err:
+                return st_err
+        else:
+            st_id = None
+        payload = handler(cid, start, end, station_id=st_id, pond_id=pond_id)
     elif report_id in GL_STATION_AWARE_REPORTS:
         pond_id, pond_err = _parse_report_pond_id(request, cid)
         if pond_err:

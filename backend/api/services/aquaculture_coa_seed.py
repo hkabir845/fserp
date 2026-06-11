@@ -118,10 +118,17 @@ AQUACULTURE_COA_ROWS: tuple[tuple[str, str, str, str, str], ...] = (
     ),
     (
         "6718",
-        "Aquaculture Expense — Equipment & Repairs",
+        "Aquaculture Expense — Equipment & Tools",
         "expense",
         "repair_maintenance",
-        "Equipment, small tools, and repairs not capitalized to 1580 (equipment).",
+        "Durable equipment, aerators, nets, and tools not capitalized to 1580 (equipment).",
+    ),
+    (
+        "6722",
+        "Aquaculture Expense — Repairs & Structural Maintenance",
+        "expense",
+        "repair_maintenance",
+        "Pond dike, pump, aerator, vehicle, and site repair labour and materials (repair_maintenance).",
     ),
     (
         "6719",

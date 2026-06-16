@@ -100,14 +100,21 @@ FUEL_STATION_INCOME_MAP_HINTS: dict[str, str] = {
 
 AQUACULTURE_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Land & rights", ("lease",)),
-    ("Labor & payroll", ("worker_salary",)),
-    ("Pond development", ("soilcut", "pond_preparation", "fry_stocking")),
+    ("Labor & payroll", ("worker_salary", "meals_entertainment")),
+    (
+        "Pond development & care",
+        ("soilcut", "pond_preparation", "pond_care_products", "fry_stocking"),
+    ),
     ("Feed", ("feed_purchase", "feed_consumed")),
-    ("Medicine & health", ("medicine_purchase", "medicine_consumed")),
-    ("Power, equipment & repairs", ("electricity", "equipment", "repair_maintenance")),
-    ("Shop & supplies", ("shop_supplies",)),
+    ("Medicine & health", ("medicine_purchase", "medicine_consumed", "sampling_lab")),
+    ("Power, generator & water", ("electricity", "generator_fuel", "water")),
+    ("Equipment, repairs & depreciation", ("equipment", "repair_maintenance", "depreciation")),
+    ("Shop, office & supplies", ("shop_supplies", "office_supplies", "netting_gear")),
+    ("Transport & live haul", ("transportation", "fish_haul_supplies")),
+    ("Security & compliance", ("security", "insurance", "licenses_permits", "predator_control")),
+    ("Finance & professional", ("bank_charges", "professional_fees", "communication")),
     ("Mortality & shrinkage", ("mortality",)),
-    ("Operations", ("fisherman", "transportation", "other")),
+    ("Operations", ("fisherman", "other")),
     ("System (automatic)", ("vendor_bill_pond",)),
 )
 AQUACULTURE_INCOME_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -117,7 +124,10 @@ AQUACULTURE_INCOME_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("empty_feed_sack_sale", "used_material_sale", "rejected_material_sale", "used_equipment_sale"),
     ),
     ("Inventory reconciliation", ("biological_count_gain",)),
-    ("Other", ("other_income",)),
+    (
+        "Grants & other revenue",
+        ("subsidy_grant", "commission_income", "pond_rental_income", "other_income"),
+    ),
 )
 FUEL_STATION_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -154,13 +164,37 @@ FUEL_STATION_INCOME_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 _AQUACULTURE_EXPENSE_SUPPLEMENTAL_HINTS: dict[str, str] = {
     "soilcut": "Earthworks and soil removal when preparing new ponds or expanding existing ones.",
-    "pond_preparation": "Lime, fertiliser, pond drying, and other preparation before stocking.",
+    "pond_preparation": (
+        "Lime, fertiliser, pond drying, and other one-time preparation before stocking a new crop."
+    ),
+    "pond_care_products": (
+        "Ongoing pond water-care products: probiotics, conditioners, and treatment chemicals that are not "
+        "classified as veterinary medicine."
+    ),
     "fry_stocking": (
         "Fry and fingerling purchases — prefer vendor bills with pond-tagged fish-type lines rather than manual costs."
     ),
     "electricity": "Grid power, prepaid meters, and site electrical costs for pumps and aerators.",
+    "generator_fuel": "Diesel and fuel for on-site generators when grid power is unavailable.",
+    "water": "Tube-well pumping, irrigation water, and water-delivery charges for pond sites.",
+    "depreciation": "Depreciation on pond fixed assets — usually auto-posted from Fixed Assets (GL 6320).",
+    "netting_gear": "Nets, cages, bird netting, and pond gear — distinct from general shop inventory.",
+    "sampling_lab": "Water-quality and fish-health lab tests — not veterinary medicine purchases.",
+    "security": "Watchman services, guard contracts, and site security cash costs.",
+    "predator_control": "Predator fencing, traps, and bird deterrents — preventive cash costs.",
+    "insurance": "Pond, stock, and liability insurance premiums.",
+    "bank_charges": "Bank fees and mobile-wallet charges on pond transactions.",
+    "licenses_permits": "Fisheries permits and regulatory licenses for the site.",
+    "professional_fees": "Accounting, audit, legal, and consulting fees.",
+    "communication": "Mobile airtime and internet for pond site offices.",
     "fisherman": "Harvest crew or contract fisherman payments tied to pond operations.",
-    "transportation": "Fish hauling, feed delivery to ponds, and vehicle costs for the aquaculture site.",
+    "transportation": "Fish hauling vehicles, fuel, drivers, and logistics between sites or to market.",
+    "fish_haul_supplies": (
+        "Ice blocks, oxygen cylinders, saline, and live-haul consumables for moving fish between ponds or to buyers."
+    ),
+    "office_supplies": "Paper, pens, printer supplies, and small admin items for the pond site office.",
+    "meals_entertainment": "Site meals for workers and modest entertainment — not payroll wages.",
+    "worker_salary": "Pond workers, casual labour, and harvest crew wages — prefer HR payroll when posting to GL.",
 }
 AQUACULTURE_INCOME_TYPE_HINTS: dict[str, str] = {
     "fish_harvest_sale": "Primary table-fish or market harvest revenue from the pond.",
@@ -174,7 +208,10 @@ AQUACULTURE_INCOME_TYPE_HINTS: dict[str, str] = {
         "Upward physical fish count vs books when posted from the fish stock ledger (Dr 1581 / Cr 4244). "
         "Not a cash sale — use for custom labels tied to inventory reconciliation income."
     ),
-    "other_income": "Tours, consulting, grants, or other pond income that does not fit a named type above.",
+    "other_income": "Tours, consulting, or other pond income that does not fit a named type above.",
+    "subsidy_grant": "Government aquaculture subsidies, grants, and development-program payments.",
+    "commission_income": "Sales commissions, brokerage, and agent fees earned on pond sales.",
+    "pond_rental_income": "Income from renting ponds, facilities, or equipment to third parties.",
 }
 
 FUEL_STATION_EXPENSE_MAP_CODES: frozenset[str] = frozenset(c for c, _ in FUEL_STATION_EXPENSE_MAP_TARGETS)

@@ -32,6 +32,14 @@ export function isGrowOutRole(pond: { pond_role?: string }): boolean {
   return (pond.pond_role || '').toLowerCase() === 'grow_out'
 }
 
+export function pondPlBillLabel(pond: PondSitePhaseFields & { name?: string }): string {
+  return (
+    (pond.operational_display_name || '').trim() ||
+    (pond as { name?: string }).name ||
+    'Pond'
+  )
+}
+
 export function pondFishBillLabel(pond: PondSitePhaseFields): string {
   return (
     (pond.nursing_display_name || '').trim() ||

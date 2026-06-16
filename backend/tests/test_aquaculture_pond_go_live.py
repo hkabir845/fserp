@@ -48,6 +48,121 @@ def test_go_live_payload_with_employee_does_not_500(company_tenant):
 
 
 @pytest.mark.django_db
+def test_go_live_pl_zero_confirmed_marks_complete(company_tenant):
+    from datetime import date
+
+    set_company_cutover_date(company_tenant.id, date(2026, 5, 22))
+    pond = AquaculturePond.objects.create(
+        company=company_tenant,
+        name="Fresh Pond",
+        code="FP01",
+        is_active=True,
+        pond_role="grow_out",
+        prior_pl_zero_confirmed_at=date(2026, 5, 22),
+    )
+    payload = build_opening_balances_payload(company_tenant.id)
+    gl = next(p["go_live"] for p in payload["ponds"] if p["pond_id"] == pond.id)
+    pl = next(c for c in gl["checks"] if c["id"] == "pl")
+    assert pl["status"] == "complete"
+    assert "confirmed zero" in pl["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_opening_balances_put_confirms_zero_prior_pl(api_client, auth_admin_headers, company_tenant):
+    import json
+    from datetime import date
+
+    from api.models import Company
+
+    Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    set_company_cutover_date(company_tenant.id, date(2026, 6, 16))
+    pond = AquaculturePond.objects.create(
+        company=company_tenant,
+        name="Zero PL Pond",
+        code="ZP01",
+        is_active=True,
+        pond_role="grow_out",
+    )
+    body = {
+        "cutover_date": "2026-06-16",
+        "updates": [{"pond_id": pond.id, "confirm_prior_pl_zero": True}],
+    }
+    r = api_client.put(
+        "/api/aquaculture/ponds/opening-balances/",
+        data=json.dumps(body),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    data = json.loads(r.content)
+    assert data.get("errors") == []
+    assert data.get("saved", 0) >= 1
+    pond.refresh_from_db()
+    assert pond.prior_pl_zero_confirmed_at == date(2026, 6, 16)
+    row = next(p for p in data["ponds"] if p["pond_id"] == pond.id)
+    assert row["prior_pl_zero_confirmed_at"] == "2026-06-16"
+    pl = next(c for c in row["go_live"]["checks"] if c["id"] == "pl")
+    assert pl["status"] == "complete"
+
+
+@pytest.mark.django_db
+def test_opening_balances_put_posts_pl_to_gl_without_pl_patch(api_client, auth_admin_headers, company_tenant):
+    import json
+    from datetime import date
+    from decimal import Decimal
+
+    from api.models import ChartOfAccount, Company
+    from api.services.aquaculture_pond_pl_opening import sync_pond_pl_openings
+
+    Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    set_company_cutover_date(company_tenant.id, date(2026, 6, 16))
+    for code, name, atype in [
+        ("4240", "Fish sales", "income"),
+        ("6716", "Feed", "expense"),
+        ("3200", "OBE", "equity"),
+    ]:
+        ChartOfAccount.objects.create(
+            company_id=company_tenant.id,
+            account_code=code,
+            account_name=name,
+            account_type=atype,
+            account_sub_type="opening_balance_equity" if code == "3200" else "",
+            is_active=True,
+        )
+    pond = AquaculturePond.objects.create(
+        company=company_tenant,
+        name="GL Pond",
+        code="GLP01",
+        is_active=True,
+        pond_role="grow_out",
+    )
+    sync_pond_pl_openings(
+        company_tenant.id,
+        pond.id,
+        income=[{"category_code": "fish_harvest_sale", "amount": "500", "as_of_date": "2026-06-16"}],
+    )
+    body = {
+        "cutover_date": "2026-06-16",
+        "updates": [{"pond_id": pond.id, "post_pl_opening_to_gl": True}],
+    }
+    r = api_client.put(
+        "/api/aquaculture/ponds/opening-balances/",
+        data=json.dumps(body),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    data = json.loads(r.content)
+    assert data.get("errors") == []
+    assert data.get("saved", 0) >= 1
+    pond.refresh_from_db()
+    assert pond.pl_opening_journal_id is not None
+    row = next(p for p in data["ponds"] if p["pond_id"] == pond.id)
+    assert row["pl_openings"]["pl_opening_gl_locked"] is True
+    assert row["pl_openings"]["pl_opening_journal_number"] == f"AUTO-POND-PL-OB-{pond.id}"
+
+
+@pytest.mark.django_db
 def test_cutover_date_round_trip(company_tenant):
     set_company_cutover_date(company_tenant.id, None)
     company_tenant.refresh_from_db()

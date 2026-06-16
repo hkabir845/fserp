@@ -9,7 +9,7 @@ import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
-import { preferNursingPondId, pondFishBillLabel } from '@/lib/aquaculturePondSite'
+import { preferNursingPondId, pondFishBillLabel, pondPlBillLabel } from '@/lib/aquaculturePondSite'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -1303,6 +1303,16 @@ export default function BillsPage() {
         .map((p) => ({
           ...p,
           name: pondFishBillLabel(p),
+        })),
+    [aquaculturePonds],
+  )
+  const pondOptionsForPlTag = useMemo<AquaculturePondOption[]>(
+    () =>
+      aquaculturePonds
+        .filter((p) => p.is_active !== false)
+        .map((p) => ({
+          ...p,
+          name: pondPlBillLabel(p),
         })),
     [aquaculturePonds],
   )
@@ -3589,7 +3599,7 @@ export default function BillsPage() {
                             <BillPondAllocationFields
                               line={line}
                               index={index}
-                              ponds={pondOptionsForFish}
+                              ponds={showFishDims ? pondOptionsForFish : pondOptionsForPlTag}
                               cycles={productionCycles}
                               billExpenseCategories={billExpenseCategories}
                               expenseAccounts={expenseAccounts}
@@ -4143,7 +4153,7 @@ export default function BillsPage() {
                             <BillPondAllocationFields
                               line={line}
                               index={index}
-                              ponds={pondOptionsForFish}
+                              ponds={showFishDims ? pondOptionsForFish : pondOptionsForPlTag}
                               cycles={productionCycles}
                               billExpenseCategories={billExpenseCategories}
                               expenseAccounts={expenseAccounts}

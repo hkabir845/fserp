@@ -47,6 +47,10 @@ def test_aquaculture_expense_rollup_coa_codes(company_tenant):
     assert coa_account_code_for_aquaculture_expense_category("equipment") == "6718"
     assert coa_account_code_for_aquaculture_expense_category("mortality") == "6726"
     assert coa_account_code_for_aquaculture_expense_category("shop_supplies") == "6725"
+    assert coa_account_code_for_aquaculture_expense_category("generator_fuel") == "6717"
+    assert coa_account_code_for_aquaculture_expense_category("security") == "6725"
+    assert coa_account_code_for_aquaculture_expense_category("sampling_lab") == "6721"
+    assert coa_account_code_for_aquaculture_expense_category("depreciation") == "6320"
 
 
 @pytest.mark.django_db

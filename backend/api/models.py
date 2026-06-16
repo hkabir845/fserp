@@ -2285,6 +2285,11 @@ class AquaculturePond(models.Model):
         related_name="aquaculture_pond_pl_openings",
         help_text="AUTO-POND-PL-OB-{pond id} when prior P&L openings are posted to the G/L.",
     )
+    prior_pl_zero_confirmed_at = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Go-live: user confirmed no prior revenue or costs before cutover (all P&L categories zero).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
   Briefcase,
@@ -122,6 +122,9 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
   const [employeeDrafts, setEmployeeDrafts] = useState<Record<string, PartyDraft>>({})
   const [plDrafts, setPlDrafts] = useState<Record<string, PlDraft>>({})
   const [plPostGlDrafts, setPlPostGlDrafts] = useState<Record<number, boolean>>({})
+  const plPostGlDraftsRef = useRef<Record<number, boolean>>({})
+  const [plZeroConfirmDrafts, setPlZeroConfirmDrafts] = useState<Record<number, boolean>>({})
+  const plZeroConfirmDraftsRef = useRef<Record<number, boolean>>({})
   const [saving, setSaving] = useState(false)
   const [cutoverDate, setCutoverDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [goLiveSummary, setGoLiveSummary] = useState<OpeningBalancesResponse['go_live'] | null>(null)
@@ -130,6 +133,22 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
   const draftKey = (pondId: number, partyId: number) => `${pondId}:${partyId}`
   const plDraftKey = (pondId: number, kind: PlKind, code: string) => `${pondId}:${kind}:${code}`
 
+  const setPlZeroConfirmForPond = useCallback((pondId: number, confirmed: boolean) => {
+    setPlZeroConfirmDrafts((prev) => {
+      const next = { ...prev, [pondId]: confirmed }
+      plZeroConfirmDraftsRef.current = next
+      return next
+    })
+  }, [])
+
+  const setPlPostGlForPond = useCallback((pondId: number, postToGl: boolean) => {
+    setPlPostGlDrafts((prev) => {
+      const next = { ...prev, [pondId]: postToGl }
+      plPostGlDraftsRef.current = next
+      return next
+    })
+  }, [])
+
   const initDrafts = useCallback((ponds: PondOpeningSummary[], cat: CategoryCatalog | null, asOfDefault: string) => {
     const lease: Record<number, LeaseDraft> = {}
     const cust: Record<number, PartyDraft> = {}
@@ -137,6 +156,7 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
     const emp: Record<string, PartyDraft> = {}
     const pl: Record<string, PlDraft> = {}
     const plPostGl: Record<number, boolean> = {}
+    const plZeroConfirm: Record<number, boolean> = {}
     const today = asOfDefault || new Date().toISOString().slice(0, 10)
     for (const p of ponds) {
       lease[p.pond_id] = { leasePaid: p.lease_paid_to_landlord ?? '0' }
@@ -179,7 +199,8 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
           }
         }
       }
-      plPostGl[p.pond_id] = false
+      plPostGl[p.pond_id] = Boolean(p.pl_openings?.pl_opening_gl_locked)
+      plZeroConfirm[p.pond_id] = Boolean(p.prior_pl_zero_confirmed_at)
     }
     setLeaseDrafts(lease)
     setCustomerDrafts(cust)
@@ -187,6 +208,9 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
     setEmployeeDrafts(emp)
     setPlDrafts(pl)
     setPlPostGlDrafts(plPostGl)
+    plPostGlDraftsRef.current = plPostGl
+    setPlZeroConfirmDrafts(plZeroConfirm)
+    plZeroConfirmDraftsRef.current = plZeroConfirm
   }, [])
 
   const load = useCallback(async () => {
@@ -349,7 +373,10 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
           const origAmt = parseMoney(row.amount)
           const origDate = (row.as_of_date || '').slice(0, 10)
           const origMemo = (row.memo || '').trim()
-          if (amt !== origAmt || d.asOf !== origDate || d.memo.trim() !== origMemo) {
+          const amountChanged = amt !== origAmt
+          const memoChanged = d.memo.trim() !== origMemo
+          const dateChanged = d.asOf !== origDate
+          if (amountChanged || memoChanged || (amt !== 0 && dateChanged)) {
             plChanged.push({
               category_code: row.category_code,
               amount: amt,
@@ -363,15 +390,24 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
           dirty = true
         }
       }
-      if (plPostGlDrafts[p.pond_id]) {
+      const glAlreadyPosted = Boolean(p.pl_openings?.pl_opening_gl_locked)
+      const wantsPostGl = plPostGlDraftsRef.current[p.pond_id] ?? glAlreadyPosted
+      if (wantsPostGl && !glAlreadyPosted) {
         patch.post_pl_opening_to_gl = true
+        dirty = true
+      }
+
+      const origZeroConfirm = Boolean(p.prior_pl_zero_confirmed_at)
+      const draftZeroConfirm = plZeroConfirmDraftsRef.current[p.pond_id] ?? origZeroConfirm
+      if (draftZeroConfirm !== origZeroConfirm) {
+        patch.confirm_prior_pl_zero = draftZeroConfirm
         dirty = true
       }
 
       if (dirty) updates.push(patch)
     }
     return updates
-  }, [sorted, leaseDrafts, customerDrafts, vendorDrafts, employeeDrafts, plDrafts, plPostGlDrafts, catalog])
+  }, [sorted, leaseDrafts, customerDrafts, vendorDrafts, employeeDrafts, plDrafts, catalog])
 
   const pendingCount = buildUpdates().length
 
@@ -384,10 +420,13 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
         { cutover_date: cutoverDate, updates },
       )
       const errs = Array.isArray(data?.errors) ? data.errors : []
+      const savedCount = typeof data?.saved === 'number' ? data.saved : 0
       if (errs.length) {
         toast.error(errs[0]?.detail || 'Some rows could not be saved')
+      } else if (updates.length > 0 && savedCount === 0) {
+        toast.error('No changes were saved. Check cutover date and try again.')
       } else if (updates.length) {
-        toast.success(`Saved go-live data (${data?.saved ?? updates.length} pond update(s))`)
+        toast.success(`Saved go-live data (${savedCount || updates.length} pond update(s))`)
       } else {
         toast.success('Cutover date saved')
       }
@@ -522,7 +561,9 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
                   drafts={plDrafts}
                   setDrafts={setPlDrafts}
                   plPostGlDrafts={plPostGlDrafts}
-                  setPlPostGlDrafts={setPlPostGlDrafts}
+                  setPlPostGlForPond={setPlPostGlForPond}
+                  plZeroConfirmDrafts={plZeroConfirmDrafts}
+                  setPlZeroConfirmForPond={setPlZeroConfirmForPond}
                   plDraftKey={plDraftKey}
                   focusPondId={focusPondId}
                   cutoverDate={cutoverDate}
@@ -1028,7 +1069,9 @@ function PlOpeningTab({
   drafts,
   setDrafts,
   plPostGlDrafts,
-  setPlPostGlDrafts,
+  setPlPostGlForPond,
+  plZeroConfirmDrafts,
+  setPlZeroConfirmForPond,
   plDraftKey,
   focusPondId,
   cutoverDate,
@@ -1041,7 +1084,9 @@ function PlOpeningTab({
   drafts: Record<string, PlDraft>
   setDrafts: React.Dispatch<React.SetStateAction<Record<string, PlDraft>>>
   plPostGlDrafts: Record<number, boolean>
-  setPlPostGlDrafts: React.Dispatch<React.SetStateAction<Record<number, boolean>>>
+  setPlPostGlForPond: (pondId: number, postToGl: boolean) => void
+  plZeroConfirmDrafts: Record<number, boolean>
+  setPlZeroConfirmForPond: (pondId: number, confirmed: boolean) => void
   plDraftKey: (pondId: number, kind: PlKind, code: string) => string
   focusPondId: number | null
   cutoverDate: string
@@ -1090,9 +1135,7 @@ function PlOpeningTab({
               className="mt-0.5 rounded border-slate-300"
               checked={Boolean(plPostGlDrafts[p.pond_id])}
               disabled={Boolean(p.pl_openings?.pl_opening_gl_locked)}
-              onChange={(e) =>
-                setPlPostGlDrafts((prev) => ({ ...prev, [p.pond_id]: e.target.checked }))
-              }
+              onChange={(e) => setPlPostGlForPond(p.pond_id, e.target.checked)}
             />
             <span>
               Post prior P&amp;L to G/L for <strong>{p.pond_name}</strong>
@@ -1163,6 +1206,27 @@ function PlOpeningTab({
                   <span className="ml-2 text-sm font-normal text-slate-500">{pond.pond_code}</span>
                 ) : null}
               </h3>
+              {kind === 'income' ? (
+                <label className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 text-sm text-slate-800">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 rounded border-slate-300"
+                    checked={Boolean(plZeroConfirmDrafts[pond.pond_id])}
+                    disabled={Boolean(pond.pl_openings?.pl_opening_gl_locked)}
+                    onChange={(e) => setPlZeroConfirmForPond(pond.pond_id, e.target.checked)}
+                  />
+                  <span>
+                    <strong>No prior P&amp;L before cutover</strong> — confirm all income and expense categories are
+                    zero (new crop or no history to import). Saves with the button below; requires cutover date{' '}
+                    <strong>{cutoverDate}</strong>.
+                    {pond.prior_pl_zero_confirmed_at ? (
+                      <span className="mt-1 block text-xs font-normal text-emerald-900">
+                        Confirmed on {pond.prior_pl_zero_confirmed_at.slice(0, 10)}.
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+              ) : null}
               <div className="grid gap-3 sm:grid-cols-2">
                 {toShow.map((row) => {
                   const key = plDraftKey(pond.pond_id, kind, row.category_code)

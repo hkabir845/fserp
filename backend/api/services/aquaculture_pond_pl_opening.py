@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-from api.models import AquaculturePondPlOpening
+from api.models import AquaculturePond, AquaculturePondPlOpening
 from api.services.aquaculture_cutover import validate_opening_as_of
 from api.services.tenant_reporting_categories import (
     merged_aquaculture_expense_category_list_for_api,
@@ -177,4 +177,14 @@ def sync_pond_pl_openings(
     if err:
         return err
     err = apply_rows(AquaculturePondPlOpening.KIND_EXPENSE, expense, expense_codes)
-    return err
+    if err:
+        return err
+    pond = AquaculturePond.objects.filter(pk=pond_id, company_id=company_id).first()
+    if pond and pond.prior_pl_zero_confirmed_at:
+        totals = pl_opening_rows_for_pond(company_id, pond_id)["totals"]
+        income = _q(Decimal(totals["income_signed"]))
+        expense_total = _q(Decimal(totals["expense_signed"]))
+        if income > 0 or expense_total > 0:
+            pond.prior_pl_zero_confirmed_at = None
+            pond.save(update_fields=["prior_pl_zero_confirmed_at", "updated_at"])
+    return None

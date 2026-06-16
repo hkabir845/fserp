@@ -163,14 +163,17 @@ def test_reporting_category_map_targets_enriched(api_client, company_tenant, aut
     )
     assert r.status_code == 200
     targets = json.loads(r.content.decode())["map_targets"]
-    assert len(targets) >= 17
+    assert len(targets) >= 34
     mortality = next(t for t in targets if t["id"] == "mortality")
     assert mortality["group"] == "Mortality & shrinkage"
     assert mortality.get("coa_code") == "6726"
     electricity = next(t for t in targets if t["id"] == "electricity")
-    assert electricity["group"] == "Power, equipment & repairs"
+    assert electricity["group"] == "Power, generator & water"
     assert electricity.get("hint")
     assert electricity.get("coa_code")
+    security = next(t for t in targets if t["id"] == "security")
+    assert security["group"] == "Security & compliance"
+    assert security.get("coa_code") == "6725"
 
     r2 = api_client.get(
         "/api/reporting-categories/map-targets/",

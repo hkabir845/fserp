@@ -90,6 +90,7 @@ export interface PondOpeningSummary {
   pos_customer_id: number | null
   pos_customer_display?: string | null
   lease_paid_to_landlord: string
+  prior_pl_zero_confirmed_at?: string | null
   balance_sheet_lines: BalanceSheetLine[]
   pl_openings: {
     income: PlCategoryRow[]

@@ -115,6 +115,7 @@ from api.services.party_opening_gl import (
     apply_vendor_opening_gl,
 )
 from api.services.aquaculture_pond_pl_opening import (
+    pl_opening_rows_for_pond,
     sync_pond_pl_openings,
 )
 from api.services.aquaculture_pond_pos_customer import (
@@ -1389,6 +1390,8 @@ def aquaculture_ponds_opening_balances(request):
             or item.get("customer")
             or item.get("vendors")
             or item.get("employees")
+            or item.get("confirm_prior_pl_zero") is True
+            or item.get("post_pl_opening_to_gl") is True
         )
         if has_opening:
             cut_req = require_cutover_configured(cid)
@@ -1402,6 +1405,52 @@ def aquaculture_ponds_opening_balances(request):
                     "detail": "Prior P&L openings cannot be changed after they are posted to the G/L.",
                 }
             )
+
+        if "confirm_prior_pl_zero" in item:
+            confirm_zero = bool(item.get("confirm_prior_pl_zero"))
+            if confirm_zero and p.pl_opening_journal_id:
+                item_errors.append(
+                    {
+                        "pond_id": pond_id,
+                        "detail": "Cannot confirm zero prior P&L after amounts are posted to the G/L.",
+                    }
+                )
+            elif confirm_zero:
+                pl_rows = pl_opening_rows_for_pond(cid, pond_id)
+                pl_income = _money_q(Decimal(pl_rows["totals"]["income_signed"]))
+                pl_expense = _money_q(Decimal(pl_rows["totals"]["expense_signed"]))
+                if pl_income > 0 or pl_expense > 0:
+                    item_errors.append(
+                        {
+                            "pond_id": pond_id,
+                            "detail": (
+                                "Prior P&L amounts are non-zero — clear them or enter actual openings "
+                                "before confirming zero."
+                            ),
+                        }
+                    )
+                else:
+                    cut_req = require_cutover_configured(cid)
+                    if cut_req:
+                        item_errors.append({"pond_id": pond_id, "detail": cut_req})
+
+        if item.get("post_pl_opening_to_gl") and not p.pl_opening_journal_id:
+            cut_req = require_cutover_configured(cid)
+            if cut_req:
+                item_errors.append({"pond_id": pond_id, "detail": cut_req})
+            else:
+                pl_rows = pl_opening_rows_for_pond(cid, pond_id)
+                pl_income = _money_q(Decimal(pl_rows["totals"]["income_signed"]))
+                pl_expense = _money_q(Decimal(pl_rows["totals"]["expense_signed"]))
+                if pl_income == 0 and pl_expense == 0:
+                    item_errors.append(
+                        {
+                            "pond_id": pond_id,
+                            "detail": (
+                                "Enter prior P&L amounts before posting to the general ledger."
+                            ),
+                        }
+                    )
 
         cust_body = item.get("customer")
         if isinstance(cust_body, dict) and p.pos_customer_id:
@@ -1604,6 +1653,19 @@ def aquaculture_ponds_opening_balances(request):
                         raise ValueError(gl_err)
                     saved += 1
 
+                if "confirm_prior_pl_zero" in item:
+                    confirm_zero = bool(item.get("confirm_prior_pl_zero"))
+                    if confirm_zero:
+                        company = Company.objects.filter(pk=cid).first()
+                        cut = company.aquaculture_go_live_cutover_date if company else None
+                        if not cut:
+                            raise ValueError("Set cutover date before confirming zero prior P&L.")
+                        p.prior_pl_zero_confirmed_at = cut
+                    else:
+                        p.prior_pl_zero_confirmed_at = None
+                    p.save(update_fields=["prior_pl_zero_confirmed_at", "updated_at"])
+                    saved += 1
+
                 if "pl_income" in item or "pl_expense" in item:
                     pl_err = sync_pond_pl_openings(
                         cid,
@@ -1614,11 +1676,15 @@ def aquaculture_ponds_opening_balances(request):
                     if pl_err:
                         raise ValueError(pl_err)
                     p.refresh_from_db()
-                    post_pl_gl = bool(item.get("post_pl_opening_to_gl", False))
-                    pl_gl_err = apply_pond_pl_opening_gl(cid, pond_id, post_to_gl=post_pl_gl)
-                    if pl_gl_err:
-                        raise ValueError(pl_gl_err)
                     saved += 1
+
+                if item.get("post_pl_opening_to_gl"):
+                    p.refresh_from_db()
+                    if not p.pl_opening_journal_id:
+                        pl_gl_err = apply_pond_pl_opening_gl(cid, pond_id, post_to_gl=True)
+                        if pl_gl_err:
+                            raise ValueError(pl_gl_err)
+                        saved += 1
         except ValueError as exc:
             errors.append({"pond_id": pond_id, "detail": str(exc)})
 

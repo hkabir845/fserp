@@ -211,7 +211,13 @@ def aquaculture_expense_category_to_cost_bucket(category: str, company_id: int |
         return "labor"
     if c == "electricity":
         return "electricity"
+    if c == "generator_fuel":
+        return "electricity"
+    if c == "water":
+        return "miscellaneous"
     if c == "equipment":
+        return "equipment"
+    if c == "depreciation":
         return "equipment"
     if c == "repair_maintenance":
         return "repair_maintenance"
@@ -219,6 +225,28 @@ def aquaculture_expense_category_to_cost_bucket(category: str, company_id: int |
         return "lease"
     if c == "transportation":
         return "transportation"
+    if c == "fish_haul_supplies":
+        return "transportation"
+    if c == "office_supplies":
+        return "shop_supplies"
+    if c == "meals_entertainment":
+        return "miscellaneous"
+    if c == "pond_care_products":
+        return "medicine"
+    if c == "sampling_lab":
+        return "medicine"
+    if c in (
+        "security",
+        "predator_control",
+        "insurance",
+        "bank_charges",
+        "licenses_permits",
+        "professional_fees",
+        "communication",
+    ):
+        return "miscellaneous"
+    if c == "netting_gear":
+        return "shop_supplies"
     if c == "fisherman":
         return "fisherman"
     if c == "shop_supplies":

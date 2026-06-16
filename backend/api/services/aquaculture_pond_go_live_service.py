@@ -244,6 +244,11 @@ def _readiness_checks(
     pl_expense_abs = abs(pl_expense)
     if pl_income > 0 or pl_expense_abs > 0:
         pl_status, pl_detail = "complete", "Prior income and/or expense recorded."
+    elif getattr(pond, "prior_pl_zero_confirmed_at", None):
+        pl_status, pl_detail = (
+            "complete",
+            "No prior P&L before cutover — confirmed zero at go-live.",
+        )
     elif pond.is_active and (pond.pond_role or "grow_out") == "grow_out":
         pl_status, pl_detail = (
             "missing",

@@ -258,6 +258,9 @@ def build_pond_opening_summary(company_id: int, pond: AquaculturePond) -> dict[s
         "pos_customer_id": pond.pos_customer_id,
         "pos_customer_display": pc_disp or None,
         "lease_paid_to_landlord": _str_money(pond.lease_paid_to_landlord),
+        "prior_pl_zero_confirmed_at": (
+            pond.prior_pl_zero_confirmed_at.isoformat() if pond.prior_pl_zero_confirmed_at else None
+        ),
         "balance_sheet_lines": balance_sheet_lines,
         "pl_openings": pl,
         "totals": {

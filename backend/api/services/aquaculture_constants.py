@@ -36,9 +36,10 @@ SHARED_OPERATING_COST_RULE = (
 # Stable keys stored in DB; labels can be shown in UI from this map.
 AQUACULTURE_EXPENSE_CATEGORY_CHOICES: tuple[tuple[str, str], ...] = (
     ("lease", "Lease money"),
-    ("worker_salary", "Worker salary"),
+    ("worker_salary", "Labor & wages"),
     ("soilcut", "Soil cut"),
-    ("pond_preparation", "Pond preparation"),
+    ("pond_preparation", "Pond preparation cost"),
+    ("pond_care_products", "Pond care products"),
     ("fry_stocking", "Fry stocking"),
     ("feed_purchase", "Feed purchase"),
     ("feed_consumed", "Feed consumed (pond warehouse)"),
@@ -49,11 +50,26 @@ AQUACULTURE_EXPENSE_CATEGORY_CHOICES: tuple[tuple[str, str], ...] = (
         "Vendor bill (pond-tagged line)",
     ),
     ("electricity", "Electricity"),
+    ("generator_fuel", "Generator diesel & fuel (ponds)"),
+    ("water", "Water & tube-well / irrigation"),
     ("equipment", "Equipment (aerators, nets, etc.)"),
     ("repair_maintenance", "Repair & maintenance"),
+    ("depreciation", "Depreciation (pond equipment)"),
     ("fisherman", "Fisherman bills"),
-    ("transportation", "Transportation"),
+    ("transportation", "Transportation (vehicles & hauling)"),
+    ("fish_haul_supplies", "Ice, oxygen & saline (live haul)"),
+    ("office_supplies", "Office supplies"),
+    ("meals_entertainment", "Meals & entertainment"),
     ("shop_supplies", "Shop supplies to pond"),
+    ("netting_gear", "Netting, cages & pond gear"),
+    ("sampling_lab", "Sampling & lab testing"),
+    ("security", "Security & watchman"),
+    ("predator_control", "Predator control & fencing"),
+    ("insurance", "Insurance (pond & stock)"),
+    ("bank_charges", "Bank & payment fees"),
+    ("licenses_permits", "Licenses & fisheries permits"),
+    ("professional_fees", "Professional & accounting fees"),
+    ("communication", "Phone & internet (pond site)"),
     ("mortality", "Mortality, predation & shrinkage"),
     ("other", "Miscellaneous"),
 )
@@ -155,15 +171,62 @@ EXPENSE_CATEGORY_EXTRA_HELP: dict[str, str] = {
         "Inventoried shop goods issued or sold to a pond (nets, rope, fittings, tools, non-feed supplies). Prefer "
         "vendor bills with pond tag, POS on account, or internal shop stock issue—posts to the shop_supplies cost bucket."
     ),
+    "office_supplies": (
+        "Stationery, printer ink, small office tools, and admin consumables for the pond site or aquaculture office — "
+        "not shop inventory issued to ponds (use Shop supplies for nets, rope, and pond tools)."
+    ),
+    "fish_haul_supplies": (
+        "Ice, oxygen, saline, and other consumables for live fish transport between ponds or to market — distinct "
+        "from vehicle fuel and driver charges (use Transportation for haulage and vehicle costs)."
+    ),
+    "meals_entertainment": (
+        "Worker meals on site, harvest crew catering, and modest entertainment for pond staff or visiting "
+        "contractors — not regular wages (use Labor & wages for payroll)."
+    ),
+    "pond_care_products": (
+        "Probiotics, water conditioners, lime alternatives, and pond-treatment products that are not veterinary "
+        "medicine — distinct from one-time pond preparation before stocking (use Pond preparation cost for liming "
+        "and drying at crop start)."
+    ),
+    "generator_fuel": (
+        "Diesel, petrol, or lubricants for on-site generators that run aerators and pumps when grid power is off — "
+        "distinct from grid electricity (use Electricity for metered power)."
+    ),
+    "water": (
+        "Tube-well pumping, irrigation water, and water-delivery charges for pond sites — not live-haul ice or saline "
+        "(use Ice, oxygen & saline for fish transport consumables)."
+    ),
+    "depreciation": (
+        "Depreciation expense on pond fixed assets (aerators, vehicles, buildings) — usually posted automatically from "
+        "the Fixed Assets module (GL 6320). Use on bills only for manual adjustments or non-FA depreciation entries."
+    ),
+    "netting_gear": (
+        "Nets, cages, bird netting, ropes, and pond gear purchased for the site — prefer this over Shop supplies when "
+        "the purchase is pond-specific equipment rather than general shop inventory."
+    ),
+    "sampling_lab": (
+        "Water-quality tests, fish health sampling, and laboratory fees — distinct from veterinary medicine purchases "
+        "(use Medicine purchase for drugs and treatments)."
+    ),
+    "security": (
+        "Watchman wages paid outside payroll, guard services, CCTV monitoring contracts, and site security cash costs."
+    ),
+    "predator_control": (
+        "Predator fencing, snake traps, bird deterrents, and similar preventive gear — cash costs before or after "
+        "loss events. Biological book-value write-offs from the fish stock ledger post separately (Dr 6726 / Cr 1581)."
+    ),
+    "insurance": "Pond, stock, equipment, and liability insurance premiums for aquaculture operations.",
+    "bank_charges": "Bank service fees, mobile-wallet charges, and payment-processing costs on pond transactions.",
+    "licenses_permits": "Fisheries department fees, pond-use permits, and other regulatory licenses for the site.",
+    "professional_fees": "Accounting, audit, legal, and consulting fees tied to aquaculture operations.",
+    "communication": "Mobile airtime, SIM cards, and internet for pond managers and site offices.",
     "mortality": (
-        "Costs tied to fish loss events: disposal, predator fencing, netting after snake or bird damage, and similar "
-        "shrinkage-related site costs. Biological book-value write-offs from the fish stock ledger post separately "
-        "(Dr 6726 / Cr 1581); use this category for cash expenses linked to mortality management."
+        "Cash costs tied to fish loss events: disposal, emergency netting after damage, and similar shrinkage-related "
+        "site costs. Biological book-value write-offs from the fish stock ledger post separately (Dr 6726 / Cr 1581)."
     ),
     "other": (
-        "Use for feeding boats; electrical wire, fittings, and bulbs; security cameras; engines; aerators; nets; "
-        "casual labour; worker meals or site consumables; and other pond operating costs that do not fit a named "
-        "category above (prefer Repair & maintenance for paid repair work on dikes, pumps, or vehicles). "
+        "Use only when no named category fits — feeding boats, casual labour not on payroll, and other pond operating "
+        "costs (prefer Repair & maintenance for paid repair work on dikes, pumps, or vehicles). "
         "Describe the payment clearly in Memo."
     ),
 }
@@ -179,6 +242,9 @@ AQUACULTURE_INCOME_TYPE_CHOICES: tuple[tuple[str, str], ...] = (
     ("rejected_material_sale", "Rejected material sale"),
     ("used_equipment_sale", "Used / scrap equipment sale"),
     ("biological_count_gain", "Biological inventory count gain"),
+    ("subsidy_grant", "Government subsidy & grants"),
+    ("commission_income", "Sales commission & brokerage"),
+    ("pond_rental_income", "Pond rental & facility income"),
     ("other_income", "Other income"),
 )
 
@@ -376,14 +442,30 @@ def coa_account_code_for_aquaculture_expense_category(
         "feed_consumed": "6716",
         "feed_medicine": "6716",
         "electricity": "6717",
+        "generator_fuel": "6717",
+        "water": "6725",
         "equipment": "6718",
         "repair_maintenance": "6722",
+        "depreciation": "6320",
         "shop_supplies": "6725",
         "mortality": "6726",
         "fisherman": "6719",
         "transportation": "6720",
+        "fish_haul_supplies": "6720",
+        "office_supplies": "6725",
+        "meals_entertainment": "6725",
+        "pond_care_products": "6721",
         "medicine_purchase": "6721",
         "medicine_consumed": "6721",
+        "netting_gear": "6725",
+        "sampling_lab": "6721",
+        "security": "6725",
+        "predator_control": "6725",
+        "insurance": "6725",
+        "bank_charges": "6725",
+        "licenses_permits": "6725",
+        "professional_fees": "6725",
+        "communication": "6725",
         "other": "6725",
         "vendor_bill_pond": "6725",
     }
@@ -410,4 +492,6 @@ def coa_account_code_for_aquaculture_income_type(income_type: str, company_id: i
         return "4244"
     if it == "biological_count_gain":
         return "4244"
+    if it in ("subsidy_grant", "commission_income", "pond_rental_income"):
+        return "4243"
     return "4243"

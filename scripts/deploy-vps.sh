@@ -22,6 +22,9 @@ echo "==> Backend: migrate + static"
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
 
+echo "==> Backend: database sanity check"
+bash "$REPO_ROOT/scripts/diagnose-vps-db.sh" || true
+
 echo "==> Backend: deployment check"
 python manage.py check --deploy || true
 

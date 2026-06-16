@@ -37,6 +37,13 @@ _is_management_entrypoint = _argv0 in ("manage.py", "django-admin", "django-admi
 # (like Gunicorn does) so a real DJANGO_SECRET_KEY is always set in production.
 _PROD_SECRET_REQUIRED_CMDS = frozenset({"collectstatic"})
 
+# Gunicorn/uWSGI load wsgi.py — not manage.py / runserver / pytest.
+_is_wsgi_production = (
+    not _is_runserver
+    and not _is_management_entrypoint
+    and "pytest" not in sys.modules
+)
+
 
 def _csv(name: str) -> list[str]:
     raw = (os.environ.get(name) or "").strip()
@@ -57,9 +64,15 @@ def _truthy(name: str) -> bool:
 
 
 # --- Core ---
-_default_hosts = ["api.mahasoftcorporation.com", "mahasoftcorporation.com"]
+_default_hosts = [
+    "api.mahasoftcorporation.com",
+    "mahasoftcorporation.com",
+    "www.mahasoftcorporation.com",
+]
+# Loopback allows nginx/curl health checks on the VPS (127.0.0.1:8001); not exposed publicly.
+_loopback_hosts = ["127.0.0.1", "localhost", "[::1]"]
 _env_hosts = _csv("DJANGO_ALLOWED_HOSTS") or _csv("FSERP_ALLOWED_HOSTS")
-ALLOWED_HOSTS = _env_hosts or list(_default_hosts)
+ALLOWED_HOSTS = _uniq(_env_hosts or _default_hosts, _loopback_hosts)
 if _is_runserver:
     # DisallowedHost surfaces as HTTP 400 (HTML) — browsers show Axios "400" with little detail.
     # - `.localhost` matches tenant-style dev hosts (e.g. adib.localhost:8000) used with Next.js.
@@ -70,7 +83,7 @@ if _is_runserver:
     else:
         ALLOWED_HOSTS = _uniq(
             ALLOWED_HOSTS,
-            ["localhost", "127.0.0.1", "[::1]", ".localhost"],
+            [".localhost"],
         )
 
 DEBUG = _is_runserver
@@ -184,6 +197,14 @@ else:
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+
+if _is_wsgi_production and not DATABASE_URL and not _truthy("FSERP_USE_SQLITE"):
+    raise ImproperlyConfigured(
+        "Production (Gunicorn) requires DATABASE_URL (PostgreSQL with your existing ERP data) "
+        "or FSERP_USE_SQLITE=1 to use backend/db.sqlite3. "
+        "Without either, the API starts against an empty database and old data will not load. "
+        "Set DATABASE_URL in backend/.env, then: pm2 restart fserp_backend --update-env"
+    )
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

@@ -98,6 +98,26 @@ pm2 startup   # optional: survive reboot
 
 Nginx example: [`deploy/nginx-fserp.example.conf`](deploy/nginx-fserp.example.conf).
 
+### SQLite → PostgreSQL (safe migration on VPS)
+
+```bash
+# 1. Create DB (once) — in psql as postgres user:
+#    CREATE USER fserp_user WITH PASSWORD '...';
+#    CREATE DATABASE fserp OWNER fserp_user;
+
+# 2. Point .env at PostgreSQL
+bash scripts/use-postgres-env.sh 'postgres://fserp_user:PASSWORD@127.0.0.1:5432/fserp'
+
+# 3. Copy SQLite data into PostgreSQL (backs up db.sqlite3 first)
+bash scripts/migrate-sqlite-to-postgres.sh
+
+# 4. Restart API and verify
+pm2 restart fserp_backend --update-env
+bash scripts/diagnose-vps-db.sh
+```
+
+If your **old data is already in PostgreSQL**, skip step 3 — only set `DATABASE_URL` to that database.
+
 ### Routine deploy (after git pull)
 
 ```bash

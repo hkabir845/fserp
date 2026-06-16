@@ -66,6 +66,46 @@ Copy from `backend/env.example` and fill values. Never commit real `.env`.
 
 ## 5. Backend release steps (typical Linux VPS)
 
+### First-time VPS setup
+
+```bash
+cd /path/to/FSERP
+git pull
+
+# Backend env (required — Gunicorn fails without DJANGO_SECRET_KEY)
+cp backend/env.production.example backend/.env
+nano backend/.env   # DATABASE_URL, SMTP, domains
+bash scripts/setup-vps-env.sh --generate-key   # or set DJANGO_SECRET_KEY manually (50+ chars)
+
+chmod +x scripts/*.sh
+bash scripts/deploy-vps.sh
+```
+
+**PM2** (from repo root, uses `ecosystem.config.js`):
+
+| Process | Port | Notes |
+|---------|------|--------|
+| `fserp_backend` | `127.0.0.1:8000` | Loads `backend/.env` via Django settings |
+| `fserp_frontend` | `127.0.0.1:3000` | `npm run start` (matches nginx example) |
+
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup   # optional: survive reboot
+```
+
+Nginx example: [`deploy/nginx-fserp.example.conf`](deploy/nginx-fserp.example.conf).
+
+### Routine deploy (after git pull)
+
+```bash
+cd /path/to/FSERP
+git pull
+bash scripts/deploy-vps.sh
+```
+
+Manual steps (if not using the script):
+
 ```bash
 cd /path/to/FSERP/backend
 source venv/bin/activate
@@ -77,7 +117,7 @@ python manage.py collectstatic --noinput
 Run the app (example):
 
 ```bash
-gunicorn fsms.wsgi:application --bind 127.0.0.1:8001 --workers 3
+bash scripts/run-gunicorn.sh
 ```
 
 Put **nginx** (or cPanel/Apache) in front: TLS, `proxy_set_header X-Forwarded-Proto https`, forward `/` and `/api/` to Gunicorn. Do not strip CORS headers if the proxy handles OPTIONS incorrectly — prefer forwarding OPTIONS to Django.

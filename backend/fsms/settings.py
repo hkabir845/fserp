@@ -225,22 +225,33 @@ _LOCAL = [
     "http://127.0.0.1:3000",
     "http://adib.localhost:3000",
 ]
+_PROD_ORIGINS = [
+    "https://mahasoftcorporation.com",
+    "https://www.mahasoftcorporation.com",
+]
 _LOCALHOST_SUBDOMAIN = r"^http://[a-zA-Z0-9-]+\.localhost(:\d+)?$"
 
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_PRIVATE_NETWORK = True
-CORS_ALLOWED_ORIGINS = _csv("FSERP_CORS_ALLOWED_ORIGINS") or [
-    *_LOCAL,
-    "https://mahasoftcorporation.com",
-]
-CORS_ALLOWED_ORIGIN_REGEXES = _csv("FSERP_CORS_ORIGIN_REGEXES") or [
-    r"^https://[a-zA-Z0-9-]+\.mahasoftcorporation\.com$",
-    _LOCALHOST_SUBDOMAIN,
-]
-if _is_runserver:
-    CORS_ALLOWED_ORIGINS = _uniq(CORS_ALLOWED_ORIGINS, _LOCAL)
-    if _LOCALHOST_SUBDOMAIN not in CORS_ALLOWED_ORIGIN_REGEXES:
-        CORS_ALLOWED_ORIGIN_REGEXES = [*CORS_ALLOWED_ORIGIN_REGEXES, _LOCALHOST_SUBDOMAIN]
+_env_cors = _csv("FSERP_CORS_ALLOWED_ORIGINS")
+if _env_cors:
+    CORS_ALLOWED_ORIGINS = _env_cors
+elif _is_runserver:
+    CORS_ALLOWED_ORIGINS = _uniq(_PROD_ORIGINS, _LOCAL)
+else:
+    CORS_ALLOWED_ORIGINS = list(_PROD_ORIGINS)
+_env_cors_regexes = _csv("FSERP_CORS_ORIGIN_REGEXES")
+if _env_cors_regexes:
+    CORS_ALLOWED_ORIGIN_REGEXES = _env_cors_regexes
+elif _is_runserver:
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://[a-zA-Z0-9-]+\.mahasoftcorporation\.com$",
+        _LOCALHOST_SUBDOMAIN,
+    ]
+else:
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://[a-zA-Z0-9-]+\.mahasoftcorporation\.com$",
+    ]
 
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-selected-company-id",
@@ -249,13 +260,13 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-request-id",
 ]
 
-CSRF_TRUSTED_ORIGINS = _csv("FSERP_CSRF_TRUSTED_ORIGINS") or [
-    *_LOCAL,
-    "https://mahasoftcorporation.com",
-    "https://www.mahasoftcorporation.com",
-]
-if _is_runserver:
-    CSRF_TRUSTED_ORIGINS = _uniq(CSRF_TRUSTED_ORIGINS, _LOCAL + ["https://localhost:3000"])
+_env_csrf = _csv("FSERP_CSRF_TRUSTED_ORIGINS")
+if _env_csrf:
+    CSRF_TRUSTED_ORIGINS = _env_csrf
+elif _is_runserver:
+    CSRF_TRUSTED_ORIGINS = _uniq(_PROD_ORIGINS, _LOCAL, ["https://localhost:3000"])
+else:
+    CSRF_TRUSTED_ORIGINS = list(_PROD_ORIGINS)
 
 REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],

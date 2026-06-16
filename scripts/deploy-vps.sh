@@ -42,7 +42,7 @@ pm2 save
 
 echo "==> Smoke tests"
 sleep 2
-curl -sf "http://127.0.0.1:8000/health/" | head -c 200 || echo "WARN: backend health check failed"
-curl -sf -o /dev/null -w "frontend HTTP %{http_code}\n" "http://127.0.0.1:3000/" || echo "WARN: frontend check failed"
+curl -sf "http://127.0.0.1:8001/health/" | head -c 200 || echo "WARN: backend health check failed"
+curl -sf -o /dev/null -w "frontend HTTP %{http_code}\n" "http://127.0.0.1:3001/" || echo "WARN: frontend check failed"
 
 echo "Deploy complete. Verify: curl https://api.mahasoftcorporation.com/health/"

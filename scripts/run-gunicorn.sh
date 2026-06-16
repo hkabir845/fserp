@@ -5,7 +5,7 @@ cd "$ROOT/backend"
 # shellcheck disable=SC1091
 source venv/bin/activate
 exec gunicorn fsms.wsgi:application \
-  --bind 127.0.0.1:8000 \
+  --bind 127.0.0.1:8001 \
   --workers 3 \
   --timeout 120 \
   --access-logfile - \

@@ -83,10 +83,12 @@ bash scripts/deploy-vps.sh
 
 **PM2** (from repo root, uses `ecosystem.config.js`):
 
+On a **shared VPS** where VIPTAP already uses `8000` / `3000`, FSERP binds to **`8001`** / **`3001`**. Nginx for `api.mahasoftcorporation.com` and `mahasoftcorporation.com` must proxy to those ports (see `deploy/nginx-fserp.example.conf`). Local dev still uses `8000` / `3000`.
+
 | Process | Port | Notes |
 |---------|------|--------|
-| `fserp_backend` | `127.0.0.1:8000` | Loads `backend/.env` via Django settings |
-| `fserp_frontend` | `127.0.0.1:3000` | `npm run start` (matches nginx example) |
+| `fserp_backend` | `127.0.0.1:8001` | Loads `backend/.env` via Django settings |
+| `fserp_frontend` | `127.0.0.1:3001` | `npm run start` with `PORT=3001` |
 
 ```bash
 pm2 start ecosystem.config.js

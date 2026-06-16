@@ -96,7 +96,7 @@ Optional: copy **`backend/.env.example`** to **`backend/.env`** for `FRONTEND_BA
 
 Use **`DATABASE_URL`** for PostgreSQL (see `env.example`), or omit it to use the default SQLite file `backend/db.sqlite3`. Run `python manage.py migrate` to apply Django migrations.
 
-**Process manager (VPS):** Use **`ecosystem.config.js`** at the repo root with PM2 (`pm2 start ecosystem.config.js`). Or run **`bash scripts/run-gunicorn.sh`** manually. Set **`DJANGO_SECRET_KEY`** and **`DATABASE_URL`** in **`backend/.env`** (copy from [`env.production.example`](env.production.example)). Full flow: **`bash scripts/deploy-vps.sh`** from repo root after **`bash scripts/setup-vps-env.sh --generate-key`**.
+**Process manager (VPS):** Use **`ecosystem.config.js`** at the repo root with PM2 (`pm2 start ecosystem.config.js`). Backend **`:8001`**, frontend **`:3001`** (VIPTAP uses 8000/3000 on the shared host). Or run **`bash scripts/run-gunicorn.sh`** manually. Set **`DJANGO_SECRET_KEY`** and **`DATABASE_URL`** in **`backend/.env`** (copy from [`env.production.example`](env.production.example)). Full flow: **`bash scripts/deploy-vps.sh`** from repo root after **`bash scripts/setup-vps-env.sh --generate-key`**.
 
 ## Run
 

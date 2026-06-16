@@ -7,6 +7,8 @@
  *
  * Django loads backend/.env automatically (python-dotenv in fsms/settings.py).
  * Ensure backend/.env exists with DJANGO_SECRET_KEY and DATABASE_URL before first start.
+ *
+ * Ports (shared VPS with VIPTAP on 8000/3000): FSERP backend 8001, frontend 3001.
  */
 const path = require('path')
 
@@ -37,7 +39,7 @@ module.exports = {
       min_uptime: '10s',
       env: {
         NODE_ENV: 'production',
-        PORT: '3000',
+        PORT: '3001',
       },
     },
   ],

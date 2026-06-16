@@ -130,6 +130,7 @@ type ReportScopeTableProps = {
   ponds: { id: number; name: string }[]
   aquaculturePondId: string
   onViewEntityPl?: (entityType: 'station' | 'pond', entityId: number) => void
+  onLoansStrictSiteChange?: (strict: boolean) => void
 }
 
 type ReportType = 
@@ -144,6 +145,8 @@ type ReportType =
   | 'expense-detail'
   | 'income-detail'
   | 'stations-financial-summary'
+  | 'fuel-stations-pl-summary'
+  | 'shop-hubs-pl-summary'
   | 'ponds-pl-summary'
   | 'entities-pl-summary'
   | 'entities-balance-sheet-summary'
@@ -187,6 +190,8 @@ type ReportType =
   | 'aquaculture-pond-medicine-stock'
   | 'aquaculture-pond-supplies-stock'
   | 'aquaculture-fish-stock-position'
+  | 'aquaculture-fcr-biomass'
+  | 'aquaculture-fish-growth'
   | 'aquaculture-shop-station-stock'
   | 'aquaculture-equipment-assets'
   | 'aquaculture-pond-total-inventory'
@@ -289,7 +294,7 @@ const reports: ReportCard[] = [
     id: 'entities-pl-summary',
     title: 'All Entities — P&L',
     description:
-      'Each station (fuel / shop hub with combined shop totals) and each pond with income, COGS, expenses, gross, net, inventory & AR/AP hints',
+      'Each entity on its own row: fuel stations, shop hubs (no fuel), ponds, and head office — plus segment totals and company total',
     icon: TrendingUp,
     category: 'financial',
   },
@@ -319,15 +324,29 @@ const reports: ReportCard[] = [
     id: 'stations-financial-summary',
     title: 'All Stations — P&L Summary',
     description:
-      'Individual P&L per station (fuel site / shop): income, COGS, expenses — click Full P&L for account lines',
+      'Individual P&L per station (fuel and shop hub without fuel as separate groups) plus stations total and company total',
     icon: MapPin,
+    category: 'financial',
+  },
+  {
+    id: 'fuel-stations-pl-summary',
+    title: 'Fuel Stations — P&L Summary',
+    description: 'Individual P&L per fuel filling station with category and company totals',
+    icon: Droplet,
+    category: 'financial',
+  },
+  {
+    id: 'shop-hubs-pl-summary',
+    title: 'Shop Hubs (no fuel) — P&L Summary',
+    description: 'Individual P&L per shop/agro hub (station without fuel) with category and company totals',
+    icon: Store,
     category: 'financial',
   },
   {
     id: 'ponds-pl-summary',
     title: 'All Ponds — P&L Summary (GL)',
     description:
-      'Individual P&L per aquaculture pond from posted GL: income, COGS, expenses — click Full P&L for account lines',
+      'Individual P&L per pond from posted GL plus ponds total and company total — use Site scope for one pond on other reports',
     icon: MapPin,
     category: 'financial',
   },
@@ -620,6 +639,21 @@ const reports: ReportCard[] = [
     category: 'aquaculture',
   },
   {
+    id: 'aquaculture-fcr-biomass',
+    title: 'Aquaculture — FCR, feed & pond load',
+    description: 'Feed conversion ratio from recorded feed and sampling biomass; kg per decimal and partial harvest hints',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-fish-growth',
+    title: 'Aquaculture — Fish growth, FCR & load',
+    description:
+      'Sample-to-sample growth intervals with ADG, interval FCR, period summary, and pond density (kg per decimal)',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
     id: 'aquaculture-fish-stock-position',
     title: 'Aquaculture — Fish stock by pond',
     description: 'Biological fish position per pond from transfers, fry bills, sales, samples, and ledger',
@@ -674,6 +708,8 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
   'aquaculture-pond-medicine-stock',
   'aquaculture-pond-supplies-stock',
   'aquaculture-fish-stock-position',
+  'aquaculture-fcr-biomass',
+  'aquaculture-fish-growth',
   'aquaculture-shop-station-stock',
   'aquaculture-equipment-assets',
   'aquaculture-pond-total-inventory',
@@ -696,6 +732,8 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'entities-trial-balance-summary',
   'entities-financial-summary',
   'stations-financial-summary',
+  'fuel-stations-pl-summary',
+  'shop-hubs-pl-summary',
   'ponds-pl-summary',
   'daily-summary',
   'fuel-sales',
@@ -717,6 +755,8 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'aquaculture-pond-medicine-stock',
   'aquaculture-pond-supplies-stock',
   'aquaculture-fish-stock-position',
+  'aquaculture-fcr-biomass',
+  'aquaculture-fish-growth',
   'aquaculture-shop-station-stock',
   'aquaculture-equipment-assets',
   'aquaculture-pond-total-inventory',
@@ -822,6 +862,8 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'entities-trial-balance-summary',
   'entities-financial-summary',
   'stations-financial-summary',
+  'fuel-stations-pl-summary',
+  'shop-hubs-pl-summary',
   'ponds-pl-summary',
   'daily-summary',
   'shift-summary',
@@ -856,6 +898,8 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'aquaculture-pond-medicine-stock',
   'aquaculture-pond-supplies-stock',
   'aquaculture-fish-stock-position',
+  'aquaculture-fcr-biomass',
+  'aquaculture-fish-growth',
   'aquaculture-shop-station-stock',
   'aquaculture-equipment-assets',
   'aquaculture-pond-total-inventory',
@@ -1278,6 +1322,7 @@ export default function ReportsPage() {
   const [itemFilterCategoryList, setItemFilterCategoryList] = useState<string[]>([])
   const [reportStationList, setReportStationList] = useState<ReportStationForSegment[]>([])
   const [reportStationId, setReportStationId] = useState('')
+  const [loansStrictSiteOnly, setLoansStrictSiteOnly] = useState(false)
   const [businessSegment, setBusinessSegment] = useState<ReportBusinessSegment>('all')
   const todayIso = localDateISO()
   const [salesPurchaseDateRange, setSalesPurchaseDateRange] = useState({
@@ -1713,6 +1758,8 @@ export default function ReportsPage() {
       dateRangeOverride?: { startDate: string; endDate: string }
       /** Override Site scope for this fetch (station id or p:{pondId}). */
       siteScopeKey?: string
+      /** Loans borrow/lent report: exclude company-wide loans when a site is selected. */
+      strictSiteOnly?: boolean
     }
   ) => {
     setLoading(true)
@@ -1833,6 +1880,13 @@ export default function ReportsPage() {
       }
     }
 
+    if (reportId === 'loans-borrow-and-lent') {
+      const strict = opts?.strictSiteOnly ?? loansStrictSiteOnly
+      if (strict && params.station_id) {
+        params.strict_site = 'true'
+      }
+    }
+
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
       if (!token) {
@@ -1936,6 +1990,7 @@ export default function ReportsPage() {
     businessSegment,
     salesPurchaseDateRange,
     scrollReportPanelIntoView,
+    loansStrictSiteOnly,
   ])
 
   const openEntityPlDetail = useCallback(
@@ -3138,7 +3193,8 @@ export default function ReportsPage() {
                       <p className="text-slate-500">Limited to your assigned site.</p>
                     ) : (
                       <p className="text-slate-500">
-                        Filter site-scoped reports by station or pond. <strong>All</strong> = company-wide.
+                        Filter by one <strong>fuel station</strong>, <strong>shop hub (no fuel)</strong>, or{' '}
+                        <strong>pond</strong>. <strong>All</strong> = company-wide totals plus per-entity breakdowns.
                       </p>
                     )}
                   </div>
@@ -3157,13 +3213,26 @@ export default function ReportsPage() {
                         className="min-w-[16rem] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                       >
                         <option value="">All</option>
-                        {reportStationList.length > 0 ? (
-                          <optgroup label="Stations">
-                            {reportStationList.map((s) => (
-                              <option key={s.id} value={String(s.id)}>
-                                {s.station_name}
-                              </option>
-                            ))}
+                        {reportStationList.filter((s) => s.operates_fuel_retail !== false).length > 0 ? (
+                          <optgroup label="Fuel filling stations">
+                            {reportStationList
+                              .filter((s) => s.operates_fuel_retail !== false)
+                              .map((s) => (
+                                <option key={s.id} value={String(s.id)}>
+                                  {s.station_name}
+                                </option>
+                              ))}
+                          </optgroup>
+                        ) : null}
+                        {reportStationList.filter((s) => s.operates_fuel_retail === false).length > 0 ? (
+                          <optgroup label="Shop hubs (no fuel)">
+                            {reportStationList
+                              .filter((s) => s.operates_fuel_retail === false)
+                              .map((s) => (
+                                <option key={s.id} value={String(s.id)}>
+                                  {s.station_name}
+                                </option>
+                              ))}
                           </optgroup>
                         ) : null}
                         {showPondsInSiteScope ? (
@@ -3491,6 +3560,13 @@ export default function ReportsPage() {
                           ponds: aquaculturePonds,
                           aquaculturePondId: effectiveAquaculturePondId,
                           onViewEntityPl: openEntityPlDetail,
+                          onLoansStrictSiteChange:
+                            selectedReport === 'loans-borrow-and-lent'
+                              ? (strict) => {
+                                  setLoansStrictSiteOnly(strict)
+                                  void fetchReport('loans-borrow-and-lent', { strictSiteOnly: strict })
+                                }
+                              : undefined,
                         }
                       )}
 
@@ -3557,6 +3633,49 @@ function renderPeriodFilter(
       onDateChange={onDateChange}
       description={description || 'Data is filtered by this date range.'}
     />
+  )
+}
+
+function renderAquacultureFcrBlock(data: Record<string, unknown> | null | undefined) {
+  const fcr = data?.fcr as Record<string, unknown> | undefined
+  if (!fcr) return null
+  const scoped = (fcr.scoped ?? fcr.portfolio) as Record<string, unknown> | undefined
+  if (!scoped) return null
+  const feed = Number(scoped.feed_kg ?? 0)
+  const gain = Number(scoped.biomass_gain_kg ?? 0)
+  const harvest = Number(scoped.harvest_kg ?? 0)
+  const fcrBio = scoped.fcr_biomass != null ? Number(scoped.fcr_biomass) : null
+  const fcrHar = scoped.fcr_harvest != null ? Number(scoped.fcr_harvest) : null
+  if (feed <= 0 && gain <= 0 && harvest <= 0) return null
+  return (
+    <div className="rounded-lg border border-teal-200 bg-teal-50/50 px-4 py-3">
+      <h4 className="text-sm font-semibold text-teal-950">Feed conversion (FCR) — period</h4>
+      <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+        <div>
+          <span className="text-xs text-teal-800/80">Feed recorded</span>
+          <p className="font-semibold tabular-nums text-teal-950">{feed > 0 ? `${formatNumber(feed, 2)} kg` : '—'}</p>
+        </div>
+        <div>
+          <span className="text-xs text-teal-800/80">Biomass gain (sampling)</span>
+          <p className="font-semibold tabular-nums text-teal-950">{gain > 0 ? `${formatNumber(gain, 2)} kg` : '—'}</p>
+        </div>
+        <div>
+          <span className="text-xs text-teal-800/80">FCR (feed ÷ biomass gain)</span>
+          <p className="font-semibold tabular-nums text-teal-950">
+            {fcrBio != null && Number.isFinite(fcrBio) ? formatNumber(fcrBio, 2) : '—'}
+          </p>
+        </div>
+        <div>
+          <span className="text-xs text-teal-800/80">FCR (feed ÷ harvest kg)</span>
+          <p className="font-semibold tabular-nums text-teal-950">
+            {fcrHar != null && Number.isFinite(fcrHar) ? formatNumber(fcrHar, 2) : '—'}
+          </p>
+        </div>
+      </div>
+      {typeof fcr.methodology === 'string' ? (
+        <p className="mt-2 text-[11px] leading-relaxed text-teal-900/70">{fcr.methodology}</p>
+      ) : null}
+    </div>
   )
 }
 
@@ -5145,6 +5264,16 @@ function renderReportTable(
           )}
         {data.accounting_note && (
           <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
+        )}
+        {data.filter_station_id != null && data.filter_station_id > 0 && scopeLabels?.onLoansStrictSiteChange && (
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={Boolean(data.filter_strict_site)}
+              onChange={(e) => scopeLabels.onLoansStrictSiteChange?.(e.target.checked)}
+            />
+            This site only (exclude company-wide loans)
+          </label>
         )}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -8257,6 +8386,7 @@ function renderReportTable(
             handleReportDateChange,
             'Aquaculture pond P&L uses fish sales dates, expense dates, and payroll payment dates in this range.'
           )}
+        {renderAquacultureFcrBlock(data)}
         <p className="text-sm font-medium text-slate-700">
           All amounts in <strong>BDT</strong>.
         </p>
@@ -8610,6 +8740,7 @@ function renderReportTable(
             handleReportDateChange,
             'Rows are filtered by transaction date within this range.'
           )}
+        {renderAquacultureFcrBlock(data)}
         <p className="text-sm font-medium text-slate-700">
           {reportType === 'aquaculture-equipment-assets'
             ? 'Equipment, repair, and miscellaneous pond asset purchases in the period — amounts in '
@@ -9074,6 +9205,215 @@ function renderReportTable(
     )
   }
 
+  if (reportType === 'aquaculture-fish-growth' && data) {
+    const period = data.period || {}
+    const intervals: any[] = Array.isArray(data.intervals) ? data.intervals : []
+    const loadRows: any[] = Array.isArray(data.load_by_pond) ? data.load_by_pond : []
+    const summary = data.summary || {}
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Growth is measured between consecutive biomass samples; FCR and load use the same period.'
+          )}
+        {renderAquacultureFcrBlock(data)}
+        <div className="grid gap-3 sm:grid-cols-4">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <div className="text-xs text-slate-500">Samples</div>
+            <div className="font-semibold tabular-nums">{summary.sample_count ?? 0}</div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <div className="text-xs text-slate-500">Growth intervals</div>
+            <div className="font-semibold tabular-nums">{summary.interval_count ?? 0}</div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <div className="text-xs text-slate-500">Period biomass gain</div>
+            <div className="font-semibold tabular-nums">
+              {summary.biomass_gain_kg != null ? `${formatNumber(Number(summary.biomass_gain_kg), 2)} kg` : '—'}
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <div className="text-xs text-slate-500">Period FCR (biomass)</div>
+            <div className="font-semibold tabular-nums text-teal-900">{summary.fcr_biomass ?? '—'}</div>
+          </div>
+        </div>
+        {intervals.length > 0 ? (
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2">Sample-to-sample growth</h4>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Pond</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">From → To</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Days</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">ADG g/fish/day</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Biomass gain kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Feed kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Interval FCR</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {intervals.map((row: any, idx: number) => (
+                    <tr key={`${row.pond_id}-${row.from_sample_id}-${row.to_sample_id}-${idx}`}>
+                      <td className="px-3 py-2 font-medium">{row.pond_name}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {row.from_date} → {row.to_date}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.days}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-teal-900">
+                        {row.adg_g_per_fish_per_day ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.biomass_gain_kg ?? '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(row.feed_kg ?? 0), 2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.interval_fcr ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">
+            Need at least two biomass samples in the period to show growth intervals. Record samples under Aquaculture →
+            Sampling.
+          </p>
+        )}
+        {loadRows.length > 0 ? (
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2">Pond load (kg per decimal) — as of period end</h4>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Pond</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Live kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Live fish</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">pcs/kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">kg/dec</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Load</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {loadRows.map((r: any) => (
+                    <tr key={r.pond_id}>
+                      <td className="px-3 py-2 font-medium">{r.pond_name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(r.implied_net_weight_kg ?? 0), 2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{(r.implied_net_fish_count ?? 0).toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.current_fish_per_kg ?? '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.stock_density_kg_per_decimal ?? '—'}</td>
+                      <td className="px-3 py-2">{r.load_level_label ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+        {data.methodology ? <p className="text-xs text-slate-600">{String(data.methodology)}</p> : null}
+      </div>
+    )
+  }
+
+  if (reportType === 'aquaculture-fcr-biomass' && data) {
+    const period = data.period || {}
+    const fcr = data.fcr || {}
+    const portfolio = fcr.portfolio || {}
+    const loadRows: any[] = Array.isArray(data.load_by_pond) ? data.load_by_pond : []
+    const perPond: any[] = Array.isArray(fcr.per_pond) ? fcr.per_pond : []
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'FCR uses feed kg on pond expenses and biomass gain from first-to-last sampling in this range.'
+          )}
+        {renderAquacultureFcrBlock(data)}
+        {perPond.length > 0 ? (
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2">FCR by pond</h4>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Pond</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Feed kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Biomass gain</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Harvest kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">FCR biomass</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">FCR harvest</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {perPond.map((p: any) => (
+                    <tr key={p.pond_id}>
+                      <td className="px-3 py-2 font-medium">{p.pond_name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(p.feed_kg ?? 0), 2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(p.biomass_gain_kg ?? 0), 2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(p.harvest_kg ?? 0), 2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-teal-900">
+                        {p.fcr_biomass ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.fcr_harvest ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+        {loadRows.length > 0 ? (
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2">Pond load (kg per decimal) — as of period end</h4>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Pond</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Live kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Live fish</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">pcs/kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">kg/dec</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Load</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Partial harvest hint</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {loadRows.map((r: any) => (
+                    <tr key={r.pond_id}>
+                      <td className="px-3 py-2 font-medium">{r.pond_name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(r.implied_net_weight_kg ?? 0), 2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{(r.implied_net_fish_count ?? 0).toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.current_fish_per_kg ?? '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.stock_density_kg_per_decimal ?? '—'}</td>
+                      <td className="px-3 py-2">{r.load_level_label ?? '—'}</td>
+                      <td className="px-3 py-2 text-xs text-amber-900">
+                        {r.partial_harvest_applicable && r.partial_harvest_suggested_kg
+                          ? `~${formatNumber(Number(r.partial_harvest_suggested_kg), 0)} kg` +
+                            (r.partial_harvest_suggested_fish_count
+                              ? ` (~${(r.partial_harvest_suggested_fish_count as number).toLocaleString()} fish)`
+                              : '')
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+        {data.methodology ? <p className="text-xs text-slate-600">{String(data.methodology)}</p> : null}
+      </div>
+    )
+  }
+
   if (reportType === 'aquaculture-fish-stock-position' && data && Array.isArray(data.groups)) {
     const period = data.period || {}
     const groups: any[] = data.groups
@@ -9089,6 +9429,7 @@ function renderReportTable(
             handleReportDateChange,
             'Biological fish position computed as of the report end date.'
           )}
+        {renderAquacultureFcrBlock(data)}
         <p className="text-sm font-medium text-slate-700">
           Fish stock by pond as of <strong>{asOf}</strong> (kg and head count from movements and latest sample).
         </p>
@@ -9146,6 +9487,28 @@ function renderReportTable(
                           : '—'}
                       </td>
                     </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-gray-500">Current size (pcs/kg)</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{ln.current_fish_per_kg ?? '—'}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-gray-500">Load (kg per decimal)</td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {ln.stock_density_kg_per_decimal ?? '—'}
+                        {ln.load_level_label ? ` · ${ln.load_level_label}` : ''}
+                      </td>
+                    </tr>
+                    {ln.partial_harvest_applicable && ln.partial_harvest_suggested_kg ? (
+                      <tr>
+                        <td className="px-2 py-1 text-amber-800">Suggested partial harvest</td>
+                        <td className="px-2 py-1 text-right text-amber-900 font-medium">
+                          ~{formatNumber(Number(ln.partial_harvest_suggested_kg), 0)} kg
+                          {ln.partial_harvest_suggested_fish_count
+                            ? ` (~${(ln.partial_harvest_suggested_fish_count as number).toLocaleString()} fish)`
+                            : ''}
+                        </td>
+                      </tr>
+                    ) : null}
                     {ln.stocking_advice_message ? (
                       <tr>
                         <td className="px-2 py-1 text-gray-500">Stocking note</td>

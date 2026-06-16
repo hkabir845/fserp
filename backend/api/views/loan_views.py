@@ -17,6 +17,8 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
+from api.exceptions import GlPostingError
+
 from api.models import (
     ChartOfAccount,
     Loan,
@@ -46,6 +48,7 @@ from api.services.loan_counterparty_opening import (
     resolve_default_loan_principal,
     resolve_opening_balance_equity,
 )
+from api.services.loan_posting import resync_loan_gl_station_tags
 from api.services.loan_counterparty_ledger import build_counterparty_ledger
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
@@ -280,6 +283,12 @@ def _counterparty_json(c: LoanCounterparty):
         "opening_annual_interest_rate": (str(oar) if oar is not None else None),
         "opening_principal_account_id": c.opening_principal_account_id,
         "opening_equity_account_id": c.opening_equity_account_id,
+        "opening_balance_station_id": c.opening_balance_station_id,
+        "opening_balance_station_name": (
+            c.opening_balance_station.station_name
+            if getattr(c, "opening_balance_station_id", None) and getattr(c, "opening_balance_station", None)
+            else ""
+        ),
         "opening_balance_journal_id": c.opening_balance_journal_id,
         "default_lent_principal_account_id": c.opening_principal_account_id
         if ob_t == LoanCounterparty.OPENING_RECEIVABLE
@@ -405,6 +414,7 @@ def _opening_fields_snapshot(c: LoanCounterparty) -> dict:
         "opening_annual_interest_rate": str(oar) if oar is not None else None,
         "opening_principal_account_id": c.opening_principal_account_id,
         "opening_equity_account_id": c.opening_equity_account_id,
+        "opening_balance_station_id": c.opening_balance_station_id,
         "post_opening_to_gl": True,
     }
 
@@ -443,6 +453,7 @@ def _counterparty_opening_from_body(cid, body) -> tuple[dict, bool, JsonResponse
         out["opening_annual_interest_rate"] = None
         out["opening_principal_account_id"] = None
         out["opening_equity_account_id"] = None
+        out["opening_balance_station_id"] = None
         return out, post_gl, None
 
     if not as_of:
@@ -502,6 +513,18 @@ def _counterparty_opening_from_body(cid, body) -> tuple[dict, bool, JsonResponse
             return {}, True, JsonResponse({"detail": "Invalid opening_equity_account_id"}, status=400)
         out["opening_equity_account_id"] = oeq_id
 
+    raw_st = body.get("opening_balance_station_id", body.get("opening_balance_station"))
+    if raw_st in (None, "", 0, "0"):
+        out["opening_balance_station_id"] = None
+    else:
+        pv = parse_valid_station_id(cid, raw_st)
+        if pv is None:
+            return {}, True, JsonResponse(
+                {"detail": "Unknown, inactive, or invalid opening_balance_station_id for this company."},
+                status=400,
+            )
+        out["opening_balance_station_id"] = pv
+
     return out, post_gl, None
 
 
@@ -513,7 +536,7 @@ def loan_counterparties_list_or_create(request):
     if request.method == "GET":
         qs = (
             LoanCounterparty.objects.filter(company_id=cid)
-            .select_related("opening_principal_account", "opening_equity_account")
+            .select_related("opening_principal_account", "opening_equity_account", "opening_balance_station")
             .order_by("code", "id")
         )
         return JsonResponse([_counterparty_json(c) for c in qs], safe=False)
@@ -603,6 +626,8 @@ def loan_counterparty_detail(request, counterparty_id: int):
                 "opening_annual_interest_rate",
                 "opening_principal_account_id",
                 "opening_equity_account_id",
+                "opening_balance_station_id",
+                "opening_balance_station",
                 "post_opening_to_gl",
             }
         )
@@ -666,7 +691,7 @@ def loan_counterparty_detail(request, counterparty_id: int):
         c.refresh_from_db()
         c = (
             LoanCounterparty.objects.filter(pk=c.pk, company_id=cid)
-            .select_related("opening_principal_account", "opening_equity_account")
+            .select_related("opening_principal_account", "opening_equity_account", "opening_balance_station")
             .first()
         )
         if not c:
@@ -856,6 +881,27 @@ def loans_list_or_create(request):
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
 
+def _apply_loan_station_from_body(lo: Loan, cid: int, body: dict) -> tuple[int, JsonResponse | None]:
+    """Apply station_id from PATCH body; resync posted GL when it changes."""
+    if "station_id" not in body and "station" not in body:
+        return 0, None
+    old_station_id = lo.station_id
+    raw_s = body.get("station_id", body.get("station"))
+    if raw_s in (None, "", 0, "0"):
+        lo.station_id = None
+    else:
+        pv = parse_valid_station_id(cid, raw_s)
+        if pv is None:
+            return 0, JsonResponse(
+                {"detail": "Unknown, inactive, or invalid station_id for this company."},
+                status=400,
+            )
+        lo.station_id = pv
+    if old_station_id != lo.station_id:
+        return resync_loan_gl_station_tags(cid, lo), None
+    return 0, None
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
@@ -947,20 +993,16 @@ def loan_detail(request, loan_id: int):
                 if new_st not in ("draft", "active", "closed"):
                     return JsonResponse({"detail": "status must be draft, active, or closed"}, status=400)
                 lo.status = new_st
+            resync_count = 0
             if "station_id" in body or "station" in body:
-                raw_s = body.get("station_id", body.get("station"))
-                if raw_s in (None, "", 0, "0"):
-                    lo.station_id = None
-                else:
-                    pv = parse_valid_station_id(cid, raw_s)
-                    if pv is None:
-                        return JsonResponse(
-                            {"detail": "Unknown, inactive, or invalid station_id for this company."},
-                            status=400,
-                        )
-                    lo.station_id = pv
+                resync_count, st_err = _apply_loan_station_from_body(lo, cid, body)
+                if st_err:
+                    return st_err
             lo.save()
-            return JsonResponse(_loan_json(lo))
+            out = _loan_json(lo)
+            if resync_count:
+                out["gl_station_resynced_journals"] = resync_count
+            return JsonResponse(out)
         has_activity = (
             lo.disbursements.exists()
             or lo.repayments.exists()
@@ -1151,20 +1193,16 @@ def loan_detail(request, loan_id: int):
                 {"detail": "Islamic facility cannot have a parent loan"},
                 status=400,
             )
+        resync_count = 0
         if "station_id" in body or "station" in body:
-            raw_s = body.get("station_id", body.get("station"))
-            if raw_s in (None, "", 0, "0"):
-                lo.station_id = None
-            else:
-                pv = parse_valid_station_id(cid, raw_s)
-                if pv is None:
-                    return JsonResponse(
-                        {"detail": "Unknown, inactive, or invalid station_id for this company."},
-                        status=400,
-                    )
-                lo.station_id = pv
+            resync_count, st_err = _apply_loan_station_from_body(lo, cid, body)
+            if st_err:
+                return st_err
         lo.save()
-        return JsonResponse(_loan_json(lo))
+        out = _loan_json(lo)
+        if resync_count:
+            out["gl_station_resynced_journals"] = resync_count
+        return JsonResponse(out)
     if request.method == "DELETE":
         if lo.child_loans.exists():
             return JsonResponse(
@@ -1251,6 +1289,8 @@ def loan_disburse(request, loan_id: int):
             )
     except ValidationError as e:
         return JsonResponse({"detail": str(e)}, status=400)
+    except GlPostingError as e:
+        return JsonResponse({"detail": e.detail}, status=400)
     d.refresh_from_db()
     lo.refresh_from_db()
     return JsonResponse(
@@ -1321,6 +1361,8 @@ def loan_repay(request, loan_id: int):
             )
     except ValidationError as e:
         return JsonResponse({"detail": str(e)}, status=400)
+    except GlPostingError as e:
+        return JsonResponse({"detail": e.detail}, status=400)
     r.refresh_from_db()
     lo.refresh_from_db()
     return JsonResponse(
@@ -1410,6 +1452,8 @@ def loan_accrue_interest(request, loan_id: int):
         accrual.refresh_from_db()
     except ValidationError as e:
         return JsonResponse({"detail": str(e)}, status=400)
+    except GlPostingError as e:
+        return JsonResponse({"detail": e.detail}, status=400)
     return JsonResponse(
         {
             "accrual": {

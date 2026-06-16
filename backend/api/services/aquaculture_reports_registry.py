@@ -27,6 +27,8 @@ from api.models import (
     Station,
 )
 from api.services.aquaculture_constants import fish_species_display_label
+from api.services.aquaculture_fcr_service import fcr_period_summary_block
+from api.services.aquaculture_growth_service import build_fish_growth_report
 from api.services.aquaculture_pond_stock_service import pond_warehouse_stock_matrix
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 from api.services.gl_posting import item_inventory_unit_cost
@@ -90,6 +92,30 @@ def _period_block(start: date, end: date) -> dict[str, str]:
     return {"start_date": start.isoformat(), "end_date": end.isoformat()}
 
 
+def _attach_fcr_to_report(
+    payload: dict[str, Any],
+    company_id: int,
+    start: date,
+    end: date,
+    request: HttpRequest,
+) -> dict[str, Any]:
+    """Add standard FCR + feed block to date-range aquaculture reports."""
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return payload
+    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return payload
+    payload["fcr"] = fcr_period_summary_block(
+        company_id,
+        start,
+        end,
+        pond_id=pond_filter_id,
+        production_cycle_id=cycle_filter_id,
+    )
+    return payload
+
+
 def build_aquaculture_report(
     report_id: str, company_id: int, start: date, end: date, request: HttpRequest
 ) -> dict[str, Any] | JsonResponse:
@@ -129,6 +155,10 @@ def build_aquaculture_report(
         payload = _report_equipment_assets(company_id, start, end, request)
     elif report_id == "aquaculture-pond-total-inventory":
         payload = _report_pond_total_inventory(company_id, end, request)
+    elif report_id == "aquaculture-fcr-biomass":
+        payload = _report_fcr_biomass(company_id, start, end, request)
+    elif report_id == "aquaculture-fish-growth":
+        payload = _report_fish_growth(company_id, start, end, request)
     else:
         return JsonResponse({"detail": "Unknown aquaculture report"}, status=404)
 
@@ -136,6 +166,20 @@ def build_aquaculture_report(
         return payload
     if isinstance(payload, dict):
         payload.setdefault("report_id", report_id)
+        date_range_reports = {
+            "aquaculture-pond-pl",
+            "aquaculture-fish-sales",
+            "aquaculture-pond-sales-comprehensive",
+            "aquaculture-expenses",
+            "aquaculture-sampling",
+            "aquaculture-production-cycles",
+            "aquaculture-profit-transfers",
+            "aquaculture-fish-transfers",
+            "aquaculture-equipment-assets",
+            "aquaculture-fish-stock-position",
+        }
+        if report_id in date_range_reports:
+            _attach_fcr_to_report(payload, company_id, start, end, request)
     return payload
 
 
@@ -305,6 +349,15 @@ def _report_fish_stock_position(
                             "latest_sample_estimated_total_weight_kg"
                         ),
                         "latest_sample_fish_species_label": r.get("latest_sample_fish_species_label"),
+                        "stock_density_kg_per_decimal": r.get("stock_density_kg_per_decimal"),
+                        "load_level": r.get("load_level"),
+                        "load_level_label": r.get("load_level_label"),
+                        "current_fish_per_kg": r.get("current_fish_per_kg"),
+                        "current_avg_weight_kg": r.get("current_avg_weight_kg"),
+                        "partial_harvest_applicable": r.get("partial_harvest_applicable"),
+                        "partial_harvest_suggested_kg": r.get("partial_harvest_suggested_kg"),
+                        "partial_harvest_suggested_fish_count": r.get("partial_harvest_suggested_fish_count"),
+                        "partial_harvest_rationale": r.get("partial_harvest_rationale"),
                         "stocking_advice_status": r.get("stocking_advice_status"),
                         "stocking_advice_message": r.get("stocking_advice_message"),
                     }
@@ -1200,6 +1253,92 @@ def _report_sampling(company_id: int, start: date, end: date, request: HttpReque
         "summary": summary,
         "groups": groups,
         "totals": {"sample_count": total_samples},
+    }
+
+
+def _report_fcr_biomass(company_id: int, start: date, end: date, request: HttpRequest) -> dict[str, Any]:
+    """Dedicated FCR, feed consumption, biomass gain, and pond load report for a date range."""
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+
+    fcr_block = fcr_period_summary_block(
+        company_id,
+        start,
+        end,
+        pond_id=pond_filter_id,
+        production_cycle_id=cycle_filter_id,
+    )
+    stock_rows = compute_fish_stock_position_rows(
+        company_id,
+        pond_id=pond_filter_id,
+        production_cycle_id=cycle_filter_id,
+        include_inactive_ponds=False,
+    )
+    load_rows: list[dict[str, Any]] = []
+    for r in stock_rows:
+        load_rows.append(
+            {
+                "pond_id": r.get("pond_id"),
+                "pond_name": r.get("pond_name") or "",
+                "pond_role": r.get("pond_role"),
+                "water_area_decimal": r.get("water_area_decimal"),
+                "implied_net_weight_kg": r.get("implied_net_weight_kg"),
+                "implied_net_fish_count": r.get("implied_net_fish_count"),
+                "current_fish_per_kg": r.get("current_fish_per_kg"),
+                "stock_density_kg_per_decimal": r.get("stock_density_kg_per_decimal"),
+                "load_level": r.get("load_level"),
+                "load_level_label": r.get("load_level_label"),
+                "partial_harvest_applicable": r.get("partial_harvest_applicable"),
+                "partial_harvest_suggested_kg": r.get("partial_harvest_suggested_kg"),
+                "partial_harvest_suggested_fish_count": r.get("partial_harvest_suggested_fish_count"),
+                "partial_harvest_rationale": r.get("partial_harvest_rationale"),
+            }
+        )
+
+    portfolio = fcr_block.get("portfolio") or {}
+    return {
+        "period": _period_block(start, end),
+        "currency_code": BDT,
+        "summary": {
+            "feed_kg": portfolio.get("feed_kg"),
+            "biomass_gain_kg": portfolio.get("biomass_gain_kg"),
+            "harvest_kg": portfolio.get("harvest_kg"),
+            "fcr_biomass": portfolio.get("fcr_biomass"),
+            "fcr_harvest": portfolio.get("fcr_harvest"),
+            "pond_count_with_load": len(load_rows),
+        },
+        "fcr": fcr_block,
+        "load_by_pond": load_rows,
+        "methodology": fcr_block.get("methodology"),
+    }
+
+
+def _report_fish_growth(company_id: int, start: date, end: date, request: HttpRequest) -> dict[str, Any]:
+    """Sample-to-sample growth intervals with ADG, interval FCR, period FCR, and pond load."""
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    species_raw = (request.GET.get("fish_species") or "").strip() or None
+
+    body = build_fish_growth_report(
+        company_id,
+        start,
+        end,
+        pond_id=pond_filter_id,
+        production_cycle_id=cycle_filter_id,
+        fish_species=species_raw,
+    )
+    return {
+        "period": _period_block(start, end),
+        "currency_code": BDT,
+        **body,
     }
 
 

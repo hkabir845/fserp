@@ -8,8 +8,10 @@ from decimal import Decimal
 import pytest
 
 from api.models import (
+    AquacultureBiomassSample,
     AquacultureFishSale,
     AquaculturePond,
+    AquacultureProductionCycle,
     Bill,
     BillLine,
     Item,
@@ -80,6 +82,75 @@ def test_assert_outbound_allows_after_vendor_fry_receipt(company_tenant):
         fish_species="tilapia",
         fish_count=10000,
         weight_kg=Decimal("100"),
+    )
+    assert err is None
+
+
+@pytest.mark.django_db
+def test_assert_outbound_allows_transfer_weight_from_biomass_sample_after_fry_stocking(company_tenant):
+    """
+    Fry bills record tiny kg vs head count; transfers use seine pcs/kg.
+    Outbound guard must use sample-based biomass, not transaction book weight alone.
+    """
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id,
+        name="Nursing Pond",
+        pond_role="nursing",
+        physical_site_name="Site-A",
+        is_active=True,
+    )
+    cy = AquacultureProductionCycle.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        name="Mid Cycle",
+        start_date=date(2026, 1, 1),
+    )
+    vendor = Vendor.objects.create(company_id=company_tenant.id, company_name="Fry Vendor")
+    fish_item = Item.objects.create(
+        company_id=company_tenant.id,
+        name="Tilapia Fry",
+        pos_category="fish",
+        unit="kg",
+        unit_price=Decimal("100"),
+        cost=Decimal("80"),
+    )
+    bill = Bill.objects.create(
+        company_id=company_tenant.id,
+        vendor=vendor,
+        bill_number="B-FRY-N",
+        bill_date=date(2026, 4, 1),
+        status="posted",
+        stock_receipt_applied=True,
+        total=Decimal("5000"),
+    )
+    BillLine.objects.create(
+        bill=bill,
+        item=fish_item,
+        quantity=Decimal("1"),
+        amount=Decimal("5000"),
+        aquaculture_pond=pond,
+        aquaculture_production_cycle=cy,
+        aquaculture_fish_count=500000,
+        aquaculture_fish_weight_kg=Decimal("166.6667"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        production_cycle=cy,
+        fish_species="tilapia",
+        sample_date=date(2026, 6, 16),
+        estimated_fish_count=45,
+        estimated_total_weight_kg=Decimal("1"),
+        stock_reference_fish_count=498650,
+        extrapolated_biomass_kg=Decimal("11081"),
+    )
+    err = assert_outbound_fish_within_implied_stock(
+        company_tenant.id,
+        pond.id,
+        production_cycle_id=cy.id,
+        fish_species="tilapia",
+        fish_count=50000,
+        weight_kg=Decimal("1111.11"),
     )
     assert err is None
 

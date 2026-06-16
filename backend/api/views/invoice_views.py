@@ -7,6 +7,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
+from api.exceptions import GlPostingError
 from api.utils.auth import auth_required
 from api.utils.customer_display import customer_display_name
 from api.views.common import parse_json_body, require_company_id
@@ -199,12 +200,15 @@ def invoices_list_or_create(request):
             .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
             .first()
         )
-        sync_invoice_gl(
-            cid,
-            inv,
-            payment_method=(body.get("payment_method") or "cash"),
-            bank_account_id=body.get("bank_account_id"),
-        )
+        try:
+            sync_invoice_gl(
+                cid,
+                inv,
+                payment_method=(body.get("payment_method") or "cash"),
+                bank_account_id=body.get("bank_account_id"),
+            )
+        except GlPostingError as e:
+            return JsonResponse({"detail": e.detail}, status=400)
         return JsonResponse(_invoice_to_json(inv, cid), status=201)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
@@ -286,24 +290,27 @@ def invoice_detail(request, invoice_id: int):
             .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
             .first()
         )
-        if not material:
-            sync_invoice_gl(
-                cid,
-                inv,
-                old_status=old_status,
-                payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
-                bank_account_id=body.get("bank_account_id"),
-            )
-        else:
-            ok_post, err_post = reconcile_invoice_after_material_edit(
-                cid,
-                inv,
-                old_status=old_status,
-                payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
-                bank_account_id=body.get("bank_account_id"),
-            )
-            if not ok_post:
-                return JsonResponse({"detail": err_post}, status=409)
+        try:
+            if not material:
+                sync_invoice_gl(
+                    cid,
+                    inv,
+                    old_status=old_status,
+                    payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
+                    bank_account_id=body.get("bank_account_id"),
+                )
+            else:
+                ok_post, err_post = reconcile_invoice_after_material_edit(
+                    cid,
+                    inv,
+                    old_status=old_status,
+                    payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
+                    bank_account_id=body.get("bank_account_id"),
+                )
+                if not ok_post:
+                    return JsonResponse({"detail": err_post}, status=409)
+        except GlPostingError as e:
+            return JsonResponse({"detail": e.detail}, status=400)
         return JsonResponse(_invoice_to_json(inv, cid))
     if request.method == "DELETE":
         ok, err = cleanup_invoice_posting_effects(cid, inv)
@@ -332,13 +339,16 @@ def invoice_status(request, invoice_id: int):
         inv.status = (body.get("status") or inv.status)[:32]
         inv.save()
         inv.refresh_from_db()
-        sync_invoice_gl(
-            cid,
-            inv,
-            old_status=old_status,
-            payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
-            bank_account_id=body.get("bank_account_id"),
-        )
+        try:
+            sync_invoice_gl(
+                cid,
+                inv,
+                old_status=old_status,
+                payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
+                bank_account_id=body.get("bank_account_id"),
+            )
+        except GlPostingError as e:
+            return JsonResponse({"detail": e.detail}, status=400)
     inv = (
         Invoice.objects.filter(id=invoice_id, company_id=cid)
         .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")

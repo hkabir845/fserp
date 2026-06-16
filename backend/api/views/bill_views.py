@@ -10,7 +10,7 @@ from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from api.exceptions import StockBusinessError
+from api.exceptions import GlPostingError, StockBusinessError
 from api.models import (
     AquaculturePond,
     AquacultureProductionCycle,
@@ -27,6 +27,7 @@ from api.services.aquaculture_constants import (
     normalize_fish_species,
     normalize_fish_species_other,
 )
+from api.services.aquaculture_pond_display import bill_line_pond_display_name
 from api.services.aquaculture_production_cycle_service import (
     assign_auto_production_cycles_for_parsed_bill_lines,
 )
@@ -432,10 +433,24 @@ def _bill_line_quantity_from_row(
 
 
 def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
+    item = getattr(l, "item", None) if getattr(l, "item_id", None) else None
+    pond = getattr(l, "aquaculture_pond", None) if getattr(l, "aquaculture_pond_id", None) else None
+    cycle = (
+        getattr(l, "aquaculture_production_cycle", None)
+        if getattr(l, "aquaculture_production_cycle_id", None)
+        else None
+    )
     return {
         "id": l.id,
         "line_number": getattr(l, "line_number", 0),
         "item_id": l.item_id,
+        "item_name": ((item.name or "").strip() if item else ""),
+        "item_pos_category": ((item.pos_category or "").strip() if item else ""),
+        "item_pieces_per_kg": (
+            str(item.pieces_per_kg)
+            if item and getattr(item, "pieces_per_kg", None) is not None
+            else None
+        ),
         "description": l.description or "",
         "quantity": str(l.quantity),
         "unit_price": str(l.unit_price),
@@ -450,7 +465,10 @@ def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
         ),
         "tax_amount": str(getattr(l, "tax_amount", 0)),
         "aquaculture_pond_id": getattr(l, "aquaculture_pond_id", None),
+        "pond_name": ((pond.name or "").strip() if pond else ""),
+        "pond_display_name": bill_line_pond_display_name(pond, l) if pond else "",
         "aquaculture_production_cycle_id": getattr(l, "aquaculture_production_cycle_id", None),
+        "cycle_name": ((cycle.name or "").strip() if cycle else ""),
         "aquaculture_cost_bucket": (getattr(l, "aquaculture_cost_bucket", None) or "")[:40],
         "aquaculture_expense_category": _bill_line_aquaculture_expense_category(l),
         "tenant_reporting_category_id": getattr(l, "tenant_reporting_category_id", None),
@@ -785,6 +803,8 @@ def bills_create(request):
                     b,
                     acknowledge_tank_overfill=ack_tank_overfill,
                 )
+    except GlPostingError as e:
+        return JsonResponse({"detail": e.detail}, status=400)
     except StockBusinessError as e:
         return JsonResponse({"detail": e.detail}, status=400)
     except IntegrityError:
@@ -960,6 +980,8 @@ def bill_detail(request, bill_id: int):
                             b,
                             acknowledge_tank_overfill=ack_tank_overfill,
                         )
+        except GlPostingError as e:
+            return JsonResponse({"detail": e.detail}, status=400)
         except StockBusinessError as e:
             return JsonResponse({"detail": e.detail}, status=400)
         return JsonResponse(_bill_to_json(b))

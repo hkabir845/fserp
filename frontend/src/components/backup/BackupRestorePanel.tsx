@@ -17,6 +17,7 @@ import {
   type BackupPreviewPayload,
 } from '@/utils/tenantBackup'
 import { safeLogError } from '@/utils/connectionError'
+import { formatDateTime } from '@/utils/date'
 
 export interface BackupCompanyOption {
   id: number
@@ -47,9 +48,7 @@ function extractErrorMessage(err: unknown, fallback: string): string {
 }
 
 function formatAuditTimestamp(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
+  return formatDateTime(iso)
 }
 
 function actionLabel(action: string): string {

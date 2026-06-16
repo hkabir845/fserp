@@ -10,6 +10,8 @@ from django.utils import timezone
 
 from api.models import ChartOfAccount, Loan, LoanDisbursement, LoanInterestAccrual, LoanRepayment, Station
 from api.services.loan_islamic import loan_uses_islamic_terminology
+from api.services.entity_gl_scoping import validate_loan_interest_entity_tags_for_gl
+from api.exceptions import GlPostingError
 from api.services.gl_posting import _create_posted_entry
 
 logger = logging.getLogger(__name__)
@@ -161,6 +163,8 @@ def post_loan_repayment(company_id: int, r: LoanRepayment) -> bool:
     memo_settle = (
         (f"Payment/settlement {settle_lbl} · {base}" if base else f"Payment/settlement {settle_lbl}")
     )[:280]
+    if i > 0 and interest_acc:
+        validate_loan_interest_entity_tags_for_gl(loan, company_id)
     lines: list = []
     if loan.direction == Loan.DIRECTION_BORROWED:
         if p > 0:
@@ -294,6 +298,7 @@ def post_loan_interest_accrual(company_id: int, accrual: LoanInterestAccrual) ->
     if not _coa_ok(company_id, interest_acc) or not _coa_ok(company_id, accrual_acc):
         logger.warning("loan accrual %s: missing interest or accrual GL", accrual.id)
         return False
+    validate_loan_interest_entity_tags_for_gl(loan, company_id)
     memo = (accrual.memo or loan.loan_no or "")[:280]
     entry_number = f"AUTO-LOAN-ACCR-{accrual.id}"
     if loan.direction == Loan.DIRECTION_BORROWED:
@@ -375,3 +380,40 @@ def reverse_loan_interest_accrual(company_id: int, accrual: LoanInterestAccrual,
             reversal_journal_entry_id=je.id,
         )
     return True
+
+
+def resync_loan_gl_station_tags(company_id: int, loan: Loan) -> int:
+    """
+    Align station_id on auto-posted loan journal headers and lines with the loan's current site.
+    Returns the number of journal entries updated.
+    """
+    from api.models import JournalEntry, JournalEntryLine
+
+    je_ids: set[int] = set()
+    for je_id in loan.disbursements.filter(journal_entry_id__isnull=False).values_list(
+        "journal_entry_id", flat=True
+    ):
+        je_ids.add(int(je_id))
+    for je_id in loan.repayments.filter(journal_entry_id__isnull=False).values_list(
+        "journal_entry_id", flat=True
+    ):
+        je_ids.add(int(je_id))
+    for je_id in loan.interest_accruals.filter(journal_entry_id__isnull=False).values_list(
+        "journal_entry_id", flat=True
+    ):
+        je_ids.add(int(je_id))
+    for je_id in loan.interest_accruals.filter(
+        reversal_journal_entry_id__isnull=False
+    ).values_list("reversal_journal_entry_id", flat=True):
+        je_ids.add(int(je_id))
+
+    if not je_ids:
+        return 0
+
+    gst = _loan_gl_station_id(loan)
+    with transaction.atomic():
+        JournalEntry.objects.filter(company_id=company_id, id__in=je_ids).update(station_id=gst)
+        JournalEntryLine.objects.filter(
+            journal_entry_id__in=je_ids, journal_entry__company_id=company_id
+        ).update(station_id=gst)
+    return len(je_ids)

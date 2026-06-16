@@ -96,6 +96,16 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
         "group": "Reports — Financial",
     },
     {
+        "report_id": "fuel-stations-pl-summary",
+        "label": "Fuel Stations — P&L Summary",
+        "group": "Reports — Financial",
+    },
+    {
+        "report_id": "shop-hubs-pl-summary",
+        "label": "Shop Hubs (no fuel) — P&L Summary",
+        "group": "Reports — Financial",
+    },
+    {
         "report_id": "ponds-pl-summary",
         "label": "All Ponds — P&L Summary (GL)",
         "group": "Reports — Financial",
@@ -230,6 +240,16 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
     {
         "report_id": "aquaculture-fish-stock-position",
         "label": "Aquaculture — Fish stock by pond",
+        "group": "Reports — Aquaculture",
+    },
+    {
+        "report_id": "aquaculture-fcr-biomass",
+        "label": "Aquaculture — FCR, feed & pond load",
+        "group": "Reports — Aquaculture",
+    },
+    {
+        "report_id": "aquaculture-fish-growth",
+        "label": "Aquaculture — Fish growth, FCR & load",
         "group": "Reports — Aquaculture",
     },
     {

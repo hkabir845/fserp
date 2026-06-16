@@ -214,8 +214,15 @@ def finalize_aquaculture_fish_sale_to_invoice(
             bank_account_id=bank_account_id,
         )
 
+        from api.services.aquaculture_sale_bio_relief_service import sync_aquaculture_fish_sale_bio_relief
+
         sale.refresh_from_db()
-        return sale, _invoice_min_json(inv, company_id), None
+        bio_meta = sync_aquaculture_fish_sale_bio_relief(company_id, sale)
+
+        sale.refresh_from_db()
+        inv_json = _invoice_min_json(inv, company_id)
+        inv_json["bio_relief"] = bio_meta
+        return sale, inv_json, None
 
 
 def _invoice_min_json(inv: Invoice, company_id: int) -> dict:

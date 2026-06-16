@@ -43,6 +43,7 @@ import { printCurrentWindow, printDocument, escapeHtml } from '@/utils/printDocu
 import type { PrintBranding } from '@/utils/printBranding'
 import { loadPrintBranding } from '@/utils/printBranding'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { formatDateOnly, localDateISO } from '@/utils/date'
 import {
   MAX_ANNUAL_APR,
   annualAprFromInterestFormInput,
@@ -68,6 +69,8 @@ interface Counterparty {
   opening_annual_interest_rate?: string | null
   opening_principal_account_id?: number | null
   opening_equity_account_id?: number | null
+  opening_balance_station_id?: number | null
+  opening_balance_station_name?: string | null
   opening_balance_journal_id?: number | null
   default_lent_principal_account_id?: number | null
   default_borrowed_principal_account_id?: number | null
@@ -616,6 +619,7 @@ export default function LoansPage() {
     opening_balance_type: 'zero' as OpeningType,
     opening_balance: '',
     opening_balance_as_of: '',
+    opening_balance_station_id: '' as string | number,
     opening_interest_applicable: false,
     opening_annual_interest_rate: '',
     post_opening_to_gl: true,
@@ -629,6 +633,7 @@ export default function LoansPage() {
     opening_balance_type: 'zero' as OpeningType,
     opening_balance: '',
     opening_balance_as_of: '',
+    opening_balance_station_id: '' as string | number,
     opening_interest_applicable: false,
     opening_annual_interest_rate: '',
     post_opening_to_gl: true,
@@ -643,7 +648,9 @@ export default function LoansPage() {
   const [cpSaving, setCpSaving] = useState(false)
   const [actionLoan, setActionLoan] = useState<LoanRow | null>(null)
   const [disbAmt, setDisbAmt] = useState('')
+  const [disbDate, setDisbDate] = useState('')
   const [repayAmt, setRepayAmt] = useState('')
+  const [repayDate, setRepayDate] = useState('')
   const [repayPrin, setRepayPrin] = useState('')
   const [repayInt, setRepayInt] = useState('')
   const [scheduleData, setScheduleData] = useState<ScheduleRemainingResponse | null>(null)
@@ -913,6 +920,10 @@ export default function LoansPage() {
       opening_balance_type: (c.opening_balance_type as OpeningType) || 'zero',
       opening_balance: c.opening_balance != null ? String(c.opening_balance) : '',
       opening_balance_as_of: c.opening_balance_as_of || '',
+      opening_balance_station_id:
+        c.opening_balance_station_id != null && c.opening_balance_station_id > 0
+          ? String(c.opening_balance_station_id)
+          : '',
       opening_interest_applicable: Boolean(c.opening_interest_applicable),
       opening_annual_interest_rate: c.opening_annual_interest_rate != null ? String(c.opening_annual_interest_rate) : '',
       post_opening_to_gl: true,
@@ -979,6 +990,9 @@ export default function LoansPage() {
           opening_interest_applicable: cpEditForm.opening_interest_applicable,
           post_opening_to_gl: cpEditForm.post_opening_to_gl,
         })
+        const obSt = loanStationIdForApi(cpEditForm.opening_balance_station_id)
+        if (obSt != null) payload.opening_balance_station_id = obSt
+        else payload.opening_balance_station_id = null
         if (cpEditForm.opening_interest_applicable) {
           const ar = (cpEditForm.opening_annual_interest_rate || '0').trim() || '0'
           payload.opening_annual_interest_rate = ar
@@ -1044,6 +1058,8 @@ export default function LoansPage() {
       if (cpForm.opening_balance_type !== 'zero' && (Number(cpForm.opening_balance) || 0) > 0) {
         payload.opening_balance = Number(cpForm.opening_balance) || 0
         if (cpForm.opening_balance_as_of) payload.opening_balance_as_of = cpForm.opening_balance_as_of
+        const obSt = loanStationIdForApi(cpForm.opening_balance_station_id)
+        if (obSt != null) payload.opening_balance_station_id = obSt
         if (cpForm.opening_interest_applicable) {
           const ar = (cpForm.opening_annual_interest_rate || '0').trim() || '0'
           payload.opening_annual_interest_rate = ar
@@ -1066,6 +1082,7 @@ export default function LoansPage() {
         opening_balance_type: 'zero',
         opening_balance: '',
         opening_balance_as_of: '',
+        opening_balance_station_id: '',
         opening_interest_applicable: false,
         opening_annual_interest_rate: '',
         post_opening_to_gl: true,
@@ -1401,6 +1418,7 @@ export default function LoansPage() {
       await api.post(`/loans/${actionLoan.id}/disburse/`, {
         amount: disbAmt,
         post_to_gl: true,
+        ...(disbDate.trim() ? { disbursement_date: disbDate.trim() } : {}),
       })
       toast.success(
         loanUsesIslamicTerminology(actionLoan)
@@ -1409,6 +1427,7 @@ export default function LoansPage() {
       )
       setActionLoan(null)
       setDisbAmt('')
+      setDisbDate('')
       load()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
@@ -1435,6 +1454,7 @@ export default function LoansPage() {
         principal_amount: repayPrin || '0',
         interest_amount: repayInt || '0',
         post_to_gl: true,
+        ...(repayDate.trim() ? { repayment_date: repayDate.trim() } : {}),
       })
       toast.success(
         actionLoan.direction === 'lent'
@@ -1447,6 +1467,7 @@ export default function LoansPage() {
       setRepayAmt('')
       setRepayPrin('')
       setRepayInt('')
+      setRepayDate('')
       load()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
@@ -1554,6 +1575,9 @@ export default function LoansPage() {
     const out = Number(actionLoan.outstanding_principal ?? 0)
     const undrawn = Math.max(0, sanction - out)
     setDisbAmt(undrawn > 0.0005 ? roundMoney2(undrawn) : '')
+    const today = localDateISO()
+    setDisbDate(today)
+    setRepayDate(today)
   }, [actionLoan])
 
   useEffect(() => {
@@ -2644,9 +2668,11 @@ export default function LoansPage() {
                               onClick={() => {
                                 setActionLoan(row)
                                 setDisbAmt('')
+                                setDisbDate(localDateISO())
                                 setRepayAmt('')
                                 setRepayPrin('')
                                 setRepayInt('')
+                                setRepayDate(localDateISO())
                                 setScheduleRemainApplied(null)
                                 setScheduleRemainInput('')
                                 setScheduleQuartersApplied(null)
@@ -2846,6 +2872,37 @@ export default function LoansPage() {
                           />
                         </div>
                       </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          GL site (optional)
+                        </label>
+                        <select
+                          className="w-full border rounded-lg px-3 py-2 text-sm"
+                          value={
+                            cpForm.opening_balance_station_id === ''
+                              ? ''
+                              : String(cpForm.opening_balance_station_id)
+                          }
+                          onChange={(e) =>
+                            setCpForm({
+                              ...cpForm,
+                              opening_balance_station_id: e.target.value === '' ? '' : e.target.value,
+                            })
+                          }
+                        >
+                          <option value="">Company-wide (no site tag)</option>
+                          {stations
+                            .filter((s) => s.is_active !== false)
+                            .map((s) => (
+                              <option key={s.id} value={String(s.id)}>
+                                {s.station_name}
+                              </option>
+                            ))}
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Tags the opening journal for entity balance-sheet reporting.
+                        </p>
+                      </div>
                       <label className="flex items-center gap-2 text-sm text-gray-700">
                         <input
                           type="checkbox"
@@ -3013,6 +3070,34 @@ export default function LoansPage() {
                               setCpEditForm({ ...cpEditForm, opening_balance_as_of: e.target.value })
                             }
                           />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            GL site (optional)
+                          </label>
+                          <select
+                            className="w-full border rounded-lg px-3 py-2 text-sm"
+                            value={
+                              cpEditForm.opening_balance_station_id === ''
+                                ? ''
+                                : String(cpEditForm.opening_balance_station_id)
+                            }
+                            onChange={(e) =>
+                              setCpEditForm({
+                                ...cpEditForm,
+                                opening_balance_station_id: e.target.value === '' ? '' : e.target.value,
+                              })
+                            }
+                          >
+                            <option value="">Company-wide (no site tag)</option>
+                            {stations
+                              .filter((s) => s.is_active !== false)
+                              .map((s) => (
+                                <option key={s.id} value={String(s.id)}>
+                                  {s.station_name}
+                                </option>
+                              ))}
+                          </select>
                         </div>
                         <label className="flex items-center gap-2 text-sm text-gray-700">
                           <input
@@ -3923,6 +4008,15 @@ export default function LoansPage() {
                   <X className="h-5 w-5" />
                 </button>
               </div>
+              {!actionLoan.station_id &&
+              actionLoan.interest_account_id &&
+              actionLoan.interest_account_id > 0 ? (
+                <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  No GL site is set on this loan. Principal and bank movements can post company-wide, but{' '}
+                  <strong>interest / profit accruals and repayments with an interest portion require a site</strong>{' '}
+                  (Edit loan → GL segment — site) so entity P&L is correct.
+                </p>
+              ) : null}
               <div className="space-y-4">
                 {isIslamicFacilityHeader(actionLoan) ? (
                   <p className="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-4">
@@ -3970,6 +4064,13 @@ export default function LoansPage() {
                           Amount defaults to remaining limit (sanction minus outstanding); change if you draw less.
                         </span>
                       </p>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Disbursement date</label>
+                      <input
+                        type="date"
+                        className="w-full border rounded-lg px-3 py-2 mb-2"
+                        value={disbDate}
+                        onChange={(e) => setDisbDate(e.target.value)}
+                      />
                       <input
                         type="number"
                         step="0.01"
@@ -4290,7 +4391,7 @@ export default function LoansPage() {
                                 className="flex flex-wrap justify-between gap-2 items-center border-b border-gray-50 pb-1 last:border-0"
                               >
                                 <span>
-                                  {a.accrual_date} · {currencySymbol}
+                                  {formatDateOnly(a.accrual_date)} · {currencySymbol}
                                   {Number(a.amount).toLocaleString(undefined, {
                                     minimumFractionDigits: 2,
                                     maximumFractionDigits: 2,
@@ -4442,6 +4543,13 @@ export default function LoansPage() {
                           interest).
                         </p>
                       </div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Payment date</label>
+                      <input
+                        type="date"
+                        className="w-full border rounded-lg px-3 py-2 mb-2"
+                        value={repayDate}
+                        onChange={(e) => setRepayDate(e.target.value)}
+                      />
                       <input
                         type="number"
                         step="0.01"
@@ -4494,7 +4602,7 @@ export default function LoansPage() {
                               className="flex flex-wrap justify-between gap-2 items-center border-b border-gray-50 pb-1 last:border-0"
                             >
                               <span>
-                                {r.repayment_date} · total {currencySymbol}
+                                {formatDateOnly(r.repayment_date)} · total {currencySymbol}
                                 {Number(r.amount).toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,

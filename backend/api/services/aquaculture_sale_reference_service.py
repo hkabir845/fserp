@@ -74,7 +74,7 @@ def last_fish_sale_reference_for_ledger(
 
 
 def suggest_ledger_book_value_from_sale(*, price_per_kg: str | Decimal, weight_kg: str | Decimal | float) -> str | None:
-    """Book value = |weight| × last sale price/kg (2 dp)."""
+    """Book value = |weight| × last sale price/kg (2 dp). Legacy — prefer cost-based for mortality."""
     try:
         p = Decimal(str(price_per_kg))
         w = abs(Decimal(str(weight_kg)))
@@ -84,3 +84,22 @@ def suggest_ledger_book_value_from_sale(*, price_per_kg: str | Decimal, weight_k
         return None
     amt = (w * p).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return str(amt)
+
+
+def suggest_ledger_book_value_from_bio_cost(
+    *,
+    cost_per_kg: str | Decimal,
+    weight_kg: str | Decimal | float,
+    bio_asset_balance: str | Decimal | None = None,
+) -> str | None:
+    """Book value = |weight| × production cost/kg, capped at bio-asset balance (2 dp)."""
+    from api.services.aquaculture_bio_asset_cost_service import suggest_bio_asset_relief_amount
+
+    relief, _ = suggest_bio_asset_relief_amount(
+        cost_per_kg=cost_per_kg,
+        weight_kg=weight_kg,
+        bio_asset_balance=bio_asset_balance,
+    )
+    if relief <= 0:
+        return None
+    return str(relief)

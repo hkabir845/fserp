@@ -856,11 +856,17 @@ def report_loan_payable_gl(
 
 
 def report_loans_borrow_and_lent(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    *,
+    strict_site: bool = False,
 ) -> dict[str, Any]:
     """
     Operational loan facilities (borrowed vs lent) with GL keys for drill-down.
     Period columns aggregate disbursements and repayments between start and end (inclusive).
+    When ``station_id`` is set, ``strict_site`` excludes company-wide loans (no site tag).
     """
     qs = (
         Loan.objects.filter(company_id=company_id)
@@ -876,7 +882,10 @@ def report_loans_borrow_and_lent(
         .order_by("direction", "loan_no")
     )
     if station_id is not None:
-        qs = qs.filter(Q(station_id=station_id) | Q(station_id__isnull=True))
+        if strict_site:
+            qs = qs.filter(station_id=station_id)
+        else:
+            qs = qs.filter(Q(station_id=station_id) | Q(station_id__isnull=True))
 
     loan_ids = list(qs.values_list("id", flat=True))
     disb_by_loan: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
@@ -957,9 +966,12 @@ def report_loans_borrow_and_lent(
         "period columns sum disbursements and repayments dated within the selected range."
     )
     if station_id is not None:
-        note += (
-            " Site filter: includes loans tagged to this station or with no station (company-wide)."
-        )
+        if strict_site:
+            note += " Site filter: this station only (company-wide loans excluded)."
+        else:
+            note += (
+                " Site filter: includes loans tagged to this station or with no station (company-wide)."
+            )
     out = {
         "report_id": "loans-borrow-and-lent",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -977,6 +989,7 @@ def report_loans_borrow_and_lent(
     }
     if station_id is not None:
         out["filter_station_id"] = station_id
+        out["filter_strict_site"] = bool(strict_site)
     return out
 
 
@@ -2116,6 +2129,7 @@ def report_cash_flow(
         out_cf["by_pond"] = by_pond
         out_cf["unscoped"] = unscoped
         out_cf["entities"] = by_station + by_pond + [unscoped]
+        _enrich_cash_flow_entity_splits(out_cf)
     return out_cf
 
 
@@ -2329,6 +2343,158 @@ def _entity_financial_summary_row(
     return row
 
 
+_FINANCIAL_PL_SUM_KEYS: tuple[str, ...] = (
+    "income",
+    "cost_of_goods_sold",
+    "expenses",
+    "gross_profit",
+    "net_income",
+)
+_FINANCIAL_BS_SUM_KEYS: tuple[str, ...] = (
+    "total_assets",
+    "total_liabilities",
+    "total_equity",
+    "total_liabilities_and_equity",
+)
+_FINANCIAL_TB_SUM_KEYS: tuple[str, ...] = ("trial_balance_debit", "trial_balance_credit")
+_FINANCIAL_ALL_SUM_KEYS: tuple[str, ...] = (
+    _FINANCIAL_PL_SUM_KEYS + _FINANCIAL_BS_SUM_KEYS + _FINANCIAL_TB_SUM_KEYS
+)
+_CASH_FLOW_ENTITY_SUM_KEYS: tuple[str, ...] = (
+    "net_income",
+    "customer_payments_received",
+    "vendor_payments_made",
+    "net_change_in_cash",
+    "ending_cash",
+)
+
+
+def _split_stations_by_business_kind(
+    by_station: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    from api.services.station_business_kind import KIND_SHOP_HUB
+
+    fuel: list[dict[str, Any]] = []
+    shop: list[dict[str, Any]] = []
+    for row in by_station:
+        if row.get("business_kind") == KIND_SHOP_HUB:
+            shop.append(row)
+        else:
+            fuel.append(row)
+    return fuel, shop
+
+
+def _category_total_row(
+    rows: list[dict[str, Any]],
+    *,
+    label: str,
+    entity_type: str,
+    sum_keys: tuple[str, ...],
+) -> dict[str, Any]:
+    acc = {k: Decimal("0") for k in sum_keys}
+    for row in rows:
+        for key in sum_keys:
+            acc[key] += _d(row.get(key))
+    out: dict[str, Any] = {
+        "entity_type": entity_type,
+        "entity_id": None,
+        "entity_name": label,
+    }
+    for key in sum_keys:
+        out[key] = _f(acc[key])
+    if "trial_balance_debit" in sum_keys:
+        td, tc = acc["trial_balance_debit"], acc["trial_balance_credit"]
+        out["trial_balance_balanced"] = abs(td - tc) <= Decimal("0.02")
+    return out
+
+
+def _enrich_entity_bundle_splits(bundle: dict[str, Any]) -> None:
+    """Add fuel vs shop-hub station slices and category subtotals (individual + total)."""
+    fuel, shop = _split_stations_by_business_kind(bundle["by_station"])
+    bundle["by_fuel_station"] = fuel
+    bundle["by_shop_hub"] = shop
+    bundle["fuel_stations_total"] = _category_total_row(
+        fuel,
+        label="Total — all fuel filling stations",
+        entity_type="fuel_stations_total",
+        sum_keys=_FINANCIAL_ALL_SUM_KEYS,
+    )
+    bundle["shop_hubs_total"] = _category_total_row(
+        shop,
+        label="Total — all shop / agro hubs (no fuel)",
+        entity_type="shop_hubs_total",
+        sum_keys=_FINANCIAL_ALL_SUM_KEYS,
+    )
+    bundle["stations_total"] = _category_total_row(
+        bundle["by_station"],
+        label="Total — all stations (fuel + shop)",
+        entity_type="stations_total",
+        sum_keys=_FINANCIAL_ALL_SUM_KEYS,
+    )
+    bundle["ponds_total"] = _category_total_row(
+        bundle["by_pond"],
+        label="Total — all ponds",
+        entity_type="ponds_total",
+        sum_keys=_FINANCIAL_ALL_SUM_KEYS,
+    )
+
+
+def _enrich_cash_flow_entity_splits(out_cf: dict[str, Any]) -> None:
+    by_station = out_cf.get("by_station") or []
+    if not by_station:
+        return
+    from api.services.station_business_kind import station_business_kind, station_business_kind_label
+
+    for row in by_station:
+        st = Station.objects.filter(pk=row.get("entity_id")).first()
+        if st:
+            kind = station_business_kind(st)
+            row["business_kind"] = kind
+            row["business_kind_label"] = station_business_kind_label(kind)
+    fuel, shop = _split_stations_by_business_kind(by_station)
+    out_cf["by_fuel_station"] = fuel
+    out_cf["by_shop_hub"] = shop
+    out_cf["fuel_stations_total"] = _category_total_row(
+        fuel,
+        label="Total — all fuel filling stations",
+        entity_type="fuel_stations_total",
+        sum_keys=_CASH_FLOW_ENTITY_SUM_KEYS,
+    )
+    out_cf["shop_hubs_total"] = _category_total_row(
+        shop,
+        label="Total — all shop / agro hubs (no fuel)",
+        entity_type="shop_hubs_total",
+        sum_keys=_CASH_FLOW_ENTITY_SUM_KEYS,
+    )
+    out_cf["stations_total"] = _category_total_row(
+        by_station,
+        label="Total — all stations (fuel + shop)",
+        entity_type="stations_total",
+        sum_keys=_CASH_FLOW_ENTITY_SUM_KEYS,
+    )
+    by_pond = out_cf.get("by_pond") or []
+    out_cf["ponds_total"] = _category_total_row(
+        by_pond,
+        label="Total — all ponds",
+        entity_type="ponds_total",
+        sum_keys=_CASH_FLOW_ENTITY_SUM_KEYS,
+    )
+
+
+def _pl_company_total(co: dict[str, Any]) -> dict[str, float]:
+    return {
+        "income": co["income"],
+        "cost_of_goods_sold": co["cost_of_goods_sold"],
+        "expenses": co["expenses"],
+        "gross_profit": co["gross_profit"],
+        "net_income": co["net_income"],
+    }
+
+
+def _pl_category_total(co: dict[str, Any]) -> dict[str, float]:
+    return _pl_company_total(co)
+
+
 def _collect_all_entity_financial_rows(
     company_id: int, start: date, end: date
 ) -> dict[str, Any]:
@@ -2384,7 +2550,7 @@ def _collect_all_entity_financial_rows(
         entity_id=None,
         entity_name="Company total (all GL)",
     )
-    return {
+    bundle = {
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "balance_sheet_as_of": end.isoformat(),
         "by_station": by_station,
@@ -2392,14 +2558,16 @@ def _collect_all_entity_financial_rows(
         "unscoped": unscoped,
         "company_total": company_total,
     }
+    _enrich_entity_bundle_splits(bundle)
+    return bundle
 
 
 _ENTITY_SCOPE_NOTE = (
-    "Stations (fuel sites, shops) and ponds (aquaculture) are separate entities — each row is that "
-    "entity's own P&L from posted GL. Station rows use site-tagged journal lines; pond rows use "
-    "pond-tagged lines; head office uses lines with no site or pond tag. Company total is all GL. "
-    "For account-level detail (income, COGS, expense lines), open Profit & Loss with Site scope set "
-    "to that station or pond."
+    "Fuel filling stations, shop/agro hubs (stations without fuel), and ponds are separate entities — "
+    "each row is that entity's own P&L from posted GL. Fuel and shop-hub stations use site-tagged "
+    "journal lines; pond rows use pond-tagged lines; head office uses lines with no site or pond tag. "
+    "Category totals sum individual rows; company total is all GL. For account-level detail, open "
+    "Profit & Loss with Site scope set to that station or pond."
 )
 
 
@@ -2492,33 +2660,77 @@ def _entity_report_payload(
     row_mapper,
     *,
     accounting_note: str,
+    segment_totals: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     co = bundle["company_total"]
-    return {
+    payload: dict[str, Any] = {
         "report_id": report_id,
         "period": bundle["period"],
         "balance_sheet_as_of": bundle.get("balance_sheet_as_of"),
         "by_station": [row_mapper(r) for r in bundle["by_station"]],
+        "by_fuel_station": [row_mapper(r) for r in bundle.get("by_fuel_station") or []],
+        "by_shop_hub": [row_mapper(r) for r in bundle.get("by_shop_hub") or []],
         "by_pond": [row_mapper(r) for r in bundle["by_pond"]],
         "unscoped": row_mapper(bundle["unscoped"]),
+        "fuel_stations_total": row_mapper(bundle["fuel_stations_total"]),
+        "shop_hubs_total": row_mapper(bundle["shop_hubs_total"]),
+        "stations_total": row_mapper(bundle["stations_total"]),
+        "ponds_total": row_mapper(bundle["ponds_total"]),
         "company_total": row_mapper(co),
         "accounting_note": accounting_note,
+    }
+    if segment_totals is not None:
+        payload["segment_totals"] = segment_totals
+    return payload
+
+
+_PL_METRIC_KEYS: tuple[str, ...] = (
+    "income",
+    "cost_of_goods_sold",
+    "expenses",
+    "gross_profit",
+    "net_income",
+)
+
+
+def _sum_metric_rows(rows: list[dict[str, Any]], keys: tuple[str, ...]) -> dict[str, float]:
+    totals = {k: Decimal("0") for k in keys}
+    for r in rows:
+        for k in keys:
+            totals[k] += _d(r.get(k))
+    return {k: _f(totals[k]) for k in keys}
+
+
+def _entity_pl_segment_totals(bundle: dict[str, Any]) -> dict[str, Any]:
+    """Roll up P&L by entity class: fuel stations, shop hubs (no fuel), all stations, ponds."""
+    unscoped = bundle.get("unscoped")
+    return {
+        "fuel_stations": _pl_category_total(bundle["fuel_stations_total"]),
+        "shop_hubs": _pl_category_total(bundle["shop_hubs_total"]),
+        "all_stations": _pl_category_total(bundle["stations_total"]),
+        "ponds": _pl_category_total(bundle["ponds_total"]),
+        "unscoped": _sum_metric_rows([unscoped] if unscoped else [], _PL_METRIC_KEYS),
     }
 
 
 def report_entities_pl_summary(company_id: int, start: date, end: date) -> dict[str, Any]:
     """P&L per station, pond, head office, and company total."""
     bundle = _collect_all_entity_financial_rows(company_id, start, end)
-    return _entity_report_payload(
+    payload = _entity_report_payload(
         "entities-pl-summary",
         bundle,
         _entity_pl_row,
         accounting_note=(
-            "Posted journal P&L for the date range. "
+            "Posted journal P&L for the date range. Each row is one entity (fuel station, shop hub, or pond). "
             + _ENTITY_SCOPE_NOTE
-            + " Pond management_revenue_bdt / management_profit_bdt are aquaculture register totals (BDT)."
+            + " Category totals sum fuel stations, shop hubs (no fuel), and ponds separately. "
+            "Company total is all GL. Pond management_revenue_bdt / management_profit_bdt are aquaculture register totals (BDT)."
         ),
+        segment_totals=_entity_pl_segment_totals(bundle),
     )
+    payload["fuel_stations"] = payload["by_fuel_station"]
+    payload["shop_hubs"] = payload["by_shop_hub"]
+    return payload
 
 
 def report_entities_balance_sheet_summary(
@@ -2564,12 +2776,19 @@ def report_entities_financial_summary(
         "period": bundle["period"],
         "balance_sheet_as_of": bundle["balance_sheet_as_of"],
         "by_station": bundle["by_station"],
+        "by_fuel_station": bundle["by_fuel_station"],
+        "by_shop_hub": bundle["by_shop_hub"],
         "by_pond": bundle["by_pond"],
         "unscoped": bundle["unscoped"],
+        "fuel_stations_total": bundle["fuel_stations_total"],
+        "shop_hubs_total": bundle["shop_hubs_total"],
+        "stations_total": bundle["stations_total"],
+        "ponds_total": bundle["ponds_total"],
         "company_total": bundle["company_total"],
         "entities": bundle["by_station"] + bundle["by_pond"] + [bundle["unscoped"]],
         "accounting_note": (
-            "Combined view. For separate reports use: All Entities — P&L, "
+            "Combined view. Fuel stations, shop hubs (no fuel), and ponds are separate entity groups "
+            "with category subtotals. For separate reports use: All Entities — P&L, "
             "All Entities — Balance Sheet, and All Entities — Trial Balance."
         ),
     }
@@ -2642,11 +2861,22 @@ def report_stations_financial_summary(
     """Individual P&L per station (fuel site / shop) from posted GL."""
     full = report_entities_pl_summary(company_id, start, end)
     rows = [_station_pl_summary_row(r) for r in full["by_station"]]
+    fuel_rows = [_station_pl_summary_row(r) for r in full.get("by_fuel_station") or []]
+    shop_rows = [_station_pl_summary_row(r) for r in full.get("by_shop_hub") or []]
+    seg = full.get("segment_totals") or {}
     co = full["company_total"]
     return {
         "report_id": "stations-financial-summary",
         "period": full["period"],
         "stations": rows,
+        "fuel_stations": fuel_rows,
+        "shop_hubs": shop_rows,
+        "segment_totals": {
+            "fuel_stations": seg.get("fuel_stations"),
+            "shop_hubs": seg.get("shop_hubs"),
+            "all_stations": seg.get("all_stations"),
+        },
+        "stations_total": seg.get("all_stations") or {},
         "company_total": {
             "income": co["income"],
             "cost_of_goods_sold": co["cost_of_goods_sold"],
@@ -2655,11 +2885,54 @@ def report_stations_financial_summary(
             "net_income": co["net_income"],
         },
         "accounting_note": (
-            "One row per station: direct GL P&L (lines tagged to the station, excluding pond-tagged lines). "
-            "Shop hubs also show combined_shop_* columns: direct shop activity plus sales/COGS attributed to "
-            "ponds but sold from that shop (POS on account to pond customers). "
-            "Fuel filling stations show business_kind=fuel_station. "
-            "Use Profit & Loss with Site scope for account-level detail; pond P&L is All Ponds — P&L Summary."
+            "One row per station — each station is its own entity. Fuel filling stations and shop hubs "
+            "(stations without fuel forecourt) are listed separately with segment totals. "
+            "Stations total sums all station rows; company total is all GL (includes ponds and head office). "
+            "Shop hubs also show combined_shop_* columns when POS sales are attributed to ponds. "
+            "Use Profit & Loss with Site scope for account-level detail on one station."
+        ),
+    }
+
+
+def report_fuel_stations_pl_summary(
+    company_id: int, start: date, end: date
+) -> dict[str, Any]:
+    """Individual P&L per fuel filling station from posted GL."""
+    full = report_entities_pl_summary(company_id, start, end)
+    rows = [_station_pl_summary_row(r) for r in full["by_fuel_station"]]
+    seg = full.get("segment_totals") or {}
+    return {
+        "report_id": "fuel-stations-pl-summary",
+        "period": full["period"],
+        "fuel_stations": rows,
+        "stations": rows,
+        "category_total": seg.get("fuel_stations") or _pl_category_total(full["fuel_stations_total"]),
+        "company_total": _pl_company_total(full["company_total"]),
+        "accounting_note": (
+            "One row per fuel filling station (operates fuel retail). Each station is its own entity. "
+            "Category total sums fuel stations only; company total is all GL."
+        ),
+    }
+
+
+def report_shop_hubs_pl_summary(
+    company_id: int, start: date, end: date
+) -> dict[str, Any]:
+    """Individual P&L per shop/agro hub (station without fuel) from posted GL."""
+    full = report_entities_pl_summary(company_id, start, end)
+    rows = [_station_pl_summary_row(r) for r in full["by_shop_hub"]]
+    seg = full.get("segment_totals") or {}
+    return {
+        "report_id": "shop-hubs-pl-summary",
+        "period": full["period"],
+        "shop_hubs": rows,
+        "stations": rows,
+        "category_total": seg.get("shop_hubs") or _pl_category_total(full["shop_hubs_total"]),
+        "company_total": _pl_company_total(full["company_total"]),
+        "accounting_note": (
+            "One row per shop/agro hub (station without fuel forecourt). Each hub is its own entity. "
+            "combined_shop_* columns include sales/COGS attributed to ponds from that shop. "
+            "Category total sums shop hubs only; company total is all GL."
         ),
     }
 
@@ -2668,11 +2941,14 @@ def report_ponds_pl_summary(company_id: int, start: date, end: date) -> dict[str
     """Individual P&L per aquaculture pond from posted GL (pond-tagged journal lines)."""
     full = report_entities_pl_summary(company_id, start, end)
     rows = [_pond_pl_summary_row(r) for r in full["by_pond"]]
+    seg = full.get("segment_totals") or {}
     co = full["company_total"]
     return {
         "report_id": "ponds-pl-summary",
         "period": full["period"],
         "ponds": rows,
+        "segment_totals": {"ponds": seg.get("ponds")},
+        "ponds_total": seg.get("ponds") or {},
         "company_total": {
             "income": co["income"],
             "cost_of_goods_sold": co["cost_of_goods_sold"],
@@ -2681,13 +2957,12 @@ def report_ponds_pl_summary(company_id: int, start: date, end: date) -> dict[str
             "net_income": co["net_income"],
         },
         "accounting_note": (
-            "One row per pond from posted GL lines tagged to that pond (income, COGS, expenses). "
+            "One row per pond — each pond is its own entity from posted GL lines tagged to that pond. "
+            "Ponds total sums all pond rows; company total is all GL (includes stations and head office). "
             "pond_open_ar_bdt / pond_open_ap_bdt are open balances for the pond POS customer and pond-tagged "
             "vendor bills. pond_warehouse_inventory_value_bdt is feed/medicine/supplies on hand at the pond. "
             "Management revenue/profit columns are aquaculture register totals in BDT and may differ from GL. "
-            "Use Profit & Loss with Site scope set to a pond for account detail; AR/AP Aging also accept pond scope. "
-            "For operational pond economics (cycles, feed, transfers), use Aquaculture — Pond P&L. "
-            "Station P&L is separate (All Stations — P&L Summary)."
+            "Use Profit & Loss with Site scope set to a pond for account detail; station P&L is All Stations — P&L Summary."
         ),
     }
 

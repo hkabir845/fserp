@@ -53,6 +53,7 @@ def test_ponds_pl_summary_lists_each_pond(company_tenant_with_gl):
     assert Decimal(str(by_id[p1.id]["income"])) == Decimal("80.00")
     assert Decimal(str(by_id[p2.id]["income"])) == Decimal("40.00")
     assert Decimal(str(by_id[p1.id]["net_income"])) == Decimal("80.00")
+    assert Decimal(str(out["ponds_total"]["income"])) == Decimal("120.00")
 
     full = report_entities_pl_summary(cid, start, end)
     assert len(full["by_pond"]) == len(out["ponds"])

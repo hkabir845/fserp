@@ -40,8 +40,10 @@ from api.models import (
     Station,
     Vendor,
 )
+from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 from api.services.aquaculture_pond_pos_customer import maybe_provision_auto_pos_customer
+from api.services.aquaculture_stock_ledger_reconcile_service import OPENING_DEMO_MEMO_TAG
 
 POND_CODES = tuple(f"BULK-DEMO-P{i}" for i in range(1, 6))
 EXP_MEMO_PREFIX = "BULK-DEMO-EXP-"
@@ -145,17 +147,39 @@ class Command(BaseCommand):
             sample_note = f"{memo} seine estimate"
             if AquacultureBiomassSample.objects.filter(company_id=cid, pond=pond, notes=sample_note).exists():
                 continue
-            AquacultureBiomassSample.objects.create(
+            cy = cycles[i - 1]
+            est_fc = 5000 + i * 200
+            est_kg = Decimal("1500.0000") + Decimal(i * 50)
+            opening_memo = f"BULK-DEMO-OPENING-{i:02d} {OPENING_DEMO_MEMO_TAG}"
+            if not AquacultureFishStockLedger.objects.filter(company_id=cid, memo=opening_memo).exists():
+                AquacultureFishStockLedger.objects.create(
+                    company_id=cid,
+                    pond=pond,
+                    production_cycle=cy,
+                    entry_date=cy.start_date or (today - timedelta(days=60)),
+                    entry_kind="adjustment",
+                    loss_reason="",
+                    fish_species="tilapia",
+                    fish_count_delta=est_fc,
+                    weight_kg_delta=est_kg,
+                    book_value=Decimal("0"),
+                    post_to_books=False,
+                    memo=opening_memo,
+                )
+                self.stdout.write(f"  + Fish ledger opening {opening_memo}")
+            sample = AquacultureBiomassSample(
                 company_id=cid,
                 pond=pond,
-                production_cycle=cycles[i - 1],
+                production_cycle=cy,
                 sample_date=today - timedelta(days=15 + i),
-                estimated_fish_count=5000 + i * 200,
-                estimated_total_weight_kg=Decimal("1500.0000") + Decimal(i * 50),
+                estimated_fish_count=est_fc,
+                estimated_total_weight_kg=est_kg,
                 avg_weight_kg=Decimal("0.280000") + Decimal(i) * Decimal("0.001"),
                 fish_species="tilapia",
                 notes=sample_note,
             )
+            apply_aquaculture_biomass_sample_extrapolation(sample)
+            sample.save()
             self.stdout.write(f"  + Biomass {memo}")
 
         inc_types = (

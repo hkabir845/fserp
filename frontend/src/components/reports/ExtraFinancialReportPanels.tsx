@@ -19,6 +19,8 @@ type ReportType =
   | 'expense-detail'
   | 'income-detail'
   | 'stations-financial-summary'
+  | 'fuel-stations-pl-summary'
+  | 'shop-hubs-pl-summary'
   | 'ponds-pl-summary'
   | 'entities-pl-summary'
   | 'entities-balance-sheet-summary'
@@ -26,10 +28,33 @@ type ReportType =
   | 'entities-financial-summary'
 
 function entitySections(data: Record<string, unknown>) {
+  const byFuel =
+    (data.by_fuel_station as Record<string, unknown>[]) ??
+    (data.fuel_stations as Record<string, unknown>[]) ??
+    []
+  const byShop =
+    (data.by_shop_hub as Record<string, unknown>[]) ??
+    (data.shop_hubs as Record<string, unknown>[]) ??
+    []
+  const byStation = (data.by_station as Record<string, unknown>[]) ?? []
   return {
-    byStation: (data.by_station as Record<string, unknown>[]) ?? [],
+    byFuelStation: byFuel.length ? byFuel : byStation.filter((r) => r.business_kind === 'fuel_station'),
+    byShopHub: byShop.length ? byShop : byStation.filter((r) => r.business_kind === 'shop_hub'),
+    byStation,
     byPond: (data.by_pond as Record<string, unknown>[]) ?? [],
     unscoped: data.unscoped as Record<string, unknown> | undefined,
+    fuelStationsTotal:
+      (data.fuel_stations_total as Record<string, unknown>) ??
+      (data.segment_totals as { fuel_stations?: Record<string, unknown> })?.fuel_stations,
+    shopHubsTotal:
+      (data.shop_hubs_total as Record<string, unknown>) ??
+      (data.segment_totals as { shop_hubs?: Record<string, unknown> })?.shop_hubs,
+    stationsTotal:
+      (data.stations_total as Record<string, unknown>) ??
+      (data.segment_totals as { all_stations?: Record<string, unknown> })?.all_stations,
+    pondsTotal:
+      (data.ponds_total as Record<string, unknown>) ??
+      (data.segment_totals as { ponds?: Record<string, unknown> })?.ponds,
     companyTotal: (data.company_total as Record<string, unknown>) ?? {},
     bsAsOf: String(data.balance_sheet_as_of ?? (data.period as { end_date?: string })?.end_date ?? ''),
   }
@@ -234,6 +259,51 @@ function entityTbTable(
   )
 }
 
+function segmentPlTotalsCard(
+  title: string,
+  totals: Record<string, unknown> | undefined,
+  drillScope?: { startDate?: string; endDate?: string; stationId?: number | null; pondId?: number | null },
+) {
+  if (!totals || Object.keys(totals).length === 0) return null
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
+      <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
+        <div>
+          <p className="text-gray-500">Income</p>
+          <p className="font-semibold">
+            <ReportAmountCell amount={Number(totals.income ?? 0)} row={totals} field="income" scope={drillScope} />
+          </p>
+        </div>
+        <div>
+          <p className="text-gray-500">COGS</p>
+          <p className="font-semibold">
+            <ReportAmountCell amount={Number(totals.cost_of_goods_sold ?? 0)} row={totals} field="cost_of_goods_sold" scope={drillScope} />
+          </p>
+        </div>
+        <div>
+          <p className="text-gray-500">Expenses</p>
+          <p className="font-semibold">
+            <ReportAmountCell amount={Number(totals.expenses ?? 0)} row={totals} field="expenses" scope={drillScope} />
+          </p>
+        </div>
+        <div>
+          <p className="text-gray-500">Gross profit</p>
+          <p className="font-semibold">
+            <ReportAmountCell amount={Number(totals.gross_profit ?? 0)} row={totals} field="gross_profit" scope={drillScope} />
+          </p>
+        </div>
+        <div>
+          <p className="text-gray-500">Net income</p>
+          <p className="font-semibold">
+            <ReportAmountCell amount={Number(totals.net_income ?? 0)} row={totals} field="net_income" scope={drillScope} />
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function renderEntitySectionTables(
   kind: 'pl' | 'bs' | 'tb',
   sections: ReturnType<typeof entitySections>,
@@ -245,24 +315,68 @@ function renderEntitySectionTables(
     pondId?: number | null
   },
 ) {
-  const { byStation, byPond, unscoped, bsAsOf } = sections
+  const {
+    byFuelStation,
+    byShopHub,
+    byStation,
+    byPond,
+    unscoped,
+    bsAsOf,
+    fuelStationsTotal,
+    shopHubsTotal,
+    pondsTotal,
+  } = sections
+  const fuelStations = byFuelStation.length ? byFuelStation : byStation.filter((r) => r.business_kind !== 'shop_hub')
+  const shopHubs = byShopHub.length ? byShopHub : byStation.filter((r) => r.business_kind === 'shop_hub')
   const label =
     kind === 'pl' ? 'Profit & Loss' : kind === 'bs' ? 'Balance Sheet' : 'Trial Balance'
 
-  const renderSection = (title: string, rows: Record<string, unknown>[], entityKind?: 'station' | 'pond') => {
-    if (kind === 'pl' && entityKind) {
-      return entityPlTable(title, rows, entityKind, onViewEntityPl, drillScope)
-    }
-    if (kind === 'bs') {
-      return entityBsTable(title, rows, bsAsOf, drillScope)
-    }
-    return entityTbTable(title, rows, drillScope)
+  const renderSection = (
+    title: string,
+    rows: Record<string, unknown>[],
+    entityKind?: 'station' | 'pond',
+    categoryTotal?: Record<string, unknown>,
+    categoryTitle?: string,
+  ) => {
+    const table =
+      kind === 'pl' && entityKind
+        ? entityPlTable(title, rows, entityKind, onViewEntityPl, drillScope)
+        : kind === 'bs'
+          ? entityBsTable(title, rows, bsAsOf, drillScope)
+          : entityTbTable(title, rows, drillScope)
+    return (
+      <div key={title} className="space-y-3">
+        {table}
+        {kind === 'pl' && categoryTotal
+          ? segmentPlTotalsCard(categoryTitle ?? title, categoryTotal, drillScope)
+          : null}
+      </div>
+    )
   }
 
   return (
     <>
-      {renderSection(`${label} — stations (sites)`, byStation, 'station')}
-      {renderSection(`${label} — ponds (aquaculture, GL-tagged)`, byPond, 'pond')}
+      {renderSection(
+        `${label} — fuel filling stations`,
+        fuelStations,
+        'station',
+        fuelStationsTotal,
+        'Total — all fuel filling stations',
+      )}
+      {renderSection(
+        `${label} — shop hubs (no fuel)`,
+        shopHubs,
+        'station',
+        shopHubsTotal,
+        'Total — all shop hubs (no fuel)',
+      )}
+      {renderSection(
+        `${label} — ponds (aquaculture, GL-tagged)`,
+        byPond,
+        'pond',
+        pondsTotal,
+        'Total — all ponds',
+      )}
       {unscoped ? renderSection(`${label} — head office / unassigned`, [unscoped]) : null}
     </>
   )
@@ -458,6 +572,12 @@ export function renderExtraFinancialReport(
     const op = (data.operating as Record<string, number>) ?? {}
     const cash = (data.cash_summary as Record<string, number>) ?? {}
     const byStation = (data.by_station as Record<string, unknown>[]) ?? []
+    const byFuel =
+      (data.by_fuel_station as Record<string, unknown>[]) ??
+      byStation.filter((r) => r.business_kind !== 'shop_hub')
+    const byShop =
+      (data.by_shop_hub as Record<string, unknown>[]) ??
+      byStation.filter((r) => r.business_kind === 'shop_hub')
     const byPond = (data.by_pond as Record<string, unknown>[]) ?? []
     const unscoped = data.unscoped as Record<string, unknown> | undefined
     const showEntities = byStation.length > 0 || byPond.length > 0
@@ -541,8 +661,9 @@ export function renderExtraFinancialReport(
 
         {showEntities ? (
           <div className="space-y-6">
-            <p className="text-sm font-semibold text-slate-900">Cash flow by entity (all stations and ponds)</p>
-            {entityTable('Stations (site-tagged GL + payments)', byStation, false)}
+            <p className="text-sm font-semibold text-slate-900">Cash flow by entity (each station, shop hub, and pond)</p>
+            {entityTable('Fuel filling stations', byFuel, false)}
+            {entityTable('Shop hubs (no fuel)', byShop, false)}
             {byPond.length > 0 ? entityTable('Ponds (pond-tagged bank GL + registered sales)', byPond, true) : null}
             {unscoped ? entityTable('Head office / unassigned', [unscoped], false) : null}
           </div>
@@ -634,6 +755,14 @@ export function renderExtraFinancialReport(
         ) : (
           renderEntitySectionTables(kind as 'pl' | 'bs' | 'tb', sections, ctx.onViewEntityPl, ctx.drillScope)
         )}
+        {kind === 'pl' && data.segment_totals ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {segmentPlTotalsCard('Total — fuel filling stations', (data.segment_totals as Record<string, unknown>).fuel_stations as Record<string, unknown>, ctx.drillScope)}
+            {segmentPlTotalsCard('Total — shop hubs (no fuel)', (data.segment_totals as Record<string, unknown>).shop_hubs as Record<string, unknown>, ctx.drillScope)}
+            {segmentPlTotalsCard('Total — all stations', (data.segment_totals as Record<string, unknown>).all_stations as Record<string, unknown>, ctx.drillScope)}
+            {segmentPlTotalsCard('Total — all ponds', (data.segment_totals as Record<string, unknown>).ponds as Record<string, unknown>, ctx.drillScope)}
+          </div>
+        ) : null}
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 p-4">
           <h3 className="text-sm font-semibold text-slate-900">Company total (all GL)</h3>
           {kind === 'pl' || isCombined ? (
@@ -700,29 +829,73 @@ export function renderExtraFinancialReport(
     )
   }
 
-  if (reportType === 'stations-financial-summary' || reportType === 'ponds-pl-summary') {
+  if (
+    reportType === 'stations-financial-summary' ||
+    reportType === 'fuel-stations-pl-summary' ||
+    reportType === 'shop-hubs-pl-summary' ||
+    reportType === 'ponds-pl-summary'
+  ) {
     const isPond = reportType === 'ponds-pl-summary'
+    const isFuelOnly = reportType === 'fuel-stations-pl-summary'
+    const isShopOnly = reportType === 'shop-hubs-pl-summary'
     const rows = (isPond
       ? (data.ponds as Record<string, unknown>[])
-      : (data.stations as Record<string, unknown>[])) ?? []
+      : isFuelOnly
+        ? (data.fuel_stations as Record<string, unknown>[])
+        : isShopOnly
+          ? (data.shop_hubs as Record<string, unknown>[])
+          : (data.stations as Record<string, unknown>[])) ?? []
+    const fuelRows = (data.fuel_stations as Record<string, unknown>[]) ?? []
+    const shopRows = (data.shop_hubs as Record<string, unknown>[]) ?? []
+    const segmentTotals = (data.segment_totals as Record<string, Record<string, unknown>>) ?? {}
+    const entityTotal = (isPond
+      ? data.ponds_total ?? data.category_total
+      : isFuelOnly || isShopOnly
+        ? data.category_total
+        : data.stations_total) as Record<string, unknown> | undefined
     const co = (data.company_total as Record<string, number>) ?? {}
+    const periodHint = isPond
+      ? 'Individual P&L per pond (each pond is its own entity). Use Site scope or Full P&L for one pond.'
+      : isFuelOnly
+        ? 'Individual P&L per fuel filling station. Use Site scope or Full P&L for one station.'
+        : isShopOnly
+          ? 'Individual P&L per shop/agro hub (station without fuel). Use Site scope or Full P&L for one hub.'
+          : 'Individual P&L per station. Fuel stations and shop hubs (no fuel) are separate entities.'
     return (
       <div className="space-y-6">
-        {periodFilter(
-          isPond
-            ? 'Individual P&L per pond from posted GL (pond-tagged lines). Use Full P&L for account detail.'
-            : 'Individual P&L per station from posted GL. Use Full P&L for account detail.',
-        )}
+        {periodFilter(periodHint)}
         {typeof data.accounting_note === 'string' && (
           <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">{data.accounting_note}</p>
         )}
-        {entityPlTable(
-          isPond ? 'Ponds' : 'Stations',
-          rows,
-          isPond ? 'pond' : 'station',
-          ctx.onViewEntityPl,
+        {isPond ? (
+          entityPlTable('Ponds', rows, 'pond', ctx.onViewEntityPl, ctx.drillScope)
+        ) : isFuelOnly ? (
+          entityPlTable('Fuel filling stations', rows, 'station', ctx.onViewEntityPl, ctx.drillScope)
+        ) : isShopOnly ? (
+          entityPlTable('Shop hubs (no fuel)', rows, 'station', ctx.onViewEntityPl, ctx.drillScope)
+        ) : (
+          <>
+            {entityPlTable('Fuel filling stations', fuelRows.length > 0 ? fuelRows : rows.filter((r) => r.business_kind !== 'shop_hub'), 'station', ctx.onViewEntityPl, ctx.drillScope)}
+            {entityPlTable('Shop hubs (no fuel)', shopRows, 'station', ctx.onViewEntityPl, ctx.drillScope)}
+          </>
+        )}
+        {segmentPlTotalsCard(
+          isPond
+            ? 'Total — all ponds'
+            : isFuelOnly
+              ? 'Total — all fuel filling stations'
+              : isShopOnly
+                ? 'Total — all shop hubs (no fuel)'
+                : 'Total — all stations',
+          entityTotal ?? (isPond ? segmentTotals.ponds : isFuelOnly ? segmentTotals.fuel_stations : isShopOnly ? segmentTotals.shop_hubs : segmentTotals.all_stations),
           ctx.drillScope,
         )}
+        {!isPond && !isFuelOnly && !isShopOnly ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {segmentPlTotalsCard('Total — fuel filling stations', segmentTotals.fuel_stations, ctx.drillScope)}
+            {segmentPlTotalsCard('Total — shop hubs (no fuel)', segmentTotals.shop_hubs, ctx.drillScope)}
+          </div>
+        ) : null}
         <div className="rounded-lg border-2 border-slate-300 bg-slate-50 p-4">
           <h3 className="text-sm font-semibold text-slate-900">Company total (all GL)</h3>
           <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
@@ -957,6 +1130,8 @@ export const EXTRA_FINANCIAL_REPORT_IDS: readonly ReportType[] = [
   'expense-detail',
   'income-detail',
   'stations-financial-summary',
+  'fuel-stations-pl-summary',
+  'shop-hubs-pl-summary',
   'ponds-pl-summary',
   'entities-pl-summary',
   'entities-balance-sheet-summary',

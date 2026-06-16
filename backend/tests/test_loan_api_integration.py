@@ -18,8 +18,9 @@ def _headers(auth_super_headers, company):
 
 def _coa_and_counterparty(company):
     """Minimal COA for a borrowed loan + one counterparty (ORM for speed)."""
-    from api.models import ChartOfAccount
+    from api.models import ChartOfAccount, Station
 
+    st = Station.objects.create(company=company, station_name="Loan Test Site", is_active=True)
     bank = ChartOfAccount.objects.create(
         company=company,
         account_code="T1010",
@@ -55,6 +56,7 @@ def _coa_and_counterparty(company):
         role_type="bank",
     )
     return {
+        "st": st,
         "bank": bank,
         "loan_pay": loan_pay,
         "int_exp": int_exp,
@@ -80,6 +82,7 @@ def test_borrowed_loan_disburse_repay_and_gl(
                 "settlement_account_id": ctx["bank"].id,
                 "interest_account_id": ctx["int_exp"].id,
                 "interest_accrual_account_id": ctx["accrued"].id,
+                "station_id": ctx["st"].id,
                 "annual_interest_rate": "12",
                 "sanction_amount": "10000",
                 "term_months": 12,

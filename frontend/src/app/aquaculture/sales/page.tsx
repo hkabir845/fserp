@@ -201,10 +201,10 @@ export default function AquacultureSalesPage() {
             <Link href="/cashier" className="font-medium text-teal-800 underline">
               Cashier
             </Link>{' '}
-            for packaged retail over the counterâ€”this screen is the operational record for fish leaving ponds (kg, head)
+            for packaged retail over the counter—this screen is the operational record for fish leaving ponds (kg, head)
             and aquaculture revenue. Use income type to classify each line; feed purchases stay on Expenses. Use{' '}
             <strong className="font-medium text-slate-800">Record to books</strong> on a row to create the invoice and GL
-            entry (aquaculture revenue 4240â€“4244, cash or A/R).
+            entry (aquaculture revenue 4240–4244, cash or A/R).
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -320,23 +320,23 @@ export default function AquacultureSalesPage() {
                 <tr key={r.id} className="border-b border-slate-100">
                   <td className="px-2 py-2 whitespace-nowrap align-top">{formatDateOnly(r.sale_date)}</td>
                   <td className="min-w-0 break-words px-2 py-2 align-top text-slate-800">{r.pond_name}</td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-600">{r.production_cycle_name || 'â€”'}</td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-700">{r.income_type_label || r.income_type || 'â€”'}</td>
+                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-600">{r.production_cycle_name || '—'}</td>
+                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-700">{r.income_type_label || r.income_type || '—'}</td>
                   <td className="min-w-0 break-words px-2 py-2 align-top text-slate-700">
-                    {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? 'â€”' : r.fish_species_label || 'â€”'}
+                    {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? '—' : r.fish_species_label || '—'}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums align-top">{formatNumber(Number(r.weight_kg))}</td>
                   <td className="px-2 py-2 text-right tabular-nums align-top">
-                    {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? 'â€”' : (r.fish_count ?? 'â€”')}
+                    {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? '—' : (r.fish_count ?? '—')}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums align-top text-slate-600">
-                    {rowFishPerKg != null ? formatNumber(rowFishPerKg) : 'â€”'}
+                    {rowFishPerKg != null ? formatNumber(rowFishPerKg) : '—'}
                   </td>
                   <td className="px-2 py-2 text-right font-medium tabular-nums align-top">
                     {sym}
                     {formatNumber(Number(r.total_amount))}
                   </td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top">{r.buyer_name || 'â€”'}</td>
+                  <td className="min-w-0 break-words px-2 py-2 align-top">{r.buyer_name || '—'}</td>
                   <td className="min-w-0 px-2 py-2 align-top text-xs">
                     {r.accounting_posted && r.invoice_number ? (
                       <span className="inline-flex flex-col gap-0.5 break-words">
@@ -352,7 +352,12 @@ export default function AquacultureSalesPage() {
                         </Link>
                       </span>
                     ) : (
-                      <span className="text-slate-400">â€”</span>
+                      <span
+                        className="inline-block rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600 ring-1 ring-slate-200"
+                        title="Use Record in Actions to create the invoice and GL entry"
+                      >
+                        Not posted
+                      </span>
                     )}
                   </td>
                   <td className="min-w-0 px-2 py-2 align-top">
@@ -495,7 +500,7 @@ export default function AquacultureSalesPage() {
                     onChange={(e) => setFinalizeCustomerId(e.target.value)}
                     required
                   >
-                    <option value="">Select customerâ€¦</option>
+                    <option value="">Select customer…</option>
                     {creditCustomerOptions.map((c) => (
                       <option key={c.id} value={c.id}>
                         {customerPickLabel(c)}
@@ -503,7 +508,7 @@ export default function AquacultureSalesPage() {
                     ))}
                   </select>
                   <span className="mt-1 block text-xs text-slate-500">
-                    Or link the pond to a POS customer under Ponds â€” it will be used if you leave this empty (on
+                    Or link the pond to a POS customer under Ponds — it will be used if you leave this empty (on
                     account only).
                   </span>
                 </label>

@@ -38,6 +38,7 @@ import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
+import { NURSING_WORKFLOW_STEPS } from '@/lib/aquaculturePondSite'
 
 type PeriodPreset = 'this_month' | 'last_month' | 'ytd' | 'last_90' | 'custom'
 
@@ -732,6 +733,47 @@ export default function AquacultureOverviewPage() {
           <span className="font-medium">fish harvest sale</span> weight only.
         </p>
       ) : null}
+
+      {/* Fry nursing → fingerling transfer workflow */}
+      <section className="mt-10 rounded-xl border border-sky-200 bg-sky-50/60 p-5">
+        <h2 className="text-sm font-semibold text-sky-950">Physical site: fry nursing → fingerling transfers</h2>
+        <p className="mt-1 text-sm text-sky-900/90">
+          Each physical pond can have two profit centers — nursing phase (e.g. Mynuddin Nursing Pond at 3,000 pcs/kg)
+          and grow-out phase (Mynuddin Pond). After sampling records the current pcs/kg for that batch, transfer to production
+          ponds and move remainder to the grow-out pond on the same site.
+        </p>
+        <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-sky-900/85">
+          {NURSING_WORKFLOW_STEPS.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/aquaculture/ponds"
+            className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
+          >
+            Ponds · create site pair
+          </Link>
+          <Link
+            href="/bills?new=1"
+            className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
+          >
+            Stock fry (vendor bill)
+          </Link>
+          <Link
+            href="/aquaculture/transfers"
+            className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
+          >
+            Transfer fingerlings
+          </Link>
+          <Link
+            href="/aquaculture/sampling"
+            className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
+          >
+            Biomass sampling
+          </Link>
+        </div>
+      </section>
 
       {/* Tables */}
       <div className="mt-10 grid gap-6 lg:grid-cols-3">

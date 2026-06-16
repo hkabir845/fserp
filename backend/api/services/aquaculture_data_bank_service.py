@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from typing import TypeVar
 
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import F, OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
 
 from api.models import (
@@ -184,6 +184,26 @@ def filter_live_pond_queryset(qs: QS, company_id: int, pond_id: int, date_field:
     if after is None:
         return qs
     return qs.filter(**{f"{date_field}__gt": after})
+
+
+def filter_live_biomass_samples_queryset(qs: QS, company_id: int) -> QS:
+    """
+    Exclude archived biomass samples for ponds with active Data Bank closes.
+    Matches per-pond filter_live_pond_queryset(..., sample_date) when listing all ponds.
+    """
+    latest_close_end = (
+        AquacultureDataBankPondClose.objects.filter(
+            company_id=company_id,
+            pond_id=OuterRef("pond_id"),
+            status=AquacultureDataBankPondClose.STATUS_CLOSED,
+            is_data_locked=True,
+        )
+        .order_by("-period_end", "-id")
+        .values("period_end")[:1]
+    )
+    return qs.annotate(_data_bank_close_end=Subquery(latest_close_end)).filter(
+        Q(_data_bank_close_end__isnull=True) | Q(sample_date__gt=F("_data_bank_close_end"))
+    )
 
 
 def effective_pl_start_for_pond(company_id: int, pond_id: int, start: date) -> date:

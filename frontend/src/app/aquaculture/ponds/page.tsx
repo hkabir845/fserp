@@ -26,7 +26,9 @@ import {
   PondGoLiveReadinessBadge,
 } from '@/components/aquaculture/PondGoLiveFleetBanner'
 import type { OpeningBalancesResponse } from '@/components/aquaculture/pondOpeningShared'
+import { PondPhaseWorkflowPanel } from '@/components/aquaculture/PondPhaseWorkflowPanel'
 import { useToast } from '@/components/Toast'
+import { NURSING_WORKFLOW_STEPS } from '@/lib/aquaculturePondSite'
 import api from '@/lib/api'
 import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -48,6 +50,18 @@ interface Pond extends PondOpeningSource {
   notes: string
   pond_role?: string
   pond_role_label?: string
+  physical_site_name?: string
+  site_base_name?: string
+  same_site_grow_out_pond_id?: number | null
+  same_site_grow_out_display_name?: string
+  same_site_nursing_pond_id?: number | null
+  same_site_nursing_display_name?: string
+  linked_grow_out_pond_id?: number | null
+  linked_grow_out_pond_name?: string
+  phase_workflow_summary?: string
+  nursing_display_name?: string
+  grow_out_display_name?: string
+  operational_display_name?: string
   warehouse_group_id?: number | null
   warehouse_group_name?: string
   pos_customer_id?: number | null
@@ -296,6 +310,8 @@ const emptyForm = () => ({
   is_active: true,
   notes: '',
   pond_role: 'grow_out',
+  physical_site_name: '',
+  linked_grow_out_pond_id: '',
   warehouse_group_id: '',
   pos_customer_id: '',
   leasing_area_decimal: '',
@@ -404,6 +420,17 @@ export default function AquaculturePondsPage() {
     Map<number, { readinessPercent: number; ready: boolean }>
   >(() => new Map())
   const [goLiveLoading, setGoLiveLoading] = useState(false)
+  const [sitePairModal, setSitePairModal] = useState(false)
+  const [sitePairMode, setSitePairMode] = useState<'create' | 'link'>('create')
+  const [sitePairForm, setSitePairForm] = useState({
+    physical_site_name: '',
+    nursing_name: '',
+    grow_out_name: '',
+    water_area_decimal: '',
+    existing_nursing_pond_id: '',
+    existing_grow_out_pond_id: '',
+  })
+  const [sitePairSaving, setSitePairSaving] = useState(false)
 
   const pondsMissingPosCustomer = useMemo(
     () => ponds.filter((p) => !p.pos_customer_id),
@@ -579,6 +606,112 @@ export default function AquaculturePondsPage() {
     }
   }
 
+  const sitePairGrowOutOptions = useMemo(() => {
+    const nursingId = parseInt(sitePairForm.existing_nursing_pond_id, 10)
+    const site = sitePairForm.physical_site_name.trim().toLowerCase()
+    return ponds.filter((p) => {
+      if (!p.is_active) return false
+      if ((p.pond_role || 'grow_out') !== 'grow_out') return false
+      if (Number.isFinite(nursingId) && p.id === nursingId) return false
+      if (!site) return true
+      return (p.physical_site_name || '').trim().toLowerCase() === site
+    })
+  }, [ponds, sitePairForm.existing_nursing_pond_id, sitePairForm.physical_site_name])
+
+  const sitePairNursingOptions = useMemo(
+    () =>
+      ponds.filter(
+        (p) =>
+          p.is_active &&
+          (p.pond_role || 'grow_out') === 'nursing' &&
+          p.id !== parseInt(sitePairForm.existing_grow_out_pond_id, 10),
+      ),
+    [ponds, sitePairForm.existing_grow_out_pond_id],
+  )
+
+  const saveSitePair = async () => {
+    const site = sitePairForm.physical_site_name.trim()
+    if (!site) {
+      toast.error('Physical site name is required (e.g. Mynuddin)')
+      return
+    }
+    setSitePairSaving(true)
+    try {
+      if (sitePairMode === 'link') {
+        const nursingId = parseInt(sitePairForm.existing_nursing_pond_id, 10)
+        const growId = parseInt(sitePairForm.existing_grow_out_pond_id, 10)
+        if (!Number.isFinite(nursingId) || nursingId <= 0) {
+          toast.error('Select the nursing-phase pond')
+          return
+        }
+        if (!Number.isFinite(growId) || growId <= 0) {
+          toast.error('Select the grow-out pond on the same site')
+          return
+        }
+        if (nursingId === growId) {
+          toast.error('Nursing and grow-out must be different ponds')
+          return
+        }
+        await Promise.all([
+          api.put(`/aquaculture/ponds/${nursingId}/`, {
+            physical_site_name: site,
+            linked_grow_out_pond_id: growId,
+            pond_role: 'nursing',
+          }),
+          api.put(`/aquaculture/ponds/${growId}/`, {
+            physical_site_name: site,
+            pond_role: 'grow_out',
+          }),
+        ])
+        toast.success(`Linked nursing and grow-out ponds for ${site}`)
+      } else {
+        const payload: Record<string, unknown> = {
+          physical_site_name: site,
+          nursing_name: sitePairForm.nursing_name.trim() || undefined,
+          grow_out_name: sitePairForm.grow_out_name.trim() || undefined,
+        }
+        const wa = sitePairForm.water_area_decimal.trim()
+        if (wa) payload.water_area_decimal = wa
+        await api.post('/aquaculture/ponds/create-site-pair/', payload)
+        toast.success(`Created nursing + grow-out pair for ${site}`)
+      }
+      setSitePairModal(false)
+      await load()
+    } catch (e: unknown) {
+      toast.error(extractErrorMessage(e, 'Could not save site pair'))
+    } finally {
+      setSitePairSaving(false)
+    }
+  }
+
+  const growOutOptionsForNursing = useMemo(() => {
+    const site = form.physical_site_name.trim().toLowerCase()
+    const growOuts = ponds.filter((p) => {
+      if ((p.pond_role || 'grow_out') !== 'grow_out') return false
+      if (editing && p.id === editing.id) return false
+      if (!p.is_active) return false
+      return true
+    })
+    if (!site) return growOuts
+    const onSite = growOuts.filter(
+      (p) => (p.physical_site_name || '').trim().toLowerCase() === site,
+    )
+    return onSite.length > 0 ? onSite : growOuts
+  }, [ponds, form.physical_site_name, editing])
+
+  const openSitePair = () => {
+    setSitePairMode('create')
+    setSitePairForm({
+      physical_site_name: '',
+      nursing_name: '',
+      grow_out_name: '',
+      water_area_decimal: '',
+      existing_nursing_pond_id: '',
+      existing_grow_out_pond_id: '',
+    })
+    setSitePairModal(true)
+  }
+
   const openNew = () => {
     setEditing(null)
     setSkipAutoPosCustomer(false)
@@ -596,6 +729,13 @@ export default function AquaculturePondsPage() {
       is_active: p.is_active,
       notes: p.notes || '',
       pond_role: p.pond_role || 'grow_out',
+      physical_site_name: p.physical_site_name || '',
+      linked_grow_out_pond_id:
+        p.linked_grow_out_pond_id != null
+          ? String(p.linked_grow_out_pond_id)
+          : p.same_site_grow_out_pond_id != null
+            ? String(p.same_site_grow_out_pond_id)
+            : '',
       warehouse_group_id:
         p.warehouse_group_id != null ? String(p.warehouse_group_id) : '',
       pos_customer_id: p.pos_customer_id != null ? String(p.pos_customer_id) : '',
@@ -623,6 +763,11 @@ export default function AquaculturePondsPage() {
         is_active: form.is_active,
         notes: form.notes.trim(),
         pond_role: form.pond_role,
+        physical_site_name: form.physical_site_name.trim() || null,
+        linked_grow_out_pond_id:
+          form.pond_role === 'nursing' && form.linked_grow_out_pond_id.trim()
+            ? parseInt(form.linked_grow_out_pond_id, 10)
+            : null,
         leasing_area_decimal: form.leasing_area_decimal.trim() || null,
         water_area_decimal: form.water_area_decimal.trim() || null,
         pond_depth_ft: form.pond_depth_ft.trim() || null,
@@ -836,6 +981,14 @@ export default function AquaculturePondsPage() {
                 >
                   <Landmark className="h-4 w-4" aria-hidden />
                   Go-live setup
+                </button>
+                <button
+                  type="button"
+                  onClick={openSitePair}
+                  className="inline-flex items-center gap-1 rounded-lg border border-teal-600 bg-white px-3 py-2 text-sm font-medium text-teal-800 shadow-sm hover:bg-teal-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  Site pair
                 </button>
                 <button
                   type="button"
@@ -1056,6 +1209,7 @@ export default function AquaculturePondsPage() {
                             <div className="flex flex-col gap-1.5">
                               <span className="w-fit rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">
                                 {p.pond_role_label || (p.pond_role === 'nursing' ? 'Nursing' : 'Grow-out')}
+                                {p.physical_site_name ? ` · ${p.physical_site_name}` : ''}
                               </span>
                               <span
                                 className={`w-fit rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -1440,9 +1594,66 @@ export default function AquaculturePondsPage() {
                   ))}
                 </select>
                 <span className="mt-1 block text-xs font-normal text-slate-500">
-                  Used for filters and nursing → grow-out transfers (management only; does not post GL by itself).
+                  Any physical pond can act as nursing while fry are held (fry → fingerling). Pair with a grow-out
+                  profit center on the same site, or use <strong>Site pair</strong> to create both at once.
                 </span>
               </label>
+              <label className="block text-sm font-medium text-slate-700">
+                Physical site name
+                <input
+                  type="text"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  value={form.physical_site_name}
+                  onChange={(e) => setForm((f) => ({ ...f, physical_site_name: e.target.value }))}
+                  placeholder="e.g. Mynuddin"
+                />
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  Same water body for nursing-phase and grow-out-phase profit centers (e.g. Mynuddin Nursing Pond +
+                  Mynuddin Pond).
+                </span>
+              </label>
+              {form.pond_role === 'nursing' ? (
+                <label className="block text-sm font-medium text-slate-700">
+                  Grow-out pond on same site (remainder after transfers)
+                  <select
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                    value={form.linked_grow_out_pond_id}
+                    onChange={(e) => setForm((f) => ({ ...f, linked_grow_out_pond_id: e.target.value }))}
+                  >
+                    <option value="">— choose grow-out pond —</option>
+                    {growOutOptionsForNursing.map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        {p.operational_display_name || p.grow_out_display_name || p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-xs font-normal text-slate-500">
+                    When fingerlings are ready (pcs/kg from your latest sample), transfer most to production ponds and the
+                    remainder here (e.g. Mynuddin Nursing → Mynuddin Pond).
+                  </span>
+                </label>
+              ) : null}
+              {form.pond_role === 'grow_out' && editing?.same_site_nursing_pond_id ? (
+                <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                  Nursing phase:{' '}
+                  <Link
+                    href={`/aquaculture/ponds/${editing.same_site_nursing_pond_id}`}
+                    className="font-semibold underline"
+                  >
+                    {editing.same_site_nursing_display_name || `Pond #${editing.same_site_nursing_pond_id}`}
+                  </Link>
+                </p>
+              ) : null}
+              {form.pond_role === 'nursing' ? (
+                <div className="rounded-lg border border-sky-100 bg-sky-50/50 px-3 py-2 text-xs text-sky-900">
+                  <p className="font-medium">Nursing workflow</p>
+                  <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+                    {NURSING_WORKFLOW_STEPS.map((s) => (
+                      <li key={s}>{s}</li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
               <label className="block text-sm font-medium text-slate-700">
                 Shared warehouse group
                 <select
@@ -1685,6 +1896,161 @@ export default function AquaculturePondsPage() {
           </div>
         </div>
       )}
+
+      {sitePairModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-slate-900">Create physical site pair</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              One water body, two profit centers: nursing phase (fry → fingerling) and grow-out phase (remainder +
+              production).
+            </p>
+            <div className="mt-4 flex gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <button
+                type="button"
+                onClick={() => setSitePairMode('create')}
+                className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${
+                  sitePairMode === 'create' ? 'bg-white text-teal-900 shadow-sm' : 'text-slate-600'
+                }`}
+              >
+                Create new pair
+              </button>
+              <button
+                type="button"
+                onClick={() => setSitePairMode('link')}
+                className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${
+                  sitePairMode === 'link' ? 'bg-white text-teal-900 shadow-sm' : 'text-slate-600'
+                }`}
+              >
+                Link existing ponds
+              </button>
+            </div>
+            <div className="mt-4 space-y-3">
+              <label className="block text-sm font-medium text-slate-700">
+                Physical site name *
+                <input
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="e.g. Mynuddin"
+                  value={sitePairForm.physical_site_name}
+                  onChange={(e) => {
+                    const site = e.target.value
+                    setSitePairForm((f) => ({
+                      ...f,
+                      physical_site_name: site,
+                      nursing_name:
+                        sitePairMode === 'create'
+                          ? f.nursing_name || (site.trim() ? `${site.trim()} Nursing Pond` : '')
+                          : f.nursing_name,
+                      grow_out_name: sitePairMode === 'create' ? f.grow_out_name || site.trim() : f.grow_out_name,
+                    }))
+                  }}
+                />
+              </label>
+              {sitePairMode === 'link' ? (
+                <>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Nursing-phase pond *
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      value={sitePairForm.existing_nursing_pond_id}
+                      onChange={(e) => {
+                        const id = e.target.value
+                        const pond = ponds.find((p) => String(p.id) === id)
+                        setSitePairForm((f) => ({
+                          ...f,
+                          existing_nursing_pond_id: id,
+                          physical_site_name:
+                            f.physical_site_name.trim() ||
+                            (pond?.physical_site_name || '').trim() ||
+                            (pond?.site_base_name || '').trim(),
+                        }))
+                      }}
+                    >
+                      <option value="">— select nursing pond —</option>
+                      {sitePairNursingOptions.map((p) => (
+                        <option key={p.id} value={String(p.id)}>
+                          {p.nursing_display_name || p.operational_display_name || p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Grow-out pond on same site *
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      value={sitePairForm.existing_grow_out_pond_id}
+                      onChange={(e) =>
+                        setSitePairForm((f) => ({ ...f, existing_grow_out_pond_id: e.target.value }))
+                      }
+                    >
+                      <option value="">— select grow-out pond —</option>
+                      {sitePairGrowOutOptions.map((p) => (
+                        <option key={p.id} value={String(p.id)}>
+                          {p.grow_out_display_name || p.operational_display_name || p.name}
+                        </option>
+                      ))}
+                    </select>
+                    {sitePairForm.physical_site_name.trim() &&
+                    sitePairGrowOutOptions.length === 0 &&
+                    sitePairForm.existing_nursing_pond_id ? (
+                      <span className="mt-1 block text-xs text-amber-700">
+                        No grow-out ponds on this site yet — switch to Create new pair or clear the site name to see all
+                        grow-out ponds.
+                      </span>
+                    ) : null}
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Nursing-phase name
+                    <input
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="Mynuddin Nursing Pond"
+                      value={sitePairForm.nursing_name}
+                      onChange={(e) => setSitePairForm((f) => ({ ...f, nursing_name: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Grow-out-phase name
+                    <input
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="Mynuddin Pond"
+                      value={sitePairForm.grow_out_name}
+                      onChange={(e) => setSitePairForm((f) => ({ ...f, grow_out_name: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Water area (decimal, optional)
+                    <input
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={sitePairForm.water_area_decimal}
+                      onChange={(e) => setSitePairForm((f) => ({ ...f, water_area_decimal: e.target.value }))}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSitePairModal(false)}
+                className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={sitePairSaving}
+                onClick={() => void saveSitePair()}
+                className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+              >
+                {sitePairSaving ? 'Saving…' : sitePairMode === 'link' ? 'Link ponds' : 'Create pair'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   )
 }

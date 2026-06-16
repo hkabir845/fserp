@@ -310,6 +310,7 @@ def _create_profit_transfer(
         credit=Decimal("0"),
         description=line_desc,
         station_id=None,
+        aquaculture_pond_id=pond.id,
     )
     JournalEntryLine.objects.create(
         journal_entry=je,
@@ -318,6 +319,7 @@ def _create_profit_transfer(
         credit=amount,
         description=line_desc,
         station_id=None,
+        aquaculture_pond_id=pond.id,
     )
     xfer = AquaculturePondProfitTransfer(
         company_id=company_id,

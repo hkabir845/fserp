@@ -45,7 +45,7 @@ import {
   DEFAULT_COMPANY_TIME_ZONE,
   isKnownCompanyTimeZone,
 } from '@/utils/timeZones'
-import { formatDateOnly } from '@/utils/date'
+import { formatDateOnly, formatDateTime } from '@/utils/date'
 import { displayCompanyCode } from '@/utils/companyCode'
 import { AMOUNT_ADMIN_TEXT_CLASS } from '@/utils/amountFieldStyles'
 import {
@@ -1403,7 +1403,7 @@ function CompaniesPageContent() {
                             {company.platform_release_applied_at && (
                               <p className="mt-1 text-xs text-slate-500">
                                 Last applied:{' '}
-                                {new Date(company.platform_release_applied_at).toLocaleString()}
+                                {formatDateTime(company.platform_release_applied_at)}
                               </p>
                             )}
                             {company.release_can_rollback && (

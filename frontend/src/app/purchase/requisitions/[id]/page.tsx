@@ -1,0 +1,213 @@
+'use client'
+
+import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { api } from '@/lib/api'
+
+type PRDetail = {
+  id: number
+  doc_number: string
+  supplier_id: number | null
+  warehouse_id: number | null
+  status: string
+  needed_by?: string | null
+  purpose?: string | null
+  converted_po_id: number | null
+  created_by: number | null
+  lines: { id: number; item_id: number; qty: number; est_unit_price: number }[]
+}
+
+type LogRow = { id: number; action: string; notes: string | null; actor_user_id: number; created_at: string }
+
+export default function PurchaseRequisitionDetailPage() {
+  const params = useParams()
+  const router = useRouter()
+  const qc = useQueryClient()
+  const id = Number(params.id)
+  const [notes, setNotes] = useState('')
+
+  const qDetail = useQuery({
+    queryKey: ['purchase-requisition', id],
+    queryFn: async () => (await api.get(`/requisitions/purchase/${id}`)).data as PRDetail,
+    enabled: Number.isFinite(id),
+  })
+
+  const qLog = useQuery({
+    queryKey: ['purchase-requisition-log', id],
+    queryFn: async () => (await api.get(`/requisitions/purchase/${id}/approval-log`)).data as LogRow[],
+    enabled: Number.isFinite(id),
+  })
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['purchase-requisition', id] })
+    qc.invalidateQueries({ queryKey: ['purchase-requisition-log', id] })
+    qc.invalidateQueries({ queryKey: ['purchase-requisitions'] })
+    qc.invalidateQueries({ queryKey: ['requisitions-inbox'] })
+  }
+
+  const submitMut = useMutation({
+    mutationFn: () => api.post(`/requisitions/purchase/${id}/submit`, { notes: notes || null }),
+    onSuccess: () => {
+      setNotes('')
+      invalidate()
+    },
+  })
+
+  const approveMut = useMutation({
+    mutationFn: () => api.post(`/requisitions/purchase/${id}/approve`, { notes: notes || null }),
+    onSuccess: () => {
+      setNotes('')
+      invalidate()
+    },
+  })
+
+  const rejectMut = useMutation({
+    mutationFn: () => api.post(`/requisitions/purchase/${id}/reject`, { notes: notes || null }),
+    onSuccess: () => {
+      setNotes('')
+      invalidate()
+    },
+  })
+
+  const convertMut = useMutation({
+    mutationFn: () =>
+      api.post(`/requisitions/purchase/${id}/convert-po`, {
+        supplier_id: null,
+        order_date: new Date().toISOString(),
+        expected_date: null,
+      }),
+    onSuccess: (res) => {
+      invalidate()
+      const poId = (res.data as { purchase_order_id?: number })?.purchase_order_id
+      if (poId) router.push(`/purchase/orders/${poId}`)
+    },
+  })
+
+  if (!Number.isFinite(id) || qDetail.isError) {
+    return (
+      <div className="p-8 text-center text-gray-600">
+        Requisition not found.{' '}
+        <Link href="/purchase/requisitions" className="text-indigo-600">
+          Back
+        </Link>
+      </div>
+    )
+  }
+
+  if (qDetail.isLoading || !qDetail.data) {
+    return <div className="p-8 text-center text-gray-600">Loading…</div>
+  }
+
+  const r = qDetail.data
+  const err =
+    (submitMut.error as any)?.response?.data?.detail ||
+    (approveMut.error as any)?.response?.data?.detail ||
+    (rejectMut.error as any)?.response?.data?.detail ||
+    (convertMut.error as any)?.response?.data?.detail
+
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      <Link href="/purchase/requisitions" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+        ← All purchase requisitions
+      </Link>
+      <h1 className="mt-2 text-2xl font-semibold text-gray-900">{r.doc_number}</h1>
+      <p className="text-sm text-gray-600">Status: {r.status.replace(/_/g, ' ')}</p>
+
+      {r.purpose && <p className="mt-3 text-sm text-gray-700">{r.purpose}</p>}
+
+      <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-gray-900">Lines</h2>
+        <ul className="mt-2 space-y-1 text-sm">
+          {r.lines.map((l) => (
+            <li key={l.id} className="flex justify-between text-gray-700">
+              <span>Item #{l.item_id}</span>
+              <span>
+                {l.qty} @ {l.est_unit_price}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mt-4">
+        <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Notes (optional)</label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          placeholder="Visible on approval log"
+        />
+      </div>
+
+      {err && <p className="mt-2 text-sm text-red-600">{typeof err === 'string' ? err : JSON.stringify(err)}</p>}
+
+      <div className="mt-6 flex flex-wrap gap-2">
+        {r.status === 'draft' && (
+          <button
+            type="button"
+            disabled={submitMut.isPending}
+            onClick={() => submitMut.mutate()}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+          >
+            Submit for approval
+          </button>
+        )}
+        {(r.status === 'pending_dept_head' || r.status === 'pending_executive') && (
+          <>
+            <button
+              type="button"
+              disabled={approveMut.isPending}
+              onClick={() => approveMut.mutate()}
+              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50"
+            >
+              Approve step
+            </button>
+            <button
+              type="button"
+              disabled={rejectMut.isPending}
+              onClick={() => rejectMut.mutate()}
+              className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50"
+            >
+              Reject
+            </button>
+          </>
+        )}
+        {r.status === 'approved' && !r.converted_po_id && (
+          <button
+            type="button"
+            disabled={convertMut.isPending}
+            onClick={() => convertMut.mutate()}
+            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+          >
+            Create draft PO
+          </button>
+        )}
+        {r.converted_po_id && (
+          <Link
+            href={`/purchase/orders/${r.converted_po_id}`}
+            className="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+          >
+            Open linked PO
+          </Link>
+        )}
+      </div>
+
+      <div className="mt-10">
+        <h2 className="text-sm font-semibold text-gray-900">Approval log</h2>
+        <ul className="mt-2 space-y-2 text-sm text-gray-700">
+          {(qLog.data || []).map((row) => (
+            <li key={row.id} className="rounded border border-gray-100 bg-gray-50/80 px-3 py-2">
+              <span className="font-medium">{row.action.replace(/_/g, ' ')}</span>
+              <span className="text-gray-500"> · user #{row.actor_user_id}</span>
+              {row.notes && <p className="mt-1 text-gray-600">{row.notes}</p>}
+            </li>
+          ))}
+          {qLog.data?.length === 0 && <li className="text-gray-500">No events yet.</li>}
+        </ul>
+      </div>
+    </div>
+  )
+}

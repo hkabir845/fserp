@@ -1719,6 +1719,14 @@ class LoanCounterparty(models.Model):
         on_delete=models.SET_NULL,
         related_name="loan_counterparty_openings",
     )
+    opening_balance_station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="loan_counterparty_openings",
+        help_text="Optional GL site tag on counterparty opening balance journal lines.",
+    )
     employee = models.ForeignKey(
         "Employee", null=True, blank=True, on_delete=models.SET_NULL, related_name="loan_counterparties"
     )
@@ -2233,6 +2241,30 @@ class AquaculturePond(models.Model):
         default="grow_out",
         db_index=True,
         help_text="grow_out | nursing | broodstock | other — for filters and transfer workflows (management only).",
+    )
+    physical_site_name = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text=(
+            "Shared water-body name for ponds on the same physical site (e.g. Mynuddin). "
+            "Use with a nursing-phase and grow-out-phase profit center per site."
+        ),
+    )
+    is_virtual = models.BooleanField(
+        default=False,
+        help_text="Deprecated — all ponds are physical. Do not use.",
+    )
+    linked_grow_out_pond = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="same_site_nursing_phases",
+        help_text=(
+            "For nursing-role ponds: grow-out profit center on the same physical site "
+            "(remainder fingerlings after nursing transfers, e.g. Mynuddin Nursing → Mynuddin Pond)."
+        ),
     )
     warehouse_group = models.ForeignKey(
         AquacultureWarehouseGroup,

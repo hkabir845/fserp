@@ -67,10 +67,17 @@ function entityRowsCsv(
 
 function appendEntitySectionsCsv(data: Record<string, unknown>, kind: 'pl' | 'bs' | 'tb'): string {
   const byStation = (data.by_station as Record<string, unknown>[]) ?? []
+  const byFuel =
+    (data.by_fuel_station as Record<string, unknown>[]) ??
+    byStation.filter((r) => r.business_kind !== 'shop_hub')
+  const byShop =
+    (data.by_shop_hub as Record<string, unknown>[]) ??
+    byStation.filter((r) => r.business_kind === 'shop_hub')
   const byPond = (data.by_pond as Record<string, unknown>[]) ?? []
   const unscoped = data.unscoped as Record<string, unknown> | undefined
   let out = ''
-  out += entityRowsCsv(`${kind.toUpperCase()} — stations`, kind, byStation)
+  out += entityRowsCsv(`${kind.toUpperCase()} — fuel filling stations`, kind, byFuel)
+  out += entityRowsCsv(`${kind.toUpperCase()} — shop hubs (no fuel)`, kind, byShop)
   if (byPond.length) out += entityRowsCsv(`${kind.toUpperCase()} — ponds`, kind, byPond)
   if (unscoped) out += entityRowsCsv(`${kind.toUpperCase()} — head office`, kind, [unscoped])
   return out
@@ -183,16 +190,33 @@ export function buildExtraFinancialReportCsv(
     return out
   }
 
-  if (reportId === 'stations-financial-summary' || reportId === 'ponds-pl-summary') {
+  if (
+    reportId === 'stations-financial-summary' ||
+    reportId === 'fuel-stations-pl-summary' ||
+    reportId === 'shop-hubs-pl-summary' ||
+    reportId === 'ponds-pl-summary'
+  ) {
     const isPond = reportId === 'ponds-pl-summary'
+    const isFuel = reportId === 'fuel-stations-pl-summary'
+    const isShop = reportId === 'shop-hubs-pl-summary'
     const rows = (isPond
       ? (data.ponds as Record<string, unknown>[])
-      : (data.stations as Record<string, unknown>[])) ?? []
+      : isFuel
+        ? (data.fuel_stations as Record<string, unknown>[])
+        : isShop
+          ? (data.shop_hubs as Record<string, unknown>[])
+          : (data.stations as Record<string, unknown>[])) ?? []
+    const catTotal = (isPond
+      ? data.ponds_total
+      : isFuel || isShop
+        ? data.category_total
+        : data.stations_total) as Record<string, number> | undefined
     const co = (data.company_total as Record<string, number>) ?? {}
-    let out = `${isPond ? 'Pond' : 'Station'},Income,COGS,Expenses,Gross profit,Net income\n`
+    const label = isPond ? 'Pond' : isFuel ? 'Fuel station' : isShop ? 'Shop hub' : 'Station'
+    let out = `${label},Income,COGS,Expenses,Gross profit,Net income\n`
     rows.forEach((r) => {
       out += [
-        escapeCsvValue(isPond ? r.pond_name : r.station_name),
+        escapeCsvValue(isPond ? r.pond_name : r.station_name ?? r.entity_name),
         r.income ?? 0,
         r.cost_of_goods_sold ?? 0,
         r.expenses ?? 0,
@@ -201,6 +225,9 @@ export function buildExtraFinancialReportCsv(
       ].join(',')
       out += '\n'
     })
+    if (catTotal) {
+      out += `Category total,${catTotal.income ?? 0},${catTotal.cost_of_goods_sold ?? 0},${catTotal.expenses ?? 0},${catTotal.gross_profit ?? 0},${catTotal.net_income ?? 0}\n`
+    }
     out += `Company total,${co.income ?? 0},${co.cost_of_goods_sold ?? 0},${co.expenses ?? 0},${co.gross_profit ?? 0},${co.net_income ?? 0}\n`
     return out
   }

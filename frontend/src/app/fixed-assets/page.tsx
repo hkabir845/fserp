@@ -25,7 +25,10 @@ import { formatCurrency } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import {
   COA_ACCUM_DEPR,
+  COA_DEPR_EXPENSE,
+  COA_FIXED_EQUIPMENT,
   suggestedFixedAssetAccountIds,
+  templateCoaOptionLabel,
   type CoaPick,
 } from '@/lib/coaDefaults'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
@@ -941,7 +944,7 @@ export default function FixedAssetsPage() {
                       onChange={(e) => setFormData({ ...formData, asset_account_id: e.target.value })}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2"
                     >
-                      <option value="">Select…</option>
+                      <option value="">{templateCoaOptionLabel(COA_FIXED_EQUIPMENT, coaOptions)}</option>
                       {assetCoa.map((a) => (
                         <option key={a.id} value={a.id}>{formatCoaOptionLabel(a)}</option>
                       ))}
@@ -954,7 +957,7 @@ export default function FixedAssetsPage() {
                       onChange={(e) => setFormData({ ...formData, accumulated_depreciation_account_id: e.target.value })}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2"
                     >
-                      <option value="">Select…</option>
+                      <option value="">{templateCoaOptionLabel(COA_ACCUM_DEPR, coaOptions)}</option>
                       {accumCoa.map((a) => (
                         <option key={a.id} value={a.id}>{formatCoaOptionLabel(a)}</option>
                       ))}
@@ -970,7 +973,7 @@ export default function FixedAssetsPage() {
                       onChange={(e) => setFormData({ ...formData, depreciation_expense_account_id: e.target.value })}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2"
                     >
-                      <option value="">Select…</option>
+                      <option value="">{templateCoaOptionLabel(COA_DEPR_EXPENSE, coaOptions)}</option>
                       {expenseCoa.map((a) => (
                         <option key={a.id} value={a.id}>{formatCoaOptionLabel(a)}</option>
                       ))}

@@ -7,7 +7,7 @@ from decimal import Decimal
 from django.db import transaction
 
 from api.models import ChartOfAccount, LoanCounterparty
-from api.services.gl_posting import _create_posted_entry
+from api.services.gl_posting import _create_posted_entry, _gl_station_id
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +103,9 @@ def post_loan_counterparty_opening(company_id: int, c: LoanCounterparty, *, post
         desc = f"Loan payable opening — {c.name}"[:500]
 
     entry_number = f"AUTO-LOAN-CP-OB-{c.id}"
+    gst = _gl_station_id(company_id, getattr(c, "opening_balance_station_id", None))
     with transaction.atomic():
-        je = _create_posted_entry(company_id, ob_date, entry_number, desc, lines)
+        je = _create_posted_entry(company_id, ob_date, entry_number, desc, lines, gl_station_id=gst)
         if not je:
             return False
         LoanCounterparty.objects.filter(pk=c.pk, company_id=company_id).update(

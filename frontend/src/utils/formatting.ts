@@ -10,7 +10,7 @@ export {
   roundToDecimals,
 } from './currency'
 
-export { formatDate, formatDateLong, formatDateRange } from './date'
+export { formatDate, formatDateLong, formatDateRange, formatDateOnly, formatDateTime } from './date'
 
 /**
  * Format a percentage value

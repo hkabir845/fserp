@@ -31,6 +31,7 @@ import {
   suggestedInvoiceRevenueAccountId,
   templateCoaOptionLabel,
 } from '@/lib/coaDefaults'
+import { suggestItemGlAccountIds, itemGlCtxFromItemFields } from '@/lib/itemGlDefaults'
 import {
   mergeSuggestedLineAccountId,
   parseSuggestedCoaId,
@@ -87,6 +88,9 @@ interface Item {
   unit: string
   is_deleted?: boolean
   revenue_account_id?: number | null
+  pos_category?: string
+  item_type?: string
+  category?: string
 }
 
 interface CoaIncomeRow {
@@ -601,8 +605,14 @@ export default function InvoicesPage() {
             item.revenue_account_id != null && Number(item.revenue_account_id) > 0
               ? Number(item.revenue_account_id)
               : undefined
+          const itemSuggestedRev = itemRev
+            ? undefined
+            : parseSuggestedCoaId(
+                suggestItemGlAccountIds(itemGlCtxFromItemFields(item), revenueCoaOptions)
+                  .revenue_account_id
+              )
           row.revenue_account_id = mergeSuggestedLineAccountId(
-            itemRev,
+            itemRev ?? itemSuggestedRev,
             defaultInvoiceRevenueAccountId(),
             false
           )
@@ -618,7 +628,7 @@ export default function InvoicesPage() {
         )
       }
     },
-    [items, toast, defaultInvoiceRevenueAccountId]
+    [items, toast, defaultInvoiceRevenueAccountId, revenueCoaOptions]
   )
 
   const calculateTotals = () => {

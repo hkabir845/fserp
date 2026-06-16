@@ -86,15 +86,15 @@ interface LastSampleReference {
   avg_weight_kg?: string | null
 }
 
-interface LastSaleReference {
-  sale_id: number
-  sale_date: string
-  price_per_kg: string
-  weight_kg: string
-  total_amount: string
-  fish_species_label: string
-  production_cycle_name?: string
-  buyer_name?: string
+interface BioCostReference {
+  cost_per_kg: string
+  basis_note?: string
+  biological_cost_total?: string
+  denominator_kg?: string
+  on_hand_weight_kg?: string
+  bio_asset_balance?: string
+  book_cost_per_kg?: string | null
+  method?: string
 }
 
 type Props = {
@@ -341,8 +341,8 @@ export function AquacultureStockLedgerFormModal({
   )
   const [cycles, setCycles] = useState<CycleRow[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const [lastSale, setLastSale] = useState<LastSaleReference | null>(null)
-  const [lastSaleLoading, setLastSaleLoading] = useState(false)
+  const [bioCost, setBioCost] = useState<BioCostReference | null>(null)
+  const [bioCostLoading, setBioCostLoading] = useState(false)
   const [lastSample, setLastSample] = useState<LastSampleReference | null>(null)
   const [lastSampleLoading, setLastSampleLoading] = useState(false)
   const [bookValueTouched, setBookValueTouched] = useState(false)
@@ -376,7 +376,7 @@ export function AquacultureStockLedgerFormModal({
       quantitiesDirtyRef.current = false
       prefScopeRef.current = ''
       prevPrefillScopeRef.current = ''
-      setLastSale(null)
+      setBioCost(null)
       setLastSample(null)
     }
     prevOpenRef.current = open
@@ -449,36 +449,33 @@ export function AquacultureStockLedgerFormModal({
   ])
 
   useEffect(() => {
-    if (!open || glLinked || bookPostingLocked || !form.pond_id || !form.fish_species) {
-      setLastSale(null)
-      setLastSaleLoading(false)
+    if (!open || glLinked || bookPostingLocked || !form.pond_id) {
+      setBioCost(null)
+      setBioCostLoading(false)
       return
     }
     const ac = new AbortController()
-    setLastSaleLoading(true)
+    setBioCostLoading(true)
     void (async () => {
       try {
         const params: Record<string, string> = {
           pond_id: form.pond_id,
-          fish_species: form.fish_species,
         }
         if (form.production_cycle_id) params.production_cycle_id = form.production_cycle_id
-        if (form.fish_species === 'other' && debouncedSpeciesOther) {
-          params.fish_species_other = debouncedSpeciesOther
-        }
-        const { data } = await api.get<{ found: boolean } & Partial<LastSaleReference>>(
-          '/aquaculture/fish-sales/last-reference/',
+        if (form.entry_date) params.as_of = form.entry_date
+        const { data } = await api.get<{ found: boolean } & Partial<BioCostReference>>(
+          '/aquaculture/fish-stock/bio-cost-reference/',
           { params, signal: ac.signal },
         )
-        if (data?.found && data.price_per_kg) {
-          setLastSale(data as LastSaleReference)
+        if (data?.found && data.cost_per_kg) {
+          setBioCost(data as BioCostReference)
         } else {
-          setLastSale(null)
+          setBioCost(null)
         }
       } catch {
-        if (!ac.signal.aborted) setLastSale(null)
+        if (!ac.signal.aborted) setBioCost(null)
       } finally {
-        if (!ac.signal.aborted) setLastSaleLoading(false)
+        if (!ac.signal.aborted) setBioCostLoading(false)
       }
     })()
     return () => ac.abort()
@@ -488,8 +485,7 @@ export function AquacultureStockLedgerFormModal({
     bookPostingLocked,
     form.pond_id,
     form.production_cycle_id,
-    form.fish_species,
-    debouncedSpeciesOther,
+    form.entry_date,
   ])
 
   const applySamplePrefill = useCallback((ref: LastSampleReference, entryKind: string) => {
@@ -610,18 +606,23 @@ export function AquacultureStockLedgerFormModal({
   }, [form.entry_kind, form.kg_removed, form.adj_weight_kg, glLinked, bookPostingLocked])
 
   const suggestedBookValue = useMemo(() => {
-    if (!lastSale?.price_per_kg || weightKgForBook == null) return null
-    const p = Number(lastSale.price_per_kg)
+    if (!bioCost?.cost_per_kg || weightKgForBook == null) return null
+    const p = Number(bioCost.cost_per_kg)
     if (!Number.isFinite(p) || p <= 0) return null
-    return (Math.round(weightKgForBook * p * 100) / 100).toFixed(2)
-  }, [lastSale, weightKgForBook])
+    let amt = Math.round(weightKgForBook * p * 100) / 100
+    const bal = bioCost.bio_asset_balance != null ? Number(bioCost.bio_asset_balance) : null
+    if (bal != null && Number.isFinite(bal) && bal > 0 && amt > bal) {
+      amt = bal
+    }
+    return amt.toFixed(2)
+  }, [bioCost, weightKgForBook])
 
   useEffect(() => {
     if (bookValueTouched || glLinked || bookPostingLocked || suggestedBookValue == null) return
     setForm((f) => (f.book_value === suggestedBookValue ? f : { ...f, book_value: suggestedBookValue }))
   }, [suggestedBookValue, bookValueTouched, glLinked, bookPostingLocked])
 
-  const applyLastSaleBookValue = () => {
+  const applyBioCostBookValue = () => {
     if (suggestedBookValue == null) return
     setForm((f) => ({ ...f, book_value: suggestedBookValue }))
     setBookValueTouched(false)
@@ -1022,27 +1023,24 @@ export function AquacultureStockLedgerFormModal({
                 </p>
               )}
               <div className="mt-4 space-y-3">
-                {lastSaleLoading ? (
-                  <p className="text-xs text-slate-500">Looking up last sale for this pond, cycle, and species…</p>
-                ) : lastSale ? (
+                {bioCostLoading ? (
+                  <p className="text-xs text-slate-500">Looking up production cost/kg for bio-asset relief…</p>
+                ) : bioCost ? (
                   <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-600">
                     <p>
-                      <span className="font-medium text-slate-800">Last sale</span>{' '}
-                      {formatDateOnly(lastSale.sale_date)}
-                      {lastSale.buyer_name ? ` · ${lastSale.buyer_name}` : ''}:{' '}
+                      <span className="font-medium text-slate-800">Production cost</span>{' '}
                       <span className="tabular-nums font-medium text-slate-800">
                         {sym}
-                        {formatNumber(Number(lastSale.price_per_kg), 2)}/kg
+                        {formatNumber(Number(bioCost.cost_per_kg), 2)}/kg
                       </span>
-                      <span className="text-slate-500">
-                        {' '}
-                        ({formatNumber(Number(lastSale.weight_kg), 2)} kg → {sym}
-                        {formatNumber(Number(lastSale.total_amount), 2)})
-                      </span>
+                      <span className="text-slate-500"> (fry + feed + medicine + preparation)</span>
                     </p>
+                    {bioCost.basis_note ? (
+                      <p className="mt-1 text-[11px] leading-snug text-slate-500">{bioCost.basis_note}</p>
+                    ) : null}
                     {weightKgForBook != null && suggestedBookValue ? (
                       <p className="mt-1 tabular-nums text-slate-700">
-                        Suggested book value for {formatNumber(weightKgForBook, 2)} kg:{' '}
+                        Suggested bio-asset write-down for {formatNumber(weightKgForBook, 2)} kg:{' '}
                         <span className="font-semibold text-teal-900">
                           {sym}
                           {formatNumber(Number(suggestedBookValue), 2)}
@@ -1050,22 +1048,22 @@ export function AquacultureStockLedgerFormModal({
                         {bookValueTouched ? (
                           <button
                             type="button"
-                            onClick={applyLastSaleBookValue}
+                            onClick={applyBioCostBookValue}
                             className="ml-2 font-medium text-teal-800 underline hover:text-teal-950"
                           >
-                            Re-apply from last sale
+                            Re-apply from cost/kg
                           </button>
                         ) : null}
                       </p>
                     ) : (
                       <p className="mt-1 text-slate-500">
-                        Enter weight removed or adjustment kg — book value will fill from the last sale rate.
+                        Enter weight removed — book value fills from accumulated production cost/kg.
                       </p>
                     )}
                   </div>
                 ) : (
                   <p className="text-xs text-slate-500">
-                    No recorded sale for this pond, production cycle, and species. Enter book value manually.
+                    No production cost/kg for this pond yet — enter book value manually (market rate if needed).
                   </p>
                 )}
                 <div className="grid gap-4 sm:grid-cols-2">

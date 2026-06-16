@@ -28,13 +28,19 @@ from api.models import (
     AquacultureExpense,
     AquacultureExpensePondShare,
     AquacultureFishSale,
+    AquacultureFishStockLedger,
     AquaculturePond,
     AquacultureProductionCycle,
     Company,
     PayrollRun,
     PayrollRunPondAllocation,
 )
+from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
+from api.services.aquaculture_stock_ledger_reconcile_service import (
+    OPENING_DEMO_MEMO_TAG,
+    opening_stock_for_pond,
+)
 
 DEMO_TAG = "[DASHBOARD-DEMO]"
 PAYROLL_NO = "DASH-DEMO-001"
@@ -137,6 +143,37 @@ class Command(BaseCommand):
                     },
                 )
                 cycles[p.id] = cy
+
+            for p in ponds:
+                cy = cycles[p.id]
+                if AquacultureFishStockLedger.objects.filter(
+                    company_id=cid,
+                    pond_id=p.id,
+                    production_cycle_id=cy.id,
+                    memo__contains=OPENING_DEMO_MEMO_TAG,
+                ).exists():
+                    continue
+                opening = opening_stock_for_pond(cid, p, cy.id)
+                if not opening:
+                    continue
+                fc, wkg = opening
+                AquacultureFishStockLedger.objects.create(
+                    company_id=cid,
+                    pond=p,
+                    production_cycle=cy,
+                    entry_date=cy.start_date or (today - timedelta(days=90)),
+                    entry_kind="adjustment",
+                    loss_reason="",
+                    fish_species="tilapia",
+                    fish_count_delta=fc,
+                    weight_kg_delta=wkg,
+                    book_value=Decimal("0"),
+                    post_to_books=False,
+                    memo=(
+                        f"{DEMO_TAG} {OPENING_DEMO_MEMO_TAG} Opening fry/stocking reconcile for "
+                        f"{cy.name} — demo only, not posted to GL."
+                    ),
+                )
 
             # --- Feed with kg (spread across long span + extra on ISO window days)
             feed_days = sorted(
@@ -287,28 +324,35 @@ class Command(BaseCommand):
             for p in ponds:
                 cy = cycles[p.id]
                 base_kg = Decimal("2100") + Decimal(p.id % 7) * Decimal("120")
-                AquacultureBiomassSample.objects.create(
-                    company_id=cid,
-                    pond=p,
-                    production_cycle=cy,
-                    sample_date=early_d,
-                    estimated_fish_count=8000 + (p.id % 5) * 400,
-                    estimated_total_weight_kg=base_kg,
-                    avg_weight_kg=(base_kg / Decimal("8000")).quantize(Decimal("0.000001")),
-                    fish_species="tilapia",
-                    notes=f"{DEMO_TAG} Seine / cast-net estimate (early)",
-                )
-                AquacultureBiomassSample.objects.create(
-                    company_id=cid,
-                    pond=p,
-                    production_cycle=cy,
-                    sample_date=late_d,
-                    estimated_fish_count=9000 + (p.id % 5) * 350,
-                    estimated_total_weight_kg=base_kg + Decimal("480") + Decimal(p.id % 4) * Decimal("40"),
-                    avg_weight_kg=Decimal("0.350000"),
-                    fish_species="tilapia",
-                    notes=f"{DEMO_TAG} Seine / cast-net estimate (late)",
-                )
+                for sample_date, est_fc, est_kg, avg_kg, note_suffix in (
+                    (
+                        early_d,
+                        8000 + (p.id % 5) * 400,
+                        base_kg,
+                        (base_kg / Decimal("8000")).quantize(Decimal("0.000001")),
+                        "early",
+                    ),
+                    (
+                        late_d,
+                        9000 + (p.id % 5) * 350,
+                        base_kg + Decimal("480") + Decimal(p.id % 4) * Decimal("40"),
+                        Decimal("0.350000"),
+                        "late",
+                    ),
+                ):
+                    sample = AquacultureBiomassSample(
+                        company_id=cid,
+                        pond=p,
+                        production_cycle=cy,
+                        sample_date=sample_date,
+                        estimated_fish_count=est_fc,
+                        estimated_total_weight_kg=est_kg,
+                        avg_weight_kg=avg_kg,
+                        fish_species="tilapia",
+                        notes=f"{DEMO_TAG} Seine / cast-net estimate ({note_suffix})",
+                    )
+                    apply_aquaculture_biomass_sample_extrapolation(sample)
+                    sample.save()
 
             # --- Payroll allocation (drives total_costs / net profit)
             pay_end = today - timedelta(days=1) if today.day > 1 else today

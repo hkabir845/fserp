@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Copy, Loader2, Plus, Trash2, X } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
@@ -24,6 +24,8 @@ import {
   newLineLocalId,
   saleRowToLineDraft,
 } from './aquacultureSaleShared'
+import { PartialHarvestAdvicePanel } from '@/app/aquaculture/PartialHarvestAdvicePanel'
+import type { StockMetricsRow } from '@/app/aquaculture/aquacultureFishMetrics'
 
 type Props = {
   open: boolean
@@ -52,19 +54,53 @@ type StockBreakdownRow = {
 
 type Availability = { weightKg: number; count: number }
 
-function availabilityForLine(line: SaleLineDraft, rows: StockBreakdownRow[]): Availability | null {
+type LastSampleReference = {
+  fish_per_kg?: string | null
+  sample_date?: string
+  production_cycle_id?: number | null
+  cycle_scope_fallback?: boolean
+}
+
+function sumAvailability(
+  line: SaleLineDraft,
+  rows: StockBreakdownRow[],
+  cycleFilter: string | null,
+): Availability {
   const species = line.fish_species
-  if (!species || species === 'not_applicable') return null
-  const cycle = line.production_cycle_id.trim()
   let weightKg = 0
   let count = 0
   for (const r of rows) {
     if (r.fish_species !== species) continue
-    if (cycle !== '' && String(r.production_cycle_id ?? '') !== cycle) continue
+    if (cycleFilter != null && String(r.production_cycle_id ?? '') !== cycleFilter) continue
     weightKg += Number(r.implied_net_weight_kg) || 0
     count += r.implied_net_fish_count || 0
   }
   return { weightKg, count }
+}
+
+function availabilityForLine(line: SaleLineDraft, rows: StockBreakdownRow[]): Availability | null {
+  const species = line.fish_species
+  if (!species || species === 'not_applicable') return null
+  const cycle = line.production_cycle_id.trim()
+  if (cycle === '') return sumAvailability(line, rows, null)
+  const exact = sumAvailability(line, rows, cycle)
+  if (exact.weightKg <= 0 && exact.count <= 0) {
+    return sumAvailability(line, rows, null)
+  }
+  return exact
+}
+
+function lineSampleScopeKey(header: SaleHeaderDraft, line: SaleLineDraft): string {
+  const other = line.fish_species === 'other' ? line.fish_species_other.trim() : ''
+  return `${header.pond_id}|${line.production_cycle_id}|${line.fish_species}|${other}`
+}
+
+function applySamplePcsToLine(line: SaleLineDraft, fishPerKg: string): SaleLineDraft {
+  const fpk = fishPerKg.trim()
+  if (!fpk) return line
+  const next = { ...line, fish_per_kg: roundDecimalInputString(fpk, 2) }
+  next.fish_count = computeHeads(next.weight_kg, next.fish_per_kg)
+  return next
 }
 
 function computeHeads(weightKg: string, fishPerKgStr: string): string {
@@ -176,6 +212,7 @@ export function AquacultureSaleFormModal({
   const isEdit = editing != null
   const [cycles, setCycles] = useState<CycleRow[]>([])
   const [stockRows, setStockRows] = useState<StockBreakdownRow[]>([])
+  const [pondStockRow, setPondStockRow] = useState<StockMetricsRow | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [header, setHeader] = useState<SaleHeaderDraft>({
     pond_id: '',
@@ -184,6 +221,9 @@ export function AquacultureSaleFormModal({
     memo: '',
   })
   const [lines, setLines] = useState<SaleLineDraft[]>([emptyFishHarvestLine()])
+  const [sampleByScope, setSampleByScope] = useState<Record<string, LastSampleReference>>({})
+  const skipAutoPcsLine = useRef<Set<string>>(new Set())
+  const autoCycleFromSampleDone = useRef<Set<string>>(new Set())
 
   const speciesOptionsForFish = useMemo(
     () =>
@@ -238,12 +278,106 @@ export function AquacultureSaleFormModal({
   useEffect(() => {
     if (!open) return
     resetForm()
+    skipAutoPcsLine.current = new Set()
+    autoCycleFromSampleDone.current = new Set()
+    setSampleByScope({})
   }, [open, resetForm])
+
+  const fishLineScopes = useMemo(() => {
+    if (!open || !header.pond_id) return [] as string[]
+    const keys = new Set<string>()
+    for (const line of lines) {
+      if (lineIsNonFish(line, incomeTypes)) continue
+      if (!line.fish_species || line.fish_species === 'not_applicable') continue
+      keys.add(lineSampleScopeKey(header, line))
+    }
+    return [...keys]
+  }, [open, header.pond_id, lines, incomeTypes])
+
+  const fishLineScopesKey = fishLineScopes.join('\u0000')
+
+  useEffect(() => {
+    if (!open || isEdit || !header.pond_id || fishLineScopes.length === 0) {
+      if (!open) setSampleByScope({})
+      return
+    }
+    const ac = new AbortController()
+    void (async () => {
+      const next: Record<string, LastSampleReference> = {}
+      await Promise.all(
+        fishLineScopes.map(async (scopeKey) => {
+          const [pondId, cycleId, species, speciesOther] = scopeKey.split('|')
+          if (!pondId || !species) return
+          try {
+            const params: Record<string, string> = {
+              pond_id: pondId,
+              fish_species: species,
+            }
+            if (cycleId) params.production_cycle_id = cycleId
+            if (species === 'other' && speciesOther) params.fish_species_other = speciesOther
+            const { data } = await api.get<{ found: boolean } & Partial<LastSampleReference>>(
+              '/aquaculture/biomass-samples/last-reference/',
+              { params, signal: ac.signal },
+            )
+            if (data?.found && data.fish_per_kg) {
+              next[scopeKey] = data as LastSampleReference
+            }
+          } catch {
+            /* optional hint */
+          }
+        }),
+      )
+      if (!ac.signal.aborted) {
+        setSampleByScope((prev) => ({ ...prev, ...next }))
+      }
+    })()
+    return () => ac.abort()
+  }, [open, isEdit, header.pond_id, fishLineScopesKey])
+
+  const effectivePcsForLine = useCallback(
+    (line: SaleLineDraft): string => {
+      const scopeKey = lineSampleScopeKey(header, line)
+      const ref = sampleByScope[scopeKey]
+      const raw = ref?.fish_per_kg?.trim() ?? pondStockRow?.current_fish_per_kg?.trim() ?? ''
+      if (!raw) return ''
+      const n = Number(raw.replace(/,/g, ''))
+      return Number.isFinite(n) && n > 0 ? raw : ''
+    },
+    [header.pond_id, sampleByScope, pondStockRow],
+  )
+
+  useEffect(() => {
+    if (!open || isEdit) return
+    setLines((prev) =>
+      prev.map((line) => {
+        if (lineIsNonFish(line, incomeTypes)) return line
+        if (skipAutoPcsLine.current.has(line.localId)) return line
+        const pcs = effectivePcsForLine(line)
+        if (!pcs) return line
+        let next = applySamplePcsToLine(line, pcs)
+        const scopeKey = lineSampleScopeKey(header, line)
+        const ref = sampleByScope[scopeKey]
+        if (
+          !line.production_cycle_id.trim() &&
+          ref?.production_cycle_id != null &&
+          !autoCycleFromSampleDone.current.has(line.localId)
+        ) {
+          autoCycleFromSampleDone.current.add(line.localId)
+          next = { ...next, production_cycle_id: String(ref.production_cycle_id) }
+        }
+        if (next.fish_per_kg === line.fish_per_kg && next.fish_count === line.fish_count) {
+          if (next.production_cycle_id === line.production_cycle_id) return line
+        }
+        return next
+      }),
+    )
+  }, [open, isEdit, header.pond_id, sampleByScope, pondStockRow, effectivePcsForLine, incomeTypes])
 
   useEffect(() => {
     if (!open || !header.pond_id) {
       setCycles([])
       setStockRows([])
+      setPondStockRow(null)
       return
     }
     void (async () => {
@@ -258,18 +392,21 @@ export function AquacultureSaleFormModal({
     })()
     void (async () => {
       try {
-        const { data } = await api.get<{ breakdown_rows?: StockBreakdownRow[] }>(
+        const { data } = await api.get<{ breakdown_rows?: StockBreakdownRow[]; rows?: StockMetricsRow[] }>(
           '/aquaculture/fish-stock-position/',
           { params: { pond_id: header.pond_id, breakdown: 'cycle_species' } }
         )
         setStockRows(Array.isArray(data?.breakdown_rows) ? data.breakdown_rows : [])
+        setPondStockRow(Array.isArray(data?.rows) && data.rows[0] ? data.rows[0] : null)
       } catch {
         setStockRows([])
+        setPondStockRow(null)
       }
     })()
   }, [open, header.pond_id])
 
   const updateLine = (localId: string, patch: Partial<SaleLineDraft>) => {
+    if ('fish_per_kg' in patch) skipAutoPcsLine.current.add(localId)
     setLines((prev) =>
       prev.map((ln) => {
         if (ln.localId !== localId) return ln
@@ -305,11 +442,12 @@ export function AquacultureSaleFormModal({
   }
 
   const duplicateLine = (line: SaleLineDraft) => {
+    const localId = newLineLocalId()
     setLines((prev) => [
       ...prev,
       {
         ...line,
-        localId: newLineLocalId(),
+        localId,
         weight_kg: '',
         fish_per_kg: '',
         fish_count: '',
@@ -460,6 +598,12 @@ export function AquacultureSaleFormModal({
             </div>
           </section>
 
+          {pondStockRow ? (
+            <section className="mt-5">
+              <PartialHarvestAdvicePanel row={pondStockRow} />
+            </section>
+          ) : null}
+
           <section className="mt-5">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -511,6 +655,7 @@ export function AquacultureSaleFormModal({
                   {lines.map((line, idx) => {
                     const nonFish = lineIsNonFish(line, incomeTypes)
                     const avail = nonFish ? null : availabilityForLine(line, stockRows)
+                    const sampleRef = nonFish ? null : sampleByScope[lineSampleScopeKey(header, line)] ?? null
                     const reqWeight = Number(line.weight_kg)
                     const reqHeads = Number(line.fish_count)
                     const overWeight =
@@ -616,15 +761,29 @@ export function AquacultureSaleFormModal({
                           {nonFish ? (
                             <span className="block py-2.5 text-center text-xs text-slate-400">—</span>
                           ) : (
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.0001"
-                              className={`${inputCls} text-right tabular-nums`}
-                              placeholder="pcs/kg"
-                              value={line.fish_per_kg}
-                              onChange={(e) => updateLine(line.localId, { fish_per_kg: e.target.value })}
-                            />
+                            <div className="space-y-1">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.0001"
+                                className={`${inputCls} text-right tabular-nums`}
+                                placeholder="pcs/kg"
+                                value={line.fish_per_kg}
+                                onChange={(e) => updateLine(line.localId, { fish_per_kg: e.target.value })}
+                              />
+                              {sampleRef?.fish_per_kg && line.fish_per_kg.trim() !== '' ? (
+                                <p className="text-[11px] leading-tight text-emerald-700">
+                                  From sample
+                                  {sampleRef.sample_date ? ` · ${sampleRef.sample_date.slice(0, 10)}` : ''}
+                                </p>
+                              ) : pondStockRow?.current_fish_per_kg &&
+                                line.fish_per_kg.trim() !== '' &&
+                                !sampleRef?.fish_per_kg ? (
+                                <p className="text-[11px] leading-tight text-slate-500">
+                                  From pond stock estimate
+                                </p>
+                              ) : null}
+                            </div>
                           )}
                         </td>
                         <td className="px-2 py-2">

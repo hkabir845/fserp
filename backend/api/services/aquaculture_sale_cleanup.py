@@ -11,7 +11,7 @@ from api.services.document_posting_lifecycle import (
     assert_invoice_change_allowed,
     reconcile_invoice_after_material_edit,
 )
-from api.services.gl_posting import cleanup_invoice_posting_effects
+from api.services.gl_posting import cleanup_invoice_posting_effects, delete_aquaculture_fish_sale_bio_relief_journal
 
 
 def cleanup_aquaculture_fish_sale_effects(company_id: int, sale: AquacultureFishSale) -> tuple[bool, str]:
@@ -28,6 +28,8 @@ def cleanup_aquaculture_fish_sale_effects(company_id: int, sale: AquacultureFish
             return True, ""
 
         AquacultureBiomassSample.objects.filter(source_fish_sale_id=locked.id).delete()
+
+        delete_aquaculture_fish_sale_bio_relief_journal(company_id, locked.id)
 
         inv_id = locked.invoice_id
         if inv_id:
@@ -95,10 +97,17 @@ def reconcile_aquaculture_fish_sale_with_invoice(
         _refresh_invoice_totals(inv)
 
         old_status = inv.status
-        return reconcile_invoice_after_material_edit(
+        ok_rec, err_rec = reconcile_invoice_after_material_edit(
             company_id,
             inv,
             old_status=old_status,
             payment_method=payment_method or (inv.payment_method or "cash"),
             bank_account_id=bank_account_id,
         )
+        if not ok_rec:
+            return False, err_rec
+
+        from api.services.aquaculture_sale_bio_relief_service import sync_aquaculture_fish_sale_bio_relief
+
+        sync_aquaculture_fish_sale_bio_relief(company_id, sale)
+        return True, ""

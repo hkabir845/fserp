@@ -476,6 +476,10 @@ urlpatterns = [
     ),
     path("aquaculture/ponds/", aquaculture_views.aquaculture_ponds_list_or_create),
     path(
+        "aquaculture/ponds/create-site-pair/",
+        aquaculture_views.aquaculture_ponds_create_site_pair,
+    ),
+    path(
         "aquaculture/ponds/provision-pos-customers/",
         aquaculture_views.aquaculture_ponds_provision_pos_customers,
     ),
@@ -527,6 +531,10 @@ urlpatterns = [
         "aquaculture/fish-sales/last-reference/",
         aquaculture_views.aquaculture_fish_sale_last_reference,
     ),
+    path(
+        "aquaculture/fish-stock/bio-cost-reference/",
+        aquaculture_views.aquaculture_fish_stock_bio_cost_reference,
+    ),
     path("aquaculture/sales/", aquaculture_views.aquaculture_sales_list_or_create),
     path(
         "aquaculture/sales/<int:sale_id>/finalize/",
@@ -559,6 +567,10 @@ urlpatterns = [
     ),
     path("aquaculture/pond-roles/", aquaculture_views.aquaculture_pond_roles_reference),
     path("aquaculture/fish-pond-transfers/", aquaculture_views.aquaculture_fish_pond_transfers),
+    path(
+        "aquaculture/fish-pond-transfers/preview-cost/",
+        aquaculture_views.aquaculture_fish_pond_transfer_preview_cost,
+    ),
     path(
         "aquaculture/fish-pond-transfers/<int:transfer_id>/",
         aquaculture_views.aquaculture_fish_pond_transfer_detail,

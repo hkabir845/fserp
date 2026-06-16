@@ -55,6 +55,11 @@ from api.models import (
     Vendor,
 )
 from api.exceptions import GlPostingError, StockBusinessError
+from api.services.entity_gl_scoping import (
+    validate_bill_entity_tags_for_gl,
+    validate_invoice_entity_tags_for_gl,
+    validate_payroll_entity_tags_for_gl,
+)
 from api.services.aquaculture_constants import (
     coa_account_code_for_aquaculture_expense_category,
     coa_account_code_for_aquaculture_income_type,
@@ -973,6 +978,8 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
     ).exists():
         return True
 
+    validate_invoice_entity_tags_for_gl(company_id, inv)
+
     # Split by COGS account, inventory account, and aquaculture cost bucket so mixed feed/medicine lines stay tagged.
     buckets: dict[tuple[int, int, str], Decimal] = {}
     total_cogs = Decimal("0")
@@ -1435,6 +1442,74 @@ def post_aquaculture_fish_stock_ledger_journal(
     )
 
 
+def post_aquaculture_fish_sale_bio_relief_journal(
+    company_id: int,
+    sale_id: int,
+    entry_date: date,
+    *,
+    relief_amount: Decimal,
+    pond_id: int,
+    production_cycle_id: int | None,
+    pond_label: str,
+    weight_kg: Decimal,
+    cost_per_kg: Decimal,
+    memo: str = "",
+) -> JournalEntry | None:
+    """
+    Idempotent entry_number AUTO-AQ-SALE-{sale_id}-BIO.
+
+    Harvest bio-asset relief at accumulated production cost/kg: Dr 6726 / Cr 1581.
+    """
+    entry_number = f"AUTO-AQ-SALE-{sale_id}-BIO"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
+        return JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).first()
+
+    amt = relief_amount.quantize(Decimal("0.01"))
+    if amt <= 0:
+        return None
+
+    bio = ChartOfAccount.objects.filter(company_id=company_id, account_code="1581", is_active=True).first()
+    exp = ChartOfAccount.objects.filter(company_id=company_id, account_code="6726", is_active=True).first()
+    if not bio or not exp:
+        logger.warning(
+            "skip aquaculture fish sale bio relief %s: missing COA (1581, 6726)",
+            entry_number,
+        )
+        return None
+
+    line_memo = (
+        memo
+        or f"Harvest bio-asset relief — {weight_kg} kg @ {cost_per_kg}/kg"
+    )[:300]
+    aq_meta = {
+        "pond_id": pond_id,
+        "production_cycle_id": production_cycle_id,
+        "cost_bucket": "biological_writeoff",
+    }
+    lines = [
+        (exp, amt, Decimal("0"), line_memo),
+        (bio, Decimal("0"), amt, line_memo),
+    ]
+    desc = f"Aquaculture — harvest bio-asset relief ({pond_label})"[:500]
+    return _create_posted_entry(
+        company_id,
+        entry_date,
+        entry_number,
+        desc,
+        lines,
+        gl_station_id=None,
+        aquaculture_line_costing=[aq_meta, aq_meta],
+    )
+
+
+def delete_aquaculture_fish_sale_bio_relief_journal(company_id: int, sale_id: int) -> int:
+    deleted, _ = JournalEntry.objects.filter(
+        company_id=company_id,
+        entry_number=f"AUTO-AQ-SALE-{sale_id}-BIO",
+    ).delete()
+    return deleted
+
+
 def delete_auto_fund_transfer_journal(company_id: int, transfer_id: int) -> int:
     """Remove GL entry for a fund transfer when unposting the transfer."""
     deleted, _ = JournalEntry.objects.filter(
@@ -1463,6 +1538,8 @@ def post_invoice_sale_journal(
     ).exists():
         post_invoice_cogs_journal(company_id, inv)
         return True
+
+    validate_invoice_entity_tags_for_gl(company_id, inv)
 
     vat_acc = _coa(company_id, CODE_VAT)
     rev_splits = _build_revenue_splits(company_id, inv)
@@ -2582,6 +2659,8 @@ def post_bill_journal(
             )
         return True
 
+    validate_bill_entity_tags_for_gl(company_id, bill)
+
     built = _build_bill_journal_lines(company_id, bill)
     je = None
     if built:
@@ -2970,6 +3049,16 @@ def post_payroll_salary(
         return None, f"Pond allocations ({alloc_gross}) exceed payroll gross ({gross})."
     split_mixed_entities = split_by_pond and company_gross > Decimal("0.02")
     split_full_pond = split_by_pond and not split_mixed_entities and abs(alloc_gross - gross) <= Decimal("0.02")
+
+    try:
+        validate_payroll_entity_tags_for_gl(
+            company_id,
+            pr,
+            split_by_pond=split_by_pond,
+            split_mixed_entities=split_mixed_entities,
+        )
+    except GlPostingError as ex:
+        return None, ex.detail
 
     pond_exp = _coa(company_id, CODE_AQUACULTURE_LABOR_EXP)
     company_exp = _coa(company_id, CODE_SALARY_EXP)

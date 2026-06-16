@@ -1,0 +1,22 @@
+/** Maps ERP hub `href` (from app-modules menu) to `/modules/[slug]` for the mirror hub page. */
+export const erpHubHrefToSlug: Record<string, string> = {
+  '/dashboard': 'dashboard',
+  '/reports': 'reports',
+  '/master-data': 'master-data',
+  '/procurement': 'procurement',
+  '/trade-finance': 'trade-finance',
+  '/sales': 'sales',
+  '/manufacturing': 'manufacturing',
+  '/lab': 'lab',
+  '/inventory': 'inventory',
+  '/livestock': 'livestock',
+  '/transport': 'transport',
+  '/workshop': 'workshop',
+  '/fuel': 'fuel',
+  '/loans': 'loans',
+  '/crm': 'crm',
+  '/hr': 'hr',
+  '/accounting': 'accounting',
+  '/payroll': 'payroll',
+  '/settings': 'settings',
+}

@@ -28,6 +28,13 @@ import {
   lineHasEntityTag,
   resolveJournalLinePondId,
 } from '@/utils/entityGlScoping'
+import {
+  applyJournalQuickEntryTemplate,
+  JOURNAL_QUICK_ENTRY_TEMPLATES,
+  JOURNAL_RECOMMENDED_ACCOUNT_CODES,
+  type JournalQuickEntryKind,
+} from '@/lib/journalEntryTemplates'
+import { coaPickFromRows } from '@/lib/coaSuggestForm'
 
 interface JournalEntryLine {
   id?: number
@@ -132,6 +139,7 @@ export default function JournalEntriesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
+  const [quickEntryKind, setQuickEntryKind] = useState<JournalQuickEntryKind | ''>('')
   const [showViewModal, setShowViewModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null)
   const [editingEntry, setEditingEntry] = useState<JournalEntry | null>(null)
@@ -182,6 +190,34 @@ export default function JournalEntriesPage() {
   const showSiteCol = stations.length > 0
   const showPondCol = ponds.length > 0
   const lineTableMetaCols = 4 + (showSiteCol ? 1 : 0) + (showPondCol ? 1 : 0)
+
+  const coaPickOptions = coaPickFromRows(accounts)
+  const recommendedAccountIds = new Set(
+    JOURNAL_RECOMMENDED_ACCOUNT_CODES.map((code) => {
+      const a = accounts.find((x) => String(x.account_code || '').trim() === code)
+      return a?.id
+    }).filter((id): id is number => id != null && id > 0)
+  )
+  const recommendedAccounts = accounts.filter((a) => recommendedAccountIds.has(a.id))
+  const otherAccounts = accounts.filter((a) => !recommendedAccountIds.has(a.id))
+
+  const applyQuickEntry = (kind: JournalQuickEntryKind) => {
+    const applied = applyJournalQuickEntryTemplate(kind, coaPickOptions, {
+      defaultStationId: formData.station_id,
+    })
+    if (!applied) {
+      toast.error('Could not apply template — check that template GL accounts exist in Chart of Accounts.')
+      return
+    }
+    setFormData((prev) => ({
+      ...prev,
+      description: prev.description.trim() ? prev.description : applied.description,
+      station_id: applied.station_id !== '' ? applied.station_id : prev.station_id,
+      lines: applied.lines,
+    }))
+    setQuickEntryKind(kind)
+    toast.success('Suggested accounts and entity tags applied — enter amounts and review site/pond tags.')
+  }
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -454,14 +490,37 @@ export default function JournalEntriesPage() {
 
   const updateLine = (index: number, field: string, value: any) => {
     const newLines = [...formData.lines]
+    const applyDefaultSiteIfNeeded = (lineIdx: number, accountId: number | null) => {
+      if (!accountId) return
+      const acc = accounts.find((a) => a.id === accountId)
+      if (!accountNeedsEntityTag(acc)) return
+      const line = newLines[lineIdx]
+      if (lineHasEntityTag(line, formData.station_id)) return
+      if (formData.station_id !== '' && formData.station_id != null) {
+        newLines[lineIdx] = { ...line, station_id: formData.station_id }
+      }
+    }
     if (field === 'debit_account_id') {
-      newLines[index] = { ...newLines[index], debit_account_id: value ? parseInt(value) : null, credit_account_id: null }
+      const accountId = value ? parseInt(value) : null
+      newLines[index] = { ...newLines[index], debit_account_id: accountId, credit_account_id: null }
+      applyDefaultSiteIfNeeded(index, accountId)
     } else if (field === 'credit_account_id') {
-      newLines[index] = { ...newLines[index], credit_account_id: value ? parseInt(value) : null, debit_account_id: null }
+      const accountId = value ? parseInt(value) : null
+      newLines[index] = { ...newLines[index], credit_account_id: accountId, debit_account_id: null }
+      applyDefaultSiteIfNeeded(index, accountId)
     } else {
       newLines[index] = { ...newLines[index], [field]: value }
     }
     setFormData({ ...formData, lines: newLines })
+  }
+
+  const lineEntityScopeWarning = (line: LineForm): string | null => {
+    const accId = line.debit_account_id || line.credit_account_id
+    if (!accId || !(Number(line.amount) > 0)) return null
+    const acc = accounts.find((a) => a.id === accId)
+    if (!accountNeedsEntityTag(acc)) return null
+    if (lineHasEntityTag(line, formData.station_id)) return null
+    return 'Assign a site or pond so this amount appears on entity P&L.'
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -675,6 +734,7 @@ export default function JournalEntriesPage() {
       ],
     })
     setEditingEntry(null)
+    setQuickEntryKind('')
   }
 
   const handleCloseModal = () => {
@@ -1299,6 +1359,40 @@ export default function JournalEntriesPage() {
                 ) : null}
               </div>
 
+              <div className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+                <label className="block text-sm font-medium text-indigo-950 mb-2">
+                  Quick entry (suggested GL + entity tags)
+                </label>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <select
+                    value={quickEntryKind}
+                    onChange={(e) => {
+                      const v = e.target.value as JournalQuickEntryKind | ''
+                      setQuickEntryKind(v)
+                      if (v) applyQuickEntry(v)
+                    }}
+                    className="min-w-[14rem] flex-1 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">— Choose a pattern —</option>
+                    {JOURNAL_QUICK_ENTRY_TEMPLATES.map((t) => (
+                      <option key={t.kind} value={t.kind}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  {quickEntryKind ? (
+                    <p className="text-xs text-indigo-800 sm:max-w-md">
+                      {JOURNAL_QUICK_ENTRY_TEMPLATES.find((t) => t.kind === quickEntryKind)?.hint}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-indigo-700">
+                      Pre-fills debit/credit from the fuel-station + aquaculture chart template. Income, COGS,
+                      and expense lines get a site or pond tag when required.
+                    </p>
+                  )}
+                </div>
+              </div>
+
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold">Entry Lines</h3>
@@ -1357,11 +1451,24 @@ export default function JournalEntriesPage() {
                               required
                             >
                               <option value="">Select Account</option>
-                              {accounts.map((account) => (
-                                <option key={account.id} value={account.id}>
-                                  {formatCoaOptionLabel(account)}
-                                </option>
-                              ))}
+                              {recommendedAccounts.length > 0 ? (
+                                <optgroup label="Recommended for this ERP">
+                                  {recommendedAccounts.map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                      {formatCoaOptionLabel(account)}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ) : null}
+                              {otherAccounts.length > 0 ? (
+                                <optgroup label="All accounts">
+                                  {otherAccounts.map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                      {formatCoaOptionLabel(account)}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ) : null}
                             </select>
                           </td>
                           <td className="px-3 py-2">
@@ -1453,6 +1560,9 @@ export default function JournalEntriesPage() {
                               placeholder="0.00"
                               required
                             />
+                            {lineEntityScopeWarning(line) ? (
+                              <p className="mt-1 text-xs text-amber-700">{lineEntityScopeWarning(line)}</p>
+                            ) : null}
                           </td>
                           <td className="px-3 py-2 text-center">
                             {formData.lines.length > 2 && (

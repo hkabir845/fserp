@@ -19,15 +19,120 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
+/** Placeholder hint for date text inputs matching the company pattern. */
+export function dateFormatInputPlaceholder(pattern: string): string {
+  switch (String(pattern || '').trim()) {
+    case 'DD/MM/YYYY':
+      return 'DD/MM/YYYY'
+    case 'MM/DD/YYYY':
+      return 'MM/DD/YYYY'
+    case 'DD-MM-YYYY':
+      return 'DD-MM-YYYY'
+    case 'YYYY-MM-DD':
+    default:
+      return 'YYYY-MM-DD'
+  }
+}
+
+function isValidCalendarYmd(y: number, m: number, d: number): boolean {
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return false
+  if (y < 1000 || y > 9999 || m < 1 || m > 12 || d < 1 || d > 31) return false
+  const dt = new Date(y, m - 1, d)
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d
+}
+
+function toIsoYmd(y: number, m: number, d: number): string {
+  return `${y}-${pad2(m)}-${pad2(d)}`
+}
+
+/**
+ * Parse a typed/display date into YYYY-MM-DD using the company pattern.
+ * Returns null when the value is empty or not a valid calendar date.
+ */
+export function parseCompanyDate(text: string, pattern: string): string | null {
+  const s = String(text || '').trim()
+  if (!s) return null
+
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s)
+  if (iso) {
+    const y = Number(iso[1])
+    const m = Number(iso[2])
+    const d = Number(iso[3])
+    return isValidCalendarYmd(y, m, d) ? toIsoYmd(y, m, d) : null
+  }
+
+  const p = String(pattern || '').trim()
+  let sep = '/'
+  let order: 'dmy' | 'mdy' | 'ymd' = 'ymd'
+  switch (p) {
+    case 'DD/MM/YYYY':
+      order = 'dmy'
+      sep = '/'
+      break
+    case 'MM/DD/YYYY':
+      order = 'mdy'
+      sep = '/'
+      break
+    case 'DD-MM-YYYY':
+      order = 'dmy'
+      sep = '-'
+      break
+    case 'YYYY-MM-DD':
+    default:
+      order = 'ymd'
+      sep = '-'
+      break
+  }
+
+  const parts = s.split(sep).map((x) => x.trim())
+  if (parts.length !== 3 || parts.some((x) => !x)) return null
+
+  let y: number
+  let m: number
+  let d: number
+  if (order === 'dmy') {
+    d = Number(parts[0])
+    m = Number(parts[1])
+    y = Number(parts[2])
+  } else if (order === 'mdy') {
+    m = Number(parts[0])
+    d = Number(parts[1])
+    y = Number(parts[2])
+  } else {
+    y = Number(parts[0])
+    m = Number(parts[1])
+    d = Number(parts[2])
+  }
+
+  if (parts[2].length === 2 && order !== 'ymd') {
+    y = 2000 + y
+  } else if (parts[0].length === 2 && order === 'ymd') {
+    y = 2000 + y
+  }
+
+  return isValidCalendarYmd(y, m, d) ? toIsoYmd(y, m, d) : null
+}
+
 /** Format a calendar date (YYYY-MM-DD or ISO) for display using the company pattern. */
 export function formatCompanyDate(isoOrYmd: string, pattern: string): string {
   const raw = String(isoOrYmd || '').trim()
   if (!raw) return ''
-  const d = new Date(raw.includes('T') ? raw : `${raw.split('T')[0]}T12:00:00`)
-  if (Number.isNaN(d.getTime())) return raw
-  const y = d.getFullYear()
-  const m = pad2(d.getMonth() + 1)
-  const day = pad2(d.getDate())
+  const ymd = raw.split('T')[0]
+  const mIso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
+  let y: number
+  let m: string
+  let day: string
+  if (mIso) {
+    y = Number(mIso[1])
+    m = mIso[2]
+    day = mIso[3]
+  } else {
+    const d = new Date(raw.includes('T') ? raw : `${ymd}T12:00:00`)
+    if (Number.isNaN(d.getTime())) return raw
+    y = d.getFullYear()
+    m = pad2(d.getMonth() + 1)
+    day = pad2(d.getDate())
+  }
   switch (pattern) {
     case 'DD/MM/YYYY':
       return `${day}/${m}/${y}`

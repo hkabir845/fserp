@@ -324,3 +324,48 @@ def test_backfill_missing_transfer_line_costs(api_client, company_tenant, auth_a
     assert r.status_code == 200
     xfer = next(x for x in json.loads(r.content)["transfers"] if x["id"] == tr.id)
     assert Decimal(xfer["lines"][0]["cost_amount"]) == Decimal("350000.00")
+
+
+@pytest.mark.django_db
+def test_fish_pond_transfer_preview_cost_api(api_client, company_tenant, auth_admin_headers):
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Preview Nursing", pond_role="nursing", is_active=True
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2026, 4, 1),
+        expense_category="fry_stocking",
+        amount=Decimal("2000.00"),
+        memo="fry",
+    )
+    AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=src,
+        income_type="fingerling_sale",
+        fish_species="tilapia",
+        sale_date=date(2026, 4, 10),
+        weight_kg=Decimal("50.00"),
+        fish_count=2500,
+        total_amount=Decimal("2500.00"),
+    )
+    h = {**auth_admin_headers, "HTTP_X_COMPANY_ID": str(cid)}
+    r = api_client.post(
+        "/api/aquaculture/fish-pond-transfers/preview-cost/",
+        data=json.dumps(
+            {
+                "from_pond_id": src.id,
+                "transfer_date": "2026-05-17",
+                "lines": [{"weight_kg": "20", "fish_count": 400}],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert r.status_code == 200, r.content.decode()
+    body = json.loads(r.content)
+    assert body["cost_basis"] == "per_kg"
+    assert Decimal(body["lines"][0]["cost_amount"]) == Decimal("800.00")
+    assert body["transfer_cost_per_kg"] is not None

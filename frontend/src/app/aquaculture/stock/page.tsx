@@ -93,6 +93,15 @@ interface PositionRow {
   load_level_label?: string
   advice_summary?: string
   reference_note?: string
+  current_fish_per_kg?: string | null
+  current_fish_per_kg_source?: string | null
+  current_avg_weight_kg?: string | null
+  partial_harvest_applicable?: boolean
+  partial_harvest_suggested_kg?: string | null
+  partial_harvest_suggested_fish_count?: number | null
+  partial_harvest_target_kg_per_decimal?: string | null
+  partial_harvest_post_load_kg_per_decimal?: string | null
+  partial_harvest_rationale?: string
 }
 interface LedgerRow {
   id: number
@@ -367,8 +376,16 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
               <span className="text-xs text-slate-500">Set water area and depth on pond</span>
             )}
           </span>
-          {volDensity ? <span className="tabular-nums text-xs text-slate-500">{volDensity}</span> : null}
-          {r.advice_summary ? (
+                            {volDensity ? <span className="tabular-nums text-xs text-slate-500">{volDensity}</span> : null}
+                            {r.partial_harvest_applicable && r.partial_harvest_suggested_kg ? (
+                              <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
+                                Suggest harvest ~{formatNumber(Number(r.partial_harvest_suggested_kg), 0)} kg
+                                {r.partial_harvest_suggested_fish_count
+                                  ? ` (~${formatNumber(r.partial_harvest_suggested_fish_count, 0)} fish)`
+                                  : ''}
+                              </span>
+                            ) : null}
+                            {r.advice_summary ? (
             <span className="text-xs leading-snug text-slate-600">{r.advice_summary}</span>
           ) : null}
         </div>
@@ -1341,6 +1358,11 @@ function AquacultureStockPageContent() {
                           <div className="text-xs font-normal text-slate-500">
                             {formatNumber(r.implied_net_fish_count, 0)} fish (est.)
                           </div>
+                          {r.current_fish_per_kg ? (
+                            <div className="text-xs font-medium text-teal-800">
+                              {formatNumber(Number(r.current_fish_per_kg), 1)} pcs/kg
+                            </div>
+                          ) : null}
                         </td>
                         <td className="py-2 pr-4 tabular-nums text-slate-700">
                           <div>{formatNumber(Number(r.ledger_weight_kg_delta), 2)} kg</div>
@@ -1364,6 +1386,14 @@ function AquacultureStockPageContent() {
                             </span>
                             {volDensity ? (
                               <span className="tabular-nums text-xs text-slate-500">{volDensity}</span>
+                            ) : null}
+                            {r.partial_harvest_applicable && r.partial_harvest_suggested_kg ? (
+                              <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
+                                Suggest harvest ~{formatNumber(Number(r.partial_harvest_suggested_kg), 0)} kg
+                                {r.partial_harvest_suggested_fish_count
+                                  ? ` (~${formatNumber(r.partial_harvest_suggested_fish_count, 0)} fish)`
+                                  : ''}
+                              </span>
                             ) : null}
                             {r.advice_summary ? (
                               <span className="text-xs leading-snug text-slate-600">{r.advice_summary}</span>

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { PondPhaseWorkflowPanel } from '@/components/aquaculture/PondPhaseWorkflowPanel'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -23,6 +24,7 @@ import { extractErrorMessage } from '@/utils/errorHandler'
 import { aquacultureArchivePlReportHref } from '@/lib/aquacultureDataBankArchive'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
+import { PartialHarvestAdvicePanel } from '@/app/aquaculture/PartialHarvestAdvicePanel'
 
 type PeriodPreset = 'this_month' | 'last_month' | 'ytd' | 'last_90' | 'custom'
 type PresetButton = Exclude<PeriodPreset, 'custom'>
@@ -102,6 +104,13 @@ interface PondDetail {
   notes: string
   pond_role?: string
   pond_role_label?: string
+  physical_site_name?: string
+  phase_workflow_summary?: string
+  same_site_grow_out_pond_id?: number | null
+  same_site_grow_out_display_name?: string
+  same_site_nursing_pond_id?: number | null
+  same_site_nursing_display_name?: string
+  linked_grow_out_pond_id?: number | null
   warehouse_group_id?: number | null
   warehouse_group_name?: string
   pos_customer_id?: number | null
@@ -296,7 +305,15 @@ interface StockRow {
   implied_net_fish_count: number
   implied_net_weight_kg: string
   stock_density_kg_per_decimal?: string | null
+  load_level?: string
   load_level_label?: string
+  current_fish_per_kg?: string | null
+  current_fish_per_kg_source?: string | null
+  partial_harvest_applicable?: boolean
+  partial_harvest_suggested_kg?: string | null
+  partial_harvest_suggested_fish_count?: number | null
+  partial_harvest_rationale?: string
+  advice_summary?: string
 }
 
 interface TransferRow {
@@ -810,6 +827,12 @@ export default function PondDetailViewPage() {
         <p className="text-sm text-slate-600">Pond not found.</p>
       ) : (
         <>
+          {(pond.pond_role === 'nursing' || pond.pond_role === 'grow_out') && (
+            <section className="mb-6">
+              <PondPhaseWorkflowPanel pond={pond} />
+            </section>
+          )}
+
           <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1029,10 +1052,24 @@ export default function PondDetailViewPage() {
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-slate-500">Load status</dt>
-                  <dd className="font-medium text-slate-800">{pond.tilapia_load_level_label || '—'}</dd>
+                  <dd className="font-medium text-slate-800">{pond.tilapia_load_level_label || stock?.load_level_label || '—'}</dd>
                 </div>
+                {stock?.current_fish_per_kg ? (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Current size (pcs/kg)</dt>
+                    <dd className="tabular-nums font-medium text-teal-900">
+                      {formatNumber(Number(stock.current_fish_per_kg), 1)} pcs/kg
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
             </section>
+
+            {stock ? (
+              <section className="mb-6">
+                <PartialHarvestAdvicePanel row={stock} />
+              </section>
+            ) : null}
           </div>
 
           <section className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

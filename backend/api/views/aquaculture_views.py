@@ -48,6 +48,7 @@ from api.services.aquaculture_feeding_advice_service import build_feeding_advice
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.aquaculture_transfer_cost import (
     backfill_missing_transfer_line_costs,
+    preview_transfer_line_costs,
     resolve_auto_transfer_line_cost,
 )
 from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
@@ -127,6 +128,7 @@ from api.services.aquaculture_pond_pos_customer import (
 from api.services.aquaculture_sale_biomass_sync import sync_biomass_sample_from_fish_sale
 from api.services.aquaculture_biomass_sample_reference_service import last_biomass_sample_reference_for_ledger
 from api.services.aquaculture_sale_reference_service import last_fish_sale_reference_for_ledger
+from api.services.aquaculture_bio_asset_cost_service import lookup_bio_cost_per_kg
 from api.services.aquaculture_pond_stock_service import (
     consume_pond_feed_on_advice_apply,
     consume_pond_warehouse_stock,
@@ -153,9 +155,25 @@ from api.services.aquaculture_data_bank_service import (
     assert_ponds_writable,
     effective_pl_start_for_pond,
     filter_live_pond_queryset,
+    filter_live_biomass_samples_queryset,
     pond_live_data_after_date,
     pond_lock_summary,
     pond_write_blocked_detail,
+)
+from api.services.aquaculture_pond_display import (
+    pond_grow_out_display_name,
+    pond_nursing_display_name,
+    pond_operational_display_name,
+    pond_site_base_name,
+)
+from api.services.aquaculture_pond_site import (
+    default_grow_out_name_for_site,
+    default_nursing_name_for_site,
+    phase_workflow_summary,
+    same_site_grow_out_pond,
+    same_site_nursing_pond,
+    site_peers_json,
+    validate_nursing_grow_out_link,
 )
 from api.services.aquaculture_constants import (
     AQUACULTURE_FISH_SPECIES_CHOICES,
@@ -306,6 +324,8 @@ def _apply_pond_lease_fields(p: AquaculturePond, body: dict) -> str | None:
 
 def _apply_pond_aquaculture_fields(p: AquaculturePond, body: dict) -> str | None:
     """Mutate water surface area and depth from JSON. Returns error message or None."""
+    if "physical_site_name" in body:
+        p.physical_site_name = (body.get("physical_site_name") or "").strip()[:120]
     if "water_area_decimal" in body:
         raw = body.get("water_area_decimal")
         if raw in (None, ""):
@@ -334,6 +354,69 @@ def _apply_pond_aquaculture_fields(p: AquaculturePond, body: dict) -> str | None
                 return "pond_depth_m cannot be negative"
             p.pond_depth_ft = quantize_two_decimal_places(metres_to_feet(dm))
     return None
+
+
+def _apply_pond_site_phase_fields(p: AquaculturePond, body: dict, company_id: int) -> str | None:
+    """Same-site nursing ↔ grow-out link (physical ponds only)."""
+    if "linked_grow_out_pond_id" not in body:
+        return None
+    raw = body.get("linked_grow_out_pond_id")
+    if raw in (None, ""):
+        p.linked_grow_out_pond_id = None
+        return None
+    if (getattr(p, "pond_role", None) or "grow_out").strip().lower() != "nursing":
+        return "linked_grow_out_pond_id applies only to ponds with role Nursing / nursery."
+    try:
+        gid = int(raw)
+    except (TypeError, ValueError):
+        return "linked_grow_out_pond_id must be an integer"
+    if gid == p.id:
+        return "linked_grow_out_pond_id cannot be the same pond"
+    dest = AquaculturePond.objects.filter(pk=gid, company_id=company_id, is_active=True).first()
+    if not dest:
+        return "Unknown or inactive linked_grow_out_pond_id for this company"
+    link_err = validate_nursing_grow_out_link(p, dest)
+    if link_err:
+        return link_err
+    p.linked_grow_out_pond_id = gid
+    if not (p.physical_site_name or "").strip() and (dest.physical_site_name or "").strip():
+        p.physical_site_name = dest.physical_site_name
+    elif (p.physical_site_name or "").strip() and not (dest.physical_site_name or "").strip():
+        dest.physical_site_name = p.physical_site_name
+        dest.save(update_fields=["physical_site_name", "updated_at"])
+    return None
+
+
+def _validate_pond_site_phases(p: AquaculturePond) -> str | None:
+    role = (getattr(p, "pond_role", None) or "grow_out").strip().lower()
+    if getattr(p, "linked_grow_out_pond_id", None) and role != "nursing":
+        return "Linked grow-out pond applies only to nursing-phase profit centers."
+    if role == "nursing" and getattr(p, "linked_grow_out_pond_id", None):
+        dest = getattr(p, "linked_grow_out_pond", None)
+        if dest:
+            return validate_nursing_grow_out_link(p, dest)
+    return None
+
+
+def _pond_site_phase_json(p: AquaculturePond) -> dict:
+    grow = same_site_grow_out_pond(p)
+    nurse = same_site_nursing_pond(p)
+    return {
+        "same_site_grow_out_pond_id": grow.id if grow else None,
+        "same_site_grow_out_pond_name": (grow.name or "").strip() if grow else "",
+        "same_site_grow_out_display_name": pond_grow_out_display_name(grow) if grow else "",
+        "same_site_nursing_pond_id": nurse.id if nurse else None,
+        "same_site_nursing_pond_name": (nurse.name or "").strip() if nurse else "",
+        "same_site_nursing_display_name": pond_nursing_display_name(nurse) if nurse else "",
+        "same_site_peers": site_peers_json(p),
+        "phase_workflow_summary": phase_workflow_summary(p),
+        "linked_grow_out_pond_id": getattr(p, "linked_grow_out_pond_id", None),
+        "linked_grow_out_pond_name": (
+            (p.linked_grow_out_pond.name or "").strip()
+            if getattr(p, "linked_grow_out_pond_id", None) and getattr(p, "linked_grow_out_pond", None)
+            else (grow.name or "").strip() if grow else ""
+        ),
+    }
 
 
 def _apply_pond_default_feed_item(p: AquaculturePond, body: dict, company_id: int) -> str | None:
@@ -830,6 +913,12 @@ def _pond_to_json(
         ),
         "pond_role": getattr(p, "pond_role", None) or "grow_out",
         "pond_role_label": POND_ROLE_LABELS.get(getattr(p, "pond_role", None) or "grow_out", "Grow-out"),
+        "physical_site_name": (getattr(p, "physical_site_name", None) or "").strip(),
+        "site_base_name": pond_site_base_name(p),
+        "nursing_display_name": pond_nursing_display_name(p),
+        "grow_out_display_name": pond_grow_out_display_name(p),
+        "operational_display_name": pond_operational_display_name(p),
+        **_pond_site_phase_json(p),
         "warehouse_group_id": getattr(p, "warehouse_group_id", None),
         "warehouse_group_name": (
             (p.warehouse_group.name or "").strip()
@@ -1033,6 +1122,7 @@ def aquaculture_ponds_list_or_create(request):
                 "default_feed_item",
                 "default_medicine_item",
                 "warehouse_group",
+                "linked_grow_out_pond",
             )
             .prefetch_related(_LANDLORD_POND_SHARE_PREFETCH)
             .order_by("sort_order", "id")
@@ -1099,6 +1189,12 @@ def aquaculture_ponds_list_or_create(request):
     wg_err = _apply_pond_warehouse_group(p, body, cid)
     if wg_err:
         return JsonResponse({"detail": wg_err}, status=400)
+    vn_err = _apply_pond_site_phase_fields(p, body, cid)
+    if vn_err:
+        return JsonResponse({"detail": vn_err}, status=400)
+    val_err = _validate_pond_site_phases(p)
+    if val_err:
+        return JsonResponse({"detail": val_err}, status=400)
     try:
         with transaction.atomic():
             p.save()
@@ -1114,6 +1210,7 @@ def aquaculture_ponds_list_or_create(request):
             "default_feed_item",
             "default_medicine_item",
             "warehouse_group",
+            "linked_grow_out_pond",
         )
         .prefetch_related(_LANDLORD_POND_SHARE_PREFETCH)
         .first()
@@ -1124,6 +1221,96 @@ def aquaculture_ponds_list_or_create(request):
             _tilapia_load_fields(_fetch_tilapia_stock_row_for_pond(cid, p.id)),
             landlord_shares=[_landlord_pond_share_json(sh) for sh in p.landlord_pond_shares.all()],
         ),
+        status=201,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def aquaculture_ponds_create_site_pair(request):
+    """
+    Create nursing-phase + grow-out-phase profit centers for one physical pond site
+    (e.g. Mynuddin Nursing Pond + Mynuddin Pond).
+    """
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    body, e = parse_json_body(request)
+    if e:
+        return e
+    site = (body.get("physical_site_name") or body.get("site_name") or "").strip()[:120]
+    if not site:
+        return JsonResponse({"detail": "physical_site_name is required"}, status=400)
+    nursing_name = (body.get("nursing_name") or default_nursing_name_for_site(site)).strip()[:200]
+    grow_name = (body.get("grow_out_name") or body.get("grow_name") or default_grow_out_name_for_site(site)).strip()[:200]
+    if AquaculturePond.objects.filter(company_id=cid, name__iexact=nursing_name).exists():
+        return JsonResponse({"detail": f"A pond named {nursing_name!r} already exists."}, status=409)
+    if AquaculturePond.objects.filter(company_id=cid, name__iexact=grow_name).exists():
+        return JsonResponse({"detail": f"A pond named {grow_name!r} already exists."}, status=409)
+    sort_order = int(body.get("sort_order") or 0)
+    water_raw = body.get("water_area_decimal")
+    water_area = None
+    if water_raw not in (None, ""):
+        water_area = quantize_pond_area_decimal(_decimal(water_raw))
+        if water_area < 0:
+            return JsonResponse({"detail": "water_area_decimal cannot be negative"}, status=400)
+    with transaction.atomic():
+        grow = AquaculturePond(
+            company_id=cid,
+            name=grow_name,
+            code=_next_automatic_pond_code(cid),
+            sort_order=sort_order + 1,
+            is_active=True,
+            pond_role="grow_out",
+            physical_site_name=site,
+        )
+        if water_area is not None:
+            grow.water_area_decimal = water_area
+        grow.save()
+        nursing = AquaculturePond(
+            company_id=cid,
+            name=nursing_name,
+            code=_next_automatic_pond_code(cid),
+            sort_order=sort_order,
+            is_active=True,
+            pond_role="nursing",
+            physical_site_name=site,
+            linked_grow_out_pond=grow,
+        )
+        if water_area is not None:
+            nursing.water_area_decimal = water_area
+        nursing.save()
+    for p in (nursing, grow):
+        maybe_provision_auto_pos_customer(company_id=cid, pond=p, skip_auto=False)
+    nursing = (
+        AquaculturePond.objects.filter(pk=nursing.pk)
+        .select_related("linked_grow_out_pond", "warehouse_group")
+        .prefetch_related(_LANDLORD_POND_SHARE_PREFETCH)
+        .first()
+    )
+    grow = (
+        AquaculturePond.objects.filter(pk=grow.pk)
+        .select_related("linked_grow_out_pond", "warehouse_group")
+        .prefetch_related(_LANDLORD_POND_SHARE_PREFETCH)
+        .first()
+    )
+    return JsonResponse(
+        {
+            "physical_site_name": site,
+            "nursing_pond": _pond_to_json(
+                nursing,
+                _tilapia_load_fields(_fetch_tilapia_stock_row_for_pond(cid, nursing.id)),
+                landlord_shares=[_landlord_pond_share_json(sh) for sh in nursing.landlord_pond_shares.all()],
+            ),
+            "grow_out_pond": _pond_to_json(
+                grow,
+                _tilapia_load_fields(_fetch_tilapia_stock_row_for_pond(cid, grow.id)),
+                landlord_shares=[_landlord_pond_share_json(sh) for sh in grow.landlord_pond_shares.all()],
+            ),
+        },
         status=201,
     )
 
@@ -1535,6 +1722,12 @@ def aquaculture_pond_detail(request, pond_id: int):
         wg_err = _apply_pond_warehouse_group(p, body, cid)
         if wg_err:
             return JsonResponse({"detail": wg_err}, status=400)
+        vn_err = _apply_pond_site_phase_fields(p, body, cid)
+        if vn_err:
+            return JsonResponse({"detail": vn_err}, status=400)
+        val_err = _validate_pond_site_phases(p)
+        if val_err:
+            return JsonResponse({"detail": val_err}, status=400)
         p.save()
         if "pos_customer_id" in body:
             raw_pc = body.get("pos_customer_id")
@@ -2429,6 +2622,60 @@ def aquaculture_fish_sale_last_reference(request):
 @require_http_methods(["GET"])
 @auth_required
 @require_company_id
+def aquaculture_fish_stock_bio_cost_reference(request):
+    """Production cost/kg for bio-asset relief (mortality book value, harvest COGS)."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    pond_id, e = _parse_optional_int(request.GET.get("pond_id"), name="pond_id")
+    if e:
+        return e
+    if pond_id is None:
+        return JsonResponse({"detail": "pond_id is required"}, status=400)
+    if not _pond_for_company(cid, pond_id):
+        return JsonResponse({"detail": "pond not found"}, status=404)
+    cy_id, e = _parse_optional_int(request.GET.get("production_cycle_id"), name="production_cycle_id")
+    if e:
+        return e
+    cycle = None
+    if cy_id is not None:
+        cycle = AquacultureProductionCycle.objects.filter(pk=cy_id, company_id=cid).first()
+        if not cycle:
+            return JsonResponse({"detail": "production_cycle not found"}, status=404)
+        if cycle.pond_id != pond_id:
+            return JsonResponse({"detail": "production_cycle_id does not belong to pond_id"}, status=400)
+    as_of_raw = (request.GET.get("as_of") or "").strip()
+    if as_of_raw:
+        try:
+            as_of = date.fromisoformat(as_of_raw.split("T")[0])
+        except Exception:
+            return JsonResponse({"detail": "as_of must be YYYY-MM-DD"}, status=400)
+    else:
+        as_of = date.today()
+    weight_raw = request.GET.get("weight_kg")
+    line_weight = None
+    if weight_raw not in (None, ""):
+        try:
+            line_weight = Decimal(str(weight_raw).replace(",", ""))
+        except Exception:
+            return JsonResponse({"detail": "weight_kg must be a number"}, status=400)
+    ref = lookup_bio_cost_per_kg(
+        cid,
+        pond_id=pond_id,
+        as_of_date=as_of,
+        production_cycle=cycle,
+        line_weight_kg=line_weight,
+    )
+    if not ref.get("found"):
+        return JsonResponse({"found": False, **ref})
+    return JsonResponse({"found": True, **ref})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
 def aquaculture_biomass_sample_last_reference(request):
     """Latest biomass sample for pond + production cycle + species (stock ledger quantity hints)."""
     err = _aquaculture_access(request)
@@ -2778,10 +3025,12 @@ def _sample_to_json(b: AquacultureBiomassSample) -> dict:
         cname = (b.production_cycle.name or "").strip()
     sp = getattr(b, "fish_species", None) or "tilapia"
     spo = getattr(b, "fish_species_other", None) or ""
+    pond_obj = b.pond if getattr(b, "pond_id", None) else None
+    pond_display = pond_operational_display_name(pond_obj) if pond_obj else ""
     return {
         "id": b.id,
         "pond_id": b.pond_id,
-        "pond_name": (b.pond.name or "").strip() if getattr(b, "pond_id", None) else "",
+        "pond_name": pond_display or ((pond_obj.name or "").strip() if pond_obj else ""),
         "production_cycle_id": cyc_id,
         "production_cycle_name": cname,
         "sample_date": b.sample_date.isoformat(),
@@ -2816,12 +3065,17 @@ def aquaculture_samples_list_or_create(request):
         return err
     cid = request.company_id
     if request.method == "GET":
-        qs = AquacultureBiomassSample.objects.filter(company_id=cid).select_related("pond", "production_cycle")
+        qs = (
+            AquacultureBiomassSample.objects.filter(company_id=cid, pond__is_active=True)
+            .select_related("pond", "production_cycle")
+        )
         pid = request.GET.get("pond_id")
         if pid and str(pid).strip().isdigit():
             p_int = int(pid)
             qs = qs.filter(pond_id=p_int)
             qs = filter_live_pond_queryset(qs, cid, p_int, "sample_date")
+        else:
+            qs = filter_live_biomass_samples_queryset(qs, cid)
         qs = qs.order_by("-sample_date", "-id")[:200]
         return JsonResponse([_sample_to_json(b) for b in qs], safe=False)
 
@@ -3112,6 +3366,7 @@ def aquaculture_fish_stock_position(request):
         production_cycle_id=cy_id,
         fish_species_filter=species_filter,
         entries_after_date=entries_after,
+        include_inactive_ponds=pond_id is not None,
     )
     payload: dict = {"rows": rows}
     if str(request.GET.get("breakdown", "")).lower() in ("1", "true", "yes", "cycle_species"):
@@ -3121,6 +3376,7 @@ def aquaculture_fish_stock_position(request):
             production_cycle_id=cy_id,
             fish_species_filter=species_filter,
             entries_after_date=entries_after,
+            include_inactive_ponds=pond_id is not None,
         )
     return JsonResponse(payload)
 
@@ -4087,6 +4343,72 @@ def aquaculture_pond_roles_reference(request):
         [{"id": c, "label": lbl} for c, lbl in AQUACULTURE_POND_ROLE_CHOICES],
         safe=False,
     )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def aquaculture_fish_pond_transfer_preview_cost(request):
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    body, e = parse_json_body(request)
+    if e:
+        return e
+    try:
+        from_pond_id = int(body.get("from_pond_id"))
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "from_pond_id is required and must be an integer"}, status=400)
+    from_pond = _pond_for_company(cid, from_pond_id)
+    if not from_pond:
+        return JsonResponse({"detail": "from_pond not found"}, status=404)
+    td = _parse_date(body.get("transfer_date"))
+    if not td:
+        return JsonResponse({"detail": "transfer_date is required (YYYY-MM-DD)"}, status=400)
+    from_cycle_obj = None
+    raw_fc = body.get("from_production_cycle_id")
+    if raw_fc not in (None, ""):
+        try:
+            fcy = int(raw_fc)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "from_production_cycle_id must be an integer or null"}, status=400)
+        from_cycle_obj = AquacultureProductionCycle.objects.filter(
+            pk=fcy, company_id=cid, pond_id=from_pond_id
+        ).first()
+        if not from_cycle_obj:
+            return JsonResponse({"detail": "from_production_cycle_id not found for this pond"}, status=404)
+    raw_lines = body.get("lines")
+    if not isinstance(raw_lines, list):
+        return JsonResponse({"detail": "lines must be an array"}, status=400)
+
+    parsed_lines: list[dict] = []
+    for i, row in enumerate(raw_lines):
+        if not isinstance(row, dict):
+            return JsonResponse({"detail": f"lines[{i}] must be an object"}, status=400)
+        wk = _decimal(row.get("weight_kg"), "0")
+        if wk < 0:
+            return JsonResponse({"detail": f"lines[{i}].weight_kg cannot be negative"}, status=400)
+        fc_raw = row.get("fish_count")
+        fc: int | None = None
+        if fc_raw not in (None, ""):
+            try:
+                fc = int(fc_raw)
+            except (TypeError, ValueError):
+                return JsonResponse({"detail": f"lines[{i}].fish_count must be an integer"}, status=400)
+            if fc < 0:
+                return JsonResponse({"detail": f"lines[{i}].fish_count cannot be negative"}, status=400)
+        parsed_lines.append({"weight_kg": wk, "fish_count": fc})
+
+    payload = preview_transfer_line_costs(
+        company_id=cid,
+        from_pond_id=from_pond_id,
+        transfer_date=td,
+        from_cycle=from_cycle_obj,
+        lines=parsed_lines,
+    )
+    return JsonResponse(payload)
 
 
 @csrf_exempt

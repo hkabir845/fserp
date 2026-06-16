@@ -282,6 +282,170 @@ def _production_cost_share_for_line(
     return _share_for_scope(None)
 
 
+def _transfer_uses_head_cost_basis(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    from_cycle: AquacultureProductionCycle | None,
+    fish_count: int | None = None,
+) -> tuple[bool, int]:
+    """Whether inter-pond transfer cost uses stocked-fingerling head share (nursing-style)."""
+    cycle_filter_id = from_cycle.id if from_cycle is not None else None
+    stocked_heads = _nursing_stocked_heads_basis(
+        company_id=company_id,
+        pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+    )
+    heads = int(fish_count or 0)
+    if heads <= 0 or stocked_heads <= 0:
+        return False, stocked_heads
+    pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).only("pond_role").first()
+    role = (pond.pond_role or "").strip().lower() if pond else ""
+    use_head = role == "nursing" or stocked_heads >= 10000
+    return use_head, stocked_heads
+
+
+def _bio_total_for_transfer_scope(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+) -> Decimal:
+    start, end = pl_window_for_transfer_date(transfer_date, from_cycle)
+    cycle_filter_id = from_cycle.id if from_cycle is not None else None
+    payload = compute_aquaculture_pl_summary_dict(
+        company_id,
+        start,
+        end,
+        from_pond_id,
+        cycle_filter_id,
+        from_cycle,
+        include_cycle_breakdown=False,
+    )
+    ponds = payload.get("ponds") or []
+    if not ponds:
+        return Decimal("0")
+    cpk = ponds[0].get("cost_per_kg") or {}
+    return _biological_production_cost_total(cpk.get("costing_lines") or [])
+
+
+def lookup_transfer_cost_per_head(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+) -> tuple[Decimal | None, str]:
+    """Production cost per stocked fingerling for nursing-style inter-pond transfers."""
+    cycle_filter_id = from_cycle.id if from_cycle is not None else None
+    bio_total = _bio_total_for_transfer_scope(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        transfer_date=transfer_date,
+        from_cycle=from_cycle,
+    )
+    if bio_total <= 0:
+        return None, "No fry/feed/medicine/preparation costs recorded for this pond in the selected period."
+    stocked_heads = _nursing_stocked_heads_basis(
+        company_id=company_id,
+        pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+    )
+    if stocked_heads <= 0:
+        return None, "No stocked fingerling count for per-head transfer cost."
+    per_head = _money_q(bio_total / Decimal(stocked_heads))
+    note = (
+        f"Transfer cost/head = production costs ({bio_total}) ÷ {stocked_heads} stocked fingerlings. "
+        "Shop supplies, lease, and other overhead are excluded from fish transfer cost."
+    )
+    return per_head, note
+
+
+def preview_transfer_line_costs(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+    lines: list[dict],
+) -> dict:
+    """
+    Preview auto production cost for each transfer line (matches save-time resolve_auto_transfer_line_cost).
+    Each line dict must include weight_kg (Decimal) and fish_count (int, optional).
+    """
+    parsed: list[tuple[Decimal, int | None]] = []
+    for ln in lines:
+        wk = _money_q(ln.get("weight_kg") or Decimal("0"))
+        fc_raw = ln.get("fish_count")
+        fc: int | None = None
+        if fc_raw not in (None, ""):
+            fc = int(fc_raw)
+        parsed.append((wk, fc))
+
+    total_w = _money_q(sum(wk for wk, _ in parsed if wk > 0))
+    sample_heads = next((fc for _, fc in parsed if fc and fc > 0), None)
+    use_head, stocked_heads = _transfer_uses_head_cost_basis(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        from_cycle=from_cycle,
+        fish_count=sample_heads,
+    )
+
+    transfer_cost_per_kg: str | None = None
+    transfer_cost_per_head: str | None = None
+    basis_note = ""
+
+    if use_head:
+        per_head, head_note = lookup_transfer_cost_per_head(
+            company_id=company_id,
+            from_pond_id=from_pond_id,
+            transfer_date=transfer_date,
+            from_cycle=from_cycle,
+        )
+        if per_head is not None:
+            transfer_cost_per_head = str(per_head)
+        basis_note = head_note
+    else:
+        per_kg, kg_note = lookup_transfer_cost_per_kg(
+            company_id=company_id,
+            from_pond_id=from_pond_id,
+            transfer_date=transfer_date,
+            from_cycle=from_cycle,
+            line_weight_kg=None,
+            transfer_total_weight_kg=total_w if total_w > 0 else None,
+        )
+        if per_kg is not None:
+            transfer_cost_per_kg = str(per_kg)
+        basis_note = kg_note
+
+    line_out: list[dict] = []
+    for wk, fc in parsed:
+        if wk <= 0:
+            line_out.append({"cost_amount": None})
+            continue
+        cost = resolve_auto_transfer_line_cost(
+            company_id=company_id,
+            from_pond_id=from_pond_id,
+            transfer_date=transfer_date,
+            from_cycle=from_cycle,
+            weight_kg=wk,
+            submitted_cost=Decimal("0"),
+            transfer_total_weight_kg=total_w if total_w > 0 else None,
+            fish_count=fc,
+        )
+        line_out.append({"cost_amount": str(cost) if cost > 0 else None})
+
+    return {
+        "cost_basis": "per_head" if use_head else "per_kg",
+        "stocked_heads_basis": stocked_heads if use_head else None,
+        "transfer_cost_per_kg": transfer_cost_per_kg,
+        "transfer_cost_per_head": transfer_cost_per_head,
+        "transfer_cost_basis_note": basis_note or None,
+        "lines": line_out,
+    }
+
+
 def resolve_auto_transfer_line_cost(
     *,
     company_id: int,

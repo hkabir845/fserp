@@ -7,11 +7,15 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatNumber } from '@/utils/currency'
-import { formatDateOnly } from '@/utils/date'
+import { formatDateOnly, localDateISO } from '@/utils/date'
+import { CompanyDateInput } from '@/components/CompanyDateInput'
 
 interface Pond {
   id: number
   name: string
+  operational_display_name?: string
+  is_active?: boolean
+  pond_role?: string
 }
 interface FishSpeciesOpt {
   id: string
@@ -48,6 +52,24 @@ interface CycleRow {
 interface PositionRow {
   implied_net_fish_count: number
   implied_net_weight_kg: string
+  stocked_fish_count?: number
+  stocked_weight_kg?: string
+}
+
+function formatMeanKgPerFish(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return '—'
+  const decimals = Math.abs(v) > 0 && Math.abs(v) < 0.01 ? 4 : 2
+  return formatNumber(v, decimals)
+}
+
+function referenceAvgKgFromStock(stock: PositionRow): number | null {
+  const tc = stock.implied_net_fish_count
+  const tw = Number(String(stock.implied_net_weight_kg).replace(/,/g, ''))
+  if (tc > 0 && Number.isFinite(tw) && tw > 0) return tw / tc
+  const stockedC = stock.stocked_fish_count ?? 0
+  const stockedW = Number(String(stock.stocked_weight_kg ?? '').replace(/,/g, ''))
+  if (stockedC > 0 && Number.isFinite(stockedW) && stockedW > 0) return stockedW / stockedC
+  return null
 }
 
 /** total_kg / fish_count when both are valid and count > 0 */
@@ -118,8 +140,7 @@ function extrapolationPreview(
   const tw = Number(String(stock.implied_net_weight_kg).replace(/,/g, ''))
   const refHead = tc > 0 ? tc : null
   const refNetKg = Number.isFinite(tw) ? tw : null
-  let refAvgKg: number | null = null
-  if (tc > 0 && tw > 0) refAvgKg = tw / tc
+  const refAvgKg = referenceAvgKgFromStock(stock)
   if (refHead == null || refHead <= 0) {
     return { refHead, refNetKg, refAvgKg, sampleAvgKg, biomassKg: null, gainKg: null }
   }
@@ -150,6 +171,16 @@ export default function AquacultureSamplingPage() {
   })
   const [stockPreview, setStockPreview] = useState<PositionRow | null>(null)
   const [stockPreviewLoading, setStockPreviewLoading] = useState(false)
+
+  const activePonds = useMemo(
+    () => ponds.filter((p) => p.is_active !== false),
+    [ponds],
+  )
+
+  const pondLabel = useCallback(
+    (p: Pond) => p.operational_display_name?.trim() || p.name,
+    [],
+  )
 
   const speciesOptionsForSampling = (
     fishSpeciesOpts.length ? fishSpeciesOpts : [{ id: 'tilapia', label: 'Tilapia' }]
@@ -252,7 +283,7 @@ export default function AquacultureSamplingPage() {
 
   const openNew = () => {
     setEditing(null)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateISO()
     setForm({
       pond_id: ponds[0] ? String(ponds[0].id) : '',
       production_cycle_id: '',
@@ -341,7 +372,7 @@ export default function AquacultureSamplingPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+    <div className="w-full min-w-0 px-4 py-6 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 id="aq-sampling-title" className="text-xl font-bold tracking-tight text-slate-900">
@@ -363,9 +394,9 @@ export default function AquacultureSamplingPage() {
               onChange={(e) => setFilterPond(e.target.value)}
             >
               <option value="">All</option>
-              {ponds.map((p) => (
+              {activePonds.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {pondLabel(p)}
                 </option>
               ))}
             </select>
@@ -429,8 +460,8 @@ export default function AquacultureSamplingPage() {
           </Link>
         </div>
       ) : (
-        <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-[1100px] w-full text-left text-sm" aria-labelledby="aq-sampling-title">
+        <div className="mt-6 w-full min-w-0 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full min-w-[1100px] text-left text-sm" aria-labelledby="aq-sampling-title">
             <caption className="sr-only">Aquaculture net samples and pond biomass extrapolation</caption>
             <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
               <tr>
@@ -503,12 +534,12 @@ export default function AquacultureSamplingPage() {
                     <td className="px-3 py-2 text-right tabular-nums">
                       {r.estimated_total_weight_kg != null ? formatNumber(Number(r.estimated_total_weight_kg)) : '—'}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{avgKg != null ? formatNumber(avgKg) : '—'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{avgKg != null ? formatMeanKgPerFish(avgKg) : '—'}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                       {bookHead != null && bookHead > 0 ? formatNumber(bookHead, 0) : '—'}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                      {bookMean != null ? formatNumber(bookMean) : '—'}
+                      {bookMean != null ? formatMeanKgPerFish(bookMean) : '—'}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{estBio != null ? formatNumber(estBio) : '—'}</td>
                     <td
@@ -583,9 +614,9 @@ export default function AquacultureSamplingPage() {
                   value={form.pond_id}
                   onChange={(e) => setForm((f) => ({ ...f, pond_id: e.target.value }))}
                 >
-                  {ponds.map((p) => (
+                  {activePonds.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name}
+                      {pondLabel(p)}
                     </option>
                   ))}
                 </select>
@@ -607,11 +638,11 @@ export default function AquacultureSamplingPage() {
               </label>
               <label className="block text-sm font-medium text-slate-700">
                 Sample date
-                <input
-                  type="date"
+                <CompanyDateInput
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.sample_date}
-                  onChange={(e) => setForm((f) => ({ ...f, sample_date: e.target.value }))}
+                  onChange={(isoYmd) => setForm((f) => ({ ...f, sample_date: isoYmd }))}
+                  required
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700">
@@ -718,7 +749,7 @@ export default function AquacultureSamplingPage() {
                     <div className="flex justify-between gap-2">
                       <dt className="text-teal-900/80">Book mean kg/fish</dt>
                       <dd className="tabular-nums font-medium text-teal-950">
-                        {modalExtrapolation.refAvgKg != null ? formatNumber(modalExtrapolation.refAvgKg) : '—'}
+                        {modalExtrapolation.refAvgKg != null ? formatMeanKgPerFish(modalExtrapolation.refAvgKg) : '—'}
                       </dd>
                     </div>
                     <div className="flex justify-between gap-2">

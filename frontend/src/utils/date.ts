@@ -87,6 +87,11 @@ export function formatDate(
   return `${dateStr} ${timeStr}`.trim()
 }
 
+/** Date + time using company date_format and time_format. */
+export function formatDateTime(date: string | Date | null | undefined): string {
+  return formatDate(date, true)
+}
+
 /**
  * Format a date as a long date string (Month Day, Year)
  * @param date Date string, Date object, or null/undefined

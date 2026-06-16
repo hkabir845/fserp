@@ -22,7 +22,9 @@ from api.models import (
     Invoice,
     JournalEntry,
     JournalEntryLine,
+    PayrollRun,
 )
+from api.exceptions import GlPostingError
 from api.services.coa_constants import pl_bucket_for_coa
 
 
@@ -114,6 +116,130 @@ def manual_je_entity_scoping_warnings(entry: JournalEntry) -> list[str]:
             "this amount will appear under Head office / unassigned, not on a station or pond P&L."
         )
     return warnings
+
+
+def validate_bill_entity_tags_for_gl(company_id: int, bill: Bill) -> None:
+    """
+    Block AUTO-BILL posting when expense debits would lack station or pond tags on entity P&L.
+    Inventory (asset) debits and head-office-only bills are allowed without a receipt site.
+    """
+    from api.services.gl_posting import (
+        _build_bill_journal_lines,
+        _unpack_gl_line,
+        bill_eligible_for_posting,
+    )
+
+    if not bill_eligible_for_posting(bill):
+        return
+    built = _build_bill_journal_lines(company_id, bill)
+    if not built:
+        return
+    lines, aq_cost = built
+    missing_codes: list[str] = []
+    for raw, meta in zip(lines, aq_cost):
+        acc, debit, _credit, _desc, st_opt, explicit = _unpack_gl_line(raw)
+        if debit <= 0:
+            continue
+        if not pl_line_needs_entity_dimension(acc):
+            continue
+        if meta and meta.get("pond_id"):
+            continue
+        line_st = st_opt if explicit else None
+        if line_st:
+            continue
+        code = (getattr(acc, "account_code", None) or "").strip()
+        missing_codes.append(code or str(getattr(acc, "id", "?")))
+    if missing_codes:
+        codes = ", ".join(missing_codes[:8])
+        extra = f" (+{len(missing_codes) - 8} more)" if len(missing_codes) > 8 else ""
+        raise GlPostingError(
+            "Cannot post bill: expense lines need a receipt station or pond tag "
+            f"so entity P&L is correct. Untagged accounts: {codes}{extra}. "
+            "Set Receipt location on the bill or assign a pond on expense lines."
+        )
+
+
+def validate_loan_interest_entity_tags_for_gl(loan, company_id: int) -> None:
+    """
+    Block loan interest/profit GL when P&L accounts would post without a station tag.
+    Principal and settlement lines are balance-sheet; disbursements without interest are allowed.
+    """
+    from api.services.loan_posting import _loan_gl_station_id
+
+    if _loan_gl_station_id(loan):
+        return
+    interest = getattr(loan, "interest_account", None)
+    if not interest or not pl_line_needs_entity_dimension(interest):
+        return
+    raise GlPostingError(
+        "Cannot post loan interest: set GL segment — site on this loan (Edit loan) so "
+        "interest expense or income appears on the correct fuel station, shop, or site P&L. "
+        "Company-wide (no site) is only for principal/bank movements without P&L interest."
+    )
+
+
+def validate_invoice_entity_tags_for_gl(company_id: int, inv: Invoice) -> None:
+    """Block invoice GL when revenue/COGS would post without station or pond attribution."""
+    from api.services.gl_posting import (
+        _build_revenue_splits,
+        _gl_station_id,
+        _invoice_aquaculture_pond_cycle,
+        item_should_relieve_cogs,
+        item_cogs_unit_cost,
+    )
+    from api.models import InvoiceLine
+
+    if inv.status == "draft" or (inv.total or Decimal("0")) <= 0:
+        return
+    rev_splits = _build_revenue_splits(company_id, inv)
+    has_revenue = bool(rev_splits)
+    has_cogs = False
+    for line in InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item"):
+        it = line.item
+        if not it or not item_should_relieve_cogs(company_id, it):
+            continue
+        if item_cogs_unit_cost(company_id, it) <= 0:
+            continue
+        qty = line.quantity or Decimal("0")
+        if qty <= 0:
+            continue
+        has_cogs = True
+        break
+    if not has_revenue and not has_cogs:
+        return
+    pond_id, _cycle_id = _invoice_aquaculture_pond_cycle(company_id, inv)
+    if pond_id:
+        return
+    if _gl_station_id(company_id, inv.station_id):
+        return
+    raise GlPostingError(
+        "Cannot post invoice: assign a selling site (station) or link to a pond "
+        "(aquaculture sale or pond customer) so revenue and COGS appear on the correct entity P&L."
+    )
+
+
+def validate_payroll_entity_tags_for_gl(
+    company_id: int,
+    pr: PayrollRun,
+    *,
+    split_by_pond: bool,
+    split_mixed_entities: bool,
+) -> None:
+    """Block salary expense posting when wages would lack station or pond tags."""
+    from api.services.gl_posting import _gl_station_id
+
+    if split_by_pond:
+        if split_mixed_entities and not _gl_station_id(company_id, pr.station_id):
+            raise GlPostingError(
+                "Cannot post payroll: assign a payroll site (station) for the company/site "
+                "wage portion, or allocate all gross pay to ponds."
+            )
+        return
+    if not _gl_station_id(company_id, pr.station_id):
+        raise GlPostingError(
+            "Cannot post payroll: assign a payroll site (station) or split wages by pond "
+            "so salary expense tags to an entity for P&L reports."
+        )
 
 
 def audit_entity_gl_scoping(company_id: int, *, sample_limit: int = 5) -> dict[str, Any]:

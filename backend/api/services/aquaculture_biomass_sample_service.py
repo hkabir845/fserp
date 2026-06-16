@@ -6,6 +6,19 @@ from decimal import Decimal
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 
 
+def _reference_avg_weight_kg(row: dict, tc: int, tw: Decimal) -> Decimal | None:
+    """Book mean kg/fish from net position, or gross stocked-in when net kg is non-positive."""
+    if tc <= 0:
+        return None
+    if tw > 0:
+        return (tw / Decimal(tc)).quantize(Decimal("0.000001"))
+    stocked_c = int(row.get("stocked_fish_count") or 0)
+    stocked_w = Decimal(str(row.get("stocked_weight_kg") or "0"))
+    if stocked_c > 0 and stocked_w > 0:
+        return (stocked_w / Decimal(stocked_c)).quantize(Decimal("0.000001"))
+    return None
+
+
 def apply_aquaculture_biomass_sample_extrapolation(sample) -> None:
     """
     Fill stock reference + extrapolation fields on AquacultureBiomassSample (in-memory).
@@ -26,6 +39,8 @@ def apply_aquaculture_biomass_sample_extrapolation(sample) -> None:
         pond_id=sample.pond_id,
         production_cycle_id=cy_id,
         fish_species_filter=sp,
+        # Samples may reference inactive/historical ponds; still snapshot book position.
+        include_inactive_ponds=True,
     )
     if not rows:
         return
@@ -38,9 +53,8 @@ def apply_aquaculture_biomass_sample_extrapolation(sample) -> None:
         sample.stock_reference_fish_count = tc
     sample.stock_reference_net_weight_kg = tw if tw != 0 else None
 
-    ref_avg: Decimal | None = None
-    if tc > 0 and tw > 0:
-        ref_avg = (tw / Decimal(tc)).quantize(Decimal("0.000001"))
+    ref_avg = _reference_avg_weight_kg(r, tc, tw)
+    if ref_avg is not None:
         sample.stock_reference_avg_weight_kg = ref_avg
 
     fc = sample.estimated_fish_count

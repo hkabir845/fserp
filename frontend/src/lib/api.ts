@@ -502,4 +502,11 @@ api.interceptors.response.use(
   }
 )
 
+/** Join backend origin with an absolute path (e.g. `/health`, `/api/v1/...`). */
+export function backendUrl(path: string): string {
+  const p = path.startsWith('/') ? path : `/${path}`
+  return `${getBackendOrigin().replace(/\/+$/, '')}${p}`
+}
+
+export { api }
 export default api

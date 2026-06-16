@@ -2,19 +2,30 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Plus, RefreshCw, Trash2, ArrowRightLeft, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Beaker, Fish, Plus, RefreshCw, Trash2, ArrowRightLeft, Pencil } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol, roundToDecimals } from '@/utils/currency'
 import { roundCountInputString, roundDecimalInputString } from '@/utils/inputDecimals'
+import { growOutPondsForTransfers, NURSING_WORKFLOW_STEPS, sameSiteGrowOutPond } from '@/lib/aquaculturePondSite'
+
+const SAMPLE_STALE_DAYS = 30
 
 interface Pond {
   id: number
   name: string
   pond_role?: string
   pond_role_label?: string
+  physical_site_name?: string
+  is_active?: boolean
+  same_site_grow_out_pond_id?: number | null
+  same_site_grow_out_display_name?: string
+  linked_grow_out_pond_id?: number | null
+  linked_grow_out_pond_name?: string
+  operational_display_name?: string
+  phase_workflow_summary?: string
 }
 
 interface CycleRow {
@@ -25,16 +36,17 @@ interface CycleRow {
   end_date?: string | null
 }
 
-interface PlCostPerKgBlock {
-  total_cost_per_kg?: string | null
-  transfer_cost_per_kg?: string | null
-  transfer_cost_basis_note?: string | null
-  basis_note?: string
+interface TransferCostPreviewLine {
+  cost_amount: string | null
 }
 
-interface PlPondRowBrief {
-  pond_id: number
-  cost_per_kg?: PlCostPerKgBlock
+interface TransferCostPreviewResponse {
+  cost_basis: 'per_kg' | 'per_head'
+  stocked_heads_basis?: number | null
+  transfer_cost_per_kg?: string | null
+  transfer_cost_per_head?: string | null
+  transfer_cost_basis_note?: string | null
+  lines: TransferCostPreviewLine[]
 }
 
 interface TransferLine {
@@ -72,6 +84,31 @@ type LineDraft = {
   cost_amount: string
 }
 
+type LastSampleReference = {
+  sample_id: number
+  sample_date: string
+  pond_id?: number
+  pond_name?: string
+  production_cycle_id?: number | null
+  production_cycle_name?: string
+  fish_per_kg?: string | null
+  fish_species_label?: string
+  estimated_fish_count?: number | null
+  estimated_total_weight_kg?: string | null
+  stock_reference_fish_count?: number | null
+  extrapolated_biomass_kg?: string | null
+  cycle_scope_fallback?: boolean
+  site_scope_fallback?: boolean
+}
+
+type SourceStockBrief = {
+  implied_net_fish_count: number
+  implied_net_weight_kg: string
+  effective_net_weight_kg?: string
+  current_fish_per_kg?: string | null
+  latest_sample_date?: string | null
+}
+
 const emptyLine = (): LineDraft => ({
   to_pond_id: '',
   to_production_cycle_id: '',
@@ -85,32 +122,6 @@ const emptyLine = (): LineDraft => ({
 function formatWeightKgFromCalc(w: number): string {
   if (!Number.isFinite(w) || w <= 0) return ''
   return roundDecimalInputString(String(w), 2)
-}
-
-/** Cost input string from kg × P&L total cost/kg (2 dp, no thousands sep). */
-function formatCostFromPerKg(weightKg: number, perKg: number): string {
-  if (!Number.isFinite(weightKg) || weightKg <= 0 || !Number.isFinite(perKg) || perKg < 0) return ''
-  const v = Math.round(weightKg * perKg * 100) / 100
-  if (!Number.isFinite(v) || v <= 0) return ''
-  return v.toFixed(2)
-}
-
-/** P&L window for transfer: cycle start → min(transfer date, cycle end); else calendar YTD through transfer date. */
-function plWindowForTransferDate(
-  transferDateIso: string,
-  cycle: CycleRow | undefined,
-): { start_date: string; end_date: string } {
-  const td = transferDateIso.slice(0, 10)
-  if (cycle?.start_date) {
-    let start = cycle.start_date.slice(0, 10)
-    let end = td
-    const cEnd = cycle.end_date ? cycle.end_date.slice(0, 10) : null
-    if (cEnd && cEnd < end) end = cEnd
-    if (start > end) start = end
-    return { start_date: start, end_date: end }
-  }
-  const y = td.slice(0, 4)
-  return { start_date: `${y}-01-01`, end_date: td }
 }
 
 /**
@@ -154,6 +165,35 @@ function recalcTransferLine(ln: LineDraft, source: 'fish' | 'weight' | 'pcs'): L
   return ln
 }
 
+/** Pre-fill pcs/kg from sampling when the line has not been manually overridden. */
+function applyEffectivePcsToLine(
+  ln: LineDraft,
+  lineIdx: number,
+  fishPerKg: string,
+  skipAutoPcs: Set<number>,
+): LineDraft {
+  if (skipAutoPcs.has(lineIdx)) return ln
+  const fpk = fishPerKg.trim()
+  if (!fpk) return ln
+  let next = { ...ln, pcs_per_kg: roundDecimalInputString(fpk, 2) }
+  if (ln.fish_count.trim() !== '') {
+    next = recalcTransferLine(next, 'fish')
+  }
+  return next
+}
+
+function daysSinceIsoDate(iso: string): number | null {
+  const d = iso.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null
+  const then = new Date(`${d}T12:00:00`)
+  const now = new Date()
+  const ms = now.getTime() - then.getTime()
+  if (!Number.isFinite(ms)) return null
+  return Math.floor(ms / (24 * 60 * 60 * 1000))
+}
+
+const COST_PREVIEW_DEBOUNCE_MS = 350
+
 export default function AquacultureFishTransfersPage() {
   const toast = useToast()
   const [ponds, setPonds] = useState<Pond[]>([])
@@ -172,15 +212,29 @@ export default function AquacultureFishTransfersPage() {
   const [fishSpeciesOther, setFishSpeciesOther] = useState('')
   const [memo, setMemo] = useState('')
   const [lineDrafts, setLineDrafts] = useState<LineDraft[]>([emptyLine()])
-  const [transferPlCostPerKg, setTransferPlCostPerKg] = useState<number | null>(null)
-  const [transferPlCostLoading, setTransferPlCostLoading] = useState(false)
+  const [transferCostBasis, setTransferCostBasis] = useState<'per_kg' | 'per_head' | null>(null)
+  const [transferCostPerKg, setTransferCostPerKg] = useState<number | null>(null)
+  const [transferCostPerHead, setTransferCostPerHead] = useState<number | null>(null)
+  const [transferCostPreviewLoading, setTransferCostPreviewLoading] = useState(false)
   const [transferPlBasisHint, setTransferPlBasisHint] = useState('')
-  const transferPlCostPerKgRef = useRef<number | null>(null)
   const skipAutoCostLine = useRef<Set<number>>(new Set())
+  const skipAutoPcsLine = useRef<Set<number>>(new Set())
+  const autoCycleFromSampleDone = useRef(false)
+  const costPreviewRequestId = useRef(0)
+  const [costPreviewRevision, setCostPreviewRevision] = useState(0)
+  const [lastSample, setLastSample] = useState<LastSampleReference | null>(null)
+  const [lastSampleLoading, setLastSampleLoading] = useState(false)
+  const [sourceStock, setSourceStock] = useState<SourceStockBrief | null>(null)
+  const [sourceStockLoading, setSourceStockLoading] = useState(false)
 
-  useEffect(() => {
-    transferPlCostPerKgRef.current = transferPlCostPerKg
-  }, [transferPlCostPerKg])
+  const lineCostPreviewKey = useMemo(
+    () => lineDrafts.map((ln) => `${ln.weight_kg.trim()}|${ln.fish_count.trim()}`).join(';'),
+    [lineDrafts],
+  )
+
+  const hasAutoTransferCostRate = transferCostBasis === 'per_head'
+    ? transferCostPerHead != null
+    : transferCostPerKg != null
 
   const loadPonds = useCallback(async () => {
     try {
@@ -247,86 +301,233 @@ export default function AquacultureFishTransfersPage() {
 
   useEffect(() => {
     if (!modal) {
-      setTransferPlCostPerKg(null)
+      setTransferCostBasis(null)
+      setTransferCostPerKg(null)
+      setTransferCostPerHead(null)
       setTransferPlBasisHint('')
-      setTransferPlCostLoading(false)
+      setTransferCostPreviewLoading(false)
       return
     }
     const fp = parseInt(fromPondId, 10)
     if (!Number.isFinite(fp)) {
-      setTransferPlCostPerKg(null)
+      setTransferCostBasis(null)
+      setTransferCostPerKg(null)
+      setTransferCostPerHead(null)
       setTransferPlBasisHint('')
       return
     }
-    const { start_date, end_date } = plWindowForTransferDate(transferDate, selectedFromCycle)
-    let cancelled = false
-    setTransferPlCostPerKg(null)
-    setTransferPlBasisHint('')
-    setTransferPlCostLoading(true)
-    const params: Record<string, string> = {
-      start_date,
-      end_date,
-      pond_id: String(fp),
-    }
-    if (fromCycleId.trim() && selectedFromCycle && selectedFromCycle.pond_id === fp) {
-      params.cycle_id = fromCycleId.trim()
-    }
-    void (async () => {
-      try {
-        const { data } = await api.get<{ ponds: PlPondRowBrief[] }>('/aquaculture/pl-summary/', { params })
-        if (cancelled) return
-        const row = Array.isArray(data?.ponds) ? data.ponds[0] : undefined
-        const cpk = row?.cost_per_kg
-        const raw =
-          cpk?.transfer_cost_per_kg != null && String(cpk.transfer_cost_per_kg).trim() !== ''
-            ? cpk.transfer_cost_per_kg
-            : cpk?.total_cost_per_kg
-        const n = raw != null && String(raw).trim() !== '' ? Number(raw) : NaN
-        const hintParts = [
-          (cpk?.transfer_cost_basis_note || '').trim(),
-          (cpk?.basis_note || '').trim(),
-        ].filter(Boolean)
-        if (Number.isFinite(n) && n >= 0) {
-          setTransferPlCostPerKg(n)
-          setTransferPlBasisHint(hintParts.join(' '))
-        } else {
-          setTransferPlCostPerKg(null)
-          setTransferPlBasisHint(hintParts.join(' '))
-        }
-      } catch {
-        if (!cancelled) {
-          setTransferPlCostPerKg(null)
-          setTransferPlBasisHint('')
-        }
-      } finally {
-        if (!cancelled) setTransferPlCostLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [modal, fromPondId, fromCycleId, transferDate, selectedFromCycle])
 
-  const applyPlCostToDraftLines = useCallback(
-    (drafts: LineDraft[], opts?: { force?: boolean }) => {
-      const pk = transferPlCostPerKgRef.current
-      if (pk == null) return drafts
-      const force = Boolean(opts?.force)
+    const requestId = ++costPreviewRequestId.current
+    setTransferCostPreviewLoading(true)
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const body: Record<string, unknown> = {
+          from_pond_id: fp,
+          transfer_date: transferDate.slice(0, 10),
+          lines: lineDrafts.map((ln) => {
+            const row: Record<string, unknown> = {}
+            const w = ln.weight_kg.trim()
+            if (w !== '') row.weight_kg = w
+            else row.weight_kg = '0'
+            const fc = ln.fish_count.trim()
+            if (fc !== '') {
+              const n = parseInt(fc, 10)
+              if (Number.isFinite(n) && n > 0) row.fish_count = n
+            }
+            return row
+          }),
+        }
+        if (fromCycleId.trim() && selectedFromCycle && selectedFromCycle.pond_id === fp) {
+          body.from_production_cycle_id = parseInt(fromCycleId, 10)
+        }
+        try {
+          const { data } = await api.post<TransferCostPreviewResponse>(
+            '/aquaculture/fish-pond-transfers/preview-cost/',
+            body,
+          )
+          if (costPreviewRequestId.current !== requestId) return
+          const basis = data?.cost_basis === 'per_head' ? 'per_head' : 'per_kg'
+          setTransferCostBasis(basis)
+          const pkgRaw = data?.transfer_cost_per_kg
+          const pkg =
+            pkgRaw != null && String(pkgRaw).trim() !== '' ? Number(pkgRaw) : NaN
+          setTransferCostPerKg(Number.isFinite(pkg) && pkg >= 0 ? pkg : null)
+          const phRaw = data?.transfer_cost_per_head
+          const ph =
+            phRaw != null && String(phRaw).trim() !== '' ? Number(phRaw) : NaN
+          setTransferCostPerHead(Number.isFinite(ph) && ph >= 0 ? ph : null)
+          setTransferPlBasisHint((data?.transfer_cost_basis_note || '').trim())
+
+          const previewLines = Array.isArray(data?.lines) ? data.lines : []
+          setLineDrafts((drafts) =>
+            drafts.map((ln, i) => {
+              if (skipAutoCostLine.current.has(i)) return ln
+              const raw = previewLines[i]?.cost_amount
+              if (raw == null || String(raw).trim() === '') {
+                return { ...ln, cost_amount: '' }
+              }
+              return { ...ln, cost_amount: roundDecimalInputString(String(raw), 2) }
+            }),
+          )
+        } catch {
+          if (costPreviewRequestId.current !== requestId) return
+          setTransferCostBasis(null)
+          setTransferCostPerKg(null)
+          setTransferCostPerHead(null)
+          setTransferPlBasisHint('')
+        } finally {
+          if (costPreviewRequestId.current === requestId) {
+            setTransferCostPreviewLoading(false)
+          }
+        }
+      })()
+    }, COST_PREVIEW_DEBOUNCE_MS)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [modal, fromPondId, fromCycleId, transferDate, selectedFromCycle, lineCostPreviewKey, lineDrafts.length, costPreviewRevision])
+
+  const applySamplePcsToDraftLines = useCallback(
+    (drafts: LineDraft[], fishPerKg: string) => {
+      const fpk = fishPerKg.trim()
+      if (!fpk) return drafts
       return drafts.map((ln, i) => {
-        if (!force && skipAutoCostLine.current.has(i)) return ln
-        const w = Number(String(ln.weight_kg).trim())
-        if (!Number.isFinite(w) || w <= 0) return ln
-        const c = formatCostFromPerKg(w, pk)
-        return c ? { ...ln, cost_amount: c } : ln
+        if (skipAutoPcsLine.current.has(i)) return ln
+        let next = { ...ln, pcs_per_kg: roundDecimalInputString(fpk, 2) }
+        if (ln.fish_count.trim() !== '') {
+          next = recalcTransferLine(next, 'fish')
+        }
+        return next
       })
     },
     [],
   )
 
   useEffect(() => {
-    if (!modal || transferPlCostPerKg == null) return
-    setLineDrafts((d) => applyPlCostToDraftLines(d))
-  }, [modal, transferPlCostPerKg, applyPlCostToDraftLines])
+    if (!modal) {
+      setLastSample(null)
+      setLastSampleLoading(false)
+      setSourceStock(null)
+      setSourceStockLoading(false)
+      autoCycleFromSampleDone.current = false
+      return
+    }
+    const fp = parseInt(fromPondId, 10)
+    if (!Number.isFinite(fp) || !fishSpecies.trim()) {
+      setLastSample(null)
+      setSourceStock(null)
+      return
+    }
+    const ac = new AbortController()
+    setLastSampleLoading(true)
+    void (async () => {
+      try {
+        const params: Record<string, string> = {
+          pond_id: String(fp),
+          fish_species: fishSpecies,
+        }
+        if (fishSpecies === 'other' && fishSpeciesOther.trim()) {
+          params.fish_species_other = fishSpeciesOther.trim()
+        }
+        const { data } = await api.get<{ found: boolean } & Partial<LastSampleReference>>(
+          '/aquaculture/biomass-samples/last-reference/',
+          { params, signal: ac.signal },
+        )
+        if (ac.signal.aborted) return
+        if (data?.found) {
+          setLastSample(data as LastSampleReference)
+          if (
+            editingId == null &&
+            !autoCycleFromSampleDone.current &&
+            data.production_cycle_id != null &&
+            !fromCycleId.trim()
+          ) {
+            autoCycleFromSampleDone.current = true
+            setFromCycleId(String(data.production_cycle_id))
+          }
+        } else {
+          setLastSample(null)
+        }
+      } catch {
+        if (!ac.signal.aborted) setLastSample(null)
+      } finally {
+        if (!ac.signal.aborted) setLastSampleLoading(false)
+      }
+    })()
+    return () => ac.abort()
+  }, [modal, fromPondId, fishSpecies, fishSpeciesOther, editingId])
+
+  const effectiveSamplePcs = useMemo(() => {
+    const raw = lastSample?.fish_per_kg?.trim() ?? ''
+    if (!raw) return ''
+    const n = Number(raw.replace(/,/g, ''))
+    return Number.isFinite(n) && n > 0 ? raw : ''
+  }, [lastSample])
+
+  useEffect(() => {
+    if (!modal || !effectiveSamplePcs || editingId != null) return
+    setLineDrafts((d) => applySamplePcsToDraftLines(d, effectiveSamplePcs))
+  }, [modal, effectiveSamplePcs, editingId, applySamplePcsToDraftLines])
+
+  useEffect(() => {
+    if (!modal) return
+    const fp = parseInt(fromPondId, 10)
+    if (!Number.isFinite(fp) || !fishSpecies.trim()) {
+      setSourceStock(null)
+      return
+    }
+    const ac = new AbortController()
+    setSourceStockLoading(true)
+    void (async () => {
+      try {
+        const params: Record<string, string> = {
+          pond_id: String(fp),
+          fish_species: fishSpecies,
+        }
+        if (fromCycleId.trim()) params.production_cycle_id = fromCycleId.trim()
+        const { data } = await api.get<{ rows?: SourceStockBrief[] }>('/aquaculture/fish-stock-position/', {
+          params,
+          signal: ac.signal,
+        })
+        if (ac.signal.aborted) return
+        const row = Array.isArray(data?.rows) && data.rows[0] ? data.rows[0] : null
+        if (row && (row.implied_net_fish_count > 0 || Number(row.implied_net_weight_kg) > 0)) {
+          setSourceStock(row)
+        } else {
+          setSourceStock(null)
+        }
+      } catch {
+        if (!ac.signal.aborted) setSourceStock(null)
+      } finally {
+        if (!ac.signal.aborted) setSourceStockLoading(false)
+      }
+    })()
+    return () => ac.abort()
+  }, [modal, fromPondId, fromCycleId, fishSpecies])
+
+  const totalTransferHeads = useMemo(() => {
+    let sum = 0
+    for (const ln of lineDrafts) {
+      const fc = parseInt(String(ln.fish_count).trim(), 10)
+      if (Number.isFinite(fc) && fc > 0) sum += fc
+    }
+    return sum
+  }, [lineDrafts])
+
+  const sampleStaleDays = useMemo(() => {
+    if (!lastSample?.sample_date) return null
+    return daysSinceIsoDate(lastSample.sample_date)
+  }, [lastSample])
+
+  const adjustSkipAutoPcsAfterRemoveLine = (removedIndex: number) => {
+    const next = new Set<number>()
+    skipAutoPcsLine.current.forEach((j) => {
+      if (j < removedIndex) next.add(j)
+      else if (j > removedIndex) next.add(j - 1)
+    })
+    skipAutoPcsLine.current = next
+  }
 
   const adjustSkipAutoCostAfterRemoveLine = (removedIndex: number) => {
     const next = new Set<number>()
@@ -335,6 +536,37 @@ export default function AquacultureFishTransfersPage() {
       else if (j > removedIndex) next.add(j - 1)
     })
     skipAutoCostLine.current = next
+  }
+
+  const fillRemainderHeads = (lineIdx: number) => {
+    const available = sourceStock?.implied_net_fish_count ?? 0
+    if (available <= 0) {
+      toast.error('No book stock in the source pond for this species/cycle.')
+      return
+    }
+    let sumOther = 0
+    for (let i = 0; i < lineDrafts.length; i++) {
+      if (i === lineIdx) continue
+      const fc = parseInt(String(lineDrafts[i].fish_count).trim(), 10)
+      if (Number.isFinite(fc) && fc > 0) sumOther += fc
+    }
+    const rem = available - sumOther
+    if (rem <= 0) {
+      toast.error('Other lines already use all available fish — reduce counts or check stock.')
+      return
+    }
+    setLineDrafts((d) =>
+      d.map((row, i) => {
+        if (i !== lineIdx) return row
+        let next = applyEffectivePcsToLine(
+          { ...row, fish_count: String(rem) },
+          lineIdx,
+          effectiveSamplePcs,
+          skipAutoPcsLine.current,
+        )
+        return recalcTransferLine(next, 'fish')
+      }),
+    )
   }
 
   const cyclesForPond = useCallback(
@@ -351,15 +583,28 @@ export default function AquacultureFishTransfersPage() {
     setEditingId(null)
   }
 
+  const activePonds = useMemo(() => ponds.filter((p) => p.is_active !== false), [ponds])
+
+  const fromPond = useMemo(
+    () => activePonds.find((p) => String(p.id) === fromPondId),
+    [activePonds, fromPondId],
+  )
+
+  const transferDestinations = useMemo(
+    () => growOutPondsForTransfers(fromPond, activePonds),
+    [fromPond, activePonds],
+  )
+
   const openNew = () => {
-    const nursing = ponds.find((p) => p.pond_role === 'nursing')
-    const fromP = nursing ?? ponds[0]
-    const growOut = ponds.find(
-      (p) => p.pond_role === 'grow_out' && fromP && p.id !== fromP.id
-    )
+    const nursingPonds = activePonds.filter((p) => p.pond_role === 'nursing')
+    const fromP = nursingPonds[0] ?? activePonds[0]
+    const { sameSite, others } = growOutPondsForTransfers(fromP, activePonds)
+    const firstDest = sameSite ?? others[0]
     setEditingId(null)
     skipAutoCostLine.current = new Set()
-    setFromPondId(fromP ? String(fromP.id) : '')
+    skipAutoPcsLine.current = new Set()
+    autoCycleFromSampleDone.current = false
+    setFromPondId('')
     setFromCycleId('')
     setTransferDate(new Date().toISOString().slice(0, 10))
     setFishSpecies('tilapia')
@@ -368,7 +613,7 @@ export default function AquacultureFishTransfersPage() {
     setLineDrafts([
       {
         ...emptyLine(),
-        to_pond_id: growOut ? String(growOut.id) : '',
+        to_pond_id: firstDest ? String(firstDest.id) : '',
       },
     ])
     setModal(true)
@@ -377,6 +622,7 @@ export default function AquacultureFishTransfersPage() {
   const openEdit = (t: TransferRow) => {
     setEditingId(t.id)
     skipAutoCostLine.current = new Set()
+    skipAutoPcsLine.current = new Set()
     setFromPondId(String(t.from_pond_id))
     setFromCycleId(t.from_production_cycle_id != null ? String(t.from_production_cycle_id) : '')
     setTransferDate(t.transfer_date.slice(0, 10))
@@ -409,9 +655,28 @@ export default function AquacultureFishTransfersPage() {
         : [emptyLine()]
     mapped.forEach((ln, i) => {
       if (ln.cost_amount.trim() !== '') skipAutoCostLine.current.add(i)
+      if (ln.pcs_per_kg.trim() !== '') skipAutoPcsLine.current.add(i)
     })
     setLineDrafts(mapped)
     setModal(true)
+  }
+
+  const addSameSiteRemainderLine = () => {
+    if (!fromPond) return
+    const same = sameSiteGrowOutPond(fromPond, activePonds)
+    if (!same) {
+      toast.error('Link a grow-out pond on the same physical site from Ponds setup first.')
+      return
+    }
+    const fpk = effectiveSamplePcs
+    setLineDrafts((rows) => [
+      ...rows,
+      {
+        ...emptyLine(),
+        to_pond_id: String(same.id),
+        ...(fpk ? { pcs_per_kg: roundDecimalInputString(fpk, 2) } : {}),
+      },
+    ])
   }
 
   const submit = async () => {
@@ -423,6 +688,29 @@ export default function AquacultureFishTransfersPage() {
     if (fishSpecies === 'other' && !fishSpeciesOther.trim()) {
       toast.error('Enter a species description when species is “Other”')
       return
+    }
+    if (!effectiveSamplePcs && editingId == null) {
+      const ok = window.confirm(
+        'No biomass sample found for this pond, cycle, and species. Weight from head count may be wrong. Record a sample under Aquaculture → Sampling first. Save this transfer anyway?'
+      )
+      if (!ok) return
+    }
+    if (
+      sampleStaleDays != null &&
+      sampleStaleDays > SAMPLE_STALE_DAYS &&
+      editingId == null
+    ) {
+      const ok = window.confirm(
+        `Latest sample is ${sampleStaleDays} days old (>${SAMPLE_STALE_DAYS}). Fingerling size may have changed — consider re-sampling. Continue with this pcs/kg?`
+      )
+      if (!ok) return
+    }
+    const available = sourceStock?.implied_net_fish_count ?? 0
+    if (available > 0 && totalTransferHeads > available) {
+      const ok = window.confirm(
+        `Transfer lines total ${formatNumber(totalTransferHeads, 0)} heads but book stock shows ${formatNumber(available, 0)} available. Continue anyway?`
+      )
+      if (!ok) return
     }
     const linesPayload: Record<string, unknown>[] = []
     for (let i = 0; i < lineDrafts.length; i++) {
@@ -450,6 +738,17 @@ export default function AquacultureFishTransfersPage() {
         toast.error(`Line ${i + 1}: fish count must be a positive integer`)
         return
       }
+      if (ln.pcs_per_kg.trim() === '') {
+        toast.error(
+          `Line ${i + 1}: pcs/kg is required — record a biomass sample or enter pcs/kg manually`
+        )
+        return
+      }
+      const pcsCheck = Number(ln.pcs_per_kg.trim().replace(/,/g, ''))
+      if (!Number.isFinite(pcsCheck) || pcsCheck <= 0) {
+        toast.error(`Line ${i + 1}: pcs/kg must be greater than zero`)
+        return
+      }
       let costOut = '0'
       if (ln.cost_amount.trim() !== '') {
         const n = Number(ln.cost_amount.trim().replace(/,/g, ''))
@@ -458,12 +757,6 @@ export default function AquacultureFishTransfersPage() {
           return
         }
         costOut = n.toFixed(2)
-      } else {
-        const pk = transferPlCostPerKgRef.current
-        if (pk != null && pk > 0) {
-          const auto = formatCostFromPerKg(w, pk)
-          if (auto) costOut = auto
-        }
       }
       const row: Record<string, unknown> = {
         to_pond_id: tp,
@@ -571,7 +864,9 @@ export default function AquacultureFishTransfersPage() {
             Fish pond transfers
           </h1>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Move nursing or holding fish to grow-out ponds: each line records <strong>kg and head count</strong>{' '}
+            Move fingerlings from a <strong>nursing-phase</strong> pond (after sampling — pcs/kg from your seine count) to production
+            grow-out ponds — including the <strong>grow-out-phase pond on the same physical site</strong> for remainder
+            (e.g. Mynuddin Nursing → Mynuddin Pond). Each line records <strong>kg and head count</strong>{' '}
             (both required). Optional <strong>cost per line</strong> reallocates biological cost on the management P&amp;L
             (source pond decreases, receivers increase; company total unchanged). Stock feed and medicine still flow
             through{' '}
@@ -738,6 +1033,198 @@ export default function AquacultureFishTransfersPage() {
             <h2 className="text-lg font-semibold text-slate-900">
               {editingId != null ? 'Edit fish pond transfer' : 'Record fish pond transfer'}
             </h2>
+            {fromPond?.pond_role === 'nursing' ? (
+              <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
+                <p className="font-medium">Nursing → fingerling transfer</p>
+                <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+                  {NURSING_WORKFLOW_STEPS.slice(3).map((s) => (
+                    <li key={s}>{s}</li>
+                  ))}
+                </ol>
+                {transferDestinations.sameSite ? (
+                  <p className="mt-2">
+                    Same-site grow-out:{' '}
+                    <strong>
+                      {transferDestinations.sameSite.operational_display_name ||
+                        transferDestinations.sameSite.name}
+                    </strong>
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {lastSampleLoading || sourceStockLoading ? (
+              <p className="mt-3 text-xs text-slate-500">Loading sample &amp; book stock for source pond…</p>
+            ) : null}
+
+            {lastSample ? (
+              <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-sm text-emerald-950">
+                <p className="flex flex-wrap items-center gap-2 font-medium">
+                  <Beaker className="h-4 w-4 shrink-0" aria-hidden />
+                  Biomass sample for transfer
+                </p>
+                <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+                  <div>
+                    <dt className="text-emerald-800/80">Date</dt>
+                    <dd className="font-medium tabular-nums">{formatDateOnly(lastSample.sample_date)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-emerald-800/80">Pond</dt>
+                    <dd className="font-medium">
+                      {lastSample.pond_name || fromPond?.name || '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-emerald-800/80">Cycle</dt>
+                    <dd className="font-medium">{lastSample.production_cycle_name || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-emerald-800/80">Species</dt>
+                    <dd className="font-medium">{lastSample.fish_species_label || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-emerald-800/80">Sample fish</dt>
+                    <dd className="font-medium tabular-nums">
+                      {lastSample.estimated_fish_count != null
+                        ? formatNumber(lastSample.estimated_fish_count, 0)
+                        : '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-emerald-800/80">Sample kg</dt>
+                    <dd className="font-medium tabular-nums">
+                      {lastSample.estimated_total_weight_kg != null
+                        ? formatNumber(Number(lastSample.estimated_total_weight_kg), 2)
+                        : '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-emerald-800/80">Fish/kg (pcs/kg)</dt>
+                    <dd className="font-semibold tabular-nums">
+                      {effectiveSamplePcs
+                        ? formatNumber(Number(effectiveSamplePcs), 2)
+                        : '—'}
+                    </dd>
+                  </div>
+                  {lastSample.stock_reference_fish_count != null ? (
+                    <div>
+                      <dt className="text-emerald-800/80">Book head at sample</dt>
+                      <dd className="font-medium tabular-nums">
+                        {formatNumber(lastSample.stock_reference_fish_count, 0)}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+                {lastSample.cycle_scope_fallback ? (
+                  <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-900">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    No sample on the selected source cycle — using latest sample for this pond and species (
+                    {lastSample.production_cycle_name || 'cycle'}).
+                  </p>
+                ) : null}
+                {lastSample.site_scope_fallback ? (
+                  <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-900">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Latest seine sample for this physical site was recorded on{' '}
+                    <strong>{lastSample.pond_name || 'another profit center'}</strong> — pcs/kg and book head are
+                    still applied to this transfer.
+                  </p>
+                ) : null}
+                {!effectiveSamplePcs ? (
+                  <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-900">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Sample found but pcs/kg could not be calculated — enter seine fish count and sample kg on the
+                    sampling record, or type pcs/kg manually on each line.
+                  </p>
+                ) : sampleStaleDays != null && sampleStaleDays > SAMPLE_STALE_DAYS ? (
+                  <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-900">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Sample is {sampleStaleDays} days old — consider re-sampling before large transfers.
+                  </p>
+                ) : effectiveSamplePcs ? (
+                  <p className="mt-2 text-xs text-emerald-800/90">
+                    Pcs/kg is applied from this record. Enter <strong>fish count (heads)</strong> per line — weight and
+                    cost derive automatically (all fields stay editable).
+                  </p>
+                ) : null}
+                <Link
+                  href="/aquaculture/sampling"
+                  className="mt-1 inline-block text-xs font-medium text-teal-800 underline hover:text-teal-950"
+                >
+                  Open sampling
+                </Link>
+              </div>
+            ) : !lastSampleLoading && !sourceStockLoading && modal && fromPondId && !lastSample ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
+                <p className="flex items-start gap-2 font-medium">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  No live biomass sample for this pond and species
+                </p>
+                <p className="mt-1 text-xs leading-relaxed">
+                  Select the source pond where you recorded the sample (e.g. Digonta Nursing), then record seine
+                  weighing under Sampling if needed. You can still save by entering pcs/kg manually on each line.
+                </p>
+                <Link
+                  href="/aquaculture/sampling"
+                  className="mt-1 inline-block text-xs font-medium text-teal-800 underline hover:text-teal-950"
+                >
+                  Record sample now
+                </Link>
+              </div>
+            ) : null}
+
+            {sourceStock ? (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800">
+                <p className="flex flex-wrap items-center gap-2 font-medium">
+                  <Fish className="h-4 w-4 text-slate-500" aria-hidden />
+                  Book stock (source pond)
+                  <span className="tabular-nums font-semibold">
+                    {formatNumber(sourceStock.implied_net_fish_count, 0)} fish
+                    {(() => {
+                      const bookKg = Number(sourceStock.implied_net_weight_kg)
+                      const effRaw = sourceStock.effective_net_weight_kg?.trim()
+                      const effKg =
+                        effRaw != null && effRaw !== '' ? Number(effRaw) : Number.NaN
+                      const showEff =
+                        Number.isFinite(effKg) &&
+                        effKg > 0 &&
+                        (!Number.isFinite(bookKg) || Math.abs(effKg - bookKg) > 0.05)
+                      if (showEff) {
+                        return (
+                          <>
+                            {' '}
+                            · ~{formatNumber(effKg, 2)} kg est. biomass
+                            <span className="text-xs font-normal text-slate-500">
+                              {' '}
+                              (book {formatNumber(bookKg, 2)} kg)
+                            </span>
+                          </>
+                        )
+                      }
+                      return <> · {formatNumber(bookKg, 2)} kg</>
+                    })()}
+                  </span>
+                </p>
+                {totalTransferHeads > 0 ? (
+                  <p
+                    className={`mt-1 text-xs tabular-nums ${
+                      sourceStock.implied_net_fish_count > 0 && totalTransferHeads > sourceStock.implied_net_fish_count
+                        ? 'font-medium text-rose-700'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    This transfer: {formatNumber(totalTransferHeads, 0)} heads
+                    {sourceStock.implied_net_fish_count > 0 ? (
+                      <>
+                        {' '}
+                        · Remaining after:{' '}
+                        {formatNumber(Math.max(0, sourceStock.implied_net_fish_count - totalTransferHeads), 0)} fish
+                      </>
+                    ) : null}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="mt-4 space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-sm font-medium text-slate-700">
@@ -748,13 +1235,16 @@ export default function AquacultureFishTransfersPage() {
                     onChange={(e) => {
                       setFromPondId(e.target.value)
                       setFromCycleId('')
+                      autoCycleFromSampleDone.current = false
                     }}
                   >
-                    <option value="">—</option>
-                    {ponds.map((p) => (
+                    <option value="">Select source pond…</option>
+                    {activePonds.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name}
-                        {p.pond_role === 'nursing' ? ' (nursing)' : ''}
+                        {p.operational_display_name || p.name}
+                        {p.pond_role === 'nursing'
+                          ? ` (nursing${p.physical_site_name ? ` · ${p.physical_site_name}` : ''})`
+                          : ''}
                       </option>
                     ))}
                   </select>
@@ -793,6 +1283,7 @@ export default function AquacultureFishTransfersPage() {
                     const v = e.target.value
                     setFishSpecies(v)
                     if (v !== 'other') setFishSpeciesOther('')
+                    autoCycleFromSampleDone.current = false
                   }}
                 >
                   {species.map((s) => (
@@ -822,49 +1313,65 @@ export default function AquacultureFishTransfersPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      disabled={transferPlCostPerKg == null}
+                      disabled={!hasAutoTransferCostRate}
                       className="text-sm font-medium text-teal-800 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
                       onClick={() => {
                         skipAutoCostLine.current = new Set()
-                        setLineDrafts((d) => applyPlCostToDraftLines(d, { force: true }))
+                        setCostPreviewRevision((r) => r + 1)
                       }}
                     >
-                      Fill costs from P&amp;L analysis
+                      Reset costs to auto
                     </button>
                     <button
                       type="button"
                       className="text-sm font-medium text-teal-800 hover:underline"
-                      onClick={() => setLineDrafts((d) => [...d, emptyLine()])}
+                      onClick={addSameSiteRemainderLine}
+                    >
+                      + Same-site grow-out
+                    </button>
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-teal-800 hover:underline"
+                      onClick={() =>
+                        setLineDrafts((d) => [
+                          ...d,
+                          {
+                            ...emptyLine(),
+                            ...(effectiveSamplePcs
+                              ? { pcs_per_kg: roundDecimalInputString(effectiveSamplePcs, 2) }
+                              : {}),
+                          },
+                        ])
+                      }
                     >
                       + Add line
                     </button>
                   </div>
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                  {transferPlCostLoading ? (
-                    <span>Loading pond P&amp;L cost/kg for this transfer…</span>
-                  ) : transferPlCostPerKg != null ? (
+                  {transferCostPreviewLoading ? (
+                    <span>Calculating transfer cost from pond production costs…</span>
+                  ) : hasAutoTransferCostRate ? (
                     <span>
-                      Auto cost uses <strong className="font-medium text-slate-800">cost/kg</strong> from the
-                      aquaculture P&amp;L for the source pond through this transfer date (harvest kg, or on-hand
-                      biological kg when the pond has not harvested yet)
-                      {fromCycleId.trim() ? ' (scoped to the source production cycle)' : ' (calendar year to date)'}:{' '}
-                      <span className="tabular-nums font-medium text-slate-800">
-                        {sym}
-                        {formatNumber(transferPlCostPerKg, 2)}/kg
-                      </span>
-                      . Edit a cost field to keep a custom amount; clear it to allow auto-fill again.
+                      Enter <strong className="font-medium text-slate-800">fish count (heads)</strong> on each line
+                      first — weight (kg) and cost fill from the latest sample pcs/kg and pond production costs (
+                      {transferCostBasis === 'per_head' && transferCostPerHead != null ? (
+                        <span className="tabular-nums font-medium text-slate-800">
+                          {sym}
+                          {formatNumber(transferCostPerHead, 2)}/head
+                        </span>
+                      ) : transferCostPerKg != null ? (
+                        <span className="tabular-nums font-medium text-slate-800">
+                          {sym}
+                          {formatNumber(transferCostPerKg, 2)}/kg
+                        </span>
+                      ) : null}
+                      ). Edit any field to override.
                     </span>
                   ) : (
                     <span>
-                      Auto cost/kg is not available for this pond and date range. That usually means{' '}
-                      <strong className="font-medium text-slate-800">no pond costs are recorded yet</strong>{' '}
-                      (vendor bills, POS on account to the pond customer, payroll split, or pond expenses) and{' '}
-                      <strong className="font-medium text-slate-800">no biological kg basis</strong> (harvest/fingerling
-                      sales or positive on-hand fish kg from stocking and transfers).{' '}
-                      <strong className="font-medium text-slate-800">Sampling does not drive this number</strong> — it is
-                      for density advice only. Enter cost manually, or record feed/medicine/fry costs first, then reopen
-                      this form.
+                      Enter heads first; weight derives from sample pcs/kg when available. Auto cost needs pond
+                      costs recorded — otherwise enter cost manually.
                     </span>
                   )}
                 </p>
@@ -882,6 +1389,7 @@ export default function AquacultureFishTransfersPage() {
                             className="text-xs text-rose-700 hover:underline"
                             onClick={() => {
                               adjustSkipAutoCostAfterRemoveLine(idx)
+                              adjustSkipAutoPcsAfterRemoveLine(idx)
                               setLineDrafts((d) => d.filter((_, i) => i !== idx))
                             }}
                           >
@@ -903,11 +1411,11 @@ export default function AquacultureFishTransfersPage() {
                             }}
                           >
                             <option value="">—</option>
-                            {ponds
+                            {activePonds
                               .filter((p) => String(p.id) !== fromPondId)
                               .map((p) => (
                                 <option key={p.id} value={p.id}>
-                                  {p.name}
+                                  {p.operational_display_name || p.name}
                                 </option>
                               ))}
                           </select>
@@ -930,28 +1438,94 @@ export default function AquacultureFishTransfersPage() {
                             ))}
                           </select>
                         </label>
+                        <label className="text-xs font-medium text-slate-700 sm:col-span-2">
+                          Fish count (heads) * — enter first
+                          <input
+                            className="mt-0.5 w-full rounded border border-teal-300 bg-white px-2 py-1.5 text-sm tabular-nums"
+                            inputMode="numeric"
+                            placeholder="e.g. 200000"
+                            value={ln.fish_count}
+                            onChange={(e) => {
+                              const fish_count = e.target.value
+                              setLineDrafts((d) =>
+                                d.map((row, i) => {
+                                  if (i !== idx) return row
+                                  let next = applyEffectivePcsToLine(
+                                    { ...row, fish_count },
+                                    idx,
+                                    effectiveSamplePcs,
+                                    skipAutoPcsLine.current,
+                                  )
+                                  return recalcTransferLine(next, 'fish')
+                                })
+                              )
+                            }}
+                            onBlur={() => {
+                              setLineDrafts((d) =>
+                                d.map((row, i) => {
+                                  if (i !== idx) return row
+                                  const t = row.fish_count.trim()
+                                  if (t === '') return row
+                                  let next = applyEffectivePcsToLine(
+                                    { ...row, fish_count: roundCountInputString(row.fish_count) },
+                                    idx,
+                                    effectiveSamplePcs,
+                                    skipAutoPcsLine.current,
+                                  )
+                                  return recalcTransferLine(next, 'fish')
+                                })
+                              )
+                            }}
+                          />
+                        </label>
                         <label className="text-xs text-slate-600">
-                          Weight (kg) *
+                          Pcs/kg {lastSample ? '(from sample)' : effectiveSamplePcs ? '(from sample)' : '*'}
                           <input
                             className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums"
                             inputMode="decimal"
-                            placeholder="e.g. 2142.9"
+                            placeholder={
+                              lastSample?.fish_per_kg ??
+                              (effectiveSamplePcs || 'Enter measured pcs/kg')
+                            }
+                            value={ln.pcs_per_kg}
+                            onChange={(e) => {
+                              const pcs_per_kg = e.target.value
+                              if (pcs_per_kg.trim() === '') skipAutoPcsLine.current.delete(idx)
+                              else skipAutoPcsLine.current.add(idx)
+                              setLineDrafts((d) =>
+                                d.map((row, i) => {
+                                  if (i !== idx) return row
+                                  return recalcTransferLine({ ...row, pcs_per_kg }, 'pcs')
+                                })
+                              )
+                            }}
+                            onBlur={() => {
+                              setLineDrafts((d) =>
+                                d.map((row, i) => {
+                                  if (i !== idx) return row
+                                  const t = row.pcs_per_kg.trim()
+                                  if (t === '') return row
+                                  let next = { ...row, pcs_per_kg: roundDecimalInputString(row.pcs_per_kg, 2) }
+                                  next = recalcTransferLine(next, 'pcs')
+                                  return next
+                                })
+                              )
+                            }}
+                          />
+                        </label>
+                        <label className="text-xs text-slate-600">
+                          Weight (kg) * — auto from heads ÷ pcs/kg
+                          <input
+                            className="mt-0.5 w-full rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm tabular-nums"
+                            inputMode="decimal"
+                            placeholder="Filled when heads + pcs/kg set"
                             value={ln.weight_kg}
                             onChange={(e) => {
                               const weight_kg = e.target.value
                               setLineDrafts((d) =>
                                 d.map((row, i) => {
                                   if (i !== idx) return row
-                                  let next = recalcTransferLine({ ...row, weight_kg }, 'weight')
-                                  const pk = transferPlCostPerKgRef.current
-                                  if (pk != null && !skipAutoCostLine.current.has(idx)) {
-                                    const w = Number(String(next.weight_kg).trim())
-                                    if (Number.isFinite(w) && w > 0) {
-                                      const c = formatCostFromPerKg(w, pk)
-                                      if (c) next = { ...next, cost_amount: c }
-                                    }
-                                  }
-                                  return next
+                                  return recalcTransferLine({ ...row, weight_kg }, 'weight')
                                 })
                               )
                             }}
@@ -961,17 +1535,8 @@ export default function AquacultureFishTransfersPage() {
                                   if (i !== idx) return row
                                   const t = row.weight_kg.trim()
                                   if (t === '') return row
-                                  const nextW = roundDecimalInputString(row.weight_kg, 2)
-                                  let next = { ...row, weight_kg: nextW }
+                                  let next = { ...row, weight_kg: roundDecimalInputString(row.weight_kg, 2) }
                                   next = recalcTransferLine(next, 'weight')
-                                  const pk = transferPlCostPerKgRef.current
-                                  if (pk != null && !skipAutoCostLine.current.has(idx)) {
-                                    const wn = Number(String(next.weight_kg).trim())
-                                    if (Number.isFinite(wn) && wn > 0) {
-                                      const c = formatCostFromPerKg(wn, pk)
-                                      if (c) next = { ...next, cost_amount: c }
-                                    }
-                                  }
                                   return next
                                 })
                               )
@@ -979,11 +1544,11 @@ export default function AquacultureFishTransfersPage() {
                           />
                         </label>
                         <label className="text-xs text-slate-600">
-                          Cost amount (fry/feed/medicine cost/kg × kg)
+                          Cost amount (BDT)
                           <input
                             className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums"
                             inputMode="decimal"
-                            placeholder={transferPlCostPerKg != null ? 'Filled when kg entered' : 'Enter kg first'}
+                            placeholder={hasAutoTransferCostRate ? 'Auto when heads/kg entered' : 'Enter manually'}
                             value={ln.cost_amount}
                             onChange={(e) => {
                               const v = e.target.value
@@ -1003,100 +1568,27 @@ export default function AquacultureFishTransfersPage() {
                             }}
                           />
                         </label>
-                        <label className="text-xs text-slate-600">
-                          Fish count (heads, required)
-                          <input
-                            className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums"
-                            inputMode="numeric"
-                            value={ln.fish_count}
-                            onChange={(e) => {
-                              const fish_count = e.target.value
-                              setLineDrafts((d) =>
-                                d.map((row, i) => {
-                                  if (i !== idx) return row
-                                  let next = recalcTransferLine({ ...row, fish_count }, 'fish')
-                                  const pk = transferPlCostPerKgRef.current
-                                  if (pk != null && !skipAutoCostLine.current.has(idx)) {
-                                    const w = Number(String(next.weight_kg).trim())
-                                    if (Number.isFinite(w) && w > 0) {
-                                      const c = formatCostFromPerKg(w, pk)
-                                      if (c) next = { ...next, cost_amount: c }
-                                    }
-                                  }
-                                  return next
-                                })
-                              )
-                            }}
-                            onBlur={() => {
-                              setLineDrafts((d) =>
-                                d.map((row, i) => {
-                                  if (i !== idx) return row
-                                  const t = row.fish_count.trim()
-                                  if (t === '') return row
-                                  let next = { ...row, fish_count: roundCountInputString(row.fish_count) }
-                                  next = recalcTransferLine(next, 'fish')
-                                  const pk = transferPlCostPerKgRef.current
-                                  if (pk != null && !skipAutoCostLine.current.has(idx)) {
-                                    const w = Number(String(next.weight_kg).trim())
-                                    if (Number.isFinite(w) && w > 0) {
-                                      const c = formatCostFromPerKg(w, pk)
-                                      if (c) next = { ...next, cost_amount: c }
-                                    }
-                                  }
-                                  return next
-                                })
-                              )
-                            }}
-                          />
-                        </label>
-                        <label className="text-xs text-slate-600">
-                          Pcs/kg at transfer (optional)
-                          <input
-                            className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums"
-                            inputMode="decimal"
-                            placeholder="e.g. 70"
-                            value={ln.pcs_per_kg}
-                            onChange={(e) => {
-                              const pcs_per_kg = e.target.value
-                              setLineDrafts((d) =>
-                                d.map((row, i) => {
-                                  if (i !== idx) return row
-                                  let next = recalcTransferLine({ ...row, pcs_per_kg }, 'pcs')
-                                  const pk = transferPlCostPerKgRef.current
-                                  if (pk != null && !skipAutoCostLine.current.has(idx)) {
-                                    const w = Number(String(next.weight_kg).trim())
-                                    if (Number.isFinite(w) && w > 0) {
-                                      const c = formatCostFromPerKg(w, pk)
-                                      if (c) next = { ...next, cost_amount: c }
-                                    }
-                                  }
-                                  return next
-                                })
-                              )
-                            }}
-                            onBlur={() => {
-                              setLineDrafts((d) =>
-                                d.map((row, i) => {
-                                  if (i !== idx) return row
-                                  const t = row.pcs_per_kg.trim()
-                                  if (t === '') return row
-                                  let next = { ...row, pcs_per_kg: roundDecimalInputString(row.pcs_per_kg, 2) }
-                                  next = recalcTransferLine(next, 'pcs')
-                                  const pk = transferPlCostPerKgRef.current
-                                  if (pk != null && !skipAutoCostLine.current.has(idx)) {
-                                    const w = Number(String(next.weight_kg).trim())
-                                    if (Number.isFinite(w) && w > 0) {
-                                      const c = formatCostFromPerKg(w, pk)
-                                      if (c) next = { ...next, cost_amount: c }
-                                    }
-                                  }
-                                  return next
-                                })
-                              )
-                            }}
-                          />
-                        </label>
                       </div>
+                      {sourceStock && sourceStock.implied_net_fish_count > 0 ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            className="text-xs font-medium text-teal-800 underline hover:text-teal-950"
+                            onClick={() => fillRemainderHeads(idx)}
+                          >
+                            Fill remainder ({formatNumber(
+                              Math.max(
+                                0,
+                                sourceStock.implied_net_fish_count -
+                                  totalTransferHeads +
+                                  (parseInt(String(ln.fish_count).trim(), 10) || 0),
+                              ),
+                              0,
+                            )}{' '}
+                            heads)
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>

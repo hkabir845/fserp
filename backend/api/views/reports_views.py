@@ -22,6 +22,8 @@ from api.services.reporting import (
     report_entities_pl_summary,
     report_entities_trial_balance_summary,
     report_ponds_pl_summary,
+    report_fuel_stations_pl_summary,
+    report_shop_hubs_pl_summary,
     report_stations_financial_summary,
     report_inventory_sku_valuation,
     report_item_master_by_category,
@@ -75,6 +77,8 @@ _REPORT_HANDLERS = {
     "entities-trial-balance-summary": report_entities_trial_balance_summary,
     "entities-financial-summary": report_entities_financial_summary,
     "stations-financial-summary": report_stations_financial_summary,
+    "fuel-stations-pl-summary": report_fuel_stations_pl_summary,
+    "shop-hubs-pl-summary": report_shop_hubs_pl_summary,
     "ponds-pl-summary": report_ponds_pl_summary,
     "fuel-sales": report_fuel_sales,
     "tank-inventory": report_tank_inventory,
@@ -220,6 +224,8 @@ AQUACULTURE_REPORT_IDS = frozenset(
         "aquaculture-pond-medicine-stock",
         "aquaculture-pond-supplies-stock",
         "aquaculture-fish-stock-position",
+        "aquaculture-fcr-biomass",
+        "aquaculture-fish-growth",
         "aquaculture-shop-station-stock",
         "aquaculture-equipment-assets",
         "aquaculture-pond-total-inventory",
@@ -403,6 +409,15 @@ def report_by_id(request, report_id: str):
             st_id = None
         if report_id in GL_POND_AWARE_REPORTS:
             payload = handler(cid, start, end, st_id, pond_id=pond_id)
+        elif report_id == "loans-borrow-and-lent":
+            strict = (request.GET.get("strict_site") or "").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+            payload = report_loans_borrow_and_lent(
+                cid, start, end, st_id, strict_site=strict
+            )
         else:
             payload = handler(cid, start, end, st_id)
     else:

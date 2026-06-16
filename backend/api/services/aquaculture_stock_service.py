@@ -19,6 +19,11 @@ from api.models import (
 )
 from api.services.aquaculture_constants import fish_species_display_label, normalize_fish_species
 from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
+from api.services.aquaculture_biomass_sample_reference_service import last_biomass_sample_reference_for_ledger
+from api.services.aquaculture_partial_harvest import (
+    effective_biomass_kg_from_position_row,
+    enrich_position_row_with_fish_metrics,
+)
 from api.services.aquaculture_units import (
     compute_stocking_load_advice,
     compute_water_volume_cu_ft,
@@ -323,7 +328,7 @@ def compute_fish_stock_position_rows(
             "production_cycle_id": cy_id,
             **advice,
         }
-        out_rows.append(row)
+        out_rows.append(enrich_position_row_with_fish_metrics(row, water_area_decimal=wa_dec))
     return out_rows
 
 
@@ -372,7 +377,7 @@ def _position_row_from_bucket(
         water_volume_cu_ft=vol_cu,
         pond_role=role,
     )
-    return {
+    base_row = {
         "pond_id": p.id,
         "pond_name": (p.name or "").strip(),
         "pond_role": role,
@@ -415,6 +420,7 @@ def _position_row_from_bucket(
         ),
         **advice,
     }
+    return enrich_position_row_with_fish_metrics(base_row, water_area_decimal=wa_dec)
 
 
 def compute_fish_stock_position_breakdown_rows(
@@ -610,15 +616,19 @@ def compute_fish_stock_position_breakdown_rows(
         bill_in_c[key] += fc
 
     latest_sample: dict[StockBucketKey, AquacultureBiomassSample] = {}
+    pond_species_sample: dict[tuple[int, str], AquacultureBiomassSample] = {}
     smp_q = AquacultureBiomassSample.objects.filter(company_id=cid, pond_id__in=pond_by_id.keys())
-    if cy_id is not None:
-        smp_q = smp_q.filter(production_cycle_id=cy_id)
     if species_filter_code is not None:
         smp_q = smp_q.filter(fish_species=species_filter_code)
+    if entries_after_date is not None:
+        smp_q = smp_q.filter(sample_date__gt=entries_after_date)
     for s in smp_q.order_by("pond_id", "production_cycle_id", "fish_species", "-sample_date", "-id"):
         sp, _ = normalize_fish_species(getattr(s, "fish_species", None))
         if not _species_ok(sp):
             continue
+        ps_key = (s.pond_id, sp)
+        if ps_key not in pond_species_sample:
+            pond_species_sample[ps_key] = s
         cyc = s.production_cycle_id
         if not _cycle_ok(cyc):
             continue
@@ -649,7 +659,7 @@ def compute_fish_stock_position_breakdown_rows(
         mort_w, mort_c = mortality_map[key]
         adj_in_w, adj_in_c = adjustment_in_map[key]
         adj_out_w, adj_out_c = adjustment_out_map[key]
-        smp = latest_sample.get(key)
+        smp = latest_sample.get(key) or pond_species_sample.get((pid, sp))
         cname = cycle_names.get(cyc) if cyc is not None else None
         out_rows.append(
             _position_row_from_bucket(
@@ -680,6 +690,44 @@ def compute_fish_stock_position_breakdown_rows(
     return out_rows
 
 
+def _enrich_stock_row_with_sample_reference(
+    company_id: int,
+    pond_id: int,
+    *,
+    production_cycle_id: int | None,
+    fish_species: str,
+    row: dict,
+) -> dict:
+    """Attach latest same-site biomass sample when the cycle bucket has no seine data."""
+    has_sample = bool(
+        row.get("latest_sample_avg_weight_kg")
+        or (
+            row.get("latest_sample_estimated_fish_count") is not None
+            and row.get("latest_sample_estimated_total_weight_kg")
+        )
+        or row.get("current_fish_per_kg")
+    )
+    if has_sample:
+        return row
+    ref = last_biomass_sample_reference_for_ledger(
+        company_id,
+        pond_id=pond_id,
+        production_cycle_id=production_cycle_id,
+        fish_species=fish_species,
+    )
+    if not ref:
+        return row
+    out = dict(row)
+    out["latest_sample_date"] = ref.get("sample_date")
+    out["latest_sample_estimated_fish_count"] = ref.get("estimated_fish_count")
+    out["latest_sample_estimated_total_weight_kg"] = ref.get("estimated_total_weight_kg")
+    if ref.get("avg_weight_kg"):
+        out["latest_sample_avg_weight_kg"] = ref["avg_weight_kg"]
+    if ref.get("fish_per_kg"):
+        out["current_fish_per_kg"] = ref["fish_per_kg"]
+    return out
+
+
 def implied_fish_stock_for_outbound_scope(
     company_id: int,
     pond_id: int,
@@ -696,10 +744,16 @@ def implied_fish_stock_for_outbound_scope(
         fish_species_filter=sp_code,
     )
     if rows:
-        r = rows[0]
+        r = _enrich_stock_row_with_sample_reference(
+            company_id,
+            pond_id,
+            production_cycle_id=production_cycle_id,
+            fish_species=fish_species,
+            row=rows[0],
+        )
         return (
             int(r.get("implied_net_fish_count") or 0),
-            _d(r.get("implied_net_weight_kg")),
+            effective_biomass_kg_from_position_row(r),
         )
     rows_pond = compute_fish_stock_position_rows(
         company_id,
@@ -708,10 +762,16 @@ def implied_fish_stock_for_outbound_scope(
         fish_species_filter=sp_code,
     )
     if rows_pond:
-        r = rows_pond[0]
+        r = _enrich_stock_row_with_sample_reference(
+            company_id,
+            pond_id,
+            production_cycle_id=production_cycle_id,
+            fish_species=fish_species,
+            row=rows_pond[0],
+        )
         return (
             int(r.get("implied_net_fish_count") or 0),
-            _d(r.get("implied_net_weight_kg")),
+            effective_biomass_kg_from_position_row(r),
         )
     return 0, Decimal("0")
 
@@ -782,6 +842,13 @@ def assert_outbound_fish_within_implied_stock(
     if fish_count <= avail_c and weight_kg <= avail_w:
         return None
     scope = "this production cycle" if production_cycle_id else "this pond"
+    if fish_count <= avail_c and weight_kg > avail_w:
+        return (
+            f"Insufficient biomass on source {scope} for this transfer weight: "
+            f"{avail_w} kg estimated from book stock and latest sampling ({avail_c:,} fish); "
+            f"this transaction requires {weight_kg} kg ({fish_count:,} fish). "
+            "Reduce head count or weight, record a biomass sample, or verify fry stocking."
+        )
     return (
         f"Insufficient fish stock on source {scope}: "
         f"{avail_w} kg ({avail_c:,} fish) available after prior movements; "

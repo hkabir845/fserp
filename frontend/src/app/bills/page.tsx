@@ -9,6 +9,7 @@ import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
+import { preferNursingPondId, pondFishBillLabel } from '@/lib/aquaculturePondSite'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -83,7 +84,11 @@ interface BillLineItem {
   /** Explicit QuickBooks-style line kind. Falls back to item_id presence when absent (legacy rows). */
   line_kind?: BillLineKind
   item_id?: number
+  item_name?: string
+  item_pos_category?: string
+  item_pieces_per_kg?: number | string | null
   expense_account_id?: number
+  expense_account_name?: string
   tank_id?: number  // For fuel items - specifies which tank to receive fuel into
   tank_name?: string | null
   quantity: number
@@ -99,7 +104,10 @@ interface BillLineItem {
   aquaculture_fish_species_other?: string
   /** Optional: tag line to a pond/cycle for aquaculture P&L when the bill posts (GL). */
   aquaculture_pond_id?: number | '' | null
+  pond_name?: string
+  pond_display_name?: string
   aquaculture_production_cycle_id?: number | '' | null
+  cycle_name?: string
   /** Pond operating expense category (maps to 671x COA + cost bucket on post). */
   aquaculture_expense_category?: string
   aquaculture_cost_bucket?: string
@@ -119,6 +127,11 @@ interface AquaculturePondOption {
   id: number
   name: string
   pond_role?: string
+  physical_site_name?: string
+  linked_grow_out_pond_id?: number | null
+  nursing_display_name?: string
+  grow_out_display_name?: string
+  operational_display_name?: string
   is_active?: boolean
 }
 
@@ -367,6 +380,117 @@ function itemPiecesPerKg(item: Item | undefined): number | null {
 function formatFishLinePcsPerKg(item: Item | undefined): string {
   const pcs = itemPiecesPerKg(item)
   return pcs != null ? formatNumber(pcs) : '—'
+}
+
+function billLinePiecesPerKg(line: BillLineItem, rowItem: Item | undefined): number | null {
+  const fromItem = itemPiecesPerKg(rowItem)
+  if (fromItem != null) return fromItem
+  const raw = line.item_pieces_per_kg
+  if (raw != null && raw !== '') {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  const w = line.aquaculture_fish_weight_kg
+  const heads = parseFishHeadCount(line)
+  if (heads > 0 && w != null && String(w) !== '') {
+    const wn = Number(w)
+    if (Number.isFinite(wn) && wn > 0) return heads / wn
+  }
+  return null
+}
+
+function formatBillLinePcsPerKg(line: BillLineItem, rowItem: Item | undefined): string {
+  const pcs = billLinePiecesPerKg(line, rowItem)
+  return pcs != null ? formatNumber(pcs) : '—'
+}
+
+function billLineShowFishColumns(line: BillLineItem, rowItem: Item | undefined): boolean {
+  if (isFishTypeItem(rowItem)) return true
+  if ((line.item_pos_category || '').toLowerCase() === 'fish') return true
+  if (line.aquaculture_fish_weight_kg != null && String(line.aquaculture_fish_weight_kg) !== '') return true
+  if (parseFishHeadCount(line) > 0) return true
+  const sp = (line.aquaculture_fish_species || '').trim()
+  return sp !== '' && sp !== 'not_applicable'
+}
+
+function formatBillLineFishWeightKg(
+  line: BillLineItem,
+  rowItem: Item | undefined,
+  showFishCols: boolean,
+): string {
+  const w = line.aquaculture_fish_weight_kg
+  if (w != null && String(w) !== '') return formatNumber(Number(w))
+  if (showFishCols && billLinePiecesPerKg(line, rowItem) != null) {
+    const qty = Number(line.quantity)
+    if (Number.isFinite(qty) && qty > 0) return formatNumber(qty)
+  }
+  return '—'
+}
+
+function billLineItemDisplayName(
+  line: BillLineItem,
+  itemList: Item[],
+  expenseAccounts: ExpenseAccount[],
+): string {
+  if (line.item_id) {
+    return (
+      itemList.find((i) => i.id === line.item_id)?.name ||
+      (line.item_name || '').trim() ||
+      `Item #${line.item_id}`
+    )
+  }
+  if (line.expense_account_id) {
+    return (
+      expenseAccounts.find((a) => a.id === line.expense_account_id)?.account_name ||
+      (line.expense_account_name || '').trim() ||
+      `Account #${line.expense_account_id}`
+    )
+  }
+  if ((line.expense_account_name || '').trim()) return line.expense_account_name!.trim()
+  if ((line.item_name || '').trim()) return line.item_name!.trim()
+  if ((line.description || '').trim()) return line.description!.trim()
+  return '—'
+}
+
+function billLinePondDisplayName(
+  line: BillLineItem,
+  ponds: AquaculturePondOption[],
+): string {
+  const pid = line.aquaculture_pond_id
+  if (pid === '' || pid == null) return '—'
+  const n = Number(pid)
+  if (!Number.isFinite(n) || n <= 0) return '—'
+  const fromApi = (line.pond_display_name || '').trim()
+  if (fromApi) return fromApi
+  const pond = ponds.find((p) => p.id === n)
+  if (pond) {
+    const role = (pond.pond_role || '').toLowerCase()
+    if (role === 'nursing' && billLineShowFishColumns(line, undefined)) {
+      return (pond.nursing_display_name || '').trim() || `${pond.name} Nursing`
+    }
+    return (
+      (pond.operational_display_name || '').trim() ||
+      (line.pond_name || '').trim() ||
+      pond.name ||
+      `Pond #${n}`
+    )
+  }
+  return (line.pond_name || '').trim() || `Pond #${n}`
+}
+
+function billLineCycleDisplayName(
+  line: BillLineItem,
+  cycles: ProductionCycleOption[],
+): string {
+  const cid = line.aquaculture_production_cycle_id
+  if (cid === '' || cid == null) return '—'
+  const n = Number(cid)
+  if (!Number.isFinite(n) || n <= 0) return '—'
+  return (
+    (line.cycle_name || '').trim() ||
+    cycles.find((c) => c.id === n)?.name ||
+    `Cycle #${n}`
+  )
 }
 
 /** Per-head (per fry/fingerling) cost = line amount ÷ headcount. Empty when count is missing. */
@@ -1168,19 +1292,18 @@ export default function BillsPage() {
   const [stations, setStations] = useState<Station[]>([])
   const [aquaculturePonds, setAquaculturePonds] = useState<AquaculturePondOption[]>([])
   const [fishSpeciesOptions, setFishSpeciesOptions] = useState<FishSpeciesOption[]>([])
-  // First nursing pond — suggested as the default destination for fry/fingerling purchases.
-  const firstNursingPondId = useMemo<number | null>(() => {
-    const np = aquaculturePonds.find((p) => (p.pond_role || '').toLowerCase() === 'nursing')
-    return np ? np.id : null
-  }, [aquaculturePonds])
-  // Pond options with a "(nursing)" hint so fish purchases can be steered to nursing ponds.
+  const firstNursingPondId = useMemo<number | null>(
+    () => preferNursingPondId(aquaculturePonds),
+    [aquaculturePonds],
+  )
   const pondOptionsForFish = useMemo<AquaculturePondOption[]>(
     () =>
-      aquaculturePonds.map((p) =>
-        (p.pond_role || '').toLowerCase() === 'nursing'
-          ? { ...p, name: `${p.name} (nursing)` }
-          : p,
-      ),
+      aquaculturePonds
+        .filter((p) => (p.pond_role || '').toLowerCase() === 'nursing')
+        .map((p) => ({
+          ...p,
+          name: pondFishBillLabel(p),
+        })),
     [aquaculturePonds],
   )
   const [productionCycles, setProductionCycles] = useState<ProductionCycleOption[]>([])
@@ -1439,9 +1562,13 @@ export default function BillsPage() {
       if (itemsRes.status === 'fulfilled') {
         try {
           const itemsData = itemsRes.value?.data || []
-          if (Array.isArray(itemsData)) {
-            setItems(itemsData)
-          } else {
+          const itemsList = isOffsetPagedPayload(itemsData)
+            ? (itemsData.results as Item[])
+            : Array.isArray(itemsData)
+              ? itemsData
+              : []
+          setItems(itemsList)
+          if (!Array.isArray(itemsData) && !isOffsetPagedPayload(itemsData)) {
             console.error('❌ Items data is not an array:', itemsData)
             toast.error('Items data format error')
           }
@@ -1532,10 +1659,28 @@ export default function BillsPage() {
       if (pondsRes.status === 'fulfilled' && Array.isArray(pondsRes.value.data)) {
         setAquaculturePonds(
           pondsRes.value.data
-            .map((p: { id?: unknown; name?: unknown; pond_role?: unknown; is_active?: unknown }) => ({
+            .map((p: {
+              id?: unknown
+              name?: unknown
+              pond_role?: unknown
+              physical_site_name?: unknown
+              linked_grow_out_pond_id?: unknown
+              nursing_display_name?: unknown
+              grow_out_display_name?: unknown
+              operational_display_name?: unknown
+              is_active?: unknown
+            }) => ({
               id: typeof p.id === 'number' ? p.id : Number(p.id),
               name: String(p.name || '').trim() || `Pond ${p.id}`,
               pond_role: String(p.pond_role || '').trim(),
+              physical_site_name: String(p.physical_site_name || '').trim(),
+              linked_grow_out_pond_id:
+                p.linked_grow_out_pond_id != null && p.linked_grow_out_pond_id !== ''
+                  ? Number(p.linked_grow_out_pond_id)
+                  : null,
+              nursing_display_name: String(p.nursing_display_name || '').trim(),
+              grow_out_display_name: String(p.grow_out_display_name || '').trim(),
+              operational_display_name: String(p.operational_display_name || '').trim(),
               is_active: p.is_active !== false,
             }))
             .filter((p: AquaculturePondOption) => Number.isFinite(p.id)),
@@ -1613,9 +1758,9 @@ export default function BillsPage() {
   }, [router, loadCompanyCurrency])
 
   useEffect(() => {
-    if (!showModal && !showEditModal) return
+    if (!showModal && !showEditModal && !showViewModal) return
     void ensureBillReferenceData()
-  }, [showModal, showEditModal, ensureBillReferenceData])
+  }, [showModal, showEditModal, showViewModal, ensureBillReferenceData])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -2362,7 +2507,10 @@ export default function BillsPage() {
 
   const handleViewBill = async (billId: number) => {
     try {
-      const response = await api.get(`/bills/${billId}`)
+      const [, response] = await Promise.all([
+        ensureBillReferenceData(),
+        api.get(`/bills/${billId}`),
+      ])
       if (response.status === 200) {
         setViewingBill(response.data)
         setShowViewModal(true)
@@ -2382,17 +2530,26 @@ export default function BillsPage() {
 
   const billReceivingLocationLabel = (bill: Bill): string => {
     const pondIds = new Set<number>()
+    const pondNames = new Map<number, string>()
     for (const line of bill.lines || []) {
       const pid = line.aquaculture_pond_id
-      if (pid != null && Number(pid) > 0) pondIds.add(Number(pid))
+      if (pid != null && Number(pid) > 0) {
+        const n = Number(pid)
+        pondIds.add(n)
+        const label = (line.pond_name || '').trim()
+        if (label) pondNames.set(n, label)
+        const display = (line.pond_display_name || '').trim()
+        if (display) pondNames.set(n, display)
+      }
     }
     if (pondIds.size === 1) {
       const pid = [...pondIds][0]
       const pond = aquaculturePonds.find((p) => p.id === pid)
+      const pondLabel = pond?.name || pondNames.get(pid) || `Pond #${pid}`
       const shop =
         bill.receipt_station_name ||
         (bill.receipt_station_id ? `Station #${bill.receipt_station_id}` : '')
-      return shop ? `Pond: ${pond?.name || `Pond #${pid}`} · Shop hub: ${shop}` : `Pond: ${pond?.name || `Pond #${pid}`}`
+      return shop ? `Pond: ${pondLabel} · Shop hub: ${shop}` : `Pond: ${pondLabel}`
     }
     return (
       bill.receipt_station_name ||
@@ -2912,6 +3069,10 @@ export default function BillsPage() {
                           if (pondIds.size === 1) {
                             const pid = [...pondIds][0]
                             const pond = aquaculturePonds.find((p) => p.id === pid)
+                            const linePondName = (viewingBill.lines || [])
+                              .map((l) => (l.pond_display_name || l.pond_name || '').trim())
+                              .find(Boolean)
+                            const pondLabel = pond?.name || linePondName || `Pond #${pid}`
                             const shop =
                               viewingBill.receipt_station_name ||
                               (viewingBill.receipt_station_id
@@ -2919,7 +3080,7 @@ export default function BillsPage() {
                                 : '')
                             return (
                               <>
-                                Pond: {pond?.name || `Pond #${pid}`}
+                                Pond: {pondLabel}
                                 {shop ? (
                                   <span className="block text-sm font-normal text-gray-600">
                                     Shop hub: {shop}
@@ -2973,15 +3134,14 @@ export default function BillsPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {viewingBill.lines?.map((item: BillLineItem) => {
                         const rowItem = item.item_id ? items.find((i) => i.id === item.item_id) : undefined
-                        const showFishCols = isFishTypeItem(rowItem)
-                        const wkg = item.aquaculture_fish_weight_kg
+                        const showFishCols = billLineShowFishColumns(item, rowItem)
                         const fc = item.aquaculture_fish_count
                         return (
                           <tr key={item.id}>
                             <td className="px-4 py-3 text-sm text-gray-900">
-                              {items.find(i => i.id === item.item_id)?.name || expenseAccounts.find(a => a.id === item.expense_account_id)?.account_name || 'N/A'}
+                              {billLineItemDisplayName(item, items, expenseAccounts)}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{item.description || '-'}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{item.description || '—'}</td>
                             <td className="px-4 py-3 text-sm text-gray-700">
                               {item.tank_name ||
                                 (item.tank_id
@@ -2989,22 +3149,16 @@ export default function BillsPage() {
                                   : '—')}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-700">
-                              {item.aquaculture_pond_id
-                                ? aquaculturePonds.find((p) => p.id === item.aquaculture_pond_id)?.name ||
-                                  `Pond #${item.aquaculture_pond_id}`
-                                : '—'}
+                              {billLinePondDisplayName(item, aquaculturePonds)}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-700">
-                              {item.aquaculture_production_cycle_id
-                                ? productionCycles.find((c) => c.id === item.aquaculture_production_cycle_id)
-                                    ?.name || `Cycle #${item.aquaculture_production_cycle_id}`
-                                : '—'}
+                              {billLineCycleDisplayName(item, productionCycles)}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
-                              {showFishCols ? formatFishLinePcsPerKg(rowItem) : '—'}
+                              {showFishCols ? formatBillLinePcsPerKg(item, rowItem) : '—'}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
-                              {showFishCols && wkg != null && String(wkg) !== '' ? formatNumber(Number(wkg)) : '—'}
+                              {showFishCols ? formatBillLineFishWeightKg(item, rowItem, showFishCols) : '—'}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
                               {showFishCols && fc != null && String(fc) !== '' ? formatNumber(Number(fc)) : '—'}

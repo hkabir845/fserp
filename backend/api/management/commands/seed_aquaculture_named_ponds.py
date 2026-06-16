@@ -2,23 +2,34 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Max
 
-from api.models import AquacultureFishStockLedger, AquaculturePond, AquacultureWarehouseGroup, Company
+from api.models import (
+    AquacultureFishStockLedger,
+    AquaculturePond,
+    AquacultureProductionCycle,
+    AquacultureWarehouseGroup,
+    Company,
+)
 from api.services.aquaculture_pond_pos_customer import maybe_provision_auto_pos_customer
+
+from api.services.aquaculture_pond_site import default_nursing_name_for_site
 
 STOCK_MEMO_TAG = "[POND-DEMO-STOCK]"
 
 # Canonical demo rows: idempotent by pond name (case-insensitive) within a company.
+# Mynuddin is a same-site pair: nursing phase + grow-out phase on one physical pond.
 POND_PROFILES: tuple[dict, ...] = (
     {
         "name": "Digonta",
         "role": "nursing",
+        "physical_site_name": "Digonta",
+        "linked_grow_out_name": "Digonta-Grow Out",
         "code_stem": "DIGONTA",
         "water_area_decimal": Decimal("0.6500"),
         "leasing_area_decimal": Decimal("0.8000"),
@@ -37,6 +48,8 @@ POND_PROFILES: tuple[dict, ...] = (
     {
         "name": "Mynuddin",
         "role": "grow_out",
+        "physical_site_name": "Mynuddin",
+        "site_pair": True,
         "code_stem": "MYNUDDIN",
         "water_area_decimal": Decimal("2.4000"),
         "leasing_area_decimal": Decimal("2.6500"),
@@ -102,8 +115,39 @@ def _unique_pond_code(company_id: int, base: str) -> str:
     return code[:64]
 
 
+def _mid_cycle_for_pond(company_id: int, pond: AquaculturePond) -> AquacultureProductionCycle:
+    cy = (
+        AquacultureProductionCycle.objects.filter(
+            company_id=company_id,
+            pond=pond,
+            is_active=True,
+            name__icontains="Mid Cycle",
+        )
+        .order_by("-start_date", "-id")
+        .first()
+    )
+    if cy:
+        return cy
+    cy = AquacultureProductionCycle.objects.filter(company_id=company_id, pond=pond, code="0").first()
+    if cy:
+        return cy
+    label = (pond.name or "Pond").strip()
+    return AquacultureProductionCycle.objects.create(
+        company_id=company_id,
+        pond=pond,
+        name=f"{label} Mid Cycle",
+        code="0",
+        start_date=date.today() - timedelta(days=365),
+        is_active=True,
+        notes=f"Auto-created for {STOCK_MEMO_TAG} cycle tagging.",
+    )
+
+
 def _apply_profile(p: AquaculturePond, spec: dict) -> None:
     p.pond_role = spec["role"]
+    site = (spec.get("physical_site_name") or "").strip()
+    if site:
+        p.physical_site_name = site[:120]
     p.water_area_decimal = spec["water_area_decimal"]
     p.leasing_area_decimal = spec["leasing_area_decimal"]
     p.pond_depth_ft = spec["pond_depth_ft"]
@@ -223,6 +267,8 @@ class Command(BaseCommand):
             if with_stock:
                 self._ensure_demo_stock_row(cid, pond_for_stock, spec)
 
+        self._ensure_digonta_site_pair(cid)
+        self._ensure_mynuddin_site_pair(cid, skip_auto=skip_auto, next_order_start=next_order)
         self._ensure_ashari_shared_warehouse_group(cid)
 
         self.stdout.write(
@@ -239,10 +285,11 @@ class Command(BaseCommand):
             return
         fc = int(spec["demo_fish_count"])
         wkg = spec["demo_weight_kg"]
+        cy = _mid_cycle_for_pond(company_id, pond)
         AquacultureFishStockLedger.objects.create(
             company_id=company_id,
             pond=pond,
-            production_cycle=None,
+            production_cycle=cy,
             entry_date=date.today(),
             entry_kind="adjustment",
             loss_reason="",
@@ -256,6 +303,80 @@ class Command(BaseCommand):
             ),
         )
         self.stdout.write(self.style.NOTICE(f"  + Demo tilapia stock row for {pond.name!r}"))
+
+    def _ensure_digonta_site_pair(self, company_id: int) -> None:
+        nursing = AquaculturePond.objects.filter(
+            company_id=company_id, name__iexact="Digonta", pond_role="nursing", is_active=True
+        ).first()
+        if not nursing:
+            return
+        grow_name = "Digonta-Grow Out"
+        grow = AquaculturePond.objects.filter(company_id=company_id, name__iexact=grow_name, is_active=True).first()
+        if not grow:
+            grow = AquaculturePond.objects.create(
+                company_id=company_id,
+                name=grow_name,
+                code=_unique_pond_code(company_id, "DIGONTA-GO"),
+                sort_order=(nursing.sort_order or 0) + 1,
+                is_active=True,
+                pond_role="grow_out",
+                physical_site_name="Digonta",
+            )
+            self.stdout.write(self.style.SUCCESS(f"Created grow-out pair {grow_name!r} for Digonta site"))
+        elif not (grow.physical_site_name or "").strip():
+            grow.physical_site_name = "Digonta"
+            grow.save(update_fields=["physical_site_name", "updated_at"])
+        if not (nursing.physical_site_name or "").strip():
+            nursing.physical_site_name = "Digonta"
+        if nursing.linked_grow_out_pond_id != grow.id:
+            nursing.linked_grow_out_pond_id = grow.id
+        nursing.save(update_fields=["physical_site_name", "linked_grow_out_pond_id", "updated_at"])
+
+    def _ensure_mynuddin_site_pair(self, company_id: int, *, skip_auto: bool, next_order_start: int) -> None:
+        grow = AquaculturePond.objects.filter(
+            company_id=company_id, name__iexact="Mynuddin", pond_role="grow_out", is_active=True
+        ).first()
+        if not grow:
+            return
+        site = (grow.physical_site_name or "").strip() or "Mynuddin"
+        if not (grow.physical_site_name or "").strip():
+            grow.physical_site_name = site
+            grow.save(update_fields=["physical_site_name", "updated_at"])
+        nursing_name = default_nursing_name_for_site(site)
+        nursing = AquaculturePond.objects.filter(
+            company_id=company_id, name__iexact=nursing_name, pond_role="nursing", is_active=True
+        ).first()
+        if not nursing:
+            nursing = AquaculturePond.objects.filter(
+                company_id=company_id,
+                physical_site_name__iexact=site,
+                pond_role="nursing",
+                is_active=True,
+            ).first()
+        if not nursing:
+            nursing = AquaculturePond(
+                company_id=company_id,
+                name=nursing_name,
+                code=_unique_pond_code(company_id, "MYNUDDIN-N"),
+                sort_order=max(0, (grow.sort_order or next_order_start) - 1),
+                is_active=True,
+                pond_role="nursing",
+                physical_site_name=site,
+                linked_grow_out_pond=grow,
+                water_area_decimal=grow.water_area_decimal,
+                leasing_area_decimal=grow.leasing_area_decimal,
+            )
+            nursing.save()
+            err = maybe_provision_auto_pos_customer(company_id=company_id, pond=nursing, skip_auto=skip_auto)
+            if err:
+                raise RuntimeError(err)
+            nursing.save()
+            self.stdout.write(self.style.SUCCESS(f"Created nursing pair {nursing_name!r} for Mynuddin site"))
+        elif nursing.linked_grow_out_pond_id != grow.id:
+            nursing.linked_grow_out_pond_id = grow.id
+            if not (nursing.physical_site_name or "").strip():
+                nursing.physical_site_name = site
+            nursing.save(update_fields=["physical_site_name", "linked_grow_out_pond_id", "updated_at"])
 
     def _ensure_ashari_shared_warehouse_group(self, company_id: int) -> None:
         grp = AquacultureWarehouseGroup.objects.filter(company_id=company_id, code__iexact="ASHARI-WH").first()

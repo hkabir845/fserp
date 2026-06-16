@@ -1396,13 +1396,7 @@ export default function CashierPOSPage() {
                 >
                   <Clock className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
                   <time dateTime={now.toISOString()}>
-                    {now.toLocaleString(undefined, {
-                      weekday: "short",
-                      day: "numeric",
-                      month: "short",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {formatDate(now, true)}
                   </time>
                 </span>
               </div>

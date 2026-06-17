@@ -384,8 +384,8 @@ export default function Sidebar() {
           isActive ? activeClass : NAV_ITEM_IDLE_CLASS
         }`}
       >
-        <Icon className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-gray-300'}`} />
-        <span className="min-w-0 flex-1 truncate text-xs font-medium">{item.label}</span>
+        <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-gray-300'}`} />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
       </Link>
     )
   }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Eye, Search, X, PlusCircle, Trash2, Send, CheckCircle, Edit2, FileText } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
@@ -142,6 +142,7 @@ function normalizeInvoiceFromApi(raw: Record<string, unknown>): Invoice {
 
 export default function InvoicesPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const toast = useToast()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -877,6 +878,18 @@ export default function InvoicesPage() {
       toast.error(error.response?.data?.detail || 'Error loading invoice')
     }
   }
+
+  const invoiceViewDeepLinkConsumed = useRef(false)
+  useEffect(() => {
+    if (invoiceViewDeepLinkConsumed.current || loading) return
+    const raw = searchParams.get('view')
+    if (!raw || !/^\d+$/.test(raw)) return
+    const id = parseInt(raw, 10)
+    if (!Number.isFinite(id) || id <= 0) return
+    invoiceViewDeepLinkConsumed.current = true
+    void handleViewInvoice(id)
+    window.history.replaceState({}, '', '/invoices')
+  }, [loading, searchParams])
 
   const handleEditInvoice = async (invoice: Invoice) => {
     try {

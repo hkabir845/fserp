@@ -1,13 +1,30 @@
 """Build account-style activity lists from posted journal lines (chart account)."""
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from django.db.models import DecimalField, ExpressionWrapper, F, Sum
+from django.db.models import DecimalField, ExpressionWrapper, F, Prefetch, Sum
 
-from api.models import ChartOfAccount, JournalEntry, JournalEntryLine
+from api.models import (
+    Bill,
+    ChartOfAccount,
+    Invoice,
+    JournalEntry,
+    JournalEntryLine,
+    Payment,
+    PaymentBillAllocation,
+    PaymentInvoiceAllocation,
+    PayrollRun,
+)
+
+_PAY_RCV = re.compile(r"^AUTO-PAY-(\d+)-RCV$")
+_PAY_MADE = re.compile(r"^AUTO-PAY-(\d+)-MADE$")
+_INV = re.compile(r"^AUTO-INV-(\d+)-(?:SALE|RCPT|COGS)$")
+_BILL = re.compile(r"^AUTO-BILL-(\d+)$")
+_PAYROLL = re.compile(r"^AUTO-PAYROLL-(\d+)$")
 
 _DIFF = ExpressionWrapper(
     F("debit") - F("credit"),
@@ -160,3 +177,163 @@ def build_statement_transactions(
         )
 
     return transactions, running, opening_for_range
+
+
+def enrich_statement_transaction_sources(
+    transactions: List[dict[str, Any]],
+    *,
+    company_id: int,
+) -> None:
+    """Attach source metadata: payments (with delete flags), invoices (receivable), bills (payable)."""
+    pay_ids: set[int] = set()
+    inv_ids: set[int] = set()
+    bill_ids: set[int] = set()
+    payroll_ids: set[int] = set()
+
+    for tx in transactions:
+        en = (tx.get("entry_number") or "").strip()
+        m = _PAY_RCV.match(en) or _PAY_MADE.match(en)
+        if m:
+            pay_ids.add(int(m.group(1)))
+            continue
+        m = _INV.match(en)
+        if m:
+            inv_ids.add(int(m.group(1)))
+            continue
+        m = _BILL.match(en)
+        if m:
+            bill_ids.add(int(m.group(1)))
+            continue
+        m = _PAYROLL.match(en)
+        if m:
+            payroll_ids.add(int(m.group(1)))
+
+    meta_by_entry: dict[str, dict[str, Any]] = {}
+
+    if pay_ids:
+        payments = {
+            p.id: p
+            for p in Payment.objects.filter(
+                company_id=company_id,
+                id__in=pay_ids,
+                payment_type__in=("received", "made"),
+            ).prefetch_related(
+                Prefetch(
+                    "invoice_allocations",
+                    queryset=PaymentInvoiceAllocation.objects.select_related("invoice"),
+                ),
+                Prefetch(
+                    "bill_allocations",
+                    queryset=PaymentBillAllocation.objects.select_related("bill"),
+                ),
+            )
+        }
+
+        for pid, p in payments.items():
+            locked = bool(getattr(p, "bank_deposit_id", None))
+            can_delete = p.payment_type in ("received", "made") and not locked
+            immutable_reason = (
+                "This receipt is on a bank deposit. Void or adjust the deposit before editing or deleting this payment."
+                if locked
+                else None
+            )
+            if p.payment_type == "received":
+                entry_number = f"AUTO-PAY-{pid}-RCV"
+                source_type = "payment_received"
+                contact_type = "customer"
+                contact_id = p.customer_id
+                allocations: list[dict[str, Any]] = []
+                for a in p.invoice_allocations.all():
+                    inv = a.invoice
+                    allocations.append(
+                        {
+                            "document_type": "receivable",
+                            "invoice_id": a.invoice_id,
+                            "document_number": (
+                                inv.invoice_number if inv else f"INV-{a.invoice_id}"
+                            ),
+                            "amount": str(a.amount),
+                            "contact_id": p.customer_id,
+                        }
+                    )
+            else:
+                entry_number = f"AUTO-PAY-{pid}-MADE"
+                source_type = "payment_made"
+                contact_type = "vendor"
+                contact_id = p.vendor_id
+                allocations = []
+                for a in p.bill_allocations.all():
+                    bill = a.bill
+                    allocations.append(
+                        {
+                            "document_type": "payable",
+                            "bill_id": a.bill_id,
+                            "document_number": (
+                                bill.bill_number if bill else f"BILL-{a.bill_id}"
+                            ),
+                            "amount": str(a.amount),
+                            "contact_id": p.vendor_id,
+                        }
+                    )
+
+            meta_by_entry[entry_number] = {
+                "source_type": source_type,
+                "source_id": pid,
+                "source_label": f"PAY-{pid}",
+                "can_delete_payment": can_delete,
+                "immutable_reason": immutable_reason,
+                "contact_type": contact_type,
+                "contact_id": contact_id,
+                **({"allocations": allocations} if allocations else {}),
+            }
+
+    if inv_ids:
+        invoices = {
+            i.id: i
+            for i in Invoice.objects.filter(company_id=company_id, id__in=inv_ids)
+        }
+        for iid, inv in invoices.items():
+            label = (inv.invoice_number or f"INV-{iid}").strip() or f"INV-{iid}"
+            for suffix in ("SALE", "RCPT", "COGS"):
+                meta_by_entry[f"AUTO-INV-{iid}-{suffix}"] = {
+                    "source_type": "receivable",
+                    "source_id": iid,
+                    "source_label": label,
+                    "document_type": "receivable",
+                    "invoice_id": iid,
+                }
+
+    if bill_ids:
+        bills = {
+            b.id: b
+            for b in Bill.objects.filter(company_id=company_id, id__in=bill_ids)
+        }
+        for bid, bill in bills.items():
+            label = (bill.bill_number or f"BILL-{bid}").strip() or f"BILL-{bid}"
+            meta_by_entry[f"AUTO-BILL-{bid}"] = {
+                "source_type": "payable",
+                "source_id": bid,
+                "source_label": label,
+                "document_type": "payable",
+                "bill_id": bid,
+            }
+
+    if payroll_ids:
+        runs = {
+            r.id: r
+            for r in PayrollRun.objects.filter(company_id=company_id, id__in=payroll_ids)
+        }
+        for rid, pr in runs.items():
+            label = (pr.payroll_number or f"PR-{rid}").strip() or f"PR-{rid}"
+            meta_by_entry[f"AUTO-PAYROLL-{rid}"] = {
+                "source_type": "payroll",
+                "source_id": rid,
+                "source_label": label,
+                "can_delete_payroll_journal": True,
+            }
+
+    for tx in transactions:
+        en = (tx.get("entry_number") or "").strip()
+        meta = meta_by_entry.get(en)
+        if meta:
+            tx.update(meta)

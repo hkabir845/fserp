@@ -1,7 +1,22 @@
 """Django signals for the api app."""
 
-from django.db.models.signals import post_migrate
+from django.db.models.signals import post_migrate, pre_delete
 from django.dispatch import receiver
+
+
+@receiver(pre_delete, sender="api.JournalEntry")
+def release_payroll_when_salary_journal_deleted(sender, instance, **kwargs):
+    """Revert linked payroll run to draft when AUTO-PAYROLL journal is deleted."""
+    en = (getattr(instance, "entry_number", None) or "").strip()
+    if not en.startswith("AUTO-PAYROLL-"):
+        return
+    from api.services.gl_posting import release_payroll_salary_journal
+
+    release_payroll_salary_journal(
+        int(instance.company_id),
+        journal_entry_id=int(instance.id),
+        entry_number=en,
+    )
 
 
 @receiver(post_migrate)

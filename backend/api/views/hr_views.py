@@ -15,6 +15,7 @@ from api.models import (
     EmployeeLedgerEntry,
     JournalEntry,
     PayrollRun,
+    PayrollRunEmployeeAllocation,
     PayrollRunPondAllocation,
 )
 from api.services.permission_service import user_may_access_aquaculture_api
@@ -28,9 +29,17 @@ from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.services.contact_ledgers import build_employee_ledger, ledger_query_dates
 from api.services.employee_payroll_subledger import refresh_employee_balance
+from api.services.employee_payroll_allocations import (
+    employee_allocations_for_payroll,
+    sync_payroll_employee_allocations_all_active,
+    sync_payroll_employee_allocations_from_hr,
+    sync_single_payroll_employee_allocation,
+)
 from api.services.coa_gl_defaults import ALLOWED_SALARY_EXPENSE, parse_optional_chart_account_id
 from api.services.gl_posting import post_payroll_salary
-from api.services.station_defaults import parse_optional_station_fk
+from api.services.employee_payroll_station import employee_work_site_label, sync_payroll_station_from_employees
+from api.services.station_defaults import default_payroll_station_id, parse_optional_station_fk
+from api.services.station_stock import get_or_create_default_station
 from api.services.employee_pond_labor import (
     LABOR_SCOPE_ALL_PONDS_EQUAL,
     LABOR_SCOPE_ASSIGNED_POND,
@@ -168,6 +177,7 @@ def _employee_to_json(e: Employee) -> dict:
             if getattr(e, "home_station_id", None) and getattr(e, "home_station", None)
             else ""
         ),
+        "work_site_label": employee_work_site_label(e),
         "home_aquaculture_pond_id": getattr(e, "home_aquaculture_pond_id", None),
         "home_aquaculture_pond_name": (
             (e.home_aquaculture_pond.name or "").strip()
@@ -489,7 +499,20 @@ def _pond_allocations_for_payroll(payroll_id: int) -> list[dict]:
     ]
 
 
+def _pond_allocation_totals(p: PayrollRun, allocs: list[dict]) -> tuple[Decimal, Decimal]:
+    """Return (pond_alloc_sum, company_site_portion) for mixed entity payroll."""
+    gross = _q_money(p.total_gross or Decimal("0"))
+    pond_sum = _q_money(
+        sum(_q_money(Decimal(a.get("amount") or "0")) for a in allocs)
+    )
+    company_portion = _q_money(max(gross - pond_sum, Decimal("0")))
+    return pond_sum, company_portion
+
+
 def _payroll_run_to_json(p: PayrollRun, *, include_allocations: bool = True) -> dict:
+    from api.services.gl_posting import reconcile_payroll_run_gl_state
+
+    p = reconcile_payroll_run_gl_state(p.company_id, p)
     jn = ""
     if p.salary_journal_id:
         sj = getattr(p, "salary_journal", None)
@@ -538,8 +561,51 @@ def _payroll_run_to_json(p: PayrollRun, *, include_allocations: bool = True) -> 
             if getattr(p, "salary_expense_account_id", None) and getattr(p, "salary_expense_account", None)
             else ""
         ),
+        "subledger_employee_id": getattr(p, "subledger_employee_id", None),
     }
-    out["pond_allocations"] = _pond_allocations_for_payroll(p.id) if include_allocations else []
+    sub_emp = getattr(p, "subledger_employee", None)
+    if sub_emp is None and getattr(p, "subledger_employee_id", None):
+        sub_emp = Employee.objects.filter(pk=p.subledger_employee_id).only(
+            "employee_number", "employee_code", "first_name", "last_name"
+        ).first()
+    if sub_emp is not None:
+        out["subledger_employee_number"] = (
+            sub_emp.employee_number or sub_emp.employee_code or ""
+        ).strip()
+        nm = f"{sub_emp.first_name or ''} {sub_emp.last_name or ''}".strip()
+        out["subledger_employee_name"] = nm or out["subledger_employee_number"]
+    else:
+        out["subledger_employee_number"] = ""
+        out["subledger_employee_name"] = ""
+    emp_rows, emp_source, emp_warnings = employee_allocations_for_payroll(p.company_id, p)
+    out["employee_allocations"] = emp_rows
+    out["employee_allocations_total"] = float(
+        sum(Decimal(str(r.get("amount") or "0")) for r in emp_rows)
+    )
+    out["employee_allocations_source"] = emp_source
+    if emp_warnings:
+        out["employee_allocation_warnings"] = emp_warnings
+    allocs = _pond_allocations_for_payroll(p.id) if include_allocations else []
+    out["pond_allocations"] = allocs
+    if include_allocations:
+        pond_sum, company_portion = _pond_allocation_totals(p, allocs)
+        out["pond_allocations_total"] = float(pond_sum)
+        out["company_payroll_portion"] = float(company_portion)
+        out["is_mixed_entity_payroll"] = bool(allocs) and company_portion > Decimal("0.02")
+        co_aq = Company.objects.filter(pk=p.company_id).only("aquaculture_enabled").first()
+        if co_aq and getattr(co_aq, "aquaculture_enabled", False):
+            out["aquaculture_pond_options"] = [
+                {
+                    "id": row.id,
+                    "name": (row.name or "").strip() or f"Pond #{row.id}",
+                    "is_active": bool(row.is_active),
+                }
+                for row in AquaculturePond.objects.filter(company_id=p.company_id)
+                .only("id", "name", "is_active", "sort_order")
+                .order_by("sort_order", "id")
+            ]
+        else:
+            out["aquaculture_pond_options"] = []
     return out
 
 
@@ -555,7 +621,9 @@ def _validate_payroll_period(start: date | None, end: date | None, pay: date | N
 
 def _sync_payroll_pond_allocations(company_id: int, p: PayrollRun, body: dict) -> JsonResponse | None:
     """
-    Replace pond allocations for this payroll run. Sum of amounts must equal total_gross (within 0.02).
+    Replace pond allocations for this payroll run.
+    Sum of pond amounts must not exceed total_gross (within 0.02).
+    When sum is less than gross, the remainder posts to company/site payroll (6400).
     """
     if "pond_allocations" not in body:
         return None
@@ -584,12 +652,12 @@ def _sync_payroll_pond_allocations(company_id: int, p: PayrollRun, body: dict) -
         entries.append((pid, _q_money(amt)))
         total += _q_money(amt)
     gross = _q_money(p.total_gross or Decimal("0"))
-    if abs(total - gross) > Decimal("0.02"):
+    if total > gross + Decimal("0.02"):
         return JsonResponse(
             {
                 "detail": (
-                    f"pond_allocations must sum to total gross wages ({gross}); "
-                    f"sum of submitted amounts is {total}."
+                    f"Pond wage splits ({total}) cannot exceed total gross wages ({gross}). "
+                    "Reduce pond amounts or increase gross pay."
                 )
             },
             status=400,
@@ -599,6 +667,56 @@ def _sync_payroll_pond_allocations(company_id: int, p: PayrollRun, body: dict) -
         if amt == 0:
             continue
         PayrollRunPondAllocation.objects.create(payroll_run=p, pond_id=pid, amount=amt)
+    return None
+
+
+def _sync_payroll_employee_allocations(company_id: int, p: PayrollRun, body: dict) -> JsonResponse | None:
+    """Replace per-employee wage rows on a payroll run (must not exceed total_gross)."""
+    if "employee_allocations" not in body:
+        return None
+    alloc = body.get("employee_allocations")
+    if not isinstance(alloc, list):
+        return JsonResponse({"detail": "employee_allocations must be a list"}, status=400)
+    entries: list[tuple[Employee, Decimal]] = []
+    seen: set[int] = set()
+    total = Decimal("0")
+    for row in alloc:
+        if not isinstance(row, dict):
+            return JsonResponse({"detail": "Each employee_allocation must be an object"}, status=400)
+        eid = row.get("employee_id")
+        try:
+            eid = int(eid)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "employee_id must be an integer in each employee_allocation"}, status=400)
+        if eid in seen:
+            return JsonResponse({"detail": f"Duplicate employee_id {eid} in employee_allocations"}, status=400)
+        seen.add(eid)
+        emp = Employee.objects.filter(pk=eid, company_id=company_id, is_active=True).first()
+        if not emp:
+            return JsonResponse({"detail": f"Employee {eid} not found or inactive"}, status=404)
+        amt = _decimal(row.get("amount"), Decimal("0"))
+        if amt < 0:
+            return JsonResponse({"detail": "Allocation amount cannot be negative"}, status=400)
+        entries.append((emp, _q_money(amt)))
+        total += _q_money(amt)
+    gross = _q_money(p.total_gross or Decimal("0"))
+    if total > gross + Decimal("0.02"):
+        return JsonResponse(
+            {
+                "detail": (
+                    f"Employee wage rows ({total}) cannot exceed total gross wages ({gross}). "
+                    "Reduce employee amounts or increase gross pay."
+                )
+            },
+            status=400,
+        )
+    from api.services.employee_payroll_allocations import replace_payroll_employee_allocations
+
+    replace_payroll_employee_allocations(p.id, entries)
+    if len(entries) == 1:
+        PayrollRun.objects.filter(pk=p.pk).update(subledger_employee_id=entries[0][0].id)
+    elif len(entries) != 1:
+        PayrollRun.objects.filter(pk=p.pk).update(subledger_employee_id=None)
     return None
 
 
@@ -620,6 +738,9 @@ def _validate_payroll_amounts(gross: Decimal, ded: Decimal, net: Decimal) -> str
 def payroll_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
+        from api.services.gl_posting import reconcile_company_payroll_gl_states
+
+        reconcile_company_payroll_gl_states(cid)
         qs = PayrollRun.objects.filter(company_id=cid).select_related(
             "salary_journal", "station", "salary_expense_account"
         )
@@ -848,6 +969,17 @@ def payroll_detail(request, payroll_id: int):
             sync_err = _sync_payroll_pond_allocations(cid, p, body)
             if sync_err:
                 return sync_err
+        if "employee_allocations" in body:
+            if p.salary_journal_id:
+                return JsonResponse(
+                    {
+                        "detail": "Cannot change employee wage rows after salary is posted to the general ledger.",
+                    },
+                    status=400,
+                )
+            sync_err = _sync_payroll_employee_allocations(cid, p, body)
+            if sync_err:
+                return sync_err
         p2 = (
             PayrollRun.objects.filter(pk=p.pk, company_id=cid)
             .select_related("salary_journal", "station", "salary_expense_account")
@@ -900,6 +1032,7 @@ def payroll_from_employees(request, payroll_id: int):
     p.subledger_employee_id = None
     p.save()
     p.refresh_from_db()
+    sync_payroll_employee_allocations_all_active(cid, p)
     pond_warnings: list[str] = []
     co_aq = Company.objects.filter(pk=cid).only("aquaculture_enabled").first()
     if co_aq and getattr(co_aq, "aquaculture_enabled", False):
@@ -908,9 +1041,14 @@ def payroll_from_employees(request, payroll_id: int):
         if labor_coa and not p.salary_expense_account_id:
             PayrollRun.objects.filter(pk=p.pk).update(salary_expense_account_id=labor_coa.id)
             p.refresh_from_db()
+    p.refresh_from_db()
+    allocs = _pond_allocations_for_payroll(p.id)
+    _, company_portion = _pond_allocation_totals(p, allocs)
+    sync_payroll_station_from_employees(cid, p, company_site_gross=company_portion)
+    p.refresh_from_db()
     p = (
         PayrollRun.objects.filter(pk=p.id, company_id=cid)
-        .select_related("salary_journal", "salary_expense_account")
+        .select_related("salary_journal", "salary_expense_account", "station")
         .first()
     )
     out = _payroll_run_to_json(p)
@@ -977,6 +1115,7 @@ def payroll_from_one_employee(request, payroll_id: int):
     p.subledger_employee_id = eid
     p.save()
     p.refresh_from_db()
+    sync_single_payroll_employee_allocation(cid, p, emp, gross_amount=s)
     pond_warnings: list[str] = []
     co_aq = Company.objects.filter(pk=cid).only("aquaculture_enabled").first()
     if co_aq and getattr(co_aq, "aquaculture_enabled", False):
@@ -985,9 +1124,13 @@ def payroll_from_one_employee(request, payroll_id: int):
         if labor_coa and not p.salary_expense_account_id:
             PayrollRun.objects.filter(pk=p.pk).update(salary_expense_account_id=labor_coa.id)
             p.refresh_from_db()
+    p.refresh_from_db()
+    allocs = _pond_allocations_for_payroll(p.id)
+    _, company_portion = _pond_allocation_totals(p, allocs)
+    sync_payroll_station_from_employees(cid, p, company_site_gross=company_portion)
     p = (
         PayrollRun.objects.filter(pk=p.id, company_id=cid)
-        .select_related("salary_journal", "salary_expense_account")
+        .select_related("salary_journal", "salary_expense_account", "station")
         .first()
     )
     out = _payroll_run_to_json(p)
@@ -1017,14 +1160,51 @@ def payroll_pond_allocations_from_employees(request, payroll_id: int):
             status=400,
         )
     _, pond_warnings = sync_payroll_pond_allocations_from_employees(cid, p)
+    emp_warnings: list[str] = []
+    p.refresh_from_db()
+    allocs = _pond_allocations_for_payroll(p.id)
+    _, company_portion = _pond_allocation_totals(p, allocs)
+    sync_payroll_station_from_employees(cid, p, company_site_gross=company_portion)
     p = (
         PayrollRun.objects.filter(pk=p.id, company_id=cid)
-        .select_related("salary_journal", "salary_expense_account")
+        .select_related("salary_journal", "salary_expense_account", "station")
         .first()
     )
     out = _payroll_run_to_json(p)
     if pond_warnings:
         out["pond_allocation_warnings"] = pond_warnings
+    if emp_warnings:
+        out["employee_allocation_warnings"] = (out.get("employee_allocation_warnings") or []) + emp_warnings
+    return JsonResponse(out, status=200)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def payroll_employee_allocations_from_hr(request, payroll_id: int):
+    """
+    Rebuild per-employee wage rows from HR wage scope (does not change payroll totals).
+    """
+    cid = request.company_id
+    p = PayrollRun.objects.filter(pk=payroll_id, company_id=cid).first()
+    if not p:
+        return JsonResponse({"detail": "Not found"}, status=404)
+    if p.salary_journal_id:
+        return JsonResponse({"detail": "Already posted. Employee wage rows are locked."}, status=400)
+    _, emp_warnings = sync_payroll_employee_allocations_from_hr(cid, p)
+    p.refresh_from_db()
+    allocs = _pond_allocations_for_payroll(p.id)
+    _, company_portion = _pond_allocation_totals(p, allocs)
+    sync_payroll_station_from_employees(cid, p, company_site_gross=company_portion)
+    p = (
+        PayrollRun.objects.filter(pk=p.id, company_id=cid)
+        .select_related("salary_journal", "salary_expense_account", "subledger_employee", "station")
+        .first()
+    )
+    out = _payroll_run_to_json(p)
+    if emp_warnings:
+        out["employee_allocation_warnings"] = emp_warnings
     return JsonResponse(out, status=200)
 
 

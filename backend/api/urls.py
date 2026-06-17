@@ -452,6 +452,10 @@ urlpatterns = [
         "payroll/<int:payroll_id>/pond-allocations-from-employees/",
         hr_views.payroll_pond_allocations_from_employees,
     ),
+    path(
+        "payroll/<int:payroll_id>/employee-allocations-from-hr/",
+        hr_views.payroll_employee_allocations_from_hr,
+    ),
     path("payroll/<int:payroll_id>/from-one-employee/", hr_views.payroll_from_one_employee),
     path("payroll/<int:payroll_id>/post-to-books/", hr_views.payroll_post_to_books),
     path("payroll/<int:payroll_id>/", hr_views.payroll_detail),

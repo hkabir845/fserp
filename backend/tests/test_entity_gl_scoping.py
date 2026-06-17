@@ -308,4 +308,8 @@ def test_payroll_post_blocks_without_station_or_pond_split(company_tenant_with_g
         )
     _je, err = post_payroll_salary(cid, pr)
     assert _je is None
-    assert "payroll site" in err.lower() or "pond" in err.lower()
+    assert err
+    assert any(
+        phrase in err.lower()
+        for phrase in ("payroll site", "pond", "6400", "salaries")
+    )

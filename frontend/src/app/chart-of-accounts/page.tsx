@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
-import { Plus, Edit2, Trash2, X, FileText, Filter, AlertTriangle, RefreshCw, LayoutTemplate, Loader2, Printer } from 'lucide-react'
+import { Plus, Edit2, Trash2, X, FileText, Filter, AlertTriangle, RefreshCw, LayoutTemplate, Loader2, Printer, ExternalLink } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin, isSuperAdminRole } from '@/lib/api'
 import { useCompany } from '@/contexts/CompanyContext'
@@ -15,6 +16,10 @@ import { printLedgerStatement, type LedgerStatementPrintInput, buildLedgerStatem
 import { loadPrintBranding, type PrintBranding } from '@/utils/printBranding'
 import { downloadCsvFile } from '@/utils/businessDocumentExport'
 import { reportScopeQueryParams } from '@/app/reports/reportSiteScope'
+import {
+  confirmDeletePaymentDialog,
+  deletePaymentRequest,
+} from '@/app/payments/paymentMutations'
 
 interface AccountUsage {
   journal_lines: number
@@ -58,6 +63,15 @@ interface Account {
   bank_register?: BankRegisterSummary | null
 }
 
+interface StatementAllocation {
+  document_type: 'receivable' | 'payable'
+  invoice_id?: number
+  bill_id?: number
+  document_number: string
+  amount: string
+  contact_id?: number
+}
+
 interface StatementTransaction {
   id: number
   type: string
@@ -73,6 +87,15 @@ interface StatementTransaction {
   journal_entry_number: string
   other_account_name: string | null
   other_account_code: string | null
+  source_type?: 'payment_received' | 'payment_made' | 'receivable' | 'payable' | 'payroll'
+  source_id?: number
+  source_label?: string
+  can_delete_payment?: boolean
+  can_delete_payroll_journal?: boolean
+  immutable_reason?: string | null
+  contact_type?: 'customer' | 'vendor'
+  contact_id?: number
+  allocations?: StatementAllocation[]
 }
 
 interface AccountStatement {
@@ -256,6 +279,25 @@ function mapStatementApiToView(
       journal_entry_number: String(t.journal_entry_number ?? t.entry_number ?? ''),
       other_account_name: (t.other_account_name as string | null) ?? null,
       other_account_code: (t.other_account_code as string | null) ?? null,
+      source_type: t.source_type as StatementTransaction['source_type'],
+      source_id: t.source_id != null ? Number(t.source_id) : undefined,
+      source_label: t.source_label != null ? String(t.source_label) : undefined,
+      can_delete_payment: t.can_delete_payment === true,
+      can_delete_payroll_journal: t.can_delete_payroll_journal === true,
+      immutable_reason:
+        t.immutable_reason != null ? String(t.immutable_reason) : undefined,
+      contact_type: t.contact_type as StatementTransaction['contact_type'],
+      contact_id: t.contact_id != null ? Number(t.contact_id) : undefined,
+      allocations: Array.isArray(t.allocations)
+        ? (t.allocations as Record<string, unknown>[]).map((a) => ({
+            document_type: a.document_type as StatementAllocation['document_type'],
+            invoice_id: a.invoice_id != null ? Number(a.invoice_id) : undefined,
+            bill_id: a.bill_id != null ? Number(a.bill_id) : undefined,
+            document_number: String(a.document_number ?? ''),
+            amount: String(a.amount ?? ''),
+            contact_id: a.contact_id != null ? Number(a.contact_id) : undefined,
+          }))
+        : undefined,
     }
   })
 
@@ -376,6 +418,8 @@ export default function ChartOfAccountsPage() {
   const [statementStartDate, setStatementStartDate] = useState<string>('')
   const [statementEndDate, setStatementEndDate] = useState<string>('')
   const [statementPeriodMode, setStatementPeriodMode] = useState<StatementPeriodMode>('range')
+  const [statementPaymentDeletingId, setStatementPaymentDeletingId] = useState<number | null>(null)
+  const [statementPayrollRemovingId, setStatementPayrollRemovingId] = useState<number | null>(null)
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
 
   /** Built-in fuel retail COA template (metadata from API). */
@@ -820,6 +864,56 @@ export default function ChartOfAccountsPage() {
       toast.error(error.response?.data?.detail || 'Failed to load account statement')
     } finally {
       setStatementLoading(false)
+    }
+  }
+
+  const handleStatementDeletePayment = async (transaction: StatementTransaction) => {
+    if (!transaction.source_id || !transaction.can_delete_payment) return
+    const label = transaction.source_label || `PAY-${transaction.source_id}`
+    if (!confirmDeletePaymentDialog(label)) return
+    setStatementPaymentDeletingId(transaction.source_id)
+    try {
+      const banner = await deletePaymentRequest(transaction.source_id)
+      toast.success(banner.title)
+      if (statementAccountId) {
+        await fetchStatement(statementAccountId)
+        await fetchAccounts()
+      }
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { detail?: string } } }
+      const d = ax.response?.data?.detail
+      toast.error(typeof d === 'string' ? d : 'Failed to delete payment')
+    } finally {
+      setStatementPaymentDeletingId(null)
+    }
+  }
+
+  const handleStatementRemovePayrollJournal = async (transaction: StatementTransaction) => {
+    if (!transaction.journal_entry_id || !transaction.can_delete_payroll_journal) return
+    const label = transaction.source_label || `PR-${transaction.source_id ?? ''}`
+    if (
+      !window.confirm(
+        `Remove salary journal for ${label}?\n\nThis deletes the AUTO-PAYROLL entry from the general ledger and sets the payroll run back to draft.`
+      )
+    ) {
+      return
+    }
+    setStatementPayrollRemovingId(transaction.source_id ?? transaction.journal_entry_id)
+    try {
+      await api.post(`/journal-entries/${transaction.journal_entry_id}/unpost/`, {
+        remove_system_entry: true,
+      })
+      toast.success(`Payroll ${label} returned to draft.`)
+      if (statementAccountId) {
+        await fetchStatement(statementAccountId)
+        await fetchAccounts()
+      }
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { detail?: string } } }
+      const d = ax.response?.data?.detail
+      toast.error(typeof d === 'string' ? d : 'Failed to remove payroll journal')
+    } finally {
+      setStatementPayrollRemovingId(null)
     }
   }
 
@@ -1771,6 +1865,11 @@ export default function ChartOfAccountsPage() {
 
             {/* Period filter */}
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+              <p className="mb-3 text-xs text-gray-600">
+                <strong>Delete</strong> on payment rows (<span className="font-mono">PAY-…</span>) or
+                payroll salary rows (<span className="font-mono">AUTO-PAYROLL-…</span>) removes the
+                journal from the GL and restores draft status on the payroll run where applicable.
+              </p>
               <div className="flex flex-wrap items-end gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Report period</label>
@@ -1848,7 +1947,7 @@ export default function ChartOfAccountsPage() {
             </div>
 
             {/* Transactions Table */}
-            <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="bg-white rounded-lg shadow overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -1861,6 +1960,7 @@ export default function ChartOfAccountsPage() {
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Balance</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -1869,7 +1969,7 @@ export default function ChartOfAccountsPage() {
                     <td colSpan={4} className="px-6 py-4 text-sm font-semibold text-gray-900">
                       Opening Balance
                     </td>
-                    <td colSpan={3} className="px-6 py-4 text-sm text-right font-semibold text-gray-900">
+                    <td colSpan={4} className="px-6 py-4 text-sm text-right font-semibold text-gray-900">
                       {statement.account.currency} {formatNumber(Number(statement.opening_balance))}
                     </td>
                   </tr>
@@ -1877,7 +1977,7 @@ export default function ChartOfAccountsPage() {
                   {/* Transactions */}
                   {statement.transactions.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                         No transactions found for this period
                       </td>
                     </tr>
@@ -1932,10 +2032,64 @@ export default function ChartOfAccountsPage() {
                           <td className="px-6 py-4 text-sm text-gray-600">
                             <span className="font-mono whitespace-nowrap">{transaction.reference || '—'}</span>
                             {transaction.journal_entry_id > 0 && (
-                              <span className="text-gray-400 text-xs block mt-0.5">JE #{transaction.journal_entry_id}</span>
+                              <Link
+                                href={`/journal-entries?view=${transaction.journal_entry_id}`}
+                                className="text-blue-600 hover:text-blue-800 text-xs mt-0.5 inline-flex items-center gap-0.5"
+                              >
+                                JE #{transaction.journal_entry_id}
+                                <ExternalLink className="h-3 w-3" />
+                              </Link>
                             )}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-900">
+                            {transaction.source_type && transaction.source_id ? (
+                              <div className="mb-1">
+                                {transaction.source_type === 'receivable' ? (
+                                  <Link
+                                    href={`/invoices?view=${transaction.source_id}`}
+                                    className="font-medium text-blue-700 hover:underline inline-flex items-center gap-1"
+                                  >
+                                    Receivable: {transaction.source_label || `INV-${transaction.source_id}`}
+                                    <ExternalLink className="h-3 w-3" />
+                                  </Link>
+                                ) : transaction.source_type === 'payable' ? (
+                                  <Link
+                                    href={`/bills?view=${transaction.source_id}`}
+                                    className="font-medium text-blue-700 hover:underline inline-flex items-center gap-1"
+                                  >
+                                    Payable: {transaction.source_label || `BILL-${transaction.source_id}`}
+                                    <ExternalLink className="h-3 w-3" />
+                                  </Link>
+                                ) : transaction.source_type === 'payroll' ? (
+                                  <Link
+                                    href="/payroll"
+                                    className="font-medium text-blue-700 hover:underline inline-flex items-center gap-1"
+                                  >
+                                    Payroll: {transaction.source_label || `PR-${transaction.source_id}`}
+                                    <ExternalLink className="h-3 w-3" />
+                                  </Link>
+                                ) : (
+                                  <>
+                                    <Link
+                                      href={
+                                        transaction.source_type === 'payment_received'
+                                          ? `/payments/received?edit=${transaction.source_id}`
+                                          : `/payments/made?edit=${transaction.source_id}`
+                                      }
+                                      className="font-medium text-blue-700 hover:underline inline-flex items-center gap-1"
+                                    >
+                                      {transaction.source_label || `PAY-${transaction.source_id}`}
+                                      <ExternalLink className="h-3 w-3" />
+                                    </Link>
+                                    <span className="text-gray-500 text-xs ml-1">
+                                      ({transaction.source_type === 'payment_received'
+                                        ? 'Receipt'
+                                        : 'Payment made'})
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            ) : null}
                             {transaction.journal_description || transaction.description ? (
                               <>
                                 <div className="text-gray-900">
@@ -1947,8 +2101,43 @@ export default function ChartOfAccountsPage() {
                                   <div className="text-gray-500 text-xs mt-0.5">Line: {transaction.description}</div>
                                 )}
                               </>
-                            ) : (
+                            ) : !transaction.source_type ? (
                               '—'
+                            ) : null}
+                            {transaction.allocations && transaction.allocations.length > 0 && (
+                              <ul className="mt-1.5 space-y-0.5 text-xs">
+                                {transaction.allocations.map((alloc, allocIdx) => {
+                                  const docHref =
+                                    alloc.document_type === 'receivable' && alloc.invoice_id
+                                      ? `/invoices?view=${alloc.invoice_id}`
+                                      : alloc.document_type === 'payable' && alloc.bill_id
+                                        ? `/bills?view=${alloc.bill_id}`
+                                        : null
+                                  const docLabel =
+                                    alloc.document_type === 'receivable'
+                                      ? `Receivable: ${alloc.document_number}`
+                                      : `Payable: ${alloc.document_number}`
+                                  return (
+                                    <li key={allocIdx}>
+                                      {docHref ? (
+                                        <Link
+                                          href={docHref}
+                                          className="text-blue-700 hover:underline inline-flex items-center gap-0.5"
+                                        >
+                                          {docLabel}
+                                          <ExternalLink className="h-3 w-3" />
+                                        </Link>
+                                      ) : (
+                                        <span className="text-gray-700">{docLabel}</span>
+                                      )}
+                                      <span className="text-gray-500 ml-1 tabular-nums">
+                                        {statement.account.currency}
+                                        {formatNumber(Number(alloc.amount) || 0)}
+                                      </span>
+                                    </li>
+                                  )
+                                })}
+                              </ul>
                             )}
                             {transaction.other_account_name && (
                               <span className="text-gray-500 text-xs block mt-0.5">
@@ -1971,6 +2160,66 @@ export default function ChartOfAccountsPage() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">
                             {statement.account.currency} {formatNumber(Number(runningBalance))}
                           </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                            {transaction.source_type === 'payment_received' ||
+                            transaction.source_type === 'payment_made' ? (
+                              transaction.can_delete_payment ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleStatementDeletePayment(transaction)}
+                                  disabled={statementPaymentDeletingId === transaction.source_id}
+                                  title="Delete payment (removes AUTO-PAY journal and restores AR/AP)"
+                                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  {statementPaymentDeletingId === transaction.source_id
+                                    ? 'Deleting…'
+                                    : 'Delete'}
+                                </button>
+                              ) : (
+                                <span
+                                  className="text-xs text-gray-400"
+                                  title={transaction.immutable_reason || 'Cannot delete'}
+                                >
+                                  Locked
+                                </span>
+                              )
+                            ) : transaction.source_type === 'payroll' &&
+                              transaction.can_delete_payroll_journal ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleStatementRemovePayrollJournal(transaction)}
+                                disabled={
+                                  statementPayrollRemovingId ===
+                                  (transaction.source_id ?? transaction.journal_entry_id)
+                                }
+                                title="Remove salary journal — payroll run returns to draft"
+                                className="inline-flex items-center gap-1 rounded px-2 py-1 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                {statementPayrollRemovingId ===
+                                (transaction.source_id ?? transaction.journal_entry_id)
+                                  ? 'Removing…'
+                                  : 'Delete'}
+                              </button>
+                            ) : transaction.source_type === 'receivable' && transaction.source_id ? (
+                              <Link
+                                href={`/invoices?view=${transaction.source_id}`}
+                                className="text-xs font-medium text-blue-700 hover:underline"
+                              >
+                                Open
+                              </Link>
+                            ) : transaction.source_type === 'payable' && transaction.source_id ? (
+                              <Link
+                                href={`/bills?view=${transaction.source_id}`}
+                                className="text-xs font-medium text-blue-700 hover:underline"
+                              >
+                                Open
+                              </Link>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </td>
                         </tr>
                       )
                     })
@@ -1990,6 +2239,7 @@ export default function ChartOfAccountsPage() {
                     <td className="px-6 py-4 text-sm text-right font-semibold text-gray-900">
                       {statement.account.currency} {formatNumber(Number(statement.closing_balance))}
                     </td>
+                    <td />
                   </tr>
                 </tbody>
               </table>

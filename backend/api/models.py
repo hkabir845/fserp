@@ -3143,3 +3143,25 @@ class PayrollRunPondAllocation(models.Model):
         indexes = [
             models.Index(fields=["pond"]),
         ]
+
+
+class PayrollRunEmployeeAllocation(models.Model):
+    """
+    Attribute payroll gross wages to named employees (HR subledger and payroll audit trail).
+    Sum of amounts should match the portion of PayrollRun.total_gross attributed to listed staff.
+    """
+
+    payroll_run = models.ForeignKey(
+        PayrollRun, on_delete=models.CASCADE, related_name="employee_allocations"
+    )
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="payroll_wage_allocations"
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        db_table = "payroll_run_employee_allocation"
+        unique_together = [["payroll_run", "employee"]]
+        indexes = [
+            models.Index(fields=["employee"]),
+        ]

@@ -2533,6 +2533,18 @@ export default function BillsPage() {
     }
   }
 
+  const billViewDeepLinkConsumed = useRef(false)
+  useEffect(() => {
+    if (billViewDeepLinkConsumed.current || loading) return
+    const raw = searchParams.get('view')
+    if (!raw || !/^\d+$/.test(raw)) return
+    const id = parseInt(raw, 10)
+    if (!Number.isFinite(id) || id <= 0) return
+    billViewDeepLinkConsumed.current = true
+    void handleViewBill(id)
+    window.history.replaceState({}, '', '/bills')
+  }, [loading, searchParams])
+
   const handleCloseViewModal = () => {
     setShowViewModal(false)
     setViewingBill(null)

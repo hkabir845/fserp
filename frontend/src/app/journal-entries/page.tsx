@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, Fragment } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, Fragment, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { Plus, Edit2, Trash2, X, Eye, CheckCircle, XCircle, AlertCircle, Search, Filter, AlertTriangle, RefreshCw } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
@@ -43,6 +43,8 @@ interface JournalEntryLine {
   debit_account_id?: number | null
   credit_account_id?: number | null
   amount: number
+  debit?: number | string
+  credit?: number | string
   debit_account_name?: string
   credit_account_name?: string
   debit_account_code?: string
@@ -132,6 +134,7 @@ function validateEntityScopingForLines(
 
 export default function JournalEntriesPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const toast = useToast()
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [allEntries, setAllEntries] = useState<JournalEntry[]>([]) // Store all entries for client-side filtering
@@ -273,7 +276,11 @@ export default function JournalEntriesPage() {
       ])
 
       if (entriesRes.status === 'fulfilled') {
-        const entriesData = entriesRes.value.data
+        const raw = entriesRes.value.data
+        const entriesData = Array.isArray(raw) ? raw : []
+        if (!Array.isArray(raw)) {
+          console.error('Journal entries API did not return an array:', raw)
+        }
         setAllEntries(entriesData)
         setError(null)
         // Filters will be applied automatically via useEffect
@@ -706,6 +713,18 @@ export default function JournalEntriesPage() {
     }
   }
 
+  const viewDeepLinkConsumed = useRef(false)
+  useEffect(() => {
+    if (viewDeepLinkConsumed.current || loading) return
+    const raw = searchParams.get('view')
+    if (!raw || !/^\d+$/.test(raw)) return
+    const id = parseInt(raw, 10)
+    if (!Number.isFinite(id) || id <= 0) return
+    viewDeepLinkConsumed.current = true
+    void handleView(id)
+    window.history.replaceState({}, '', '/journal-entries')
+  }, [loading, searchParams])
+
   const resetForm = () => {
     setFormData({
       entry_date: new Date().toISOString().split('T')[0],
@@ -1027,7 +1046,7 @@ export default function JournalEntriesPage() {
             </div>
           )}
 
-          <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="bg-white rounded-lg shadow overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -1057,13 +1076,13 @@ export default function JournalEntriesPage() {
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {entry.description || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 text-sm text-gray-600 max-w-[14rem] truncate" title={entry.station_name?.trim() || undefined}>
                       {entry.station_name?.trim() ? entry.station_name : '—'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 tabular-nums">
                       {currencySymbol}{formatNumber(Number(entry.total_debit || 0))}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 tabular-nums">
                       {currencySymbol}{formatNumber(Number(entry.total_credit || 0))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -1248,11 +1267,15 @@ export default function JournalEntriesPage() {
                       <td className="px-4 py-2 text-sm text-gray-600">
                         {line.pond_name?.trim() ? line.pond_name : '—'}
                       </td>
-                      <td className="px-4 py-2 text-sm text-right font-medium text-gray-900">
-                        {line.debit_account_id ? `${currencySymbol}${formatNumber(Number(line.amount))}` : '-'}
+                      <td className="px-4 py-2 text-sm text-right font-medium text-gray-900 tabular-nums">
+                        {Number(line.debit) > 0
+                          ? `${currencySymbol}${formatNumber(Number(line.debit))}`
+                          : '-'}
                       </td>
-                      <td className="px-4 py-2 text-sm text-right font-medium text-gray-900">
-                        {line.credit_account_id ? `${currencySymbol}${formatNumber(Number(line.amount))}` : '-'}
+                      <td className="px-4 py-2 text-sm text-right font-medium text-gray-900 tabular-nums">
+                        {Number(line.credit) > 0
+                          ? `${currencySymbol}${formatNumber(Number(line.credit))}`
+                          : '-'}
                       </td>
                     </tr>
                   ))}

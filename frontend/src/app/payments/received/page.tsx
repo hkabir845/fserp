@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import {
@@ -84,6 +84,7 @@ type PaymentFilter = 'all' | 'received' | 'outstanding'
 
 export default function PaymentReceivedPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [allOutstandingInvoices, setAllOutstandingInvoices] = useState<OutstandingInvoice[]>([])
@@ -111,6 +112,13 @@ export default function PaymentReceivedPage() {
     fetchPaymentsReceived()
     fetchAllOutstandingInvoices()
   }, [startDate, endDate])
+
+  useEffect(() => {
+    const raw = searchParams.get('edit')
+    if (!raw || !/^\d+$/.test(raw)) return
+    const id = parseInt(raw, 10)
+    if (Number.isFinite(id) && id > 0) setEditPaymentId(id)
+  }, [searchParams])
 
   const fetchCustomers = async () => {
     try {

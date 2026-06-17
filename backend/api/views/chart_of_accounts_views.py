@@ -13,6 +13,7 @@ from api.views.common import parse_json_body, parse_optional_company_station_id,
 from api.models import BankAccount, ChartOfAccount, FundTransfer, JournalEntryLine, Payment
 from api.services.journal_statement import (
     build_statement_transactions,
+    enrich_statement_transaction_sources,
     journal_net_movement,
     journal_net_movement_map,
 )
@@ -476,6 +477,7 @@ def chart_of_account_statement(request, account_id: int):
     transactions, running, opening = build_statement_transactions(
         a, start_date=start_date, end_date=end_date, station_id=st_sid
     )
+    enrich_statement_transaction_sources(transactions, company_id=request.company_id)
     payload = {
         "account": _account_to_json(a, linked_banks=_linked_banks_payload(a)),
         "start_date": start_date.isoformat() if start_date else None,

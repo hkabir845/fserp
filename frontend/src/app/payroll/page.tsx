@@ -9,7 +9,6 @@ import { useToast } from '@/components/Toast'
 import { getCurrencySymbol, formatNumber, formatAmountPlain } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { getApiBaseUrl } from '@/lib/api'
-import { isTenantAdminAquacultureUser } from '@/navigation/erpAppMenu'
 import { formatBankRegisterLabel } from '@/lib/bankAccountDisplay'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import {
@@ -40,8 +39,30 @@ interface PayrollRun {
   message?: string
   created_at: string
   updated_at: string
+  station_id?: number | null
+  station_name?: string | null
   pond_allocations?: { pond_id: number; pond_name?: string; amount: string }[]
+  pond_allocations_total?: number
+  company_payroll_portion?: number
+  is_mixed_entity_payroll?: boolean
+  aquaculture_pond_options?: { id: number; name: string; is_active?: boolean }[]
   pond_allocation_warnings?: string[]
+  employee_allocations?: {
+    employee_id: number
+    employee_number?: string
+    employee_code?: string
+    employee_name?: string
+    amount: string | number
+    hr_salary?: string | number
+    labor_scope_label?: string
+    home_aquaculture_pond_name?: string
+  }[]
+  employee_allocations_total?: number
+  employee_allocations_source?: 'posted_ledger' | 'stored' | 'inferred_hr'
+  employee_allocation_warnings?: string[]
+  subledger_employee_id?: number | null
+  subledger_employee_number?: string
+  subledger_employee_name?: string
   salary_expense_account_id?: number | null
   salary_expense_account_code?: string | null
   salary_expense_account_name?: string | null
@@ -106,6 +127,125 @@ interface EmployeeRow {
   last_name: string
   salary: number | null
   is_active: boolean
+  home_station_id?: number | null
+  home_station_name?: string
+  work_site_label?: string
+  aquaculture_labor_scope?: string
+  home_aquaculture_pond_id?: number | null
+  home_aquaculture_pond_name?: string
+}
+
+function employeeWorkSiteLabel(e: EmployeeRow): string {
+  const fromApi = (e.work_site_label || '').trim()
+  if (fromApi) return fromApi
+  if (e.home_station_id != null && e.home_station_id > 0) {
+    const named = (e.home_station_name || '').trim()
+    if (named) return named
+    return `Site #${e.home_station_id}`
+  }
+  if (e.aquaculture_labor_scope === 'all_ponds_equal') {
+    return 'All ponds (equal share)'
+  }
+  if (e.aquaculture_labor_scope === 'assigned_pond') {
+    const pond = (e.home_aquaculture_pond_name || '').trim()
+    if (pond) return pond
+    if (e.home_aquaculture_pond_id) return `Pond #${e.home_aquaculture_pond_id}`
+    return 'Pond — not set'
+  }
+  return '—'
+}
+
+function employeePickerLabel(e: EmployeeRow, currencySymbol = ''): string {
+  const code = (e.employee_number || '').trim() || `ID ${e.id}`
+  const name = [e.first_name, e.last_name].filter(Boolean).join(' ')
+  const base = name ? `${code} — ${name}` : code
+  if (e.salary != null && Number(e.salary) > 0) {
+    return `${base} — ${currencySymbol}${formatNumber(Number(e.salary))}`
+  }
+  return base
+}
+
+function employeeAllocDraftFromPayrollApi(data: PayrollRun): { employee_id: string; amount: string }[] {
+  const source = data.employee_allocations_source
+  if (source !== 'stored' && source !== 'posted_ledger') {
+    return []
+  }
+  if (!Array.isArray(data.employee_allocations) || data.employee_allocations.length === 0) {
+    return []
+  }
+  return data.employee_allocations.map((x) => ({
+    employee_id: String(x.employee_id),
+    amount: String(x.amount ?? ''),
+  }))
+}
+
+/** Build pond P&L rows from employees picked on this run (separate from who gets paid). */
+function inferPondAllocationsFromEmployees(
+  draft: { employee_id: string; amount: string }[],
+  employees: EmployeeRow[],
+  ponds: { id: number; is_active?: boolean }[]
+): { pond_id: string; amount: string }[] {
+  const activeIds = ponds.filter((p) => p.is_active !== false).map((p) => p.id)
+  if (activeIds.length === 0) return []
+  const byPond = new Map<number, number>()
+
+  for (const row of draft) {
+    if (!row.employee_id) continue
+    const emp = employees.find((e) => String(e.id) === row.employee_id)
+    if (!emp) continue
+    const amt = parseMoneyInput(row.amount)
+    if (amt <= 0) continue
+    if (!emp.aquaculture_labor_scope || emp.aquaculture_labor_scope === 'not_applicable') continue
+
+    if (emp.aquaculture_labor_scope === 'all_ponds_equal') {
+      const n = activeIds.length
+      const base = Math.floor((amt / n) * 100) / 100
+      let allocated = 0
+      activeIds.forEach((pid, i) => {
+        const slice = i === n - 1 ? Math.round((amt - allocated) * 100) / 100 : base
+        byPond.set(pid, (byPond.get(pid) || 0) + slice)
+        allocated += slice
+      })
+    } else if (emp.aquaculture_labor_scope === 'assigned_pond' && emp.home_aquaculture_pond_id) {
+      const pid = emp.home_aquaculture_pond_id
+      byPond.set(pid, (byPond.get(pid) || 0) + amt)
+    }
+  }
+
+  return [...byPond.entries()]
+    .filter(([, amount]) => amount > 0)
+    .sort(([a], [b]) => a - b)
+    .map(([pond_id, amount]) => ({
+      pond_id: String(pond_id),
+      amount: formatAmountPlain(amount),
+    }))
+}
+
+/** True when this employee's wages post to site/company payroll (6400), not ponds only. */
+function employeeNeedsPayrollSite(e: EmployeeRow): boolean {
+  const scope = e.aquaculture_labor_scope
+  if (!scope || scope === 'not_applicable') return true
+  if (e.home_station_id != null && e.home_station_id > 0) return true
+  return false
+}
+
+/** Infer payroll site from HR employee picks; empty string = company-wide / pond-only. */
+function inferPayrollStationId(
+  draft: { employee_id: string }[],
+  employees: EmployeeRow[]
+): string {
+  const picked = draft
+    .map((r) => employees.find((e) => String(e.id) === r.employee_id))
+    .filter((e): e is EmployeeRow => e != null)
+  if (picked.length === 0) return ''
+
+  const siteStaff = picked.filter((e) => e.aquaculture_labor_scope !== 'all_ponds_equal')
+  const scoped = (siteStaff.length > 0 ? siteStaff : picked).filter(
+    (e) => e.home_station_id != null && e.home_station_id > 0
+  )
+  const stationIds = [...new Set(scoped.map((e) => e.home_station_id as number))]
+  if (stationIds.length === 1) return String(stationIds[0])
+  return ''
 }
 
 export default function PayrollPage() {
@@ -158,6 +298,8 @@ export default function PayrollPage() {
   } | null>(null)
   const [payFromSelect, setPayFromSelect] = useState<string>('')
   const payFromTouched = useRef(false)
+  const stationTouched = useRef(false)
+  const pondAllocTouched = useRef(false)
   const salaryExpenseTouched = useRef(false)
   const [amountSaving, setAmountSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
@@ -169,74 +311,86 @@ export default function PayrollPage() {
     d: '',
     n: '',
   })
+  const [pondAllocDraft, setPondAllocDraft] = useState<{ pond_id: string; amount: string }[]>([])
+  const [employeeAllocDraft, setEmployeeAllocDraft] = useState<
+    { employee_id: string; amount: string }[]
+  >([])
 
   const detailComputedGross = useMemo(
     () =>
       sumEarningInputs(detailAmounts.base, detailAmounts.ot, detailAmounts.bonus, detailAmounts.other),
     [detailAmounts.base, detailAmounts.ot, detailAmounts.bonus, detailAmounts.other]
   )
-  const [employees, setEmployees] = useState<EmployeeRow[]>([])
-  const [oneEmployeeId, setOneEmployeeId] = useState<string>('')
-  const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
-  /** Matches backend: pond APIs and splits are tenant Admin (or platform super-admin) only. */
-  const [aquacultureOpsUnlocked, setAquacultureOpsUnlocked] = useState(false)
-  const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string; is_active?: boolean }[]>([])
-  const [pondAllocDraft, setPondAllocDraft] = useState<{ pond_id: string; amount: string }[]>([])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const raw = localStorage.getItem('user')
-      if (!raw || raw === 'undefined' || raw === 'null') {
-        setAquacultureOpsUnlocked(false)
-        return
-      }
-      const u = JSON.parse(raw) as { role?: string }
-      const r = typeof u?.role === 'string' ? u.role.toLowerCase() : null
-      setAquacultureOpsUnlocked(isTenantAdminAquacultureUser(r, r === 'super_admin'))
-    } catch {
-      setAquacultureOpsUnlocked(false)
-    }
-  }, [])
-
-  const showPondAllocationWarnings = useCallback(
-    (data: PayrollRun) => {
-      const w = data.pond_allocation_warnings
-      if (Array.isArray(w) && w.length > 0) {
-        toast.error(w.slice(0, 4).join(' · ') + (w.length > 4 ? ` (+${w.length - 4} more)` : ''))
-      }
-    },
-    [toast]
+  const pondAllocDraftSum = useMemo(
+    () =>
+      pondAllocDraft.reduce((s, row) => {
+        if (!row.pond_id || String(row.amount).trim() === '') return s
+        return s + parseMoneyInput(row.amount)
+      }, 0),
+    [pondAllocDraft]
   )
 
-  const applyPayrollResponseToDetailState = useCallback((data: PayrollRun) => {
-    setSelectedPayroll(data)
-    setDetailAmounts(detailAmountsFromPayrollApi(data))
-    if (Array.isArray(data.pond_allocations) && data.pond_allocations.length > 0) {
-      setPondAllocDraft(
-        data.pond_allocations.map((x: { pond_id: number; amount: string | number }) => ({
-          pond_id: String(x.pond_id),
-          amount: String(x.amount ?? ''),
-        }))
-      )
-    } else if (aquaculturePonds.length > 0) {
-      setPondAllocDraft(aquaculturePonds.map((p) => ({ pond_id: String(p.id), amount: '' })))
-    } else {
-      setPondAllocDraft([])
-    }
-  }, [aquaculturePonds])
+  const employeeAllocDraftSum = useMemo(
+    () =>
+      employeeAllocDraft.reduce((s, row) => {
+        if (!row.employee_id || String(row.amount).trim() === '') return s
+        return s + parseMoneyInput(row.amount)
+      }, 0),
+    [employeeAllocDraft]
+  )
 
-  useEffect(() => {
-    const token = localStorage.getItem('access_token')
-    if (!token) {
-      router.push('/login')
-      return
+  const detailCompanyPayrollPortion = useMemo(
+    () => Math.max(0, detailComputedGross - pondAllocDraftSum),
+    [detailComputedGross, pondAllocDraftSum]
+  )
+
+  const isMixedEntityPayrollDraft = useMemo(
+    () => pondAllocDraftSum > 0.02 && detailCompanyPayrollPortion > 0.02,
+    [pondAllocDraftSum, detailCompanyPayrollPortion]
+  )
+  const [employees, setEmployees] = useState<EmployeeRow[]>([])
+  const activeEmployees = useMemo(
+    () => employees.filter((e) => e.is_active !== false),
+    [employees]
+  )
+  const employeesForPicker = useMemo(
+    () =>
+      [...activeEmployees].sort((a, b) =>
+        (a.employee_number || String(a.id)).localeCompare(b.employee_number || String(b.id), undefined, {
+          numeric: true,
+        })
+      ),
+    [activeEmployees]
+  )
+  const [oneEmployeeId, setOneEmployeeId] = useState<string>('')
+  const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
+  const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string; is_active?: boolean }[]>([])
+  const [stations, setStations] = useState<{ id: number; station_name: string; operates_fuel_retail?: boolean }[]>([])
+  const [detailStationId, setDetailStationId] = useState<string>('')
+  const pickedEmployeesInDraft = useMemo(
+    () =>
+      employeeAllocDraft
+        .map((r) => activeEmployees.find((e) => String(e.id) === r.employee_id))
+        .filter((e): e is EmployeeRow => e != null),
+    [employeeAllocDraft, activeEmployees]
+  )
+  /** Fuel/shop payroll site — hidden when every picked employee is pond-only. */
+  const showPayrollSiteSection = useMemo(() => {
+    if (!aquacultureEnabled) return true
+    const picked = pickedEmployeesInDraft
+    if (picked.length > 0 && picked.every((e) => !employeeNeedsPayrollSite(e))) {
+      return false
     }
-    fetchCompanyCurrency()
-    fetchPayrolls()
-    fetchBankAccounts()
-    fetchGlPayAccounts()
-  }, [router])
+    if (isMixedEntityPayrollDraft) return true
+    if (detailCompanyPayrollPortion > 0.02) return true
+    return picked.some(employeeNeedsPayrollSite)
+  }, [
+    aquacultureEnabled,
+    pickedEmployeesInDraft,
+    isMixedEntityPayrollDraft,
+    detailCompanyPayrollPortion,
+  ])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -257,17 +411,12 @@ export default function PayrollPage() {
           setAquaculturePonds([])
           return
         }
-        if (!aquacultureOpsUnlocked) {
-          setAquaculturePonds([])
-          return
-        }
         const pr = await fetch(`${baseUrl}/aquaculture/ponds/`, {
           headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
           mode: 'cors',
           credentials: 'omit',
         })
         if (!pr.ok) {
-          setAquaculturePonds([])
           return
         }
         const pj = await pr.json()
@@ -285,7 +434,113 @@ export default function PayrollPage() {
         setAquaculturePonds([])
       }
     })()
-  }, [aquacultureOpsUnlocked])
+  }, [])
+
+  const showPondAllocationWarnings = useCallback(
+    (data: PayrollRun) => {
+      const w = data.pond_allocation_warnings
+      if (!Array.isArray(w) || w.length === 0) return
+      toast.error(w.slice(0, 4).join(' · ') + (w.length > 4 ? ` (+${w.length - 4} more)` : ''))
+    },
+    [toast]
+  )
+
+  const showEmployeeAllocationWarnings = useCallback(
+    (data: PayrollRun) => {
+      const w = data.employee_allocation_warnings
+      if (!Array.isArray(w) || w.length === 0) return
+      toast.error(w.slice(0, 4).join(' · ') + (w.length > 4 ? ` (+${w.length - 4} more)` : ''))
+    },
+    [toast]
+  )
+
+  const showMixedPayrollInfo = useCallback(
+    (data: PayrollRun) => {
+      const pondTotal = Number(data.pond_allocations_total ?? 0)
+      const companyPortion = Number(data.company_payroll_portion ?? 0)
+      if (
+        data.is_mixed_entity_payroll ||
+        (pondTotal > 0.02 && companyPortion > 0.02)
+      ) {
+        toast.success(
+          `Mixed payroll: ${formatNumber(pondTotal)} to ponds (6712), ${formatNumber(companyPortion)} to site/company (6400).`
+        )
+      }
+    },
+    [toast]
+  )
+
+  const applyPayrollResponseToDetailState = useCallback((data: PayrollRun) => {
+    setSelectedPayroll(data)
+    setDetailAmounts(detailAmountsFromPayrollApi(data))
+    setDetailStationId(
+      data.station_id != null && data.station_id > 0 ? String(data.station_id) : ''
+    )
+    const pondOptions =
+      Array.isArray(data.aquaculture_pond_options) && data.aquaculture_pond_options.length > 0
+        ? data.aquaculture_pond_options.map((x) => ({
+            id: x.id,
+            name: (x.name || `Pond ${x.id}`).trim() || `Pond ${x.id}`,
+            is_active: x.is_active,
+          }))
+        : aquaculturePonds
+    if (pondOptions.length > 0) {
+      setAquaculturePonds(pondOptions)
+    }
+    if (Array.isArray(data.pond_allocations) && data.pond_allocations.length > 0) {
+      setPondAllocDraft(
+        data.pond_allocations.map((x: { pond_id: number; amount: string | number }) => ({
+          pond_id: String(x.pond_id),
+          amount: String(x.amount ?? ''),
+        }))
+      )
+    } else {
+      setPondAllocDraft([])
+      pondAllocTouched.current = false
+    }
+    setEmployeeAllocDraft(employeeAllocDraftFromPayrollApi(data))
+  }, [aquaculturePonds])
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) {
+      router.push('/login')
+      return
+    }
+    fetchCompanyCurrency()
+    fetchPayrolls()
+    fetchBankAccounts()
+    fetchGlPayAccounts()
+    fetchStations()
+  }, [router])
+
+  const fetchStations = async () => {
+    try {
+      const token = localStorage.getItem('access_token')
+      if (!token) return
+      const baseUrl = getApiBaseUrl()
+      const response = await fetch(`${baseUrl}/stations/`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        mode: 'cors',
+        credentials: 'omit',
+      })
+      if (!response.ok) return
+      const data = await response.json()
+      setStations(
+        Array.isArray(data)
+          ? data
+              .filter((s: { is_active?: boolean }) => s.is_active !== false)
+              .map((s: { id: number; station_name: string; operates_fuel_retail?: boolean }) => ({
+                id: s.id,
+                station_name: (s.station_name || '').trim() || `Site #${s.id}`,
+                operates_fuel_retail: s.operates_fuel_retail,
+              }))
+          : []
+      )
+    } catch {
+      setStations([])
+    }
+  }
 
   function defaultPayFromSelect(
     banks: BankAccountRow[],
@@ -331,6 +586,40 @@ export default function PayrollPage() {
       fetchEmployees()
     }
   }, [showDetailsModal])
+
+  /** Auto-fill payroll site from HR work sites when employees are picked (unless user changed site). */
+  useEffect(() => {
+    if (!showDetailsModal || stationTouched.current || !showPayrollSiteSection) return
+    const inferred = inferPayrollStationId(employeeAllocDraft, activeEmployees)
+    setDetailStationId(inferred)
+  }, [employeeAllocDraft, activeEmployees, showDetailsModal, showPayrollSiteSection])
+
+  useEffect(() => {
+    if (!showDetailsModal || showPayrollSiteSection || stationTouched.current) return
+    setDetailStationId('')
+  }, [showDetailsModal, showPayrollSiteSection])
+
+  /** Auto-fill pond wage rows when employees are picked (unless user edited ponds manually). */
+  useEffect(() => {
+    if (!showDetailsModal || pondAllocTouched.current || !aquacultureEnabled) return
+    const hasEmployeePicks = employeeAllocDraft.some((r) => r.employee_id)
+    if (!hasEmployeePicks) {
+      setPondAllocDraft([])
+      return
+    }
+    const inferred = inferPondAllocationsFromEmployees(
+      employeeAllocDraft,
+      activeEmployees,
+      aquaculturePonds
+    )
+    setPondAllocDraft(inferred)
+  }, [
+    employeeAllocDraft,
+    activeEmployees,
+    aquaculturePonds,
+    showDetailsModal,
+    aquacultureEnabled,
+  ])
 
   const fetchCompanyCurrency = async () => {
     try {
@@ -692,24 +981,36 @@ export default function PayrollPage() {
         const data = await response.json()
         setSelectedPayroll(data)
         setDetailAmounts(detailAmountsFromPayrollApi(data))
+        setDetailStationId(
+          data.station_id != null && data.station_id > 0 ? String(data.station_id) : ''
+        )
 
         const hdr = {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
         }
         let latestPonds: { id: number; name: string; is_active?: boolean }[] = []
-        try {
-          const cr = await fetch(`${baseUrl}/companies/current/`, {
-            headers: hdr,
-            mode: 'cors',
-            credentials: 'omit',
-          })
-          if (cr.ok) {
-            const cj = await cr.json()
-            const en = Boolean(cj.aquaculture_enabled)
-            setAquacultureEnabled(en)
-            if (en) {
-              if (aquacultureOpsUnlocked) {
+        if (Array.isArray(data.aquaculture_pond_options) && data.aquaculture_pond_options.length > 0) {
+          latestPonds = data.aquaculture_pond_options.map(
+            (x: { id: number; name: string; is_active?: boolean }) => ({
+              id: x.id,
+              name: (x.name || `Pond ${x.id}`).trim() || `Pond ${x.id}`,
+              is_active: x.is_active,
+            })
+          )
+          setAquaculturePonds(latestPonds)
+        } else {
+          try {
+            const cr = await fetch(`${baseUrl}/companies/current/`, {
+              headers: hdr,
+              mode: 'cors',
+              credentials: 'omit',
+            })
+            if (cr.ok) {
+              const cj = await cr.json()
+              const en = Boolean(cj.aquaculture_enabled)
+              setAquacultureEnabled(en)
+              if (en) {
                 const pr = await fetch(`${baseUrl}/aquaculture/ponds/`, {
                   headers: hdr,
                   mode: 'cors',
@@ -724,17 +1025,15 @@ export default function PayrollPage() {
                         is_active: x.is_active,
                       }))
                     : []
+                  setAquaculturePonds(latestPonds)
                 }
               } else {
-                latestPonds = []
+                setAquaculturePonds([])
               }
-              setAquaculturePonds(latestPonds)
-            } else {
-              setAquaculturePonds([])
             }
+          } catch {
+            latestPonds = aquaculturePonds
           }
-        } catch {
-          latestPonds = aquaculturePonds
         }
 
         if (Array.isArray(data.pond_allocations) && data.pond_allocations.length > 0) {
@@ -744,12 +1043,13 @@ export default function PayrollPage() {
               amount: String(x.amount ?? ''),
             }))
           )
-        } else if (latestPonds.length > 0) {
-          setPondAllocDraft(latestPonds.map((p) => ({ pond_id: String(p.id), amount: '' })))
         } else {
           setPondAllocDraft([])
         }
+        setEmployeeAllocDraft(employeeAllocDraftFromPayrollApi(data))
         payFromTouched.current = false
+        stationTouched.current = false
+        pondAllocTouched.current = false
         setShowDetailsModal(true)
       } else {
         toast.error('Failed to load payroll details')
@@ -775,7 +1075,13 @@ export default function PayrollPage() {
         total_deductions: parseMoneyInput(detailAmounts.d),
       }
       if (nRaw !== '') body.total_net = Number(nRaw)
-      if (aquacultureEnabled && aquacultureOpsUnlocked && !selectedPayroll.is_salary_posted) {
+      if (detailStationId !== '') {
+        const sid = parseInt(detailStationId, 10)
+        if (!Number.isNaN(sid)) body.station_id = sid
+      } else {
+        body.station_id = null
+      }
+      if (aquacultureEnabled && !selectedPayroll.is_salary_posted) {
         const gross = detailComputedGross
         const alloc = pondAllocDraft
           .filter((row) => row.pond_id && String(row.amount).trim() !== '')
@@ -784,14 +1090,43 @@ export default function PayrollPage() {
             amount: String(parseMoneyInput(row.amount)),
           }))
         const sumAlloc = alloc.reduce((s, x) => s + parseMoneyInput(x.amount), 0)
-        if (alloc.length > 0 && Math.abs(sumAlloc - gross) > 0.02) {
+        if (alloc.length > 0 && sumAlloc > gross + 0.02) {
           toast.error(
-            `Pond wage splits must sum to total gross (${formatNumber(gross)}). Current sum: ${formatNumber(sumAlloc)}.`
+            `Pond wage splits (${formatNumber(sumAlloc)}) cannot exceed total gross (${formatNumber(gross)}).`
+          )
+          setAmountSaving(false)
+          return
+        }
+        if (
+          showPayrollSiteSection &&
+          isMixedEntityPayrollDraft &&
+          detailStationId === ''
+        ) {
+          toast.error(
+            'Choose a payroll site (station) for the site/company wage portion (6400), or use Sum from employees to auto-fill.'
           )
           setAmountSaving(false)
           return
         }
         if (alloc.length > 0) body.pond_allocations = alloc
+      }
+      if (!selectedPayroll.is_salary_posted) {
+        const empAlloc = employeeAllocDraft
+          .filter((row) => row.employee_id && String(row.amount).trim() !== '')
+          .map((row) => ({
+            employee_id: parseInt(row.employee_id, 10),
+            amount: String(parseMoneyInput(row.amount)),
+          }))
+        const sumEmp = empAlloc.reduce((s, x) => s + parseMoneyInput(x.amount), 0)
+        const gross = detailComputedGross
+        if (empAlloc.length > 0 && sumEmp > gross + 0.02) {
+          toast.error(
+            `Employee wage rows (${formatNumber(sumEmp)}) cannot exceed total gross (${formatNumber(gross)}).`
+          )
+          setAmountSaving(false)
+          return
+        }
+        body.employee_allocations = empAlloc
       }
       const response = await fetch(`${baseUrl}/payroll/${selectedPayroll.id}/`, {
         method: 'PUT',
@@ -807,6 +1142,7 @@ export default function PayrollPage() {
       if (response.ok) {
         const data = (await response.json()) as PayrollRun
         applyPayrollResponseToDetailState(data)
+        showEmployeeAllocationWarnings(data)
         fetchPayrolls()
         toast.success('Amounts updated')
       } else {
@@ -843,6 +1179,8 @@ export default function PayrollPage() {
         const data = (await response.json()) as PayrollRun
         applyPayrollResponseToDetailState(data)
         showPondAllocationWarnings(data)
+        showEmployeeAllocationWarnings(data)
+        showMixedPayrollInfo(data)
         toast.success('Pond wage splits updated from employee pond assignments')
       } else {
         const err = await response.json()
@@ -878,9 +1216,11 @@ export default function PayrollPage() {
         const data = (await response.json()) as PayrollRun
         applyPayrollResponseToDetailState(data)
         showPondAllocationWarnings(data)
+        showEmployeeAllocationWarnings(data)
+        showMixedPayrollInfo(data)
         fetchPayrolls()
         toast.success(
-          'Totals and pond wage splits set from active employees (assign ponds on each employee first).'
+          'Totals and pond wage splits set from active employees (assign wage attribution on each employee first).'
         )
       } else {
         const err = await response.json()
@@ -934,8 +1274,108 @@ export default function PayrollPage() {
     }
   }
 
+  const persistDetailDraft = async (): Promise<boolean> => {
+    if (!selectedPayroll || selectedPayroll.is_salary_posted) return true
+    try {
+      const token = localStorage.getItem('access_token')
+      const baseUrl = getApiBaseUrl()
+      const nRaw = detailAmounts.n.trim()
+      const body: Record<string, unknown> = {
+        base_salary_total: parseMoneyInput(detailAmounts.base),
+        overtime_amount: parseMoneyInput(detailAmounts.ot),
+        bonus_amount: parseMoneyInput(detailAmounts.bonus),
+        other_earnings_amount: parseMoneyInput(detailAmounts.other),
+        total_deductions: parseMoneyInput(detailAmounts.d),
+      }
+      if (nRaw !== '') body.total_net = Number(nRaw)
+      if (detailStationId !== '') {
+        const sid = parseInt(detailStationId, 10)
+        if (!Number.isNaN(sid)) body.station_id = sid
+      } else {
+        body.station_id = null
+      }
+      if (aquacultureEnabled) {
+        const gross = detailComputedGross
+        const alloc = pondAllocDraft
+          .filter((row) => row.pond_id && String(row.amount).trim() !== '')
+          .map((row) => ({
+            pond_id: parseInt(row.pond_id, 10),
+            amount: String(parseMoneyInput(row.amount)),
+          }))
+        const sumAlloc = alloc.reduce((s, x) => s + parseMoneyInput(x.amount), 0)
+        if (alloc.length > 0 && sumAlloc > gross + 0.02) {
+          toast.error(
+            `Pond wage splits (${formatNumber(sumAlloc)}) cannot exceed total gross (${formatNumber(gross)}).`
+          )
+          return false
+        }
+        if (showPayrollSiteSection && isMixedEntityPayrollDraft && detailStationId === '') {
+          toast.error(
+            'Choose a payroll site (station) for the site/company wage portion (6400), then save before posting.'
+          )
+          return false
+        }
+        if (alloc.length > 0) body.pond_allocations = alloc
+      }
+      const empAlloc = employeeAllocDraft
+        .filter((row) => row.employee_id && String(row.amount).trim() !== '')
+        .map((row) => ({
+          employee_id: parseInt(row.employee_id, 10),
+          amount: String(parseMoneyInput(row.amount)),
+        }))
+      const sumEmp = empAlloc.reduce((s, x) => s + parseMoneyInput(x.amount), 0)
+      const gross = detailComputedGross
+      if (empAlloc.length > 0 && sumEmp > gross + 0.02) {
+        toast.error(
+          `Employee wage rows (${formatNumber(sumEmp)}) cannot exceed total gross (${formatNumber(gross)}).`
+        )
+        return false
+      }
+      body.employee_allocations = empAlloc
+      const response = await fetch(`${baseUrl}/payroll/${selectedPayroll.id}/`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        mode: 'cors',
+        credentials: 'omit',
+        body: JSON.stringify(body),
+      })
+      if (!response.ok) {
+        const err = await response.json()
+        toast.error(err.detail || 'Failed to save before posting')
+        return false
+      }
+      const data = (await response.json()) as PayrollRun
+      applyPayrollResponseToDetailState(data)
+      showEmployeeAllocationWarnings(data)
+      return true
+    } catch (e) {
+      console.error(e)
+      toast.error('Error saving before posting')
+      return false
+    }
+  }
+
   const postToBooks = async () => {
     if (!selectedPayroll || selectedPayroll.is_salary_posted) return
+    if (showPayrollSiteSection && isMixedEntityPayrollDraft && detailStationId === '') {
+      toast.error(
+        'Choose a payroll site (station) for the site/company wage portion, then Save amounts, before posting.'
+      )
+      return
+    }
+    const pickedEmployees = employeeAllocDraft.filter(
+      (row) => row.employee_id && String(row.amount).trim() !== ''
+    )
+    if (pickedEmployees.length === 0) {
+      toast.error(
+        'Pick which employees are paid on this run, enter each amount, then save before posting.'
+      )
+      return
+    }
     if (
       !window.confirm(
         'Post salary to the general ledger? This records the expense and bank (or default cash/bank) per your chart. Pay staff in your bank or cash first, then use this to update your books.'
@@ -945,6 +1385,8 @@ export default function PayrollPage() {
     }
     setActionLoading(true)
     try {
+      const saved = await persistDetailDraft()
+      if (!saved) return
       const token = localStorage.getItem('access_token')
       const baseUrl = getApiBaseUrl()
       const payload: { bank_account_id?: number; pay_from_chart_account_id?: number } = {}
@@ -1054,9 +1496,11 @@ export default function PayrollPage() {
               <li>Create a payroll run and set the pay period and payment date (e.g. April 2026: 1st–30th, payment the day you paid).</li>
               <li>
                 Set <strong>earnings</strong> (base salary, overtime, bonus, other — total gross is their sum),
-                then <strong>deductions / net</strong>. For one person only, open <strong>View</strong> and use{' '}
-                <strong>Apply one employee</strong> to pull base salary from HR; add overtime/bonus lines as
-                needed. Use <strong>Sum from employees</strong> when the run covers the whole team’s regular pay.
+                then <strong>deductions / net</strong>. Open <strong>View</strong>, pick <strong>which employees</strong>{' '}
+                are paid on this run, and enter each amount (or use <strong>Sum from employees</strong> for the
+                whole team, <strong>Apply one employee</strong> for a single person). With aquaculture, use{' '}
+                <strong>Attribute wages to ponds</strong> for pond workers and shared managers (6712); fuel/shop/office
+                staff stay on site payroll (6400).
               </li>
               <li>
                 <strong>Post to general ledger</strong> to record Dr salary expense, Cr your bank (and Cr
@@ -1504,6 +1948,80 @@ export default function PayrollPage() {
                 </div>
 
                 {selectedPayroll.is_salary_posted &&
+                  Array.isArray(selectedPayroll.employee_allocations) &&
+                  selectedPayroll.employee_allocations.length > 0 && (
+                    <div className="mb-6 rounded-lg border border-indigo-100 bg-indigo-50/60 px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-indigo-900">
+                          Wages by employee
+                          {selectedPayroll.is_salary_posted ? ' (recorded)' : ''}
+                        </h3>
+                        {selectedPayroll.employee_allocations_source === 'inferred_hr' &&
+                          !selectedPayroll.is_salary_posted && (
+                            <span className="text-xs text-amber-800">Preview from HR — save or post to record</span>
+                          )}
+                      </div>
+                      <div className="mt-2 overflow-x-auto">
+                        <table className="min-w-full text-sm text-indigo-950">
+                          <thead>
+                            <tr className="border-b border-indigo-200/80 text-left text-xs uppercase text-indigo-800/80">
+                              <th className="py-1 pr-3 font-medium">Employee ID</th>
+                              <th className="py-1 pr-3 font-medium">Name</th>
+                              <th className="py-1 pr-3 font-medium">Wage scope</th>
+                              <th className="py-1 pr-3 font-medium text-right">This run</th>
+                              <th className="py-1 font-medium text-right">HR salary</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedPayroll.employee_allocations.map((row) => (
+                              <tr key={row.employee_id} className="border-b border-indigo-100/80">
+                                <td className="py-1.5 pr-3 font-mono text-xs">
+                                  {row.employee_number || row.employee_code || `#${row.employee_id}`}
+                                </td>
+                                <td className="py-1.5 pr-3">
+                                  <a
+                                    href={`/employees/${row.employee_id}/ledger`}
+                                    className="text-indigo-900 hover:underline"
+                                  >
+                                    {row.employee_name || '—'}
+                                  </a>
+                                </td>
+                                <td className="py-1.5 pr-3 text-xs">
+                                  {row.labor_scope_label || '—'}
+                                  {row.home_aquaculture_pond_name
+                                    ? ` · ${row.home_aquaculture_pond_name}`
+                                    : ''}
+                                </td>
+                                <td className="py-1.5 pr-3 text-right font-medium tabular-nums">
+                                  {currencySymbol}
+                                  {formatNumber(Number(row.amount))}
+                                </td>
+                                <td className="py-1.5 text-right tabular-nums text-indigo-800/80">
+                                  {row.hr_salary != null && row.hr_salary !== ''
+                                    ? `${currencySymbol}${formatNumber(Number(row.hr_salary))}`
+                                    : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr>
+                              <td colSpan={3} className="pt-2 text-right text-xs font-semibold uppercase">
+                                Total
+                              </td>
+                              <td className="pt-2 text-right font-semibold tabular-nums">
+                                {currencySymbol}
+                                {formatNumber(Number(selectedPayroll.employee_allocations_total ?? 0))}
+                              </td>
+                              <td />
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                {selectedPayroll.is_salary_posted &&
                   Array.isArray(selectedPayroll.pond_allocations) &&
                   selectedPayroll.pond_allocations.length > 0 && (
                     <div className="mb-6 rounded-lg border border-teal-100 bg-teal-50/60 px-4 py-3">
@@ -1530,12 +2048,19 @@ export default function PayrollPage() {
                       <CheckCircle className="h-4 w-4" />
                       Posted to GL
                       {selectedPayroll.salary_journal_entry_number ? (
-                        <span className="font-mono text-gray-800">
+                        <a
+                          href={`/journal-entries?view=${selectedPayroll.salary_journal_entry_id ?? ''}`}
+                          className="font-mono text-gray-800 hover:text-blue-600 hover:underline"
+                        >
                           ({selectedPayroll.salary_journal_entry_number})
-                        </span>
+                        </a>
                       ) : null}
                       <a
-                        href="/journal-entries"
+                        href={
+                          selectedPayroll.salary_journal_entry_id
+                            ? `/journal-entries?view=${selectedPayroll.salary_journal_entry_id}`
+                            : '/journal-entries'
+                        }
                         className="inline-flex items-center gap-1 text-blue-600 hover:underline"
                       >
                         View journal entries
@@ -1600,10 +2125,349 @@ export default function PayrollPage() {
                   ) : (
                     <>
                       <p className="text-sm text-gray-600 mb-3">
-                        Edit earnings (base, overtime, bonus, other), then deductions and net — or use{' '}
-                        <strong>Sum from employees</strong> / <strong>Apply one employee</strong> to fill base
-                        salary from HR. Total gross is always the sum of the four earning lines.
+                        Pick <strong>which employees</strong> receive wages on this run and enter how much each
+                        gets (must match total gross). Pond P&amp;L and fuel-station splits are configured in
+                        separate sections below.
                       </p>
+                      {!selectedPayroll.is_salary_posted && (
+                        <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+                          <p className="text-sm font-medium text-indigo-900">Wages by employee</p>
+                          <p className="mt-1 text-xs text-indigo-900/80">
+                            You choose who is paid — add each person, then enter the amount. HR work
+                            assignment is shown after you pick a name. Use <strong>Sum from employees</strong>{' '}
+                            below for the full team, or <strong>HR salary</strong> on a row for one person&apos;s
+                            HR amount.
+                          </p>
+                          {activeEmployees.length === 0 ? (
+                            <p className="mt-2 text-xs text-amber-900">
+                              No active employees loaded — add staff under{' '}
+                              <Link href="/employees" className="font-medium underline">
+                                Employees
+                              </Link>{' '}
+                              or reopen this payroll.
+                            </p>
+                          ) : (
+                            <div className="mt-3">
+                              {employeeAllocDraft.length === 0 ? (
+                                <div className="rounded-lg border border-dashed border-indigo-200 bg-white px-4 py-6 text-center">
+                                  <p className="text-sm text-gray-600">No employees on this run yet.</p>
+                                  <button
+                                    type="button"
+                                    className="mt-3 inline-flex items-center rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800"
+                                    onClick={() =>
+                                      setEmployeeAllocDraft([{ employee_id: '', amount: '' }])
+                                    }
+                                  >
+                                    + Pick employee
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="overflow-x-auto rounded-lg border border-indigo-100 bg-white">
+                                  <table className="w-full min-w-[32rem] text-sm">
+                                    <thead>
+                                      <tr className="border-b border-indigo-100 bg-indigo-50/70 text-left text-xs font-semibold uppercase tracking-wide text-indigo-900">
+                                        <th className="px-3 py-2.5">Employee</th>
+                                        <th className="hidden px-3 py-2.5 sm:table-cell">HR work</th>
+                                        <th className="px-3 py-2.5 w-36">Amount paid</th>
+                                        <th className="px-3 py-2.5 w-28 text-right">Actions</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-indigo-50">
+                                      {employeeAllocDraft.map((row, idx) => {
+                                        const selectedElsewhere = new Set(
+                                          employeeAllocDraft
+                                            .filter((_, i) => i !== idx && _.employee_id)
+                                            .map((r) => r.employee_id)
+                                        )
+                                        const picked = activeEmployees.find(
+                                          (e) => String(e.id) === row.employee_id
+                                        )
+                                        return (
+                                          <tr key={idx} className="align-middle">
+                                            <td className="px-3 py-2">
+                                              <select
+                                                className="w-full min-w-[10rem] rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                                                value={row.employee_id}
+                                                onChange={(e) => {
+                                                  const v = e.target.value
+                                                  const emp = activeEmployees.find(
+                                                    (x) => String(x.id) === v
+                                                  )
+                                                  const hrSalary =
+                                                    emp?.salary != null && Number(emp.salary) > 0
+                                                      ? String(emp.salary)
+                                                      : ''
+                                                  setEmployeeAllocDraft((rows) =>
+                                                    rows.map((r, i) =>
+                                                      i === idx
+                                                        ? {
+                                                            ...r,
+                                                            employee_id: v,
+                                                            amount:
+                                                              r.amount.trim() !== ''
+                                                                ? r.amount
+                                                                : hrSalary,
+                                                          }
+                                                        : r
+                                                    )
+                                                  )
+                                                }}
+                                              >
+                                                <option value="">Choose employee…</option>
+                                                {employeesForPicker
+                                                  .filter(
+                                                    (e) =>
+                                                      String(e.id) === row.employee_id ||
+                                                      !selectedElsewhere.has(String(e.id))
+                                                  )
+                                                  .map((e) => (
+                                                    <option key={e.id} value={e.id}>
+                                                      {employeePickerLabel(e, currencySymbol)}
+                                                    </option>
+                                                  ))}
+                                              </select>
+                                              {picked ? (
+                                                <p className="mt-1 text-xs text-indigo-800/90 sm:hidden">
+                                                  {employeeWorkSiteLabel(picked)}
+                                                </p>
+                                              ) : null}
+                                            </td>
+                                            <td className="hidden px-3 py-2 text-xs text-indigo-900/90 sm:table-cell">
+                                              {picked ? employeeWorkSiteLabel(picked) : '—'}
+                                            </td>
+                                            <td className="px-3 py-2">
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm tabular-nums"
+                                                placeholder="0.00"
+                                                value={row.amount}
+                                                onChange={(e) => {
+                                                  setEmployeeAllocDraft((rows) =>
+                                                    rows.map((r, i) =>
+                                                      i === idx ? { ...r, amount: e.target.value } : r
+                                                    )
+                                                  )
+                                                }}
+                                              />
+                                            </td>
+                                            <td className="px-3 py-2 text-right">
+                                              <div className="flex flex-col items-end gap-1 sm:flex-row sm:justify-end">
+                                                {picked?.salary != null && Number(picked.salary) > 0 ? (
+                                                  <button
+                                                    type="button"
+                                                    className="text-xs font-medium text-indigo-800 hover:underline"
+                                                    title="Fill amount from HR salary"
+                                                    onClick={() => {
+                                                      const sal = String(picked.salary)
+                                                      setEmployeeAllocDraft((rows) =>
+                                                        rows.map((r, i) =>
+                                                          i === idx ? { ...r, amount: sal } : r
+                                                        )
+                                                      )
+                                                    }}
+                                                  >
+                                                    HR salary
+                                                  </button>
+                                                ) : null}
+                                                <button
+                                                  type="button"
+                                                  className="text-xs text-red-600 hover:underline"
+                                                  onClick={() =>
+                                                    setEmployeeAllocDraft((rows) =>
+                                                      rows.filter((_, i) => i !== idx)
+                                                    )
+                                                  }
+                                                >
+                                                  Remove
+                                                </button>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                              {employeeAllocDraftSum > 0.02 && (
+                                <p className="mt-2 text-xs tabular-nums text-indigo-800">
+                                  Employee total: {currencySymbol}
+                                  {formatNumber(employeeAllocDraftSum)}
+                                  {Math.abs(employeeAllocDraftSum - detailComputedGross) > 0.02 && (
+                                    <span className="ml-1 text-amber-800">
+                                      (gross is {currencySymbol}
+                                      {formatNumber(detailComputedGross)})
+                                    </span>
+                                  )}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {activeEmployees.length > 0 && employeeAllocDraft.length > 0 ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="text-xs font-medium text-indigo-800 hover:underline"
+                                  onClick={() =>
+                                    setEmployeeAllocDraft((rows) => [
+                                      ...rows,
+                                      { employee_id: '', amount: '' },
+                                    ])
+                                  }
+                                >
+                                  + Add another employee
+                                </button>
+                                <button
+                                  type="button"
+                                  className="text-xs text-gray-600 hover:underline"
+                                  onClick={() => setEmployeeAllocDraft([])}
+                                >
+                                  Clear all
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      )}
+                      {aquacultureEnabled && !selectedPayroll.is_salary_posted && (
+                        <div className="mb-4 rounded-lg border border-teal-200 bg-teal-50/50 p-3">
+                          <p className="text-sm font-medium text-teal-900">
+                            Attribute wages to ponds (Aquaculture P&amp;L)
+                          </p>
+                          <p className="mt-1 text-xs text-teal-900/80">
+                            Separate from who you pay above. Only pond-scoped wages post here (account{' '}
+                            <span className="font-mono">6712</span>): single-pond workers go to their pond;
+                            shared managers (<em>all ponds equal share</em>) split across active ponds. Fuel
+                            station, shop, and company staff are <strong>not</strong> included — they use payroll
+                            site (6400) instead.
+                          </p>
+                          {aquaculturePonds.length === 0 && (
+                            <p className="mt-2 text-xs text-amber-900">
+                              No ponds yet — add them under{' '}
+                              <Link href="/aquaculture/ponds" className="font-medium underline">
+                                Aquaculture → Ponds
+                              </Link>
+                              , then reopen this payroll or refresh the page.
+                            </p>
+                          )}
+                          <div className="mt-2 space-y-2">
+                            {(pondAllocDraft.length > 0 ? pondAllocDraft : [{ pond_id: '', amount: '' }]).map(
+                              (row, idx) => (
+                                <div key={idx} className="flex flex-wrap items-center gap-2">
+                                  <select
+                                    className="min-w-[8rem] rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    value={row.pond_id}
+                                    onChange={(e) => {
+                                      pondAllocTouched.current = true
+                                      const v = e.target.value
+                                      setPondAllocDraft((rows) => {
+                                        const base =
+                                          rows.length > 0 ? rows : [{ pond_id: '', amount: '' }]
+                                        return base.map((r, i) => (i === idx ? { ...r, pond_id: v } : r))
+                                      })
+                                    }}
+                                  >
+                                    <option value="">Pond…</option>
+                                    {aquaculturePonds.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.name}
+                                        {p.is_active === false ? ' (inactive)' : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className="w-32 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    placeholder="Amount"
+                                    value={row.amount}
+                                    onChange={(e) => {
+                                      pondAllocTouched.current = true
+                                      setPondAllocDraft((rows) => {
+                                        const base =
+                                          rows.length > 0 ? rows : [{ pond_id: '', amount: '' }]
+                                        return base.map((r, i) =>
+                                          i === idx ? { ...r, amount: e.target.value } : r
+                                        )
+                                      })
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="text-xs text-red-600 hover:underline"
+                                    onClick={() => {
+                                      pondAllocTouched.current = true
+                                      setPondAllocDraft((rows) => rows.filter((_, i) => i !== idx))
+                                    }}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              )
+                            )}
+                            {pondAllocDraftSum > 0.02 && (
+                              <span className="ml-2 text-xs tabular-nums text-teal-800">
+                                Pond total: {currencySymbol}
+                                {formatNumber(pondAllocDraftSum)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-teal-800 hover:underline"
+                              onClick={() =>
+                                setPondAllocDraft((rows) => [...(rows.length ? rows : []), { pond_id: '', amount: '' }])
+                              }
+                            >
+                              + Add pond line
+                            </button>
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-teal-800 hover:underline"
+                              onClick={fillPondAllocFromEmployees}
+                              disabled={actionLoading}
+                            >
+                              Fill from employee ponds
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {showPayrollSiteSection && !selectedPayroll.is_salary_posted && (
+                        <div className="mb-4 rounded-lg border border-amber-100 bg-amber-50/50 p-3">
+                          <label className="block text-xs font-medium text-gray-700">
+                            Payroll site (fuel station / shop)
+                          </label>
+                          <select
+                            className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                            value={detailStationId}
+                            onChange={(e) => {
+                              stationTouched.current = true
+                              setDetailStationId(e.target.value)
+                            }}
+                          >
+                            <option value="">All sites (company-wide)</option>
+                            {stations.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.station_name}
+                                {s.operates_fuel_retail === false ? ' (shop)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1 text-xs text-gray-600">
+                            Only for fuel-station and shop wages (account{' '}
+                            <span className="font-mono">6400</span>). Auto-filled when picked employees
+                            share one HR station.
+                            {isMixedEntityPayrollDraft
+                              ? ' Required for the site portion on mixed pond + site runs.'
+                              : ''}
+                          </p>
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                           <label className="block text-xs font-medium text-gray-600">Base / regular</label>
@@ -1663,6 +2527,19 @@ export default function PayrollPage() {
                           {formatNumber(detailComputedGross)}
                         </span>
                       </div>
+                      {isMixedEntityPayrollDraft && (
+                        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-950">
+                          <p className="font-medium">Mixed payroll split</p>
+                          <p className="mt-1">
+                            Pond portion ({currencySymbol}
+                            {formatNumber(pondAllocDraftSum)} → account{' '}
+                            <span className="font-mono">6712</span>) + site/company portion (
+                            {currencySymbol}
+                            {formatNumber(detailCompanyPayrollPortion)} → account{' '}
+                            <span className="font-mono">6400</span>) = total gross.
+                          </p>
+                        </div>
+                      )}
                       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                           <label className="block text-xs font-medium text-gray-600">Deductions</label>
@@ -1687,120 +2564,6 @@ export default function PayrollPage() {
                           />
                         </div>
                       </div>
-                      {aquacultureEnabled && aquacultureOpsUnlocked && !selectedPayroll.is_salary_posted && (
-                        <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50/50 p-3">
-                          <p className="text-sm font-medium text-teal-900">Attribute wages to ponds (Aquaculture P&amp;L)</p>
-                          <p className="mt-1 text-xs text-teal-900/80">
-                            Sum must equal <strong>total gross</strong> wages. Each employee&apos;s salary counts on
-                            their assigned pond (account <span className="font-mono">6712</span> when posted). Saved
-                            with <strong>Save amounts</strong>.
-                          </p>
-                          {aquaculturePonds.length === 0 && (
-                            <p className="mt-2 text-xs text-amber-900">
-                              No ponds yet — add them under{' '}
-                              <Link href="/aquaculture/ponds" className="font-medium underline">
-                                Aquaculture → Ponds
-                              </Link>
-                              , then reopen this payroll or refresh the page.
-                            </p>
-                          )}
-                          <div className="mt-2 space-y-2">
-                            {(pondAllocDraft.length > 0 ? pondAllocDraft : [{ pond_id: '', amount: '' }]).map(
-                              (row, idx) => (
-                                <div key={idx} className="flex flex-wrap items-center gap-2">
-                                  <select
-                                    className="min-w-[8rem] rounded border border-gray-300 px-2 py-1.5 text-sm"
-                                    value={row.pond_id}
-                                    onChange={(e) => {
-                                      const v = e.target.value
-                                      setPondAllocDraft((rows) => {
-                                        const base =
-                                          rows.length > 0 ? rows : [{ pond_id: '', amount: '' }]
-                                        return base.map((r, i) => (i === idx ? { ...r, pond_id: v } : r))
-                                      })
-                                    }}
-                                  >
-                                    <option value="">Pond…</option>
-                                    {aquaculturePonds.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.name}
-                                        {p.is_active === false ? ' (inactive)' : ''}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    className="w-32 rounded border border-gray-300 px-2 py-1.5 text-sm"
-                                    placeholder="Amount"
-                                    value={row.amount}
-                                    onChange={(e) => {
-                                      setPondAllocDraft((rows) => {
-                                        const base =
-                                          rows.length > 0 ? rows : [{ pond_id: '', amount: '' }]
-                                        return base.map((r, i) =>
-                                          i === idx ? { ...r, amount: e.target.value } : r
-                                        )
-                                      })
-                                    }}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="text-xs text-red-600 hover:underline"
-                                    onClick={() =>
-                                      setPondAllocDraft((rows) => rows.filter((_, i) => i !== idx))
-                                    }
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-                              )
-                            )}
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              className="text-xs font-medium text-teal-800 hover:underline"
-                              onClick={() =>
-                                setPondAllocDraft((rows) => [...(rows.length ? rows : []), { pond_id: '', amount: '' }])
-                              }
-                            >
-                              + Add pond line
-                            </button>
-                            {aquaculturePonds.length > 0 ? (
-                              <button
-                                type="button"
-                                className="text-xs font-medium text-teal-800 hover:underline"
-                                onClick={() => {
-                                  const gross = detailComputedGross
-                                  if (!Number.isFinite(gross) || gross < 0) {
-                                    toast.error('Set valid gross wages first')
-                                    return
-                                  }
-                                  const each = gross / aquaculturePonds.length
-                                  setPondAllocDraft(
-                                    aquaculturePonds.map((p) => ({
-                                      pond_id: String(p.id),
-                                      amount: formatAmountPlain(each),
-                                    }))
-                                  )
-                                }}
-                              >
-                                Distribute gross equally
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="text-xs font-medium text-teal-800 hover:underline"
-                              onClick={fillPondAllocFromEmployees}
-                              disabled={actionLoading}
-                            >
-                              Fill from employee ponds
-                            </button>
-                          </div>
-                        </div>
-                      )}
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -1834,9 +2597,7 @@ export default function PayrollPage() {
                                 )
                                 .map((e) => (
                                   <option key={e.id} value={e.id}>
-                                    {e.employee_number || e.id}{' '}
-                                    {(e.first_name + ' ' + (e.last_name || '')).trim()}{' '}
-                                    — {formatNumber(Number(e.salary))}
+                                    {employeePickerLabel(e, currencySymbol)}
                                   </option>
                                 ))}
                             </select>

@@ -34,6 +34,7 @@ from api.models import (
     BillLine,
     ChartOfAccount,
     Customer,
+    EmployeeLedgerEntry,
     FundTransfer,
     InventoryAdjustment,
     InventoryAdjustmentLine,
@@ -78,7 +79,10 @@ from api.services.station_stock import add_station_stock, item_uses_station_bins
 from api.utils.customer_display import customer_display_name
 from api.services.coa_constants import is_pl_credit_normal_type, normalize_chart_account_type
 from api.services.erp_coa_defaults import ErpCoaCode
-from api.services.employee_payroll_subledger import sync_payroll_run_to_employee_ledgers
+from api.services.employee_payroll_subledger import (
+    refresh_employee_balance,
+    sync_payroll_run_to_employee_ledgers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -3022,6 +3026,37 @@ def post_payroll_salary(
             f"Gross ({gross}) must equal deductions ({ded}) + net pay ({net})",
         )
 
+    from api.services.employee_pond_labor import ensure_payroll_pond_allocations_before_post
+    from api.services.station_defaults import default_payroll_station_id
+    from api.services.station_stock import get_or_create_default_station
+
+    _, pond_alloc_err = ensure_payroll_pond_allocations_before_post(company_id, pr)
+    if pond_alloc_err:
+        return None, pond_alloc_err
+    from api.models import PayrollRunEmployeeAllocation
+    from api.services.employee_payroll_allocations import (
+        employee_allocation_sum,
+        sync_payroll_employee_allocations_from_hr,
+    )
+
+    if not PayrollRunEmployeeAllocation.objects.filter(payroll_run_id=pr.id).exists():
+        sync_payroll_employee_allocations_from_hr(company_id, pr)
+        if not PayrollRunEmployeeAllocation.objects.filter(payroll_run_id=pr.id).exists():
+            return (
+                None,
+                "Pick which employees are paid on this run, enter each amount, save, "
+                "then post. Partial payroll cannot be split across the whole roster automatically.",
+            )
+        alloc_sum = employee_allocation_sum(pr.id)
+        if abs(alloc_sum - gross) > Decimal("0.02"):
+            return (
+                None,
+                f"Employee wage rows ({alloc_sum}) must match payroll gross ({gross}) before posting.",
+            )
+    pr = PayrollRun.objects.filter(id=pr.id, company_id=company_id).first()
+    if not pr:
+        return None, "Payroll run not found"
+
     expense = None
     if getattr(pr, "salary_expense_account_id", None):
         expense = ChartOfAccount.objects.filter(
@@ -3049,6 +3084,14 @@ def post_payroll_salary(
         return None, f"Pond allocations ({alloc_gross}) exceed payroll gross ({gross})."
     split_mixed_entities = split_by_pond and company_gross > Decimal("0.02")
     split_full_pond = split_by_pond and not split_mixed_entities and abs(alloc_gross - gross) <= Decimal("0.02")
+
+    if not split_full_pond and not _gl_station_id(company_id, pr.station_id):
+        default_sid = default_payroll_station_id(company_id)
+        if not default_sid:
+            default_sid = get_or_create_default_station(company_id).id
+        if default_sid:
+            PayrollRun.objects.filter(pk=pr.pk).update(station_id=default_sid)
+            pr.refresh_from_db()
 
     try:
         validate_payroll_entity_tags_for_gl(
@@ -3094,6 +3137,7 @@ def post_payroll_salary(
 
     lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = []
     aq_costing: list[Optional[dict]] = []
+    pr_st = _gl_station_id(company_id, pr.station_id)
     if split_by_pond:
         pond_debit_account = pond_exp or expense
         for row in pond_alloc_rows:
@@ -3102,7 +3146,7 @@ def post_payroll_salary(
                 continue
             pname = (row.pond.name if row.pond else "").strip() or f"Pond #{row.pond_id}"
             lines.append(
-                (pond_debit_account, amt, Decimal("0"), f"Pond labor — {pname} — {ref}"),
+                (pond_debit_account, amt, Decimal("0"), f"Pond labor — {pname} — {ref}", None),
             )
             aq_costing.append(
                 {"pond_id": row.pond_id, "cost_bucket": "worker_salary"},
@@ -3112,33 +3156,37 @@ def post_payroll_salary(
             if not site_exp:
                 return None, f"Add chart account {CODE_SALARY_EXP} for site / company payroll."
             lines.append(
-                (site_exp, company_gross, Decimal("0"), f"Site / company payroll — {ref}"),
+                (site_exp, company_gross, Decimal("0"), f"Site / company payroll — {ref}", pr_st),
             )
             aq_costing.append(None)
     else:
         if not expense:
             return None, f"Add chart account {CODE_SALARY_EXP} (Salaries & Wages) or pick a salary expense account."
-        lines.append((expense, gross, Decimal("0"), f"Gross pay — {ref}"))
+        lines.append((expense, gross, Decimal("0"), f"Gross pay — {ref}", pr_st))
         aq_costing.append(None)
 
     if ded > 0:
         dacc = _payroll_deduction_credit_account(company_id)
         if not dacc:
             return None, "Deductions account not configured"
-        lines.append((dacc, Decimal("0"), ded, f"Deductions / withholdings — {ref}"))
+        ded_st = pr_st if (not split_by_pond or split_mixed_entities) else None
+        lines.append((dacc, Decimal("0"), ded, f"Deductions / withholdings — {ref}", ded_st))
         aq_costing.append(None)
 
-    lines.append((pay_account, Decimal("0"), net, f"Net pay — {ref}"))
+    if not split_by_pond or split_mixed_entities:
+        pay_line_st = pr_st
+    else:
+        pay_line_st = None
+    lines.append((pay_account, Decimal("0"), net, f"Net pay — {ref}", pay_line_st))
     aq_costing.append(None)
 
-    pr_st = _gl_station_id(company_id, pr.station_id)
     je = _create_posted_entry(
         company_id,
         pr.payment_date,
         en,
         f"Salary pay {pr.payroll_number or en}",
         lines,
-        gl_station_id=pr_st,
+        gl_station_id=pr_st if (not split_by_pond or split_mixed_entities) else None,
         aquaculture_line_costing=aq_costing if split_by_pond and pond_exp else None,
     )
     if not je:
@@ -3149,6 +3197,91 @@ def post_payroll_salary(
     if pr:
         sync_payroll_run_to_employee_ledgers(company_id, pr)
     return je, ""
+
+
+def release_payroll_salary_journal(
+    company_id: int,
+    *,
+    journal_entry_id: int | None = None,
+    entry_number: str | None = None,
+) -> PayrollRun | None:
+    """
+    When an AUTO-PAYROLL salary journal is removed, revert the payroll run to draft,
+    clear the salary_journal link, and remove HR subledger lines for that run.
+    """
+    import re
+
+    pr: PayrollRun | None = None
+    if journal_entry_id:
+        pr = PayrollRun.objects.filter(
+            company_id=company_id, salary_journal_id=journal_entry_id
+        ).first()
+    en = (entry_number or "").strip()
+    if not pr and en:
+        m = re.match(r"^AUTO-PAYROLL-(\d+)$", en)
+        if m:
+            pr = PayrollRun.objects.filter(
+                company_id=company_id, pk=int(m.group(1))
+            ).first()
+    if not pr:
+        return None
+
+    pr_id = int(pr.pk)
+    old_eids = set(
+        EmployeeLedgerEntry.objects.filter(payroll_run_id=pr_id).values_list(
+            "employee_id", flat=True
+        )
+    )
+    EmployeeLedgerEntry.objects.filter(payroll_run_id=pr_id).delete()
+    for eid in old_eids:
+        refresh_employee_balance(int(eid))
+
+    PayrollRun.objects.filter(pk=pr_id).update(salary_journal=None, status="draft")
+    return PayrollRun.objects.filter(pk=pr_id).first()
+
+
+_POSTED_PAYROLL_STATUSES = frozenset({"paid", "processed"})
+
+
+def reconcile_payroll_run_gl_state(company_id: int, pr: PayrollRun) -> PayrollRun:
+    """
+    Keep payroll.status aligned with salary_journal_id.
+    A run is posted to the GL only when its salary journal row still exists.
+    """
+    jid = pr.salary_journal_id
+    status = (pr.status or "draft").strip().lower()
+
+    if jid and not JournalEntry.objects.filter(pk=jid, company_id=company_id).exists():
+        fixed = release_payroll_salary_journal(
+            company_id,
+            entry_number=f"AUTO-PAYROLL-{pr.id}",
+        )
+        return fixed or pr
+
+    if not jid and status in _POSTED_PAYROLL_STATUSES:
+        fixed = release_payroll_salary_journal(
+            company_id,
+            entry_number=f"AUTO-PAYROLL-{pr.id}",
+        )
+        return fixed or pr
+
+    return pr
+
+
+def reconcile_company_payroll_gl_states(company_id: int) -> int:
+    """Bulk-fix payroll runs marked paid/processed with no salary journal."""
+    orphan_ids = list(
+        PayrollRun.objects.filter(
+            company_id=company_id,
+            salary_journal_id__isnull=True,
+            status__in=_POSTED_PAYROLL_STATUSES,
+        ).values_list("id", flat=True)
+    )
+    for pid in orphan_ids:
+        release_payroll_salary_journal(
+            company_id, entry_number=f"AUTO-PAYROLL-{pid}"
+        )
+    return len(orphan_ids)
 
 
 def post_inventory_transfer_journal(company_id: int, transfer_id: int) -> bool:

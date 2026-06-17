@@ -31,3 +31,27 @@ def parse_optional_pond_fk(company_id: int, raw) -> tuple[int | None, str | None
     if not AquaculturePond.objects.filter(pk=pid, company_id=company_id, is_active=True).exists():
         return None, "Unknown or inactive aquaculture pond for this company."
     return pid, None
+
+
+def default_payroll_station_id(company_id: int) -> int | None:
+    """
+    Prefer the first active fuel forecourt for mixed payroll site portion (6400).
+    Falls back to any active station.
+    """
+    fuel = (
+        Station.objects.filter(
+            company_id=company_id, is_active=True, operates_fuel_retail=True
+        )
+        .order_by("id")
+        .only("id")
+        .first()
+    )
+    if fuel:
+        return int(fuel.id)
+    st = (
+        Station.objects.filter(company_id=company_id, is_active=True)
+        .order_by("id")
+        .only("id")
+        .first()
+    )
+    return int(st.id) if st else None

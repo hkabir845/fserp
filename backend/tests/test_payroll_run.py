@@ -576,3 +576,543 @@ def test_employee_ledger_get_backfills_posted_payroll_without_subledger_rows(
     data = json.loads(r.content)
     assert len(data["transactions"]) >= 2
     assert EmployeeLedgerEntry.objects.filter(employee_id=emp.id).count() == 2
+
+
+@pytest.mark.django_db
+def test_payroll_reverts_to_draft_when_salary_journal_removed(
+    api_client: Client, auth_admin_headers, user_admin
+):
+    """Removing AUTO-PAYROLL journal (GL) sets payroll status back to draft."""
+    from decimal import Decimal
+
+    from api.models import BankAccount, ChartOfAccount, Employee, JournalEntry, PayrollRun
+
+    cid = user_admin.company_id
+    ChartOfAccount.objects.get_or_create(
+        company_id=cid,
+        account_code="6400",
+        defaults={
+            "account_name": "Salaries & Wages",
+            "account_type": "expense",
+            "account_sub_type": "payroll_expenses",
+        },
+    )
+    bcoa, _ = ChartOfAccount.objects.get_or_create(
+        company_id=cid,
+        account_code="1030",
+        defaults={
+            "account_name": "Bank Operating",
+            "account_type": "asset",
+            "account_sub_type": "bank",
+        },
+    )
+    bank = BankAccount.objects.create(
+        company_id=cid,
+        chart_account=bcoa,
+        account_name="Payroll Bank",
+        account_number="0002",
+        bank_name="Test Bank",
+    )
+    Employee.objects.create(
+        company_id=cid,
+        employee_code="E-REL",
+        employee_number="E-REL",
+        first_name="Rel",
+        last_name="Test",
+        salary=Decimal("3000.00"),
+        is_active=True,
+    )
+    r = api_client.post(
+        "/api/payroll/",
+        data=json.dumps(
+            {
+                "pay_period_start": "2026-05-01",
+                "pay_period_end": "2026-05-31",
+                "payment_date": "2026-05-31",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    pid = json.loads(r.content)["id"]
+
+    r = api_client.post(
+        f"/api/payroll/{pid}/from-employees/",
+        data="{}",
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+
+    r = api_client.post(
+        f"/api/payroll/{pid}/post-to-books/",
+        data=json.dumps({"bank_account_id": bank.id}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    posted = json.loads(r.content)
+    assert posted["status"] == "paid"
+    je_id = posted["salary_journal_entry_id"]
+    assert je_id
+
+    r = api_client.post(
+        f"/api/journal-entries/{je_id}/unpost/",
+        data=json.dumps({"remove_system_entry": True}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    assert json.loads(r.content).get("removed") is True
+    assert not JournalEntry.objects.filter(pk=je_id).exists()
+
+    pr = PayrollRun.objects.get(pk=pid)
+    assert pr.status == "draft"
+    assert pr.salary_journal_id is None
+
+    r = api_client.get(f"/api/payroll/{pid}/", **auth_admin_headers)
+    assert r.status_code == 200
+    detail = json.loads(r.content)
+    assert detail["status"] == "draft"
+    assert detail["is_salary_posted"] is False
+
+
+@pytest.mark.django_db
+def test_payroll_list_repairs_paid_status_when_journal_gone(
+    api_client: Client, auth_admin_headers, user_admin
+):
+    """Orphan paid runs (no salary_journal) are corrected to draft on list GET."""
+    from decimal import Decimal
+
+    from api.models import PayrollRun
+
+    cid = user_admin.company_id
+    pr = PayrollRun.objects.create(
+        company_id=cid,
+        payroll_number="PR-ORPHAN",
+        pay_period_start="2026-05-01",
+        pay_period_end="2026-05-31",
+        payment_date="2026-05-31",
+        total_gross=Decimal("1000"),
+        total_deductions=Decimal("0"),
+        total_net=Decimal("1000"),
+        status="paid",
+        salary_journal_id=None,
+    )
+    r = api_client.get("/api/payroll/", **auth_admin_headers)
+    assert r.status_code == 200
+    rows = json.loads(r.content)
+    row = next(x for x in rows if x["id"] == pr.id)
+    assert row["status"] == "draft"
+    assert row["is_salary_posted"] is False
+    pr.refresh_from_db()
+    assert pr.status == "draft"
+
+
+@pytest.mark.django_db
+def test_partial_pond_payroll_subledger_only_pond_workers(
+    api_client: Client, auth_admin_headers, user_admin
+):
+    """Gross matching pond-scoped salaries only — subledger must not hit fuel/site staff."""
+    from decimal import Decimal
+
+    from django.db.models import Sum
+
+    from api.models import (
+        AquaculturePond,
+        BankAccount,
+        ChartOfAccount,
+        Company,
+        Employee,
+        EmployeeLedgerEntry,
+    )
+
+    cid = user_admin.company_id
+    Company.objects.filter(pk=cid).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    ChartOfAccount.objects.get_or_create(
+        company_id=cid,
+        account_code="6712",
+        defaults={
+            "account_name": "Aquaculture Expense — Labor & Wages",
+            "account_type": "expense",
+            "account_sub_type": "payroll_expenses",
+        },
+    )
+    bcoa, _ = ChartOfAccount.objects.get_or_create(
+        company_id=cid,
+        account_code="1030",
+        defaults={
+            "account_name": "Bank Operating",
+            "account_type": "asset",
+            "account_sub_type": "bank",
+        },
+    )
+    bank = BankAccount.objects.create(
+        company_id=cid,
+        chart_account=bcoa,
+        account_name="Payroll Bank Pond",
+        account_number="POND-1",
+        bank_name="Test Bank",
+    )
+    AquaculturePond.objects.create(company_id=cid, name="Pond A")
+    AquaculturePond.objects.create(company_id=cid, name="Pond B")
+    pond_worker = Employee.objects.create(
+        company_id=cid,
+        employee_code="PW",
+        employee_number="PW",
+        first_name="Pond",
+        last_name="Worker",
+        salary=Decimal("14000.00"),
+        is_active=True,
+        aquaculture_labor_scope="assigned_pond",
+        home_aquaculture_pond=AquaculturePond.objects.filter(company_id=cid).first(),
+    )
+    Employee.objects.create(
+        company_id=cid,
+        employee_code="SHARED",
+        employee_number="SHARED",
+        first_name="Shared",
+        last_name="Manager",
+        salary=Decimal("20000.00"),
+        is_active=True,
+        aquaculture_labor_scope="all_ponds_equal",
+    )
+    Employee.objects.create(
+        company_id=cid,
+        employee_code="SITE",
+        employee_number="SITE",
+        first_name="Site",
+        last_name="Accountant",
+        salary=Decimal("85000.00"),
+        is_active=True,
+        aquaculture_labor_scope="not_applicable",
+    )
+
+    r = api_client.post(
+        "/api/payroll/",
+        data=json.dumps(
+            {
+                "pay_period_start": "2026-06-01",
+                "pay_period_end": "2026-06-30",
+                "payment_date": "2026-06-30",
+                "total_gross": "34000.00",
+                "total_deductions": "0",
+                "total_net": "34000.00",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    pid = json.loads(r.content)["id"]
+    r = api_client.post(
+        f"/api/payroll/{pid}/pond-allocations-from-employees/",
+        data="{}",
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    r = api_client.post(
+        f"/api/payroll/{pid}/post-to-books/",
+        data=json.dumps({"bank_account_id": bank.id}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+
+    site_lines = EmployeeLedgerEntry.objects.filter(
+        payroll_run_id=pid, employee__employee_number="SITE"
+    )
+    assert site_lines.count() == 0
+    pw_gross = EmployeeLedgerEntry.objects.filter(
+        payroll_run_id=pid, employee_id=pond_worker.id, debit__gt=0
+    ).aggregate(t=Sum("debit"))["t"]
+    shared_gross = EmployeeLedgerEntry.objects.filter(
+        payroll_run_id=pid, employee__employee_number="SHARED", debit__gt=0
+    ).aggregate(t=Sum("debit"))["t"]
+    assert Decimal(str(pw_gross)) == Decimal("14000.00")
+    assert Decimal(str(shared_gross)) == Decimal("20000.00")
+
+
+@pytest.mark.django_db
+def test_payroll_json_includes_employee_allocations_for_pond_workers(
+    api_client: Client, auth_admin_headers, user_admin
+):
+    """Partial pond payroll exposes employee ID, name, and wage amount on the run."""
+    from decimal import Decimal
+
+    from api.models import AquaculturePond, Company, Employee
+
+    cid = user_admin.company_id
+    Company.objects.filter(pk=cid).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    pond = AquaculturePond.objects.create(company_id=cid, name="Digonta")
+    Employee.objects.create(
+        company_id=cid,
+        employee_code="E1",
+        employee_number="EMP-00001",
+        first_name="Yunus",
+        last_name="Khan",
+        salary=Decimal("20000.00"),
+        is_active=True,
+        aquaculture_labor_scope="all_ponds_equal",
+    )
+    Employee.objects.create(
+        company_id=cid,
+        employee_code="E2",
+        employee_number="EMP-00002",
+        first_name="Baro",
+        last_name="Babu",
+        salary=Decimal("14000.00"),
+        is_active=True,
+        aquaculture_labor_scope="assigned_pond",
+        home_aquaculture_pond=pond,
+    )
+    r = api_client.post(
+        "/api/payroll/",
+        data=json.dumps(
+            {
+                "pay_period_start": "2026-06-01",
+                "pay_period_end": "2026-06-30",
+                "payment_date": "2026-06-30",
+                "total_gross": "34000.00",
+                "total_deductions": "0",
+                "total_net": "34000.00",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    pid = json.loads(r.content)["id"]
+    r = api_client.post(
+        f"/api/payroll/{pid}/employee-allocations-from-hr/",
+        data="{}",
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    d = json.loads(r.content)
+    assert d["employee_allocations_total"] == 34000.0
+    by_num = {x["employee_number"]: x for x in d["employee_allocations"]}
+    assert by_num["EMP-00001"]["employee_name"] == "Yunus Khan"
+    assert by_num["EMP-00001"]["amount"] == "20000.00"
+    assert by_num["EMP-00002"]["employee_name"] == "Baro Babu"
+    assert by_num["EMP-00002"]["amount"] == "14000.00"
+    assert d["employee_allocations_source"] == "stored"
+
+
+@pytest.mark.django_db
+def test_partial_payroll_two_picked_employees_not_whole_roster(
+    api_client: Client, auth_admin_headers, user_admin
+):
+    """Picking two employees must not spread wages across every active employee."""
+    from decimal import Decimal
+
+    from django.db.models import Sum
+
+    from api.models import (
+        AquaculturePond,
+        BankAccount,
+        ChartOfAccount,
+        Company,
+        Employee,
+        EmployeeLedgerEntry,
+    )
+
+    cid = user_admin.company_id
+    Company.objects.filter(pk=cid).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    ChartOfAccount.objects.get_or_create(
+        company_id=cid,
+        account_code="6712",
+        defaults={
+            "account_name": "Aquaculture Expense — Labor & Wages",
+            "account_type": "expense",
+            "account_sub_type": "payroll_expenses",
+        },
+    )
+    bcoa, _ = ChartOfAccount.objects.get_or_create(
+        company_id=cid,
+        account_code="1030",
+        defaults={
+            "account_name": "Bank Operating",
+            "account_type": "asset",
+            "account_sub_type": "bank",
+        },
+    )
+    bank = BankAccount.objects.create(
+        company_id=cid,
+        chart_account=bcoa,
+        account_name="Payroll Bank",
+        account_number="TWO-EMP",
+        bank_name="Test Bank",
+    )
+    pond = AquaculturePond.objects.create(company_id=cid, name="Digonta")
+    emp1 = Employee.objects.create(
+        company_id=cid,
+        employee_code="E1",
+        employee_number="EMP-00001",
+        first_name="Yunus",
+        last_name="Khan",
+        salary=Decimal("20000.00"),
+        is_active=True,
+        aquaculture_labor_scope="all_ponds_equal",
+    )
+    emp6 = Employee.objects.create(
+        company_id=cid,
+        employee_code="E6",
+        employee_number="EMP-00006",
+        first_name="Baro",
+        last_name="Babu",
+        salary=Decimal("14000.00"),
+        is_active=True,
+        aquaculture_labor_scope="assigned_pond",
+        home_aquaculture_pond=pond,
+    )
+    for num, sal in [
+        ("EMP-001", "15000"),
+        ("EMP-002", "14000"),
+        ("EMP-003", "28000"),
+        ("EMP-004", "14000"),
+        ("EMP-005", "25000"),
+    ]:
+        Employee.objects.create(
+            company_id=cid,
+            employee_code=num,
+            employee_number=num,
+            first_name=num,
+            last_name="Other",
+            salary=Decimal(sal),
+            is_active=True,
+            aquaculture_labor_scope="assigned_pond",
+            home_aquaculture_pond=pond,
+        )
+
+    r = api_client.post(
+        "/api/payroll/",
+        data=json.dumps(
+            {
+                "pay_period_start": "2026-06-01",
+                "pay_period_end": "2026-06-30",
+                "payment_date": "2026-06-30",
+                "total_gross": "10000.00",
+                "total_deductions": "0",
+                "total_net": "10000.00",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    pid = json.loads(r.content)["id"]
+
+    r = api_client.post(
+        f"/api/payroll/{pid}/post-to-books/",
+        data=json.dumps({"bank_account_id": bank.id}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 400, r.content.decode()
+
+    r = api_client.put(
+        f"/api/payroll/{pid}/",
+        data=json.dumps(
+            {
+                "employee_allocations": [
+                    {"employee_id": emp1.id, "amount": "6000.00"},
+                    {"employee_id": emp6.id, "amount": "4000.00"},
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    d = json.loads(r.content)
+    assert len(d["employee_allocations"]) == 2
+    assert d["employee_allocations_total"] == 10000.0
+
+    r = api_client.post(
+        f"/api/payroll/{pid}/post-to-books/",
+        data=json.dumps({"bank_account_id": bank.id}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    d = json.loads(r.content)
+    assert len(d["employee_allocations"]) == 2
+    nums = {x["employee_number"] for x in d["employee_allocations"]}
+    assert nums == {"EMP-00001", "EMP-00006"}
+
+    ledger_count = EmployeeLedgerEntry.objects.filter(
+        payroll_run_id=pid, debit__gt=0
+    ).count()
+    assert ledger_count == 2
+    gross_by_emp = {
+        row["employee__employee_number"]: row["t"]
+        for row in EmployeeLedgerEntry.objects.filter(payroll_run_id=pid, debit__gt=0)
+        .values("employee__employee_number")
+        .annotate(t=Sum("debit"))
+    }
+    assert gross_by_emp["EMP-00001"] == Decimal("6000.00")
+    assert gross_by_emp["EMP-00006"] == Decimal("4000.00")
+
+
+@pytest.mark.django_db
+def test_legacy_whole_roster_proportional_split_is_cleared_on_read(
+    api_client: Client, auth_admin_headers, user_admin
+):
+    """Old auto-split rows across every employee are removed when opening the payroll."""
+    from decimal import Decimal
+
+    from api.models import AquaculturePond, Company, Employee, PayrollRun
+    from api.services.employee_payroll_allocations import replace_payroll_employee_allocations
+    from api.services.employee_payroll_subledger import _split_total_by_weights
+
+    cid = user_admin.company_id
+    Company.objects.filter(pk=cid).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    pond = AquaculturePond.objects.create(company_id=cid, name="Digonta")
+    emps = []
+    for num, sal in [
+        ("EMP-00001", "20000"),
+        ("EMP-00006", "14000"),
+        ("EMP-001", "15000"),
+        ("EMP-002", "14000"),
+        ("EMP-003", "28000"),
+        ("EMP-004", "14000"),
+        ("EMP-005", "25000"),
+    ]:
+        scope = "all_ponds_equal" if num == "EMP-00001" else "assigned_pond"
+        emps.append(
+            Employee.objects.create(
+                company_id=cid,
+                employee_code=num,
+                employee_number=num,
+                first_name=num,
+                last_name="Worker",
+                salary=Decimal(sal),
+                is_active=True,
+                aquaculture_labor_scope=scope,
+                home_aquaculture_pond=pond if scope == "assigned_pond" else None,
+            )
+        )
+    gross = Decimal("34000.00")
+    pr = PayrollRun.objects.create(
+        company_id=cid,
+        pay_period_start="2026-06-01",
+        pay_period_end="2026-06-30",
+        payment_date="2026-06-30",
+        total_gross=gross,
+        total_deductions=Decimal("0"),
+        total_net=gross,
+    )
+    weights = [Decimal(str(e.salary)) for e in emps]
+    parts = _split_total_by_weights(gross, weights)
+    replace_payroll_employee_allocations(pr.id, list(zip(emps, parts)))
+
+    r = api_client.get(f"/api/payroll/{pr.id}/", **auth_admin_headers)
+    assert r.status_code == 200, r.content.decode()
+    d = json.loads(r.content)
+    assert d["employee_allocations"] == []
+    assert d["employee_allocations_total"] == 0.0
+    assert any("Cleared old auto-generated" in w for w in d.get("employee_allocation_warnings", []))

@@ -19,9 +19,57 @@ const SIDEBAR_WIDTH_MIN = 200
 const SIDEBAR_WIDTH_MAX = 520
 
 const NAV_ITEM_ACTIVE_CLASS =
-  'border-blue-400/80 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-500/30'
+  'border-blue-500/50 bg-blue-600/90 text-white'
 const NAV_ITEM_IDLE_CLASS =
-  'border-transparent text-gray-300 hover:border-gray-600 hover:bg-gray-800/70 hover:text-white'
+  'border-transparent text-gray-400 hover:bg-gray-800/80 hover:text-gray-200'
+const SAAS_NAV_ITEM_ACTIVE_CLASS =
+  'border-violet-500/50 bg-violet-600/90 text-white'
+
+type SidebarMode = 'fsms_erp' | 'saas_dashboard'
+
+function SidebarModeTabs({
+  mode,
+  onModeChange,
+}: {
+  mode: SidebarMode
+  onModeChange: (mode: SidebarMode) => void
+}) {
+  const tabs: { id: SidebarMode; label: string; icon: typeof Building2 }[] = [
+    { id: 'fsms_erp', label: 'FSMS ERP', icon: Building2 },
+    { id: 'saas_dashboard', label: 'SaaS', icon: Shield },
+  ]
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Application mode"
+      className="flex rounded-md bg-gray-950/80 p-0.5 ring-1 ring-gray-800"
+    >
+      {tabs.map(({ id, label, icon: Icon }) => {
+        const active = mode === id
+        return (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onModeChange(id)}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-[11px] font-medium transition-colors ${
+              active
+                ? id === 'fsms_erp'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-violet-600 text-white shadow-sm'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="truncate">{label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -326,20 +374,18 @@ export default function Sidebar() {
   const renderNavItem = (item: (typeof menuItemsForNav)[number]) => {
     const Icon = item.icon
     const isActive = activeNavHref !== null && item.href === activeNavHref
+    const activeClass = mode === 'saas_dashboard' ? SAAS_NAV_ITEM_ACTIVE_CLASS : NAV_ITEM_ACTIVE_CLASS
     return (
       <Link
         key={item.href}
         href={item.href}
         data-nav-active={isActive ? 'true' : undefined}
-        className={`flex items-center space-x-3 rounded-lg border-2 px-3 py-2.5 transition-all duration-200 group ${
-          isActive ? NAV_ITEM_ACTIVE_CLASS : NAV_ITEM_IDLE_CLASS
+        className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors group ${
+          isActive ? activeClass : NAV_ITEM_IDLE_CLASS
         }`}
       >
-        <Icon className={`h-4.5 w-4.5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'} transition-colors`} />
-        <span className="text-sm font-medium flex-1 truncate">{item.label}</span>
-        {isActive && (
-          <div className="ml-auto h-2 w-2 rounded-full bg-white shadow-sm"></div>
-        )}
+        <Icon className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-gray-300'}`} />
+        <span className="min-w-0 flex-1 truncate text-xs font-medium">{item.label}</span>
       </Link>
     )
   }
@@ -376,135 +422,70 @@ export default function Sidebar() {
         `}
       >
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between border-b border-gray-800 p-4 sm:p-6">
-        <div>
-          <h1 className="text-xl font-bold text-blue-400 sm:text-2xl">FSMS</h1>
-          <p className="mt-1 text-xs text-gray-400">Filling Station ERP</p>
+      <div className="flex shrink-0 items-center justify-between border-b border-gray-800 px-3 py-2.5">
+        <div className="min-w-0">
+          <h1 className="text-base font-bold leading-none text-blue-400">FSMS</h1>
+          <p className="mt-0.5 truncate text-[10px] text-gray-500">
+            {mode === 'saas_dashboard' ? 'Platform admin' : 'Filling Station ERP'}
+          </p>
         </div>
         <button
           type="button"
           onClick={() => setMobileNavOpen(false)}
-          className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white md:hidden"
+          className="rounded-md p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white md:hidden"
           aria-label="Close navigation"
         >
-          <X className="h-6 w-6" />
+          <X className="h-5 w-5" />
         </button>
       </div>
 
-      {/* Tab System - Only for Super Admin */}
+      {/* Mode tabs — super admin only */}
       {navReady && isSuperAdmin && (
-        <div className="shrink-0 border-b border-gray-800 bg-gradient-to-b from-gray-850 to-gray-900">
-          {/* Tabs — stack labels on very narrow screens */}
-          <div className="flex flex-col gap-1 bg-gray-800/30 p-1 sm:flex-row sm:rounded-t-lg">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                handleModeChange('fsms_erp').catch(error => {
-                  safeLogError('Error in handleModeChange:', error)
-                })
-              }}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all sm:px-4 sm:py-3 sm:text-sm ${
-                mode === 'fsms_erp'
-                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30 border border-blue-400/50'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-              }`}
-            >
-              <Building2 className={`h-4 w-4 ${mode === 'fsms_erp' ? 'text-white' : ''}`} />
-              <span>FSMS ERP</span>
-              {mode === 'fsms_erp' && (
-                <span className="ml-1 text-xs">✓</span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleModeChange('saas_dashboard')}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all sm:px-4 sm:py-3 sm:text-sm ${
-                mode === 'saas_dashboard'
-                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30 border border-blue-400/50'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-              }`}
-            >
-              <Shield className={`h-4 w-4 ${mode === 'saas_dashboard' ? 'text-white' : ''}`} />
-              <span>SaaS Dashboard</span>
-            </button>
-          </div>
-          {/* SaaS mode context — in-sidebar so it never covers main content actions (e.g. New company). */}
-          {mode === 'saas_dashboard' && (
-            <div className="border-t border-gray-800/80 px-2 pb-2 pt-2">
-              <div className="rounded-lg border border-blue-800/60 bg-blue-950/45 px-3 py-2 shadow-inner">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-300/90">Mode</p>
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  <Shield className="h-3.5 w-3.5 shrink-0 text-blue-400" aria-hidden />
-                  <span className="text-sm font-semibold text-white">SaaS platform</span>
-                </div>
-                <p className="mt-0.5 text-[10px] text-gray-400">Not scoped to one tenant</p>
-              </div>
-            </div>
-          )}
+        <div className="shrink-0 border-b border-gray-800 px-2 py-2">
+          <SidebarModeTabs
+            mode={mode}
+            onModeChange={(newMode) => {
+              handleModeChange(newMode).catch((error) => {
+                safeLogError('Error in handleModeChange:', error)
+              })
+            }}
+          />
         </div>
       )}
 
-      {/* ERP tenant scope: all list/detail APIs use this company (superadmin: header X-Selected-Company-Id). */}
       {showingErpNav && (
-        <div className="max-h-[min(32vh,14rem)] shrink-0 overflow-y-auto border-b border-gray-800 bg-gray-800/40 px-3 py-2.5 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900">
-          {isSuperAdmin && mode === 'fsms_erp' && !selectedCompany?.id ? (
-            <p className="text-xs leading-snug text-amber-300">
-              Choose a <span className="font-semibold">company</span> below (e.g. Master Filling Station). All ERP pages
-              use that company until you switch.
-            </p>
+        <div className="shrink-0 border-b border-gray-800 px-2 py-1.5">
+          {isSuperAdmin && mode === 'fsms_erp' ? (
+            <CompanySwitcher compact />
           ) : scopeCompanyLabel ? (
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {scopeCompanyLabel.isMaster ? (
-                  <Crown className="h-3.5 w-3.5 shrink-0 text-yellow-400" aria-hidden />
-                ) : (
-                  <Building2 className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                )}
-                <span className="text-xs font-semibold text-white truncate" title={scopeCompanyLabel.name}>
-                  {scopeCompanyLabel.name}
+            <div className="flex min-w-0 items-center gap-1.5 px-0.5">
+              {scopeCompanyLabel.isMaster ? (
+                <Crown className="h-3.5 w-3.5 shrink-0 text-yellow-400" aria-hidden />
+              ) : (
+                <Building2 className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+              )}
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-white" title={scopeCompanyLabel.name}>
+                {scopeCompanyLabel.name}
+              </span>
+              {scopeCompanyLabel.isMaster ? (
+                <span className="shrink-0 rounded bg-yellow-900/80 px-1 py-px text-[9px] font-medium text-yellow-200">
+                  Master
                 </span>
-                {scopeCompanyLabel.isMaster ? (
-                  <span className="rounded bg-yellow-900/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-yellow-200">
-                    Master · dev baseline
-                  </span>
-                ) : (
-                  <span className="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-200">
-                    Tenant
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] leading-snug text-gray-400">
-                Data is isolated by company ID (not by station name). Develop and test on Master here; when ready, roll
-                the same changes to tenants such as Adib using your upgrade process.
-              </p>
+              ) : null}
             </div>
-          ) : (
-            <p className="text-xs text-gray-500">Loading company context…</p>
-          )}
-          {isSuperAdmin && mode === 'fsms_erp' && (
-            <div className="mt-3 border-t border-gray-700/80 pt-3">
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">Switch Company</p>
-              <p className="mb-2 text-[10px] leading-snug text-gray-500">
-                Master appears at the top; other tenants (e.g. Adib Filling Station) are under{' '}
-                <span className="text-gray-400">Companies</span> — scroll if the list is long.
-              </p>
-              <CompanySwitcher />
-            </div>
-          )}
+          ) : null}
         </div>
       )}
 
       {/* Navigation + menu search */}
-      <nav className="flex min-h-0 flex-1 flex-col border-t border-gray-800/80">
-        <div className="shrink-0 px-3 pb-2 pt-3 sm:px-4">
+      <nav className="flex min-h-0 flex-1 flex-col">
+        <div className="shrink-0 px-2 pb-1.5 pt-2">
           <label htmlFor="sidebar-menu-search" className="sr-only">
             Search menu
           </label>
           <div className="relative">
             <Search
-              className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500"
+              className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500"
               aria-hidden
             />
             <input
@@ -513,8 +494,8 @@ export default function Sidebar() {
               autoComplete="off"
               value={navSearchQuery}
               onChange={(e) => setNavSearchQuery(e.target.value)}
-              placeholder="Search menu…"
-              className="w-full rounded-lg border border-gray-700 bg-gray-800/90 py-2 pl-9 pr-8 text-sm text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+              placeholder="Search…"
+              className="w-full rounded-md border border-gray-700/80 bg-gray-800/80 py-1.5 pl-8 pr-7 text-xs text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40"
             />
             {navSearchQuery ? (
               <button
@@ -531,7 +512,7 @@ export default function Sidebar() {
 
         <div
           ref={navScrollRef}
-          className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900 sm:px-4"
+          className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-0.5 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900"
         >
         {!navReady ? (
           <div className="py-8 text-center text-sm text-gray-500" aria-busy="true">
@@ -555,7 +536,7 @@ export default function Sidebar() {
             )}
           </div>
         ) : isSearchingMenu ? (
-          <div className="space-y-0.5 pl-1">{menuItemsForNav.map(renderNavItem)}</div>
+          <div className="space-y-px">{menuItemsForNav.map(renderNavItem)}</div>
         ) : (
           sectionsForNav.map((section) => {
             const sectionItems = menuItemsForNav.filter((item) => item.section === section.id)
@@ -567,12 +548,12 @@ export default function Sidebar() {
               section.id === 'aquaculture' && sectionItems.some((i) => i.subGroupId)
 
             return (
-              <div key={section.id} className="mb-5">
-                <h3 className="mb-2.5 rounded-md bg-gray-800/50 px-2 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-300">
+              <div key={section.id} className="mb-3">
+                <h3 className="mb-1 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
                   {section.label}
                 </h3>
                 {hasSubGroups ? (
-                  <div className="space-y-3 pl-1">
+                  <div className="space-y-2">
                     {(() => {
                       const groups: { id: string; label: string; items: typeof sectionItems }[] = []
                       for (const item of sectionItems) {
@@ -588,17 +569,17 @@ export default function Sidebar() {
                       return groups.map((g) => (
                         <div key={g.id}>
                           {g.label ? (
-                            <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                            <p className="mb-0.5 px-1.5 text-[9px] font-medium uppercase tracking-wide text-gray-600">
                               {g.label}
                             </p>
                           ) : null}
-                          <div className="space-y-0.5">{g.items.map(renderNavItem)}</div>
+                          <div className="space-y-px">{g.items.map(renderNavItem)}</div>
                         </div>
                       ))
                     })()}
                   </div>
                 ) : (
-                  <div className="space-y-0.5 pl-1">{sectionItems.map(renderNavItem)}</div>
+                  <div className="space-y-px">{sectionItems.map(renderNavItem)}</div>
                 )}
               </div>
             )
@@ -607,23 +588,23 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      {/* Footer — always pinned at bottom of sidebar viewport */}
-      <div className="sidebar-footer-pad mt-auto shrink-0 space-y-0.5 border-t border-gray-700 bg-gray-900 p-3 pt-3 shadow-[0_-8px_24px_rgba(0,0,0,0.45)] sm:px-4 sm:pt-4">
+      {/* Footer */}
+      <div className="sidebar-footer-pad mt-auto shrink-0 border-t border-gray-800 bg-gray-900/95 p-2">
         <Link
           href="/account/password"
-          className="flex w-full items-center space-x-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
         >
-          <KeyRound className="h-5 w-5 shrink-0" />
-          <span className="text-sm font-medium">Change password</span>
+          <KeyRound className="h-3.5 w-3.5 shrink-0" />
+          <span className="text-xs font-medium">Password</span>
         </Link>
         <button
           type="button"
           onClick={performLogout}
-          className="flex w-full items-center space-x-3 rounded-lg px-3 py-2 text-left text-red-300 transition-colors hover:bg-red-950/40 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-red-400/90 transition-colors hover:bg-red-950/40 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60"
           aria-label="Log out"
         >
-          <LogOut className="h-5 w-5 shrink-0" aria-hidden />
-          <span className="text-sm font-medium">Logout</span>
+          <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span className="text-xs font-medium">Logout</span>
         </button>
       </div>
     </aside>

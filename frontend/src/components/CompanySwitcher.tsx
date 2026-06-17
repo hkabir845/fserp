@@ -49,7 +49,7 @@ function readUserRole(): string | null {
   }
 }
 
-export default function CompanySwitcher() {
+export default function CompanySwitcher({ compact = false }: { compact?: boolean }) {
   const router = useRouter()
   const { selectedCompany, setSelectedCompany, isSaaSDashboard, isMasterCompany, mode } = useCompany()
   const [companies, setCompanies] = useState<Company[]>([])
@@ -268,9 +268,9 @@ export default function CompanySwitcher() {
 
   if (loading) {
     return (
-      <div className="relative w-full min-w-0 max-w-full sm:max-w-sm">
-        <div className="rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 sm:px-4">
-          <span className="text-sm text-gray-400">Loading...</span>
+      <div className="relative w-full min-w-0 max-w-full">
+        <div className={`rounded-md border border-gray-700 bg-gray-800/80 ${compact ? 'px-2 py-1' : 'px-3 py-2 sm:px-4'}`}>
+          <span className={`text-gray-500 ${compact ? 'text-[11px]' : 'text-sm text-gray-400'}`}>Loading…</span>
         </div>
       </div>
     )
@@ -278,9 +278,9 @@ export default function CompanySwitcher() {
 
   if (fetchError) {
     return (
-      <div className="relative w-full min-w-0 max-w-full sm:max-w-sm">
-        <div className="rounded-lg border border-amber-700/80 bg-amber-950/40 px-3 py-2.5 sm:px-4">
-          <p className="text-xs leading-snug text-amber-200">{fetchError}</p>
+      <div className="relative w-full min-w-0 max-w-full">
+        <div className={`rounded-md border border-amber-700/80 bg-amber-950/40 ${compact ? 'px-2 py-1.5' : 'px-3 py-2.5 sm:px-4'}`}>
+          <p className={`leading-snug text-amber-200 ${compact ? 'text-[10px]' : 'text-xs'}`}>{fetchError}</p>
           <button
             type="button"
             onClick={() => {
@@ -300,7 +300,7 @@ export default function CompanySwitcher() {
   const openDisabled = readOnlySwitch && companies.length <= 1
 
   return (
-    <div ref={triggerRef} className="relative z-30 w-full min-w-0 max-w-full sm:max-w-sm">
+    <div ref={triggerRef} className="relative z-30 w-full min-w-0 max-w-full">
       <button
         type="button"
         onClick={() => {
@@ -309,28 +309,30 @@ export default function CompanySwitcher() {
           setIsOpen(!isOpen)
         }}
         title={currentLabel}
-        className={`flex w-full min-w-0 items-start gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-left hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:items-center sm:px-4 ${openDisabled ? 'cursor-default opacity-95' : ''}`}
+        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md border border-gray-700/80 bg-gray-800/80 text-left hover:border-blue-500/70 focus:outline-none focus:ring-1 focus:ring-blue-500/50 ${
+          compact ? 'px-2 py-1' : 'items-start gap-2 px-3 py-2.5 sm:items-center sm:px-4'
+        } ${openDisabled ? 'cursor-default opacity-95' : ''}`}
       >
-        <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-          <div className="flex min-w-0 items-center gap-2">
+        <div className={`flex min-w-0 flex-1 ${compact ? 'items-center gap-1.5' : 'flex-col gap-1 sm:flex-row sm:items-center sm:gap-2'}`}>
+          <div className="flex min-w-0 items-center gap-1.5">
             {mode === 'fsms_erp' ? (
               isMasterCompany ? (
-                <Crown className="h-4 w-4 shrink-0 text-yellow-400" />
+                <Crown className={`shrink-0 text-yellow-400 ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
               ) : (
-                <Building2 className="h-4 w-4 shrink-0 text-gray-400" />
+                <Building2 className={`shrink-0 text-gray-400 ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
               )
             ) : isSaaSDashboard ? (
-              <Shield className="h-4 w-4 shrink-0 text-blue-400" />
+              <Shield className={`shrink-0 text-blue-400 ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
             ) : isMasterCompany ? (
-              <Crown className="h-4 w-4 shrink-0 text-yellow-400" />
+              <Crown className={`shrink-0 text-yellow-400 ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
             ) : (
-              <Building2 className="h-4 w-4 shrink-0 text-gray-400" />
+              <Building2 className={`shrink-0 text-gray-400 ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
             )}
-            <span className="line-clamp-2 min-w-0 break-words text-sm font-medium text-white">
+            <span className={`min-w-0 truncate font-medium text-white ${compact ? 'text-[11px]' : 'line-clamp-2 break-words text-sm'}`}>
               {currentLabel}
             </span>
           </div>
-          {isMasterCompany && (
+          {isMasterCompany && !compact && (
             <span className="shrink-0 self-start rounded bg-yellow-900 px-1.5 py-0.5 text-[10px] text-yellow-300 sm:self-center sm:text-xs">
               Master
             </span>
@@ -338,22 +340,10 @@ export default function CompanySwitcher() {
         </div>
         {!openDisabled && (
           <ChevronDown
-            className={`mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform sm:mt-0 ${isOpen ? 'rotate-180' : ''}`}
+            className={`shrink-0 text-gray-400 transition-transform ${compact ? 'h-3 w-3' : 'mt-0.5 h-4 w-4 sm:mt-0'} ${isOpen ? 'rotate-180' : ''}`}
           />
         )}
       </button>
-      {switcherMode === 'fleet' && mode === 'fsms_erp' && masterCompanies.length === 0 && companies.length > 0 && (
-        <p className="mt-1.5 px-0.5 text-[10px] leading-snug text-gray-500">
-          No Master demo company: the first tenant is auto-selected for API scope (like Master Filling Station). Switch
-          here if you use multiple tenants.
-        </p>
-      )}
-      {switcherMode === 'group' && (
-        <p className="mt-1.5 px-0.5 text-[10px] leading-snug text-gray-500">
-          Same login portal — switch legal entity (company books). Data stays scoped per company.
-        </p>
-      )}
-
       {isOpen && !openDisabled && menuPos && typeof document !== 'undefined' && createPortal(
         <>
           <div className="fixed inset-0 z-[1000]" onClick={() => setIsOpen(false)} aria-hidden />

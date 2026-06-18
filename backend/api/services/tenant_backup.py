@@ -101,6 +101,7 @@ from api.models import (
     PaymentBillAllocation,
     PaymentInvoiceAllocation,
     PayrollRun,
+    PayrollRunEmployeeAllocation,
     PayrollRunPondAllocation,
     PondWarehouseStockReceipt,
     PondWarehouseStockReceiptLine,
@@ -151,6 +152,7 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.shifttemplate",
     "api.payrollrun",
     "api.payrollrunpondallocation",
+    "api.payrollrunemployeeallocation",
     "api.loancounterparty",
     "api.bankaccount",
     "api.subscriptionledgerinvoice",
@@ -244,6 +246,9 @@ def _init_backup_row_exists_overrides() -> None:
             "api.organization": lambda cid: Company.objects.filter(pk=cid).exists(),
             "api.broadcastread": lambda cid: _tenant_broadcast_reads_qs(cid).exists(),
             "api.payrollrunpondallocation": lambda cid: PayrollRunPondAllocation.objects.filter(
+                payroll_run__company_id=cid
+            ).exists(),
+            "api.payrollrunemployeeallocation": lambda cid: PayrollRunEmployeeAllocation.objects.filter(
                 payroll_run__company_id=cid
             ).exists(),
             "api.aquaculturelandlordpondshare": lambda cid: AquacultureLandlordPondShare.objects.filter(
@@ -469,6 +474,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).delete()
     AquacultureLandlordLedgerEntry.objects.filter(landlord__company_id=cid).delete()
     AquacultureLandlordPondShare.objects.filter(landlord__company_id=cid).delete()
+    PayrollRunEmployeeAllocation.objects.filter(payroll_run__company_id=cid).delete()
     PayrollRunPondAllocation.objects.filter(payroll_run__company_id=cid).delete()
 
     tenant_user_ids = _tenant_user_ids(cid)
@@ -666,6 +672,9 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
     _serialize_many(records, ShiftTemplate.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, PayrollRun.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, PayrollRunPondAllocation.objects.filter(payroll_run__company_id=cid).order_by("id"))
+    _serialize_many(
+        records, PayrollRunEmployeeAllocation.objects.filter(payroll_run__company_id=cid).order_by("id")
+    )
     _serialize_many(records, LoanCounterparty.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, BankAccount.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(

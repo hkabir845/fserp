@@ -593,7 +593,9 @@ def _payroll_run_to_json(p: PayrollRun, *, include_allocations: bool = True) -> 
         out["company_payroll_portion"] = float(company_portion)
         out["is_mixed_entity_payroll"] = bool(allocs) and company_portion > Decimal("0.02")
         co_aq = Company.objects.filter(pk=p.company_id).only("aquaculture_enabled").first()
-        if co_aq and getattr(co_aq, "aquaculture_enabled", False):
+        aq_en = bool(co_aq and getattr(co_aq, "aquaculture_enabled", False))
+        out["aquaculture_enabled"] = aq_en
+        if aq_en:
             out["aquaculture_pond_options"] = [
                 {
                     "id": row.id,
@@ -700,17 +702,17 @@ def _sync_payroll_employee_allocations(company_id: int, p: PayrollRun, body: dic
         entries.append((emp, _q_money(amt)))
         total += _q_money(amt)
     gross = _q_money(p.total_gross or Decimal("0"))
-    if total > gross + Decimal("0.02"):
-        return JsonResponse(
-            {
-                "detail": (
-                    f"Employee wage rows ({total}) cannot exceed total gross wages ({gross}). "
-                    "Reduce employee amounts or increase gross pay."
-                )
-            },
-            status=400,
+    from api.services.employee_payroll_allocations import (
+        replace_payroll_employee_allocations,
+        validate_employee_allocations_match_gross,
+    )
+
+    if entries:
+        match_err = validate_employee_allocations_match_gross(
+            gross, total, require_rows=False, row_count=len(entries)
         )
-    from api.services.employee_payroll_allocations import replace_payroll_employee_allocations
+        if match_err:
+            return JsonResponse({"detail": match_err}, status=400)
 
     replace_payroll_employee_allocations(p.id, entries)
     if len(entries) == 1:

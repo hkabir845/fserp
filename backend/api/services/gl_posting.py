@@ -3037,22 +3037,20 @@ def post_payroll_salary(
     from api.services.employee_payroll_allocations import (
         employee_allocation_sum,
         sync_payroll_employee_allocations_from_hr,
+        validate_employee_allocations_match_gross,
     )
 
-    if not PayrollRunEmployeeAllocation.objects.filter(payroll_run_id=pr.id).exists():
+    stored_count = PayrollRunEmployeeAllocation.objects.filter(payroll_run_id=pr.id).count()
+    if stored_count == 0:
         sync_payroll_employee_allocations_from_hr(company_id, pr)
-        if not PayrollRunEmployeeAllocation.objects.filter(payroll_run_id=pr.id).exists():
-            return (
-                None,
-                "Pick which employees are paid on this run, enter each amount, save, "
-                "then post. Partial payroll cannot be split across the whole roster automatically.",
-            )
-        alloc_sum = employee_allocation_sum(pr.id)
-        if abs(alloc_sum - gross) > Decimal("0.02"):
-            return (
-                None,
-                f"Employee wage rows ({alloc_sum}) must match payroll gross ({gross}) before posting.",
-            )
+        stored_count = PayrollRunEmployeeAllocation.objects.filter(payroll_run_id=pr.id).count()
+
+    alloc_sum = employee_allocation_sum(pr.id)
+    match_err = validate_employee_allocations_match_gross(
+        gross, alloc_sum, require_rows=True, row_count=stored_count
+    )
+    if match_err:
+        return None, match_err
     pr = PayrollRun.objects.filter(id=pr.id, company_id=company_id).first()
     if not pr:
         return None, "Payroll run not found"

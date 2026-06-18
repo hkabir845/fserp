@@ -508,5 +508,15 @@ export function backendUrl(path: string): string {
   return `${getBackendOrigin().replace(/\/+$/, '')}${p}`
 }
 
+/** Human-readable `detail` from a failed axios response (DRF-style). */
+export function readApiErrorDetail(error: unknown): string | undefined {
+  if (!axios.isAxiosError(error)) return undefined
+  const d = error.response?.data
+  if (d && typeof d === 'object' && 'detail' in d && typeof (d as { detail: unknown }).detail === 'string') {
+    return (d as { detail: string }).detail
+  }
+  return undefined
+}
+
 export { api }
 export default api

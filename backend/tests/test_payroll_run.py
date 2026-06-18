@@ -1059,6 +1059,97 @@ def test_partial_payroll_two_picked_employees_not_whole_roster(
 
 
 @pytest.mark.django_db
+def test_payroll_rejects_employee_wages_not_matching_gross(
+    api_client: Client, auth_admin_headers, user_admin, bank
+):
+    """Save and GL post are blocked when employee wage rows do not equal payroll gross."""
+    from decimal import Decimal
+
+    from api.models import Employee
+
+    cid = user_admin.company_id
+    emp = Employee.objects.create(
+        company_id=cid,
+        employee_code="EMP-MISMATCH",
+        employee_number="EMP-MISMATCH",
+        first_name="Test",
+        last_name="Worker",
+        salary=Decimal("35000.00"),
+        is_active=True,
+    )
+    r = api_client.post(
+        "/api/payroll/",
+        data=json.dumps(
+            {
+                "pay_period_start": "2026-06-01",
+                "pay_period_end": "2026-06-30",
+                "payment_date": "2026-06-30",
+                "total_gross": "34000.00",
+                "total_deductions": "0",
+                "total_net": "34000.00",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    pid = json.loads(r.content)["id"]
+
+    r = api_client.put(
+        f"/api/payroll/{pid}/",
+        data=json.dumps(
+            {
+                "employee_allocations": [
+                    {"employee_id": emp.id, "amount": "35000.00"},
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 400, r.content.decode()
+    assert "35000" in json.loads(r.content)["detail"]
+    assert "34000" in json.loads(r.content)["detail"]
+
+    r = api_client.put(
+        f"/api/payroll/{pid}/",
+        data=json.dumps(
+            {
+                "employee_allocations": [
+                    {"employee_id": emp.id, "amount": "30000.00"},
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 400, r.content.decode()
+    assert "must match" in json.loads(r.content)["detail"].lower()
+
+    r = api_client.put(
+        f"/api/payroll/{pid}/",
+        data=json.dumps(
+            {
+                "employee_allocations": [
+                    {"employee_id": emp.id, "amount": "34000.00"},
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+
+    r = api_client.post(
+        f"/api/payroll/{pid}/post-to-books/",
+        data=json.dumps({"bank_account_id": bank.id}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+
+
+@pytest.mark.django_db
 def test_legacy_whole_roster_proportional_split_is_cleared_on_read(
     api_client: Client, auth_admin_headers, user_admin
 ):

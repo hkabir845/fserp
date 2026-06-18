@@ -8,7 +8,9 @@ import { Plus, Eye, DollarSign, X, Calendar, FileText, CheckCircle, Clock, XCirc
 import { useToast } from '@/components/Toast'
 import { getCurrencySymbol, formatNumber, formatAmountPlain } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
-import { getApiBaseUrl } from '@/lib/api'
+import api, { readApiErrorDetail } from '@/lib/api'
+import axios from 'axios'
+import { useCompany } from '@/contexts/CompanyContext'
 import { formatBankRegisterLabel } from '@/lib/bankAccountDisplay'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import {
@@ -45,6 +47,7 @@ interface PayrollRun {
   pond_allocations_total?: number
   company_payroll_portion?: number
   is_mixed_entity_payroll?: boolean
+  aquaculture_enabled?: boolean
   aquaculture_pond_options?: { id: number; name: string; is_active?: boolean }[]
   pond_allocation_warnings?: string[]
   employee_allocations?: {
@@ -73,6 +76,16 @@ function parseMoneyInput(s: string): number {
   if (t === '') return 0
   const n = Number(t)
   return Number.isFinite(n) ? n : 0
+}
+
+/** Block save/post when picked employee wages do not equal payroll gross. */
+function employeeWagesMismatchMessage(sumEmp: number, gross: number): string | null {
+  if (sumEmp <= 0.02) return null
+  if (Math.abs(sumEmp - gross) <= 0.02) return null
+  if (sumEmp > gross) {
+    return `Employee wage rows (${formatNumber(sumEmp)}) exceed total gross (${formatNumber(gross)}). Reduce employee amounts or increase gross pay.`
+  }
+  return `Employee wage rows (${formatNumber(sumEmp)}) must match total gross (${formatNumber(gross)}). Adjust employee amounts or use Sum from employees.`
 }
 
 function sumEarningInputs(base: string, ot: string, bonus: string, other: string): number {
@@ -179,6 +192,33 @@ function employeeAllocDraftFromPayrollApi(data: PayrollRun): { employee_id: stri
   }))
 }
 
+/** Include employees already on this payroll run even if the list API is still loading. */
+function mergeEmployeesForPicker(
+  active: EmployeeRow[],
+  allocations: PayrollRun['employee_allocations']
+): EmployeeRow[] {
+  const byId = new Map(active.map((e) => [e.id, e]))
+  if (Array.isArray(allocations)) {
+    for (const row of allocations) {
+      if (byId.has(row.employee_id)) continue
+      const fullName = (row.employee_name || '').trim()
+      const nameParts = fullName.split(/\s+/).filter(Boolean)
+      byId.set(row.employee_id, {
+        id: row.employee_id,
+        employee_number: (row.employee_number || row.employee_code || '').trim() || `ID ${row.employee_id}`,
+        first_name: nameParts[0] || fullName || 'Employee',
+        last_name: nameParts.slice(1).join(' '),
+        salary:
+          row.hr_salary != null && Number(row.hr_salary) > 0 ? Number(row.hr_salary) : null,
+        is_active: true,
+        work_site_label: row.labor_scope_label,
+        home_aquaculture_pond_name: row.home_aquaculture_pond_name,
+      })
+    }
+  }
+  return [...byId.values()]
+}
+
 /** Build pond P&L rows from employees picked on this run (separate from who gets paid). */
 function inferPondAllocationsFromEmployees(
   draft: { employee_id: string; amount: string }[],
@@ -248,9 +288,22 @@ function inferPayrollStationId(
   return ''
 }
 
+type PondOption = { id: number; name: string; is_active?: boolean }
+
+function mapPondRows(raw: unknown): PondOption[] {
+  return Array.isArray(raw)
+    ? raw.map((x: { id: number; name: string; is_active?: boolean }) => ({
+        id: x.id,
+        name: (x.name || `Pond ${x.id}`).trim() || `Pond ${x.id}`,
+        is_active: x.is_active,
+      }))
+    : []
+}
+
 export default function PayrollPage() {
   const router = useRouter()
   const toast = useToast()
+  const { selectedCompany } = useCompany()
   const [payrolls, setPayrolls] = useState<PayrollRun[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -350,19 +403,23 @@ export default function PayrollPage() {
     [pondAllocDraftSum, detailCompanyPayrollPortion]
   )
   const [employees, setEmployees] = useState<EmployeeRow[]>([])
+  const [employeesLoading, setEmployeesLoading] = useState(false)
+  const [employeesLoadError, setEmployeesLoadError] = useState<string | null>(null)
   const activeEmployees = useMemo(
     () => employees.filter((e) => e.is_active !== false),
     [employees]
   )
-  const employeesForPicker = useMemo(
-    () =>
-      [...activeEmployees].sort((a, b) =>
-        (a.employee_number || String(a.id)).localeCompare(b.employee_number || String(b.id), undefined, {
-          numeric: true,
-        })
-      ),
-    [activeEmployees]
-  )
+  const employeesForPicker = useMemo(() => {
+    const merged = mergeEmployeesForPicker(
+      activeEmployees,
+      selectedPayroll?.employee_allocations
+    )
+    return [...merged].sort((a, b) =>
+      (a.employee_number || String(a.id)).localeCompare(b.employee_number || String(b.id), undefined, {
+        numeric: true,
+      })
+    )
+  }, [activeEmployees, selectedPayroll?.employee_allocations])
   const [oneEmployeeId, setOneEmployeeId] = useState<string>('')
   const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
   const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string; is_active?: boolean }[]>([])
@@ -371,9 +428,9 @@ export default function PayrollPage() {
   const pickedEmployeesInDraft = useMemo(
     () =>
       employeeAllocDraft
-        .map((r) => activeEmployees.find((e) => String(e.id) === r.employee_id))
+        .map((r) => employeesForPicker.find((e) => String(e.id) === r.employee_id))
         .filter((e): e is EmployeeRow => e != null),
-    [employeeAllocDraft, activeEmployees]
+    [employeeAllocDraft, employeesForPicker]
   )
   /** Fuel/shop payroll site — hidden when every picked employee is pond-only. */
   const showPayrollSiteSection = useMemo(() => {
@@ -392,49 +449,40 @@ export default function PayrollPage() {
     detailCompanyPayrollPortion,
   ])
 
-  useEffect(() => {
-    const token = localStorage.getItem('access_token')
-    if (!token) return
-    const baseUrl = getApiBaseUrl()
-    void (async () => {
+  const loadAquacultureContext = useCallback(
+    async (opts?: { preservePondsOnPondApiError?: boolean }): Promise<PondOption[]> => {
+      let en = false
       try {
-        const r = await fetch(`${baseUrl}/companies/current/`, {
-          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-          mode: 'cors',
-          credentials: 'omit',
-        })
-        if (!r.ok) return
-        const cj = await r.json()
-        const en = Boolean(cj.aquaculture_enabled)
+        const { data: cj } = await api.get<{ aquaculture_enabled?: boolean }>('/companies/current/')
+        en = Boolean(cj.aquaculture_enabled)
         setAquacultureEnabled(en)
-        if (!en) {
-          setAquaculturePonds([])
-          return
-        }
-        const pr = await fetch(`${baseUrl}/aquaculture/ponds/`, {
-          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-          mode: 'cors',
-          credentials: 'omit',
-        })
-        if (!pr.ok) {
-          return
-        }
-        const pj = await pr.json()
-        setAquaculturePonds(
-          Array.isArray(pj)
-            ? pj.map((x: { id: number; name: string; is_active?: boolean }) => ({
-                id: x.id,
-                name: (x.name || `Pond ${x.id}`).trim() || `Pond ${x.id}`,
-                is_active: x.is_active,
-              }))
-            : []
-        )
       } catch {
-        setAquacultureEnabled(false)
-        setAquaculturePonds([])
+        return []
       }
-    })()
-  }, [])
+      if (!en) {
+        setAquaculturePonds([])
+        return []
+      }
+      try {
+        const { data: pj } = await api.get<unknown[]>('/aquaculture/ponds/')
+        const ponds = mapPondRows(pj)
+        setAquaculturePonds(ponds)
+        return ponds
+      } catch {
+        // Payroll may be allowed without app.aquaculture; pond options can come from payroll detail.
+        if (!opts?.preservePondsOnPondApiError) {
+          setAquaculturePonds((prev) => prev)
+        }
+        return []
+      }
+    },
+    []
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !localStorage.getItem('access_token')?.trim()) return
+    void loadAquacultureContext()
+  }, [loadAquacultureContext, selectedCompany?.id])
 
   const showPondAllocationWarnings = useCallback(
     (data: PayrollRun) => {
@@ -476,6 +524,9 @@ export default function PayrollPage() {
     setDetailStationId(
       data.station_id != null && data.station_id > 0 ? String(data.station_id) : ''
     )
+    if (data.aquaculture_enabled != null) {
+      setAquacultureEnabled(Boolean(data.aquaculture_enabled))
+    }
     const pondOptions =
       Array.isArray(data.aquaculture_pond_options) && data.aquaculture_pond_options.length > 0
         ? data.aquaculture_pond_options.map((x) => ({
@@ -502,8 +553,7 @@ export default function PayrollPage() {
   }, [aquaculturePonds])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
-    if (!token) {
+    if (typeof window === 'undefined' || !localStorage.getItem('access_token')?.trim()) {
       router.push('/login')
       return
     }
@@ -512,25 +562,18 @@ export default function PayrollPage() {
     fetchBankAccounts()
     fetchGlPayAccounts()
     fetchStations()
-  }, [router])
+  }, [router, selectedCompany?.id])
 
   const fetchStations = async () => {
     try {
-      const token = localStorage.getItem('access_token')
-      if (!token) return
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/stations/`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-        mode: 'cors',
-        credentials: 'omit',
-      })
-      if (!response.ok) return
-      const data = await response.json()
+      const { data } = await api.get<
+        { id: number; station_name: string; operates_fuel_retail?: boolean; is_active?: boolean }[]
+      >('/stations/')
       setStations(
         Array.isArray(data)
           ? data
-              .filter((s: { is_active?: boolean }) => s.is_active !== false)
-              .map((s: { id: number; station_name: string; operates_fuel_retail?: boolean }) => ({
+              .filter((s) => s.is_active !== false)
+              .map((s) => ({
                 id: s.id,
                 station_name: (s.station_name || '').trim() || `Site #${s.id}`,
                 operates_fuel_retail: s.operates_fuel_retail,
@@ -560,39 +603,40 @@ export default function PayrollPage() {
     setPayFromSelect(defaultPayFromSelect(bankRegisters, glPayAccounts))
   }, [showDetailsModal, selectedPayroll?.id, bankRegisters, glPayAccounts])
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
+    setEmployeesLoading(true)
+    setEmployeesLoadError(null)
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/employees/`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-        mode: 'cors',
-        credentials: 'omit',
-      })
-      if (response.ok) {
-        const data: EmployeeRow[] = await response.json()
-        setEmployees(data || [])
-      }
+      const { data } = await api.get<EmployeeRow[]>('/employees/')
+      setEmployees(data || [])
     } catch (e) {
       console.error(e)
+      setEmployees([])
+      setEmployeesLoadError(readApiErrorDetail(e) || 'Could not load employees for this company')
+    } finally {
+      setEmployeesLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     if (showDetailsModal) {
-      fetchEmployees()
+      void fetchEmployees()
+      void loadAquacultureContext({ preservePondsOnPondApiError: true })
     }
-  }, [showDetailsModal])
+  }, [showDetailsModal, selectedCompany?.id, loadAquacultureContext, fetchEmployees])
+
+  /** Start with one picker row so the user can choose who is paid. */
+  useEffect(() => {
+    if (!showDetailsModal || !selectedPayroll || selectedPayroll.is_salary_posted) return
+    setEmployeeAllocDraft((draft) => (draft.length > 0 ? draft : [{ employee_id: '', amount: '' }]))
+  }, [showDetailsModal, selectedPayroll?.id, selectedPayroll?.is_salary_posted])
 
   /** Auto-fill payroll site from HR work sites when employees are picked (unless user changed site). */
   useEffect(() => {
     if (!showDetailsModal || stationTouched.current || !showPayrollSiteSection) return
-    const inferred = inferPayrollStationId(employeeAllocDraft, activeEmployees)
+    const inferred = inferPayrollStationId(employeeAllocDraft, employeesForPicker)
     setDetailStationId(inferred)
-  }, [employeeAllocDraft, activeEmployees, showDetailsModal, showPayrollSiteSection])
+  }, [employeeAllocDraft, employeesForPicker, showDetailsModal, showPayrollSiteSection])
 
   useEffect(() => {
     if (!showDetailsModal || showPayrollSiteSection || stationTouched.current) return
@@ -609,13 +653,13 @@ export default function PayrollPage() {
     }
     const inferred = inferPondAllocationsFromEmployees(
       employeeAllocDraft,
-      activeEmployees,
+      employeesForPicker,
       aquaculturePonds
     )
     setPondAllocDraft(inferred)
   }, [
     employeeAllocDraft,
-    activeEmployees,
+    employeesForPicker,
     aquaculturePonds,
     showDetailsModal,
     aquacultureEnabled,
@@ -623,22 +667,9 @@ export default function PayrollPage() {
 
   const fetchCompanyCurrency = async () => {
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/companies/current/`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        mode: 'cors',
-        credentials: 'omit'
-      })
-      if (response.ok) {
-        const data = await response.json()
-        if (data?.currency) {
-          setCurrencySymbol(getCurrencySymbol(data.currency))
-        }
+      const { data } = await api.get<{ currency?: string }>('/companies/current/')
+      if (data?.currency) {
+        setCurrencySymbol(getCurrencySymbol(data.currency))
       }
     } catch (error) {
       console.error('Error fetching company currency:', error)
@@ -647,28 +678,15 @@ export default function PayrollPage() {
 
   const fetchPayrolls = async () => {
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/payroll/`, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        mode: 'cors',
-        credentials: 'omit'
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setPayrolls(data)
-      } else if (response.status === 401) {
+      const { data } = await api.get<PayrollRun[]>('/payroll/')
+      setPayrolls(data)
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
         localStorage.removeItem('access_token')
         router.push('/login')
         toast.error('Session expired. Please login again.')
-      } else {
-        toast.error('Failed to load payroll runs')
+        return
       }
-    } catch (error) {
       console.error('Error fetching payroll:', error)
       toast.error('Error loading payroll runs')
     } finally {
@@ -678,22 +696,10 @@ export default function PayrollPage() {
 
   const fetchBankAccounts = async () => {
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/bank-accounts/`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-        mode: 'cors',
-        credentials: 'omit',
-      })
-      if (response.ok) {
-        const data: BankAccountRow[] = await response.json()
-        setBankRegisters(
-          (data || []).filter((b) => b.is_active !== false && !b.is_equity_register)
-        )
-      }
+      const { data } = await api.get<BankAccountRow[]>('/bank-accounts/')
+      setBankRegisters(
+        (data || []).filter((b) => b.is_active !== false && !b.is_equity_register)
+      )
     } catch (e) {
       console.error(e)
     }
@@ -701,34 +707,22 @@ export default function PayrollPage() {
 
   const fetchGlPayAccounts = async () => {
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/chart-of-accounts/`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-        mode: 'cors',
-        credentials: 'omit',
-      })
-      if (response.ok) {
-        const raw: GlPayAccountRow[] = await response.json()
-        const all = raw || []
-        setGlPayAccounts(all.filter(isGlValidForNetPayCredit))
-        const exp = all.find(
-          (a) => String(a.account_code).trim() === '6400' && a.is_active !== false
+      const { data: raw } = await api.get<GlPayAccountRow[]>('/chart-of-accounts/')
+      const all = raw || []
+      setGlPayAccounts(all.filter(isGlValidForNetPayCredit))
+      const exp = all.find(
+        (a) => String(a.account_code).trim() === '6400' && a.is_active !== false
+      )
+      setSalaryExpenseCoa(
+        exp
+          ? { account_code: String(exp.account_code), account_name: exp.account_name }
+          : null
+      )
+      setSalaryExpenseAccountOptions(
+        all.filter(
+          (a) => a.is_active !== false && (a.account_type || '').toLowerCase() === 'expense'
         )
-        setSalaryExpenseCoa(
-          exp
-            ? { account_code: String(exp.account_code), account_name: exp.account_name }
-            : null
-        )
-        setSalaryExpenseAccountOptions(
-          all.filter(
-            (a) => a.is_active !== false && (a.account_type || '').toLowerCase() === 'expense'
-          )
-        )
-      }
+      )
     } catch (e) {
       console.error(e)
     }
@@ -833,39 +827,21 @@ export default function PayrollPage() {
     }
 
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/payroll/${editingId}/`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        mode: 'cors',
-        credentials: 'omit',
-        body: JSON.stringify({
-          pay_period_start: formData.pay_period_start,
-          pay_period_end: formData.pay_period_end,
-          payment_date: formData.payment_date,
-          notes: formData.notes || null,
-          ...payrollAmountsPayload(),
-          salary_expense_account_id: parseSalaryExpenseAccountIdPayload(),
-        })
+      await api.put(`/payroll/${editingId}/`, {
+        pay_period_start: formData.pay_period_start,
+        pay_period_end: formData.pay_period_end,
+        payment_date: formData.payment_date,
+        notes: formData.notes || null,
+        ...payrollAmountsPayload(),
+        salary_expense_account_id: parseSalaryExpenseAccountIdPayload(),
       })
-
-      if (response.ok) {
-        toast.success('Payroll run updated successfully!')
-        setShowModal(false)
-        resetForm()
-        fetchPayrolls()
-      } else {
-        const error = await response.json()
-        toast.error(error.detail || 'Failed to update payroll run')
-      }
+      toast.success('Payroll run updated successfully!')
+      setShowModal(false)
+      resetForm()
+      fetchPayrolls()
     } catch (error) {
       console.error('Error updating payroll:', error)
-      toast.error('Error connecting to server')
+      toast.error(readApiErrorDetail(error) || 'Error connecting to server')
     }
   }
 
@@ -875,29 +851,12 @@ export default function PayrollPage() {
     }
 
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/payroll/${payroll.id}/`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        mode: 'cors',
-        credentials: 'omit'
-      })
-
-      if (response.ok) {
-        toast.success('Payroll run deleted successfully!')
-        fetchPayrolls()
-      } else {
-        const error = await response.json()
-        toast.error(error.detail || 'Failed to delete payroll run')
-      }
+      await api.delete(`/payroll/${payroll.id}/`)
+      toast.success('Payroll run deleted successfully!')
+      fetchPayrolls()
     } catch (error) {
       console.error('Error deleting payroll:', error)
-      toast.error('Error connecting to server')
+      toast.error(readApiErrorDetail(error) || 'Error connecting to server')
     }
   }
 
@@ -920,39 +879,21 @@ export default function PayrollPage() {
     }
 
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/payroll/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        mode: 'cors',
-        credentials: 'omit',
-        body: JSON.stringify({
-          pay_period_start: formData.pay_period_start,
-          pay_period_end: formData.pay_period_end,
-          payment_date: formData.payment_date,
-          notes: formData.notes || null,
-          ...payrollAmountsPayload(),
-          salary_expense_account_id: parseSalaryExpenseAccountIdPayload(),
-        })
+      await api.post('/payroll/', {
+        pay_period_start: formData.pay_period_start,
+        pay_period_end: formData.pay_period_end,
+        payment_date: formData.payment_date,
+        notes: formData.notes || null,
+        ...payrollAmountsPayload(),
+        salary_expense_account_id: parseSalaryExpenseAccountIdPayload(),
       })
-
-      if (response.ok) {
-        toast.success('Payroll run created successfully!')
-        setShowModal(false)
-        resetForm()
-        fetchPayrolls()
-      } else {
-        const error = await response.json()
-        toast.error(error.detail || 'Failed to create payroll run')
-      }
+      toast.success('Payroll run created successfully!')
+      setShowModal(false)
+      resetForm()
+      fetchPayrolls()
     } catch (error) {
       console.error('Error creating payroll:', error)
-      toast.error('Error connecting to server')
+      toast.error(readApiErrorDetail(error) || 'Error connecting to server')
     }
   }
 
@@ -966,97 +907,41 @@ export default function PayrollPage() {
 
   const handleViewDetails = async (payroll: PayrollRun) => {
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(`${baseUrl}/payroll/${payroll.id}/`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        mode: 'cors',
-        credentials: 'omit'
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setSelectedPayroll(data)
-        setDetailAmounts(detailAmountsFromPayrollApi(data))
-        setDetailStationId(
-          data.station_id != null && data.station_id > 0 ? String(data.station_id) : ''
-        )
+      const { data } = await api.get<PayrollRun>(`/payroll/${payroll.id}/`)
+      setSelectedPayroll(data)
+      setDetailAmounts(detailAmountsFromPayrollApi(data))
+      setDetailStationId(
+        data.station_id != null && data.station_id > 0 ? String(data.station_id) : ''
+      )
 
-        const hdr = {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        }
-        let latestPonds: { id: number; name: string; is_active?: boolean }[] = []
-        if (Array.isArray(data.aquaculture_pond_options) && data.aquaculture_pond_options.length > 0) {
-          latestPonds = data.aquaculture_pond_options.map(
-            (x: { id: number; name: string; is_active?: boolean }) => ({
-              id: x.id,
-              name: (x.name || `Pond ${x.id}`).trim() || `Pond ${x.id}`,
-              is_active: x.is_active,
-            })
-          )
-          setAquaculturePonds(latestPonds)
-        } else {
-          try {
-            const cr = await fetch(`${baseUrl}/companies/current/`, {
-              headers: hdr,
-              mode: 'cors',
-              credentials: 'omit',
-            })
-            if (cr.ok) {
-              const cj = await cr.json()
-              const en = Boolean(cj.aquaculture_enabled)
-              setAquacultureEnabled(en)
-              if (en) {
-                const pr = await fetch(`${baseUrl}/aquaculture/ponds/`, {
-                  headers: hdr,
-                  mode: 'cors',
-                  credentials: 'omit',
-                })
-                if (pr.ok) {
-                  const pj = await pr.json()
-                  latestPonds = Array.isArray(pj)
-                    ? pj.map((x: { id: number; name: string; is_active?: boolean }) => ({
-                        id: x.id,
-                        name: (x.name || `Pond ${x.id}`).trim() || `Pond ${x.id}`,
-                        is_active: x.is_active,
-                      }))
-                    : []
-                  setAquaculturePonds(latestPonds)
-                }
-              } else {
-                setAquaculturePonds([])
-              }
-            }
-          } catch {
-            latestPonds = aquaculturePonds
-          }
-        }
-
-        if (Array.isArray(data.pond_allocations) && data.pond_allocations.length > 0) {
-          setPondAllocDraft(
-            data.pond_allocations.map((x: { pond_id: number; amount: string | number }) => ({
-              pond_id: String(x.pond_id),
-              amount: String(x.amount ?? ''),
-            }))
-          )
-        } else {
-          setPondAllocDraft([])
-        }
-        setEmployeeAllocDraft(employeeAllocDraftFromPayrollApi(data))
-        payFromTouched.current = false
-        stationTouched.current = false
-        pondAllocTouched.current = false
-        setShowDetailsModal(true)
-      } else {
-        toast.error('Failed to load payroll details')
+      if (data.aquaculture_enabled != null) {
+        setAquacultureEnabled(Boolean(data.aquaculture_enabled))
       }
+      if (Array.isArray(data.aquaculture_pond_options) && data.aquaculture_pond_options.length > 0) {
+        setAquacultureEnabled(true)
+        setAquaculturePonds(mapPondRows(data.aquaculture_pond_options))
+      } else {
+        await loadAquacultureContext({ preservePondsOnPondApiError: true })
+      }
+
+      if (Array.isArray(data.pond_allocations) && data.pond_allocations.length > 0) {
+        setPondAllocDraft(
+          data.pond_allocations.map((x: { pond_id: number; amount: string | number }) => ({
+            pond_id: String(x.pond_id),
+            amount: String(x.amount ?? ''),
+          }))
+        )
+      } else {
+        setPondAllocDraft([])
+      }
+      setEmployeeAllocDraft(employeeAllocDraftFromPayrollApi(data))
+      payFromTouched.current = false
+      stationTouched.current = false
+      pondAllocTouched.current = false
+      setShowDetailsModal(true)
     } catch (error) {
       console.error('Error fetching payroll details:', error)
-      toast.error('Error loading payroll details')
+      toast.error(readApiErrorDetail(error) || 'Error loading payroll details')
     }
   }
 
@@ -1064,8 +949,6 @@ export default function PayrollPage() {
     if (!selectedPayroll || selectedPayroll.is_salary_posted) return
     setAmountSaving(true)
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
       const nRaw = detailAmounts.n.trim()
       const body: Record<string, unknown> = {
         base_salary_total: parseMoneyInput(detailAmounts.base),
@@ -1119,39 +1002,22 @@ export default function PayrollPage() {
           }))
         const sumEmp = empAlloc.reduce((s, x) => s + parseMoneyInput(x.amount), 0)
         const gross = detailComputedGross
-        if (empAlloc.length > 0 && sumEmp > gross + 0.02) {
-          toast.error(
-            `Employee wage rows (${formatNumber(sumEmp)}) cannot exceed total gross (${formatNumber(gross)}).`
-          )
+        const empMismatch = employeeWagesMismatchMessage(sumEmp, gross)
+        if (empAlloc.length > 0 && empMismatch) {
+          toast.error(empMismatch)
           setAmountSaving(false)
           return
         }
         body.employee_allocations = empAlloc
       }
-      const response = await fetch(`${baseUrl}/payroll/${selectedPayroll.id}/`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        mode: 'cors',
-        credentials: 'omit',
-        body: JSON.stringify(body),
-      })
-      if (response.ok) {
-        const data = (await response.json()) as PayrollRun
-        applyPayrollResponseToDetailState(data)
-        showEmployeeAllocationWarnings(data)
-        fetchPayrolls()
-        toast.success('Amounts updated')
-      } else {
-        const err = await response.json()
-        toast.error(err.detail || 'Failed to save')
-      }
+      const { data } = await api.put<PayrollRun>(`/payroll/${selectedPayroll.id}/`, body)
+      applyPayrollResponseToDetailState(data)
+      showEmployeeAllocationWarnings(data)
+      fetchPayrolls()
+      toast.success('Amounts updated')
     } catch (e) {
       console.error(e)
-      toast.error('Error saving amounts')
+      toast.error(readApiErrorDetail(e) || 'Error saving amounts')
     } finally {
       setAmountSaving(false)
     }
@@ -1161,34 +1027,18 @@ export default function PayrollPage() {
     if (!selectedPayroll || selectedPayroll.is_salary_posted) return
     setActionLoading(true)
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(
-        `${baseUrl}/payroll/${selectedPayroll.id}/pond-allocations-from-employees/`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({}),
-        }
+      const { data } = await api.post<PayrollRun>(
+        `/payroll/${selectedPayroll.id}/pond-allocations-from-employees/`,
+        {}
       )
-      if (response.ok) {
-        const data = (await response.json()) as PayrollRun
-        applyPayrollResponseToDetailState(data)
-        showPondAllocationWarnings(data)
-        showEmployeeAllocationWarnings(data)
-        showMixedPayrollInfo(data)
-        toast.success('Pond wage splits updated from employee pond assignments')
-      } else {
-        const err = await response.json()
-        toast.error(err.detail || 'Failed')
-      }
+      applyPayrollResponseToDetailState(data)
+      showPondAllocationWarnings(data)
+      showEmployeeAllocationWarnings(data)
+      showMixedPayrollInfo(data)
+      toast.success('Pond wage splits updated from employee pond assignments')
     } catch (e) {
       console.error(e)
-      toast.error('Request failed')
+      toast.error(readApiErrorDetail(e) || 'Request failed')
     } finally {
       setActionLoading(false)
     }
@@ -1198,37 +1048,18 @@ export default function PayrollPage() {
     if (!selectedPayroll || selectedPayroll.is_salary_posted) return
     setActionLoading(true)
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(
-        `${baseUrl}/payroll/${selectedPayroll.id}/from-employees/`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({}),
-        }
+      const { data } = await api.post<PayrollRun>(`/payroll/${selectedPayroll.id}/from-employees/`, {})
+      applyPayrollResponseToDetailState(data)
+      showPondAllocationWarnings(data)
+      showEmployeeAllocationWarnings(data)
+      showMixedPayrollInfo(data)
+      fetchPayrolls()
+      toast.success(
+        'Totals and pond wage splits set from active employees (assign wage attribution on each employee first).'
       )
-      if (response.ok) {
-        const data = (await response.json()) as PayrollRun
-        applyPayrollResponseToDetailState(data)
-        showPondAllocationWarnings(data)
-        showEmployeeAllocationWarnings(data)
-        showMixedPayrollInfo(data)
-        fetchPayrolls()
-        toast.success(
-          'Totals and pond wage splits set from active employees (assign wage attribution on each employee first).'
-        )
-      } else {
-        const err = await response.json()
-        toast.error(err.detail || 'Failed')
-      }
     } catch (e) {
       console.error(e)
-      toast.error('Request failed')
+      toast.error(readApiErrorDetail(e) || 'Request failed')
     } finally {
       setActionLoading(false)
     }
@@ -1242,33 +1073,17 @@ export default function PayrollPage() {
     }
     setActionLoading(true)
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
-      const response = await fetch(
-        `${baseUrl}/payroll/${selectedPayroll.id}/from-one-employee/`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({ employee_id: parseInt(oneEmployeeId, 10) }),
-        }
+      const { data } = await api.post<PayrollRun>(
+        `/payroll/${selectedPayroll.id}/from-one-employee/`,
+        { employee_id: parseInt(oneEmployeeId, 10) }
       )
-      if (response.ok) {
-        const data = (await response.json()) as PayrollRun
-        applyPayrollResponseToDetailState(data)
-        showPondAllocationWarnings(data)
-        fetchPayrolls()
-        toast.success('Gross and net set from that employee. Pond split applied when a pond is assigned.')
-      } else {
-        const err = await response.json()
-        toast.error(err.detail || 'Failed')
-      }
+      applyPayrollResponseToDetailState(data)
+      showPondAllocationWarnings(data)
+      fetchPayrolls()
+      toast.success('Gross and net set from that employee. Pond split applied when a pond is assigned.')
     } catch (e) {
       console.error(e)
-      toast.error('Request failed')
+      toast.error(readApiErrorDetail(e) || 'Request failed')
     } finally {
       setActionLoading(false)
     }
@@ -1277,8 +1092,6 @@ export default function PayrollPage() {
   const persistDetailDraft = async (): Promise<boolean> => {
     if (!selectedPayroll || selectedPayroll.is_salary_posted) return true
     try {
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
       const nRaw = detailAmounts.n.trim()
       const body: Record<string, unknown> = {
         base_salary_total: parseMoneyInput(detailAmounts.base),
@@ -1325,36 +1138,19 @@ export default function PayrollPage() {
         }))
       const sumEmp = empAlloc.reduce((s, x) => s + parseMoneyInput(x.amount), 0)
       const gross = detailComputedGross
-      if (empAlloc.length > 0 && sumEmp > gross + 0.02) {
-        toast.error(
-          `Employee wage rows (${formatNumber(sumEmp)}) cannot exceed total gross (${formatNumber(gross)}).`
-        )
+      const empMismatch = employeeWagesMismatchMessage(sumEmp, gross)
+      if (empAlloc.length > 0 && empMismatch) {
+        toast.error(empMismatch)
         return false
       }
       body.employee_allocations = empAlloc
-      const response = await fetch(`${baseUrl}/payroll/${selectedPayroll.id}/`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        mode: 'cors',
-        credentials: 'omit',
-        body: JSON.stringify(body),
-      })
-      if (!response.ok) {
-        const err = await response.json()
-        toast.error(err.detail || 'Failed to save before posting')
-        return false
-      }
-      const data = (await response.json()) as PayrollRun
+      const { data } = await api.put<PayrollRun>(`/payroll/${selectedPayroll.id}/`, body)
       applyPayrollResponseToDetailState(data)
       showEmployeeAllocationWarnings(data)
       return true
     } catch (e) {
       console.error(e)
-      toast.error('Error saving before posting')
+      toast.error(readApiErrorDetail(e) || 'Error saving before posting')
       return false
     }
   }
@@ -1376,6 +1172,13 @@ export default function PayrollPage() {
       )
       return
     }
+    const sumEmp = pickedEmployees.reduce((s, row) => s + parseMoneyInput(row.amount), 0)
+    const gross = detailComputedGross
+    const empMismatch = employeeWagesMismatchMessage(sumEmp, gross)
+    if (empMismatch) {
+      toast.error(`${empMismatch} Save amounts after correcting.`)
+      return
+    }
     if (
       !window.confirm(
         'Post salary to the general ledger? This records the expense and bank (or default cash/bank) per your chart. Pay staff in your bank or cash first, then use this to update your books.'
@@ -1387,8 +1190,6 @@ export default function PayrollPage() {
     try {
       const saved = await persistDetailDraft()
       if (!saved) return
-      const token = localStorage.getItem('access_token')
-      const baseUrl = getApiBaseUrl()
       const payload: { bank_account_id?: number; pay_from_chart_account_id?: number } = {}
       if (payFromSelect.startsWith('b:')) {
         const id = parseInt(payFromSelect.slice(2), 10)
@@ -1397,30 +1198,16 @@ export default function PayrollPage() {
         const id = parseInt(payFromSelect.slice(2), 10)
         if (!isNaN(id)) payload.pay_from_chart_account_id = id
       }
-      const response = await fetch(
-        `${baseUrl}/payroll/${selectedPayroll.id}/post-to-books/`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify(payload),
-        }
+      const { data } = await api.post<PayrollRun & { message?: string }>(
+        `/payroll/${selectedPayroll.id}/post-to-books/`,
+        payload
       )
-      if (response.ok) {
-        const data = (await response.json()) as PayrollRun & { message?: string }
-        applyPayrollResponseToDetailState(data)
-        toast.success(data.message || 'Posted to general ledger')
-        fetchPayrolls()
-      } else {
-        const err = await response.json()
-        toast.error(typeof err.detail === 'string' ? err.detail : 'Post failed')
-      }
+      applyPayrollResponseToDetailState(data)
+      toast.success(data.message || 'Posted to general ledger')
+      fetchPayrolls()
     } catch (e) {
       console.error(e)
-      toast.error('Request failed')
+      toast.error(readApiErrorDetail(e) || 'Request failed')
     } finally {
       setActionLoading(false)
     }
@@ -2131,182 +1918,208 @@ export default function PayrollPage() {
                       </p>
                       {!selectedPayroll.is_salary_posted && (
                         <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
-                          <p className="text-sm font-medium text-indigo-900">Wages by employee</p>
-                          <p className="mt-1 text-xs text-indigo-900/80">
-                            You choose who is paid — add each person, then enter the amount. HR work
-                            assignment is shown after you pick a name. Use <strong>Sum from employees</strong>{' '}
-                            below for the full team, or <strong>HR salary</strong> on a row for one person&apos;s
-                            HR amount.
-                          </p>
-                          {activeEmployees.length === 0 ? (
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-indigo-900">Wages by employee</p>
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-indigo-800 hover:underline disabled:opacity-50"
+                              disabled={employeesLoading}
+                              onClick={() => void fetchEmployees()}
+                            >
+                              {employeesLoading ? 'Loading…' : 'Refresh list'}
+                            </button>
+                          </div>
+                          {employeesLoading && employeesForPicker.length === 0 ? (
+                            <p className="mt-2 text-xs text-indigo-800/80">Loading employees…</p>
+                          ) : null}
+                          {employeesLoadError ? (
                             <p className="mt-2 text-xs text-amber-900">
-                              No active employees loaded — add staff under{' '}
-                              <Link href="/employees" className="font-medium underline">
-                                Employees
-                              </Link>{' '}
-                              or reopen this payroll.
+                              {employeesLoadError}. Check the company in the sidebar, then{' '}
+                              <button
+                                type="button"
+                                className="font-medium underline"
+                                onClick={() => void fetchEmployees()}
+                              >
+                                retry
+                              </button>
+                              .
                             </p>
-                          ) : (
-                            <div className="mt-3">
-                              {employeeAllocDraft.length === 0 ? (
-                                <div className="rounded-lg border border-dashed border-indigo-200 bg-white px-4 py-6 text-center">
-                                  <p className="text-sm text-gray-600">No employees on this run yet.</p>
-                                  <button
-                                    type="button"
-                                    className="mt-3 inline-flex items-center rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800"
-                                    onClick={() =>
-                                      setEmployeeAllocDraft([{ employee_id: '', amount: '' }])
-                                    }
-                                  >
-                                    + Pick employee
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="overflow-x-auto rounded-lg border border-indigo-100 bg-white">
-                                  <table className="w-full min-w-[32rem] text-sm">
-                                    <thead>
-                                      <tr className="border-b border-indigo-100 bg-indigo-50/70 text-left text-xs font-semibold uppercase tracking-wide text-indigo-900">
-                                        <th className="px-3 py-2.5">Employee</th>
-                                        <th className="hidden px-3 py-2.5 sm:table-cell">HR work</th>
-                                        <th className="px-3 py-2.5 w-36">Amount paid</th>
-                                        <th className="px-3 py-2.5 w-28 text-right">Actions</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-indigo-50">
-                                      {employeeAllocDraft.map((row, idx) => {
-                                        const selectedElsewhere = new Set(
-                                          employeeAllocDraft
-                                            .filter((_, i) => i !== idx && _.employee_id)
-                                            .map((r) => r.employee_id)
-                                        )
-                                        const picked = activeEmployees.find(
-                                          (e) => String(e.id) === row.employee_id
-                                        )
-                                        return (
-                                          <tr key={idx} className="align-middle">
-                                            <td className="px-3 py-2">
-                                              <select
-                                                className="w-full min-w-[10rem] rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
-                                                value={row.employee_id}
-                                                onChange={(e) => {
-                                                  const v = e.target.value
-                                                  const emp = activeEmployees.find(
-                                                    (x) => String(x.id) === v
+                          ) : null}
+                          {!employeesLoading && employeesForPicker.length === 0 ? (
+                            <p className="mt-2 text-xs text-amber-900">
+                              No employees for this company yet —{' '}
+                              <Link href="/employees" className="font-medium underline">
+                                add staff under Employees
+                              </Link>
+                              , then refresh.
+                            </p>
+                          ) : null}
+                          <div className="mt-3">
+                            {employeeAllocDraft.length === 0 ? (
+                              <div className="rounded-lg border border-dashed border-indigo-200 bg-white px-4 py-6 text-center">
+                                <p className="text-sm text-gray-600">Choose who is paid on this run.</p>
+                                <button
+                                  type="button"
+                                  className="mt-3 inline-flex items-center rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800"
+                                  onClick={() =>
+                                    setEmployeeAllocDraft([{ employee_id: '', amount: '' }])
+                                  }
+                                >
+                                  + Pick employee
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="overflow-x-auto rounded-lg border border-indigo-100 bg-white">
+                                <table className="w-full min-w-[32rem] text-sm">
+                                  <thead>
+                                    <tr className="border-b border-indigo-100 bg-indigo-50/70 text-left text-xs font-semibold uppercase tracking-wide text-indigo-900">
+                                      <th className="px-3 py-2.5">Employee</th>
+                                      <th className="hidden px-3 py-2.5 sm:table-cell">HR work</th>
+                                      <th className="px-3 py-2.5 w-36">Amount paid</th>
+                                      <th className="px-3 py-2.5 w-28 text-right">Actions</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-indigo-50">
+                                    {employeeAllocDraft.map((row, idx) => {
+                                      const selectedElsewhere = new Set(
+                                        employeeAllocDraft
+                                          .filter((_, i) => i !== idx && _.employee_id)
+                                          .map((r) => r.employee_id)
+                                      )
+                                      const picked = employeesForPicker.find(
+                                        (e) => String(e.id) === row.employee_id
+                                      )
+                                      return (
+                                        <tr key={idx} className="align-middle">
+                                          <td className="px-3 py-2">
+                                            <select
+                                              className="w-full min-w-[10rem] rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                                              value={row.employee_id}
+                                              disabled={employeesLoading && employeesForPicker.length === 0}
+                                              onChange={(e) => {
+                                                const v = e.target.value
+                                                const emp = employeesForPicker.find(
+                                                  (x) => String(x.id) === v
+                                                )
+                                                const hrSalary =
+                                                  emp?.salary != null && Number(emp.salary) > 0
+                                                    ? String(emp.salary)
+                                                    : ''
+                                                setEmployeeAllocDraft((rows) =>
+                                                  rows.map((r, i) =>
+                                                    i === idx
+                                                      ? {
+                                                          ...r,
+                                                          employee_id: v,
+                                                          amount:
+                                                            r.amount.trim() !== ''
+                                                              ? r.amount
+                                                              : hrSalary,
+                                                        }
+                                                      : r
                                                   )
-                                                  const hrSalary =
-                                                    emp?.salary != null && Number(emp.salary) > 0
-                                                      ? String(emp.salary)
-                                                      : ''
-                                                  setEmployeeAllocDraft((rows) =>
-                                                    rows.map((r, i) =>
-                                                      i === idx
-                                                        ? {
-                                                            ...r,
-                                                            employee_id: v,
-                                                            amount:
-                                                              r.amount.trim() !== ''
-                                                                ? r.amount
-                                                                : hrSalary,
-                                                          }
-                                                        : r
-                                                    )
+                                                )
+                                              }}
+                                            >
+                                              <option value="">
+                                                {employeesForPicker.length === 0
+                                                  ? employeesLoading
+                                                    ? 'Loading employees…'
+                                                    : 'No employees — add under Employees'
+                                                  : 'Choose employee…'}
+                                              </option>
+                                              {employeesForPicker
+                                                .filter(
+                                                  (e) =>
+                                                    String(e.id) === row.employee_id ||
+                                                    !selectedElsewhere.has(String(e.id))
+                                                )
+                                                .map((e) => (
+                                                  <option key={e.id} value={e.id}>
+                                                    {employeePickerLabel(e, currencySymbol)}
+                                                  </option>
+                                                ))}
+                                            </select>
+                                            {picked ? (
+                                              <p className="mt-1 text-xs text-indigo-800/90 sm:hidden">
+                                                {employeeWorkSiteLabel(picked)}
+                                              </p>
+                                            ) : null}
+                                          </td>
+                                          <td className="hidden px-3 py-2 text-xs text-indigo-900/90 sm:table-cell">
+                                            {picked ? employeeWorkSiteLabel(picked) : '—'}
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="0.01"
+                                              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm tabular-nums"
+                                              placeholder="0.00"
+                                              value={row.amount}
+                                              onChange={(e) => {
+                                                setEmployeeAllocDraft((rows) =>
+                                                  rows.map((r, i) =>
+                                                    i === idx ? { ...r, amount: e.target.value } : r
                                                   )
-                                                }}
-                                              >
-                                                <option value="">Choose employee…</option>
-                                                {employeesForPicker
-                                                  .filter(
-                                                    (e) =>
-                                                      String(e.id) === row.employee_id ||
-                                                      !selectedElsewhere.has(String(e.id))
-                                                  )
-                                                  .map((e) => (
-                                                    <option key={e.id} value={e.id}>
-                                                      {employeePickerLabel(e, currencySymbol)}
-                                                    </option>
-                                                  ))}
-                                              </select>
-                                              {picked ? (
-                                                <p className="mt-1 text-xs text-indigo-800/90 sm:hidden">
-                                                  {employeeWorkSiteLabel(picked)}
-                                                </p>
-                                              ) : null}
-                                            </td>
-                                            <td className="hidden px-3 py-2 text-xs text-indigo-900/90 sm:table-cell">
-                                              {picked ? employeeWorkSiteLabel(picked) : '—'}
-                                            </td>
-                                            <td className="px-3 py-2">
-                                              <input
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm tabular-nums"
-                                                placeholder="0.00"
-                                                value={row.amount}
-                                                onChange={(e) => {
-                                                  setEmployeeAllocDraft((rows) =>
-                                                    rows.map((r, i) =>
-                                                      i === idx ? { ...r, amount: e.target.value } : r
-                                                    )
-                                                  )
-                                                }}
-                                              />
-                                            </td>
-                                            <td className="px-3 py-2 text-right">
-                                              <div className="flex flex-col items-end gap-1 sm:flex-row sm:justify-end">
-                                                {picked?.salary != null && Number(picked.salary) > 0 ? (
-                                                  <button
-                                                    type="button"
-                                                    className="text-xs font-medium text-indigo-800 hover:underline"
-                                                    title="Fill amount from HR salary"
-                                                    onClick={() => {
-                                                      const sal = String(picked.salary)
-                                                      setEmployeeAllocDraft((rows) =>
-                                                        rows.map((r, i) =>
-                                                          i === idx ? { ...r, amount: sal } : r
-                                                        )
-                                                      )
-                                                    }}
-                                                  >
-                                                    HR salary
-                                                  </button>
-                                                ) : null}
+                                                )
+                                              }}
+                                            />
+                                          </td>
+                                          <td className="px-3 py-2 text-right">
+                                            <div className="flex flex-col items-end gap-1 sm:flex-row sm:justify-end">
+                                              {picked?.salary != null && Number(picked.salary) > 0 ? (
                                                 <button
                                                   type="button"
-                                                  className="text-xs text-red-600 hover:underline"
-                                                  onClick={() =>
+                                                  className="text-xs font-medium text-indigo-800 hover:underline"
+                                                  title="Fill amount from HR salary"
+                                                  onClick={() => {
+                                                    const sal = String(picked.salary)
                                                     setEmployeeAllocDraft((rows) =>
-                                                      rows.filter((_, i) => i !== idx)
+                                                      rows.map((r, i) =>
+                                                        i === idx ? { ...r, amount: sal } : r
+                                                      )
                                                     )
-                                                  }
+                                                  }}
                                                 >
-                                                  Remove
+                                                  HR salary
                                                 </button>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        )
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                              {employeeAllocDraftSum > 0.02 && (
-                                <p className="mt-2 text-xs tabular-nums text-indigo-800">
-                                  Employee total: {currencySymbol}
-                                  {formatNumber(employeeAllocDraftSum)}
-                                  {Math.abs(employeeAllocDraftSum - detailComputedGross) > 0.02 && (
-                                    <span className="ml-1 text-amber-800">
-                                      (gross is {currencySymbol}
-                                      {formatNumber(detailComputedGross)})
-                                    </span>
-                                  )}
-                                </p>
-                              )}
-                            </div>
-                          )}
+                                              ) : null}
+                                              <button
+                                                type="button"
+                                                className="text-xs text-red-600 hover:underline"
+                                                onClick={() =>
+                                                  setEmployeeAllocDraft((rows) =>
+                                                    rows.filter((_, i) => i !== idx)
+                                                  )
+                                                }
+                                              >
+                                                Remove
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                            {employeeAllocDraftSum > 0.02 && (
+                              <p className="mt-2 text-xs tabular-nums text-indigo-800">
+                                Employee total: {currencySymbol}
+                                {formatNumber(employeeAllocDraftSum)}
+                                {Math.abs(employeeAllocDraftSum - detailComputedGross) > 0.02 && (
+                                  <span className="ml-1 text-amber-800">
+                                    (gross is {currencySymbol}
+                                    {formatNumber(detailComputedGross)})
+                                  </span>
+                                )}
+                              </p>
+                            )}
+                          </div>
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {activeEmployees.length > 0 && employeeAllocDraft.length > 0 ? (
+                            {employeeAllocDraft.length > 0 ? (
                               <>
                                 <button
                                   type="button"
@@ -2591,9 +2404,9 @@ export default function PayrollPage() {
                               onChange={(e) => setOneEmployeeId(e.target.value)}
                             >
                               <option value="">Select employee…</option>
-                              {employees
+                              {employeesForPicker
                                 .filter(
-                                  (e) => e.is_active && e.salary != null && Number(e.salary) > 0
+                                  (e) => e.is_active !== false && e.salary != null && Number(e.salary) > 0
                                 )
                                 .map((e) => (
                                   <option key={e.id} value={e.id}>

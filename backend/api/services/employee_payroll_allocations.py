@@ -248,3 +248,41 @@ def employee_allocation_sum(payroll_run_id: int) -> Decimal:
         )["t"]
         or Decimal("0")
     )
+
+
+def employee_allocations_match_gross(gross: Decimal, alloc_sum: Decimal) -> bool:
+    return abs(_q(alloc_sum) - _q(gross)) <= Decimal("0.02")
+
+
+def validate_employee_allocations_match_gross(
+    gross: Decimal,
+    alloc_sum: Decimal,
+    *,
+    require_rows: bool = False,
+    row_count: int = 0,
+) -> str | None:
+    """
+    Return an error message when employee wage rows cannot be saved or posted against payroll gross.
+    """
+    gross = _q(gross or Decimal("0"))
+    alloc_sum = _q(alloc_sum or Decimal("0"))
+    if require_rows and row_count <= 0:
+        return (
+            "Pick which employees are paid on this run, enter each amount, save, "
+            "then post. Partial payroll cannot be split across the whole roster automatically."
+        )
+    if row_count <= 0:
+        return None
+    if gross <= 0:
+        return "Set payroll totals first (gross must be positive)."
+    if employee_allocations_match_gross(gross, alloc_sum):
+        return None
+    if alloc_sum > gross:
+        return (
+            f"Employee wage rows ({alloc_sum}) exceed payroll gross ({gross}). "
+            "Reduce employee amounts or increase gross pay, then save."
+        )
+    return (
+        f"Employee wage rows ({alloc_sum}) must match payroll gross ({gross}). "
+        "Adjust employee amounts or use Sum from employees, then save before posting."
+    )

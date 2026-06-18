@@ -114,6 +114,46 @@ def test_customer_api_backup_restore_roundtrip(api_client, auth_admin_headers, c
     assert Customer.objects.filter(display_name="API Roundtrip Customer").exists()
 
 
+def test_payroll_employee_allocation_backup_restore_roundtrip(company_tenant):
+    from api.models import PayrollRun, PayrollRunEmployeeAllocation
+    from api.services.employee_payroll_allocations import replace_payroll_employee_allocations
+
+    emp = Employee.objects.create(
+        company_id=company_tenant.id,
+        employee_code="BK-EMP-1",
+        employee_number="BK-EMP-1",
+        first_name="Backup",
+        last_name="Worker",
+        salary=Decimal("34000.00"),
+        is_active=True,
+    )
+    pr = PayrollRun.objects.create(
+        company_id=company_tenant.id,
+        pay_period_start=date(2026, 6, 1),
+        pay_period_end=date(2026, 6, 30),
+        payment_date=date(2026, 6, 30),
+        total_gross=Decimal("34000.00"),
+        total_deductions=Decimal("0"),
+        total_net=Decimal("34000.00"),
+    )
+    replace_payroll_employee_allocations(pr.id, [(emp, Decimal("34000.00"))])
+    assert PayrollRunEmployeeAllocation.objects.filter(payroll_run_id=pr.id).count() == 1
+
+    bundle = json.loads(backup_bundle_json_bytes(company_tenant.id).decode("utf-8"))
+    assert "api.payrollrunemployeeallocation" in bundle["model_labels"]
+
+    PayrollRunEmployeeAllocation.objects.filter(payroll_run__company_id=company_tenant.id).delete()
+    PayrollRun.objects.filter(company_id=company_tenant.id).delete()
+    assert not PayrollRunEmployeeAllocation.objects.filter(payroll_run_id=pr.id).exists()
+
+    restore_bundle(bundle, company_tenant.id, confirm_replace=RESTORE_CONFIRM_PHRASE)
+    row = PayrollRunEmployeeAllocation.objects.filter(
+        payroll_run__company_id=company_tenant.id, employee_id=emp.id
+    ).first()
+    assert row is not None
+    assert row.amount == Decimal("34000.00")
+
+
 def test_delete_tenant_succeeds_with_inventory_transfer(company_tenant):
     st1 = Station.objects.create(company=company_tenant, station_name="Del Stn 1")
     st2 = Station.objects.create(company=company_tenant, station_name="Del Stn 2")

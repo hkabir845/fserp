@@ -24,6 +24,7 @@ import {
   SlidersHorizontal,
   Sprout,
   Trash2,
+  Eye,
   Package,
   AlertCircle,
   Undo2,
@@ -32,6 +33,7 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
+import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 
 const inputClassName =
   'w-full min-h-10 rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -44,7 +46,7 @@ const btnDanger =
   'inline-flex items-center justify-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/20'
 /** Compact icon-only control for transfer row actions (tooltips via title + aria-label). */
 const btnRowIcon =
-  'inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-sm disabled:opacity-50'
+  'inline-flex size-10 shrink-0 items-center justify-center rounded-lg text-sm disabled:opacity-50'
 const btnRowIconPrimary = btnRowIcon + ' bg-primary text-primary-foreground shadow hover:opacity-90'
 const btnRowIconMuted = btnRowIcon + ' border border-input bg-background hover:bg-muted/60'
 const btnRowIconDanger = btnRowIcon + ' border border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20'
@@ -91,6 +93,15 @@ type ItemAvailState =
   | { status: 'ok'; data: AvailabilityResponse }
   | { status: 'error'; message: string }
 
+type InventoryMoveLine = {
+  id?: number
+  item_id: number
+  item_name: string
+  quantity: string
+  unit_cost?: string | null
+  line_value?: string
+}
+
 type TransferRecord = {
   id: number
   transfer_number: string
@@ -104,7 +115,8 @@ type TransferRecord = {
   posted_at?: string | null
   /** Present when status is posted — automatic inter-station transfer journal id. */
   auto_journal_entry_number?: string | null
-  lines: { id: number; item_id: number; item_name: string; quantity: string }[]
+  total_value?: string
+  lines: InventoryMoveLine[]
 }
 
 type PondReceiptRecord = {
@@ -115,7 +127,12 @@ type PondReceiptRecord = {
   from_station_name: string
   pond_id: number
   pond_name: string
-  lines: { item_id: number; item_name: string; quantity: string }[]
+  total_value?: string
+  lines: InventoryMoveLine[]
+}
+
+function formatInventoryValue(amount: string | number | null | undefined, currencySymbol: string): string {
+  return `${currencySymbol}${formatNumber(Number(amount || 0), 2)}`
 }
 
 function parseQtyInput(raw: string): number {
@@ -136,6 +153,63 @@ function qtyAtSourceStation(
   }
 }
 
+function qtyAtSourcePond(
+  data: AvailabilityResponse,
+  pondId: number
+): { qtyNum: number; unit: string } {
+  if (!data.tracks_per_station) return { qtyNum: 0, unit: '' }
+  const row = data.pond_warehouses?.find(p => p.pond_id === pondId)
+  const q = parseFloat(String(row?.quantity ?? '0').replace(/,/g, ''))
+  return {
+    qtyNum: Number.isFinite(q) ? q : 0,
+    unit: (data.unit || 'units').trim() || 'units',
+  }
+}
+
+type TransferEndpoint = { kind: 'station'; id: number } | { kind: 'pond'; id: number }
+
+function transferEndpointKey(e: TransferEndpoint | null): string {
+  if (!e) return ''
+  return e.kind === 'station' ? `s:${e.id}` : `p:${e.id}`
+}
+
+function parseTransferEndpointKey(raw: string): TransferEndpoint | null {
+  if (!raw) return null
+  const m = /^([sp]):(\d+)$/.exec(raw.trim())
+  if (!m) return null
+  const id = parseInt(m[2], 10)
+  if (!Number.isFinite(id) || id <= 0) return null
+  return m[1] === 's' ? { kind: 'station', id } : { kind: 'pond', id }
+}
+
+function transferEndpointsEqual(a: TransferEndpoint | null, b: TransferEndpoint | null): boolean {
+  if (!a || !b) return false
+  return a.kind === b.kind && a.id === b.id
+}
+
+type TransferRouteKind = 'station-station' | 'station-pond' | 'pond-pond' | 'pond-station' | 'none'
+
+function classifyTransferRoute(
+  from: TransferEndpoint | null,
+  to: TransferEndpoint | null,
+): TransferRouteKind {
+  if (!from || !to) return 'none'
+  if (from.kind === 'station' && to.kind === 'station') return 'station-station'
+  if (from.kind === 'station' && to.kind === 'pond') return 'station-pond'
+  if (from.kind === 'pond' && to.kind === 'pond') return 'pond-pond'
+  if (from.kind === 'pond' && to.kind === 'station') return 'pond-station'
+  return 'none'
+}
+
+function qtyAtSourceEndpoint(
+  data: AvailabilityResponse,
+  from: TransferEndpoint,
+): { qtyNum: number; unit: string } {
+  return from.kind === 'station'
+    ? qtyAtSourceStation(data, from.id)
+    : qtyAtSourcePond(data, from.id)
+}
+
 function sumQtySameItemOtherLines(rows: TransferLineRow[], itemId: number, exceptIndex: number): number {
   let sum = 0
   rows.forEach((r, j) => {
@@ -143,6 +217,34 @@ function sumQtySameItemOtherLines(rows: TransferLineRow[], itemId: number, excep
     const q = parseQtyInput(r.quantity)
     if (q > 0) sum += q
   })
+  return sum
+}
+
+function transferSourceCreditQty(
+  itemId: number,
+  from: TransferEndpoint | null,
+  original: TransferRecord | null,
+): number {
+  if (!original || !from || from.kind !== 'station') return 0
+  if (original.from_station_id !== from.id) return 0
+  let sum = 0
+  for (const ln of original.lines || []) {
+    if (ln.item_id === itemId) sum += parseQtyInput(String(ln.quantity))
+  }
+  return sum
+}
+
+function pondReceiptSourceCreditQty(
+  itemId: number,
+  from: TransferEndpoint | null,
+  original: PondReceiptRecord | null,
+): number {
+  if (!original || !from || from.kind !== 'station') return 0
+  if (original.from_station_id !== from.id) return 0
+  let sum = 0
+  for (const ln of original.lines || []) {
+    if (ln.item_id === itemId) sum += parseQtyInput(String(ln.quantity))
+  }
   return sum
 }
 
@@ -161,7 +263,7 @@ function formatStationTransferLabel(s: Station): string {
   return `${pond} — ${nm}${num}`
 }
 
-/** Receiving list: pond-linked warehouses first, in pond sort order, then other sites. */
+/** Site lists for transfer form: pond-linked warehouses first, then other sites (same order in From and To). */
 function compareReceivingStationsByPond(a: Station, b: Station): number {
   const aLinked = (a.default_aquaculture_pond_id ?? 0) > 0
   const bLinked = (b.default_aquaculture_pond_id ?? 0) > 0
@@ -181,28 +283,59 @@ function compareReceivingStationsByPond(a: Station, b: Station): number {
   return a.id - b.id
 }
 
-type TransferDestination = { kind: 'station'; id: number } | { kind: 'pond'; id: number }
-
-function formatDestinationSelectValue(d: TransferDestination | null): string {
-  if (!d) return ''
-  return d.kind === 'station' ? `s:${d.id}` : `p:${d.id}`
-}
-
-function parseDestinationSelectValue(raw: string): TransferDestination | null {
-  if (!raw) return null
-  const m = /^([sp]):(\d+)$/.exec(raw.trim())
-  if (!m) return null
-  const id = parseInt(m[2], 10)
-  if (!Number.isFinite(id) || id <= 0) return null
-  if (m[1] === 's') return { kind: 'station', id }
-  return { kind: 'pond', id }
-}
-
 type PondListItem = { id: number; name: string; sort_order: number; is_active: boolean }
 
 function comparePondsForTransfer(a: PondListItem, b: PondListItem): number {
   if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
   return a.id - b.id
+}
+
+function renderTransferEndpointOptions(
+  stations: Station[],
+  ponds: PondListItem[],
+  aquacultureEnabled: boolean,
+  other: TransferEndpoint | null,
+  userHomeStation: { id: number; name: string } | null,
+  side: 'from' | 'to',
+): ReactNode {
+  const stationNodes = stations.map(s => {
+    const endpoint: TransferEndpoint = { kind: 'station', id: s.id }
+    const sameAsOther = transferEndpointsEqual(endpoint, other)
+    const homeLocked = side === 'from' && userHomeStation != null && s.id !== userHomeStation.id
+    return (
+      <option
+        key={`s-${s.id}`}
+        value={transferEndpointKey(endpoint)}
+        disabled={sameAsOther || homeLocked}
+      >
+        {formatStationTransferLabel(s)}
+      </option>
+    )
+  })
+  const pondNodes =
+    aquacultureEnabled && ponds.length
+      ? ponds.map(p => {
+          const endpoint: TransferEndpoint = { kind: 'pond', id: p.id }
+          const sameAsOther = transferEndpointsEqual(endpoint, other)
+          const homeLocked = side === 'from' && userHomeStation != null
+          return (
+            <option
+              key={`p-${p.id}`}
+              value={transferEndpointKey(endpoint)}
+              disabled={sameAsOther || homeLocked}
+            >
+              {p.name} (pond warehouse)
+            </option>
+          )
+        })
+      : null
+
+  return (
+    <>
+      {stations.length ? <optgroup label="Sites">{stationNodes}</optgroup> : null}
+      {pondNodes ? <optgroup label="Pond warehouses">{pondNodes}</optgroup> : null}
+    </>
+  )
 }
 
 function interStationTransferImpactSummary(t: TransferRecord): string {
@@ -283,10 +416,11 @@ function InventoryContent() {
     name: string
   } | null>(null)
   const [stationMode, setStationMode] = useState<'single' | 'multi'>('single')
+  const [currencySymbol, setCurrencySymbol] = useState('৳')
 
   // Create transfer form
-  const [fromStationId, setFromStationId] = useState<number | ''>('')
-  const [toDestination, setToDestination] = useState<TransferDestination | null>(null)
+  const [fromEndpoint, setFromEndpoint] = useState<TransferEndpoint | null>(null)
+  const [toEndpoint, setToEndpoint] = useState<TransferEndpoint | null>(null)
   const [transferDate, setTransferDate] = useState(() => new Date().toISOString().split('T')[0])
   const [transferMemo, setTransferMemo] = useState('')
   const [lineRows, setLineRows] = useState<TransferLineRow[]>([{ item_id: 0, quantity: '1' }])
@@ -296,6 +430,11 @@ function InventoryContent() {
   const [transferUnpostingId, setTransferUnpostingId] = useState<number | null>(null)
   /** Draft being edited in the top form; PUT on save. */
   const [editingInterStationTransferId, setEditingInterStationTransferId] = useState<number | null>(null)
+  /** Posted transfer being amended in the form; PUT reverses prior move then applies new lines. */
+  const [amendingPostedTransferId, setAmendingPostedTransferId] = useState<number | null>(null)
+  const [editingPondReceiptId, setEditingPondReceiptId] = useState<number | null>(null)
+  const [viewTransfer, setViewTransfer] = useState<TransferRecord | null>(null)
+  const [viewPondReceipt, setViewPondReceipt] = useState<PondReceiptRecord | null>(null)
   const [pondReceiptReversingId, setPondReceiptReversingId] = useState<number | null>(null)
   const [itemAvail, setItemAvail] = useState<Record<number, ItemAvailState>>({})
   const [availFetchSeq, setAvailFetchSeq] = useState(0)
@@ -403,6 +542,10 @@ function InventoryContent() {
         const d = coRes.value.data as {
           station_mode?: string
           aquaculture_enabled?: boolean
+          currency?: string
+        }
+        if (d?.currency) {
+          setCurrencySymbol(getCurrencySymbol(d.currency))
         }
         const sm = String(d?.station_mode ?? 'single')
           .toLowerCase()
@@ -541,6 +684,28 @@ function InventoryContent() {
     setLineRows(prev => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)))
   }
 
+  const activeStations = useMemo(() => stations.filter(isStationActive), [stations])
+  const activeStationCount = activeStations.length
+  const canTransferBetweenSites = activeStationCount >= 2
+  const activePondsOrdered = useMemo(
+    () => [...ponds].filter(p => p.is_active).sort(comparePondsForTransfer),
+    [ponds],
+  )
+  const canCreateSiteTransfer = canTransferBetweenSites
+  const canMoveToPondWarehouse =
+    aquacultureEnabled && activePondsOrdered.length > 0 && activeStationCount >= 1
+  const canTransferBetweenPonds = aquacultureEnabled && activePondsOrdered.length >= 2
+  const canShowTransferForm =
+    canTransferBetweenSites || canMoveToPondWarehouse || canTransferBetweenPonds
+  const transferStationsOrdered = useMemo(
+    () => [...activeStations].sort(compareReceivingStationsByPond),
+    [activeStations],
+  )
+  const transferRoute = useMemo(
+    () => classifyTransferRoute(fromEndpoint, toEndpoint),
+    [fromEndpoint, toEndpoint],
+  )
+
   const lineItemIdsKey = useMemo(
     () =>
       [...new Set(lineRows.map(r => r.item_id).filter(id => id > 0))]
@@ -583,15 +748,43 @@ function InventoryContent() {
 
   const transferDraftIssues = useMemo(() => {
     const issues: string[] = []
-    if (!fromStationId || !toDestination) {
-      issues.push('Select both a sending site and a destination.')
+    const route = classifyTransferRoute(fromEndpoint, toEndpoint)
+    if (!fromEndpoint || !toEndpoint) {
+      issues.push('Select both a source and a destination.')
       return issues
     }
-    if (toDestination.kind === 'station' && fromStationId === toDestination.id) {
-      issues.push('Source and destination must be different sites.')
+    if (transferEndpointsEqual(fromEndpoint, toEndpoint)) {
+      issues.push('Source and destination must be different.')
       return issues
     }
-    const fs = fromStationId
+    if (editingInterStationTransferId != null && route !== 'station-station') {
+      issues.push('Draft edits are only for site-to-site transfers.')
+      return issues
+    }
+    if (amendingPostedTransferId != null && route !== 'station-station') {
+      issues.push('Posted transfer edits are only for site-to-site moves.')
+      return issues
+    }
+    if (editingPondReceiptId != null && route !== 'station-pond') {
+      issues.push('Receipt edits are only for shop → pond warehouse moves.')
+      return issues
+    }
+    if (route === 'pond-station') {
+      issues.push('Pond warehouse → shop moves are not supported here. Reverse a pond receipt or adjust stock.')
+      return issues
+    }
+    if (route === 'station-station' && !canTransferBetweenSites) {
+      issues.push('At least two active sites are required for site-to-site draft transfers.')
+      return issues
+    }
+    if (route === 'station-pond' && !canMoveToPondWarehouse) {
+      issues.push('Enable aquaculture and add ponds to move stock into pond warehouses.')
+      return issues
+    }
+    if (route === 'pond-pond' && activePondsOrdered.length < 2) {
+      issues.push('At least two ponds are required for pond-to-pond warehouse moves.')
+      return issues
+    }
     const validLines = lineRows
       .map((r, i) => ({ ...r, i, q: parseQtyInput(r.quantity) }))
       .filter(x => x.item_id > 0)
@@ -625,16 +818,27 @@ function InventoryContent() {
         )
         continue
       }
-      const { qtyNum, unit } = qtyAtSourceStation(data, fs)
+      const { qtyNum, unit } = qtyAtSourceEndpoint(data, fromEndpoint)
       const others = sumQtySameItemOtherLines(lineRows, row.item_id, row.i)
-      const maxForLine = qtyNum - others
-      if (qtyNum <= 0 && row.q > 0) {
+      const editingId = editingInterStationTransferId ?? amendingPostedTransferId
+      const originalTransfer = editingId != null ? transfers.find(x => x.id === editingId) ?? null : null
+      const originalReceipt =
+        editingPondReceiptId != null ? pondReceipts.find(x => x.id === editingPondReceiptId) ?? null : null
+      const credit =
+        transferSourceCreditQty(row.item_id, fromEndpoint, originalTransfer) +
+        pondReceiptSourceCreditQty(row.item_id, fromEndpoint, originalReceipt)
+      const effectiveAtSource = qtyNum + credit
+      const maxForLine = effectiveAtSource - others
+      if (effectiveAtSource <= 0 && row.q > 0) {
         issues.push(
           `Line ${row.i + 1}: no stock at source for this product — receive or adjust stock before transferring.`,
         )
       } else if (row.q > maxForLine + 1e-9) {
         issues.push(
-          `Line ${row.i + 1}: quantity exceeds what you can send (${qtyNum.toLocaleString()} ${unit} at source` +
+          `Line ${row.i + 1}: quantity exceeds what you can send (${effectiveAtSource.toLocaleString()} ${unit} at source` +
+            (credit > 0
+              ? ` including ${credit.toLocaleString()} ${unit} returned when this transfer is updated`
+              : '') +
             (others > 0
               ? `; ${others.toLocaleString()} ${unit} already on other lines for this SKU`
               : '') +
@@ -643,36 +847,64 @@ function InventoryContent() {
       }
     }
     return issues
-  }, [fromStationId, toDestination, lineRows, itemAvail])
+  }, [
+    fromEndpoint,
+    toEndpoint,
+    lineRows,
+    itemAvail,
+    editingInterStationTransferId,
+    amendingPostedTransferId,
+    editingPondReceiptId,
+    transfers,
+    pondReceipts,
+    canTransferBetweenSites,
+    canMoveToPondWarehouse,
+    activePondsOrdered.length,
+  ])
 
   const applyMaxQty = useCallback(
     (lineIndex: number) => {
       setLineRows(prev => {
         const row = prev[lineIndex]
-        if (!row || typeof fromStationId !== 'number' || row.item_id <= 0) return prev
+        if (!row || !fromEndpoint || row.item_id <= 0) return prev
         const st = itemAvail[row.item_id]
         if (!st || st.status !== 'ok' || !st.data.tracks_per_station) return prev
-        const { qtyNum } = qtyAtSourceStation(st.data, fromStationId)
+        const { qtyNum } = qtyAtSourceEndpoint(st.data, fromEndpoint)
         const others = sumQtySameItemOtherLines(prev, row.item_id, lineIndex)
-        const max = Math.max(0, qtyNum - others)
+        const editingId = editingInterStationTransferId ?? amendingPostedTransferId
+        const originalTransfer =
+          editingId != null ? transfers.find(x => x.id === editingId) ?? null : null
+        const originalReceipt =
+          editingPondReceiptId != null ? pondReceipts.find(x => x.id === editingPondReceiptId) ?? null : null
+        const credit =
+          transferSourceCreditQty(row.item_id, fromEndpoint, originalTransfer) +
+          pondReceiptSourceCreditQty(row.item_id, fromEndpoint, originalReceipt)
+        const max = Math.max(0, qtyNum + credit - others)
         const qtyStr = Number.isInteger(max) ? String(max) : String(Math.round(max * 1e6) / 1e6)
         const next = [...prev]
         next[lineIndex] = { ...next[lineIndex], quantity: qtyStr }
         return next
       })
     },
-    [fromStationId, itemAvail],
+    [fromEndpoint, itemAvail, editingInterStationTransferId, amendingPostedTransferId, editingPondReceiptId, transfers, pondReceipts],
   )
 
   const refreshLineAvailability = useCallback(() => {
     setAvailFetchSeq(s => s + 1)
   }, [])
 
-  const startEditInterStationDraft = (t: TransferRecord) => {
-    if (t.status !== 'draft' || !canInterStationCreate) return
-    setEditingInterStationTransferId(t.id)
-    setFromStationId(t.from_station_id)
-    setToDestination({ kind: 'station', id: t.to_station_id })
+  const refreshAfterInventoryChange = useCallback(async () => {
+    await loadCore()
+    refreshLineAvailability()
+    const n = typeof lookupItemId === 'number' ? lookupItemId : parseInt(String(lookupItemId), 10)
+    if (tab === 'lookup' && Number.isFinite(n) && n > 0) {
+      await runLookup(n)
+    }
+  }, [loadCore, refreshLineAvailability, lookupItemId, tab, runLookup])
+
+  const loadTransferIntoForm = (t: TransferRecord) => {
+    setFromEndpoint({ kind: 'station', id: t.from_station_id })
+    setToEndpoint({ kind: 'station', id: t.to_station_id })
     const raw = (t.transfer_date || '').trim()
     const d = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10)
     setTransferDate(d || new Date().toISOString().split('T')[0])
@@ -684,6 +916,50 @@ function InventoryContent() {
     )
     setItemAvail({})
     setAvailFetchSeq(s => s + 1)
+  }
+
+  const startEditInterStationDraft = (t: TransferRecord) => {
+    if (t.status !== 'draft' || !canCreateSiteTransfer) return
+    setAmendingPostedTransferId(null)
+    setEditingPondReceiptId(null)
+    setEditingInterStationTransferId(t.id)
+    loadTransferIntoForm(t)
+    requestAnimationFrame(() => {
+      document.getElementById('inventory-transfer-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  const startAmendPostedTransfer = (t: TransferRecord) => {
+    if (t.status !== 'posted' || !canCreateSiteTransfer) return
+    setEditingInterStationTransferId(null)
+    setEditingPondReceiptId(null)
+    setAmendingPostedTransferId(t.id)
+    loadTransferIntoForm(t)
+    requestAnimationFrame(() => {
+      document.getElementById('inventory-transfer-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  const loadPondReceiptIntoForm = (r: PondReceiptRecord) => {
+    setFromEndpoint({ kind: 'station', id: r.from_station_id })
+    setToEndpoint({ kind: 'pond', id: r.pond_id })
+    setTransferDate(new Date().toISOString().split('T')[0])
+    setTransferMemo('')
+    setLineRows(
+      r.lines?.length
+        ? r.lines.map(l => ({ item_id: l.item_id, quantity: String(l.quantity) }))
+        : [{ item_id: 0, quantity: '1' }],
+    )
+    setItemAvail({})
+    setAvailFetchSeq(s => s + 1)
+  }
+
+  const startEditPondReceipt = (r: PondReceiptRecord) => {
+    if (!canMoveToPondWarehouse) return
+    setEditingInterStationTransferId(null)
+    setAmendingPostedTransferId(null)
+    setEditingPondReceiptId(r.id)
+    loadPondReceiptIntoForm(r)
     requestAnimationFrame(() => {
       document.getElementById('inventory-transfer-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
@@ -691,9 +967,11 @@ function InventoryContent() {
 
   const cancelEditInterStationDraft = () => {
     setEditingInterStationTransferId(null)
+    setAmendingPostedTransferId(null)
+    setEditingPondReceiptId(null)
     setLineRows([{ item_id: 0, quantity: '1' }])
     setTransferMemo('')
-    setToDestination(null)
+    setToEndpoint(null)
     setItemAvail({})
     setAvailFetchSeq(s => s + 1)
   }
@@ -703,14 +981,11 @@ function InventoryContent() {
       toast.error(transferDraftIssues[0] || 'Fix the form before saving.')
       return
     }
-    if (!toDestination) {
-      toast.error('Select a destination.')
+    if (!fromEndpoint || !toEndpoint) {
+      toast.error('Select a source and destination.')
       return
     }
-    if (editingInterStationTransferId != null && toDestination.kind === 'pond') {
-      toast.error('Finish or cancel editing the inter-station draft before choosing a pond destination.')
-      return
-    }
+    const route = classifyTransferRoute(fromEndpoint, toEndpoint)
     const lines = lineRows
       .map(r => ({
         item_id: r.item_id,
@@ -723,48 +998,74 @@ function InventoryContent() {
     }
     setSaving(true)
     try {
-      if (toDestination.kind === 'pond') {
-        const pm = ponds.find(p => p.id === toDestination.id && p.is_active !== false)
-        const pname = (pm?.name || '').trim() || `Pond #${toDestination.id}`
-        await api.post('/aquaculture/pond-warehouse-transfer/', {
-          station_id: fromStationId,
-          pond_id: toDestination.id,
-          items: lines.map(x => ({ item_id: x.item_id, quantity: String(x.q) })),
-        })
-        toast.success(`Stock moved to ${pname} warehouse (immediate — no draft).`)
-      } else if (editingInterStationTransferId != null) {
-        await api.put(`/inventory/transfers/${editingInterStationTransferId}/`, {
-          from_station_id: fromStationId,
-          to_station_id: toDestination.id,
+      const linePayload = lines.map(x => ({ item_id: x.item_id, quantity: String(x.q) }))
+      if (route === 'station-station' && (editingInterStationTransferId != null || amendingPostedTransferId != null)) {
+        const tid = editingInterStationTransferId ?? amendingPostedTransferId
+        await api.put(`/inventory/transfers/${tid}/`, {
+          from_station_id: fromEndpoint.id,
+          to_station_id: toEndpoint.id,
           transfer_date: transferDate,
           memo: transferMemo || '',
-          lines: lines.map(x => ({ item_id: x.item_id, quantity: String(x.q) })),
+          lines: linePayload,
         })
-        toast.success('Draft updated.')
+        toast.success(
+          amendingPostedTransferId != null
+            ? 'Transfer updated — both sites adjusted and journal refreshed.'
+            : 'Draft updated.',
+        )
         setEditingInterStationTransferId(null)
-      } else {
+        setAmendingPostedTransferId(null)
+      } else if (route === 'station-station') {
         await api.post('/inventory/transfers/', {
-          from_station_id: fromStationId,
-          to_station_id: toDestination.id,
+          from_station_id: fromEndpoint.id,
+          to_station_id: toEndpoint.id,
           transfer_date: transferDate,
           memo: transferMemo || '',
-          lines: lines.map(x => ({ item_id: x.item_id, quantity: String(x.q) })),
+          lines: linePayload,
         })
         toast.success('Transfer draft created. Post it to move stock.')
+      } else if (route === 'station-pond' && editingPondReceiptId != null) {
+        await api.put(`/inventory/pond-warehouse-receipts/${editingPondReceiptId}/`, {
+          station_id: fromEndpoint.id,
+          pond_id: toEndpoint.id,
+          items: linePayload,
+        })
+        toast.success('Pond receipt updated — shop and pond warehouse quantities adjusted.')
+        setEditingPondReceiptId(null)
+      } else if (route === 'station-pond') {
+        const pm = activePondsOrdered.find(p => p.id === toEndpoint.id)
+        const pname = (pm?.name || '').trim() || `Pond #${toEndpoint.id}`
+        await api.post('/aquaculture/pond-warehouse-transfer/', {
+          station_id: fromEndpoint.id,
+          pond_id: toEndpoint.id,
+          items: linePayload,
+        })
+        toast.success(`Stock moved to ${pname} warehouse (immediate — no draft).`)
+      } else if (route === 'pond-pond') {
+        await api.post('/aquaculture/pond-warehouse-inter-pond-transfers/', {
+          from_pond_id: fromEndpoint.id,
+          to_pond_id: toEndpoint.id,
+          items: linePayload,
+          memo: transferMemo || '',
+        })
+        toast.success('Stock moved between pond warehouses (immediate — no draft).')
+      } else {
+        toast.error('This transfer route is not supported.')
+        return
       }
       setLineRows([{ item_id: 0, quantity: '1' }])
       setTransferMemo('')
       setItemAvail({})
-      void loadCore()
+      await refreshAfterInventoryChange()
     } catch (e) {
       toast.error(
         extractErrorMessage(
           e,
-          toDestination.kind === 'pond'
-            ? 'Could not move stock to pond warehouse'
-            : editingInterStationTransferId != null
-              ? 'Could not update draft'
-              : 'Could not create transfer',
+          editingInterStationTransferId != null ||
+          amendingPostedTransferId != null ||
+          editingPondReceiptId != null
+            ? 'Could not update transfer'
+            : 'Could not create transfer',
         ),
       )
     } finally {
@@ -777,7 +1078,7 @@ function InventoryContent() {
     try {
       await api.post(`/inventory/transfers/${id}/`)
       toast.success('Transfer posted')
-      void loadCore()
+      await refreshAfterInventoryChange()
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not post transfer'))
     } finally {
@@ -790,7 +1091,7 @@ function InventoryContent() {
     try {
       await api.delete(`/inventory/transfers/${id}/delete/`)
       toast.success('Draft deleted')
-      void loadCore()
+      await refreshAfterInventoryChange()
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not delete'))
     } finally {
@@ -803,7 +1104,7 @@ function InventoryContent() {
     try {
       await api.post(`/inventory/transfers/${id}/unpost/`)
       toast.success('Transfer rolled back to draft')
-      void loadCore()
+      await refreshAfterInventoryChange()
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not roll back transfer'))
     } finally {
@@ -816,7 +1117,7 @@ function InventoryContent() {
     try {
       await api.post(`/inventory/pond-warehouse-receipts/${id}/reverse/`)
       toast.success('Pond warehouse receipt reversed')
-      void loadCore()
+      await refreshAfterInventoryChange()
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not reverse receipt'))
     } finally {
@@ -843,26 +1144,6 @@ function InventoryContent() {
     transferDeletingId !== null ||
     transferUnpostingId !== null ||
     pondReceiptReversingId !== null
-
-  const activeStations = useMemo(() => stations.filter(isStationActive), [stations])
-  const activeStationCount = activeStations.length
-  const canTransferBetweenSites = activeStationCount >= 2
-  const activePondsOrdered = useMemo(
-    () => [...ponds].filter(p => p.is_active).sort(comparePondsForTransfer),
-    [ponds],
-  )
-  const canInterStationCreate = !userHomeStation && canTransferBetweenSites
-  const canMoveToPondWarehouse =
-    aquacultureEnabled && activePondsOrdered.length > 0 && activeStationCount >= 1
-  const canShowTransferForm = canInterStationCreate || canMoveToPondWarehouse
-  const receivingStationsOrdered = useMemo(
-    () => [...activeStations].sort(compareReceivingStationsByPond),
-    [activeStations],
-  )
-  const sendingStationsOrdered = useMemo(
-    () => [...activeStations].sort((a, b) => a.id - b.id),
-    [activeStations],
-  )
 
   const transferStats = useMemo(
     () => ({
@@ -920,30 +1201,24 @@ function InventoryContent() {
   useEffect(() => {
     if (loading) return
     if (userHomeStation?.id) {
-      setFromStationId(userHomeStation.id)
+      setFromEndpoint({ kind: 'station', id: userHomeStation.id })
     }
   }, [loading, userHomeStation])
 
   useEffect(() => {
     if (loading || !canShowTransferForm) return
-    if (fromStationId !== '') return
+    if (fromEndpoint) return
     if (userHomeStation?.id) return
     if (activeStations.length === 1) {
-      setFromStationId(activeStations[0].id)
+      setFromEndpoint({ kind: 'station', id: activeStations[0].id })
     }
-  }, [loading, canShowTransferForm, fromStationId, userHomeStation, activeStations])
+  }, [loading, canShowTransferForm, fromEndpoint, userHomeStation, activeStations])
 
   useEffect(() => {
-    if (!canInterStationCreate && toDestination?.kind === 'station') {
-      setToDestination(null)
+    if (fromEndpoint && toEndpoint && transferEndpointsEqual(fromEndpoint, toEndpoint)) {
+      setToEndpoint(null)
     }
-  }, [canInterStationCreate, toDestination])
-
-  useEffect(() => {
-    if (!canMoveToPondWarehouse && toDestination?.kind === 'pond') {
-      setToDestination(null)
-    }
-  }, [canMoveToPondWarehouse, toDestination])
+  }, [fromEndpoint, toEndpoint])
 
   const setTabAndUrl = (next: 'transfers' | 'lookup') => {
     setTab(next)
@@ -1092,14 +1367,8 @@ function InventoryContent() {
               <div>
                 <p className="font-medium">Your site: {userHomeStation.name}</p>
                 <p className="mt-1 text-sky-900/90 dark:text-sky-200/90">
-                  You see transfers involving this site only. Cross-site moves need a company-wide login
-                  without a home-station assignment.
-                  {canMoveToPondWarehouse ? (
-                    <>
-                      {' '}
-                      You can still move shop stock into pond warehouses from this site.
-                    </>
-                  ) : null}
+                  Transfers list only moves involving {userHomeStation.name}. Send from is fixed to your home
+                  site; choose any other site or pond warehouse as the destination (same list on both sides).
                 </p>
               </div>
             </div>
@@ -1385,28 +1654,7 @@ function InventoryContent() {
                   <ArrowRightLeft className="mx-auto h-10 w-10 text-muted-foreground/60" />
                   <h2 className="mt-3 text-lg font-semibold text-foreground">Transfers not available</h2>
                   <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-                    {userHomeStation ? (
-                      <>
-                        Inter-site transfers need a login without a home station.
-                        {!aquacultureEnabled ? (
-                          <> Enable aquaculture in Company settings to move stock into pond warehouses.</>
-                        ) : activePondsOrdered.length === 0 ? (
-                          <> Add a pond under Aquaculture to use pond warehouse moves.</>
-                        ) : (
-                          <> Confirm you have an active site under Sites.</>
-                        )}
-                      </>
-                    ) : stationMode === 'single' ? (
-                      <>
-                        Single-site companies need another active site for inter-station transfers, or enable
-                        aquaculture with ponds for shop → pond moves.
-                      </>
-                    ) : (
-                      <>
-                        Add two active sites for inter-station transfers, or enable aquaculture with ponds for
-                        warehouse moves.
-                      </>
-                    )}
+                    Add active sites and/or ponds under Sites and Aquaculture to move stock between locations.
                   </p>
                   <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                     <Link href="/stations" className={btnSecondary}>
@@ -1427,22 +1675,40 @@ function InventoryContent() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <h2 className="text-lg font-semibold tracking-tight">
-                          {editingInterStationTransferId != null
-                            ? `Edit draft ${
-                                transfers.find(x => x.id === editingInterStationTransferId)?.transfer_number ||
-                                `TR-${editingInterStationTransferId}`
+                          {editingPondReceiptId != null
+                            ? `Edit pond receipt ${
+                                pondReceipts.find(x => x.id === editingPondReceiptId)?.receipt_number ||
+                                `PWR-${editingPondReceiptId}`
                               }`
-                            : 'New stock transfer'}
+                            : amendingPostedTransferId != null
+                              ? `Edit posted ${
+                                  transfers.find(x => x.id === amendingPostedTransferId)?.transfer_number ||
+                                  `TR-${amendingPostedTransferId}`
+                                }`
+                              : editingInterStationTransferId != null
+                                ? `Edit draft ${
+                                    transfers.find(x => x.id === editingInterStationTransferId)?.transfer_number ||
+                                    `TR-${editingInterStationTransferId}`
+                                  }`
+                                : 'New stock transfer'}
                         </h2>
                         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                          {canInterStationCreate && canMoveToPondWarehouse
-                            ? 'Inter-site moves save as drafts and post with GL. Pond moves apply immediately.'
-                            : canInterStationCreate
-                              ? 'Save a draft first, then post to move stock and record the journal.'
-                              : 'Move shop stock into a pond warehouse immediately (no draft).'}
+                          {editingPondReceiptId != null
+                            ? 'Saving reverses the prior shop → pond move, applies your changes, and updates both locations.'
+                            : amendingPostedTransferId != null
+                            ? 'Saving reverses the prior move on both sites, applies your changes, and refreshes the automatic journal.'
+                            : transferRoute === 'station-station' ||
+                                editingInterStationTransferId != null ||
+                                amendingPostedTransferId != null
+                              ? 'Site-to-site moves save as drafts — post to shift bins and record the journal.'
+                              : transferRoute === 'station-pond'
+                                ? 'Shop → pond warehouse moves apply immediately (no draft).'
+                                : transferRoute === 'pond-pond'
+                                  ? 'Pond warehouse reallocations apply immediately (no draft).'
+                                  : 'Choose source and destination from the same list of sites and pond warehouses.'}
                         </p>
                       </div>
-                      {canInterStationCreate ? (
+                      {canCreateSiteTransfer ? (
                         <details className="max-w-md rounded-lg border border-border/70 bg-background/70 px-3 py-2 text-sm">
                           <summary className="cursor-pointer list-none font-medium text-foreground [&::-webkit-details-marker]:hidden">
                             <span className="inline-flex items-center gap-1.5">
@@ -1476,25 +1742,30 @@ function InventoryContent() {
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                         <div className="min-w-0 flex-1 space-y-1">
                           <label className="text-sm font-medium text-foreground" htmlFor="inv-from-st">
-                            Sending site
+                            Send from
                           </label>
                           <select
                             id="inv-from-st"
                             className={selectClassName}
                             disabled={Boolean(userHomeStation)}
                             aria-disabled={Boolean(userHomeStation)}
-                            value={fromStationId === '' ? '' : String(fromStationId)}
-                            onChange={e => setFromStationId(e.target.value ? parseInt(e.target.value, 10) : '')}
+                            value={transferEndpointKey(fromEndpoint)}
+                            onChange={e =>
+                              setFromEndpoint(parseTransferEndpointKey(e.target.value))
+                            }
                           >
                             <option value="">From…</option>
-                            {sendingStationsOrdered.map(s => (
-                              <option key={s.id} value={s.id}>
-                                {formatStationTransferLabel(s)}
-                              </option>
-                            ))}
+                            {renderTransferEndpointOptions(
+                              transferStationsOrdered,
+                              activePondsOrdered,
+                              aquacultureEnabled,
+                              toEndpoint,
+                              userHomeStation,
+                              'from',
+                            )}
                           </select>
                           <p className="text-xs text-muted-foreground">
-                            Quantities use this site&apos;s bin.
+                            Quantities use stock at the selected site bin or pond warehouse.
                           </p>
                         </div>
                         <div
@@ -1510,37 +1781,21 @@ function InventoryContent() {
                           <select
                             id="inv-to-st"
                             className={selectClassName}
-                            value={formatDestinationSelectValue(toDestination)}
-                            onChange={e => setToDestination(parseDestinationSelectValue(e.target.value))}
+                            value={transferEndpointKey(toEndpoint)}
+                            onChange={e => setToEndpoint(parseTransferEndpointKey(e.target.value))}
                           >
                             <option value="">To…</option>
-                            {canInterStationCreate ? (
-                              <optgroup label="Other sites (inter-station draft → post)">
-                                {receivingStationsOrdered.map(s => (
-                                  <option key={`s-${s.id}`} value={`s:${s.id}`}>
-                                    {formatStationTransferLabel(s)}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ) : null}
-                            {canMoveToPondWarehouse && editingInterStationTransferId == null ? (
-                              <optgroup label="Pond warehouses (shop → pond store, immediate)">
-                                {activePondsOrdered.map(p => (
-                                  <option key={`p-${p.id}`} value={`p:${p.id}`}>
-                                    {p.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ) : null}
+                            {renderTransferEndpointOptions(
+                              transferStationsOrdered,
+                              activePondsOrdered,
+                              aquacultureEnabled,
+                              fromEndpoint,
+                              userHomeStation,
+                              'to',
+                            )}
                           </select>
                           <p className="text-xs text-muted-foreground">
-                            {editingInterStationTransferId != null ? (
-                              <>Editing an inter-station draft. Pond moves use a separate flow.</>
-                            ) : (
-                              <>
-                                Another site for a draft transfer, or a pond for an immediate warehouse move.
-                              </>
-                            )}
+                            Same sites and pond warehouses as Send from — pick a different destination.
                           </p>
                         </div>
                       </div>
@@ -1549,18 +1804,22 @@ function InventoryContent() {
                           Document details
                         </h3>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium" htmlFor="inv-transfer-date">
-                              Date
-                            </label>
-                            <input
-                              id="inv-transfer-date"
-                              type="date"
-                              className={inputClassName}
-                              value={transferDate}
-                              onChange={e => setTransferDate(e.target.value)}
-                            />
-                          </div>
+                          {transferRoute === 'station-station' ||
+                          editingInterStationTransferId != null ||
+                          amendingPostedTransferId != null ? (
+                            <div className="space-y-1">
+                              <label className="text-sm font-medium" htmlFor="inv-transfer-date">
+                                Date
+                              </label>
+                              <input
+                                id="inv-transfer-date"
+                                type="date"
+                                className={inputClassName}
+                                value={transferDate}
+                                onChange={e => setTransferDate(e.target.value)}
+                              />
+                            </div>
+                          ) : null}
                           <div className="space-y-1 sm:col-span-2">
                             <label className="text-sm font-medium" htmlFor="inv-transfer-memo">
                               Memo <span className="font-normal text-muted-foreground">(optional)</span>
@@ -1628,9 +1887,9 @@ function InventoryContent() {
 
                               if (row.item_id <= 0) {
                                 availMain = <span className="text-muted-foreground">Choose a product</span>
-                              } else if (!fromStationId) {
+                              } else if (!fromEndpoint) {
                                 availMain = (
-                                  <span className="text-xs text-muted-foreground">Select sending site first</span>
+                                  <span className="text-xs text-muted-foreground">Select send-from first</span>
                                 )
                               } else if (!st || st.status === 'loading') {
                                 availMain = (
@@ -1656,8 +1915,7 @@ function InventoryContent() {
                                 )
                                 rowWarn = true
                               } else {
-                                const fs = fromStationId as number
-                                const { qtyNum, unit } = qtyAtSourceStation(st.data, fs)
+                                const { qtyNum, unit } = qtyAtSourceEndpoint(st.data, fromEndpoint)
                                 const others = sumQtySameItemOtherLines(lineRows, row.item_id, i)
                                 const maxLine = Math.max(0, qtyNum - others)
                                 availMain = (
@@ -1673,7 +1931,7 @@ function InventoryContent() {
                                 if (qtyNum <= 0) {
                                   availSub = (
                                     <span className="mt-0.5 block text-xs text-amber-800 dark:text-amber-200">
-                                      No stock at this site — cannot transfer until receipt or adjustment.
+                                      No stock at source — cannot transfer until receipt or adjustment.
                                     </span>
                                   )
                                   rowWarn = true
@@ -1741,7 +1999,7 @@ function InventoryContent() {
                                       onChange={e => updateLine(i, 'quantity', e.target.value)}
                                       aria-invalid={rowWarn}
                                     />
-                                    {typeof fromStationId === 'number' &&
+                                    {fromEndpoint &&
                                       row.item_id > 0 &&
                                       st?.status === 'ok' &&
                                       st.data.tracks_per_station && (
@@ -1795,10 +2053,12 @@ function InventoryContent() {
                       <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
                         <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
                           Quantities must be greater than zero and cannot exceed available stock at the
-                          sending site.
+                          source location.
                         </p>
                         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
-                          {editingInterStationTransferId != null ? (
+                          {editingInterStationTransferId != null ||
+                          amendingPostedTransferId != null ||
+                          editingPondReceiptId != null ? (
                             <button
                               type="button"
                               className={btnSecondary + ' w-full shrink-0 sm:w-auto'}
@@ -1819,11 +2079,19 @@ function InventoryContent() {
                             ) : (
                               <Package className="h-4 w-4" />
                             )}
-                            {toDestination?.kind === 'pond'
-                              ? 'Move to pond warehouse'
-                              : editingInterStationTransferId != null
-                                ? 'Save changes'
-                                : 'Save draft'}
+                            {editingPondReceiptId != null
+                              ? 'Save & update locations'
+                              : amendingPostedTransferId != null
+                                ? 'Save & update sites'
+                                : editingInterStationTransferId != null
+                                  ? 'Save changes'
+                                : transferRoute === 'station-station'
+                                  ? 'Save draft'
+                                : transferRoute === 'station-pond'
+                                  ? 'Move to pond warehouse'
+                                  : transferRoute === 'pond-pond'
+                                    ? 'Move between ponds'
+                                    : 'Save transfer'}
                           </button>
                         </div>
                       </div>
@@ -1869,7 +2137,7 @@ function InventoryContent() {
                   </div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-sm">
+                  <table className="w-full min-w-[860px] text-sm">
                     <thead className="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       <tr>
                         <th className="px-4 py-2.5">#</th>
@@ -1877,13 +2145,14 @@ function InventoryContent() {
                         <th className="px-4 py-2.5">Route</th>
                         <th className="px-4 py-2.5">Status</th>
                         <th className="px-4 py-2.5">Lines</th>
+                        <th className="px-4 py-2.5 text-right">Value</th>
                         <th className="px-4 py-2.5 text-right whitespace-nowrap">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredTransfers.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-12 text-center">
+                          <td colSpan={7} className="px-4 py-12 text-center">
                             <div className="mx-auto max-w-sm">
                               <ArrowRightLeft className="mx-auto h-8 w-8 text-muted-foreground/50" />
                               <p className="mt-3 font-medium text-foreground">
@@ -1928,10 +2197,23 @@ function InventoryContent() {
                                 {t.lines?.map(l => `${l.item_name} (${l.quantity})`).join(' · ') || '—'}
                               </span>
                             </td>
+                            <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap font-medium">
+                              {formatInventoryValue(t.total_value, currencySymbol)}
+                            </td>
                             <td className="px-4 py-3 text-right">
                               {t.status === 'draft' ? (
-                                <div className="flex flex-wrap items-center justify-end gap-1">
-                                  {canInterStationCreate ? (
+                                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    className={btnRowIconMuted}
+                                    disabled={transferListBusy}
+                                    title="View transfer details"
+                                    aria-label={`View draft ${t.transfer_number || t.id}`}
+                                    onClick={() => setViewTransfer(t)}
+                                  >
+                                    <Eye className="h-5 w-5 shrink-0" aria-hidden />
+                                  </button>
+                                  {canCreateSiteTransfer ? (
                                     <button
                                       type="button"
                                       className={btnRowIconMuted}
@@ -1940,7 +2222,7 @@ function InventoryContent() {
                                       aria-label={`Edit draft ${t.transfer_number || t.id}`}
                                       onClick={() => startEditInterStationDraft(t)}
                                     >
-                                      <Pencil className="h-4 w-4 shrink-0" aria-hidden />
+                                      <Pencil className="h-5 w-5 shrink-0" aria-hidden />
                                     </button>
                                   ) : null}
                                   <button
@@ -1958,9 +2240,9 @@ function InventoryContent() {
                                     }
                                   >
                                     {transferPostingId === t.id ? (
-                                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                                      <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
                                     ) : (
-                                      <Check className="h-4 w-4 shrink-0" aria-hidden />
+                                      <Check className="h-5 w-5 shrink-0" aria-hidden />
                                     )}
                                   </button>
                                   <button
@@ -1978,33 +2260,57 @@ function InventoryContent() {
                                     }
                                   >
                                     {transferDeletingId === t.id ? (
-                                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                                      <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
                                     ) : (
-                                      <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                                      <Trash2 className="h-5 w-5 shrink-0" aria-hidden />
                                     )}
                                   </button>
                                 </div>
                               ) : (
-                                <button
-                                  type="button"
-                                  className={btnRowIconWarning}
-                                  disabled={transferListBusy}
-                                  title={interStationTransferImpactSummary(t)}
-                                  aria-label={`Roll back posted transfer ${t.transfer_number || t.id}`}
-                                  onClick={() =>
-                                    setConfirmAction({
-                                      kind: 'unpost',
-                                      id: t.id,
-                                      label: t.transfer_number || `TR-${t.id}`,
-                                    })
-                                  }
-                                >
-                                  {transferUnpostingId === t.id ? (
-                                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-                                  ) : (
-                                    <Undo2 className="h-4 w-4 shrink-0" aria-hidden />
-                                  )}
-                                </button>
+                                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    className={btnRowIconMuted}
+                                    disabled={transferListBusy}
+                                    title="View transfer details"
+                                    aria-label={`View posted transfer ${t.transfer_number || t.id}`}
+                                    onClick={() => setViewTransfer(t)}
+                                  >
+                                    <Eye className="h-5 w-5 shrink-0" aria-hidden />
+                                  </button>
+                                  {canCreateSiteTransfer ? (
+                                    <button
+                                      type="button"
+                                      className={btnRowIconMuted}
+                                      disabled={transferListBusy || saving}
+                                      title="Edit — reverses prior move on both sites, then applies your changes"
+                                      aria-label={`Edit posted transfer ${t.transfer_number || t.id}`}
+                                      onClick={() => startAmendPostedTransfer(t)}
+                                    >
+                                      <Pencil className="h-5 w-5 shrink-0" aria-hidden />
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    className={btnRowIconWarning}
+                                    disabled={transferListBusy}
+                                    title={interStationTransferImpactSummary(t)}
+                                    aria-label={`Roll back posted transfer ${t.transfer_number || t.id}`}
+                                    onClick={() =>
+                                      setConfirmAction({
+                                        kind: 'unpost',
+                                        id: t.id,
+                                        label: t.transfer_number || `TR-${t.id}`,
+                                      })
+                                    }
+                                  >
+                                    {transferUnpostingId === t.id ? (
+                                      <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
+                                    ) : (
+                                      <Undo2 className="h-5 w-5 shrink-0" aria-hidden />
+                                    )}
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -2038,20 +2344,21 @@ function InventoryContent() {
                     </div>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[680px] text-sm">
+                    <table className="w-full min-w-[780px] text-sm">
                       <thead className="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         <tr>
                           <th className="px-4 py-2.5">#</th>
                           <th className="px-4 py-2.5">When</th>
                           <th className="px-4 py-2.5">Route</th>
                           <th className="px-4 py-2.5">Lines</th>
+                          <th className="px-4 py-2.5 text-right">Value</th>
                           <th className="px-4 py-2.5 text-right whitespace-nowrap">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredPondReceipts.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-4 py-12 text-center">
+                            <td colSpan={6} className="px-4 py-12 text-center">
                               <div className="mx-auto max-w-sm">
                                 <Sprout className="mx-auto h-8 w-8 text-muted-foreground/50" />
                                 <p className="mt-3 font-medium text-foreground">
@@ -2060,7 +2367,7 @@ function InventoryContent() {
                                     : 'No matching receipts'}
                                 </p>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                  Move feed or supplies from a shop site to a pond warehouse above.
+                                  Use Aquaculture to move stock into pond warehouses.
                                 </p>
                               </div>
                             </td>
@@ -2091,27 +2398,54 @@ function InventoryContent() {
                                   {r.lines?.map(l => `${l.item_name} (${l.quantity})`).join(' · ') || '—'}
                                 </span>
                               </td>
+                              <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap font-medium">
+                                {formatInventoryValue(r.total_value, currencySymbol)}
+                              </td>
                               <td className="px-4 py-3 text-right">
-                                <button
-                                  type="button"
-                                  className={btnRowIconDanger}
-                                  disabled={transferListBusy}
-                                  title={pondWarehouseReceiptImpactSummary()}
-                                  aria-label={`Remove pond receipt ${r.receipt_number || r.id}`}
-                                  onClick={() =>
-                                    setConfirmAction({
-                                      kind: 'reverse',
-                                      id: r.id,
-                                      label: r.receipt_number || `PWR-${r.id}`,
-                                    })
-                                  }
-                                >
-                                  {pondReceiptReversingId === r.id ? (
-                                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
-                                  )}
-                                </button>
+                                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    className={btnRowIconMuted}
+                                    disabled={transferListBusy}
+                                    title="View receipt details"
+                                    aria-label={`View pond receipt ${r.receipt_number || r.id}`}
+                                    onClick={() => setViewPondReceipt(r)}
+                                  >
+                                    <Eye className="h-5 w-5 shrink-0" aria-hidden />
+                                  </button>
+                                  {canMoveToPondWarehouse ? (
+                                    <button
+                                      type="button"
+                                      className={btnRowIconMuted}
+                                      disabled={transferListBusy || saving}
+                                      title="Edit — reverses prior move, then applies your changes"
+                                      aria-label={`Edit pond receipt ${r.receipt_number || r.id}`}
+                                      onClick={() => startEditPondReceipt(r)}
+                                    >
+                                      <Pencil className="h-5 w-5 shrink-0" aria-hidden />
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    className={btnRowIconDanger}
+                                    disabled={transferListBusy}
+                                    title={pondWarehouseReceiptImpactSummary()}
+                                    aria-label={`Reverse pond receipt ${r.receipt_number || r.id}`}
+                                    onClick={() =>
+                                      setConfirmAction({
+                                        kind: 'reverse',
+                                        id: r.id,
+                                        label: r.receipt_number || `PWR-${r.id}`,
+                                      })
+                                    }
+                                  >
+                                    {pondReceiptReversingId === r.id ? (
+                                      <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
+                                    ) : (
+                                      <Trash2 className="h-5 w-5 shrink-0" aria-hidden />
+                                    )}
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))
@@ -2125,6 +2459,123 @@ function InventoryContent() {
           )}
         </div>
       </div>
+
+      <Modal
+        isOpen={viewTransfer != null}
+        onClose={() => setViewTransfer(null)}
+        title={viewTransfer ? viewTransfer.transfer_number || `TR-${viewTransfer.id}` : 'Transfer'}
+        size="md"
+      >
+        {viewTransfer ? (
+          <div className="space-y-4 text-sm">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-medium uppercase text-muted-foreground">Status</p>
+                <p className="font-medium capitalize">{viewTransfer.status}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase text-muted-foreground">Date</p>
+                <p>{formatDateOnly(viewTransfer.transfer_date)}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-xs font-medium uppercase text-muted-foreground">Route</p>
+                <p>
+                  {viewTransfer.from_station_name || viewTransfer.from_station_id}
+                  <span className="mx-1.5 text-muted-foreground">→</span>
+                  {viewTransfer.to_station_name || viewTransfer.to_station_id}
+                </p>
+              </div>
+              {viewTransfer.auto_journal_entry_number ? (
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Journal</p>
+                  <p className="font-mono text-xs">{viewTransfer.auto_journal_entry_number}</p>
+                </div>
+              ) : null}
+              {viewTransfer.memo ? (
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Memo</p>
+                  <p>{viewTransfer.memo}</p>
+                </div>
+              ) : null}
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Lines</p>
+              <ul className="divide-y divide-border rounded-lg border border-border">
+                {(viewTransfer.lines || []).map(ln => (
+                  <li key={ln.id ?? `${ln.item_id}-${ln.quantity}`} className="flex justify-between gap-3 px-3 py-2">
+                    <span>{ln.item_name || `Item #${ln.item_id}`}</span>
+                    <span className="text-right tabular-nums">
+                      <span className="font-medium">{ln.quantity}</span>
+                      {ln.line_value ? (
+                        <span className="ml-2 text-muted-foreground">
+                          {formatInventoryValue(ln.line_value, currencySymbol)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {viewTransfer.total_value ? (
+                <p className="mt-2 text-right text-sm font-semibold tabular-nums">
+                  Total {formatInventoryValue(viewTransfer.total_value, currencySymbol)}
+                </p>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">{interStationTransferImpactSummary(viewTransfer)}</p>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        isOpen={viewPondReceipt != null}
+        onClose={() => setViewPondReceipt(null)}
+        title={viewPondReceipt ? viewPondReceipt.receipt_number || `PWR-${viewPondReceipt.id}` : 'Pond receipt'}
+        size="md"
+      >
+        {viewPondReceipt ? (
+          <div className="space-y-4 text-sm">
+            <div>
+              <p className="text-xs font-medium uppercase text-muted-foreground">When</p>
+              <p>{viewPondReceipt.created_at ? formatDateOnly(viewPondReceipt.created_at) : '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase text-muted-foreground">Route</p>
+              <p>
+                {viewPondReceipt.from_station_name || viewPondReceipt.from_station_id}
+                <span className="mx-1.5 text-muted-foreground">→</span>
+                {viewPondReceipt.pond_name || `Pond #${viewPondReceipt.pond_id}`}
+              </p>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Lines</p>
+              <ul className="divide-y divide-border rounded-lg border border-border">
+                {(viewPondReceipt.lines || []).map(ln => (
+                  <li
+                    key={`${ln.item_id}-${ln.quantity}`}
+                    className="flex justify-between gap-3 px-3 py-2"
+                  >
+                    <span>{ln.item_name || `Item #${ln.item_id}`}</span>
+                    <span className="text-right tabular-nums">
+                      <span className="font-medium">{ln.quantity}</span>
+                      {ln.line_value ? (
+                        <span className="ml-2 text-muted-foreground">
+                          {formatInventoryValue(ln.line_value, currencySymbol)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {viewPondReceipt.total_value ? (
+                <p className="mt-2 text-right text-sm font-semibold tabular-nums">
+                  Total {formatInventoryValue(viewPondReceipt.total_value, currencySymbol)}
+                </p>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">{pondWarehouseReceiptImpactSummary()}</p>
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         isOpen={confirmAction != null}

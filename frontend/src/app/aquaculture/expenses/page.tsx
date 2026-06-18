@@ -3,17 +3,23 @@
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BookOpen, Edit2, FileText, Package, RefreshCw, Store, Trash2 } from 'lucide-react'
+import { BookOpen, Edit2, Eye, FileText, Package, RefreshCw, Store, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
+import { ReportingCategorySelectOptions } from '@/lib/reportingCategorySelect'
 import {
   aquacultureExpenseDeleteConfirmMessage,
   aquacultureExpenseEditAllowed,
   aquacultureExpenseEditBlockedReason,
 } from '@/lib/aquacultureExpensePolicy'
+import {
+  aquacultureExpenseRegisterRowKey,
+  parseAquacultureExpenseRegister,
+  type AquacultureExpenseRegisterRow,
+} from '@/lib/aquacultureExpenseRegister'
 
 interface Pond {
   id: number
@@ -88,25 +94,7 @@ function normalizeVendorsFromApi(data: unknown): VendorSuggestion[] {
       ]
     })
 }
-interface ExpenseRow {
-  id: number
-  pond_id: number | null
-  pond_name: string
-  is_shared?: boolean
-  pond_shares?: PondShare[]
-  production_cycle_id?: number | null
-  production_cycle_name?: string
-  expense_category: string
-  expense_category_label: string
-  expense_date: string
-  amount: string
-  memo: string
-  vendor_name: string
-  source_station_id?: number | null
-  source_station_name?: string
-  feed_sack_count?: string | null
-  feed_weight_kg?: string | null
-}
+interface ExpenseRow extends AquacultureExpenseRegisterRow {}
 
 type CostMode = 'direct' | 'shared_equal' | 'shared_manual'
 
@@ -120,6 +108,9 @@ export default function AquacultureExpensesPage() {
   const [loading, setLoading] = useState(true)
   const [currency, setCurrency] = useState('BDT')
   const [filterPond, setFilterPond] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
+  const [totalAmount, setTotalAmount] = useState(0)
   const [modal, setModal] = useState(false)
   const [editing, setEditing] = useState<ExpenseRow | null>(null)
   const [cycles, setCycles] = useState<CycleRow[]>([])
@@ -171,14 +162,7 @@ export default function AquacultureExpensesPage() {
     return pair.length ? pair : manualCreateCats
   }, [cats, manualCreateCats])
 
-  const categoryChoicesForModal = useMemo(() => {
-    if (!editing) return manualCreateCats.length ? manualCreateCats : cats
-    const cur = editing.expense_category
-    if (manualCreateCats.some((c) => c.id === cur)) return manualCreateCats.length ? manualCreateCats : cats
-    const legacy = cats.find((c) => c.id === cur)
-    if (legacy) return [...manualCreateCats, legacy]
-    return manualCreateCats.length ? manualCreateCats : cats
-  }, [cats, editing, manualCreateCats])
+  const categoryChoicesForModal = useMemo(() => cats, [cats])
 
   const loadMeta = useCallback(async () => {
     try {
@@ -203,15 +187,20 @@ export default function AquacultureExpensesPage() {
   const loadRows = useCallback(async () => {
     setLoading(true)
     try {
-      const params = filterPond ? { pond_id: filterPond } : undefined
-      const { data } = await api.get<ExpenseRow[]>('/aquaculture/expenses/', { params })
-      setRows(Array.isArray(data) ? data : [])
+      const params: Record<string, string> = {}
+      if (filterPond) params.pond_id = filterPond
+      if (filterDateFrom) params.date_from = filterDateFrom
+      if (filterDateTo) params.date_to = filterDateTo
+      const { data } = await api.get('/aquaculture/expenses/', { params })
+      const parsed = parseAquacultureExpenseRegister(data)
+      setRows(parsed.rows)
+      setTotalAmount(parsed.totalAmount)
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not load expenses'))
     } finally {
       setLoading(false)
     }
-  }, [toast, filterPond])
+  }, [toast, filterPond, filterDateFrom, filterDateTo])
 
   useEffect(() => {
     void loadMeta()
@@ -222,7 +211,23 @@ export default function AquacultureExpensesPage() {
     if (raw != null && /^\d+$/.test(raw.trim())) {
       setFilterPond(raw.trim())
     }
+    const from = searchParams.get('date_from')
+    const to = searchParams.get('date_to')
+    if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) setFilterDateFrom(from)
+    if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) setFilterDateTo(to)
   }, [searchParams])
+
+  const pushFilterUrl = useCallback(
+    (next: { pond: string; from: string; to: string }) => {
+      const q = new URLSearchParams()
+      if (next.pond) q.set('pond_id', next.pond)
+      if (next.from) q.set('date_from', next.from)
+      if (next.to) q.set('date_to', next.to)
+      const path = q.toString() ? `/aquaculture/expenses?${q.toString()}` : '/aquaculture/expenses'
+      router.replace(path, { scroll: false })
+    },
+    [router],
+  )
 
   useEffect(() => {
     void loadRows()
@@ -493,6 +498,10 @@ export default function AquacultureExpensesPage() {
   }
 
   const remove = async (r: ExpenseRow) => {
+    if (r.source === 'bill') {
+      toast.error('Delete or void the vendor bill from Accounts payable instead.')
+      return
+    }
     if (!window.confirm(aquacultureExpenseDeleteConfirmMessage(r))) return
     try {
       await api.delete(`/aquaculture/expenses/${r.id}/`)
@@ -585,7 +594,7 @@ export default function AquacultureExpensesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+    <div className="mx-auto w-full min-w-0 max-w-[1800px] px-4 py-6 sm:px-6 lg:px-8">
       <datalist id="aquaculture-vendor-suggestions">
         {vendors.map((v) => (
           <option key={v.id} value={vendorPickLabel(v)} />
@@ -647,8 +656,14 @@ export default function AquacultureExpensesPage() {
             <span className="font-medium text-slate-800">Direct cost:</span> one pond (optional production cycle).{' '}
             <span className="font-medium text-slate-800">Shared cost:</span> leave pond unset and split across at least
             two ponds; shared lines cannot use a production cycle.{' '}
-            <span className="font-medium text-slate-800">Miscellaneous</span> covers boats, repairs, casual labour, site
-            meals, and anything else—use Memo.
+            <span className="font-medium text-slate-800">Day &amp; contract labor</span> (daily hired workers, not
+            employees) belongs on{' '}
+            <Link href="/bills" className="font-medium text-teal-800 underline">
+              Vendor bills
+            </Link>{' '}
+            with category Day &amp; contract labor or your custom label — same flow as electricity or repairs.{' '}
+            <span className="font-medium text-slate-800">Miscellaneous</span> covers boats, wiring, site meals, and
+            anything else—use Memo.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -657,7 +672,11 @@ export default function AquacultureExpensesPage() {
             <select
               className="ml-1 block rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
               value={filterPond}
-              onChange={(e) => setFilterPond(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value
+                setFilterPond(v)
+                pushFilterUrl({ pond: v, from: filterDateFrom, to: filterDateTo })
+              }}
             >
               <option value="">All</option>
               {ponds.map((p) => (
@@ -667,6 +686,45 @@ export default function AquacultureExpensesPage() {
               ))}
             </select>
           </label>
+          <label className="text-xs text-slate-600">
+            From
+            <input
+              type="date"
+              className="ml-1 block rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              value={filterDateFrom}
+              onChange={(e) => {
+                const v = e.target.value
+                setFilterDateFrom(v)
+                pushFilterUrl({ pond: filterPond, from: v, to: filterDateTo })
+              }}
+            />
+          </label>
+          <label className="text-xs text-slate-600">
+            To
+            <input
+              type="date"
+              className="ml-1 block rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              value={filterDateTo}
+              onChange={(e) => {
+                const v = e.target.value
+                setFilterDateTo(v)
+                pushFilterUrl({ pond: filterPond, from: filterDateFrom, to: v })
+              }}
+            />
+          </label>
+          {(filterDateFrom || filterDateTo) && (
+            <button
+              type="button"
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+              onClick={() => {
+                setFilterDateFrom('')
+                setFilterDateTo('')
+                pushFilterUrl({ pond: filterPond, from: '', to: '' })
+              }}
+            >
+              Clear dates
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void loadRows()}
@@ -701,11 +759,9 @@ export default function AquacultureExpensesPage() {
             <p className="mt-1 leading-relaxed text-indigo-950/95">
               New pond operating costs are recorded on <strong className="text-indigo-950">Vendor bills</strong> (pond tag
               + expense category → automatic 671x chart account). After posting, use{' '}
-              <strong className="text-indigo-950">Payments</strong> for bank/cash. The table below shows{' '}
-              <strong className="text-indigo-950">legacy manual rows</strong> and automated shop/warehouse entries only —
-              do not add new manual lines here. Lease → <Link href="/aquaculture/landlords" className="underline">Landlords</Link>;
-              wages → <Link href="/payroll" className="underline">Payroll</Link>; feed/medicine stock → Bills,{' '}
-              <Link href="/cashier" className="underline">Cashier</Link>, or internal shop issue below.
+              <strong className="text-indigo-950">Payments</strong> for bank/cash. The table lists{' '}
+              <strong className="text-indigo-950">vendor bill lines</strong> and legacy shop/warehouse entries — use{' '}
+              <span className="font-medium">View</span> on bill rows to open the source document.
             </p>
           </div>
         </div>
@@ -965,106 +1021,151 @@ export default function AquacultureExpensesPage() {
             </button>
           </div>
         </details>
-        <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full text-left text-sm" aria-labelledby="aq-expenses-title">
+        <div className="mt-6 w-full min-w-0 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full min-w-[1100px] table-auto text-left text-sm" aria-labelledby="aq-expenses-title">
             <caption className="sr-only">Aquaculture operating expenses</caption>
             <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
               <tr>
-                <th scope="col" className="px-3 py-2">
+                <th scope="col" className="whitespace-nowrap px-4 py-3">
                   Date
                 </th>
-                <th scope="col" className="px-3 py-2">
+                <th scope="col" className="min-w-[8rem] px-4 py-3">
                   Pond / split
                 </th>
-                <th scope="col" className="px-3 py-2">
+                <th scope="col" className="min-w-[7rem] px-4 py-3">
                   Cycle
                 </th>
-                <th scope="col" className="px-3 py-2">
+                <th scope="col" className="min-w-[9rem] px-4 py-3">
                   Category
                 </th>
-                <th scope="col" className="px-3 py-2 text-right whitespace-nowrap">
+                <th scope="col" className="min-w-[12rem] px-4 py-3">
+                  Description
+                </th>
+                <th scope="col" className="whitespace-nowrap px-4 py-3 text-right">
                   Sacks
                 </th>
-                <th scope="col" className="px-3 py-2 text-right whitespace-nowrap">
+                <th scope="col" className="whitespace-nowrap px-4 py-3 text-right">
                   Kg
                 </th>
-                <th scope="col" className="px-3 py-2 max-w-[100px]">
+                <th scope="col" className="min-w-[6rem] px-4 py-3">
                   Source
                 </th>
-                <th scope="col" className="px-3 py-2 text-right">
-                  Amount
-                </th>
-                <th scope="col" className="px-3 py-2">
+                <th scope="col" className="min-w-[10rem] px-4 py-3">
                   Vendor
                 </th>
-                <th scope="col" className="px-3 py-2 w-24">
-                  <span className="sr-only">Actions</span>
+                <th scope="col" className="whitespace-nowrap px-4 py-3 text-right">
+                  Amount
+                </th>
+                <th scope="col" className="sticky right-0 z-10 min-w-[12rem] whitespace-nowrap border-l border-slate-200 bg-slate-50 px-4 py-3">
+                  Actions
                 </th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50/80">
-                  <td className="px-3 py-2 whitespace-nowrap">{formatDateOnly(r.expense_date)}</td>
-                  <td className="px-3 py-2">{pondCell(r)}</td>
-                  <td className="px-3 py-2 text-slate-600">{r.production_cycle_name || '—'}</td>
-                  <td className="px-3 py-2">{r.expense_category_label || r.expense_category}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                <tr key={aquacultureExpenseRegisterRowKey(r)} className="group border-b border-slate-100 hover:bg-slate-50/80">
+                  <td className="whitespace-nowrap px-4 py-3">{formatDateOnly(r.expense_date)}</td>
+                  <td className="px-4 py-3">{pondCell(r)}</td>
+                  <td className="px-4 py-3 text-slate-600">{r.production_cycle_name || '—'}</td>
+                  <td className="px-4 py-3">
+                    <div>{r.expense_category_label || r.expense_category}</div>
+                    {r.source === 'bill' ? (
+                      <span className="text-xs text-teal-700">Vendor bill</span>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    <span className="line-clamp-2" title={r.memo || ''}>
+                      {r.memo?.trim() || '—'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-slate-600">
                     {r.feed_sack_count != null && r.feed_sack_count !== '' ? r.feed_sack_count : '—'}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                  <td className="px-4 py-3 text-right tabular-nums text-slate-600">
                     {r.feed_weight_kg != null && r.feed_weight_kg !== '' ? r.feed_weight_kg : '—'}
                   </td>
-                  <td className="px-3 py-2 max-w-[120px] truncate text-slate-600" title={r.source_station_name || ''}>
-                    {r.source_station_name ? (
+                  <td className="px-4 py-3 text-slate-600">
+                    {r.source === 'bill' ? (
+                      <span className="text-teal-800">A/P bill</span>
+                    ) : r.source_station_name ? (
                       <span className="text-teal-800">{r.source_station_name}</span>
                     ) : (
                       '—'
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums font-medium">
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-slate-800">{r.vendor_name || '—'}</div>
+                    {r.source === 'bill' && r.bill_number ? (
+                      <div className="text-xs text-slate-500">{r.bill_number}</div>
+                    ) : null}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums font-medium">
                     {sym}
                     {formatNumber(Number(r.amount))}
                   </td>
-                  <td className="px-3 py-2 max-w-[140px] truncate text-slate-600">{r.vendor_name || '—'}</td>
-                  <td className="px-3 py-2">
-                    {aquacultureExpenseEditAllowed(r) ? (
-                      <button
-                        type="button"
-                        className="text-blue-600 hover:underline mr-2"
-                        onClick={() => openEdit(r)}
-                        title="Edit expense"
-                        aria-label="Edit expense"
-                      >
-                        <Edit2 className="h-4 w-4 inline" aria-hidden />
-                      </button>
-                    ) : (
-                      <span
-                        className="mr-2 inline-block text-slate-400"
-                        title={aquacultureExpenseEditBlockedReason(r)}
-                      >
-                        <Edit2 className="h-4 w-4 inline opacity-40" aria-hidden />
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      className="text-red-600 hover:underline"
-                      title="Delete expense"
-                      aria-label="Delete expense"
-                      onClick={() => void remove(r)}
-                    >
-                      <Trash2 className="h-4 w-4 inline" aria-hidden />
-                    </button>
+                  <td className="sticky right-0 z-[1] border-l border-slate-100 bg-white px-4 py-3 group-hover:bg-slate-50">
+                    <div className="flex min-w-[11rem] items-center justify-end gap-2">
+                      {r.source === 'bill' && r.bill_id ? (
+                        <Link
+                          href={`/bills?view=${r.bill_id}`}
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-teal-700 hover:bg-teal-50"
+                          title="View vendor bill"
+                          aria-label="View vendor bill"
+                        >
+                          <Eye className="h-6 w-6" aria-hidden />
+                        </Link>
+                      ) : null}
+                      {aquacultureExpenseEditAllowed(r) ? (
+                        <button
+                          type="button"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50"
+                          onClick={() => openEdit(r)}
+                          title="Edit expense"
+                          aria-label="Edit expense"
+                        >
+                          <Edit2 className="h-6 w-6" aria-hidden />
+                        </button>
+                      ) : r.source !== 'bill' ? (
+                        <span
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-400"
+                          title={aquacultureExpenseEditBlockedReason(r)}
+                        >
+                          <Edit2 className="h-6 w-6 opacity-40" aria-hidden />
+                        </span>
+                      ) : null}
+                      {r.source !== 'bill' ? (
+                        <button
+                          type="button"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
+                          title="Delete expense"
+                          aria-label="Delete expense"
+                          onClick={() => void remove(r)}
+                        >
+                          <Trash2 className="h-6 w-6" aria-hidden />
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                     No expenses in this view.
                   </td>
                 </tr>
-              ) : null}
+              ) : (
+                <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-slate-900">
+                  <td className="px-4 py-3" colSpan={9}>
+                    Total ({rows.length} {rows.length === 1 ? 'row' : 'rows'})
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                    {sym}
+                    {formatNumber(totalAmount)}
+                  </td>
+                  <td className="sticky right-0 border-l border-slate-200 bg-slate-50 px-4 py-3" />
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1222,11 +1323,8 @@ export default function AquacultureExpensesPage() {
                     }))
                   }}
                 >
-                  {categoryChoicesForModal.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
+                  <option value="">Select category…</option>
+                  <ReportingCategorySelectOptions categories={categoryChoicesForModal} />
                 </select>
               </label>
               {(() => {

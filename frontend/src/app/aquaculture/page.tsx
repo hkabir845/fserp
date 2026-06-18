@@ -35,6 +35,10 @@ import {
 } from 'recharts'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
+import {
+  parseAquacultureExpenseRegister,
+  type AquacultureExpenseRegisterRow,
+} from '@/lib/aquacultureExpenseRegister'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
@@ -180,19 +184,7 @@ interface SaleRow {
   fish_species_label?: string
 }
 
-interface ExpenseRow {
-  id: number
-  pond_id: number | null
-  pond_name: string
-  expense_date: string
-  amount: string
-  expense_category: string
-  expense_category_label: string
-  memo: string
-  vendor_name: string
-  feed_weight_kg?: string | null
-  is_shared?: boolean
-}
+interface ExpenseRow extends AquacultureExpenseRegisterRow {}
 
 interface SampleRow {
   id: number
@@ -274,7 +266,7 @@ export default function AquacultureOverviewPage() {
       setPonds(Array.isArray(pondsRes.data) ? pondsRes.data : [])
       setCycles(Array.isArray(cyRes.data) ? cyRes.data : [])
       setSales(Array.isArray(salRes.data) ? salRes.data : [])
-      setExpenses(Array.isArray(expRes.data) ? expRes.data : [])
+      setExpenses(parseAquacultureExpenseRegister(expRes.data).rows)
       setSamples(Array.isArray(smpRes.data) ? smpRes.data : [])
       setStockPos(Array.isArray(stkRes.data?.rows) ? stkRes.data.rows : [])
     } catch (e) {

@@ -42,6 +42,7 @@ import {
   findFuelBillCategory,
   type FuelStationBillExpenseCategory,
 } from '@/lib/fuelStationBillLine'
+import { ReportingCategorySelectOptions } from '@/lib/reportingCategorySelect'
 import {
   resolveReceiptLocationKeyForVendor,
   vendorUsualReceivingSummary,
@@ -928,11 +929,7 @@ function BillPondAllocationFields({
                 className="w-full min-w-0 px-2 py-1 text-sm border border-teal-300 rounded focus:ring-1 focus:ring-teal-500 bg-teal-50/40"
               >
                 <option value="">Select category…</option>
-                {billExpenseCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
+                <ReportingCategorySelectOptions categories={billExpenseCategories} />
               </select>
               {line.expense_account_id ? (
                 <p className="mt-0.5 text-[11px] text-teal-800">
@@ -1090,11 +1087,7 @@ function BillPondAllocationFields({
             className="w-full min-w-0 px-2 py-1 text-sm border border-teal-300 rounded focus:ring-1 focus:ring-teal-500 bg-teal-50/40"
           >
             <option value="">Select category…</option>
-            {billExpenseCategories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
+            <ReportingCategorySelectOptions categories={billExpenseCategories} />
           </select>
         </div>
       ) : null}
@@ -1549,6 +1542,23 @@ export default function BillsPage() {
     }
   }, [])
 
+  const loadBillReportingCategories = useCallback(async () => {
+    try {
+      const [aqCatRes, fsCatRes] = await Promise.allSettled([
+        api.get('/aquaculture/expense-categories/'),
+        api.get('/fuel-station/expense-categories/'),
+      ])
+      if (aqCatRes.status === 'fulfilled' && Array.isArray(aqCatRes.value.data)) {
+        setAquacultureBillCategories(aqCatRes.value.data as AquacultureBillExpenseCategory[])
+      }
+      if (fsCatRes.status === 'fulfilled' && Array.isArray(fsCatRes.value.data)) {
+        setFuelStationBillCategories(fsCatRes.value.data as FuelStationBillExpenseCategory[])
+      }
+    } catch (error) {
+      console.error('Error fetching reporting categories for bills:', error)
+    }
+  }, [])
+
   const loadBillReferenceData = useCallback(async () => {
     try {
       const [vendorsRes, itemsRes, accountsRes, tanksRes, stationsRes] = await Promise.allSettled([
@@ -1659,11 +1669,9 @@ export default function BillsPage() {
         setStations([])
       }
 
-      const [pondsRes, cyclesRes, aqCatRes, fsCatRes, speciesRes] = await Promise.allSettled([
+      const [pondsRes, cyclesRes, speciesRes] = await Promise.allSettled([
         api.get('/aquaculture/ponds/'),
         api.get('/aquaculture/production-cycles/'),
-        api.get('/aquaculture/expense-categories/'),
-        api.get('/fuel-station/expense-categories/'),
         api.get('/aquaculture/fish-species/'),
       ])
       if (pondsRes.status === 'fulfilled' && Array.isArray(pondsRes.value.data)) {
@@ -1723,22 +1731,13 @@ export default function BillsPage() {
       } else {
         setProductionCycles([])
       }
-      if (aqCatRes.status === 'fulfilled' && Array.isArray(aqCatRes.value.data)) {
-        setAquacultureBillCategories(aqCatRes.value.data as AquacultureBillExpenseCategory[])
-      } else {
-        setAquacultureBillCategories([])
-      }
-      if (fsCatRes.status === 'fulfilled' && Array.isArray(fsCatRes.value.data)) {
-        setFuelStationBillCategories(fsCatRes.value.data as FuelStationBillExpenseCategory[])
-      } else {
-        setFuelStationBillCategories([])
-      }
+      await loadBillReportingCategories()
       referenceReadyRef.current = true
     } catch (error) {
       console.error('Error fetching reference data:', error)
       toast.error('Error connecting to server')
     }
-  }, [toast])
+  }, [toast, loadBillReportingCategories])
 
   const ensureBillReferenceData = useCallback(async () => {
     if (referenceReadyRef.current) return
@@ -1769,8 +1768,9 @@ export default function BillsPage() {
 
   useEffect(() => {
     if (!showModal && !showEditModal && !showViewModal) return
+    void loadBillReportingCategories()
     void ensureBillReferenceData()
-  }, [showModal, showEditModal, showViewModal, ensureBillReferenceData])
+  }, [showModal, showEditModal, showViewModal, ensureBillReferenceData, loadBillReportingCategories])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')

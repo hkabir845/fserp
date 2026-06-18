@@ -192,12 +192,14 @@ type ReportType =
   | 'aquaculture-fish-stock-position'
   | 'aquaculture-fcr-biomass'
   | 'aquaculture-fish-growth'
+  | 'aquaculture-pond-performance'
   | 'aquaculture-shop-station-stock'
   | 'aquaculture-equipment-assets'
   | 'aquaculture-pond-total-inventory'
   | 'aquaculture-pl-management'
 
 const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [
+  'inventory-sku-valuation',
   'item-sales-custom',
   'item-purchases-custom',
   'item-stock-movement',
@@ -654,6 +656,14 @@ const reports: ReportCard[] = [
     category: 'aquaculture',
   },
   {
+    id: 'aquaculture-pond-performance',
+    title: 'Aquaculture — Pond performance dashboard',
+    description:
+      'All ponds: FCR, load, ADG, live biomass, and bioasset (GL 1581) with pond and period filters',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
     id: 'aquaculture-fish-stock-position',
     title: 'Aquaculture — Fish stock by pond',
     description: 'Biological fish position per pond from transfers, fry bills, sales, samples, and ledger',
@@ -710,6 +720,7 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
   'aquaculture-fish-stock-position',
   'aquaculture-fcr-biomass',
   'aquaculture-fish-growth',
+  'aquaculture-pond-performance',
   'aquaculture-shop-station-stock',
   'aquaculture-equipment-assets',
   'aquaculture-pond-total-inventory',
@@ -757,6 +768,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'aquaculture-fish-stock-position',
   'aquaculture-fcr-biomass',
   'aquaculture-fish-growth',
+  'aquaculture-pond-performance',
   'aquaculture-shop-station-stock',
   'aquaculture-equipment-assets',
   'aquaculture-pond-total-inventory',
@@ -900,6 +912,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'aquaculture-fish-stock-position',
   'aquaculture-fcr-biomass',
   'aquaculture-fish-growth',
+  'aquaculture-pond-performance',
   'aquaculture-shop-station-stock',
   'aquaculture-equipment-assets',
   'aquaculture-pond-total-inventory',
@@ -1812,6 +1825,7 @@ export default function ReportsPage() {
       }
     }
     if (
+      reportId === 'inventory-sku-valuation' ||
       reportId === 'item-sales-custom' ||
       reportId === 'item-purchases-custom' ||
       reportId === 'item-stock-movement' ||
@@ -3633,6 +3647,109 @@ function renderPeriodFilter(
       onDateChange={onDateChange}
       description={description || 'Data is filtered by this date range.'}
     />
+  )
+}
+
+function renderItemScopeFilterPanel(
+  reportType: ReportType,
+  itemScope?: ItemScopeTableProps,
+  options?: { panelTitle?: string; applyHint?: string },
+) {
+  if (!itemScope) return null
+  const ic = itemScope
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+      <p className="mb-3 text-sm font-medium text-slate-800">
+        {options?.panelTitle || 'Scope: category and products (optional)'}
+      </p>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+        <div className="min-w-[200px] flex-1">
+          <label className="mb-1 block text-xs font-medium uppercase text-slate-500">Category</label>
+          <select
+            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+            value={ic.category}
+            onChange={(e) => ic.onCategoryChange(e.target.value)}
+          >
+            <option value="">All categories</option>
+            {ic.categoryList.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            {options?.applyHint ||
+              'Narrow the product list. Leave empty to include every category.'}
+          </p>
+        </div>
+        <div className="min-w-0 flex-[2]">
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+            <label className="text-xs font-medium uppercase text-slate-500">Item (multi-select)</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="text-xs font-medium text-blue-700 hover:underline"
+                onClick={() => ic.onSelectAllVisible()}
+              >
+                Select all in list
+              </button>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                className="text-xs font-medium text-slate-600 hover:underline"
+                onClick={() => ic.onClearItems()}
+              >
+                Clear selection
+              </button>
+            </div>
+          </div>
+          <div className="max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white p-2">
+            {ic.visibleItemOptions.length === 0 ? (
+              <p className="p-2 text-sm text-slate-500">
+                No products match this category. Clear category or add items in Products.
+              </p>
+            ) : (
+              <ul className="grid gap-1 sm:grid-cols-1 md:grid-cols-2">
+                {ic.visibleItemOptions.map((it) => {
+                  const checked = ic.selectedItemIds.includes(it.id)
+                  return (
+                    <li key={it.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        id={`rpt-item-${reportType}-${it.id}`}
+                        checked={checked}
+                        onChange={() => ic.onToggleItem(it.id)}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                      <label
+                        htmlFor={`rpt-item-${reportType}-${it.id}`}
+                        className="flex-1 cursor-pointer truncate text-slate-800"
+                      >
+                        <span className="font-mono text-xs text-slate-500">{it.item_number || it.id}</span> —{' '}
+                        {it.name}
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            {ic.selectedItemIds.length} selected. Leave all unchecked to include every product in the
+            chosen category (or all products when category is empty).
+          </p>
+        </div>
+        <div className="flex shrink-0 items-end">
+          <button
+            type="button"
+            onClick={() => void ic.fetchReport(reportType)}
+            className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            Apply filters
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -5493,8 +5610,17 @@ function renderReportTable(
   // Inventory: valuation & velocity (SKU)
   if (reportType === 'inventory-sku-valuation' && data) {
     const period = data?.period || {}
+    const filters = data?.filters || {}
     const rows: any[] = Array.isArray(data.rows) ? data.rows : []
     const s = data.summary || {}
+    const selectedIds: number[] = (filters?.item_ids as number[] | undefined) || []
+    const filterText = (filters?.category as string)
+      ? `category = ${String(filters.category)}`
+      : 'any category'
+    const itemPart =
+      selectedIds.length > 0
+        ? `${selectedIds.length} selected product(s): #${selectedIds.join(', #')}`
+        : 'all products in scope'
     const invTotalsRow = itemsTotalRow(rows, 'Inventory totals', [
       'extended_cost_value',
       'extended_list_value',
@@ -5520,6 +5646,17 @@ function renderReportTable(
           handleReportDateChange,
           'Period sales and velocity use invoice lines in this date range. On-hand values are current (as of now).',
         )}
+
+        {renderItemScopeFilterPanel(reportType, itemScope, {
+          panelTitle: 'Filters: category and item',
+          applyHint: 'Optional — narrow SKUs before applying. Date range is set above.',
+        })}
+
+        {itemScope ? (
+          <p className="text-xs text-slate-600">
+            <span className="font-medium">Active view:</span> {filterText}; {itemPart}.
+          </p>
+        ) : null}
 
         <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm">
           <h3 className="text-sm font-semibold text-slate-800">What this report shows</h3>
@@ -6030,92 +6167,9 @@ function renderReportTable(
             'Choose a date range, set filters, then apply. Multi-select: pick products for custom sales, custom purchases, stock movement, sales velocity, and purchase velocity.',
           )}
 
-        {ic && (
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
-            <p className="mb-3 text-sm font-medium text-slate-800">Scope: category and products (optional)</p>
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-              <div className="min-w-[200px] flex-1">
-                <label className="mb-1 block text-xs font-medium uppercase text-slate-500">Category</label>
-                <select
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-                  value={ic!.category}
-                  onChange={(e) => ic!.onCategoryChange(e.target.value)}
-                >
-                  <option value="">All categories (list shows every product)</option>
-                  {ic!.categoryList.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-slate-500">
-                  Narrow the checklist. Leave empty to see all products (still multi-selectable).
-                </p>
-              </div>
-              <div className="min-w-0 flex-[2]">
-                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                  <label className="text-xs font-medium uppercase text-slate-500">Products (multi-select)</label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-blue-700 hover:underline"
-                      onClick={() => ic!.onSelectAllVisible()}
-                    >
-                      Select all in list
-                    </button>
-                    <span className="text-slate-300">|</span>
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-slate-600 hover:underline"
-                      onClick={() => ic!.onClearItems()}
-                    >
-                      Clear selection
-                    </button>
-                  </div>
-                </div>
-                <div className="max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white p-2">
-                  {ic!.visibleItemOptions.length === 0 ? (
-                    <p className="p-2 text-sm text-slate-500">No products match this category. Clear category or add items in Products.</p>
-                  ) : (
-                    <ul className="grid gap-1 sm:grid-cols-1 md:grid-cols-2">
-                      {ic!.visibleItemOptions.map((it) => {
-                        const checked = ic!.selectedItemIds.includes(it.id)
-                        return (
-                          <li key={it.id} className="flex items-center gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              id={`rpt-item-${it.id}`}
-                              checked={checked}
-                              onChange={() => ic!.onToggleItem(it.id)}
-                              className="h-4 w-4 rounded border-slate-300"
-                            />
-                            <label htmlFor={`rpt-item-${it.id}`} className="flex-1 cursor-pointer truncate text-slate-800">
-                              <span className="font-mono text-xs text-slate-500">{it.item_number || it.id}</span> — {it.name}
-                            </label>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  {ic!.selectedItemIds.length} selected. Leave all unchecked to include <strong>every</strong> product
-                  in scope (category-only or company-wide, depending on report). Check specific rows to run the report
-                  for only those SKUs.
-                </p>
-              </div>
-              <div className="flex shrink-0 items-end">
-                <button
-                  type="button"
-                  onClick={() => void ic!.fetchReport(reportType)}
-                  className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
-                >
-                  Apply filters
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {renderItemScopeFilterPanel(reportType, ic, {
+          applyHint: 'Narrow the checklist. Leave empty to see all products (still multi-selectable).',
+        })}
 
         <p className="text-xs text-slate-600">
           <span className="font-medium">Active view:</span> {filterText}; {itemPart}.
@@ -9201,6 +9255,135 @@ function renderReportTable(
           <span>{pondTotal(groups.length === 1 ? groups[0]?.pond_name : null)}</span>
           <span className="float-right tabular-nums">{MoneyBdt(totals.total_value)}</span>
         </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'aquaculture-pond-performance' && data) {
+    const period = data.period || {}
+    const ponds: any[] = Array.isArray(data.ponds) ? data.ponds : []
+    const summary = data.summary || {}
+    const loadLevelClass = (level: string | undefined) => {
+      if (level === 'high_risk') return 'text-red-700 font-medium'
+      if (level === 'full') return 'text-amber-800 font-medium'
+      if (level === 'moderate') return 'text-teal-800'
+      if (level === 'understocked') return 'text-slate-600'
+      return ''
+    }
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'FCR and ADG use this date range. Biomass, load, and bioasset are as of the period end date.'
+          )}
+        {renderAquacultureFcrBlock(data)}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <div className="text-xs text-slate-500">Ponds</div>
+            <div className="font-semibold tabular-nums">{summary.pond_count ?? ponds.length}</div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <div className="text-xs text-slate-500">Total biomass</div>
+            <div className="font-semibold tabular-nums">
+              {summary.total_biomass_kg != null
+                ? `${formatNumber(Number(summary.total_biomass_kg), 2)} kg`
+                : '—'}
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <div className="text-xs text-slate-500">Total bioasset</div>
+            <div className="font-semibold tabular-nums text-teal-900">
+              {summary.total_bioasset_value != null ? MoneyBdt(summary.total_bioasset_value) : '—'}
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <div className="text-xs text-slate-500">Portfolio FCR</div>
+            <div className="font-semibold tabular-nums text-teal-900">{summary.portfolio_fcr_biomass ?? '—'}</div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <div className="text-xs text-slate-500">Avg ADG</div>
+            <div className="font-semibold tabular-nums">
+              {summary.avg_adg_g_per_fish_per_day != null
+                ? `${summary.avg_adg_g_per_fish_per_day} g/fish/day`
+                : '—'}
+            </div>
+          </div>
+        </div>
+        {ponds.length > 0 ? (
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2">Pond performance</h4>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Pond</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Fish</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Biomass kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Bioasset</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">ADG g/fish/day</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">FCR</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">kg/dec</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Load</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Feed kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600">Biomass gain</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {ponds.map((p: any) => (
+                    <tr key={p.pond_id}>
+                      <td className="px-3 py-2 font-medium">{p.pond_name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{(p.fish_count ?? 0).toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {formatNumber(Number(p.biomass_kg ?? 0), 2)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.bioasset_value)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-teal-900">
+                        {p.adg_g_per_fish_per_day ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-teal-900">
+                        {p.fcr_biomass ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.load_kg_per_decimal ?? '—'}</td>
+                      <td className={`px-3 py-2 ${loadLevelClass(p.load_level)}`}>
+                        {p.load_level_label ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {formatNumber(Number(p.feed_kg ?? 0), 2)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {formatNumber(Number(p.biomass_gain_kg ?? 0), 2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {ponds.length > 1 ? (
+                  <tfoot className="bg-slate-50 font-semibold">
+                    <tr>
+                      <td className="px-3 py-2">Total / portfolio</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {(summary.total_fish_count ?? 0).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {formatNumber(Number(summary.total_biomass_kg ?? 0), 2)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(summary.total_bioasset_value)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{summary.avg_adg_g_per_fish_per_day ?? '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{summary.portfolio_fcr_biomass ?? '—'}</td>
+                      <td className="px-3 py-2" colSpan={4} />
+                    </tr>
+                  </tfoot>
+                ) : null}
+              </table>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">No active ponds match the current filters.</p>
+        )}
+        {data.methodology ? <p className="text-xs text-slate-600">{String(data.methodology)}</p> : null}
       </div>
     )
   }

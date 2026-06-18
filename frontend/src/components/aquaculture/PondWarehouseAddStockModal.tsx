@@ -37,8 +37,15 @@ export function PondWarehouseAddStockModal(props: {
   initialPondId?: number | null
   /** Lock pond field (pond detail page). */
   lockPond?: boolean
+  /** When set, PUT amends an existing shop → pond receipt instead of creating a new move. */
+  editingReceipt?: {
+    id: number
+    from_station_id: number
+    pond_id: number
+    lines: { item_id: number; quantity: string }[]
+  } | null
 }) {
-  const { open, onClose, onSuccess, initialPondId, lockPond } = props
+  const { open, onClose, onSuccess, initialPondId, lockPond, editingReceipt } = props
   const toast = useToast()
 
   const [loadingMeta, setLoadingMeta] = useState(false)
@@ -137,20 +144,40 @@ export function PondWarehouseAddStockModal(props: {
   useEffect(() => {
     if (!open) return
     void loadMeta()
-    const pid =
-      initialPondId != null && Number.isFinite(initialPondId) && initialPondId > 0
-        ? String(initialPondId)
-        : ''
-    setPondId(pid)
-    setLineRows([{ item_id: 0, quantity: '1' }])
+    if (editingReceipt) {
+      setPondId(String(editingReceipt.pond_id))
+      setStationId(editingReceipt.from_station_id)
+      setLineRows(
+        editingReceipt.lines.length
+          ? editingReceipt.lines.map((l) => ({ item_id: l.item_id, quantity: String(l.quantity) }))
+          : [{ item_id: 0, quantity: '1' }],
+      )
+    } else {
+      const pid =
+        initialPondId != null && Number.isFinite(initialPondId) && initialPondId > 0
+          ? String(initialPondId)
+          : ''
+      setPondId(pid)
+      setLineRows([{ item_id: 0, quantity: '1' }])
+    }
     setCategoryFilter('')
-    setOnlyInStock(true)
+    setOnlyInStock(!editingReceipt)
     setItemAvail({})
     setAvailFetchSeq((s) => s + 1)
-  }, [open, initialPondId, loadMeta])
+  }, [open, initialPondId, editingReceipt, loadMeta])
+
+  const sourceCreditByItemId = useMemo(() => {
+    if (!editingReceipt || stationId !== editingReceipt.from_station_id) return undefined
+    const m: Record<number, number> = {}
+    for (const ln of editingReceipt.lines) {
+      const q = parseQtyInput(String(ln.quantity))
+      if (q > 0) m[ln.item_id] = (m[ln.item_id] || 0) + q
+    }
+    return m
+  }, [editingReceipt, stationId])
 
   useEffect(() => {
-    if (!open || loadingMeta) return
+    if (!open || editingReceipt || loadingMeta) return
     const pid = pondId.trim() !== '' ? parseInt(pondId, 10) : NaN
     if (!Number.isFinite(pid) || pid <= 0) {
       if (activeStations.length === 1) setStationId(activeStations[0].id)
@@ -226,8 +253,9 @@ export function PondWarehouseAddStockModal(props: {
         pondId: Number.isFinite(pondNum) ? pondNum : '',
         lineRows,
         itemAvail,
+        sourceCreditByItemId,
       }),
-    [stationId, pondNum, lineRows, itemAvail],
+    [stationId, pondNum, lineRows, itemAvail, sourceCreditByItemId],
   )
 
   const addLine = () => setLineRows((prev) => [...prev, { item_id: 0, quantity: '1' }])
@@ -257,8 +285,9 @@ export function PondWarehouseAddStockModal(props: {
       const st = itemAvail[row.item_id]
       if (!st || st.status !== 'ok' || !st.data.tracks_per_station) return prev
       const { qtyNum } = qtyAtSourceStation(st.data, stationNum)
+      const credit = sourceCreditByItemId?.[row.item_id] ?? 0
       const others = sumQtySameItemOtherLines(prev, row.item_id, lineIndex)
-      const max = Math.max(0, qtyNum - others)
+      const max = Math.max(0, qtyNum + credit - others)
       const qtyStr = Number.isInteger(max) ? String(max) : String(Math.round(max * 1e6) / 1e6)
       const next = [...prev]
       next[lineIndex] = { ...next[lineIndex], quantity: qtyStr }
@@ -276,13 +305,19 @@ export function PondWarehouseAddStockModal(props: {
       .filter((r) => r.item_id > 0 && Number.isFinite(r.q) && r.q > 0)
     setSaving(true)
     try {
-      await api.post('/aquaculture/pond-warehouse-transfer/', {
+      const payload = {
         station_id: stationId,
         pond_id: pondNum,
         items: lines.map((x) => ({ item_id: x.item_id, quantity: String(x.q) })),
-      })
-      const pname = activePonds.find((p) => p.id === pondNum)?.name || `Pond #${pondNum}`
-      toast.success(`Stock added to ${pname} warehouse`)
+      }
+      if (editingReceipt) {
+        await api.put(`/inventory/pond-warehouse-receipts/${editingReceipt.id}/`, payload)
+        toast.success('Pond receipt updated — shop and pond warehouse adjusted.')
+      } else {
+        await api.post('/aquaculture/pond-warehouse-transfer/', payload)
+        const pname = activePonds.find((p) => p.id === pondNum)?.name || `Pond #${pondNum}`
+        toast.success(`Stock added to ${pname} warehouse`)
+      }
       onSuccess?.()
       onClose()
     } catch (e) {

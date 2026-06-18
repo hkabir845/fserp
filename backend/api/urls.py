@@ -183,12 +183,20 @@ urlpatterns = [
     ),
     path("reporting-categories/", tenant_reporting_categories_views.reporting_categories_list_or_create),
     path(
+        "reporting-categories/tagging-options/",
+        tenant_reporting_categories_views.reporting_category_tagging_options,
+    ),
+    path(
         "reporting-categories/<int:category_id>/",
         tenant_reporting_categories_views.reporting_category_detail,
     ),
     path(
         "fuel-station/expense-categories/",
         tenant_reporting_categories_views.fuel_station_expense_categories,
+    ),
+    path(
+        "fuel-station/income-categories/",
+        tenant_reporting_categories_views.fuel_station_income_categories,
     ),
     # Admin (Super Admin)
     path("admin/stats/", admin_views.admin_stats),
@@ -266,6 +274,10 @@ urlpatterns = [
     path("stations/<int:station_id>/", station_views.station_detail),
     path("inventory/availability/", inventory_views.inventory_item_availability),
     path("inventory/pond-warehouse-receipts/", inventory_views.pond_warehouse_receipts_list),
+    path(
+        "inventory/pond-warehouse-receipts/<int:receipt_id>/",
+        inventory_views.pond_warehouse_receipt_detail_or_amend,
+    ),
     path(
         "inventory/pond-warehouse-receipts/<int:receipt_id>/reverse/",
         inventory_views.pond_warehouse_receipt_reverse_view,
@@ -523,6 +535,10 @@ urlpatterns = [
     path(
         "aquaculture/warehouse-group-pool/",
         aquaculture_views.aquaculture_warehouse_group_pool,
+    ),
+    path(
+        "aquaculture/pond-warehouse-inter-pond-transfers/<int:transfer_id>/",
+        aquaculture_views.aquaculture_pond_warehouse_inter_pond_transfer_detail,
     ),
     path(
         "aquaculture/pond-warehouse-inter-pond-transfers/",

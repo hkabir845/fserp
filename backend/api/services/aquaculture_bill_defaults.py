@@ -31,6 +31,18 @@ BILL_AQUACULTURE_EXPENSE_CATEGORY_CODES: frozenset[str] = frozenset(
     c for c in EXPENSE_CATEGORY_CODES if c not in BILL_AQUACULTURE_EXPENSE_EXCLUDED
 )
 
+# Tenant custom labels: block payroll, lease, and automatic-only rollups on vendor bills.
+TENANT_BILL_AQUACULTURE_EXPENSE_BLOCKED_MAPS: frozenset[str] = frozenset(
+    {
+        "vendor_bill_pond",
+        "lease",
+        "worker_salary",
+        "feed_consumed",
+        "medicine_consumed",
+        "depreciation",
+    }
+)
+
 # Prefer one category when rehydrating UI from stored cost_bucket (first match wins).
 _COST_BUCKET_TO_EXPENSE_CATEGORY: tuple[tuple[str, str], ...] = (
     ("fry_stocking", "fry_stocking"),
@@ -61,6 +73,7 @@ _COST_BUCKET_TO_EXPENSE_CATEGORY: tuple[tuple[str, str], ...] = (
     ("miscellaneous", "professional_fees"),
     ("miscellaneous", "communication"),
     ("fisherman", "fisherman"),
+    ("day_labor", "day_labor"),
     ("biological_writeoff", "mortality"),
     ("miscellaneous", "other"),
     ("ancillary", "other"),
@@ -71,9 +84,18 @@ def normalize_bill_expense_category(company_id: int, raw: str | None) -> tuple[s
     """Resolve tenant/custom codes; reject categories not allowed on bills."""
     if raw is None or str(raw).strip() == "":
         return None, None
-    code = resolve_aquaculture_expense_to_builtin(company_id, str(raw).strip())
+    raw_s = str(raw).strip()
+    tr = tenant_expense_row(company_id, APP_AQUACULTURE, raw_s)
+    code = resolve_aquaculture_expense_to_builtin(company_id, raw_s)
     if code not in EXPENSE_CATEGORY_CODES:
         return None, f"Unknown aquaculture_expense_category: {raw!r}"
+    if tr:
+        if code in TENANT_BILL_AQUACULTURE_EXPENSE_BLOCKED_MAPS:
+            return (
+                None,
+                f"Category {code!r} cannot be used on vendor bills (use the dedicated module for this cost type).",
+            )
+        return code, None
     if code in BILL_AQUACULTURE_EXPENSE_EXCLUDED:
         return (
             None,

@@ -4,7 +4,10 @@ export interface AquacultureBillExpenseCategory {
   id: string
   label: string
   hint?: string | null
+  tenant_defined?: boolean
+  maps_to_code?: string | null
   bill_create_allowed?: boolean
+  bill_create_disallowed_reason?: string | null
   default_coa_account_code?: string
   default_coa_account_id?: number | null
   default_coa_account_name?: string
@@ -36,7 +39,7 @@ export function billExpenseCategoriesFromApi(
     ])
     return rows.filter((c) => !excluded.has(c.id))
   }
-  return rows.filter((c) => c.bill_create_allowed)
+  return rows.filter((c) => c.bill_create_allowed !== false)
 }
 
 export function applyAquacultureCategoryToBillLine<

@@ -3,6 +3,7 @@
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { billLineStationCostMode } from '@/lib/billAllocation'
 import type { FuelStationBillExpenseCategory } from '@/lib/fuelStationBillLine'
+import { ReportingCategorySelectOptions } from '@/lib/reportingCategorySelect'
 
 export interface StationLineShape {
   item_id?: number
@@ -229,12 +230,7 @@ export function BillStationAllocationFields({
             className="w-full min-w-0 px-2 py-1 text-sm border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500 bg-indigo-50/40"
           >
             <option value="">Select category…</option>
-            {billFuelCategories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-                {c.tenant_defined ? '' : ' (rollup)'}
-              </option>
-            ))}
+            <ReportingCategorySelectOptions categories={billFuelCategories} />
           </select>
           {line.expense_account_id ? (
             <p className="mt-0.5 text-[11px] text-indigo-800">

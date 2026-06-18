@@ -56,6 +56,7 @@ AQUACULTURE_EXPENSE_CATEGORY_CHOICES: tuple[tuple[str, str], ...] = (
     ("repair_maintenance", "Repair & maintenance"),
     ("depreciation", "Depreciation (pond equipment)"),
     ("fisherman", "Fisherman bills"),
+    ("day_labor", "Day & contract labor"),
     ("transportation", "Transportation (vehicles & hauling)"),
     ("fish_haul_supplies", "Ice, oxygen & saline (live haul)"),
     ("office_supplies", "Office supplies"),
@@ -225,9 +226,14 @@ EXPENSE_CATEGORY_EXTRA_HELP: dict[str, str] = {
         "site costs. Biological book-value write-offs from the fish stock ledger post separately (Dr 6726 / Cr 1581)."
     ),
     "other": (
-        "Use only when no named category fits — feeding boats, casual labour not on payroll, and other pond operating "
-        "costs (prefer Repair & maintenance for paid repair work on dikes, pumps, or vehicles). "
+        "Use only when no named category fits — feeding boats, site consumables, and other pond operating "
+        "costs (use Day & contract labor for daily hired workers; prefer Repair & maintenance for paid repair work). "
         "Describe the payment clearly in Memo."
+    ),
+    "day_labor": (
+        "Daily hired workers and short-term contract labor paid through vendor bills — not employees on payroll. "
+        "Tag the pond (or split across ponds), enter amount per day or per job, and pay from Accounts payable. "
+        "Distinct from Labor & wages (HR payroll for permanent staff)."
     ),
 }
 # Display-only (pre-split DB rows); not in EXPENSE_CATEGORY_CODES — API rejects on create/update.
@@ -450,6 +456,7 @@ def coa_account_code_for_aquaculture_expense_category(
         "shop_supplies": "6725",
         "mortality": "6726",
         "fisherman": "6719",
+        "day_labor": "6719",
         "transportation": "6720",
         "fish_haul_supplies": "6720",
         "office_supplies": "6725",

@@ -14,6 +14,7 @@ from django.db import transaction
 from django.db.models import F
 
 from api.exceptions import GlPostingError, StockBusinessError
+from api.services.aquaculture_units import format_two_decimal_places_for_api
 from api.models import (
     AquacultureExpense,
     AquacultureExpenseInventoryLine,
@@ -209,22 +210,13 @@ def transfer_station_stock_to_pond_warehouse(
 
 
 @transaction.atomic
-def reverse_pond_warehouse_stock_receipt(*, company_id: int, receipt_id: int) -> None:
-    """
-    Undo a shop → pond warehouse move: return quantities to the source station bin, remove from pond.
-    Fails if the pond no longer holds enough of any line (e.g. already consumed).
-    """
-    rec = (
-        PondWarehouseStockReceipt.objects.select_for_update()
-        .filter(pk=receipt_id, company_id=company_id)
-        .select_related("pond", "from_station")
-        .first()
-    )
-    if not rec:
-        raise StockBusinessError("Pond warehouse receipt not found.")
-    lines = list(
-        PondWarehouseStockReceiptLine.objects.filter(receipt_id=rec.pk).select_related("item")
-    )
+def _reverse_pond_receipt_stock_movement(
+    *,
+    company_id: int,
+    rec: PondWarehouseStockReceipt,
+    lines: list[PondWarehouseStockReceiptLine],
+) -> None:
+    """Return receipt quantities from pond warehouse to the source station (no row delete)."""
     if not lines:
         raise StockBusinessError("Receipt has no lines.")
     for ln in lines:
@@ -249,7 +241,87 @@ def reverse_pond_warehouse_stock_receipt(*, company_id: int, receipt_id: int) ->
             continue
         add_pond_stock(company_id, rec.pond_id, it.id, -qty)
         add_station_stock(company_id, rec.from_station_id, it.id, qty)
+
+
+@transaction.atomic
+def reverse_pond_warehouse_stock_receipt(*, company_id: int, receipt_id: int) -> None:
+    """
+    Undo a shop → pond warehouse move: return quantities to the source station bin, remove from pond.
+    Fails if the pond no longer holds enough of any line (e.g. already consumed).
+    """
+    rec = (
+        PondWarehouseStockReceipt.objects.select_for_update()
+        .filter(pk=receipt_id, company_id=company_id)
+        .select_related("pond", "from_station")
+        .first()
+    )
+    if not rec:
+        raise StockBusinessError("Pond warehouse receipt not found.")
+    lines = list(
+        PondWarehouseStockReceiptLine.objects.filter(receipt_id=rec.pk).select_related("item")
+    )
+    _reverse_pond_receipt_stock_movement(company_id=company_id, rec=rec, lines=lines)
     PondWarehouseStockReceipt.objects.filter(pk=rec.pk).delete()
+
+
+@transaction.atomic
+def amend_pond_warehouse_stock_receipt(
+    *,
+    company_id: int,
+    receipt_id: int,
+    station_id: int,
+    pond_id: int,
+    items: list,
+) -> PondWarehouseStockReceipt:
+    """
+    Update a shop → pond warehouse receipt: reverse the prior move, apply new lines, keep the same receipt id.
+    """
+    st = Station.objects.filter(pk=station_id, company_id=company_id, is_active=True).first()
+    if not st:
+        raise StockBusinessError("Station not found or inactive for this company.")
+    pond = AquaculturePond.objects.filter(pk=pond_id, company_id=company_id).first()
+    if not pond:
+        raise StockBusinessError("Pond not found for this company.")
+
+    rec = (
+        PondWarehouseStockReceipt.objects.select_for_update()
+        .filter(pk=receipt_id, company_id=company_id)
+        .select_related("pond", "from_station")
+        .first()
+    )
+    if not rec:
+        raise StockBusinessError("Pond warehouse receipt not found.")
+
+    old_lines = list(
+        PondWarehouseStockReceiptLine.objects.filter(receipt_id=rec.pk).select_related("item")
+    )
+    _reverse_pond_receipt_stock_movement(company_id=company_id, rec=rec, lines=old_lines)
+
+    lines_data = _parse_shop_issue_items(company_id, items)
+    if not lines_data:
+        raise StockBusinessError("At least one line with item_id and quantity is required.")
+    for d in lines_data:
+        if not item_uses_station_bins(company_id, d["item"]):
+            raise StockBusinessError(
+                "Pond warehouse transfer only supports shop items tracked per station. "
+                "Use a station-stocked feed/medicine SKU (not tank fuel or non_pos hatchery stock)."
+            )
+    assert_pos_general_lines_within_qoh(company_id, lines_data, station_id)
+    decrement_station_lines(company_id, station_id, lines_data)
+    for d in lines_data:
+        add_pond_stock(company_id, pond_id, d["item"].id, d["quantity"])
+
+    rec.from_station_id = st.id
+    rec.pond_id = pond.id
+    rec.save(update_fields=["from_station_id", "pond_id"])
+    PondWarehouseStockReceiptLine.objects.filter(receipt_id=rec.pk).delete()
+    for d in lines_data:
+        PondWarehouseStockReceiptLine.objects.create(
+            receipt_id=rec.pk,
+            item_id=d["item"].id,
+            quantity=d["quantity"],
+        )
+    return rec
 
 
 @transaction.atomic
@@ -291,6 +363,122 @@ def transfer_pond_warehouse_between_ponds(
     PondWarehouseInterPondTransfer.objects.filter(pk=xfer.pk).update(
         transfer_number=f"PWIP-{xfer.pk}",
     )
+    for d in lines_data:
+        PondWarehouseInterPondTransferLine.objects.create(
+            transfer_id=xfer.pk,
+            item_id=d["item"].id,
+            quantity=d["quantity"],
+        )
+    return (
+        PondWarehouseInterPondTransfer.objects.filter(pk=xfer.pk)
+        .select_related("from_pond", "to_pond")
+        .first()
+        or xfer
+    )
+
+
+@transaction.atomic
+def _reverse_inter_pond_transfer_stock_movement(
+    *,
+    company_id: int,
+    xfer: PondWarehouseInterPondTransfer,
+    lines: list[PondWarehouseInterPondTransferLine],
+) -> None:
+    """Return transfer quantities from destination pond back to source pond (no row delete)."""
+    if not lines:
+        raise StockBusinessError("Transfer has no lines.")
+    for ln in lines:
+        it = ln.item
+        qty = ln.quantity if ln.quantity is not None else Decimal("0")
+        if qty <= 0:
+            continue
+        if not item_uses_station_bins(company_id, it):
+            raise StockBusinessError(
+                f'"{(it.name or "").strip()}" cannot be reversed on pond warehouse (not a station-bin SKU).'
+            )
+        have = get_pond_item_stock(company_id, xfer.to_pond_id, it.id)
+        if have < qty:
+            raise StockBusinessError(
+                f'Not enough "{(it.name or "").strip()}" at destination pond to reverse this transfer: '
+                f"need {_fmt_qty(qty)} but only {_fmt_qty(have)} remain (may have been consumed)."
+            )
+    for ln in lines:
+        it = ln.item
+        qty = ln.quantity if ln.quantity is not None else Decimal("0")
+        if qty <= 0:
+            continue
+        add_pond_stock(company_id, xfer.to_pond_id, it.id, -qty)
+        add_pond_stock(company_id, xfer.from_pond_id, it.id, qty)
+
+
+@transaction.atomic
+def reverse_pond_warehouse_inter_pond_transfer(*, company_id: int, transfer_id: int) -> None:
+    """Undo a pond-to-pond warehouse move if the destination still holds the quantities."""
+    xfer = (
+        PondWarehouseInterPondTransfer.objects.select_for_update()
+        .filter(pk=transfer_id, company_id=company_id)
+        .select_related("from_pond", "to_pond")
+        .first()
+    )
+    if not xfer:
+        raise StockBusinessError("Pond warehouse transfer not found.")
+    lines = list(
+        PondWarehouseInterPondTransferLine.objects.filter(transfer_id=xfer.pk).select_related("item")
+    )
+    _reverse_inter_pond_transfer_stock_movement(company_id=company_id, xfer=xfer, lines=lines)
+    PondWarehouseInterPondTransferLine.objects.filter(transfer_id=xfer.pk).delete()
+    PondWarehouseInterPondTransfer.objects.filter(pk=xfer.pk).delete()
+
+
+@transaction.atomic
+def amend_pond_warehouse_inter_pond_transfer(
+    *,
+    company_id: int,
+    transfer_id: int,
+    from_pond_id: int,
+    to_pond_id: int,
+    items: list,
+    memo: str = "",
+) -> PondWarehouseInterPondTransfer:
+    """Update a pond-to-pond warehouse transfer: reverse prior move, apply new lines, keep transfer id."""
+    from_pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).first()
+    to_pond = AquaculturePond.objects.filter(pk=to_pond_id, company_id=company_id).first()
+    if not from_pond or not to_pond:
+        raise StockBusinessError("Source or destination pond not found for this company.")
+    assert_ponds_allow_inter_warehouse_transfer(company_id, from_pond, to_pond)
+
+    xfer = (
+        PondWarehouseInterPondTransfer.objects.select_for_update()
+        .filter(pk=transfer_id, company_id=company_id)
+        .select_related("from_pond", "to_pond")
+        .first()
+    )
+    if not xfer:
+        raise StockBusinessError("Pond warehouse transfer not found.")
+
+    old_lines = list(
+        PondWarehouseInterPondTransferLine.objects.filter(transfer_id=xfer.pk).select_related("item")
+    )
+    _reverse_inter_pond_transfer_stock_movement(company_id=company_id, xfer=xfer, lines=old_lines)
+
+    lines_data = _parse_shop_issue_items(company_id, items)
+    if not lines_data:
+        raise StockBusinessError("At least one line with item_id and quantity is required.")
+    for d in lines_data:
+        if not item_uses_station_bins(company_id, d["item"]):
+            raise StockBusinessError(
+                "Pond-to-pond transfer only supports shop-style feed/medicine SKUs (station-bin inventory)."
+            )
+    assert_pond_lines_within_qoh(company_id, from_pond_id, lines_data)
+    decrement_pond_lines(company_id, from_pond_id, lines_data)
+    for d in lines_data:
+        add_pond_stock(company_id, to_pond_id, d["item"].id, d["quantity"])
+
+    xfer.from_pond_id = from_pond.id
+    xfer.to_pond_id = to_pond.id
+    xfer.memo = (memo or "")[:5000]
+    xfer.save(update_fields=["from_pond_id", "to_pond_id", "memo"])
+    PondWarehouseInterPondTransferLine.objects.filter(transfer_id=xfer.pk).delete()
     for d in lines_data:
         PondWarehouseInterPondTransferLine.objects.create(
             transfer_id=xfer.pk,
@@ -454,11 +642,11 @@ def pond_warehouse_stock_rows(company_id: int, pond_id: int) -> list[dict]:
                 "item_id": it.id,
                 "item_name": (it.name or "").strip(),
                 "unit": (it.unit or "").strip() or "unit",
-                "quantity": str(q),
+                "quantity": format_two_decimal_places_for_api(q),
                 "pos_category": (getattr(it, "pos_category", None) or "general").strip().lower(),
                 "reporting_category": (getattr(it, "category", None) or "").strip() or "General",
                 "content_weight_kg": str(cw) if cw is not None and cw > 0 else None,
-                "unit_cost": str(uc.quantize(Decimal("0.0001"))),
+                "unit_cost": format_two_decimal_places_for_api(uc),
             }
         )
     return out
@@ -495,11 +683,11 @@ def pond_warehouse_stock_matrix(company_id: int, *, pond_id: int | None = None) 
                 "item_id": it.id,
                 "item_name": (it.name or "").strip(),
                 "unit": (it.unit or "").strip() or "unit",
-                "quantity": str(q),
+                "quantity": format_two_decimal_places_for_api(q),
                 "pos_category": (getattr(it, "pos_category", None) or "general").strip().lower(),
                 "reporting_category": (getattr(it, "category", None) or "").strip() or "General",
                 "content_weight_kg": str(cw) if cw is not None and cw > 0 else None,
-                "unit_cost": str(uc.quantize(Decimal("0.0001"))),
+                "unit_cost": format_two_decimal_places_for_api(uc),
             }
         )
     return out

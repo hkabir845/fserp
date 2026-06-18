@@ -8,8 +8,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
-from django.db.models import Count, DecimalField, Exists, F, OuterRef, Q, Sum, Value
-from django.db.models.functions import Coalesce
+from django.db.models import Case, CharField, Count, DecimalField, Exists, F, OuterRef, Q, Sum, Value, When
+from django.db.models.functions import Coalesce, Trim
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
@@ -61,8 +61,11 @@ def _body_flag(body: dict, key: str) -> bool:
     v = body.get(key)
     return v in (True, "true", "1", 1, "yes")
 from api.services.item_reporting_categories import (
+    DEFAULT_ITEM_REPORTING_CATEGORY,
+    FUEL_REPORTING_CATEGORY,
     SUGGESTED_ITEM_REPORTING_CATEGORIES,
     normalize_item_reporting_category,
+    resolve_item_reporting_category_for_storage,
 )
 
 
@@ -423,6 +426,82 @@ def _items_type_breakdown(qs):
     return out
 
 
+def _items_category_breakdown(qs):
+    generalish = (
+        Q(category__isnull=True)
+        | Q(category="")
+        | Q(category__iexact=DEFAULT_ITEM_REPORTING_CATEGORY)
+    )
+    rows = (
+        qs.annotate(
+            rc_label=Case(
+                When(
+                    generalish & _fuel_pos_category_q(),
+                    then=Value(FUEL_REPORTING_CATEGORY),
+                ),
+                When(generalish, then=Value(DEFAULT_ITEM_REPORTING_CATEGORY)),
+                default=Coalesce(Trim("category"), Value(DEFAULT_ITEM_REPORTING_CATEGORY)),
+                output_field=CharField(),
+            )
+        )
+        .values("rc_label")
+        .annotate(c=Count("id"))
+    )
+    out: dict[str, int] = {}
+    for r in rows:
+        cat = (r["rc_label"] or "").strip() or DEFAULT_ITEM_REPORTING_CATEGORY
+        out[cat] = out.get(cat, 0) + r["c"]
+    return dict(sorted(out.items(), key=lambda x: x[0].lower()))
+
+
+def _items_apply_category_filter(qs, raw_category: str | None):
+    cat = normalize_item_reporting_category(raw_category)
+    if not cat:
+        return qs
+    if cat.lower() == DEFAULT_ITEM_REPORTING_CATEGORY.lower():
+        return qs.filter(
+            Q(category__iexact=cat) | Q(category__isnull=True) | Q(category="")
+        ).exclude(_fuel_pos_category_q())
+    if cat.lower() == FUEL_REPORTING_CATEGORY.lower():
+        return qs.filter(
+            Q(category__iexact=cat)
+            | (
+                (
+                    Q(category__isnull=True)
+                    | Q(category="")
+                    | Q(category__iexact=DEFAULT_ITEM_REPORTING_CATEGORY)
+                )
+                & _fuel_pos_category_q()
+            )
+        )
+    return qs.filter(category__iexact=cat)
+
+
+def _items_on_hand_value_totals(qs):
+    """Extended inventory value (qty × unit cost) for the current filtered catalog."""
+    inv_qs = qs.exclude(item_type__iexact="service").exclude(item_type__iexact="non_inventory")
+    total = inv_qs.aggregate(
+        total_cost_value=Coalesce(
+            Sum(
+                Case(
+                    When(
+                        _has_active_tank=True,
+                        then=F("_fuel_tank_stock")
+                        * Coalesce(F("cost"), Value(Decimal("0"))),
+                    ),
+                    default=Coalesce(F("quantity_on_hand"), Value(Decimal("0")))
+                    * Coalesce(F("cost"), Value(Decimal("0"))),
+                    output_field=DecimalField(max_digits=24, decimal_places=4),
+                )
+            ),
+            Value(Decimal("0")),
+            output_field=DecimalField(max_digits=24, decimal_places=4),
+        ),
+    )["total_cost_value"] or Decimal("0")
+    q = total.quantize(Decimal("0.01"))
+    return {"total_cost_value": _serialize_decimal(q)}
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
@@ -446,6 +525,7 @@ def items_list_or_create(request):
         it = (request.GET.get("item_type") or "").strip().lower()
         if it in ("inventory", "non_inventory", "service"):
             qs = qs.filter(item_type=it)
+        qs = _items_apply_category_filter(qs, request.GET.get("category"))
         qs = _items_apply_sort(qs, request)
 
         def _row(i):
@@ -456,7 +536,9 @@ def items_list_or_create(request):
             total = qs.count()
             stats = {
                 "by_type": _items_type_breakdown(base_qs),
+                "by_category": _items_category_breakdown(base_qs),
                 "catalog_total": base_qs.count(),
+                "on_hand": _items_on_hand_value_totals(qs),
             }
             page = qs[skip : skip + limit]
             return json_paged(
@@ -532,6 +614,7 @@ def items_list_or_create(request):
                 status=400,
             )
         pos_cat_pre = _truncate(body.get("pos_category") or "general", 64) or "general"
+        cat = resolve_item_reporting_category_for_storage(cat, pos_cat_pre)
         itype_pre = _coerce_item_type_for_storage(body.get("item_type"))
         if (
             pos_cat_pre.strip().lower() == "fish"
@@ -776,6 +859,7 @@ def item_detail(request, item_id: int):
             i.is_active = bool(body["is_active"])
         if "image_url" in body:
             i.image_url = _truncate(body.get("image_url"), 500)
+        i.category = resolve_item_reporting_category_for_storage(i.category, i.pos_category)
         if "quantity_on_hand" in body or "cost" in body:
             if "quantity_on_hand" in body and body["quantity_on_hand"] is not None:
                 intended_qty = _parse_decimal(body["quantity_on_hand"])

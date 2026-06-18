@@ -130,3 +130,71 @@ def test_expense_categories_include_bill_defaults(api_client, company_tenant, au
     assert elec.get("default_coa_account_id") is not None
     lease = next((x for x in rows if x.get("id") == "lease"), None)
     assert lease is not None and lease.get("bill_create_allowed") is False
+
+
+@pytest.mark.django_db
+def test_expense_register_includes_vendor_bill_lines(
+    api_client, company_tenant, auth_admin_headers
+):
+    Company.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    ensure_aquaculture_chart_accounts(company_tenant.id)
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P4", is_active=True)
+    vendor = Vendor.objects.create(
+        company_id=company_tenant.id,
+        company_name="Day Labor Co",
+        display_name="Day Labor Co",
+        vendor_number="V-DAY-1",
+        is_active=True,
+    )
+    bill = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor.id,
+                "bill_date": "2026-06-01",
+                "status": "open",
+                "lines": [
+                    {
+                        "description": "Netting crew",
+                        "quantity": 1,
+                        "unit_cost": "800.00",
+                        "amount": "800.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_expense_category": "day_labor",
+                    }
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert bill.status_code == 201, bill.content.decode()
+
+    all_rows = api_client.get(
+        "/api/aquaculture/expenses/",
+        {"pond_id": str(pond.id)},
+        **auth_admin_headers,
+    )
+    assert all_rows.status_code == 200
+    payload = json.loads(all_rows.content.decode())
+    assert payload["count"] >= 1
+    assert Decimal(payload["total_amount"]) >= Decimal("800.00")
+    hit = next((x for x in payload["rows"] if x.get("source") == "bill"), None)
+    assert hit is not None
+    assert hit["vendor_name"] == "Day Labor Co"
+    assert hit["pond_id"] == pond.id
+    assert hit.get("bill_id")
+
+    filtered = api_client.get(
+        "/api/aquaculture/expenses/",
+        {"pond_id": str(pond.id), "date_from": "2026-06-01", "date_to": "2026-06-01"},
+        **auth_admin_headers,
+    )
+    assert filtered.status_code == 200
+    fpayload = json.loads(filtered.content.decode())
+    assert fpayload["count"] >= 1
+    assert all(
+        r.get("expense_date", "").startswith("2026-06-01") for r in fpayload["rows"] if r.get("source") == "bill"
+    )

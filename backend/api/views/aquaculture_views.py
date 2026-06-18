@@ -131,14 +131,17 @@ from api.services.aquaculture_biomass_sample_reference_service import last_bioma
 from api.services.aquaculture_sale_reference_service import last_fish_sale_reference_for_ledger
 from api.services.aquaculture_bio_asset_cost_service import lookup_bio_cost_per_kg
 from api.services.aquaculture_pond_stock_service import (
+    amend_pond_warehouse_inter_pond_transfer,
     consume_pond_feed_on_advice_apply,
     consume_pond_warehouse_stock,
     feed_inventory_qty_from_kg,
     pond_warehouse_stock_matrix,
     pond_warehouse_stock_rows,
+    reverse_pond_warehouse_inter_pond_transfer,
     transfer_pond_warehouse_between_ponds,
     transfer_station_stock_to_pond_warehouse,
 )
+from api.services.gl_posting import item_inventory_unit_cost
 from api.services.aquaculture_warehouse_group_service import warehouse_group_pool_rows
 from api.services.aquaculture_shop_stock import execute_aquaculture_shop_stock_issue
 from api.services.tenant_reporting_categories import (
@@ -501,6 +504,25 @@ def _inter_pond_transfer_to_json(t: PondWarehouseInterPondTransfer) -> dict:
         .select_related("item")
         .order_by("id")
     )
+    line_rows = []
+    total_value = Decimal("0")
+    for ln in lines:
+        qty = ln.quantity if ln.quantity is not None else Decimal("0")
+        uc = item_inventory_unit_cost(ln.item)
+        line_value = Decimal("0")
+        if qty > 0 and uc > 0:
+            line_value = (qty * uc).quantize(Decimal("0.01"))
+        total_value += line_value
+        line_rows.append(
+            {
+                "item_id": ln.item_id,
+                "item_name": (ln.item.name or "").strip() if ln.item_id else "",
+                "quantity": str(ln.quantity),
+                "unit": (ln.item.unit or "").strip() if ln.item_id and ln.item else "",
+                "unit_cost": str(uc) if uc > 0 else None,
+                "line_value": str(line_value),
+            }
+        )
     return {
         "id": t.id,
         "transfer_number": t.transfer_number or "",
@@ -510,15 +532,8 @@ def _inter_pond_transfer_to_json(t: PondWarehouseInterPondTransfer) -> dict:
         "to_pond_name": (t.to_pond.name or "").strip() if t.to_pond_id else "",
         "memo": t.memo or "",
         "created_at": t.created_at.isoformat() if t.created_at else "",
-        "lines": [
-            {
-                "item_id": ln.item_id,
-                "item_name": (ln.item.name or "").strip() if ln.item_id else "",
-                "quantity": str(ln.quantity),
-                "unit": (ln.item.unit or "").strip() if ln.item_id and ln.item else "",
-            }
-            for ln in lines
-        ],
+        "total_value": str(total_value.quantize(Decimal("0.01"))),
+        "lines": line_rows,
     }
 
 
@@ -1910,18 +1925,57 @@ def aquaculture_expenses_list_or_create(request):
         return err
     cid = request.company_id
     if request.method == "GET":
-        qs = (
-            AquacultureExpense.objects.filter(company_id=cid)
-            .select_related("pond", "production_cycle", "source_station")
-            .prefetch_related("pond_shares__pond")
+        from api.services.aquaculture_expense_register import (
+            list_aquaculture_expense_register,
+            parse_register_date_filters,
         )
-        pid = request.GET.get("pond_id")
-        if pid and str(pid).strip().isdigit():
-            p_int = int(pid)
-            qs = qs.filter(Q(pond_id=p_int) | Q(pond_shares__pond_id=p_int)).distinct()
-            qs = filter_live_pond_queryset(qs, cid, p_int, "expense_date")
-        qs = qs.order_by("-expense_date", "-id")[:500]
-        return JsonResponse([_expense_to_json(x) for x in qs], safe=False)
+
+        pid_raw = request.GET.get("pond_id")
+        pond_id: int | None = None
+        if pid_raw and str(pid_raw).strip().isdigit():
+            pond_id = int(pid_raw)
+        date_from, date_to = parse_register_date_filters(
+            date_from_raw=request.GET.get("date_from"),
+            date_to_raw=request.GET.get("date_to"),
+        )
+        payload = list_aquaculture_expense_register(
+            cid,
+            pond_id=pond_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        if pond_id is not None:
+            from api.services.aquaculture_data_bank_service import filter_live_pond_queryset
+
+            # Re-filter expense rows for pond go-live cutoff (bill lines already pond-scoped).
+            expense_ids = [
+                r["id"]
+                for r in payload["rows"]
+                if r.get("source") == "expense" and r.get("id") is not None
+            ]
+            if expense_ids:
+                live_qs = filter_live_pond_queryset(
+                    AquacultureExpense.objects.filter(company_id=cid, pk__in=expense_ids),
+                    cid,
+                    pond_id,
+                    "expense_date",
+                )
+                live_ids = set(live_qs.values_list("pk", flat=True))
+                payload["rows"] = [
+                    r
+                    for r in payload["rows"]
+                    if r.get("source") != "expense" or int(r["id"]) in live_ids
+                ]
+                total = sum(
+                    (Decimal(str(r.get("amount") or "0")) for r in payload["rows"]),
+                    Decimal("0"),
+                ).quantize(Decimal("0.01"))
+                payload["total_amount"] = str(total)
+                payload["count"] = len(payload["rows"])
+        legacy_array = request.GET.get("legacy_array") == "1"
+        if legacy_array:
+            return JsonResponse(payload["rows"], safe=False)
+        return JsonResponse(payload)
 
     return JsonResponse(
         {
@@ -2434,6 +2488,82 @@ def aquaculture_pond_warehouse_inter_pond_transfers(request):
     except StockBusinessError as ex:
         return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
     return JsonResponse(_inter_pond_transfer_to_json(xfer), status=201)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT", "DELETE"])
+@auth_required
+@require_company_id
+def aquaculture_pond_warehouse_inter_pond_transfer_detail(request, transfer_id: int):
+    """View, amend, or reverse a pond-to-pond warehouse transfer."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    line_qs = PondWarehouseInterPondTransferLine.objects.select_related("item").order_by("id")
+    xfer = (
+        PondWarehouseInterPondTransfer.objects.filter(pk=transfer_id, company_id=cid)
+        .select_related("from_pond", "to_pond")
+        .prefetch_related(Prefetch("lines", queryset=line_qs))
+        .first()
+    )
+    if not xfer:
+        return JsonResponse({"detail": "Transfer not found"}, status=404)
+    if request.method == "GET":
+        return JsonResponse(_inter_pond_transfer_to_json(xfer))
+
+    if request.method == "DELETE":
+        lock_err = _pond_write_lock_response(cid, xfer.from_pond_id)
+        if lock_err:
+            return lock_err
+        lock_err = _pond_write_lock_response(cid, xfer.to_pond_id)
+        if lock_err:
+            return lock_err
+        try:
+            reverse_pond_warehouse_inter_pond_transfer(company_id=cid, transfer_id=transfer_id)
+        except StockBusinessError as ex:
+            return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
+        return JsonResponse({"detail": "Transfer reversed; stock returned to the source pond."}, status=200)
+
+    body, e = parse_json_body(request)
+    if e:
+        return e
+    raw_fp = body.get("from_pond_id")
+    raw_tp = body.get("to_pond_id")
+    if raw_fp in (None, "") or raw_tp in (None, ""):
+        return JsonResponse({"detail": "from_pond_id and to_pond_id are required"}, status=400)
+    try:
+        from_pond_id = int(raw_fp)
+        to_pond_id = int(raw_tp)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "from_pond_id and to_pond_id must be integers"}, status=400)
+    lock_err = _pond_write_lock_response(cid, from_pond_id)
+    if lock_err:
+        return lock_err
+    lock_err = _pond_write_lock_response(cid, to_pond_id)
+    if lock_err:
+        return lock_err
+    items = body.get("items")
+    if not isinstance(items, list) or not items:
+        return JsonResponse({"detail": "items must be a non-empty array of { item_id, quantity }"}, status=400)
+    try:
+        xfer2 = amend_pond_warehouse_inter_pond_transfer(
+            company_id=cid,
+            transfer_id=transfer_id,
+            from_pond_id=from_pond_id,
+            to_pond_id=to_pond_id,
+            items=items,
+            memo=str(body.get("memo") or ""),
+        )
+    except StockBusinessError as ex:
+        return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
+    xfer3 = (
+        PondWarehouseInterPondTransfer.objects.filter(pk=xfer2.pk, company_id=cid)
+        .select_related("from_pond", "to_pond")
+        .prefetch_related(Prefetch("lines", queryset=line_qs))
+        .first()
+    )
+    return JsonResponse(_inter_pond_transfer_to_json(xfer3 or xfer2))
 
 
 @csrf_exempt

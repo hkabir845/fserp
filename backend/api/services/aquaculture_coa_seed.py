@@ -79,7 +79,7 @@ AQUACULTURE_COA_ROWS: tuple[tuple[str, str, str, str, str], ...] = (
         "Aquaculture Expense — Labor & Wages",
         "expense",
         "payroll_expenses",
-        "Pond workers and casual labor (worker_salary).",
+        "Pond workers on payroll (worker_salary). Day labor is recorded on vendor bills (day_labor).",
     ),
     (
         "6713",
@@ -132,10 +132,10 @@ AQUACULTURE_COA_ROWS: tuple[tuple[str, str, str, str, str], ...] = (
     ),
     (
         "6719",
-        "Aquaculture Expense — Harvesting & Fisherman Charges",
+        "Aquaculture Expense — Day labor, harvest & contract crew",
         "expense",
         "other_business_expenses",
-        "Contract harvest and fisherman bills (fisherman).",
+        "Daily hired labor, contract harvest, and fisherman bills (day_labor, fisherman).",
     ),
     (
         "6720",

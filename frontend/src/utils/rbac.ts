@@ -155,6 +155,7 @@ const AQUACULTURE_REPORT_IDS = new Set([
   'aquaculture-fish-stock-position',
   'aquaculture-fcr-biomass',
   'aquaculture-fish-growth',
+  'aquaculture-pond-performance',
   'aquaculture-shop-station-stock',
   'aquaculture-equipment-assets',
   'aquaculture-pond-total-inventory',

@@ -29,6 +29,7 @@ from api.models import (
 from api.services.aquaculture_constants import fish_species_display_label
 from api.services.aquaculture_fcr_service import fcr_period_summary_block
 from api.services.aquaculture_growth_service import build_fish_growth_report
+from api.services.aquaculture_pond_performance_service import build_pond_performance_report
 from api.services.aquaculture_pond_stock_service import pond_warehouse_stock_matrix
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 from api.services.gl_posting import item_inventory_unit_cost
@@ -159,6 +160,8 @@ def build_aquaculture_report(
         payload = _report_fcr_biomass(company_id, start, end, request)
     elif report_id == "aquaculture-fish-growth":
         payload = _report_fish_growth(company_id, start, end, request)
+    elif report_id == "aquaculture-pond-performance":
+        payload = _report_pond_performance(company_id, start, end, request)
     else:
         return JsonResponse({"detail": "Unknown aquaculture report"}, status=404)
 
@@ -1328,6 +1331,31 @@ def _report_fish_growth(company_id: int, start: date, end: date, request: HttpRe
     species_raw = (request.GET.get("fish_species") or "").strip() or None
 
     body = build_fish_growth_report(
+        company_id,
+        start,
+        end,
+        pond_id=pond_filter_id,
+        production_cycle_id=cycle_filter_id,
+        fish_species=species_raw,
+    )
+    return {
+        "period": _period_block(start, end),
+        "currency_code": BDT,
+        **body,
+    }
+
+
+def _report_pond_performance(company_id: int, start: date, end: date, request: HttpRequest) -> dict[str, Any]:
+    """All-pond performance snapshot: FCR, load, ADG, biomass, and bioasset for a date range."""
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    species_raw = (request.GET.get("fish_species") or "").strip() or None
+
+    body = build_pond_performance_report(
         company_id,
         start,
         end,

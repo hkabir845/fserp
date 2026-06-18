@@ -226,6 +226,7 @@ AQUACULTURE_REPORT_IDS = frozenset(
         "aquaculture-fish-stock-position",
         "aquaculture-fcr-biomass",
         "aquaculture-fish-growth",
+        "aquaculture-pond-performance",
         "aquaculture-shop-station-stock",
         "aquaculture-equipment-assets",
         "aquaculture-pond-total-inventory",
@@ -310,6 +311,17 @@ def report_by_id(request, report_id: str):
                 report_item_purchase_velocity_analysis(cid, start, end, category, item_ids, st_id)
             )
         return JsonResponse(report_item_velocity_analysis(cid, start, end, category, item_ids, st_id))
+
+    if report_id == "inventory-sku-valuation":
+        category, item_ids, err = _parse_item_scope_query(request, cid)
+        if err:
+            return err
+        st_id, st_err = effective_report_station_id(request, cid)
+        if st_err:
+            return st_err
+        return JsonResponse(
+            report_inventory_sku_valuation(cid, start, end, st_id, category, item_ids)
+        )
 
     if report_id in AQUACULTURE_REPORT_IDS:
         from api.services.aquaculture_reports_registry import build_aquaculture_report

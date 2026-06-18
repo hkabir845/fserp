@@ -253,6 +253,11 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
         "group": "Reports — Aquaculture",
     },
     {
+        "report_id": "aquaculture-pond-performance",
+        "label": "Aquaculture — Pond performance dashboard",
+        "group": "Reports — Aquaculture",
+    },
+    {
         "report_id": "aquaculture-shop-station-stock",
         "label": "Aquaculture — Shop / station inventory",
         "group": "Reports — Aquaculture",

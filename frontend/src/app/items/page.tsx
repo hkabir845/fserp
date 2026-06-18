@@ -279,12 +279,15 @@ export default function ItemsPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [listStats, setListStats] = useState<{
     by_type: { inventory: number; non_inventory: number; service: number }
+    by_category?: Record<string, number>
     catalog_total: number
+    on_hand?: { total_cost_value?: string }
   } | null>(null)
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [filterType, setFilterType] = useState<string>('ALL')
+  const [filterCategory, setFilterCategory] = useState<string>('')
   const [exportOpts, setExportOpts] = useState<ItemListExportOptions>({
     includeQty: true,
     includeCost: true,
@@ -483,7 +486,7 @@ export default function ItemsPage() {
 
   useEffect(() => {
     setListPage(1)
-  }, [debouncedSearch, pageSize, filterType])
+  }, [debouncedSearch, pageSize, filterType, filterCategory])
 
   useEffect(() => {
     if (showModal) void loadCategoryOptions()
@@ -858,13 +861,14 @@ export default function ItemsPage() {
                       ? 'service'
                       : '',
             }
+      const categoryExtra = filterCategory.trim() ? { category: filterCategory.trim() } : {}
       const params = offsetListParams({
         page: listPage,
         pageSize,
         q: debouncedSearch,
         sort: 'id',
         dir: 'asc',
-        extra: itemTypeExtra,
+        extra: { ...itemTypeExtra, ...categoryExtra },
       })
       const response = await api.get('/items/', {
         headers: { Authorization: `Bearer ${token}` },
@@ -879,7 +883,9 @@ export default function ItemsPage() {
           const st = data.stats as
             | {
                 by_type?: { inventory?: number; non_inventory?: number; service?: number }
+                by_category?: Record<string, number>
                 catalog_total?: number
+                on_hand?: { total_cost_value?: string }
               }
             | undefined
           if (st?.by_type && typeof st.catalog_total === 'number') {
@@ -889,7 +895,9 @@ export default function ItemsPage() {
                 non_inventory: Number(st.by_type.non_inventory ?? 0),
                 service: Number(st.by_type.service ?? 0),
               },
+              by_category: st.by_category ?? {},
               catalog_total: st.catalog_total,
+              on_hand: st.on_hand,
             })
           } else {
             setListStats(null)
@@ -914,7 +922,7 @@ export default function ItemsPage() {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, filterType, listPage, pageSize, toast])
+  }, [debouncedSearch, filterType, filterCategory, listPage, pageSize, toast])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -1555,6 +1563,32 @@ export default function ItemsPage() {
     SERVICE: listStats?.by_type?.service ?? 0,
   }
 
+  const categoryFilterOptions = useMemo(() => {
+    const counts = listStats?.by_category ?? {}
+    const selected = filterCategory.trim()
+    const options = Object.entries(counts)
+      .filter(([, count]) => count > 0)
+      .sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+      .map(([cat]) => cat)
+    if (
+      selected &&
+      !options.some((cat) => cat.localeCompare(selected, undefined, { sensitivity: 'base' }) === 0)
+    ) {
+      options.push(selected)
+      options.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    }
+    return options
+  }, [listStats?.by_category, filterCategory])
+
+  const categoryCounts = listStats?.by_category ?? {}
+
+  const filteredOnHandValue = useMemo(() => {
+    const raw = listStats?.on_hand?.total_cost_value
+    if (raw == null || raw === '') return 0
+    const n = Number(String(raw).replace(/,/g, ''))
+    return Number.isFinite(n) ? n : 0
+  }, [listStats?.on_hand?.total_cost_value])
+
   const isFeedItemForm = (formData.pos_category || '').toLowerCase() === 'feed'
   const isMedicineItemForm = (formData.pos_category || '').toLowerCase() === 'medicine'
   const isNonPosForm = (formData.pos_category || '').toLowerCase() === 'non_pos'
@@ -1570,6 +1604,11 @@ export default function ItemsPage() {
         : Number(formData.content_weight_kg)
     return feedSellingPriceSuspiciousMessage(up, co, kg)
   }, [isFeedItemForm, formData.unit_price, formData.cost, formData.content_weight_kg])
+
+  const itemListFilterParams = (): Record<string, string> => ({
+    ...itemTypeExtraParams(),
+    ...(filterCategory.trim() ? { category: filterCategory.trim() } : {}),
+  })
 
   const itemTypeExtraParams = (): Record<string, string> => {
     if (filterType === 'ALL') return {}
@@ -1594,7 +1633,7 @@ export default function ItemsPage() {
         ...(debouncedSearch.trim() ? { q: debouncedSearch.trim() } : {}),
         sort: 'id',
         dir: 'asc',
-        ...itemTypeExtraParams(),
+        ...itemListFilterParams(),
       },
     })
     const data = response.data
@@ -1628,6 +1667,7 @@ export default function ItemsPage() {
   const exportSubtitle = () =>
     [
       filterType !== 'ALL' ? `Type: ${filterType.replace('_', ' ')}` : '',
+      filterCategory.trim() ? `Report category: ${filterCategory.trim()}` : '',
       debouncedSearch.trim() && `Search: ${debouncedSearch.trim()}`,
       `Generated ${formatDate(new Date(), true)}`,
     ]
@@ -1697,12 +1737,36 @@ export default function ItemsPage() {
     <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
+        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 flex-1">
             <h1 className="text-3xl font-bold text-gray-900">Products & Services</h1>
-            <p className="text-gray-600 mt-1">Manage inventory, non-inventory items, and services</p>
+            <p className="mt-1 text-gray-600">Manage inventory, non-inventory items, and services</p>
+            {!loading ? (
+              <div className="mt-3 flex max-w-2xl flex-wrap items-stretch gap-2">
+                <div className="min-w-[7.5rem] flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Matching items
+                  </p>
+                  <p className="mt-0.5 text-lg font-semibold tabular-nums leading-tight text-slate-900">
+                    {totalCount}
+                  </p>
+                </div>
+                <div
+                  className="min-w-[11rem] flex-[2] rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2 shadow-sm"
+                  title="Total for inventory rows in the current filter. Non-inventory and service items are excluded."
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
+                    On-hand value
+                  </p>
+                  <p className="mt-0.5 truncate text-lg font-semibold tabular-nums leading-tight text-emerald-950">
+                    {currencySymbol}
+                    {formatNumber(filteredOnHandValue, 2)}
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm max-w-xl w-full">
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm max-w-xl w-full shrink-0">
             <p className="text-sm font-medium text-gray-900 mb-2">Print / download catalog</p>
             <p className="text-xs text-gray-500 mb-3">
               Choose columns, then print or export up to {REFERENCE_FETCH_LIMIT} products matching your
@@ -1740,33 +1804,54 @@ export default function ItemsPage() {
           </div>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="mb-6 flex items-center space-x-2 overflow-x-auto">
-          {['ALL', 'INVENTORY', 'NON_INVENTORY', 'SERVICE'].map((type) => (
-            <button
-              key={type}
-              onClick={() => setFilterType(type)}
-              className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors ${
-                filterType === type
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              {type.replace('_', ' ')} ({itemTypeCounts[type as keyof typeof itemTypeCounts]})
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between mb-6">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-            <input
-              type="text"
-              placeholder="Search items..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0">
+            <label className="shrink-0 text-sm text-gray-600">
+              Item type
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="ml-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+              >
+                {(['ALL', 'INVENTORY', 'NON_INVENTORY', 'SERVICE'] as const).map((type) => (
+                  <option key={type} value={type}>
+                    {type.replace('_', ' ')} ({itemTypeCounts[type]})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="shrink-0 text-sm text-gray-600">
+              Report category
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="ml-2 max-w-[220px] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">
+                  All report categories ({listStats?.catalog_total ?? totalCount})
+                </option>
+                {categoryFilterOptions.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat} ({categoryCounts[cat] ?? 0})
+                  </option>
+                ))}
+              </select>
+            </label>
+            {!loading && filterCategory.trim() ? (
+              <span className="text-xs text-gray-500 tabular-nums">
+                {totalCount} item{totalCount === 1 ? '' : 's'} in {filterCategory.trim()}
+              </span>
+            ) : null}
+            <div className="relative min-w-[200px] flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search items..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
 
           <div className="flex items-center space-x-3">
@@ -2008,6 +2093,9 @@ export default function ItemsPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     On Hand
                   </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    On-hand value
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
@@ -2017,7 +2105,13 @@ export default function ItemsPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {items.map((item) => (
+                {items.map((item) => {
+                  const isInventory =
+                    item.item_type.toUpperCase() === 'INVENTORY' ||
+                    item.item_type.toLowerCase() === 'inventory'
+                  const onHandQty = parseInventoryQty(item.quantity_on_hand)
+                  const onHandValue = isInventory ? onHandQty * (Number(item.cost) || 0) : 0
+                  return (
                   <tr key={item.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       {item.image_url ? (
@@ -2074,11 +2168,11 @@ export default function ItemsPage() {
                       {currencySymbol}{formatNumber(Number(item.cost || 0))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {(item.item_type.toUpperCase() === 'INVENTORY' || item.item_type.toLowerCase() === 'inventory') ? (
+                      {isInventory ? (
                         <span>
                           {(item.pos_category || '').toLowerCase() === 'feed'
-                            ? formatFeedSackQuantityLabel(parseInventoryQty(item.quantity_on_hand))
-                            : `${formatNumber(parseInventoryQty(item.quantity_on_hand))} ${item.unit}`}
+                            ? formatFeedSackQuantityLabel(onHandQty)
+                            : `${formatNumber(onHandQty, 2)} ${item.unit}`}
                           {feedApproxTotalKg(item) != null && (
                             <span className="block text-xs text-teal-700 mt-0.5">
                               ≈ {feedApproxTotalKg(item)!.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
@@ -2087,6 +2181,16 @@ export default function ItemsPage() {
                         </span>
                       ) : (
                         <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right tabular-nums text-gray-900">
+                      {isInventory && onHandValue > 0 ? (
+                        <>
+                          {currencySymbol}
+                          {formatNumber(onHandValue, 2)}
+                        </>
+                      ) : (
+                        <span className="text-gray-400">—</span>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -2131,8 +2235,21 @@ export default function ItemsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
+              <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                <tr>
+                  <td className="px-6 py-3 text-sm font-semibold text-gray-900" colSpan={7}>
+                    Total on-hand value ({totalCount} matching item{totalCount === 1 ? '' : 's'})
+                  </td>
+                  <td className="px-6 py-3 text-sm font-semibold text-right tabular-nums text-emerald-900">
+                    {currencySymbol}
+                    {formatNumber(filteredOnHandValue, 2)}
+                  </td>
+                  <td className="px-6 py-3" colSpan={2} />
+                </tr>
+              </tfoot>
             </table>
           </div>
             )}

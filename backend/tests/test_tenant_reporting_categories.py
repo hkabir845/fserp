@@ -99,6 +99,93 @@ def test_tenant_aquaculture_expense_category_end_to_end(api_client, company_tena
 
 
 @pytest.mark.django_db
+def test_tenant_day_labor_label_on_vendor_bill(api_client, company_tenant, auth_admin_headers):
+    """Day labor custom labels roll up to day_labor — ordinary AP, not payroll."""
+    Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    ensure_aquaculture_chart_accounts(company_tenant.id)
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P1", is_active=True)
+
+    created = api_client.post(
+        "/api/reporting-categories/",
+        data=json.dumps(
+            {
+                "application": "aquaculture",
+                "kind": "expense",
+                "label": "Labor Bills",
+                "maps_to_code": "day_labor",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert created.status_code == 201
+    cat_code = json.loads(created.content.decode())["code"]
+
+    cats = api_client.get("/api/aquaculture/expense-categories/", **auth_admin_headers)
+    row = next((x for x in json.loads(cats.content.decode()) if x.get("id") == cat_code), None)
+    assert row is not None
+    assert row.get("bill_create_allowed") is True
+    assert row.get("maps_to_code") == "day_labor"
+
+    vendor = Vendor.objects.filter(company_id=company_tenant.id).first()
+    if vendor is None:
+        vendor = Vendor.objects.create(
+            company_id=company_tenant.id,
+            company_name="Labor Vendor",
+            display_name="Labor Vendor",
+            vendor_number="V-LAB-1",
+            is_active=True,
+        )
+
+    bill = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor.id,
+                "bill_date": "2026-05-01",
+                "status": "open",
+                "lines": [
+                    {
+                        "description": "5 workers netting",
+                        "quantity": 1,
+                        "unit_cost": "500.00",
+                        "amount": "500.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_expense_category": cat_code,
+                    }
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert bill.status_code == 201, bill.content.decode()
+    line = json.loads(bill.content.decode())["lines"][0]
+    assert line["aquaculture_expense_category"] == cat_code
+    assert line["aquaculture_cost_bucket"] == "day_labor"
+    assert line.get("tenant_reporting_category_id")
+
+
+@pytest.mark.django_db
+def test_tenant_label_cannot_roll_up_to_payroll(api_client, company_tenant, auth_admin_headers):
+    blocked = api_client.post(
+        "/api/reporting-categories/",
+        data=json.dumps(
+            {
+                "application": "aquaculture",
+                "kind": "expense",
+                "label": "Payroll-ish label",
+                "maps_to_code": "worker_salary",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert blocked.status_code == 400
+    assert "vendor bill" in blocked.content.decode().lower() or "payroll" in blocked.content.decode().lower()
+
+
+@pytest.mark.django_db
 def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_admin_headers):
     Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
     pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P1", is_active=True)
@@ -163,7 +250,15 @@ def test_reporting_category_map_targets_enriched(api_client, company_tenant, aut
     )
     assert r.status_code == 200
     targets = json.loads(r.content.decode())["map_targets"]
-    assert len(targets) >= 34
+    target_ids = {t["id"] for t in targets}
+    assert len(targets) >= 29
+    assert "feed_consumed" not in target_ids
+    assert "medicine_consumed" not in target_ids
+    assert "depreciation" not in target_ids
+    assert "vendor_bill_pond" not in target_ids
+    assert "fisherman" in target_ids
+    assert "day_labor" in target_ids
+    assert "worker_salary" not in target_ids
     mortality = next(t for t in targets if t["id"] == "mortality")
     assert mortality["group"] == "Mortality & shrinkage"
     assert mortality.get("coa_code") == "6726"
@@ -311,6 +406,25 @@ def test_reporting_category_edit_propagates_to_bill_and_journal(
     jl = JournalEntryLine.objects.filter(journal_entry_id=je.id, debit__gt=0).first()
     assert jl is not None
     assert jl.aquaculture_cost_bucket == "miscellaneous"
+
+
+@pytest.mark.django_db
+def test_reporting_category_rejects_automatic_only_rollup(api_client, company_tenant, auth_admin_headers):
+    blocked = api_client.post(
+        "/api/reporting-categories/",
+        data=json.dumps(
+            {
+                "application": "aquaculture",
+                "kind": "expense",
+                "label": "Bad feed consumed label",
+                "maps_to_code": "feed_consumed",
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert blocked.status_code == 400
+    assert "automatic" in blocked.content.decode().lower() or "vendor bill" in blocked.content.decode().lower()
 
 
 @pytest.mark.django_db

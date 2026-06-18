@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch, Q, Sum
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -24,7 +24,10 @@ from api.models import (
     User,
 )
 from api.exceptions import StockBusinessError
-from api.services.aquaculture_pond_stock_service import reverse_pond_warehouse_stock_receipt
+from api.services.aquaculture_pond_stock_service import (
+    amend_pond_warehouse_stock_receipt,
+    reverse_pond_warehouse_stock_receipt,
+)
 from api.services.gl_posting import (
     delete_auto_inventory_adjustment_journal,
     delete_auto_inventory_transfer_journal,
@@ -68,8 +71,34 @@ def _pond_receipt_visible_for_user(request, rec: PondWarehouseStockReceipt) -> b
     return int(rec.from_station_id) == h
 
 
+def _inventory_line_value_fields(item: Item | None, quantity: Decimal) -> dict:
+    qty = quantity or Decimal("0")
+    unit_cost = item_inventory_unit_cost(item)
+    if qty <= 0 or unit_cost <= 0:
+        line_value = Decimal("0")
+    else:
+        line_value = (qty * unit_cost).quantize(Decimal("0.01"))
+    return {
+        "unit_cost": _serialize_decimal(unit_cost) if unit_cost > 0 else None,
+        "line_value": _serialize_decimal(line_value),
+    }
+
+
 def _pond_receipt_to_json(rec: PondWarehouseStockReceipt) -> dict:
     lines = list(rec.lines.all().select_related("item"))
+    line_rows = []
+    total_value = Decimal("0")
+    for ln in lines:
+        cost_fields = _inventory_line_value_fields(ln.item, ln.quantity or Decimal("0"))
+        total_value += Decimal(cost_fields["line_value"])
+        line_rows.append(
+            {
+                "item_id": ln.item_id,
+                "item_name": (ln.item.name or "") if ln.item_id else "",
+                "quantity": _serialize_decimal(ln.quantity),
+                **cost_fields,
+            }
+        )
     return {
         "id": rec.id,
         "receipt_number": rec.receipt_number or "",
@@ -78,20 +107,28 @@ def _pond_receipt_to_json(rec: PondWarehouseStockReceipt) -> dict:
         "from_station_name": (rec.from_station.station_name or "") if rec.from_station_id else "",
         "pond_id": rec.pond_id,
         "pond_name": (rec.pond.name or "") if rec.pond_id else "",
-        "lines": [
-            {
-                "item_id": ln.item_id,
-                "item_name": (ln.item.name or "") if ln.item_id else "",
-                "quantity": _serialize_decimal(ln.quantity),
-            }
-            for ln in lines
-        ],
+        "total_value": _serialize_decimal(total_value.quantize(Decimal("0.01"))),
+        "lines": line_rows,
     }
 
 
 def _transfer_to_json(tr: InventoryTransfer):
     lines = list(tr.lines.all().select_related("item"))
     posted = tr.status == InventoryTransfer.STATUS_POSTED
+    line_rows = []
+    total_value = Decimal("0")
+    for ln in lines:
+        cost_fields = _inventory_line_value_fields(ln.item, ln.quantity or Decimal("0"))
+        total_value += Decimal(cost_fields["line_value"])
+        line_rows.append(
+            {
+                "id": ln.id,
+                "item_id": ln.item_id,
+                "item_name": (ln.item.name or "") if ln.item_id else "",
+                "quantity": _serialize_decimal(ln.quantity),
+                **cost_fields,
+            }
+        )
     return {
         "id": tr.id,
         "transfer_number": tr.transfer_number or "",
@@ -104,20 +141,17 @@ def _transfer_to_json(tr: InventoryTransfer):
         "to_station_name": (tr.to_station.station_name or "") if tr.to_station_id else "",
         "posted_at": tr.posted_at.isoformat() if tr.posted_at else None,
         "auto_journal_entry_number": (f"AUTO-ISTR-{tr.id}" if posted else None),
-        "lines": [
-            {
-                "id": ln.id,
-                "item_id": ln.item_id,
-                "item_name": (ln.item.name or "") if ln.item_id else "",
-                "quantity": _serialize_decimal(ln.quantity),
-            }
-            for ln in lines
-        ],
+        "total_value": _serialize_decimal(total_value.quantize(Decimal("0.01"))),
+        "lines": line_rows,
     }
 
 
 def _parse_interstation_transfer_draft_body(
-    *, cid: int, body: dict, request
+    *,
+    cid: int,
+    body: dict,
+    request,
+    editing_transfer: InventoryTransfer | None = None,
 ) -> JsonResponse | tuple[int, int, date, str, list[tuple[Item, Decimal]]]:
     """
     Validate JSON for creating or updating an inter-station transfer draft.
@@ -145,11 +179,11 @@ def _parse_interstation_transfer_draft_body(
     if api:
         u = User.objects.filter(pk=getattr(api, "id", None)).only("home_station_id").first()
         h = u.home_station_id if u else None
-        if h and (int(fs) != int(h) or int(ts) != int(h)):
+        if h and int(fs) != int(h) and int(ts) != int(h):
             return JsonResponse(
                 {
-                    "detail": "Moving stock between sites is restricted to users without a single-site assignment. "
-                    "Use a company-wide account, or ask an admin to clear Home station on this user."
+                    "detail": "Your account is tied to one site — transfers must involve your home site "
+                    "as the sender or receiver."
                 },
                 status=403,
             )
@@ -201,6 +235,14 @@ def _parse_interstation_transfer_draft_body(
     for iid, total_need in need_by_item.items():
         it = items_by_id[iid]
         have = get_station_stock(cid, fs, iid)
+        if editing_transfer is not None and int(editing_transfer.from_station_id) == int(fs):
+            reserved = (
+                InventoryTransferLine.objects.filter(
+                    transfer_id=editing_transfer.id, item_id=iid
+                ).aggregate(s=Sum("quantity"))["s"]
+                or Decimal("0")
+            )
+            have += reserved
         if total_need > have:
             return JsonResponse(
                 {
@@ -214,6 +256,135 @@ def _parse_interstation_transfer_draft_body(
     return fs, ts, td, memo, parsed_lines
 
 
+def _transfer_stock_lines_reverse(
+    cid: int, from_station_id: int, to_station_id: int, lines: list
+) -> None:
+    """Undo a posted transfer's bin movement (destination −qty, source +qty)."""
+    for ln in lines:
+        qty = ln.quantity or Decimal("0")
+        if qty <= 0:
+            continue
+        add_station_stock(cid, to_station_id, ln.item_id, -qty)
+        add_station_stock(cid, from_station_id, ln.item_id, qty)
+
+
+def _transfer_stock_lines_apply(
+    cid: int, from_station_id: int, to_station_id: int, parsed_lines: list[tuple[Item, Decimal]]
+) -> None:
+    for it, qty in parsed_lines:
+        if qty <= 0:
+            continue
+        add_station_stock(cid, from_station_id, it.id, -qty)
+        add_station_stock(cid, to_station_id, it.id, qty)
+
+
+def _validate_destination_can_reverse_transfer(
+    cid: int, to_station_id: int, lines: list, *, items_by_id: dict[int, Item]
+) -> JsonResponse | None:
+    need_by_item: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    for ln in lines:
+        qty = ln.quantity or Decimal("0")
+        if qty <= 0:
+            continue
+        need_by_item[ln.item_id] += qty
+    for iid, total_need in need_by_item.items():
+        it = items_by_id[iid]
+        have = get_station_stock(cid, to_station_id, iid)
+        if total_need > have:
+            return JsonResponse(
+                {
+                    "detail": (
+                        f'Cannot update: not enough "{(it.name or "").strip()}" at the receiving site to '
+                        f"reverse the current transfer: need {_serialize_decimal(total_need)} but only "
+                        f"{_serialize_decimal(have)} on hand."
+                    )
+                },
+                status=400,
+            )
+    return None
+
+
+def _inventory_transfer_amend_posted(request, tr: InventoryTransfer) -> JsonResponse:
+    """Reverse prior bin movement, apply new lines/stations, refresh AUTO-ISTR journal."""
+    cid = request.company_id
+    if tr.status != InventoryTransfer.STATUS_POSTED:
+        return JsonResponse({"detail": "Only posted transfers can be amended this way"}, status=400)
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    parsed = _parse_interstation_transfer_draft_body(cid=cid, body=body, request=request)
+    if isinstance(parsed, JsonResponse):
+        return parsed
+    fs, ts, td, memo, parsed_lines = parsed
+    with transaction.atomic():
+        locked = (
+            InventoryTransfer.objects.select_for_update()
+            .filter(pk=tr.pk, company_id=cid)
+            .first()
+        )
+        if not locked or locked.status != InventoryTransfer.STATUS_POSTED:
+            return JsonResponse({"detail": "Transfer is not posted"}, status=400)
+        old_lines = list(
+            InventoryTransferLine.objects.filter(transfer_id=locked.id).select_related("item")
+        )
+        items_by_id: dict[int, Item] = {ln.item_id: ln.item for ln in old_lines if ln.item_id}
+        err_resp = _validate_destination_can_reverse_transfer(
+            cid, locked.to_station_id, old_lines, items_by_id=items_by_id
+        )
+        if err_resp:
+            return err_resp
+        reverse_delta: defaultdict[tuple[int, int], Decimal] = defaultdict(lambda: Decimal("0"))
+        for ln in old_lines:
+            qty = ln.quantity or Decimal("0")
+            if qty <= 0:
+                continue
+            reverse_delta[(locked.to_station_id, ln.item_id)] -= qty
+            reverse_delta[(locked.from_station_id, ln.item_id)] += qty
+
+        def stock_after_reverse(station_id: int, item_id: int) -> Decimal:
+            return get_station_stock(cid, station_id, item_id) + reverse_delta.get(
+                (station_id, item_id), Decimal("0")
+            )
+
+        need_by_item: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+        new_items: dict[int, Item] = {}
+        for it, q in parsed_lines:
+            need_by_item[it.id] += q
+            new_items[it.id] = it
+        for iid, total_need in need_by_item.items():
+            it = new_items[iid]
+            have = stock_after_reverse(fs, iid)
+            if total_need > have:
+                return JsonResponse(
+                    {
+                        "detail": (
+                            f'Not enough stock of "{it.name}" at the source station after reversing the '
+                            f"prior move: need {_serialize_decimal(total_need)} but only "
+                            f"{_serialize_decimal(have)} on hand."
+                        )
+                    },
+                    status=400,
+                )
+        _transfer_stock_lines_reverse(cid, locked.from_station_id, locked.to_station_id, old_lines)
+        delete_auto_inventory_transfer_journal(cid, locked.id)
+        locked.from_station_id = fs
+        locked.to_station_id = ts
+        locked.transfer_date = td
+        locked.memo = memo
+        locked.save()
+        InventoryTransferLine.objects.filter(transfer_id=locked.pk).delete()
+        for it, q in parsed_lines:
+            InventoryTransferLine.objects.create(transfer=locked, item=it, quantity=q)
+        _transfer_stock_lines_apply(cid, fs, ts, parsed_lines)
+        post_inventory_transfer_journal(cid, locked.id)
+    tr2 = (
+        InventoryTransfer.objects.filter(pk=tr.pk)
+        .select_related("from_station", "to_station")
+        .first()
+    )
+    return JsonResponse(_transfer_to_json(tr2 or tr))
+
+
 def _inventory_transfer_put_draft(request, tr: InventoryTransfer) -> JsonResponse:
     cid = request.company_id
     if tr.status != InventoryTransfer.STATUS_DRAFT:
@@ -221,7 +392,9 @@ def _inventory_transfer_put_draft(request, tr: InventoryTransfer) -> JsonRespons
     body, err = parse_json_body(request)
     if err:
         return err
-    parsed = _parse_interstation_transfer_draft_body(cid=cid, body=body, request=request)
+    parsed = _parse_interstation_transfer_draft_body(
+        cid=cid, body=body, request=request, editing_transfer=tr
+    )
     if isinstance(parsed, JsonResponse):
         return parsed
     fs, ts, td, memo, parsed_lines = parsed
@@ -269,6 +442,61 @@ def pond_warehouse_receipts_list(request):
         qs = qs.filter(from_station_id=h)
     qs = qs.order_by("-created_at", "-id")[:200]
     return JsonResponse([_pond_receipt_to_json(r) for r in qs], safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT"])
+@auth_required
+@require_company_id
+def pond_warehouse_receipt_detail_or_amend(request, receipt_id: int):
+    """GET one receipt; PUT amends lines/route and updates shop + pond warehouse stock."""
+    cid = request.company_id
+    line_qs = PondWarehouseStockReceiptLine.objects.select_related("item")
+    rec = (
+        PondWarehouseStockReceipt.objects.filter(pk=receipt_id, company_id=cid)
+        .select_related("from_station", "pond")
+        .prefetch_related(Prefetch("lines", queryset=line_qs))
+        .first()
+    )
+    if not rec or not _pond_receipt_visible_for_user(request, rec):
+        return JsonResponse({"detail": "Receipt not found"}, status=404)
+    if request.method == "GET":
+        return JsonResponse(_pond_receipt_to_json(rec))
+
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    raw_sid = body.get("station_id")
+    raw_pid = body.get("pond_id")
+    if raw_sid is None or raw_sid == "":
+        return JsonResponse({"detail": "station_id is required"}, status=400)
+    if raw_pid is None or raw_pid == "":
+        return JsonResponse({"detail": "pond_id is required"}, status=400)
+    try:
+        station_id = int(raw_sid)
+        pond_id = int(raw_pid)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "station_id and pond_id must be integers"}, status=400)
+    items = body.get("items")
+    if not isinstance(items, list) or not items:
+        return JsonResponse({"detail": "items must be a non-empty array of { item_id, quantity }"}, status=400)
+    try:
+        rec2 = amend_pond_warehouse_stock_receipt(
+            company_id=cid,
+            receipt_id=receipt_id,
+            station_id=station_id,
+            pond_id=pond_id,
+            items=items,
+        )
+    except StockBusinessError as ex:
+        return JsonResponse({"detail": ex.detail}, status=400)
+    rec3 = (
+        PondWarehouseStockReceipt.objects.filter(pk=rec2.pk, company_id=cid)
+        .select_related("from_station", "pond")
+        .prefetch_related(Prefetch("lines", queryset=line_qs))
+        .first()
+    )
+    return JsonResponse(_pond_receipt_to_json(rec3 or rec2))
 
 
 @require_GET
@@ -379,6 +607,8 @@ def inventory_transfer_detail_or_post(request, transfer_id: int):
     if request.method == "GET":
         return JsonResponse(_transfer_to_json(tr))
     if request.method == "PUT":
+        if tr.status == InventoryTransfer.STATUS_POSTED:
+            return _inventory_transfer_amend_posted(request, tr)
         return _inventory_transfer_put_draft(request, tr)
     if tr.status == InventoryTransfer.STATUS_POSTED:
         return JsonResponse({"detail": "Transfer is already posted"}, status=400)

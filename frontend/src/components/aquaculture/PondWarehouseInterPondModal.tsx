@@ -29,8 +29,15 @@ export function PondWarehouseInterPondModal(props: {
   onSuccess?: () => void
   initialFromPondId?: number | null
   initialToPondId?: number | null
+  editingTransfer?: {
+    id: number
+    from_pond_id: number
+    to_pond_id: number
+    memo?: string
+    lines: { item_id: number; quantity: string }[]
+  } | null
 }) {
-  const { open, onClose, onSuccess, initialFromPondId, initialToPondId } = props
+  const { open, onClose, onSuccess, initialFromPondId, initialToPondId, editingTransfer } = props
   const toast = useToast()
 
   const [loadingMeta, setLoadingMeta] = useState(false)
@@ -134,11 +141,22 @@ export function PondWarehouseInterPondModal(props: {
   useEffect(() => {
     if (!open) return
     void loadMeta()
-    setFromPondId(initialFromPondId != null ? String(initialFromPondId) : '')
-    setToPondId(initialToPondId != null ? String(initialToPondId) : '')
-    setMemo('')
-    setLineRows([{ item_id: 0, quantity: '1' }])
-  }, [open, loadMeta, initialFromPondId, initialToPondId])
+    if (editingTransfer) {
+      setFromPondId(String(editingTransfer.from_pond_id))
+      setToPondId(String(editingTransfer.to_pond_id))
+      setMemo(editingTransfer.memo || '')
+      setLineRows(
+        editingTransfer.lines.length
+          ? editingTransfer.lines.map((l) => ({ item_id: l.item_id, quantity: String(l.quantity) }))
+          : [{ item_id: 0, quantity: '1' }],
+      )
+    } else {
+      setFromPondId(initialFromPondId != null ? String(initialFromPondId) : '')
+      setToPondId(initialToPondId != null ? String(initialToPondId) : '')
+      setMemo('')
+      setLineRows([{ item_id: 0, quantity: '1' }])
+    }
+  }, [open, loadMeta, initialFromPondId, initialToPondId, editingTransfer])
 
   useEffect(() => {
     if (!open) return
@@ -161,7 +179,22 @@ export function PondWarehouseInterPondModal(props: {
     }
     for (const l of lines) {
       const have = fromStock.find((s) => s.item_id === l.item_id)
-      const qoh = have ? parseFloat(have.quantity) : 0
+      let qoh = have ? parseFloat(have.quantity) : 0
+      if (
+        editingTransfer &&
+        editingTransfer.from_pond_id === fp &&
+        editingTransfer.to_pond_id === tp
+      ) {
+        const orig = editingTransfer.lines
+          .filter((x) => x.item_id === l.item_id)
+          .reduce((s, x) => s + parseQtyInput(String(x.quantity)), 0)
+        qoh += orig
+      } else if (editingTransfer && editingTransfer.from_pond_id === fp) {
+        const orig = editingTransfer.lines
+          .filter((x) => x.item_id === l.item_id)
+          .reduce((s, x) => s + parseQtyInput(String(x.quantity)), 0)
+        qoh += orig
+      }
       if (l.quantity > qoh) {
         toast.error(`Not enough at source pond for ${have?.item_name || 'item'}`)
         return
@@ -169,13 +202,19 @@ export function PondWarehouseInterPondModal(props: {
     }
     setSaving(true)
     try {
-      await api.post('/aquaculture/pond-warehouse-inter-pond-transfers/', {
+      const body = {
         from_pond_id: fp,
         to_pond_id: tp,
         items: lines.map((l) => ({ item_id: l.item_id, quantity: String(l.quantity) })),
         memo: memo.trim(),
-      })
-      toast.success('Stock moved between pond warehouses')
+      }
+      if (editingTransfer) {
+        await api.put(`/aquaculture/pond-warehouse-inter-pond-transfers/${editingTransfer.id}/`, body)
+        toast.success('Transfer updated — both pond warehouses adjusted.')
+      } else {
+        await api.post('/aquaculture/pond-warehouse-inter-pond-transfers/', body)
+        toast.success('Stock moved between pond warehouses')
+      }
       onSuccess?.()
       onClose()
     } catch (e) {
@@ -191,7 +230,9 @@ export function PondWarehouseInterPondModal(props: {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" role="dialog" aria-modal>
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h2 className="text-base font-semibold text-slate-900">Move between pond warehouses</h2>
+          <h2 className="text-base font-semibold text-slate-900">
+            {editingTransfer ? `Edit ${editingTransfer.id ? `PWIP-${editingTransfer.id}` : 'transfer'}` : 'Move between pond warehouses'}
+          </h2>
           <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-500 hover:bg-slate-100" aria-label="Close">
             <X className="h-5 w-5" />
           </button>

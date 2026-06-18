@@ -20,6 +20,10 @@ import {
 import { PondWarehouseAddStockModal } from '@/components/aquaculture/PondWarehouseAddStockModal'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
+import {
+  parseAquacultureExpenseRegister,
+  type AquacultureExpenseRegisterRow,
+} from '@/lib/aquacultureExpenseRegister'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { aquacultureArchivePlReportHref } from '@/lib/aquacultureDataBankArchive'
 import { formatDateOnly } from '@/utils/date'
@@ -210,18 +214,7 @@ interface SaleRow {
   fish_species_label?: string
 }
 
-interface ExpenseRow {
-  id: number
-  expense_date: string
-  amount: string
-  expense_category: string
-  expense_category_label: string
-  memo: string
-  vendor_name: string
-  feed_weight_kg?: string | null
-  is_shared?: boolean
-  pond_shares?: { pond_id: number; pond_name: string; amount: string }[]
-}
+interface ExpenseRow extends AquacultureExpenseRegisterRow {}
 
 interface SampleRow {
   id: number
@@ -453,7 +446,7 @@ export default function PondDetailViewPage() {
       setPond(pondRes.data)
       setPl(plRes.data)
       setSales(Array.isArray(salRes.data) ? salRes.data : [])
-      setExpenses(Array.isArray(expRes.data) ? expRes.data : [])
+      setExpenses(parseAquacultureExpenseRegister(expRes.data).rows)
       setSamples(Array.isArray(smpRes.data) ? smpRes.data : [])
       setCycles(Array.isArray(cyRes.data) ? cyRes.data : [])
       const rows = stkRes.data?.rows
@@ -1257,7 +1250,10 @@ export default function PondDetailViewPage() {
                                   ) : null}
                                   <div className="mt-0.5 text-sky-800">
                                     {rec.lines
-                                      .map((ln) => `${ln.item_name || `Item #${ln.item_id}`} (${ln.quantity})`)
+                                      .map(
+                                        (ln) =>
+                                          `${ln.item_name || `Item #${ln.item_id}`} (${formatNumber(Number(ln.quantity), 2)})`,
+                                      )
                                       .join(', ') || '—'}
                                   </div>
                                 </li>
@@ -1299,7 +1295,9 @@ export default function PondDetailViewPage() {
                                 <div className="text-[11px] text-slate-500">{w.reporting_category}</div>
                               ) : null}
                             </td>
-                            <td className="py-2 pr-3 tabular-nums text-slate-800">{w.quantity}</td>
+                            <td className="py-2 pr-3 tabular-nums text-slate-800">
+                              {formatNumber(Number(w.quantity), 2)}
+                            </td>
                             <td className="py-2 text-slate-600">{w.unit}</td>
                           </tr>
                         ))}

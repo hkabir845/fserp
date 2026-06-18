@@ -137,9 +137,11 @@ export function validatePondWarehouseLines(args: {
   pondId: number | ''
   lineRows: TransferLineRow[]
   itemAvail: Record<number, ItemAvailState>
+  /** When amending a receipt at the same shop, credit original line qty per item. */
+  sourceCreditByItemId?: Record<number, number>
 }): string[] {
   const issues: string[] = []
-  const { stationId, pondId, lineRows, itemAvail } = args
+  const { stationId, pondId, lineRows, itemAvail, sourceCreditByItemId } = args
   if (!stationId) issues.push('Select the shop site that holds the stock.')
   if (!pondId) issues.push('Select the destination pond.')
   if (!stationId || !pondId) return issues
@@ -173,13 +175,15 @@ export function validatePondWarehouseLines(args: {
       continue
     }
     const { qtyNum, unit } = qtyAtSourceStation(data, stationId)
+    const credit = sourceCreditByItemId?.[row.item_id] ?? 0
     const others = sumQtySameItemOtherLines(lineRows, row.item_id, row.i)
-    const maxForLine = qtyNum - others
-    if (qtyNum <= 0 && row.q > 0) {
+    const maxForLine = qtyNum + credit - others
+    if (qtyNum + credit <= 0 && row.q > 0) {
       issues.push(`Line ${row.i + 1}: no stock at this shop for "${data.name}".`)
     } else if (row.q > maxForLine + 1e-9) {
       issues.push(
         `Line ${row.i + 1}: max ${Math.max(0, maxForLine).toLocaleString()} ${unit} at shop` +
+          (credit > 0 ? ` (includes ${credit.toLocaleString()} ${unit} returned on save)` : '') +
           (others > 0 ? ` (${others.toLocaleString()} ${unit} on other lines)` : '') +
           '.',
       )

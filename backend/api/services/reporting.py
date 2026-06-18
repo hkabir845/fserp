@@ -4911,7 +4911,12 @@ def report_purchase_report(
 
 
 def report_inventory_sku_valuation(
-    company_id: int, start: date, end: date, station_id: int | None = None
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    category: str | None = None,
+    item_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """
     Per-SKU: on-hand, cost & list extension, period sales, velocity, days of cover.
@@ -4933,12 +4938,15 @@ def report_inventory_sku_valuation(
     inv_ids = inv_q.values_list("id", flat=True)
     inv_id_set = set(inv_ids)
     line_agg: dict[int, dict[str, Decimal]] = {}
+    inv_line_q = InvoiceLine.objects.filter(
+        invoice_id__in=inv_id_set, item_id__isnull=False
+    )
+    if category:
+        inv_line_q = inv_line_q.filter(item__category=category)
+    if item_ids:
+        inv_line_q = inv_line_q.filter(item_id__in=item_ids)
     for row in (
-        InvoiceLine.objects.filter(
-            invoice_id__in=inv_id_set, item_id__isnull=False
-        )
-        .values("item_id")
-        .annotate(
+        inv_line_q.values("item_id").annotate(
             q=Coalesce(Sum("quantity"), Decimal("0")),
             a=Coalesce(Sum("amount"), Decimal("0")),
         )
@@ -4957,10 +4965,9 @@ def report_inventory_sku_valuation(
     tot_period_qty = Decimal("0")
     tot_period_rev = Decimal("0")
 
-    for item in (
-        Item.objects.filter(company_id=company_id, is_active=True)
-        .order_by("item_number", "name")
-    ):
+    scope_items = _item_scope_queryset(company_id, category, item_ids)
+
+    for item in scope_items:
         if not item_tracks_physical_stock(item):
             continue
         if station_id is not None:
@@ -5036,6 +5043,10 @@ def report_inventory_sku_valuation(
     out_val: dict[str, Any] = {
         "report_id": "inventory-sku-valuation",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "filters": {
+            "category": category or "",
+            "item_ids": list(item_ids) if item_ids else None,
+        },
         "summary": {
             "line_count": len(rows_out),
             "total_qty_on_hand": _f(tot_qoh),

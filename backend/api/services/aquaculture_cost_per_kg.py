@@ -249,6 +249,8 @@ def aquaculture_expense_category_to_cost_bucket(category: str, company_id: int |
         return "shop_supplies"
     if c == "fisherman":
         return "fisherman"
+    if c == "day_labor":
+        return "day_labor"
     if c == "shop_supplies":
         return "shop_supplies"
     if c == "mortality":
@@ -287,6 +289,7 @@ COST_BUCKET_LABELS: dict[str, str] = {
     "lease": "Lease / pond rental",
     "transportation": "Transportation",
     "fisherman": "Harvesting / fisherman charges",
+    "day_labor": "Day & contract labor (vendor bills, not payroll)",
     "miscellaneous": "Miscellaneous pond operating (category other)",
     "shop_supplies": "Shop supplies to pond (POS COGS, non-feed / non-medicine inventory)",
     "fish_transfer_in": "Inter-pond transfer — cost in",
@@ -463,6 +466,7 @@ def build_pond_cost_per_kg_block(
         "lease",
         "transportation",
         "fisherman",
+        "day_labor",
         "miscellaneous",
         "shop_supplies",
         "fish_transfer_in",

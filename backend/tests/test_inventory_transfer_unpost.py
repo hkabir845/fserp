@@ -50,7 +50,10 @@ def test_inventory_transfer_post_then_unpost(api_client: Client, auth_admin_head
         **auth_admin_headers,
     )
     assert r.status_code == 201
-    tid = json.loads(r.content)["id"]
+    created = json.loads(r.content)
+    tid = created["id"]
+    assert created.get("total_value") == "40.00"
+    assert created["lines"][0].get("line_value") == "40.00"
 
     r2 = api_client.post(f"/api/inventory/transfers/{tid}/", content_type="application/json", **auth_admin_headers)
     assert r2.status_code == 200
@@ -144,3 +147,60 @@ def test_inventory_transfer_put_updates_draft(api_client: Client, auth_admin_hea
     assert list(
         InventoryTransferLine.objects.filter(transfer_id=tid).order_by("id").values_list("item_id", "quantity")
     ) == [(it_a.id, Decimal("1")), (it_b.id, Decimal("3"))]
+
+
+def test_inventory_transfer_amend_posted_updates_both_stations(
+    api_client: Client, auth_admin_headers, tenant_two_stations
+):
+    from api.models import Item, InventoryTransferLine, Station
+    from api.services.station_stock import get_station_stock, set_station_stock
+
+    cid = tenant_two_stations.id
+    stations = list(Station.objects.filter(company_id=cid, is_active=True).order_by("id")[:2])
+    it = Item.objects.create(
+        company_id=cid,
+        name="Amend SKU",
+        item_type="inventory",
+        category="General",
+        cost=Decimal("10"),
+        unit_price=Decimal("12"),
+    )
+    set_station_stock(cid, stations[0].id, it.id, Decimal("10"))
+    set_station_stock(cid, stations[1].id, it.id, Decimal("0"))
+
+    r = api_client.post(
+        "/api/inventory/transfers/",
+        data=json.dumps(
+            {
+                "from_station_id": stations[0].id,
+                "to_station_id": stations[1].id,
+                "lines": [{"item_id": it.id, "quantity": "4"}],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    tid = json.loads(r.content)["id"]
+    assert api_client.post(f"/api/inventory/transfers/{tid}/", **auth_admin_headers).status_code == 200
+    assert get_station_stock(cid, stations[0].id, it.id) == Decimal("6")
+    assert get_station_stock(cid, stations[1].id, it.id) == Decimal("4")
+
+    r2 = api_client.put(
+        f"/api/inventory/transfers/{tid}/",
+        data=json.dumps(
+            {
+                "from_station_id": stations[0].id,
+                "to_station_id": stations[1].id,
+                "lines": [{"item_id": it.id, "quantity": "2"}],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r2.status_code == 200, r2.content.decode()
+    assert json.loads(r2.content).get("status") == "posted"
+    assert get_station_stock(cid, stations[0].id, it.id) == Decimal("8")
+    assert get_station_stock(cid, stations[1].id, it.id) == Decimal("2")
+    assert list(
+        InventoryTransferLine.objects.filter(transfer_id=tid).values_list("quantity", flat=True)
+    ) == [Decimal("2")]

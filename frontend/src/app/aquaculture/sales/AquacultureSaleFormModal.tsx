@@ -26,6 +26,7 @@ import {
 } from './aquacultureSaleShared'
 import { PartialHarvestAdvicePanel } from '@/app/aquaculture/PartialHarvestAdvicePanel'
 import type { StockMetricsRow } from '@/app/aquaculture/aquacultureFishMetrics'
+import { ReportingCategorySelectOptions } from '@/lib/reportingCategorySelect'
 
 type Props = {
   open: boolean
@@ -687,11 +688,8 @@ export function AquacultureSaleFormModal({
                             value={line.income_type}
                             onChange={(e) => updateLine(line.localId, { income_type: e.target.value })}
                           >
-                            {incomeTypes.map((t) => (
-                              <option key={t.id} value={t.id}>
-                                {t.label}
-                              </option>
-                            ))}
+                            <option value="">Select income type…</option>
+                            <ReportingCategorySelectOptions categories={incomeTypes} />
                           </select>
                         </td>
                         <td className="px-2 py-2">

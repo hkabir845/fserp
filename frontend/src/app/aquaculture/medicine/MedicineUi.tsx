@@ -295,7 +295,7 @@ export function MedicineProductLinesEditor(props: {
                 </div>
                 {stock ? (
                   <p className="mt-1 text-[11px] text-emerald-800">
-                    On hand: {stock.quantity} {formatStockUnit(stock.unit)}
+                    On hand: {formatNumber(Number(stock.quantity), 2)} {formatStockUnit(stock.unit)}
                   </p>
                 ) : showStockWarn ? (
                   <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-800">

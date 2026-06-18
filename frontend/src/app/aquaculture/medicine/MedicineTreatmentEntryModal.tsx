@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import { Loader2, MapPin, Package, Stethoscope, X } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { formatStockUnit } from '@/lib/aquacultureMedicineUnits'
+import { formatNumber } from '@/utils/currency'
 import {
   formatTreatmentWaterVolume,
   pondHasCalculableVolume,
@@ -448,7 +449,7 @@ export function MedicineTreatmentEntryModal(props: {
                           >
                             <span className="font-medium text-slate-900">{r.item_name}</span>
                             <span className="mt-0.5 block tabular-nums text-slate-600">
-                              {r.quantity} {formatStockUnit(r.unit)}
+                              {formatNumber(Number(r.quantity), 2)} {formatStockUnit(r.unit)}
                             </span>
                           </button>
                         </li>

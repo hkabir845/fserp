@@ -49,6 +49,14 @@ interface CategoryRow {
   sort_order: number
 }
 
+interface TaggingOptionRow {
+  id: string
+  label: string
+  tenant_defined?: boolean
+  maps_to_code?: string | null
+  bill_create_allowed?: boolean
+}
+
 const SCOPE_STORAGE_KEY = 'fserp_reporting_categories_scope'
 
 const SELECT_CLASS =
@@ -127,6 +135,8 @@ export default function ReportingCategoriesPage() {
   const [loading, setLoading] = useState(true)
   const [stationsLoading, setStationsLoading] = useState(true)
   const [rows, setRows] = useState<CategoryRow[]>([])
+  const [taggingOptions, setTaggingOptions] = useState<TaggingOptionRow[]>([])
+  const [taggingLoading, setTaggingLoading] = useState(false)
   const [mapTargets, setMapTargets] = useState<ReportingMapTarget[]>([])
   const [stations, setStations] = useState<ReportStationForSegment[]>([])
   const [ponds, setPonds] = useState<{ id: number; name: string }[]>([])
@@ -273,6 +283,26 @@ export default function ReportingCategoriesPage() {
     }
   }, [resolvedApplication, kind, canCallApi, toast])
 
+  const loadTaggingOptions = useCallback(async () => {
+    if (!canCallApi || !resolvedApplication) {
+      setTaggingOptions([])
+      return
+    }
+    setTaggingLoading(true)
+    try {
+      const { data } = await api.get<{ options: TaggingOptionRow[] }>(
+        '/reporting-categories/tagging-options/',
+        { params: { application: resolvedApplication, kind } },
+      )
+      setTaggingOptions(Array.isArray(data?.options) ? data.options : [])
+    } catch (e) {
+      setTaggingOptions([])
+      toast.error(formatReportingCategoriesError(e, 'Could not load tagging options'))
+    } finally {
+      setTaggingLoading(false)
+    }
+  }, [resolvedApplication, kind, canCallApi, toast])
+
   useEffect(() => {
     if (!authReady || !canCallApi) return
     void loadTargets()
@@ -287,6 +317,21 @@ export default function ReportingCategoriesPage() {
     if (!authReady) return
     void loadRows()
   }, [authReady, loadRows])
+
+  useEffect(() => {
+    if (!authReady) return
+    void loadTaggingOptions()
+  }, [authReady, loadTaggingOptions])
+
+  const groupedTaggingOptions = useMemo(() => {
+    const rows =
+      resolvedApplication === 'aquaculture' && kind === 'expense'
+        ? taggingOptions.filter((o) => o.bill_create_allowed !== false)
+        : taggingOptions
+    const standard = rows.filter((o) => !o.tenant_defined)
+    const custom = rows.filter((o) => o.tenant_defined)
+    return { standard, custom }
+  }, [taggingOptions, resolvedApplication, kind])
 
   const onCreate = async () => {
     if (!canCallApi) {
@@ -313,7 +358,7 @@ export default function ReportingCategoriesPage() {
       })
       toast.success('Category created')
       resetForm()
-      await loadRows()
+      await Promise.all([loadRows(), loadTaggingOptions()])
     } catch (e) {
       toast.error(formatReportingCategoriesError(e, 'Create failed'))
     } finally {
@@ -327,7 +372,7 @@ export default function ReportingCategoriesPage() {
       await api.delete(`/reporting-categories/${id}/`)
       if (editingRow?.id === id) closeEdit()
       toast.success('Deleted')
-      await loadRows()
+      await Promise.all([loadRows(), loadTaggingOptions()])
     } catch (e) {
       toast.error(formatReportingCategoriesError(e, 'Delete failed'))
     }
@@ -387,7 +432,7 @@ export default function ReportingCategoriesPage() {
         toast.success('Category updated')
       }
       closeEdit()
-      await loadRows()
+      await Promise.all([loadRows(), loadTaggingOptions()])
     } catch (e) {
       toast.error(formatReportingCategoriesError(e, 'Update failed'))
     } finally {
@@ -404,7 +449,7 @@ export default function ReportingCategoriesPage() {
     try {
       await api.put(`/reporting-categories/${row.id}/`, { is_active: !row.is_active })
       toast.success(row.is_active ? 'Category deactivated' : 'Category activated')
-      await loadRows()
+      await Promise.all([loadRows(), loadTaggingOptions()])
     } catch (e) {
       toast.error(formatReportingCategoriesError(e, 'Update failed'))
     }
@@ -420,6 +465,9 @@ export default function ReportingCategoriesPage() {
     const hit = mapTargets.find((m) => m.id === code)
     return hit ? hit.label : code.replace(/_/g, ' ')
   }
+
+  const mapsToMissingFromPicker =
+    Boolean(form.maps_to_code) && !mapTargets.some((m) => m.id === form.maps_to_code)
 
   if (!authReady) {
     return (
@@ -636,7 +684,7 @@ export default function ReportingCategoriesPage() {
                     Rolls up to
                     <span className="font-normal text-slate-500">
                       Which built-in P&amp;L bucket this label counts under — grouped by how reports and GL treat
-                      each type
+                      each type. Automatic-only rollups (feed consumed, depreciation, etc.) are not listed.
                     </span>
                     <select
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
@@ -645,6 +693,11 @@ export default function ReportingCategoriesPage() {
                       disabled={!canCallApi || formSaving}
                     >
                       <option value="">— select rollup —</option>
+                      {mapsToMissingFromPicker ? (
+                        <option value={form.maps_to_code}>
+                          {rollupLabel(form.maps_to_code)} (not on vendor bills — change rollup)
+                        </option>
+                      ) : null}
                       {groupedMapTargets.map(({ group, items }) => (
                         <optgroup key={group || 'default'} label={group}>
                           {items.map((m) => (
@@ -844,6 +897,64 @@ export default function ReportingCategoriesPage() {
               </div>
             )}
           </section>
+
+          {resolvedApplication ? (
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Labels for tagging {kindLabel(kind).toLowerCase()}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Built-in types and custom labels that can be used on vendor bills and related screens for{' '}
+                  {applicationLabel(resolvedApplication)}. Unusable rollups are hidden here and in bill dropdowns.
+                </p>
+              </div>
+              {taggingLoading ? (
+                <div className="flex items-center gap-2 p-6 text-slate-600">
+                  <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                  Loading tagging options…
+                </div>
+              ) : taggingOptions.length === 0 ? (
+                <p className="p-6 text-sm text-slate-500">No tagging options loaded.</p>
+              ) : (
+                <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Standard categories
+                    </h3>
+                    <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto text-sm text-slate-800">
+                      {groupedTaggingOptions.standard.map((o) => (
+                        <li key={o.id} className="rounded-md bg-slate-50 px-2 py-1 font-mono text-xs">
+                          <span className="font-sans font-medium">{o.label}</span>
+                          <span className="ml-2 text-slate-400">{o.id}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Your custom labels
+                    </h3>
+                    {groupedTaggingOptions.custom.length === 0 ? (
+                      <p className="mt-2 text-sm text-slate-500">None yet — add one above.</p>
+                    ) : (
+                      <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto text-sm text-slate-800">
+                        {groupedTaggingOptions.custom.map((o) => (
+                          <li key={o.id} className="rounded-md border border-blue-100 bg-blue-50/60 px-2 py-1">
+                            <span className="font-medium">{o.label}</span>
+                            <span className="ml-2 font-mono text-xs text-slate-500">{o.id}</span>
+                            {o.maps_to_code ? (
+                              <span className="ml-2 text-xs text-slate-500">→ {rollupLabel(o.maps_to_code)}</span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+          ) : null}
 
           <footer className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
             <p className="font-medium text-slate-700">Where these appear</p>

@@ -63,6 +63,15 @@ export default function AquacultureSalesPage() {
     }
   }, [toast])
 
+  const loadIncomeTypes = useCallback(async () => {
+    try {
+      const { data } = await api.get<IncomeTypeOpt[]>('/aquaculture/income-types/')
+      setIncomeTypes(Array.isArray(data) ? data : [])
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Could not load income types'))
+    }
+  }, [toast])
+
   const loadRows = useCallback(async () => {
     setLoading(true)
     try {
@@ -79,6 +88,11 @@ export default function AquacultureSalesPage() {
   useEffect(() => {
     void loadPonds()
   }, [loadPonds])
+
+  useEffect(() => {
+    if (!modal) return
+    void loadIncomeTypes()
+  }, [modal, loadIncomeTypes])
 
   useEffect(() => {
     const raw = searchParams.get('pond_id')

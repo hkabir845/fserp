@@ -188,7 +188,8 @@ export function AquacultureWarehouseGroupsPanel(props: { onChanged?: () => void 
                   <ul className="mt-2 space-y-0.5 border-t border-slate-200/80 pt-2 text-xs text-slate-700">
                     {poolRows.map((r) => (
                       <li key={`${r.warehouse_group_id}-${r.item_name}`}>
-                        <span className="font-medium">{r.item_name}</span>: {formatNumber(Number(r.quantity))} {r.unit}{' '}
+                        <span className="font-medium">{r.item_name}</span>: {formatNumber(Number(r.quantity), 2)}{' '}
+                        {r.unit}{' '}
                         <span className="text-slate-500">(pooled)</span>
                       </li>
                     ))}

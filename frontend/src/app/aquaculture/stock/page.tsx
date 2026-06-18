@@ -20,9 +20,11 @@ import {
   Trash2,
   Undo2,
   ArrowRightLeft,
+  Eye,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
+import Modal from '@/components/ui/Modal'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
@@ -33,9 +35,9 @@ import { AquacultureWarehouseGroupsPanel } from '@/components/aquaculture/Aquacu
 import { AquacultureStockLedgerFormModal } from './AquacultureStockLedgerFormModal'
 
 const iconAction =
-  'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent text-slate-600 transition-colors hover:border-slate-200 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:pointer-events-none disabled:opacity-40'
+  'inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:pointer-events-none disabled:opacity-40'
 const iconActionDanger =
-  'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent text-slate-600 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30 disabled:pointer-events-none disabled:opacity-40'
+  'inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-rose-200/80 bg-rose-50/50 text-rose-700 transition-colors hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30 disabled:pointer-events-none disabled:opacity-40'
 
 interface Pond {
   id: number
@@ -218,6 +220,39 @@ interface ConsumptionResponse {
   limit: number
   kinds: RefOpt[]
 }
+
+type PondWhReceipt = {
+  id: number
+  receipt_number: string
+  created_at: string | null
+  from_station_id: number
+  from_station_name: string
+  pond_id: number
+  pond_name: string
+  total_value?: string
+  lines: { item_id: number; item_name: string; quantity: string; line_value?: string }[]
+}
+
+type PondWhInterTransfer = {
+  id: number
+  transfer_number: string
+  created_at: string | null
+  from_pond_id: number
+  from_pond_name: string
+  to_pond_id: number
+  to_pond_name: string
+  memo?: string
+  total_value?: string
+  lines: { item_id: number; item_name: string; quantity: string; unit?: string; line_value?: string }[]
+}
+
+type WhMovementRow =
+  | { kind: 'shop_to_pond'; sortAt: string; receipt: PondWhReceipt }
+  | { kind: 'pond_to_pond'; sortAt: string; transfer: PondWhInterTransfer }
+
+type WhReverseTarget =
+  | { kind: 'shop_to_pond'; id: number; label: string }
+  | { kind: 'pond_to_pond'; id: number; label: string }
 
 const WH_POS_GROUP_LABEL: Record<string, string> = {
   feed: 'Feed',
@@ -459,7 +494,7 @@ function AquacultureStockPageContent() {
   const [ledgerQuery, setLedgerQuery] = useState('')
   const [mainTab, setMainTab] = useState<'fish' | 'warehouse'>('fish')
   const [fishSubTab, setFishSubTab] = useState<'manual' | 'movements'>('manual')
-  const [whSubTab, setWhSubTab] = useState<'on_hand' | 'consumed'>('on_hand')
+  const [whSubTab, setWhSubTab] = useState<'on_hand' | 'movements' | 'consumed'>('on_hand')
   const [whRows, setWhRows] = useState<WarehouseMatrixRow[]>([])
   const [whLoading, setWhLoading] = useState(false)
   const [whPond, setWhPond] = useState('')
@@ -485,6 +520,19 @@ function AquacultureStockPageContent() {
   const [conFrom, setConFrom] = useState('')
   const [conTo, setConTo] = useState('')
   const [conQuery, setConQuery] = useState('')
+  const [whReceipts, setWhReceipts] = useState<PondWhReceipt[]>([])
+  const [whInterTransfers, setWhInterTransfers] = useState<PondWhInterTransfer[]>([])
+  const [whMovementsLoading, setWhMovementsLoading] = useState(false)
+  const [viewWhMovement, setViewWhMovement] = useState<WhMovementRow | null>(null)
+  const [editingWhReceipt, setEditingWhReceipt] = useState<PondWhReceipt | null>(null)
+  const [editingWhTransfer, setEditingWhTransfer] = useState<PondWhInterTransfer | null>(null)
+  const [whReverseBusyId, setWhReverseBusyId] = useState<string | null>(null)
+  const [confirmWhReverse, setConfirmWhReverse] = useState<WhReverseTarget | null>(null)
+  const [viewConsumption, setViewConsumption] = useState<ConsumptionRow | null>(null)
+  const [editConsumption, setEditConsumption] = useState<ConsumptionRow | null>(null)
+  const [consumptionEditForm, setConsumptionEditForm] = useState({ amount: '', memo: '', feed_weight_kg: '' })
+  const [consumptionEditSaving, setConsumptionEditSaving] = useState(false)
+  const [viewLedgerRow, setViewLedgerRow] = useState<LedgerRow | null>(null)
 
   const replaceFishSpeciesQuery = useCallback(
     (speciesCode: string) => {
@@ -687,6 +735,41 @@ function AquacultureStockPageContent() {
     }
   }, [toast, whPond])
 
+  const loadWhMovements = useCallback(async () => {
+    setWhMovementsLoading(true)
+    try {
+      const [rcRes, trRes] = await Promise.all([
+        api.get<PondWhReceipt[]>('/inventory/pond-warehouse-receipts/').catch(() => ({ data: [] })),
+        api
+          .get<PondWhInterTransfer[]>('/aquaculture/pond-warehouse-inter-pond-transfers/')
+          .catch(() => ({ data: [] })),
+      ])
+      setWhReceipts(Array.isArray(rcRes.data) ? rcRes.data : [])
+      setWhInterTransfers(Array.isArray(trRes.data) ? trRes.data : [])
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Could not load warehouse movements'))
+      setWhReceipts([])
+      setWhInterTransfers([])
+    } finally {
+      setWhMovementsLoading(false)
+    }
+  }, [toast])
+
+  const whMovementRows = useMemo((): WhMovementRow[] => {
+    const pid = whPond.trim() ? parseInt(whPond, 10) : NaN
+    const filterPond = Number.isFinite(pid) && pid > 0 ? pid : null
+    const rows: WhMovementRow[] = []
+    for (const r of whReceipts) {
+      if (filterPond != null && r.pond_id !== filterPond) continue
+      rows.push({ kind: 'shop_to_pond', sortAt: r.created_at || '', receipt: r })
+    }
+    for (const t of whInterTransfers) {
+      if (filterPond != null && t.from_pond_id !== filterPond && t.to_pond_id !== filterPond) continue
+      rows.push({ kind: 'pond_to_pond', sortAt: t.created_at || '', transfer: t })
+    }
+    return rows.sort((a, b) => b.sortAt.localeCompare(a.sortAt))
+  }, [whReceipts, whInterTransfers, whPond])
+
   const filteredLedgerRows = useMemo(() => {
     const q = ledgerQuery.trim().toLowerCase()
     if (!q) return rows
@@ -736,6 +819,21 @@ function AquacultureStockPageContent() {
   const filteredWhSummary = useMemo(() => {
     const ponds = new Set(filteredWhRows.map((r) => r.pond_id))
     return { lineCount: filteredWhRows.length, pondCount: ponds.size }
+  }, [filteredWhRows])
+
+  const filteredWhTotals = useMemo(() => {
+    let quantity = 0
+    let value = 0
+    for (const r of filteredWhRows) {
+      const q = Number(r.quantity) || 0
+      const uc = Number(r.unit_cost) || 0
+      quantity += q
+      if (Number.isFinite(q) && Number.isFinite(uc)) value += q * uc
+    }
+    return {
+      quantity: Number(quantity.toFixed(2)),
+      value: Number(value.toFixed(2)),
+    }
   }, [filteredWhRows])
 
   const filteredMovements = useMemo(() => {
@@ -874,8 +972,9 @@ function AquacultureStockPageContent() {
   useEffect(() => {
     if (mainTab !== 'warehouse') return
     if (whSubTab === 'on_hand') void loadWarehouseMatrix()
+    else if (whSubTab === 'movements') void loadWhMovements()
     else void loadConsumption()
-  }, [mainTab, whSubTab, loadWarehouseMatrix, loadConsumption])
+  }, [mainTab, whSubTab, loadWarehouseMatrix, loadWhMovements, loadConsumption])
 
   useEffect(() => {
     if (mainTab !== 'fish' || fishSubTab !== 'movements') return
@@ -899,6 +998,60 @@ function AquacultureStockPageContent() {
   }, [posPond])
 
   const sym = getCurrencySymbol(currency)
+
+  const executeWhReverse = async () => {
+    const t = confirmWhReverse
+    if (!t) return
+    const busyKey = `${t.kind}-${t.id}`
+    setWhReverseBusyId(busyKey)
+    try {
+      if (t.kind === 'shop_to_pond') {
+        await api.post(`/inventory/pond-warehouse-receipts/${t.id}/reverse/`)
+        toast.success('Receipt reversed — stock returned to the shop.')
+      } else {
+        await api.delete(`/aquaculture/pond-warehouse-inter-pond-transfers/${t.id}/`)
+        toast.success('Transfer reversed — stock returned to the source pond.')
+      }
+      setConfirmWhReverse(null)
+      void loadWhMovements()
+      void loadWarehouseMatrix()
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Could not reverse'))
+    } finally {
+      setWhReverseBusyId(null)
+    }
+  }
+
+  const saveConsumptionEdit = async () => {
+    const r = editConsumption
+    if (!r) return
+    setConsumptionEditSaving(true)
+    try {
+      const body: Record<string, string> = { memo: consumptionEditForm.memo }
+      if (consumptionEditForm.amount.trim()) body.amount = consumptionEditForm.amount.trim()
+      if (r.kind === 'feed' && consumptionEditForm.feed_weight_kg.trim()) {
+        body.feed_weight_kg = consumptionEditForm.feed_weight_kg.trim()
+      }
+      await api.put(`/aquaculture/expenses/${r.id}/`, body)
+      toast.success('Consumption updated — stock and COGS refreshed.')
+      setEditConsumption(null)
+      void loadConsumption()
+      if (whSubTab === 'on_hand') void loadWarehouseMatrix()
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Could not save'))
+    } finally {
+      setConsumptionEditSaving(false)
+    }
+  }
+
+  const openEditConsumption = (r: ConsumptionRow) => {
+    setEditConsumption(r)
+    setConsumptionEditForm({
+      amount: String(r.amount || ''),
+      memo: r.memo || '',
+      feed_weight_kg: r.feed_weight_kg ? String(r.feed_weight_kg) : '',
+    })
+  }
 
   const openNew = () => {
     setEditingRow(null)
@@ -1135,7 +1288,7 @@ function AquacultureStockPageContent() {
           </div>
         </div>
       ) : (
-        <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
               <Package className="h-3.5 w-3.5 text-teal-700" aria-hidden />
@@ -1167,11 +1320,27 @@ function AquacultureStockPageContent() {
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
               <ListOrdered className="h-3.5 w-3.5 text-teal-700" aria-hidden />
-              Book value
+              On hand total
             </div>
-            <p className="mt-2 text-sm leading-snug text-slate-600">
-              Extended value uses average unit cost for reference. Actual COGS posts when you consume stock or apply
-              feeding advice.
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+              {whLoading ? '—' : formatNumber(filteredWhTotals.quantity, 2)}
+            </p>
+            <p className="mt-0.5 text-sm text-slate-600">
+              {whSearch.trim() || whPosCategory || whPond
+                ? 'Sum of filtered quantities (units vary by SKU)'
+                : 'Sum of on-hand quantities (units vary by SKU)'}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <BarChart3 className="h-3.5 w-3.5 text-teal-700" aria-hidden />
+              Value total
+            </div>
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+              {whLoading ? '—' : `${sym}${formatNumber(filteredWhTotals.value, 2)}`}
+            </p>
+            <p className="mt-0.5 text-sm text-slate-600">
+              Extended value at average unit cost (reference until consumed)
             </p>
           </div>
         </div>
@@ -1756,11 +1925,20 @@ function AquacultureStockPageContent() {
                           >
                             <button
                               type="button"
+                              className={iconAction}
+                              title="View entry details"
+                              aria-label={`View ledger entry ${r.id}`}
+                              onClick={() => setViewLedgerRow(r)}
+                            >
+                              <Eye className="h-5 w-5" aria-hidden />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => openEdit(r)}
                               className={iconAction}
                               title={r.journal_entry_id ? 'Edit memo (GL-linked row)' : 'Edit entry'}
                             >
-                              <Pencil className="h-4 w-4" aria-hidden />
+                              <Pencil className="h-5 w-5" aria-hidden />
                               <span className="sr-only">Edit</span>
                             </button>
                             <button
@@ -1769,7 +1947,7 @@ function AquacultureStockPageContent() {
                               className={iconActionDanger}
                               title="Rollback entry — reverse deltas and remove automatic GL if applicable"
                             >
-                              <Undo2 className="h-4 w-4" aria-hidden />
+                              <Undo2 className="h-5 w-5" aria-hidden />
                               <span className="sr-only">Rollback entry</span>
                             </button>
                           </div>
@@ -2040,6 +2218,22 @@ function AquacultureStockPageContent() {
             <button
               type="button"
               role="tab"
+              aria-selected={whSubTab === 'movements'}
+              onClick={() => setWhSubTab('movements')}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                whSubTab === 'movements'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <ArrowRightLeft className="h-3.5 w-3.5 text-current opacity-90" aria-hidden />
+                Movements
+              </span>
+            </button>
+            <button
+              type="button"
+              role="tab"
               aria-selected={whSubTab === 'consumed'}
               onClick={() => setWhSubTab('consumed')}
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
@@ -2070,7 +2264,10 @@ function AquacultureStockPageContent() {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setInterPondOpen(true)}
+                  onClick={() => {
+                    setEditingWhTransfer(null)
+                    setInterPondOpen(true)
+                  }}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
                 >
                   <ArrowRightLeft className="h-4 w-4" aria-hidden />
@@ -2078,7 +2275,10 @@ function AquacultureStockPageContent() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAddWhOpen(true)}
+                  onClick={() => {
+                    setEditingWhReceipt(null)
+                    setAddWhOpen(true)
+                  }}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800"
                 >
                   <Plus className="h-4 w-4" aria-hidden />
@@ -2198,7 +2398,7 @@ function AquacultureStockPageContent() {
                           <td className="py-2 pr-4 text-slate-600">{warehouseShelfLabel(r.pos_category)}</td>
                           <td className="py-2 pr-4 text-slate-600">{r.reporting_category}</td>
                           <td className="py-2 pr-4 text-right tabular-nums text-slate-800">
-                            {formatNumber(q, 4)} {r.unit}
+                            {formatNumber(q, 2)} {r.unit}
                           </td>
                           <td className="py-2 pr-4 text-right tabular-nums text-slate-700">
                             {ext != null && Number.isFinite(ext) ? `${sym}${formatNumber(ext, 2)}` : '—'}
@@ -2215,11 +2415,157 @@ function AquacultureStockPageContent() {
                       )
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-slate-900">
+                      <td className="py-2.5 pr-4" colSpan={5}>
+                        Total ({filteredWhRows.length} {filteredWhRows.length === 1 ? 'line' : 'lines'})
+                      </td>
+                      <td
+                        className="py-2.5 pr-4 text-right tabular-nums"
+                        title="Sum of quantities; units may differ by SKU"
+                      >
+                        {formatNumber(filteredWhTotals.quantity, 2)}
+                      </td>
+                      <td className="py-2.5 pr-4 text-right tabular-nums">
+                        {sym}
+                        {formatNumber(filteredWhTotals.value, 2)}
+                      </td>
+                      <td className="py-2.5" />
+                    </tr>
+                  </tfoot>
                 </table>
               )}
             </div>
           </section>
           </>
+          ) : null}
+
+          {whSubTab === 'movements' ? (
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm mt-4">
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Warehouse movements</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Shop → pond receipts and pond-to-pond reallocations. Edit reverses the prior move and applies your
+                    changes on both locations; reverse returns stock to the source.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadWhMovements()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+                >
+                  <RefreshCw className="h-4 w-4" aria-hidden />
+                  Refresh
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                {whMovementsLoading ? (
+                  <p className="py-8 text-center text-sm text-slate-500">Loading movements…</p>
+                ) : whMovementRows.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-slate-500">No warehouse movements yet for this filter.</p>
+                ) : (
+                  <table className="min-w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                        <th className="py-2 pr-4">When</th>
+                        <th className="py-2 pr-4">Type</th>
+                        <th className="py-2 pr-4">#</th>
+                        <th className="py-2 pr-4">Route</th>
+                        <th className="py-2 pr-4">Lines</th>
+                        <th className="py-2 pr-4 text-right">Value</th>
+                        <th className="py-2 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {whMovementRows.map((row) => {
+                        const isReceipt = row.kind === 'shop_to_pond'
+                        const doc = isReceipt ? row.receipt : row.transfer
+                        const docNum = isReceipt
+                          ? row.receipt.receipt_number || `PWR-${row.receipt.id}`
+                          : row.transfer.transfer_number || `PWIP-${row.transfer.id}`
+                        const route = isReceipt
+                          ? `${row.receipt.from_station_name} → ${row.receipt.pond_name}`
+                          : `${row.transfer.from_pond_name} → ${row.transfer.to_pond_name}`
+                        const lines = doc.lines?.map((l) => `${l.item_name} (${l.quantity})`).join(' · ') || '—'
+                        const val = doc.total_value
+                        const busyKey = `${row.kind}-${doc.id}`
+                        return (
+                          <tr key={busyKey} className="border-b border-slate-100 hover:bg-slate-50/80">
+                            <td className="py-2 pr-4 whitespace-nowrap text-slate-600">
+                              {doc.created_at ? formatDateOnly(doc.created_at) : '—'}
+                            </td>
+                            <td className="py-2 pr-4 text-slate-700">
+                              {isReceipt ? 'Shop → pond' : 'Pond → pond'}
+                            </td>
+                            <td className="py-2 pr-4 font-mono text-xs">{docNum}</td>
+                            <td className="py-2 pr-4 text-slate-800">{route}</td>
+                            <td className="max-w-xs py-2 pr-4 text-slate-600">
+                              <span className="line-clamp-2">{lines}</span>
+                            </td>
+                            <td className="py-2 pr-4 text-right tabular-nums font-medium">
+                              {val ? `${sym}${formatNumber(Number(val), 2)}` : '—'}
+                            </td>
+                            <td className="py-2 text-right">
+                              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  className={iconAction}
+                                  title="View details"
+                                  aria-label={`View ${docNum}`}
+                                  onClick={() => setViewWhMovement(row)}
+                                >
+                                  <Eye className="h-5 w-5" aria-hidden />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={iconAction}
+                                  title="Edit — reverses prior move, then applies your changes"
+                                  aria-label={`Edit ${docNum}`}
+                                  onClick={() => {
+                                    if (isReceipt) {
+                                      setEditingWhTransfer(null)
+                                      setEditingWhReceipt(row.receipt)
+                                      setAddWhOpen(true)
+                                    } else {
+                                      setEditingWhReceipt(null)
+                                      setEditingWhTransfer(row.transfer)
+                                      setInterPondOpen(true)
+                                    }
+                                  }}
+                                >
+                                  <Pencil className="h-5 w-5" aria-hidden />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={iconActionDanger}
+                                  disabled={whReverseBusyId === busyKey}
+                                  title={
+                                    isReceipt
+                                      ? 'Reverse — return stock to shop (fails if pond consumed it)'
+                                      : 'Reverse — return stock to source pond'
+                                  }
+                                  aria-label={`Reverse ${docNum}`}
+                                  onClick={() =>
+                                    setConfirmWhReverse({
+                                      kind: row.kind,
+                                      id: doc.id,
+                                      label: docNum,
+                                    })
+                                  }
+                                >
+                                  <Trash2 className="h-5 w-5" aria-hidden />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </section>
           ) : null}
 
           {whSubTab === 'consumed' ? (
@@ -2398,16 +2744,36 @@ function AquacultureStockPageContent() {
                                 {memoShort || '—'}
                               </td>
                               <td className="px-2 py-2 text-center">
-                                <button
-                                  type="button"
-                                  disabled={consumptionDeleteBusyId === r.id}
-                                  onClick={() => void deleteConsumptionRow(r)}
-                                  className={iconActionDanger}
-                                  title="Delete and reverse stock / COGS"
-                                  aria-label={`Delete ${r.kind_label} on ${r.pond_name}`}
-                                >
-                                  <Trash2 className="h-4 w-4" aria-hidden />
-                                </button>
+                                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    className={iconAction}
+                                    title="View consumption details"
+                                    aria-label={`View ${r.kind_label} on ${r.pond_name}`}
+                                    onClick={() => setViewConsumption(r)}
+                                  >
+                                    <Eye className="h-5 w-5" aria-hidden />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={iconAction}
+                                    title="Edit amount / memo — reverses and reposts COGS & stock"
+                                    aria-label={`Edit ${r.kind_label} on ${r.pond_name}`}
+                                    onClick={() => openEditConsumption(r)}
+                                  >
+                                    <Pencil className="h-5 w-5" aria-hidden />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={consumptionDeleteBusyId === r.id}
+                                    onClick={() => void deleteConsumptionRow(r)}
+                                    className={iconActionDanger}
+                                    title="Delete and reverse stock / COGS"
+                                    aria-label={`Delete ${r.kind_label} on ${r.pond_name}`}
+                                  >
+                                    <Trash2 className="h-5 w-5" aria-hidden />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           )
@@ -2535,20 +2901,237 @@ function AquacultureStockPageContent() {
 
       <PondWarehouseAddStockModal
         open={addWhOpen}
-        onClose={() => setAddWhOpen(false)}
+        onClose={() => {
+          setAddWhOpen(false)
+          setEditingWhReceipt(null)
+        }}
         initialPondId={whPond ? parseInt(whPond, 10) : null}
+        editingReceipt={
+          editingWhReceipt
+            ? {
+                id: editingWhReceipt.id,
+                from_station_id: editingWhReceipt.from_station_id,
+                pond_id: editingWhReceipt.pond_id,
+                lines: editingWhReceipt.lines.map((l) => ({
+                  item_id: l.item_id,
+                  quantity: String(l.quantity),
+                })),
+              }
+            : null
+        }
         onSuccess={() => {
-          if (mainTab === 'warehouse' && whSubTab === 'on_hand') void loadWarehouseMatrix()
+          void loadWarehouseMatrix()
+          void loadWhMovements()
+          setEditingWhReceipt(null)
         }}
       />
       <PondWarehouseInterPondModal
         open={interPondOpen}
-        onClose={() => setInterPondOpen(false)}
+        onClose={() => {
+          setInterPondOpen(false)
+          setEditingWhTransfer(null)
+        }}
         initialFromPondId={whPond ? parseInt(whPond, 10) : null}
+        editingTransfer={
+          editingWhTransfer
+            ? {
+                id: editingWhTransfer.id,
+                from_pond_id: editingWhTransfer.from_pond_id,
+                to_pond_id: editingWhTransfer.to_pond_id,
+                memo: editingWhTransfer.memo,
+                lines: editingWhTransfer.lines.map((l) => ({
+                  item_id: l.item_id,
+                  quantity: String(l.quantity),
+                })),
+              }
+            : null
+        }
         onSuccess={() => {
-          if (mainTab === 'warehouse' && whSubTab === 'on_hand') void loadWarehouseMatrix()
+          void loadWarehouseMatrix()
+          void loadWhMovements()
+          setEditingWhTransfer(null)
         }}
       />
+
+      <Modal
+        isOpen={viewWhMovement != null}
+        onClose={() => setViewWhMovement(null)}
+        title={
+          viewWhMovement?.kind === 'shop_to_pond'
+            ? viewWhMovement.receipt.receipt_number || `PWR-${viewWhMovement.receipt.id}`
+            : viewWhMovement?.kind === 'pond_to_pond'
+              ? viewWhMovement.transfer.transfer_number || `PWIP-${viewWhMovement.transfer.id}`
+              : 'Movement'
+        }
+        size="md"
+      >
+        {viewWhMovement ? (
+          <div className="space-y-3 text-sm">
+            <p className="text-slate-600">
+              {viewWhMovement.kind === 'shop_to_pond' ? 'Shop → pond receipt' : 'Pond → pond transfer'}
+            </p>
+            <p>
+              <span className="font-medium">Route: </span>
+              {viewWhMovement.kind === 'shop_to_pond'
+                ? `${viewWhMovement.receipt.from_station_name} → ${viewWhMovement.receipt.pond_name}`
+                : `${viewWhMovement.transfer.from_pond_name} → ${viewWhMovement.transfer.to_pond_name}`}
+            </p>
+            <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+              {(viewWhMovement.kind === 'shop_to_pond'
+                ? viewWhMovement.receipt.lines
+                : viewWhMovement.transfer.lines
+              ).map((ln) => (
+                <li key={`${ln.item_id}-${ln.quantity}`} className="flex justify-between px-3 py-2">
+                  <span>{ln.item_name}</span>
+                  <span className="tabular-nums">
+                    {ln.quantity}
+                    {ln.line_value ? ` · ${sym}${formatNumber(Number(ln.line_value), 2)}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal isOpen={confirmWhReverse != null} onClose={() => setConfirmWhReverse(null)} title="Reverse movement?" size="sm">
+        {confirmWhReverse ? (
+          <div className="space-y-4 text-sm">
+            <p className="text-slate-600">
+              This returns quantities to the source location. It fails if stock was already consumed at the destination.
+            </p>
+            <p className="font-medium text-slate-900">{confirmWhReverse.label}</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="rounded-lg border px-3 py-2" onClick={() => setConfirmWhReverse(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-rose-700 px-3 py-2 text-white hover:bg-rose-800 disabled:opacity-50"
+                disabled={whReverseBusyId != null}
+                onClick={() => void executeWhReverse()}
+              >
+                Reverse
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal isOpen={viewConsumption != null} onClose={() => setViewConsumption(null)} title="Consumption" size="md">
+        {viewConsumption ? (
+          <div className="space-y-2 text-sm">
+            <p>
+              <span className="font-medium">Date:</span> {formatDateOnly(viewConsumption.entry_date)}
+            </p>
+            <p>
+              <span className="font-medium">Pond:</span> {viewConsumption.pond_name}
+            </p>
+            <p>
+              <span className="font-medium">Type:</span> {viewConsumption.kind_label}
+            </p>
+            <p>
+              <span className="font-medium">COGS:</span> {sym}
+              {formatNumber(Number(viewConsumption.amount), 2)}
+            </p>
+            {viewConsumption.feed_weight_kg ? (
+              <p>
+                <span className="font-medium">Feed kg:</span>{' '}
+                {formatNumber(Number(viewConsumption.feed_weight_kg), 2)}
+              </p>
+            ) : null}
+            {viewConsumption.journal_entry_number ? (
+              <p>
+                <span className="font-medium">Journal:</span> {viewConsumption.journal_entry_number}
+              </p>
+            ) : null}
+            {viewConsumption.memo ? (
+              <p>
+                <span className="font-medium">Memo:</span> {viewConsumption.memo}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal isOpen={editConsumption != null} onClose={() => setEditConsumption(null)} title="Edit consumption" size="md">
+        {editConsumption ? (
+          <div className="space-y-3 text-sm">
+            <p className="text-xs text-slate-500">
+              Saving reverses the prior consumption and reposts COGS / pond warehouse stock with your changes.
+            </p>
+            <label className="block">
+              <span className="text-xs font-medium text-slate-600">COGS amount</span>
+              <input
+                type="text"
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                value={consumptionEditForm.amount}
+                onChange={(e) => setConsumptionEditForm((f) => ({ ...f, amount: e.target.value }))}
+              />
+            </label>
+            {editConsumption.kind === 'feed' ? (
+              <label className="block">
+                <span className="text-xs font-medium text-slate-600">Feed kg</span>
+                <input
+                  type="text"
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                  value={consumptionEditForm.feed_weight_kg}
+                  onChange={(e) => setConsumptionEditForm((f) => ({ ...f, feed_weight_kg: e.target.value }))}
+                />
+              </label>
+            ) : null}
+            <label className="block">
+              <span className="text-xs font-medium text-slate-600">Memo</span>
+              <textarea
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                rows={3}
+                value={consumptionEditForm.memo}
+                onChange={(e) => setConsumptionEditForm((f) => ({ ...f, memo: e.target.value }))}
+              />
+            </label>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" className="rounded-lg border px-3 py-2" onClick={() => setEditConsumption(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={consumptionEditSaving}
+                className="rounded-lg bg-teal-700 px-3 py-2 text-white hover:bg-teal-800 disabled:opacity-50"
+                onClick={() => void saveConsumptionEdit()}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal isOpen={viewLedgerRow != null} onClose={() => setViewLedgerRow(null)} title="Ledger entry" size="md">
+        {viewLedgerRow ? (
+          <div className="space-y-2 text-sm">
+            <p>
+              <span className="font-medium">Date:</span> {formatDateOnly(viewLedgerRow.entry_date)}
+            </p>
+            <p>
+              <span className="font-medium">Pond:</span> {viewLedgerRow.pond_name}
+            </p>
+            <p>
+              <span className="font-medium">Kind:</span> {viewLedgerRow.entry_kind_label}
+            </p>
+            <p>
+              <span className="font-medium">Δ fish:</span> {formatNumber(viewLedgerRow.fish_count_delta, 0)}
+            </p>
+            <p>
+              <span className="font-medium">Δ kg:</span> {formatNumber(Number(viewLedgerRow.weight_kg_delta), 2)}
+            </p>
+            {viewLedgerRow.memo ? (
+              <p>
+                <span className="font-medium">Memo:</span> {viewLedgerRow.memo}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

@@ -15,6 +15,8 @@ from api.services.tenant_reporting_categories import (
     KIND_INCOME,
     list_map_target_choices,
     merged_fuel_station_expense_category_list_for_api,
+    merged_fuel_station_income_category_list_for_api,
+    merged_reporting_tagging_options_for_api,
     next_auto_tenant_reporting_category_code,
     validate_maps_to,
     validate_tenant_code_not_builtin_conflict,
@@ -191,7 +193,12 @@ def reporting_category_detail(request, category_id: int):
         r.label = lab[:200]
     if "maps_to_code" in body:
         maps_to = (body.get("maps_to_code") or "").strip()
-        merr = validate_maps_to(application=r.application, kind=r.kind, maps_to_code=maps_to)
+        merr = validate_maps_to(
+            application=r.application,
+            kind=r.kind,
+            maps_to_code=maps_to,
+            previous_maps_to_code=old_maps_to_code,
+        )
         if merr:
             return JsonResponse({"detail": merr}, status=400)
         r.maps_to_code = maps_to
@@ -228,6 +235,42 @@ def fuel_station_expense_categories(request):
     try:
         ensure_fuel_station_reporting_rollup_accounts(request.company_id)
         rows = merged_fuel_station_expense_category_list_for_api(request.company_id)
+    except (ProgrammingError, OperationalError) as exc:
+        return _db_error_response(exc)
+    return JsonResponse(rows, safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def reporting_category_tagging_options(request):
+    """Merged built-in + tenant labels for expense/income tagging dropdowns."""
+    app = (request.GET.get("application") or "").strip().lower()
+    kind = (request.GET.get("kind") or "").strip().lower()
+    if app not in (APP_AQUACULTURE, APP_FUEL_STATION):
+        return JsonResponse({"detail": "application must be aquaculture or fuel_station"}, status=400)
+    if kind not in (KIND_EXPENSE, KIND_INCOME):
+        return JsonResponse({"detail": "kind must be expense or income"}, status=400)
+    try:
+        rows = merged_reporting_tagging_options_for_api(
+            company_id=request.company_id,
+            application=app,
+            kind=kind,
+        )
+    except (ProgrammingError, OperationalError) as exc:
+        return _db_error_response(exc)
+    return JsonResponse({"options": rows})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def fuel_station_income_categories(request):
+    """Merged built-in + tenant fuel-station income categories for tagging."""
+    try:
+        rows = merged_fuel_station_income_category_list_for_api(request.company_id)
     except (ProgrammingError, OperationalError) as exc:
         return _db_error_response(exc)
     return JsonResponse(rows, safe=False)

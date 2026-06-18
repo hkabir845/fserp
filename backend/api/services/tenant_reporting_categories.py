@@ -61,8 +61,8 @@ FUEL_STATION_INCOME_MAP_TARGETS: tuple[tuple[str, str], ...] = (
 
 FUEL_STATION_EXPENSE_MAP_HINTS: dict[str, str] = {
     "operating": (
-        "General station overhead not covered by a dedicated rollup below — security contracts, misc admin, "
-        "and catch-all site costs. Default GL 6920."
+        "General station overhead — security contracts, casual day labor, misc admin, and catch-all site costs. "
+        "Default GL 6920."
     ),
     "payroll": "Gross wages and salaries for station staff. Default GL 6400.",
     "rent": "Site lease, land rent, and building occupancy. Default GL 6200.",
@@ -114,7 +114,7 @@ AQUACULTURE_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Security & compliance", ("security", "insurance", "licenses_permits", "predator_control")),
     ("Finance & professional", ("bank_charges", "professional_fees", "communication")),
     ("Mortality & shrinkage", ("mortality",)),
-    ("Operations", ("fisherman", "other")),
+    ("Operations", ("fisherman", "day_labor", "other")),
     ("System (automatic)", ("vendor_bill_pond",)),
 )
 AQUACULTURE_INCOME_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -188,13 +188,17 @@ _AQUACULTURE_EXPENSE_SUPPLEMENTAL_HINTS: dict[str, str] = {
     "professional_fees": "Accounting, audit, legal, and consulting fees.",
     "communication": "Mobile airtime and internet for pond site offices.",
     "fisherman": "Harvest crew or contract fisherman payments tied to pond operations.",
+    "day_labor": (
+        "Daily hired workers and short-term labor on vendor bills — not employees. "
+        "Same ordinary AP flow as electricity or repairs: bill, tag pond, pay."
+    ),
     "transportation": "Fish hauling vehicles, fuel, drivers, and logistics between sites or to market.",
     "fish_haul_supplies": (
         "Ice blocks, oxygen cylinders, saline, and live-haul consumables for moving fish between ponds or to buyers."
     ),
     "office_supplies": "Paper, pens, printer supplies, and small admin items for the pond site office.",
     "meals_entertainment": "Site meals for workers and modest entertainment — not payroll wages.",
-    "worker_salary": "Pond workers, casual labour, and harvest crew wages — prefer HR payroll when posting to GL.",
+    "worker_salary": "Permanent staff wages only — use HR Payroll, not vendor bills or custom labels.",
 }
 AQUACULTURE_INCOME_TYPE_HINTS: dict[str, str] = {
     "fish_harvest_sale": "Primary table-fish or market harvest revenue from the pond.",
@@ -346,13 +350,7 @@ def manual_aquaculture_expense_category_change_allowed_for_company(
         return True, None
     r = tenant_expense_row(company_id, APP_AQUACULTURE, new_category)
     if r:
-        mapped = (r.maps_to_code or "").strip()
-        if mapped in MANUAL_AQUACULTURE_EXPENSE_CATEGORY_CODES:
-            return True, None
-        return (
-            False,
-            "This company-defined category rolls up to a built-in type that cannot be used for manual pond costs.",
-        )
+        return True, None
     if old_category == new_category:
         return True, None
     return manual_aquaculture_expense_category_change_allowed(
@@ -390,13 +388,33 @@ def normalize_income_type_for_company(company_id: int, raw: str | None) -> tuple
     return None, f"Unknown income_type: {raw!r}. Use a known income type code or a company-defined type."
 
 
-def validate_maps_to(*, application: str, kind: str, maps_to_code: str) -> str | None:
+def validate_maps_to(
+    *,
+    application: str,
+    kind: str,
+    maps_to_code: str,
+    previous_maps_to_code: str | None = None,
+) -> str | None:
     m = (maps_to_code or "").strip()
     if not m:
         return "maps_to_code is required"
     if application == APP_AQUACULTURE:
-        if kind == KIND_EXPENSE and m not in EXPENSE_CATEGORY_CODES:
-            return "maps_to_code must be a built-in aquaculture expense category code"
+        if kind == KIND_EXPENSE:
+            if m not in EXPENSE_CATEGORY_CODES:
+                return "maps_to_code must be a built-in aquaculture expense category code"
+            from api.services.aquaculture_bill_defaults import (
+                TENANT_BILL_AQUACULTURE_EXPENSE_BLOCKED_MAPS,
+            )
+
+            if m in TENANT_BILL_AQUACULTURE_EXPENSE_BLOCKED_MAPS:
+                prev = (previous_maps_to_code or "").strip()
+                if prev and m == prev:
+                    return None
+                return (
+                    f'Rollup "{m}" cannot be used for custom expense labels '
+                    "(not available on vendor bills). For day labor use Day & contract labor; "
+                    "for staff wages use HR Payroll."
+                )
         if kind == KIND_INCOME and m not in INCOME_TYPE_CODES:
             return "maps_to_code must be a built-in aquaculture income type code"
         return None
@@ -465,10 +483,16 @@ def list_map_target_choices(*, application: str, kind: str, company_id: int | No
         )
 
         if kind == KIND_EXPENSE:
+            from api.services.aquaculture_bill_defaults import (
+                TENANT_BILL_AQUACULTURE_EXPENSE_BLOCKED_MAPS,
+            )
+
             groups = _group_lookup(AQUACULTURE_EXPENSE_MAP_GROUPS)
             group_order = tuple(g for g, _ in AQUACULTURE_EXPENSE_MAP_GROUPS)
             rows: list[dict] = []
             for code, label in AQUACULTURE_EXPENSE_CATEGORY_CHOICES:
+                if code in TENANT_BILL_AQUACULTURE_EXPENSE_BLOCKED_MAPS:
+                    continue
                 hint = EXPENSE_CATEGORY_EXTRA_HELP.get(code) or _AQUACULTURE_EXPENSE_SUPPLEMENTAL_HINTS.get(code)
                 row: dict = {
                     "id": code,
@@ -543,6 +567,7 @@ def merged_aquaculture_expense_category_list_for_api(company_id: int) -> list[di
     from api.models import ChartOfAccount, TenantReportingCategory
     from api.services.aquaculture_bill_defaults import (
         BILL_AQUACULTURE_EXPENSE_CATEGORY_CODES,
+        TENANT_BILL_AQUACULTURE_EXPENSE_BLOCKED_MAPS,
         chart_account_id_for_aquaculture_expense_category,
     )
     from api.services.aquaculture_constants import (
@@ -553,19 +578,31 @@ def merged_aquaculture_expense_category_list_for_api(company_id: int) -> list[di
     from api.services.aquaculture_cost_per_kg import aquaculture_expense_category_to_cost_bucket
 
     def _row(*, code: str, label: str, tenant_defined: bool, maps_to: str | None) -> dict:
-        builtin = maps_to or code
+        builtin = (maps_to or code).strip() if tenant_defined else code
         coa_code = coa_account_code_for_aquaculture_expense_category(builtin, company_id=company_id)
         coa_id = chart_account_id_for_aquaculture_expense_category(company_id, builtin)
         coa_name = ""
         if coa_id:
             acc = ChartOfAccount.objects.filter(pk=coa_id, company_id=company_id).first()
             coa_name = (acc.account_name or "").strip() if acc else ""
+        if tenant_defined:
+            bill_allowed = builtin not in TENANT_BILL_AQUACULTURE_EXPENSE_BLOCKED_MAPS
+        else:
+            bill_allowed = builtin in BILL_AQUACULTURE_EXPENSE_CATEGORY_CODES
+        disallowed_reason: str | None = None
+        if tenant_defined and not bill_allowed:
+            disallowed_reason = (
+                EXPENSE_CATEGORY_EXTRA_HELP.get(builtin)
+                or f'This label rolls up to "{builtin}", which cannot be used on vendor bills. '
+                "Edit the category and pick a different rollup (e.g. Other, Fisherman, Repair)."
+            )
         return {
             "id": code,
             "label": label,
-            "hint": EXPENSE_CATEGORY_EXTRA_HELP.get(builtin),
+            "hint": EXPENSE_CATEGORY_EXTRA_HELP.get(builtin) if not disallowed_reason else disallowed_reason,
             "manual_create_allowed": code in MANUAL_AQUACULTURE_EXPENSE_CATEGORY_CODES,
-            "bill_create_allowed": builtin in BILL_AQUACULTURE_EXPENSE_CATEGORY_CODES,
+            "bill_create_allowed": bill_allowed,
+            "bill_create_disallowed_reason": disallowed_reason,
             "default_coa_account_code": coa_code,
             "default_coa_account_id": coa_id,
             "default_coa_account_name": coa_name,
@@ -589,6 +626,65 @@ def merged_aquaculture_expense_category_list_for_api(company_id: int) -> list[di
         mapped = (r.maps_to_code or "").strip()
         out.append(
             _row(code=r.code, label=r.label, tenant_defined=True, maps_to=mapped or None)
+        )
+    return out
+
+
+def merged_fuel_station_income_category_list_for_api(company_id: int) -> list[dict]:
+    from api.models import ChartOfAccount, TenantReportingCategory
+    from api.services.fuel_station_coa_constants import (
+        coa_account_code_for_fuel_station_income_rollup,
+        resolve_fuel_station_income_to_rollup,
+    )
+
+    def _row(
+        *,
+        code: str,
+        label: str,
+        tenant_defined: bool,
+        maps_to: str | None,
+        trc_id: int | None,
+    ) -> dict:
+        rollup = resolve_fuel_station_income_to_rollup(company_id, (maps_to or code).strip())
+        coa_code = coa_account_code_for_fuel_station_income_rollup(rollup, company_id=company_id)
+        coa_id = None
+        acc = ChartOfAccount.objects.filter(
+            company_id=company_id, account_code=coa_code, is_active=True
+        ).first()
+        coa_name = (acc.account_name or "").strip() if acc else ""
+        if acc:
+            coa_id = int(acc.id)
+        return {
+            "id": code,
+            "label": label,
+            "tenant_defined": tenant_defined,
+            "maps_to_code": maps_to,
+            "tenant_reporting_category_id": trc_id,
+            "tagging_allowed": True,
+            "default_coa_account_code": coa_code,
+            "default_coa_account_id": coa_id,
+            "default_coa_account_name": coa_name,
+        }
+
+    out: list[dict] = [
+        _row(code=c, label=lbl, tenant_defined=False, maps_to=c, trc_id=None)
+        for c, lbl in FUEL_STATION_INCOME_MAP_TARGETS
+    ]
+    for r in TenantReportingCategory.objects.filter(
+        company_id=company_id,
+        application=APP_FUEL_STATION,
+        kind=KIND_INCOME,
+        is_active=True,
+    ).order_by("sort_order", "code"):
+        mapped = (r.maps_to_code or "").strip() or r.code
+        out.append(
+            _row(
+                code=r.code,
+                label=r.label,
+                tenant_defined=True,
+                maps_to=mapped,
+                trc_id=int(r.id),
+            )
         )
     return out
 
@@ -649,6 +745,21 @@ def merged_fuel_station_expense_category_list_for_api(company_id: int) -> list[d
             )
         )
     return out
+
+
+def merged_reporting_tagging_options_for_api(
+    *, company_id: int, application: str, kind: str
+) -> list[dict]:
+    """Built-in + active tenant labels shown together in expense/income tagging dropdowns."""
+    if application == APP_AQUACULTURE and kind == KIND_EXPENSE:
+        return merged_aquaculture_expense_category_list_for_api(company_id)
+    if application == APP_AQUACULTURE and kind == KIND_INCOME:
+        return merged_aquaculture_income_type_list_for_api(company_id)
+    if application == APP_FUEL_STATION and kind == KIND_EXPENSE:
+        return merged_fuel_station_expense_category_list_for_api(company_id)
+    if application == APP_FUEL_STATION and kind == KIND_INCOME:
+        return merged_fuel_station_income_category_list_for_api(company_id)
+    return []
 
 
 def merged_aquaculture_income_type_list_for_api(company_id: int) -> list[dict]:

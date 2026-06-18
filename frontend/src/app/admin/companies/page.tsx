@@ -851,7 +851,7 @@ function CompaniesPageContent() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex min-h-0 flex-1 overflow-y-auto">
         <div className="w-full min-w-0 p-4 sm:p-6 lg:p-8">
@@ -2465,7 +2465,7 @@ function CompaniesPageContent() {
 
 function CompaniesPageFallback() {
   return (
-    <div className="flex h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">Loading…</div>
     </div>

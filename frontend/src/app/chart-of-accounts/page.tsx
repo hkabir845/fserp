@@ -1169,7 +1169,7 @@ export default function ChartOfAccountsPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-gray-100 page-with-sidebar">
+      <div className="flex h-screen page-with-sidebar">
         <Sidebar />
         <div className="flex-1 overflow-auto app-scroll-pad">
           <div className="flex flex-col justify-center items-center h-64 bg-white rounded-lg shadow">
@@ -1183,7 +1183,7 @@ export default function ChartOfAccountsPage() {
 
   if (error) {
     return (
-      <div className="flex h-screen bg-gray-100 page-with-sidebar">
+      <div className="flex h-screen page-with-sidebar">
         <Sidebar />
         <div className="flex-1 overflow-auto app-scroll-pad">
           <div className="mb-6">
@@ -1208,7 +1208,7 @@ export default function ChartOfAccountsPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto">
         <div className="app-scroll-pad">

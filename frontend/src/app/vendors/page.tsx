@@ -559,7 +559,7 @@ export default function VendorsPage() {
 
   return (
     <CompanyProvider>
-      <div className="flex h-screen bg-gray-100 page-with-sidebar">
+      <div className="flex h-screen page-with-sidebar">
         <Sidebar />
         <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

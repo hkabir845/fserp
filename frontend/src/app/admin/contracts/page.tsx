@@ -516,7 +516,7 @@ function ContractsPageContent() {
 
   if (mode !== 'saas_dashboard') {
     return (
-      <div className="flex h-screen bg-gray-100 page-with-sidebar">
+      <div className="flex h-screen page-with-sidebar">
         <Sidebar />
         <div className="flex-1 overflow-y-auto app-scroll-pad">
           <div className="bg-white rounded-lg shadow app-modal-pad text-center">
@@ -528,7 +528,7 @@ function ContractsPageContent() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-y-auto">
         <div className="app-scroll-pad">

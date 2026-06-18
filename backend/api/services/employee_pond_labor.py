@@ -416,7 +416,7 @@ def ensure_payroll_pond_allocations_before_post(
         if not allocs:
             return warnings, (
                 "Payroll has no pond wage split. Set pond allocations, use Fill from one employee "
-                "for pond staff pay, or Sum from employees for a full payroll run before posting."
+                "for pond staff pay, or Apply one employee before posting."
             )
         if alloc_sum > gross + Decimal("0.02"):
             return warnings, (

@@ -1123,7 +1123,7 @@ export default function InvoicesPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="min-w-0 flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
         <div className="mb-6">

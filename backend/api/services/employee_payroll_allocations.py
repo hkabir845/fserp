@@ -117,7 +117,7 @@ def sync_payroll_employee_allocations_from_hr(
         replace_payroll_employee_allocations(payroll.id, [])
         warnings.append(
             "No employees could be matched to this payroll gross. "
-            "Use Fill from one employee or Sum from employees, or set employee wage rows manually."
+            "Use Fill from one employee, or set employee wage rows manually."
         )
         return [], warnings
 
@@ -215,7 +215,7 @@ def employee_allocations_for_payroll(
     if out and not warnings:
         warnings.append(
             "Employee wage rows are preview-only (from HR). Save amounts or use "
-            "Sum from employees / Fill from one employee to record who is paid on this run."
+            "Fill from one employee to record who is paid on this run."
         )
     return out, "inferred_hr", warnings
 
@@ -284,5 +284,5 @@ def validate_employee_allocations_match_gross(
         )
     return (
         f"Employee wage rows ({alloc_sum}) must match payroll gross ({gross}). "
-        "Adjust employee amounts or use Sum from employees, then save before posting."
+        "Adjust employee amounts for each person paid, then save before posting."
     )

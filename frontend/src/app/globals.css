@@ -49,26 +49,38 @@
   :root {
     /* Sticky POS cart / panels below app header */
     --pos-header-offset: 5.5rem;
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Enterprise SaaS tokens (Fluent / Stripe / QuickBooks-style light workspace) */
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 214 32% 91%;
+    --muted-foreground: 215 16% 40%;
+    --accent: 214 32% 91%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --border: 214 32% 88%;
+    --input: 214 32% 88%;
+    --ring: 221 83% 53%;
     --radius: 0.5rem;
+    /* Sidebar shell — neutral dark nav + blue accent (industry standard for admin ERP) */
+    --sidebar-bg: 222 47% 11%;
+    --sidebar-bg-elevated: 224 71% 4%;
+    --sidebar-border: 217 33% 20%;
+    --sidebar-fg: 210 40% 98%;
+    --sidebar-fg-muted: 215 20% 72%;
+    --sidebar-fg-subtle: 215 16% 52%;
+    --sidebar-hover: 217 33% 17%;
+    --sidebar-accent: 221 83% 53%;
+    --sidebar-accent-fg: 210 40% 98%;
+    --sidebar-search-bg: 217 33% 15%;
     /* Reserve space above Windows taskbar (browsers do not expose it in safe-area). */
     --erp-os-bottom-chrome: 0px;
   }
@@ -141,6 +153,112 @@
   .touch-min {
     @apply min-h-11 min-w-11;
   }
+
+  /* ── ERP app shell (world-standard SaaS layout) ── */
+  .erp-sidebar {
+    @apply text-[hsl(var(--sidebar-fg))];
+    background: linear-gradient(
+      180deg,
+      hsl(var(--sidebar-bg)) 0%,
+      hsl(var(--sidebar-bg-elevated)) 100%
+    );
+    box-shadow: inset -1px 0 0 hsl(var(--sidebar-border) / 0.85);
+  }
+
+  .erp-sidebar-section {
+    border-bottom: 1px solid hsl(var(--sidebar-border) / 0.75);
+    background: hsl(var(--sidebar-bg-elevated) / 0.35);
+  }
+
+  .erp-sidebar-nav-idle {
+    @apply border-transparent transition-colors;
+    color: hsl(var(--sidebar-fg-muted));
+  }
+
+  .erp-sidebar-nav-idle:hover {
+    color: hsl(var(--sidebar-fg));
+    background: hsl(var(--sidebar-hover) / 0.9);
+    border-color: hsl(var(--sidebar-border));
+  }
+
+  .erp-sidebar-nav-active {
+    color: hsl(var(--sidebar-accent-fg));
+    background: hsl(var(--sidebar-accent));
+    border-color: hsl(var(--sidebar-accent));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+  }
+
+  .erp-sidebar-nav-active-saas {
+    @apply border-violet-500 bg-violet-600 text-white shadow-sm;
+  }
+
+  .erp-sidebar-search {
+    border: 1px solid hsl(var(--sidebar-border));
+    background: hsl(var(--sidebar-search-bg) / 0.85);
+    color: hsl(var(--sidebar-fg));
+  }
+
+  .erp-sidebar-search::placeholder {
+    color: hsl(var(--sidebar-fg-subtle));
+  }
+
+  .erp-sidebar-search:focus {
+    outline: none;
+    border-color: hsl(var(--sidebar-accent));
+    box-shadow: 0 0 0 2px hsl(var(--sidebar-accent) / 0.35);
+  }
+
+  .erp-sidebar-label {
+    color: hsl(var(--sidebar-fg-subtle));
+    @apply text-[10px] font-semibold uppercase tracking-wider;
+  }
+
+  .erp-sidebar-sublabel {
+    color: hsl(var(--sidebar-fg-subtle) / 0.85);
+    @apply text-[9px] font-medium uppercase tracking-wider;
+  }
+
+  .erp-sidebar-footer {
+    border-top: 1px solid hsl(var(--sidebar-border) / 0.75);
+    background: hsl(var(--sidebar-bg-elevated) / 0.55);
+  }
+
+  .erp-sidebar-footer-link {
+    color: hsl(var(--sidebar-fg-muted));
+  }
+
+  .erp-sidebar-footer-link:hover {
+    color: hsl(var(--sidebar-fg));
+    background: hsl(var(--sidebar-hover));
+  }
+
+  .erp-sidebar-tabs {
+    background: hsl(var(--sidebar-bg-elevated) / 0.8);
+    box-shadow: inset 0 0 0 1px hsl(var(--sidebar-border) / 0.8);
+  }
+
+  .erp-sidebar-chip {
+    border: 1px solid hsl(var(--sidebar-border) / 0.85);
+    background: hsl(var(--sidebar-search-bg) / 0.85);
+    color: hsl(var(--sidebar-fg));
+  }
+
+  .erp-sidebar-popover {
+    border: 1px solid hsl(var(--sidebar-border));
+    background: hsl(var(--sidebar-hover));
+    color: hsl(var(--sidebar-fg));
+    box-shadow: 0 10px 25px rgb(0 0 0 / 0.25);
+  }
+
+  .erp-sidebar-popover-item:hover {
+    background: hsl(var(--sidebar-bg) / 0.85);
+  }
+
+  .erp-sidebar-popover-heading {
+    border-bottom: 1px solid hsl(var(--sidebar-border));
+    background: hsl(var(--sidebar-bg-elevated) / 0.5);
+    color: hsl(var(--sidebar-fg-subtle));
+  }
 }
 
 /* Custom scrollbar for sidebar */
@@ -149,22 +267,30 @@
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: hsl(224 71% 4%);
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #374151;
+  background: hsl(215 16% 40%);
   border-radius: 3px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: hsl(215 20% 55%);
 }
 
 /* Firefox scrollbar */
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: #374151 #1f2937;
+  scrollbar-color: hsl(215 16% 40%) hsl(224 71% 4%);
+}
+
+.scrollbar-sidebar::-webkit-scrollbar-track {
+  background: hsl(222 47% 11%);
+}
+
+.scrollbar-sidebar {
+  scrollbar-color: hsl(215 16% 40%) hsl(222 47% 11%);
 }
 
 /* App shell: lock viewport height so sidebar + main scroll independently (not the whole page). */
@@ -174,6 +300,7 @@
   width: 100%;
   max-width: 100%;
   overflow: hidden;
+  background-color: hsl(var(--background));
 }
 
 @media (min-width: 768px) {

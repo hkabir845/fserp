@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { Plus, Eye, DollarSign, X, Calendar, FileText, CheckCircle, Clock, XCircle, Edit2, Trash2, BookOpen, RefreshCw, Landmark, ArrowRight, User } from 'lucide-react'
+import { Plus, Eye, DollarSign, X, Calendar, FileText, CheckCircle, Clock, XCircle, Edit2, Trash2, BookOpen, Landmark, ArrowRight, User } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { getCurrencySymbol, formatNumber, formatAmountPlain } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
@@ -85,7 +85,7 @@ function employeeWagesMismatchMessage(sumEmp: number, gross: number): string | n
   if (sumEmp > gross) {
     return `Employee wage rows (${formatNumber(sumEmp)}) exceed total gross (${formatNumber(gross)}). Reduce employee amounts or increase gross pay.`
   }
-  return `Employee wage rows (${formatNumber(sumEmp)}) must match total gross (${formatNumber(gross)}). Adjust employee amounts or use Sum from employees.`
+  return `Employee wage rows (${formatNumber(sumEmp)}) must match total gross (${formatNumber(gross)}). Adjust employee amounts for each person paid on this run.`
 }
 
 function sumEarningInputs(base: string, ot: string, bonus: string, other: string): number {
@@ -986,7 +986,7 @@ export default function PayrollPage() {
           detailStationId === ''
         ) {
           toast.error(
-            'Choose a payroll site (station) for the site/company wage portion (6400), or use Sum from employees to auto-fill.'
+            'Choose a payroll site (station) for the site/company wage portion (6400), or use Apply one employee to auto-fill.'
           )
           setAmountSaving(false)
           return
@@ -1036,27 +1036,6 @@ export default function PayrollPage() {
       showEmployeeAllocationWarnings(data)
       showMixedPayrollInfo(data)
       toast.success('Pond wage splits updated from employee pond assignments')
-    } catch (e) {
-      console.error(e)
-      toast.error(readApiErrorDetail(e) || 'Request failed')
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  const runFromEmployees = async () => {
-    if (!selectedPayroll || selectedPayroll.is_salary_posted) return
-    setActionLoading(true)
-    try {
-      const { data } = await api.post<PayrollRun>(`/payroll/${selectedPayroll.id}/from-employees/`, {})
-      applyPayrollResponseToDetailState(data)
-      showPondAllocationWarnings(data)
-      showEmployeeAllocationWarnings(data)
-      showMixedPayrollInfo(data)
-      fetchPayrolls()
-      toast.success(
-        'Totals and pond wage splits set from active employees (assign wage attribution on each employee first).'
-      )
     } catch (e) {
       console.error(e)
       toast.error(readApiErrorDetail(e) || 'Request failed')
@@ -1252,7 +1231,7 @@ export default function PayrollPage() {
   const totalNet = payrolls.reduce((sum, p) => sum + (Number(p.total_net) || 0), 0)
 
   return (
-    <div className="flex h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto">
         <div className="app-scroll-pad">
@@ -1284,8 +1263,8 @@ export default function PayrollPage() {
               <li>
                 Set <strong>earnings</strong> (base salary, overtime, bonus, other — total gross is their sum),
                 then <strong>deductions / net</strong>. Open <strong>View</strong>, pick <strong>which employees</strong>{' '}
-                are paid on this run, and enter each amount (or use <strong>Sum from employees</strong> for the
-                whole team, <strong>Apply one employee</strong> for a single person). With aquaculture, use{' '}
+                are paid on this run, and enter each amount (or use <strong>Apply one employee</strong> when only one
+                person was paid). With aquaculture, use{' '}
                 <strong>Attribute wages to ponds</strong> for pond workers and shared managers (6712); fuel/shop/office
                 staff stay on site payroll (6400).
               </li>
@@ -2385,15 +2364,6 @@ export default function PayrollPage() {
                           className="rounded-lg bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-300 disabled:opacity-50"
                         >
                           {amountSaving ? 'Saving…' : 'Save amounts'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={runFromEmployees}
-                          disabled={actionLoading}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-blue-800 hover:bg-blue-50 disabled:opacity-50"
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                          Sum from employees
                         </button>
                         <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
                           <div className="min-w-0 sm:max-w-xs">

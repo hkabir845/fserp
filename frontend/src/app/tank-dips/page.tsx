@@ -431,7 +431,7 @@ export default function TankDipsPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-gray-100 page-with-sidebar">
+      <div className="flex h-screen page-with-sidebar">
         <Sidebar />
         <div className="flex-1 overflow-auto app-scroll-pad">
           <div className="text-center">Loading...</div>
@@ -441,7 +441,7 @@ export default function TankDipsPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">

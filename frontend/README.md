@@ -12,7 +12,7 @@
    ```bat
    npm run dev
    ```
-   Uses **Turbopack** (faster than Webpack on this large app). First visit to each route still compiles on demand (often 10–60s); reloads are much faster.
+   Uses **Webpack** (stable on Windows with large pages). First visit to each route still compiles on demand (often 10–60s). For faster reloads when file locks are not an issue, try `npm run dev:turbo`.
 
 3. **Clean restart** (if `.next` is corrupted on Windows):
    ```bat
@@ -24,8 +24,9 @@
 
 | Script | Purpose |
 |--------|---------|
-| `npm run dev` | Turbopack dev server on port 3000 |
-| `npm run dev:webpack` | Webpack dev (slower; fallback) |
+| `npm run dev` | Webpack dev server on port 3000 (default) |
+| `npm run dev:turbo` | Turbopack dev (faster; can hit file-lock errors on Windows) |
+| `npm run dev:webpack` | Same as `npm run dev` |
 | `npm run restart-dev.bat` | Kill :3000, delete `.next`, start dev |
 | `backend\run-dev.bat` | Kill :8000 duplicates, start Django |
 

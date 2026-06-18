@@ -486,7 +486,7 @@ export default function FixedAssetsPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-gray-100 page-with-sidebar">
+      <div className="flex h-screen page-with-sidebar">
         <Sidebar />
         <div className="flex-1 overflow-auto app-scroll-pad flex items-center justify-center text-gray-600">
           Loading fixed assets…
@@ -496,7 +496,7 @@ export default function FixedAssetsPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">

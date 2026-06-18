@@ -236,7 +236,7 @@ export default function MetersPage() {
   })
 
   return (
-    <div className="flex h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto app-scroll-pad">
         <div className="mb-6">

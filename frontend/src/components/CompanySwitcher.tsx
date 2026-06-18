@@ -269,8 +269,8 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
   if (loading) {
     return (
       <div className="relative w-full min-w-0 max-w-full">
-        <div className={`rounded-md border border-gray-700 bg-gray-800/80 ${compact ? 'px-2 py-1' : 'px-3 py-2 sm:px-4'}`}>
-          <span className={`text-gray-500 ${compact ? 'text-[11px]' : 'text-sm text-gray-400'}`}>Loading…</span>
+        <div className={`erp-sidebar-chip rounded-md ${compact ? 'px-2 py-1' : 'px-3 py-2 sm:px-4'}`}>
+          <span className={`text-[hsl(var(--sidebar-fg-muted))] ${compact ? 'text-[11px]' : 'text-sm'}`}>Loading…</span>
         </div>
       </div>
     )
@@ -309,7 +309,7 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
           setIsOpen(!isOpen)
         }}
         title={currentLabel}
-        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md border border-gray-700/80 bg-gray-800/80 text-left hover:border-blue-500/70 focus:outline-none focus:ring-1 focus:ring-blue-500/50 ${
+        className={`erp-sidebar-chip flex w-full min-w-0 items-center gap-1.5 rounded-md text-left hover:border-[hsl(var(--sidebar-accent))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--sidebar-accent)/0.4)] ${
           compact ? 'px-2 py-1' : 'items-start gap-2 px-3 py-2.5 sm:items-center sm:px-4'
         } ${openDisabled ? 'cursor-default opacity-95' : ''}`}
       >
@@ -319,14 +319,14 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
               isMasterCompany ? (
                 <Crown className={`shrink-0 text-yellow-400 ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
               ) : (
-                <Building2 className={`shrink-0 text-gray-400 ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
+                <Building2 className={`shrink-0 text-[hsl(var(--sidebar-fg-muted))] ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
               )
             ) : isSaaSDashboard ? (
-              <Shield className={`shrink-0 text-blue-400 ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
+              <Shield className={`shrink-0 text-[hsl(var(--sidebar-accent))] ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
             ) : isMasterCompany ? (
               <Crown className={`shrink-0 text-yellow-400 ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
             ) : (
-              <Building2 className={`shrink-0 text-gray-400 ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
+              <Building2 className={`shrink-0 text-[hsl(var(--sidebar-fg-muted))] ${compact ? 'h-3 w-3' : 'h-4 w-4'}`} />
             )}
             <span className={`min-w-0 truncate font-medium text-white ${compact ? 'text-[11px]' : 'line-clamp-2 break-words text-sm'}`}>
               {currentLabel}
@@ -340,7 +340,7 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
         </div>
         {!openDisabled && (
           <ChevronDown
-            className={`shrink-0 text-gray-400 transition-transform ${compact ? 'h-3 w-3' : 'mt-0.5 h-4 w-4 sm:mt-0'} ${isOpen ? 'rotate-180' : ''}`}
+            className={`shrink-0 text-[hsl(var(--sidebar-fg-muted))] transition-transform ${compact ? 'h-3 w-3' : 'mt-0.5 h-4 w-4 sm:mt-0'} ${isOpen ? 'rotate-180' : ''}`}
           />
         )}
       </button>
@@ -349,21 +349,21 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
           <div className="fixed inset-0 z-[1000]" onClick={() => setIsOpen(false)} aria-hidden />
           <div
             style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: menuPos.width }}
-            className="z-[1001] max-h-[min(70vh,24rem)] min-w-0 overflow-y-auto rounded-lg border border-gray-700 bg-gray-800 shadow-lg">
+            className="erp-sidebar-popover z-[1001] max-h-[min(70vh,24rem)] min-w-0 overflow-y-auto rounded-lg">
             {switcherMode === 'fleet' && mode === 'saas_dashboard' && (
               <>
                 <button
                   type="button"
                   onClick={() => handleSelect(null)}
-                  className={`flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-gray-700 ${
-                    isSaaSDashboard ? 'border-l-4 border-blue-500 bg-blue-900/50' : ''
+                  className={`erp-sidebar-popover-item flex w-full items-center gap-2 px-4 py-3 text-left ${
+                    isSaaSDashboard ? 'border-l-4 border-[hsl(var(--sidebar-accent))] bg-[hsl(var(--sidebar-bg-elevated)/0.5)]' : ''
                   }`}
                 >
-                  <Shield className="h-4 w-4 shrink-0 text-blue-400" />
-                  <span className="min-w-0 flex-1 font-medium text-white">SaaS Dashboard</span>
-                  {isSaaSDashboard && <span className="ml-auto text-xs text-blue-400">Current</span>}
+                  <Shield className="h-4 w-4 shrink-0 text-[hsl(var(--sidebar-accent))]" />
+                  <span className="min-w-0 flex-1 font-medium text-[hsl(var(--sidebar-fg))]">SaaS Dashboard</span>
+                  {isSaaSDashboard && <span className="ml-auto text-xs text-[hsl(var(--sidebar-accent))]">Current</span>}
                 </button>
-                <div className="border-t border-gray-700" />
+                <div className="border-t border-[hsl(var(--sidebar-border))]" />
               </>
             )}
 
@@ -380,8 +380,8 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
                     type="button"
                     onClick={() => handleSelect(mc)}
                     title={mc.name}
-                    className={`flex w-full flex-col gap-2 px-4 py-3 text-left hover:bg-gray-700 sm:flex-row sm:items-center sm:gap-3 ${
-                      selectedCompany?.id === mc.id ? 'border-l-4 border-blue-500 bg-blue-900/50' : ''
+                    className={`erp-sidebar-popover-item flex w-full flex-col gap-2 px-4 py-3 text-left sm:flex-row sm:items-center sm:gap-3 ${
+                      selectedCompany?.id === mc.id ? 'border-l-4 border-[hsl(var(--sidebar-accent))] bg-[hsl(var(--sidebar-bg-elevated)/0.5)]' : ''
                     }`}
                   >
                     <div className="flex min-w-0 flex-1 items-start gap-2">
@@ -393,19 +393,19 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
                     <div className="flex shrink-0 flex-wrap items-center gap-2 pl-6 sm:ml-auto sm:pl-0">
                       <span className="rounded bg-yellow-900 px-2 py-0.5 text-xs text-yellow-300">Master</span>
                       {selectedCompany?.id === mc.id && (
-                        <span className="text-xs text-blue-400">Current</span>
+                        <span className="text-xs text-[hsl(var(--sidebar-accent))]">Current</span>
                       )}
                     </div>
                   </button>
                 ))}
-                <div className="border-t border-gray-700" />
+                <div className="border-t border-[hsl(var(--sidebar-border))]" />
               </>
             )}
 
             {switcherMode === 'fleet' && (
               <>
-                <div className="border-b border-gray-700 bg-gray-700/50 px-4 py-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                <div className="erp-sidebar-popover-heading px-4 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide">
                     Companies ({regularCompanies.length})
                   </span>
                 </div>
@@ -415,18 +415,18 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
                     key={company.id}
                     onClick={() => handleSelect(company)}
                     title={company.name}
-                    className={`flex w-full flex-col gap-2 px-4 py-3 text-left hover:bg-gray-700 sm:flex-row sm:items-center sm:gap-3 ${
-                      selectedCompany?.id === company.id ? 'border-l-4 border-blue-500 bg-blue-900/50' : ''
+                    className={`erp-sidebar-popover-item flex w-full flex-col gap-2 px-4 py-3 text-left sm:flex-row sm:items-center sm:gap-3 ${
+                      selectedCompany?.id === company.id ? 'border-l-4 border-[hsl(var(--sidebar-accent))] bg-[hsl(var(--sidebar-bg-elevated)/0.5)]' : ''
                     }`}
                   >
                     <div className="flex min-w-0 flex-1 items-start gap-2">
-                      <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                      <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--sidebar-fg-muted))]" />
                       <span className="min-w-0 flex-1 break-words font-medium leading-snug text-white">
                         {company.name}
                       </span>
                     </div>
                     {selectedCompany?.id === company.id && (
-                      <span className="shrink-0 pl-6 text-xs text-blue-400 sm:ml-auto sm:pl-0">Current</span>
+                      <span className="shrink-0 pl-6 text-xs text-[hsl(var(--sidebar-accent))] sm:ml-auto sm:pl-0">Current</span>
                     )}
                   </button>
                 ))}
@@ -435,8 +435,8 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
 
             {switcherMode === 'group' && (
               <>
-                <div className="border-b border-gray-700 bg-gray-700/50 px-4 py-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                <div className="erp-sidebar-popover-heading px-4 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide">
                     Legal entities ({companies.length})
                   </span>
                 </div>
@@ -446,22 +446,22 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
                     key={company.id}
                     onClick={() => handleSelect(company)}
                     title={company.name}
-                    className={`flex w-full flex-col gap-2 px-4 py-3 text-left hover:bg-gray-700 sm:flex-row sm:items-center sm:gap-3 ${
-                      selectedCompany?.id === company.id ? 'border-l-4 border-blue-500 bg-blue-900/50' : ''
+                    className={`erp-sidebar-popover-item flex w-full flex-col gap-2 px-4 py-3 text-left sm:flex-row sm:items-center sm:gap-3 ${
+                      selectedCompany?.id === company.id ? 'border-l-4 border-[hsl(var(--sidebar-accent))] bg-[hsl(var(--sidebar-bg-elevated)/0.5)]' : ''
                     }`}
                   >
                     <div className="flex min-w-0 flex-1 items-start gap-2">
                       {isMasterCompanyRecord(company) ? (
                         <Crown className="mt-0.5 h-4 w-4 shrink-0 text-yellow-400" />
                       ) : (
-                        <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                        <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--sidebar-fg-muted))]" />
                       )}
                       <span className="min-w-0 flex-1 break-words font-medium leading-snug text-white">
                         {company.name}
                       </span>
                     </div>
                     {selectedCompany?.id === company.id && (
-                      <span className="shrink-0 pl-6 text-xs text-blue-400 sm:ml-auto sm:pl-0">Current</span>
+                      <span className="shrink-0 pl-6 text-xs text-[hsl(var(--sidebar-accent))] sm:ml-auto sm:pl-0">Current</span>
                     )}
                   </button>
                 ))}
@@ -469,12 +469,12 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
             )}
 
             {switcherMode === 'fleet' && regularCompanies.length === 0 && masterCompanies.length === 0 && (
-              <div className="space-y-2 px-4 py-3 text-center text-xs leading-snug text-gray-400">
+              <div className="space-y-2 px-4 py-3 text-center text-xs leading-snug text-[hsl(var(--sidebar-fg-muted))]">
                 <p>No companies found.</p>
               </div>
             )}
             {switcherMode === 'fleet' && regularCompanies.length === 0 && masterCompanies.length > 0 && (
-              <div className="px-4 py-2 text-center text-xs text-gray-500">No other tenants</div>
+              <div className="px-4 py-2 text-center text-xs text-[hsl(var(--sidebar-fg-subtle))]">No other tenants</div>
             )}
           </div>
         </>,

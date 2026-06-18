@@ -57,7 +57,7 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <div className="flex h-screen min-h-0 bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen min-h-0 page-with-sidebar">
       <Sidebar />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex-1 min-h-0 overflow-y-auto p-6 md:p-10">

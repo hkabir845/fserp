@@ -118,7 +118,7 @@ function OverviewPageContent() {
   // Also handle case where mode might not be initialized yet
   if (!mode || mode !== 'saas_dashboard') {
     return (
-      <div className="flex h-screen bg-gray-100 page-with-sidebar">
+      <div className="flex h-screen page-with-sidebar">
         <Sidebar />
         <div className="flex min-h-0 flex-1 overflow-y-auto p-4 sm:p-8">
           <div className="w-full rounded-lg bg-white p-6 text-center shadow sm:p-8">
@@ -133,7 +133,7 @@ function OverviewPageContent() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 page-with-sidebar">
+    <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex min-h-0 flex-1 overflow-y-auto">
         <div className="w-full min-w-0 p-4 sm:p-6 lg:p-8">

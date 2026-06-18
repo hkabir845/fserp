@@ -18,12 +18,9 @@ const SIDEBAR_WIDTH_DEFAULT = 256
 const SIDEBAR_WIDTH_MIN = 200
 const SIDEBAR_WIDTH_MAX = 520
 
-const NAV_ITEM_ACTIVE_CLASS =
-  'border-blue-500/50 bg-blue-600/90 text-white'
-const NAV_ITEM_IDLE_CLASS =
-  'border-transparent text-gray-400 hover:bg-gray-800/80 hover:text-gray-200'
-const SAAS_NAV_ITEM_ACTIVE_CLASS =
-  'border-violet-500/50 bg-violet-600/90 text-white'
+const NAV_ITEM_ACTIVE_CLASS = 'erp-sidebar-nav-active'
+const NAV_ITEM_IDLE_CLASS = 'erp-sidebar-nav-idle'
+const SAAS_NAV_ITEM_ACTIVE_CLASS = 'erp-sidebar-nav-active-saas'
 
 type SidebarMode = 'fsms_erp' | 'saas_dashboard'
 
@@ -43,7 +40,7 @@ function SidebarModeTabs({
     <div
       role="tablist"
       aria-label="Application mode"
-      className="flex rounded-md bg-gray-950/80 p-0.5 ring-1 ring-gray-800"
+      className="erp-sidebar-tabs flex rounded-md p-0.5"
     >
       {tabs.map(({ id, label, icon: Icon }) => {
         const active = mode === id
@@ -59,7 +56,7 @@ function SidebarModeTabs({
                 ? id === 'fsms_erp'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'bg-violet-600 text-white shadow-sm'
-                : 'text-gray-500 hover:text-gray-300'
+                : 'text-[hsl(var(--sidebar-fg-subtle))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-fg))]'
             }`}
           >
             <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -384,7 +381,7 @@ export default function Sidebar() {
           isActive ? activeClass : NAV_ITEM_IDLE_CLASS
         }`}
       >
-        <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-gray-300'}`} />
+        <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-white' : 'opacity-80 group-hover:opacity-100'}`} />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
       </Link>
     )
@@ -400,7 +397,7 @@ export default function Sidebar() {
       <button
         type="button"
         onClick={() => setMobileNavOpen(true)}
-        className="fixed left-[max(0.75rem,env(safe-area-inset-left,0px))] top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[60] flex h-11 w-11 items-center justify-center rounded-lg bg-gray-900 text-white shadow-lg ring-1 ring-white/10 md:hidden"
+        className="fixed left-[max(0.75rem,env(safe-area-inset-left,0px))] top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[60] flex h-11 w-11 items-center justify-center rounded-lg bg-[hsl(var(--sidebar-bg))] text-white shadow-lg ring-1 ring-[hsl(var(--sidebar-border))] md:hidden"
         aria-label="Open navigation menu"
       >
         <Menu className="h-6 w-6" />
@@ -416,23 +413,23 @@ export default function Sidebar() {
       <aside
         key={`sidebar-${mode}`}
         className={`
-          fixed top-0 left-0 bottom-[var(--erp-os-bottom-chrome,0px)] z-[50] flex min-h-0 w-[min(100vw-3rem,20rem)] max-w-[20rem] flex-col overflow-hidden bg-gray-900 text-white shadow-xl transition-transform duration-200 ease-out
+          erp-sidebar fixed top-0 left-0 bottom-[var(--erp-os-bottom-chrome,0px)] z-[50] flex min-h-0 w-[min(100vw-3rem,20rem)] max-w-[20rem] flex-col overflow-hidden shadow-xl transition-transform duration-200 ease-out
           md:static md:bottom-auto md:z-auto md:h-full md:max-h-full md:min-h-0 md:min-w-0 md:w-full md:max-w-none md:translate-x-0
           ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
       >
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between border-b border-gray-800 px-3 py-2.5">
+      <div className="erp-sidebar-section flex shrink-0 items-center justify-between px-3 py-2.5">
         <div className="min-w-0">
-          <h1 className="text-base font-bold leading-none text-blue-400">FSMS</h1>
-          <p className="mt-0.5 truncate text-[10px] text-gray-500">
+          <h1 className="text-base font-bold leading-none tracking-tight text-[hsl(var(--sidebar-accent))]">FSMS</h1>
+          <p className="mt-0.5 truncate text-[10px] font-medium text-[hsl(var(--sidebar-fg-muted))]">
             {mode === 'saas_dashboard' ? 'Platform admin' : 'Filling Station ERP'}
           </p>
         </div>
         <button
           type="button"
           onClick={() => setMobileNavOpen(false)}
-          className="rounded-md p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white md:hidden"
+          className="rounded-md p-1.5 text-[hsl(var(--sidebar-fg-muted))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-fg))] md:hidden"
           aria-label="Close navigation"
         >
           <X className="h-5 w-5" />
@@ -441,7 +438,7 @@ export default function Sidebar() {
 
       {/* Mode tabs — super admin only */}
       {navReady && isSuperAdmin && (
-        <div className="shrink-0 border-b border-gray-800 px-2 py-2">
+        <div className="erp-sidebar-section shrink-0 px-2 py-2">
           <SidebarModeTabs
             mode={mode}
             onModeChange={(newMode) => {
@@ -454,7 +451,7 @@ export default function Sidebar() {
       )}
 
       {showingErpNav && (
-        <div className="shrink-0 border-b border-gray-800 px-2 py-1.5">
+        <div className="erp-sidebar-section shrink-0 px-2 py-1.5">
           {isSuperAdmin && mode === 'fsms_erp' ? (
             <CompanySwitcher compact />
           ) : scopeCompanyLabel ? (
@@ -462,7 +459,7 @@ export default function Sidebar() {
               {scopeCompanyLabel.isMaster ? (
                 <Crown className="h-3.5 w-3.5 shrink-0 text-yellow-400" aria-hidden />
               ) : (
-                <Building2 className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                <Building2 className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--sidebar-fg-muted))]" aria-hidden />
               )}
               <span className="min-w-0 flex-1 truncate text-xs font-medium text-white" title={scopeCompanyLabel.name}>
                 {scopeCompanyLabel.name}
@@ -485,7 +482,7 @@ export default function Sidebar() {
           </label>
           <div className="relative">
             <Search
-              className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500"
+              className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[hsl(var(--sidebar-fg-subtle))]"
               aria-hidden
             />
             <input
@@ -495,13 +492,13 @@ export default function Sidebar() {
               value={navSearchQuery}
               onChange={(e) => setNavSearchQuery(e.target.value)}
               placeholder="Search…"
-              className="w-full rounded-md border border-gray-700/80 bg-gray-800/80 py-1.5 pl-8 pr-7 text-xs text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40"
+              className="erp-sidebar-search w-full rounded-md py-1.5 pl-8 pr-7 text-xs"
             />
             {navSearchQuery ? (
               <button
                 type="button"
                 onClick={() => setNavSearchQuery('')}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:bg-gray-700 hover:text-white"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[hsl(var(--sidebar-fg-subtle))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-fg))]"
                 aria-label="Clear menu search"
               >
                 <X className="h-4 w-4" />
@@ -512,21 +509,21 @@ export default function Sidebar() {
 
         <div
           ref={navScrollRef}
-          className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-0.5 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900"
+          className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-0.5 scrollbar-thin scrollbar-sidebar"
         >
         {!navReady ? (
-          <div className="py-8 text-center text-sm text-gray-500" aria-busy="true">
+          <div className="py-8 text-center text-sm text-[hsl(var(--sidebar-fg-muted))]" aria-busy="true">
             Loading menu…
           </div>
         ) : sectionsForNav.length === 0 ? (
-          <div className="py-8 text-center text-gray-400">
+          <div className="py-8 text-center text-[hsl(var(--sidebar-fg-muted))]">
             {navSearchQuery.trim() ? (
               <>
                 <p className="text-sm">No menu items match &quot;{navSearchQuery.trim()}&quot;</p>
                 <button
                   type="button"
                   onClick={() => setNavSearchQuery('')}
-                  className="mt-2 text-xs font-medium text-blue-400 hover:text-blue-300"
+                  className="mt-2 text-xs font-medium text-[hsl(var(--sidebar-accent))] hover:underline"
                 >
                   Clear search
                 </button>
@@ -549,7 +546,7 @@ export default function Sidebar() {
 
             return (
               <div key={section.id} className="mb-3">
-                <h3 className="mb-1 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                <h3 className="erp-sidebar-label mb-1 px-1.5 py-0.5">
                   {section.label}
                 </h3>
                 {hasSubGroups ? (
@@ -569,7 +566,7 @@ export default function Sidebar() {
                       return groups.map((g) => (
                         <div key={g.id}>
                           {g.label ? (
-                            <p className="mb-0.5 px-1.5 text-[9px] font-medium uppercase tracking-wide text-gray-600">
+                            <p className="erp-sidebar-sublabel mb-0.5 px-1.5">
                               {g.label}
                             </p>
                           ) : null}
@@ -589,10 +586,10 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="sidebar-footer-pad mt-auto shrink-0 border-t border-gray-800 bg-gray-900/95 p-2">
+      <div className="erp-sidebar-footer sidebar-footer-pad mt-auto shrink-0 p-2 backdrop-blur-sm">
         <Link
           href="/account/password"
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+          className="erp-sidebar-footer-link flex w-full items-center gap-2 rounded-md px-2 py-1.5 transition-colors"
         >
           <KeyRound className="h-3.5 w-3.5 shrink-0" />
           <span className="text-xs font-medium">Password</span>
@@ -600,7 +597,7 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={performLogout}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-red-400/90 transition-colors hover:bg-red-950/40 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60"
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-red-300 transition-colors hover:bg-red-950/50 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60"
           aria-label="Log out"
         >
           <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -618,7 +615,7 @@ export default function Sidebar() {
         aria-valuemax={SIDEBAR_WIDTH_MAX}
         aria-valuenow={Math.round(sidebarWidthPx)}
         className={`pointer-events-none absolute top-0 z-[52] hidden h-full w-3 -translate-x-1/2 cursor-col-resize select-none md:pointer-events-auto md:block ${
-          isResizingSidebar ? 'bg-blue-500/25' : 'hover:bg-white/10'
+          isResizingSidebar ? 'bg-[hsl(var(--sidebar-accent)/0.35)]' : 'hover:bg-white/10'
         }`}
         style={{ right: 0 }}
         onMouseDown={onSidebarResizePointerDown}

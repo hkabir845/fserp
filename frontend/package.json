@@ -8,21 +8,22 @@
   "scripts": {
     "kill:3000": "node scripts/free-port-3000.mjs",
     "predev": "node scripts/free-port-3000.mjs",
-    "dev": "node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --turbo",
+    "dev": "node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --webpack",
+    "dev:turbo": "node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --turbo",
     "dev:webpack": "node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --webpack",
     "clean:next": "node scripts/clean-next.mjs",
-    "dev:clean": "npm run clean:next && node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --turbo",
+    "dev:clean": "npm run clean:next && node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --webpack",
     "build": "next build",
     "prestart": "node scripts/free-port-3000.mjs",
-    "start": "next start -p 3000",
+    "start": "next start -H 127.0.0.1 -p ${PORT:-3000}",
     "lint": "eslint ."
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.12",
-    "axios": "^1.7.9",
+    "axios": "^1.18.0",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.554.0",
-    "next": "^16.2.4",
+    "next": "^16.2.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.15.0",
@@ -34,12 +35,12 @@
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^16.2.4",
+    "eslint-config-next": "^16.2.9",
     "postcss": "^8.5.10",
     "tailwindcss": "^3.4.16"
   },
   "overrides": {
-    "axios": "^1.7.9",
+    "axios": "^1.18.0",
     "postcss": "^8.5.10"
   }
 }

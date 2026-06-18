@@ -518,7 +518,7 @@ export default function EmployeesPage() {
 
   return (
     <CompanyProvider>
-      <div className="flex h-screen bg-gray-100 page-with-sidebar">
+      <div className="flex h-screen page-with-sidebar">
         <Sidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           {error ? (

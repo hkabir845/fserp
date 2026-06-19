@@ -14,6 +14,7 @@ import {
   applyBillLineEntityKey,
   billLineEntityKey,
   billLineEntityKind,
+  billLineExpenseReportingKind,
 } from '@/lib/billLineEntity'
 import {
   useEntityScopedBillExpenseCategories,
@@ -64,12 +65,14 @@ export function BillLineEntityTagging({
 }) {
   const entityKey = billLineEntityKey(line)
   const entityKind = billLineEntityKind(entityKey)
-  const showCategory = entityKind === 'pond' || entityKind === 'station'
+  const expenseReportingKind = billLineExpenseReportingKind(entityKey, stations)
+  const showCategory = expenseReportingKind === 'aquaculture' || expenseReportingKind === 'fuel_station'
+  const isShopHubEntity = expenseReportingKind === 'aquaculture' && entityKind === 'station'
 
   const { categories: scopedPondCategories, loading: pondCategoriesLoading } =
-    useEntityScopedBillExpenseCategories(entityKey, entityKind)
+    useEntityScopedBillExpenseCategories(entityKey, expenseReportingKind)
   const { categories: scopedFuelCategories, loading: fuelCategoriesLoading } =
-    useEntityScopedFuelBillExpenseCategories(entityKey, entityKind)
+    useEntityScopedFuelBillExpenseCategories(entityKey, expenseReportingKind)
 
   const pondCategories =
     scopedPondCategories.length > 0 ? scopedPondCategories : billExpenseCategories
@@ -78,7 +81,7 @@ export function BillLineEntityTagging({
     scopedFuelCategories.length > 0 ? scopedFuelCategories : billFuelCategories
 
   const handleEntityChange = (key: string) => {
-    const next = applyBillLineEntityKey(line, key)
+    const next = applyBillLineEntityKey(line, key, stations)
     onFieldChange(index, '__entity_bundle__', next)
   }
 
@@ -119,29 +122,35 @@ export function BillLineEntityTagging({
           showHeadOffice={showHeadOffice}
           companyName={companyName}
         />
-        {billPurpose === 'pond' && entityKind === 'station' ? (
+        {isShopHubEntity ? (
+          <p className="mt-1 text-xs text-teal-800 leading-snug">
+            <strong>Shop / aquaculture hub</strong> — use aquaculture expense categories (feed, medicine,
+            pond care, equipment). Stock is received here for your ponds and walk-in sales; this site does
+            not sell fuel.
+          </p>
+        ) : billPurpose === 'pond' && entityKind === 'station' ? (
           <p className="mt-1 text-xs text-amber-800 leading-snug">
-            This line tags a <strong>shop / station</strong> for site P&amp;L, not a pond. For feed,
-            medicine, and other pond costs, pick a <strong>pond</strong> under Entity — then choose{' '}
-            <strong>Pond expense category</strong> (e.g. Feed). If stock is received at Premium Agro,
-            set that on the header <strong>Receiving location</strong>; the pond tag is for who consumes
-            the cost in aquaculture reports.
+            This line tags a <strong>fuel station</strong> for site P&amp;L. For feed and pond costs, pick a{' '}
+            <strong>pond</strong> under Entity, or tag a <strong>shop hub</strong> (e.g. Premium Agro) when
+            buying inventory for the aquaculture shop.
           </p>
         ) : null}
       </div>
-      {showCategory && entityKind === 'pond' ? (
+      {showCategory && expenseReportingKind === 'aquaculture' ? (
         <div className="min-w-[12rem] flex-1">
-          <label className="block text-xs font-medium text-gray-700 mb-1">Pond expense category</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">
+            {isShopHubEntity ? 'Shop / aquaculture expense category' : 'Pond expense category'}
+          </label>
           <ReportingCategoryCombobox
             categories={pondCategories}
             value={line.aquaculture_expense_category || ''}
             onChange={handlePondCategory}
             className={selectClassName}
-            placeholder={pondCategoriesLoading ? 'Loading categories…' : 'Search pond category…'}
+            placeholder={pondCategoriesLoading ? 'Loading categories…' : 'Search category…'}
           />
         </div>
       ) : null}
-      {showCategory && entityKind === 'station' ? (
+      {showCategory && expenseReportingKind === 'fuel_station' ? (
         <div className="min-w-[12rem] flex-1">
           <label className="block text-xs font-medium text-gray-700 mb-1">Station expense category</label>
           <ReportingCategoryCombobox

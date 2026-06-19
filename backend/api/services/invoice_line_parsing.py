@@ -89,6 +89,10 @@ def parse_invoice_line_row(company_id: int, row: dict) -> tuple[Optional[dict[st
             status=400,
         )
 
+    from api.services.station_business_kind import station_is_shop_hub
+
+    shop_hub = bool(line_sid and station_is_shop_hub(company_id, line_sid))
+
     fs_code = (row.get("fuel_station_income_category") or "")[:64]
     aq_code = (row.get("aquaculture_income_category") or "")[:64]
     raw_trc = row.get("tenant_reporting_category_id")
@@ -103,6 +107,23 @@ def parse_invoice_line_row(company_id: int, row: dict) -> tuple[Optional[dict[st
         )
         if trc_err:
             return None, trc_err
+    elif shop_hub and aq_code:
+        trc_id, trc_err = _resolve_tenant_reporting_category_id(
+            company_id,
+            raw_trc_id=raw_trc,
+            income_code=aq_code,
+            application=APP_AQUACULTURE,
+        )
+        if trc_err:
+            return None, trc_err
+    elif shop_hub and fs_code:
+        return None, JsonResponse(
+            {
+                "detail": "fuel_station_income_category is not used at shop / aquaculture hubs — "
+                "use aquaculture_income_category."
+            },
+            status=400,
+        )
     elif line_sid and fs_code:
         trc_id, trc_err = _resolve_tenant_reporting_category_id(
             company_id,

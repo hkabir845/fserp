@@ -760,8 +760,10 @@ def bills_create(request):
     if purpose_err:
         return JsonResponse({"detail": purpose_err}, status=400)
     if "bill_purpose" not in body:
-        bill_purpose = infer_bill_purpose_from_parsed_lines(parsed_lines)
-    line_purpose_err = validate_parsed_lines_for_bill_purpose(bill_purpose, parsed_lines)
+        bill_purpose = infer_bill_purpose_from_parsed_lines(parsed_lines, request.company_id)
+    line_purpose_err = validate_parsed_lines_for_bill_purpose(
+        bill_purpose, parsed_lines, request.company_id
+    )
     if line_purpose_err:
         return JsonResponse({"detail": line_purpose_err}, status=400)
 
@@ -923,8 +925,12 @@ def bill_detail(request, bill_id: int):
             if purpose_err:
                 return JsonResponse({"detail": purpose_err}, status=400)
             if "bill_purpose" not in body:
-                bill_purpose = infer_bill_purpose_from_parsed_lines(parsed_lines)
-            line_purpose_err = validate_parsed_lines_for_bill_purpose(bill_purpose, parsed_lines)
+                bill_purpose = infer_bill_purpose_from_parsed_lines(
+                    parsed_lines, request.company_id
+                )
+            line_purpose_err = validate_parsed_lines_for_bill_purpose(
+                bill_purpose, parsed_lines, request.company_id
+            )
             if line_purpose_err:
                 return JsonResponse({"detail": line_purpose_err}, status=400)
         elif "bill_purpose" in body:
@@ -934,13 +940,14 @@ def bill_detail(request, bill_id: int):
             existing_lines = [
                 {
                     "aquaculture_pond_id": ln.aquaculture_pond_id,
+                    "aquaculture_cost_bucket": ln.aquaculture_cost_bucket,
                     "fuel_station_expense_category": ln.fuel_station_expense_category,
                     "receipt_station_id": ln.receipt_station_id,
                 }
                 for ln in b.lines.all()
             ]
             line_purpose_err = validate_parsed_lines_for_bill_purpose(
-                bill_purpose, existing_lines
+                bill_purpose, existing_lines, request.company_id
             )
             if line_purpose_err:
                 return JsonResponse({"detail": line_purpose_err}, status=400)

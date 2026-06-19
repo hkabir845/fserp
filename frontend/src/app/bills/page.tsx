@@ -1518,7 +1518,8 @@ export default function BillsPage() {
     const billPurpose = inferBillPurposeIncludingMixed(
       formData.lines,
       resolved.receiptStationId,
-      aquaculturePonds.length > 0
+      aquaculturePonds.length > 0,
+      stations
     )
     return {
       receiptStationId: resolved.receiptStationId,
@@ -2305,7 +2306,7 @@ export default function BillsPage() {
       const line = formData.lines[i]
       const lineItem = line.item_id ? items.find((it) => it.id === line.item_id) : undefined
       const fishLine = (lineItem?.pos_category || '').toLowerCase() === 'fish'
-      const pondErr = validateBillLinePondAllocation(line, i, fishLine)
+      const pondErr = validateBillLinePondAllocation(line, i, fishLine, stations)
       if (pondErr) {
         toast.error(pondErr)
         return
@@ -2350,7 +2351,8 @@ export default function BillsPage() {
               amount: Number(line.amount),
             })) || [],
             fullBill.receipt_station_id,
-            aquaculturePonds.length > 0
+            aquaculturePonds.length > 0,
+            stations
           )
         setFormData({
           vendor_id: fullBill.vendor_id,
@@ -2506,7 +2508,7 @@ export default function BillsPage() {
       const line = formData.lines[i]
       const lineItem = line.item_id ? items.find((it) => it.id === line.item_id) : undefined
       const fishLine = (lineItem?.pos_category || '').toLowerCase() === 'fish'
-      const pondErr = validateBillLinePondAllocation(line, i, fishLine)
+      const pondErr = validateBillLinePondAllocation(line, i, fishLine, stations)
       if (pondErr) {
         toast.error(pondErr)
         return

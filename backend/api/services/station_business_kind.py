@@ -25,3 +25,26 @@ def station_business_kind(station) -> str:
 
 def station_business_kind_label(kind: str) -> str:
     return KIND_LABELS.get((kind or "").strip(), kind or "Station")
+
+
+def station_is_shop_hub(company_id: int, station_id: int | None) -> bool:
+    """True when the station is a non-fuel aquaculture shop hub (e.g. Premium Agro)."""
+    if not station_id:
+        return False
+    from api.models import Station
+
+    st = Station.objects.filter(pk=int(station_id), company_id=company_id).first()
+    return st is not None and station_business_kind(st) == KIND_SHOP_HUB
+
+
+def line_receipt_station_id_from_row(row: dict) -> int | None:
+    raw = row.get("line_receipt_station_id")
+    if raw in (None, ""):
+        raw = row.get("receipt_station_id")
+    if raw in (None, ""):
+        return None
+    try:
+        sid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return sid if sid > 0 else None

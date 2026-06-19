@@ -143,12 +143,12 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
   }
 
   return (
-    <div className="page-with-sidebar flex h-screen min-h-0 w-full min-w-0 max-w-full bg-slate-50">
+    <div className="page-with-sidebar flex h-dvh max-h-dvh min-h-0 w-full min-w-0 max-w-full flex-row bg-slate-50">
       <Sidebar />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="erp-main-column flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <MasterCompanyBanner />
         <TenantCompanyBanner />
-        <main id="aquaculture-workspace" className="min-h-0 flex-1 overflow-y-auto outline-none" role="main">
+        <main id="aquaculture-workspace" className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none" role="main">
           {children}
         </main>
       </div>

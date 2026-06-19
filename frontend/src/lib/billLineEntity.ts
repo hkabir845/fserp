@@ -6,6 +6,7 @@ import {
   reportScopeQueryParams,
 } from '@/app/reports/reportSiteScope'
 import type { BillPurpose } from '@/lib/billAllocation'
+import { isShopHubStationId, stationIsShopHub } from '@/utils/stationCapabilities'
 
 export type BillLineEntityFields = {
   aquaculture_pond_id?: number | '' | null
@@ -44,10 +45,28 @@ export function billLineEntityKind(
   return 'office'
 }
 
+export type BillLineExpenseReportingKind = 'aquaculture' | 'fuel_station' | 'office'
+
+/** Which expense/income category picker to show for a line entity tag. */
+export function billLineExpenseReportingKind(
+  entityKey: string,
+  stations: { id: number; operates_fuel_retail?: boolean }[] = []
+): BillLineExpenseReportingKind {
+  const kind = billLineEntityKind(entityKey)
+  if (kind === 'pond') return 'aquaculture'
+  if (kind === 'office') return 'office'
+  const scope = parseReportSiteScopeKey(entityKey)
+  if (scope.kind === 'station' && isShopHubStationId(scope.id, stations)) {
+    return 'aquaculture'
+  }
+  return 'fuel_station'
+}
+
 /** Apply entity selection to line fields; clears incompatible tags/categories. */
 export function applyBillLineEntityKey<T extends BillLineEntityFields>(
   line: T,
-  key: string
+  key: string,
+  stations: { id: number; operates_fuel_retail?: boolean }[] = []
 ): T {
   const scope = parseReportSiteScopeKey(key)
   if (scope.kind === 'pond') {
@@ -62,6 +81,18 @@ export function applyBillLineEntityKey<T extends BillLineEntityFields>(
     }
   }
   if (scope.kind === 'station') {
+    const shopHub = isShopHubStationId(scope.id, stations)
+    if (shopHub) {
+      return {
+        ...line,
+        line_receipt_station_id: scope.id,
+        aquaculture_pond_id: '',
+        fuel_station_expense_category: '',
+        station_cost_mode: 'direct',
+        shared_equal_station_ids: [],
+        station_shares: [],
+      }
+    }
     return {
       ...line,
       line_receipt_station_id: scope.id,
@@ -89,16 +120,25 @@ export function applyBillLineEntityKey<T extends BillLineEntityFields>(
 
 export function inferBillPurposeFromEntityLines(
   lines: BillLineEntityFields[],
-  hasPonds: boolean
+  hasPonds: boolean,
+  stations: { id: number; operates_fuel_retail?: boolean }[] = []
 ): BillPurpose {
   let hasPond = false
   let hasStation = false
   let hasOffice = false
   for (const line of lines) {
-    const kind = billLineEntityKind(billLineEntityKey(line))
+    const key = billLineEntityKey(line)
+    const kind = billLineEntityKind(key)
     if (kind === 'pond') hasPond = true
-    if (kind === 'station') hasStation = true
     if (kind === 'office') hasOffice = true
+    if (kind === 'station') {
+      const scope = parseReportSiteScopeKey(key)
+      if (scope.kind === 'station' && isShopHubStationId(scope.id, stations)) {
+        hasPond = true
+      } else {
+        hasStation = true
+      }
+    }
     if ((line.fuel_station_expense_category || '').trim()) hasStation = true
     if (
       line.aquaculture_cost_mode === 'shared_equal' ||

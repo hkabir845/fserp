@@ -8,7 +8,7 @@ import {
   invoiceAquacultureIncomeFromApi,
   type AquacultureInvoiceIncomeCategory,
 } from '@/lib/aquacultureInvoiceLine'
-import { entityScopeParamsFromKey } from '@/lib/billLineEntity'
+import { entityScopeParamsFromKey, type BillLineExpenseReportingKind } from '@/lib/billLineEntity'
 import {
   billFuelCategoriesFromApi,
   type FuelStationBillExpenseCategory,
@@ -40,14 +40,14 @@ export function clearEntityScopedReportingCategoryCache(): void {
 }
 
 export async function fetchAquacultureBillExpenseCategoriesForEntity(
-  entityKey: string
+  entityKey: string,
+  options?: { shopHub?: boolean }
 ): Promise<AquacultureBillExpenseCategory[]> {
-  const key = scopedCacheKey('/aquaculture/expense-categories/', entityKey)
+  const params = options?.shopHub ? {} : entityScopeParamsFromKey(entityKey)
+  const key = scopedCacheKey('/aquaculture/expense-categories/', entityKey) + (options?.shopHub ? ':shop' : '')
   const cached = readCache<AquacultureBillExpenseCategory>(key)
   if (cached) return cached
-  const { data } = await api.get('/aquaculture/expense-categories/', {
-    params: entityScopeParamsFromKey(entityKey),
-  })
+  const { data } = await api.get('/aquaculture/expense-categories/', { params })
   return writeCache(
     key,
     billExpenseCategoriesFromApi(Array.isArray(data) ? data : [])
@@ -70,14 +70,14 @@ export async function fetchFuelBillExpenseCategoriesForEntity(
 }
 
 export async function fetchAquacultureInvoiceIncomeForEntity(
-  entityKey: string
+  entityKey: string,
+  options?: { shopHub?: boolean }
 ): Promise<AquacultureInvoiceIncomeCategory[]> {
-  const key = scopedCacheKey('/aquaculture/income-types/', entityKey)
+  const params = options?.shopHub ? {} : entityScopeParamsFromKey(entityKey)
+  const key = scopedCacheKey('/aquaculture/income-types/', entityKey) + (options?.shopHub ? ':shop' : '')
   const cached = readCache<AquacultureInvoiceIncomeCategory>(key)
   if (cached) return cached
-  const { data } = await api.get('/aquaculture/income-types/', {
-    params: entityScopeParamsFromKey(entityKey),
-  })
+  const { data } = await api.get('/aquaculture/income-types/', { params })
   return writeCache(key, invoiceAquacultureIncomeFromApi(Array.isArray(data) ? data : []))
 }
 
@@ -98,19 +98,20 @@ export async function fetchFuelInvoiceIncomeForEntity(
 
 export function useEntityScopedBillExpenseCategories(
   entityKey: string,
-  entityKind: 'office' | 'station' | 'pond'
+  expenseReportingKind: BillLineExpenseReportingKind
 ): { categories: AquacultureBillExpenseCategory[]; loading: boolean } {
   const [categories, setCategories] = useState<AquacultureBillExpenseCategory[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (entityKind !== 'pond') {
+    if (expenseReportingKind !== 'aquaculture') {
       setCategories([])
       return
     }
+    const shopHub = entityKey !== '' && /^\d+$/.test(entityKey)
     let cancelled = false
     setLoading(true)
-    fetchAquacultureBillExpenseCategoriesForEntity(entityKey)
+    fetchAquacultureBillExpenseCategoriesForEntity(entityKey, { shopHub })
       .then((rows) => {
         if (!cancelled) setCategories(rows)
       })
@@ -123,20 +124,20 @@ export function useEntityScopedBillExpenseCategories(
     return () => {
       cancelled = true
     }
-  }, [entityKey, entityKind])
+  }, [entityKey, expenseReportingKind])
 
   return { categories, loading }
 }
 
 export function useEntityScopedFuelBillExpenseCategories(
   entityKey: string,
-  entityKind: 'office' | 'station' | 'pond'
+  expenseReportingKind: BillLineExpenseReportingKind
 ): { categories: FuelStationBillExpenseCategory[]; loading: boolean } {
   const [categories, setCategories] = useState<FuelStationBillExpenseCategory[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (entityKind !== 'station') {
+    if (expenseReportingKind !== 'fuel_station') {
       setCategories([])
       return
     }
@@ -155,14 +156,14 @@ export function useEntityScopedFuelBillExpenseCategories(
     return () => {
       cancelled = true
     }
-  }, [entityKey, entityKind])
+  }, [entityKey, expenseReportingKind])
 
   return { categories, loading }
 }
 
 export function useEntityScopedInvoiceIncomeCategories(
   entityKey: string,
-  entityKind: 'office' | 'station' | 'pond'
+  expenseReportingKind: BillLineExpenseReportingKind
 ): {
   pondCategories: AquacultureInvoiceIncomeCategory[]
   stationCategories: FuelStationInvoiceIncomeCategory[]
@@ -173,16 +174,17 @@ export function useEntityScopedInvoiceIncomeCategories(
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (entityKind === 'office') {
+    if (expenseReportingKind === 'office') {
       setPondCategories([])
       setStationCategories([])
       return
     }
     let cancelled = false
     setLoading(true)
+    const shopHub = expenseReportingKind === 'aquaculture' && entityKey !== '' && /^\d+$/.test(entityKey)
     const task =
-      entityKind === 'pond'
-        ? fetchAquacultureInvoiceIncomeForEntity(entityKey).then((rows) => {
+      expenseReportingKind === 'aquaculture'
+        ? fetchAquacultureInvoiceIncomeForEntity(entityKey, { shopHub }).then((rows) => {
             if (!cancelled) {
               setPondCategories(rows)
               setStationCategories([])
@@ -207,7 +209,7 @@ export function useEntityScopedInvoiceIncomeCategories(
     return () => {
       cancelled = true
     }
-  }, [entityKey, entityKind])
+  }, [entityKey, expenseReportingKind])
 
   return { pondCategories, stationCategories, loading }
 }

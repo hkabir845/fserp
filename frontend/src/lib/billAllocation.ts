@@ -1,5 +1,6 @@
 import type { AquacultureBillExpenseCategory } from '@/lib/aquacultureBillLine'
 import type { FuelStationBillExpenseCategory } from '@/lib/fuelStationBillLine'
+import { isShopHubStationId } from '@/utils/stationCapabilities'
 
 export type BillPurpose = 'station' | 'pond' | 'office' | 'mixed'
 
@@ -32,7 +33,8 @@ export function billLineStationCostMode(line: BillLineAllocationFields): Station
 export function inferBillPurposeFromLines(
   lines: BillLineAllocationFields[],
   headerStationId: number | '' | null | undefined,
-  hasPonds: boolean
+  hasPonds: boolean,
+  stations: { id: number; operates_fuel_retail?: boolean }[] = []
 ): BillPurpose {
   for (const line of lines) {
     const pond =
@@ -47,6 +49,10 @@ export function inferBillPurposeFromLines(
     ) {
       return 'pond'
     }
+    const stRaw = line.line_receipt_station_id
+    const stId =
+      stRaw !== '' && stRaw != null && Number.isFinite(Number(stRaw)) ? Number(stRaw) : null
+    if (stId && isShopHubStationId(stId, stations)) return 'pond'
     if (
       billLineStationCostMode(line) === 'shared_equal' ||
       billLineStationCostMode(line) === 'shared_manual' ||
@@ -54,15 +60,11 @@ export function inferBillPurposeFromLines(
     ) {
       return 'station'
     }
-    if (
-      line.line_receipt_station_id !== '' &&
-      line.line_receipt_station_id != null &&
-      Number.isFinite(Number(line.line_receipt_station_id))
-    ) {
-      return 'station'
-    }
+    if (stId) return 'station'
   }
   if (headerStationId !== '' && headerStationId != null && Number.isFinite(Number(headerStationId))) {
+    const hid = Number(headerStationId)
+    if (isShopHubStationId(hid, stations)) return 'pond'
     return 'station'
   }
   return hasPonds ? 'station' : 'office'
@@ -71,7 +73,8 @@ export function inferBillPurposeFromLines(
 export function inferBillPurposeIncludingMixed(
   lines: BillLineAllocationFields[],
   headerStationId: number | '' | null | undefined,
-  hasPonds: boolean
+  hasPonds: boolean,
+  stations: { id: number; operates_fuel_retail?: boolean }[] = []
 ): BillPurpose {
   let hasPond = false
   let hasStation = false
@@ -88,6 +91,10 @@ export function inferBillPurposeIncludingMixed(
     ) {
       hasPond = true
     }
+    const stRaw = line.line_receipt_station_id
+    const stId =
+      stRaw !== '' && stRaw != null && Number.isFinite(Number(stRaw)) ? Number(stRaw) : null
+    if (stId && isShopHubStationId(stId, stations)) hasPond = true
     if (
       billLineStationCostMode(line) === 'shared_equal' ||
       billLineStationCostMode(line) === 'shared_manual' ||
@@ -95,18 +102,14 @@ export function inferBillPurposeIncludingMixed(
     ) {
       hasStation = true
     }
-    if (
-      line.line_receipt_station_id !== '' &&
-      line.line_receipt_station_id != null &&
-      Number.isFinite(Number(line.line_receipt_station_id))
-    ) {
-      hasStation = true
-    }
+    if (stId && !isShopHubStationId(stId, stations)) hasStation = true
   }
   if (hasPond && hasStation) return 'mixed'
   if (hasPond) return 'pond'
   if (hasStation) return 'station'
   if (headerStationId !== '' && headerStationId != null && Number.isFinite(Number(headerStationId))) {
+    const hid = Number(headerStationId)
+    if (isShopHubStationId(hid, stations)) return 'pond'
     return 'station'
   }
   return hasPonds ? 'station' : 'office'
@@ -115,7 +118,8 @@ export function inferBillPurposeIncludingMixed(
 export function validateBillLinePondAllocation(
   line: BillLineAllocationFields,
   lineIndex: number,
-  isFishLine: boolean
+  isFishLine: boolean,
+  stations: { id: number; operates_fuel_retail?: boolean }[] = []
 ): string | null {
   const n = lineIndex + 1
   const mode = billLinePondCostMode(line)
@@ -129,6 +133,18 @@ export function validateBillLinePondAllocation(
       Number.isFinite(Number(line.aquaculture_pond_id))
     if (pond && !line.item_id && !line.aquaculture_expense_category) {
       return `Line ${n}: choose a pond expense category (or pick an inventory item for feed/medicine/fry).`
+    }
+    const stRaw = line.line_receipt_station_id
+    const stId =
+      stRaw !== '' && stRaw != null && Number.isFinite(Number(stRaw)) ? Number(stRaw) : null
+    if (
+      !pond &&
+      stId &&
+      isShopHubStationId(stId, stations) &&
+      !line.item_id &&
+      !line.aquaculture_expense_category
+    ) {
+      return `Line ${n}: choose an aquaculture expense category for the shop hub (or pick a feed/medicine item).`
     }
     return null
   }

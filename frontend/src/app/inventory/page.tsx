@@ -1418,9 +1418,10 @@ function InventoryContent() {
   }, [confirmAction])
 
   return (
-    <PageLayout>
-      <div className="app-scroll-pad p-4 sm:p-6 lg:p-8">
-        <div className="mx-auto w-full max-w-7xl space-y-6">
+    <PageLayout containScroll>
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="shrink-0 app-scroll-pad pb-3">
+          <div className="mx-auto w-full max-w-7xl space-y-6">
           <header className="space-y-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0 flex-1">
@@ -1571,7 +1572,12 @@ function InventoryContent() {
               Stock adjustments
             </Link>
           </div>
+          </div>
+        </div>
 
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="app-scroll-pad pt-0">
+            <div className="mx-auto w-full max-w-7xl space-y-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-border bg-card px-10 py-16 text-center shadow-sm">
               <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -2717,6 +2723,8 @@ function InventoryContent() {
               ) : null}
             </div>
           )}
+            </div>
+          </div>
         </div>
       </div>
 

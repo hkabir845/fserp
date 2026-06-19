@@ -5,6 +5,7 @@
 
 import type { BillPurpose } from '@/lib/billAllocation'
 import { formatPondScopeKey, formatHeadOfficeScopeKey, HEAD_OFFICE_SCOPE_KEY, parseReportSiteScopeKey } from '@/app/reports/reportSiteScope'
+import { stationIsShopHub } from '@/utils/stationCapabilities'
 
 export { formatPondScopeKey, formatHeadOfficeScopeKey, HEAD_OFFICE_SCOPE_KEY, parseReportSiteScopeKey as parseBillReceiptLocationKey }
 
@@ -83,10 +84,12 @@ export function resolveBillReceiptLocation(
     }
   }
   if (scope.kind === 'station' && stations.some((s) => s.id === scope.id)) {
+    const st = stations.find((s) => s.id === scope.id)
+    const shopHub = st != null && stationIsShopHub(st)
     return {
       locationKey: String(scope.id),
       receiptStationId: scope.id,
-      billPurpose: 'station',
+      billPurpose: shopHub ? 'pond' : 'station',
       headerPondId: null,
     }
   }

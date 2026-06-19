@@ -390,7 +390,7 @@ export default function Sidebar() {
   return (
     <>
     <div
-      className={`sidebar-viewport-height relative flex min-h-0 shrink-0 flex-col self-start overflow-hidden ${isDesktopLayout ? '' : 'w-0'}`}
+      className={`erp-sidebar-column sidebar-viewport-height relative flex min-h-0 shrink-0 flex-col overflow-hidden ${isDesktopLayout ? '' : 'w-0'}`}
       style={isDesktopLayout ? { width: sidebarWidthPx } : undefined}
     >
       {/* Mobile menu toggle — sits above main content; sidebar is off-canvas until opened */}

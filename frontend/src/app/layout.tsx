@@ -51,7 +51,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${inter.className} min-h-screen min-h-[100dvh] bg-background antialiased`}
+        className={`${inter.className} h-dvh max-h-dvh overflow-hidden bg-background antialiased`}
         suppressHydrationWarning
       >
         {/* Hoisted to <head> by Next — suppresses extension onMessage console noise */}

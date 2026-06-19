@@ -152,16 +152,26 @@ def validate_and_apply_shared_pond_bill_line_category(company_id: int, row: dict
 
 def apply_aquaculture_expense_category_to_bill_line_row(company_id: int, row: dict) -> str | None:
     """
-    When aquaculture_pond_id and aquaculture_expense_category are set, fill cost_bucket and
-    expense_account_id (when no item line) from aquaculture COA mapping.
+    When aquaculture_pond_id or a shop-hub receipt station and aquaculture_expense_category are set,
+    fill cost_bucket and expense_account_id (when no item line) from aquaculture COA mapping.
     Returns error message or None.
     """
+    from api.services.aquaculture_bill_pond_share import bill_line_cost_mode
+    from api.services.station_business_kind import line_receipt_station_id_from_row, station_is_shop_hub
+
     raw_p = row.get("aquaculture_pond_id")
-    if raw_p in (None, ""):
-        return None
     raw_cat = row.get("aquaculture_expense_category")
     if raw_cat in (None, ""):
         return None
+    if raw_p in (None, ""):
+        sid = line_receipt_station_id_from_row(row)
+        mode = bill_line_cost_mode(row)
+        if sid and station_is_shop_hub(company_id, sid):
+            pass
+        elif mode in ("shared_equal", "shared_manual"):
+            pass
+        else:
+            return None
     raw_s = str(raw_cat).strip()
     tr = tenant_expense_row(company_id, APP_AQUACULTURE, raw_s)
     if tr:

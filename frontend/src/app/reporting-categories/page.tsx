@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
 import {
   Loader2,
   Plus,
@@ -534,31 +534,28 @@ export default function ReportingCategoriesPage() {
 
   if (!authReady) {
     return (
-      <div className="flex min-h-screen bg-slate-50">
-        <Sidebar />
-        <main className="flex flex-1 items-center justify-center p-6 text-slate-600">
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center p-6 text-slate-600">
           <Loader2 className="h-6 w-6 animate-spin" />
-        </main>
-      </div>
+        </div>
+      </PageLayout>
     )
   }
 
   if (!isAdmin) {
     return (
-      <div className="flex min-h-screen bg-slate-50">
-        <Sidebar />
-        <main className="flex-1 p-6">
+      <PageLayout className="bg-slate-50">
+        <div className="app-scroll-pad">
           <h1 className="text-xl font-semibold text-slate-800">Reporting categories</h1>
           <p className="mt-2 text-slate-600">Only company administrators can manage reporting categories.</p>
-        </main>
-      </div>
+        </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <Sidebar />
-      <main className="flex-1 overflow-auto p-4 sm:p-6">
+    <PageLayout className="bg-slate-50">
+      <div className="app-scroll-pad">
         <div className="mx-auto max-w-5xl space-y-6">
           <header>
             <div className="flex items-center gap-3">
@@ -1043,7 +1040,7 @@ export default function ReportingCategoriesPage() {
             </ul>
           </footer>
         </div>
-      </main>
-    </div>
+      </div>
+    </PageLayout>
   )
 }

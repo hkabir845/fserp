@@ -5,7 +5,7 @@ import { groupReportingMapTargets } from '@/app/reporting-categories/reportingCa
 
 export type VendorReferenceRow = {
   id: number
-  display_name: string
+  display_name?: string | null
   vendor_number?: string
   email?: string | null
   phone?: string | null
@@ -13,7 +13,7 @@ export type VendorReferenceRow = {
 
 export type CustomerReferenceRow = {
   id: number
-  display_name: string
+  display_name?: string | null
   customer_number?: string
   email?: string | null
   phone?: string | null

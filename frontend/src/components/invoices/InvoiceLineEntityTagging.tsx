@@ -12,6 +12,7 @@ import {
 } from '@/lib/fuelStationInvoiceLine'
 import {
   applyInvoiceLineEntityKey,
+  billLineExpenseReportingKind,
   invoiceLineEntityKey,
   invoiceLineEntityKind,
 } from '@/lib/invoiceLineEntity'
@@ -55,13 +56,15 @@ export function InvoiceLineEntityTagging({
 }) {
   const entityKey = invoiceLineEntityKey(line)
   const entityKind = invoiceLineEntityKind(entityKey)
-  const showCategory = entityKind === 'pond' || entityKind === 'station'
+  const expenseReportingKind = billLineExpenseReportingKind(entityKey, stations)
+  const showCategory = expenseReportingKind === 'aquaculture' || expenseReportingKind === 'fuel_station'
+  const isShopHubEntity = expenseReportingKind === 'aquaculture' && entityKind === 'station'
 
   const {
     pondCategories: scopedPondCategories,
     stationCategories: scopedStationCategories,
     loading: categoriesLoading,
-  } = useEntityScopedInvoiceIncomeCategories(entityKey, entityKind)
+  } = useEntityScopedInvoiceIncomeCategories(entityKey, expenseReportingKind)
 
   const pondCategories =
     scopedPondCategories.length > 0 ? scopedPondCategories : pondIncomeCategories
@@ -69,7 +72,7 @@ export function InvoiceLineEntityTagging({
     scopedStationCategories.length > 0 ? scopedStationCategories : stationIncomeCategories
 
   const handleEntityChange = (key: string) => {
-    const next = applyInvoiceLineEntityKey(line, key)
+    const next = applyInvoiceLineEntityKey(line, key, stations)
     onFieldChange(index, '__entity_bundle__', {
       ...next,
       aquaculture_income_category: '',
@@ -112,8 +115,14 @@ export function InvoiceLineEntityTagging({
           showHeadOffice={showHeadOffice}
           companyName={companyName}
         />
+        {isShopHubEntity ? (
+          <p className="mt-1 text-xs text-teal-800 leading-snug">
+            Shop hub sales (feed, medicine, pond gear) — aquaculture income types, not fuel forecourt
+            categories.
+          </p>
+        ) : null}
       </div>
-      {showCategory && entityKind === 'pond' ? (
+      {showCategory && expenseReportingKind === 'aquaculture' ? (
         <div className="min-w-[12rem] flex-1">
           <label className="block text-xs font-medium text-gray-700 mb-1">Income tag (reporting)</label>
           <ReportingCategoryCombobox
@@ -126,7 +135,7 @@ export function InvoiceLineEntityTagging({
           />
         </div>
       ) : null}
-      {showCategory && entityKind === 'station' ? (
+      {showCategory && expenseReportingKind === 'fuel_station' ? (
         <div className="min-w-[12rem] flex-1">
           <label className="block text-xs font-medium text-gray-700 mb-1">Income tag (reporting)</label>
           <ReportingCategoryCombobox

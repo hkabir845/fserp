@@ -3,5 +3,6 @@ export {
   applyBillLineEntityKey as applyInvoiceLineEntityKey,
   billLineEntityKey as invoiceLineEntityKey,
   billLineEntityKind as invoiceLineEntityKind,
+  billLineExpenseReportingKind,
   type BillLineEntityFields as InvoiceLineEntityFields,
 } from '@/lib/billLineEntity'

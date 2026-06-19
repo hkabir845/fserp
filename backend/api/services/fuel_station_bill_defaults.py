@@ -24,16 +24,28 @@ def normalize_fuel_station_expense_category(
 
 def apply_fuel_station_category_to_bill_line_row(company_id: int, row: dict) -> str | None:
     """
-    Optional fuel_station_expense_category on non-pond bill lines.
+    Optional fuel_station_expense_category on non-pond bill lines at fuel retail stations.
     Sets tenant_reporting_category_id when the code is a tenant-defined row,
     and default expense_account_id from rollup → COA mapping when no item line.
     """
+    from api.services.station_business_kind import line_receipt_station_id_from_row, station_is_shop_hub
+
     raw_p = row.get("aquaculture_pond_id")
     if raw_p not in (None, ""):
         if row.get("fuel_station_expense_category") not in (None, ""):
             return "fuel_station_expense_category cannot be set when aquaculture_pond_id is set"
         row["fuel_station_expense_category"] = ""
         # Pond lines may carry aquaculture tenant_reporting_category_id (set earlier in parsing).
+        return None
+
+    sid = line_receipt_station_id_from_row(row)
+    if sid and station_is_shop_hub(company_id, sid):
+        if row.get("fuel_station_expense_category") not in (None, ""):
+            return (
+                "fuel_station_expense_category is not used at shop / aquaculture hubs — "
+                "use aquaculture_expense_category (e.g. feed_purchase, medicine_purchase)."
+            )
+        row["fuel_station_expense_category"] = ""
         return None
 
     raw_cat = row.get("fuel_station_expense_category")

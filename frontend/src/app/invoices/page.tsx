@@ -46,6 +46,8 @@ import type { BillReceiptLocationPond, BillReceiptLocationStation } from '@/lib/
 import type { FuelStationInvoiceIncomeCategory } from '@/lib/fuelStationInvoiceLine'
 import { invoiceFuelCategoriesFromApi } from '@/lib/fuelStationInvoiceLine'
 import { clearEntityScopedReportingCategoryCache } from '@/lib/entityScopedReportingCategories'
+import { REFERENCE_FETCH_LIMIT, unwrapReferenceList } from '@/lib/pagination'
+import { fetchEntityScopeDirectory } from '@/lib/entityScopeDirectory'
 
 interface InvoiceLineItem extends InvoiceFormLine {}
 
@@ -212,42 +214,25 @@ export default function InvoicesPage() {
   const loadInvoiceReferenceData = useCallback(async () => {
     clearEntityScopedReportingCategoryCache()
     try {
-      const [stationsRes, pondsRes, aqIncRes, fsIncRes, companyRes] = await Promise.allSettled([
-        api.get('/stations/'),
-        api.get('/aquaculture/ponds/'),
-        api.get('/aquaculture/income-types/'),
-        api.get('/fuel-station/income-categories/'),
-        api.get('/companies/current'),
+      const [scope, aqIncRes, fsIncRes, companyRes] = await Promise.all([
+        fetchEntityScopeDirectory(),
+        api.get('/aquaculture/income-types/').catch(() => ({ data: [] })),
+        api.get('/fuel-station/income-categories/').catch(() => ({ data: [] })),
+        api.get('/companies/current/').catch(() => ({ data: null })),
       ])
-      if (stationsRes.status === 'fulfilled' && Array.isArray(stationsRes.value.data)) {
-        setStations(
-          stationsRes.value.data.map((s: Record<string, unknown>) => ({
-            id: Number(s.id),
-            station_name: String(s.station_name || ''),
-            station_number: s.station_number != null ? String(s.station_number) : undefined,
-            operates_fuel_retail: s.operates_fuel_retail as boolean | undefined,
-            is_active: s.is_active as boolean | undefined,
-          }))
-        )
+      setStations(scope.stations)
+      setPonds(scope.ponds)
+      const aqIncResData = aqIncRes.data
+      if (Array.isArray(aqIncResData)) {
+        setPondIncomeCategories(invoiceAquacultureIncomeFromApi(aqIncResData))
       }
-      if (pondsRes.status === 'fulfilled' && Array.isArray(pondsRes.value.data)) {
-        setPonds(
-          pondsRes.value.data.map((p: Record<string, unknown>) => ({
-            id: Number(p.id),
-            name: String(p.name || ''),
-            pond_role: p.pond_role != null ? String(p.pond_role) : undefined,
-            is_active: p.is_active as boolean | undefined,
-          }))
-        )
+      const fsIncResData = fsIncRes.data
+      if (Array.isArray(fsIncResData)) {
+        setStationIncomeCategories(invoiceFuelCategoriesFromApi(fsIncResData))
       }
-      if (aqIncRes.status === 'fulfilled' && Array.isArray(aqIncRes.value.data)) {
-        setPondIncomeCategories(invoiceAquacultureIncomeFromApi(aqIncRes.value.data))
-      }
-      if (fsIncRes.status === 'fulfilled' && Array.isArray(fsIncRes.value.data)) {
-        setStationIncomeCategories(invoiceFuelCategoriesFromApi(fsIncRes.value.data))
-      }
-      if (companyRes.status === 'fulfilled') {
-        const name = String(companyRes.value.data?.name || companyRes.value.data?.company_name || '').trim()
+      const companyData = companyRes.data as { name?: string; company_name?: string } | null
+      if (companyData) {
+        const name = String(companyData.name || companyData.company_name || '').trim()
         if (name) setCompanyName(name)
       }
     } catch (error) {
@@ -330,6 +315,16 @@ export default function InvoicesPage() {
       void loadPrintBranding(api)
         .then(setPrintBranding)
         .catch(() => setPrintBranding(null))
+
+      void api
+        .get('/customers/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } })
+        .then((res) => {
+          const raw = unwrapReferenceList<Customer>(res.data)
+          setCustomers(raw.filter((c) => c.is_active !== false))
+        })
+        .catch(() => {})
+
+      void loadInvoiceReferenceData()
 
       // Fetch invoices with proper error handling
       const includePos = sourceFilter === 'all' || sourceFilter === 'pos'
@@ -468,69 +463,31 @@ export default function InvoicesPage() {
   const fetchCustomersAndItems = async () => {
     setLoadingItems(true)
     try {
-      const token = localStorage.getItem('access_token')
-      if (!token) {
-        toast.error('Authentication required')
-        setLoadingItems(false)
-        return
+      const [customersRes, itemsRes] = await Promise.allSettled([
+        api.get('/customers/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
+        api.get('/items/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
+      ])
+
+      if (customersRes.status === 'fulfilled') {
+        const raw = unwrapReferenceList<Customer>(customersRes.value.data)
+        setCustomers(raw.filter((c) => c.is_active !== false))
+      } else {
+        console.error('Failed to load customers:', customersRes.reason)
+        toast.error(extractErrorMessage(customersRes.reason, 'Failed to load customers'))
       }
-      
-      const baseUrl = getApiBaseUrl()
-      
-      // Fetch customers
-      try {
-        const customersResponse = await fetch(`${baseUrl}/customers/`, {
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        })
-        
-        if (customersResponse.ok) {
-          const customersData = await customersResponse.json()
-          const activeCustomers = customersData.filter((c: Customer) => c.is_active)
-          setCustomers(activeCustomers)
-        } else {
-          const errorData = await customersResponse.json().catch(() => ({}))
-          console.error('Failed to load customers:', customersResponse.status, errorData)
-          toast.error(errorData.detail || 'Failed to load customers')
+
+      if (itemsRes.status === 'fulfilled') {
+        const raw = unwrapReferenceList<Item>(itemsRes.value.data)
+        const validItems = raw.filter(
+          (item) => item && item.id && item.name && !item.is_deleted,
+        )
+        setItems(validItems)
+        if (validItems.length === 0) {
+          console.warn('No valid items found. Raw data:', itemsRes.value.data)
         }
-      } catch (error) {
-        console.error('Error fetching customers:', error)
-        toast.error('Failed to load customers')
-      }
-      
-      // Fetch items
-      try {
-        const itemsResponse = await fetch(`${baseUrl}/items/`, {
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        })
-        
-        if (itemsResponse.ok) {
-          const itemsData = await itemsResponse.json()
-          
-          // Filter out deleted items and ensure we have valid items
-          const validItems = Array.isArray(itemsData) 
-            ? itemsData.filter((item: Item) => item && item.id && item.name && !item.is_deleted)
-            : []
-          
-          setItems(validItems)
-          
-          if (validItems.length === 0) {
-            console.warn('No valid items found. Raw data:', itemsData)
-            toast.error('No items available. Please create items first.')
-          }
-        } else {
-          const errorData = await itemsResponse.json().catch(() => ({}))
-          console.error('Failed to load items:', itemsResponse.status, errorData)
-          toast.error(errorData.detail || `Failed to load items (${itemsResponse.status})`)
-        }
-      } catch (error) {
-        console.error('Error fetching items:', error)
-        toast.error('Failed to load items. Check console for details.')
+      } else {
+        console.error('Failed to load items:', itemsRes.reason)
+        toast.error(extractErrorMessage(itemsRes.reason, 'Failed to load items'))
       }
     } catch (error) {
       console.error('Error fetching customers/items:', error)

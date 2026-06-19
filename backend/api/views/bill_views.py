@@ -545,7 +545,11 @@ def _bill_to_json(b, *, include_lines: bool = True):
         "bill_date": _serialize_date(b.bill_date),
         "due_date": _serialize_date(b.due_date),
         "vendor_id": b.vendor_id,
-        "vendor_name": b.vendor.company_name if b.vendor_id else "",
+        "vendor_name": (
+            (b.vendor.display_name or b.vendor.company_name or "").strip()
+            if b.vendor_id and getattr(b, "vendor", None)
+            else ""
+        ),
         "receipt_station_id": getattr(b, "receipt_station_id", None),
         "receipt_station_name": (
             b.receipt_station.station_name

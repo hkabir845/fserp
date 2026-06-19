@@ -9,7 +9,7 @@ export const EXTENSION_NOISE_FILTER_BODY = `
   window.__fserpExtNoiseFilter = 1
 
   var NOISE =
-    /message channel closed before a response was received|listener indicated an asynchronous response|extension context invalidated/i
+    /message channel closed before a response was received|listener indicated an asynchronous response|extension context invalidated|Cannot read properties of null \(reading 'removeChild'\)|Failed to execute 'removeChild' on 'Node'|The node to be removed is not a child of this node/i
 
   function isNoisyReason(reason) {
     if (reason == null) return false

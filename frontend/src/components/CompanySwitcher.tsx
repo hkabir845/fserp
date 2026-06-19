@@ -345,7 +345,7 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
         )}
       </button>
       {isOpen && !openDisabled && menuPos && typeof document !== 'undefined' && createPortal(
-        <>
+        <div>
           <div className="fixed inset-0 z-[1000]" onClick={() => setIsOpen(false)} aria-hidden />
           <div
             style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: menuPos.width }}
@@ -477,7 +477,7 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
               <div className="px-4 py-2 text-center text-xs text-[hsl(var(--sidebar-fg-subtle))]">No other tenants</div>
             )}
           </div>
-        </>,
+        </div>,
         document.body,
       )}
     </div>

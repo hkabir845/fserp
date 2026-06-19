@@ -22,6 +22,7 @@ import {
 import { ReportingCategoryCombobox } from './ReportingCategoryCombobox'
 import type { BillReceiptLocationPond, BillReceiptLocationStation } from '@/lib/billReceiptLocation'
 import type { CoaPick } from '@/lib/coaDefaults'
+import type { BillPurpose } from '@/lib/billAllocation'
 import { BillLineEntitySelect } from './BillLineEntitySelect'
 
 export type BillLineEntityTagShape = {
@@ -45,6 +46,7 @@ export function BillLineEntityTagging({
   selectClassName = 'w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500',
   showHeadOffice = true,
   companyName,
+  billPurpose,
 }: {
   line: BillLineEntityTagShape
   index: number
@@ -57,6 +59,8 @@ export function BillLineEntityTagging({
   selectClassName?: string
   showHeadOffice?: boolean
   companyName?: string
+  /** Header bill purpose — used for contextual hints on entity vs category fields. */
+  billPurpose?: BillPurpose
 }) {
   const entityKey = billLineEntityKey(line)
   const entityKind = billLineEntityKind(entityKey)
@@ -115,6 +119,15 @@ export function BillLineEntityTagging({
           showHeadOffice={showHeadOffice}
           companyName={companyName}
         />
+        {billPurpose === 'pond' && entityKind === 'station' ? (
+          <p className="mt-1 text-xs text-amber-800 leading-snug">
+            This line tags a <strong>shop / station</strong> for site P&amp;L, not a pond. For feed,
+            medicine, and other pond costs, pick a <strong>pond</strong> under Entity — then choose{' '}
+            <strong>Pond expense category</strong> (e.g. Feed). If stock is received at Premium Agro,
+            set that on the header <strong>Receiving location</strong>; the pond tag is for who consumes
+            the cost in aquaculture reports.
+          </p>
+        ) : null}
       </div>
       {showCategory && entityKind === 'pond' ? (
         <div className="min-w-[12rem] flex-1">

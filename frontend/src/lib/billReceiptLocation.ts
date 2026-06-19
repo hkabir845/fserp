@@ -21,6 +21,11 @@ export interface BillReceiptLocationPond {
   id: number
   name: string
   pond_role?: string
+  physical_site_name?: string
+  linked_grow_out_pond_id?: number | null
+  nursing_display_name?: string
+  grow_out_display_name?: string
+  operational_display_name?: string
   is_active?: boolean
 }
 

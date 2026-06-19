@@ -1,17 +1,18 @@
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
-import { Inter } from 'next/font/google'
+import localFont from 'next/font/local'
 import './globals.css'
 import { Providers } from '@/components/Providers'
 import { ErrorFilter } from '@/components/ErrorFilter'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { SuppressWarnings } from '@/components/SuppressWarnings'
 
-const inter = Inter({
-  subsets: ['latin'],
+const inter = localFont({
+  src: '../fonts/inter-latin.woff2',
   display: 'swap',
   preload: true,
   fallback: ['system-ui', 'arial'],
+  weight: '100 900',
 })
 
 export const viewport: Viewport = {

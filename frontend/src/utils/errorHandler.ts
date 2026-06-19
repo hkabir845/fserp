@@ -204,6 +204,29 @@ export function extractErrorMessage(error: any, fallback: string = 'An error occ
 export const CHROME_ASYNC_MESSAGE_CHANNEL_NOISE =
   /message channel closed before a response was received|listener indicated an asynchronous response/i
 
+/** React 19 / Next.js DOM cleanup when extensions or translation mutate nodes React still owns. */
+export const REACT_DOM_CLEANUP_NOISE =
+  /Cannot read properties of null \(reading 'removeChild'\)|Failed to execute 'removeChild' on 'Node'|The node to be removed is not a child of this node/i
+
+export function isBenignReactDomCleanupError(reason: unknown): boolean {
+  if (reason == null) return false
+  const parts: string[] = []
+  if (typeof reason === 'string') {
+    parts.push(reason)
+  } else if (reason instanceof Error) {
+    parts.push(reason.message, reason.stack || '')
+  } else if (typeof reason === 'object' && 'message' in reason) {
+    parts.push(String((reason as { message?: unknown }).message))
+    if ('stack' in reason) parts.push(String((reason as { stack?: unknown }).stack))
+  }
+  try {
+    parts.push(String(reason))
+  } catch {
+    /* ignore */
+  }
+  return REACT_DOM_CLEANUP_NOISE.test(parts.join(' '))
+}
+
 /** Promise rejection from a broken extension onMessage handler — not app code. */
 export function isBenignExtensionRejection(reason: unknown): boolean {
   if (reason == null) return false
@@ -309,7 +332,7 @@ export function initConsoleErrorFilter(): void {
   window.addEventListener(
     'unhandledrejection',
     (event) => {
-      if (isBenignExtensionRejection(event.reason)) {
+      if (isBenignExtensionRejection(event.reason) || isBenignReactDomCleanupError(event.reason)) {
         event.preventDefault()
         event.stopImmediatePropagation()
       }
@@ -401,6 +424,9 @@ export function initConsoleErrorFilter(): void {
     if (checkHydrationToolingNoise(args)) {
       return
     }
+    if (args.some((arg) => isBenignReactDomCleanupError(arg))) {
+      return
+    }
     // Check if any argument is an extension or connection error
     const hasExtensionOrConnectionError = args.length > 0 && args.some(arg => checkExtensionError(arg))
     
@@ -475,7 +501,7 @@ export function initConsoleErrorFilter(): void {
       error: event.error
     }
     
-    if (isExtensionError(errorInfo)) {
+    if (isExtensionError(errorInfo) || isBenignReactDomCleanupError(event.error ?? event.message)) {
       // Suppress extension errors
       event.preventDefault()
       event.stopPropagation()
@@ -487,7 +513,7 @@ export function initConsoleErrorFilter(): void {
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason
 
-    if (isBenignExtensionRejection(reason) || isExtensionError(reason)) {
+    if (isBenignExtensionRejection(reason) || isBenignReactDomCleanupError(reason) || isExtensionError(reason)) {
       event.preventDefault()
       event.stopImmediatePropagation()
       return

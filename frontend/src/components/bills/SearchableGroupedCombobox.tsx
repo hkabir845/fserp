@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import { safeSelectInput } from '@/utils/safeSelectInput'
 
@@ -55,9 +56,30 @@ export function SearchableGroupedCombobox({
   const listboxId = useId()
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(-1)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  const updateMenuPos = useCallback(() => {
+    const el = inputRef.current
+    if (!el) return null
+    const rect = el.getBoundingClientRect()
+    const pos = {
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 200),
+    }
+    setMenuPos(pos)
+    return pos
+  }, [])
+
+  const openList = useCallback(() => {
+    updateMenuPos()
+    setOpen(true)
+    setQuery('')
+  }, [updateMenuPos])
 
   const allOptions = useMemo(() => {
     const opts: GroupedComboboxOption[] = []
@@ -67,7 +89,7 @@ export function SearchableGroupedCombobox({
   }, [groups, emptyOption])
 
   const selectedLabel = useMemo(() => {
-    if (emptyOption && value === emptyOption.value) return emptyOption.label
+    if (emptyOption && value === emptyOption.value) return ''
     const hit = allOptions.find((o) => o.value === value && (!emptyOption || o.value !== emptyOption.value))
     return hit?.label || ''
   }, [allOptions, emptyOption, value])
@@ -122,12 +144,39 @@ export function SearchableGroupedCombobox({
   )
 
   useEffect(() => {
+    if (!open) {
+      setMenuPos(null)
+      return
+    }
+    const sync = () => updateMenuPos()
+    sync()
+    const raf = requestAnimationFrame(sync)
+    const onScrollOrResize = () => updateMenuPos()
+    window.addEventListener('scroll', onScrollOrResize, true)
+    window.addEventListener('resize', onScrollOrResize)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
+    }
+  }, [open, updateMenuPos])
+
+  useEffect(() => {
     if (!open) return
     const onDocMouseDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) close()
+      const target = e.target as Node
+      if (rootRef.current?.contains(target)) return
+      if (listRef.current?.contains(target)) return
+      close()
     }
-    document.addEventListener('mousedown', onDocMouseDown)
-    return () => document.removeEventListener('mousedown', onDocMouseDown)
+    // Defer so the same click that opened the list does not immediately close it.
+    const t = window.setTimeout(() => {
+      document.addEventListener('mousedown', onDocMouseDown)
+    }, 0)
+    return () => {
+      window.clearTimeout(t)
+      document.removeEventListener('mousedown', onDocMouseDown)
+    }
   }, [open, close])
 
   useEffect(() => {
@@ -135,7 +184,54 @@ export function SearchableGroupedCombobox({
     setActiveIndex(selectableOptions.length > 0 ? 0 : -1)
   }, [open, query, selectableOptions.length])
 
-  const inputDisplay = open ? query : selectedLabel || ''
+  const inputDisplay = open ? query : selectedLabel
+
+  const portalListClassName =
+    'max-h-72 w-max min-w-full max-w-[min(42rem,calc(100vw-2rem))] overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg'
+
+  const listContent =
+    flatRows.length === 0 ? (
+      <li className="px-3 py-2 text-gray-500">No matches. Try another search.</li>
+    ) : (
+      flatRows.map((row, idx) => {
+        if (row.kind === 'header') {
+          return (
+            <li
+              key={`h-${row.label}-${idx}`}
+              className="mt-1 border-t border-gray-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 first:mt-0 first:border-t-0"
+            >
+              {row.label}
+            </li>
+          )
+        }
+        const opt = row.option
+        const active = !opt.disabled && row.flatIndex === activeIndex
+        return (
+          <li
+            key={`${opt.value}-${idx}`}
+            role="option"
+            aria-selected={active}
+            aria-disabled={opt.disabled}
+            title={opt.title}
+            className={`cursor-pointer px-3 py-1.5 ${
+              opt.disabled ? 'cursor-not-allowed opacity-40' : ''
+            } ${active ? 'bg-blue-50 text-blue-900' : 'text-gray-900 hover:bg-gray-50'}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onMouseEnter={() => {
+              if (row.flatIndex >= 0) setActiveIndex(row.flatIndex)
+            }}
+            onClick={() => pick(opt)}
+          >
+            <div className="whitespace-normal break-words leading-snug">{opt.label}</div>
+            {opt.description ? (
+              <div className="mt-0.5 whitespace-normal break-words text-xs leading-snug text-gray-500">
+                {opt.description}
+              </div>
+            ) : null}
+          </li>
+        )
+      })
+    )
 
   return (
     <div className="relative min-w-0" ref={rootRef}>
@@ -152,11 +248,10 @@ export function SearchableGroupedCombobox({
           spellCheck={false}
           placeholder={placeholder}
           value={inputDisplay}
-          title={selectedLabel || placeholder}
+          title={selectedLabel || emptyOption?.label || placeholder}
           className={`${className} pr-8 ${open ? '' : 'truncate'}`}
           onFocus={(e) => {
-            setOpen(true)
-            setQuery(selectedLabel)
+            openList()
             safeSelectInput(e.currentTarget)
           }}
           onChange={(e) => {
@@ -172,7 +267,7 @@ export function SearchableGroupedCombobox({
             }
             if (e.key === 'ArrowDown') {
               e.preventDefault()
-              if (!open) setOpen(true)
+              if (!open) openList()
               setActiveIndex((i) =>
                 selectableOptions.length === 0 ? -1 : Math.min(i + 1, selectableOptions.length - 1)
               )
@@ -201,8 +296,7 @@ export function SearchableGroupedCombobox({
               close()
               inputRef.current?.blur()
             } else {
-              setOpen(true)
-              setQuery('')
+              openList()
               inputRef.current?.focus()
             }
           }}
@@ -211,56 +305,27 @@ export function SearchableGroupedCombobox({
         </button>
       </div>
 
-      {open && (
-        <ul
-          id={listboxId}
-          role="listbox"
-          className={`absolute ${listClassName}`}
-        >
-          {flatRows.length === 0 ? (
-            <li className="px-3 py-2 text-gray-500">No matches. Try another search.</li>
-          ) : (
-            flatRows.map((row, idx) => {
-              if (row.kind === 'header') {
-                return (
-                  <li
-                    key={`h-${row.label}-${idx}`}
-                    className="mt-1 border-t border-gray-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 first:mt-0 first:border-t-0"
-                  >
-                    {row.label}
-                  </li>
-                )
-              }
-              const opt = row.option
-              const active = !opt.disabled && row.flatIndex === activeIndex
-              return (
-                <li
-                  key={`${opt.value}-${idx}`}
-                  role="option"
-                  aria-selected={active}
-                  aria-disabled={opt.disabled}
-                  title={opt.title}
-                  className={`cursor-pointer px-3 py-1.5 ${
-                    opt.disabled ? 'cursor-not-allowed opacity-40' : ''
-                  } ${active ? 'bg-blue-50 text-blue-900' : 'text-gray-900 hover:bg-gray-50'}`}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => {
-                    if (row.flatIndex >= 0) setActiveIndex(row.flatIndex)
-                  }}
-                  onClick={() => pick(opt)}
-                >
-                  <div className="whitespace-normal break-words leading-snug">{opt.label}</div>
-                  {opt.description ? (
-                    <div className="mt-0.5 whitespace-normal break-words text-xs leading-snug text-gray-500">
-                      {opt.description}
-                    </div>
-                  ) : null}
-                </li>
-              )
-            })
-          )}
-        </ul>
-      )}
+      {open &&
+        menuPos &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <ul
+            ref={listRef}
+            id={listboxId}
+            role="listbox"
+            style={{
+              position: 'fixed',
+              top: menuPos.top,
+              left: menuPos.left,
+              minWidth: menuPos.width,
+              zIndex: 9999,
+            }}
+            className={portalListClassName}
+          >
+            {listContent}
+          </ul>,
+          document.body,
+        )}
     </div>
   )
 }

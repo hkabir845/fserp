@@ -16,6 +16,18 @@ export function isOffsetPagedPayload(x: unknown): x is OffsetPaged<unknown> {
   return typeof o.count === 'number' && Array.isArray(o.results)
 }
 
+/** Unwrap list endpoints that return either a bare array or `{ results: [...] }`. */
+export function unwrapReferenceList<T>(data: unknown): T[] {
+  if (isOffsetPagedPayload(data)) return data.results as T[]
+  if (Array.isArray(data)) return data as T[]
+  if (data && typeof data === 'object') {
+    const o = data as Record<string, unknown>
+    if (Array.isArray(o.results)) return o.results as T[]
+    if (Array.isArray(o.data)) return o.data as T[]
+  }
+  return []
+}
+
 export const OFFSET_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const
 
 /** Max rows for dropdown/reference fetches (vendors, customers, items). */

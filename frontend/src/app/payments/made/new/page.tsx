@@ -16,6 +16,7 @@ import {
   normalizeBankAccountsFromApi,
   type BankAccountLike,
 } from '@/lib/bankAccountDisplay'
+import { VendorReferenceCombobox } from '@/components/reference/VendorReferenceCombobox'
 
 interface OutstandingBill {
   id: number
@@ -645,24 +646,13 @@ function RecordPaymentMadeInner() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Vendor *</label>
-                  <select
+                  <VendorReferenceCombobox
                     id="record-payment-vendor"
-                    name="vendor_id"
-                    value={selectedVendorId != null ? String(selectedVendorId) : ''}
-                    onChange={(e) => handleVendorSelectChange(e.target.value)}
+                    value={selectedVendorId ?? 0}
+                    onChange={(id) => handleVendorSelectChange(id > 0 ? String(id) : '')}
+                    vendors={vendors}
                     className="relative z-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  >
-                    <option value="">Select Vendor</option>
-                    {vendors.map((vendor) => (
-                      <option key={vendor.id} value={String(vendor.id)}>
-                        {vendor.display_name ||
-                          vendor.vendor_name ||
-                          vendor.company_name ||
-                          `Vendor ${vendor.vendor_number}`}
-                      </option>
-                    ))}
-                  </select>
+                  />
                   {!loading && vendors.length === 0 && !error && (
                     <p className="mt-1 text-sm text-gray-500">No vendors found.</p>
                   )}

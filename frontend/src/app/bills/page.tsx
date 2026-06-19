@@ -8,7 +8,7 @@ import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText, Ban } from '
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
-import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
+import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT, unwrapReferenceList } from '@/lib/pagination'
 import { preferNursingPondId, pondFishBillLabel } from '@/lib/aquaculturePondSite'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
@@ -54,10 +54,16 @@ import {
   formatPondScopeKey,
   headerPondIdFromLocationKey,
   inferReceiptLocationKeyFromBill,
+  receiptLocationDisplayLabel,
   resolveBillReceiptLocation,
 } from '@/lib/billReceiptLocation'
 import { BillReceiptLocationSelect } from '@/components/bills/BillReceiptLocationSelect'
 import { VendorReferenceCombobox } from '@/components/reference/VendorReferenceCombobox'
+import {
+  fetchEntityScopeDirectory,
+  parsePondsFromApi,
+  parseStationsFromApi,
+} from '@/lib/entityScopeDirectory'
 import {
   type BillPurpose,
   billLinePondCostMode,
@@ -1376,6 +1382,66 @@ export default function BillsPage() {
     return v ? vendorUsualReceivingSummary(v) : null
   }, [formData.vendor_id, vendors])
 
+  const resolveBillVendorLabel = useCallback(
+    (bill: { vendor_name?: string; vendor_id?: number }) => {
+      const fromApi = (bill.vendor_name || '').trim()
+      if (fromApi) return fromApi
+      const v = bill.vendor_id ? vendors.find((x) => x.id === bill.vendor_id) : undefined
+      if (v) {
+        const label = (v.display_name || v.vendor_number || '').trim()
+        if (label) return label
+      }
+      return bill.vendor_id ? `Vendor #${bill.vendor_id}` : '—'
+    },
+    [vendors],
+  )
+
+  const resolveBillReceiptLabel = useCallback(
+    (bill: Pick<Bill, 'receipt_station_id' | 'receipt_station_name' | 'lines'>) => {
+      const stationName = (bill.receipt_station_name || '').trim()
+      const pondIds = new Set<number>()
+      for (const line of bill.lines || []) {
+        const pid = line.aquaculture_pond_id
+        if (pid != null && Number(pid) > 0) pondIds.add(Number(pid))
+      }
+      if (pondIds.size === 1) {
+        const pid = [...pondIds][0]
+        const pond = aquaculturePonds.find((p) => p.id === pid)
+        const pondLabel = pond?.name || `Pond #${pid}`
+        return stationName ? `${pondLabel} · ${stationName}` : pondLabel
+      }
+      if (stationName) return stationName
+      const sid = bill.receipt_station_id
+      if (sid != null && Number(sid) > 0) {
+        const label = receiptLocationDisplayLabel(String(sid), stations, aquaculturePonds)
+        return label || `Station #${sid}`
+      }
+      return '—'
+    },
+    [stations, aquaculturePonds],
+  )
+
+  const loadReceiptLocationDirectory = useCallback(async () => {
+    try {
+      const [vendorsRes, scopeRes] = await Promise.allSettled([
+        api.get('/vendors/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
+        fetchEntityScopeDirectory(),
+      ])
+
+      if (vendorsRes.status === 'fulfilled') {
+        const raw = unwrapReferenceList<Vendor>(vendorsRes.value.data)
+        setVendors(raw.filter((v) => v.is_active))
+      }
+
+      if (scopeRes.status === 'fulfilled') {
+        setStations(scopeRes.value.stations)
+        setAquaculturePonds(scopeRes.value.ponds as AquaculturePondOption[])
+      }
+    } catch (error) {
+      console.error('Failed to load receipt locations:', error)
+    }
+  }, [])
+
   const handleFormVendorChange = (rawVendorId: string) => {
     const vendor_id = parseInt(rawVendorId, 10) || 0
     if (!vendor_id) {
@@ -1596,6 +1662,7 @@ export default function BillsPage() {
   }, [])
 
   const loadBillReferenceData = useCallback(async () => {
+    let vendorsLoaded = false
     try {
       const [vendorsRes, itemsRes, accountsRes, tanksRes, stationsRes] = await Promise.allSettled([
         api.get('/vendors/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
@@ -1606,10 +1673,10 @@ export default function BillsPage() {
       ])
 
       if (vendorsRes.status === 'fulfilled') {
-        const vendorsData = vendorsRes.value.data
-        const raw = Array.isArray(vendorsData) ? vendorsData : []
+        const raw = unwrapReferenceList<Vendor>(vendorsRes.value.data)
         const activeVendors = raw.filter((v: Vendor) => v.is_active)
         setVendors(activeVendors)
+        vendorsLoaded = true
       } else {
         console.error('❌ Failed to load vendors:', vendorsRes)
         toast.error('Failed to load vendors')
@@ -1694,33 +1761,9 @@ export default function BillsPage() {
       }
 
       if (stationsRes.status === 'fulfilled') {
-        const raw = Array.isArray(stationsRes.value.data) ? stationsRes.value.data : []
-        setStations(
-          raw
-            .map(
-              (s: {
-                id?: unknown
-                station_name?: string
-                station_number?: string
-                default_aquaculture_pond_id?: unknown
-                operates_fuel_retail?: unknown
-                is_active?: unknown
-              }) => ({
-                id: typeof s.id === 'number' ? s.id : Number(s.id),
-                station_name: String(s.station_name || '').trim() || 'Station',
-                station_number: s.station_number != null ? String(s.station_number) : undefined,
-                default_aquaculture_pond_id:
-                  s.default_aquaculture_pond_id != null && s.default_aquaculture_pond_id !== ''
-                    ? Number(s.default_aquaculture_pond_id)
-                    : null,
-                operates_fuel_retail: s.operates_fuel_retail !== false,
-                is_active: s.is_active !== false,
-              }),
-            )
-            .filter((s: Station) => Number.isFinite(s.id)),
-        )
+        setStations(parseStationsFromApi(stationsRes.value.data))
       } else {
-        setStations([])
+        console.error('❌ Failed to load stations:', stationsRes)
       }
 
       const [pondsRes, cyclesRes, speciesRes] = await Promise.allSettled([
@@ -1728,37 +1771,8 @@ export default function BillsPage() {
         api.get('/aquaculture/production-cycles/'),
         api.get('/aquaculture/fish-species/'),
       ])
-      if (pondsRes.status === 'fulfilled' && Array.isArray(pondsRes.value.data)) {
-        setAquaculturePonds(
-          pondsRes.value.data
-            .map((p: {
-              id?: unknown
-              name?: unknown
-              pond_role?: unknown
-              physical_site_name?: unknown
-              linked_grow_out_pond_id?: unknown
-              nursing_display_name?: unknown
-              grow_out_display_name?: unknown
-              operational_display_name?: unknown
-              is_active?: unknown
-            }) => ({
-              id: typeof p.id === 'number' ? p.id : Number(p.id),
-              name: String(p.name || '').trim() || `Pond ${p.id}`,
-              pond_role: String(p.pond_role || '').trim(),
-              physical_site_name: String(p.physical_site_name || '').trim(),
-              linked_grow_out_pond_id:
-                p.linked_grow_out_pond_id != null && p.linked_grow_out_pond_id !== ''
-                  ? Number(p.linked_grow_out_pond_id)
-                  : null,
-              nursing_display_name: String(p.nursing_display_name || '').trim(),
-              grow_out_display_name: String(p.grow_out_display_name || '').trim(),
-              operational_display_name: String(p.operational_display_name || '').trim(),
-              is_active: p.is_active !== false,
-            }))
-            .filter((p: AquaculturePondOption) => Number.isFinite(p.id)),
-        )
-      } else {
-        setAquaculturePonds([])
+      if (pondsRes.status === 'fulfilled') {
+        setAquaculturePonds(parsePondsFromApi(pondsRes.value.data))
       }
       if (speciesRes.status === 'fulfilled' && Array.isArray(speciesRes.value.data)) {
         setFishSpeciesOptions(
@@ -1786,10 +1800,11 @@ export default function BillsPage() {
         setProductionCycles([])
       }
       await loadBillReportingCategories()
-      referenceReadyRef.current = true
+      referenceReadyRef.current = vendorsLoaded
     } catch (error) {
       console.error('Error fetching reference data:', error)
       toast.error('Error connecting to server')
+      referenceReadyRef.current = false
     }
   }, [toast, loadBillReportingCategories])
 
@@ -1830,7 +1845,8 @@ export default function BillsPage() {
     const token = localStorage.getItem('access_token')
     if (!token) return
     void loadBills()
-  }, [loadBills])
+    void loadReceiptLocationDirectory()
+  }, [loadBills, loadReceiptLocationDirectory])
 
   const openedBillFromUrl = useRef(false)
   useEffect(() => {
@@ -2722,6 +2738,7 @@ export default function BillsPage() {
         (b) => `<tr>
         <td>${escapeHtml(b.bill_number)}</td>
         <td>${escapeHtml(b.vendor_name || '—')}</td>
+        <td>${escapeHtml(resolveBillReceiptLabel(b))}</td>
         <td>${escapeHtml(formatDateOnly(b.bill_date))}</td>
         <td>${escapeHtml(b.due_date ? formatDateOnly(b.due_date) : '—')}</td>
         <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(billTotal(b)))}</td>
@@ -2733,7 +2750,7 @@ export default function BillsPage() {
     const ok = await printListView({
       title: 'Vendor bills (list)',
       subtitle: sub,
-      tableHtml: `<table><thead><tr><th>Bill #</th><th>Vendor</th><th>Date</th><th>Due</th><th class="right">Total</th><th class="right">Balance</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`,
+      tableHtml: `<table><thead><tr><th>Bill #</th><th>Vendor</th><th>Receiving location</th><th>Date</th><th>Due</th><th class="right">Total</th><th class="right">Balance</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`,
     })
     if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
   }
@@ -2964,6 +2981,9 @@ export default function BillsPage() {
                     Vendor
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Receiving location
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Bill Date
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -2990,7 +3010,12 @@ export default function BillsPage() {
                       {bill.bill_number}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {bill.vendor_name}
+                      {resolveBillVendorLabel(bill)}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 max-w-[14rem]">
+                      <span className="line-clamp-2" title={resolveBillReceiptLabel(bill)}>
+                        {resolveBillReceiptLabel(bill)}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {formatDateOnly(bill.bill_date)}
@@ -3145,7 +3170,7 @@ export default function BillsPage() {
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">Vendor</p>
-                    <p className="text-lg">{viewingBill.vendor_name || 'N/A'}</p>
+                    <p className="text-lg">{resolveBillVendorLabel(viewingBill)}</p>
                   </div>
                   {(viewingBill.receipt_station_name ||
                     viewingBill.receipt_station_id ||
@@ -3424,6 +3449,11 @@ export default function BillsPage() {
                       ponds={aquaculturePonds}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
+                    {stations.length === 0 && aquaculturePonds.length === 0 ? (
+                      <p className="mt-1 text-xs text-amber-800">
+                        No stations or ponds loaded. Add sites under Stations or enable aquaculture ponds, then refresh.
+                      </p>
+                    ) : null}
                     {formData.receipt_location_key.startsWith('p:') ? (
                       <p className="mt-1 text-xs text-teal-800">
                         Pond bill — lines tag this pond for aquaculture P&amp;L (671x). Shop hub for stock is set
@@ -3670,6 +3700,7 @@ export default function BillsPage() {
                             billFuelCategories={billFuelCategories}
                             billExpenseCoaOptions={billExpenseCoaOptions}
                             onFieldChange={handleLineChange}
+                            billPurpose={formData.bill_purpose}
                           />
                         </div>
                       )
@@ -3920,6 +3951,11 @@ export default function BillsPage() {
                       ponds={aquaculturePonds}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
+                    {stations.length === 0 && aquaculturePonds.length === 0 ? (
+                      <p className="mt-1 text-xs text-amber-800">
+                        No stations or ponds loaded. Add sites under Stations or enable aquaculture ponds, then refresh.
+                      </p>
+                    ) : null}
                     {formData.receipt_location_key.startsWith('p:') ? (
                       <p className="mt-1 text-xs text-teal-800">
                         Pond bill — lines tag this pond for aquaculture P&amp;L (671x). Shop hub for stock is set
@@ -4188,6 +4224,7 @@ export default function BillsPage() {
                             billFuelCategories={billFuelCategories}
                             billExpenseCoaOptions={billExpenseCoaOptions}
                             onFieldChange={handleLineChange}
+                            billPurpose={formData.bill_purpose}
                           />
                         </div>
                       )

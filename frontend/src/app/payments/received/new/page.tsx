@@ -16,6 +16,7 @@ import {
   normalizeBankAccountsFromApi,
   type BankAccountLike,
 } from '@/lib/bankAccountDisplay'
+import { CustomerReferenceCombobox } from '@/components/reference/CustomerReferenceCombobox'
 
 interface OutstandingInvoice {
   id: number
@@ -686,24 +687,13 @@ function RecordPaymentReceivedInner() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
-                  <select
+                  <CustomerReferenceCombobox
                     id="payment-received-customer"
-                    name="customer_id"
-                    value={selectedCustomerId != null ? String(selectedCustomerId) : ''}
-                    onChange={(e) => handleCustomerSelectChange(e.target.value)}
+                    value={selectedCustomerId ?? 0}
+                    onChange={(id) => handleCustomerSelectChange(id > 0 ? String(id) : '')}
+                    customers={customers}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 bg-white relative z-10"
-                    required
-                  >
-                    <option value="">Select Customer</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={String(customer.id)}>
-                        {customer.display_name ||
-                          customer.company_name ||
-                          customer.first_name ||
-                          `Customer ${customer.customer_number || customer.id}`}
-                      </option>
-                    ))}
-                  </select>
+                  />
                   {!loading && customers.length === 0 ? (
                     <p className="mt-2 text-sm text-amber-700">
                       No customers returned from the server. Add customers under Customers or check API access.

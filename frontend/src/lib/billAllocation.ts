@@ -1,7 +1,7 @@
 import type { AquacultureBillExpenseCategory } from '@/lib/aquacultureBillLine'
 import type { FuelStationBillExpenseCategory } from '@/lib/fuelStationBillLine'
 
-export type BillPurpose = 'station' | 'pond' | 'office'
+export type BillPurpose = 'station' | 'pond' | 'office' | 'mixed'
 
 export type PondCostMode = 'direct' | 'shared_equal' | 'shared_manual'
 export type StationCostMode = 'direct' | 'shared_equal' | 'shared_manual'
@@ -68,6 +68,50 @@ export function inferBillPurposeFromLines(
   return hasPonds ? 'station' : 'office'
 }
 
+export function inferBillPurposeIncludingMixed(
+  lines: BillLineAllocationFields[],
+  headerStationId: number | '' | null | undefined,
+  hasPonds: boolean
+): BillPurpose {
+  let hasPond = false
+  let hasStation = false
+  for (const line of lines) {
+    const pond =
+      line.aquaculture_pond_id !== '' &&
+      line.aquaculture_pond_id != null &&
+      Number.isFinite(Number(line.aquaculture_pond_id))
+    if (pond) hasPond = true
+    if (
+      billLinePondCostMode(line) === 'shared_equal' ||
+      billLinePondCostMode(line) === 'shared_manual' ||
+      line.aquaculture_expense_category
+    ) {
+      hasPond = true
+    }
+    if (
+      billLineStationCostMode(line) === 'shared_equal' ||
+      billLineStationCostMode(line) === 'shared_manual' ||
+      (line.fuel_station_expense_category || '').trim()
+    ) {
+      hasStation = true
+    }
+    if (
+      line.line_receipt_station_id !== '' &&
+      line.line_receipt_station_id != null &&
+      Number.isFinite(Number(line.line_receipt_station_id))
+    ) {
+      hasStation = true
+    }
+  }
+  if (hasPond && hasStation) return 'mixed'
+  if (hasPond) return 'pond'
+  if (hasStation) return 'station'
+  if (headerStationId !== '' && headerStationId != null && Number.isFinite(Number(headerStationId))) {
+    return 'station'
+  }
+  return hasPonds ? 'station' : 'office'
+}
+
 export function validateBillLinePondAllocation(
   line: BillLineAllocationFields,
   lineIndex: number,
@@ -121,7 +165,15 @@ export function validateBillLineStationAllocation(
   lineIndex: number,
   billPurpose: BillPurpose
 ): string | null {
-  if (billPurpose !== 'station') return null
+  if (billPurpose === 'office') return null
+  if (billPurpose === 'mixed') {
+    const hasPond =
+      line.aquaculture_pond_id !== '' &&
+      line.aquaculture_pond_id != null &&
+      Number.isFinite(Number(line.aquaculture_pond_id))
+    if (hasPond) return null
+  }
+  if (billPurpose !== 'station' && billPurpose !== 'mixed') return null
   const n = lineIndex + 1
   const mode = billLineStationCostMode(line)
   const hasPond =

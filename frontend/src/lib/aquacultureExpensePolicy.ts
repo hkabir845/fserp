@@ -37,7 +37,7 @@ export function aquacultureExpenseDeleteConfirmMessage(row: AquacultureExpenseRo
   }
   const cat = row.expense_category
   if (cat === 'feed_consumed') {
-    return 'Delete this feed consumption? Pond warehouse stock will be restored, COGS journal reversed, and linked feeding advice reverted to Approved if applicable.'
+    return 'Delete this feed consumption? Feed and auto-created empty sacks will be restored at the pond, the COGS journal reversed, and linked feeding advice reverted to Approved if applicable.'
   }
   if (cat === 'medicine_consumed') {
     return 'Delete this medicine consumption? Pond warehouse stock will be restored and the COGS journal reversed.'

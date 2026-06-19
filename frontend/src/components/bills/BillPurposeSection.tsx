@@ -47,10 +47,10 @@ export function BillPurposeSection({
       </div>
       <p className="mt-2 text-xs text-slate-600">
         {value === 'station'
-          ? 'Use tanks for fuel, header station for shop stock, and station cost type for utilities and maintenance. Split one bill across sites with “shared” on a line.'
+          ? 'Use tanks for fuel, header station for shop stock, and station cost type for utilities and maintenance. Each line can also pick its own entity below.'
           : value === 'pond'
-            ? 'Tag pond costs or split lease and shared electricity across ponds. Fish fry lines use one pond only.'
-            : 'Expense accounts only — no pond or station tags on lines.'}
+            ? 'Tag pond costs or split lease and shared electricity across ponds. Each line can pick its own pond entity below.'
+            : 'Expense accounts only — no pond or station tags on lines unless you set an entity per line.'}
       </p>
     </fieldset>
   )

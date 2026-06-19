@@ -18,6 +18,7 @@ import {
   Info,
 } from 'lucide-react'
 import { vendorUsualReceivingLabel } from '@/lib/vendorReceivingDefaults'
+import { VendorDefaultReceivingSelect } from '@/components/vendors/VendorDefaultReceivingSelect'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api, { getBackendOrigin } from '@/lib/api'
@@ -27,7 +28,7 @@ import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { isConnectionError } from '@/utils/connectionError'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
-import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { CoaAccountCombobox } from '@/components/reference/CoaAccountCombobox'
 import { formatDate } from '@/utils/date'
 import {
   buildVendorListCsv,
@@ -190,7 +191,7 @@ export default function VendorsPage() {
           id: o.id,
           station_name: o.station_name || `Site #${o.id}`,
           is_active: o.is_active,
-          operates_fuel_retail: o.operates_fuel_retail !== false,
+          operates_fuel_retail: o.operates_fuel_retail === false ? false : true,
         })
       }
       setStations(parsed)
@@ -495,8 +496,6 @@ export default function VendorsPage() {
     resetForm()
   }
 
-  const fuelStations = stations.filter((s) => s.operates_fuel_retail !== false)
-  const shopStations = stations.filter((s) => s.operates_fuel_retail === false)
 
   const defaultReceivingLabel = (vendor: Vendor) => {
     const label = vendorUsualReceivingLabel(vendor)
@@ -872,10 +871,9 @@ export default function VendorsPage() {
                       <Building2 className="h-4 w-4 text-amber-600" />
                       Usual receiving location (optional)
                     </label>
-                    <select
+                    <VendorDefaultReceivingSelect
                       value={formData.default_receiving}
-                      onChange={(e) => {
-                        const default_receiving = e.target.value
+                      onChange={(default_receiving) => {
                         const suggested = suggestVendorDefaultExpenseAccountId(
                           default_receiving,
                           coaExpenseOptions
@@ -890,45 +888,10 @@ export default function VendorsPage() {
                           ),
                         })
                       }}
+                      stations={stations}
+                      ponds={ponds}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                    >
-                      <option value="">— Any site or pond (choose on each bill) —</option>
-                      {fuelStations.length > 0 ? (
-                        <optgroup label="Sites — fuel forecourt">
-                          {fuelStations.map((s) => (
-                            <option key={`s-${s.id}`} value={`s:${s.id}`}>
-                              {s.station_name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ) : null}
-                      {shopStations.length > 0 ? (
-                        <optgroup label="Sites — shop / POS (no fuel)">
-                          {shopStations.map((s) => (
-                            <option key={`s-${s.id}`} value={`s:${s.id}`}>
-                              {s.station_name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ) : null}
-                      {fuelStations.length === 0 && shopStations.length === 0
-                        ? stations.map((s) => (
-                            <option key={`s-${s.id}`} value={`s:${s.id}`}>
-                              {s.station_name}
-                            </option>
-                          ))
-                        : null}
-                      {ponds.length > 0 ? (
-                        <optgroup label="Ponds — fish & fry delivered to pond">
-                          {ponds.map((p) => (
-                            <option key={`p-${p.id}`} value={`p:${p.id}`}>
-                              {p.name}
-                              {p.code ? ` (${p.code})` : ''}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ) : null}
-                    </select>
+                    />
                     <p className="mt-1 text-xs text-gray-500">
                       Does not restrict this supplier to one place. Pre-fills{' '}
                       <Link href="/bills" className="text-blue-600 hover:underline">
@@ -945,31 +908,26 @@ export default function VendorsPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Default expense account (optional)
                     </label>
-                    <select
+                    <CoaAccountCombobox
                       value={formData.default_expense_account_id}
-                      onChange={(e) => {
+                      onChange={(accountId) => {
                         syncBooleanFieldTouchedForAccountPick(
                           vendorExpenseAccountTouchedRef,
-                          e.target.value
+                          accountId
                         )
-                        setFormData({ ...formData, default_expense_account_id: e.target.value })
+                        setFormData({ ...formData, default_expense_account_id: accountId })
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                    >
-                      <option value="">
-                        {formData.default_receiving
+                      accounts={coaExpenseOptions}
+                      emptyLabel={
+                        formData.default_receiving
                           ? templateVendorDefaultExpenseOptionLabel(
                               formData.default_receiving,
                               coaExpenseOptions
                             )
-                          : '— No vendor override (bill uses line item or system default) —'}
-                      </option>
-                      {coaExpenseOptions.map((a) => (
-                        <option key={a.id} value={String(a.id)}>
-                          {formatCoaOptionLabel(a)}
-                        </option>
-                      ))}
-                    </select>
+                          : '— No vendor override (bill uses line item or system default) —'
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
                     <p className="mt-1 text-xs text-gray-500">
                       <strong>Expense category for vendor bills</strong> (P&amp;L), not the account you pay from.
                       Suggested when you pick a usual location: site → 6920 station operating, pond → 6725 aquaculture

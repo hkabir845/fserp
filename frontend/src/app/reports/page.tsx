@@ -45,6 +45,7 @@ import {
   type ReportStationForSegment,
 } from './reportBusinessSegment'
 import { BusinessSegmentFilter } from './BusinessSegmentFilter'
+import { ReportSiteScopeSelect } from '@/components/reports/ReportSiteScopeSelect'
 import { SalesPurchasePeriodFilter } from './SalesPurchasePeriodFilter'
 import {
   inferSalesPurchasePreset,
@@ -1508,14 +1509,24 @@ export default function ReportsPage() {
     if (!t) return
     let cancelled = false
     api
-      .get<{ id: number; station_name: string; operates_fuel_retail?: boolean }[]>('/stations/')
+      .get<
+        {
+          id: number
+          station_name: string
+          station_number?: string
+          operates_fuel_retail?: boolean
+          is_active?: boolean
+        }[]
+      >('/stations/')
       .then((res) => {
         if (cancelled) return
         const rows = Array.isArray(res.data) ? res.data : []
         const mapped = rows.map((s) => ({
           id: s.id,
           station_name: s.station_name || `Station ${s.id}`,
-          operates_fuel_retail: s.operates_fuel_retail !== false,
+          station_number: s.station_number != null ? String(s.station_number) : undefined,
+          operates_fuel_retail: s.operates_fuel_retail === false ? false : true,
+          is_active: s.is_active !== false,
         }))
         setReportStationList(mapped)
         const saved = localStorage.getItem('fserp_report_station_id')?.trim() || ''
@@ -2135,9 +2146,8 @@ export default function ReportsPage() {
     }
   }, [searchParams, reportRbacHydrated, fetchReport])
 
-  const onReportStationSelectChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const v = e.target.value
+  const applyReportSiteScopeChange = useCallback(
+    (v: string) => {
       persistReportStation(v)
       const scope = parseReportSiteScopeKey(v)
       if (scope.kind === 'pond') {
@@ -3219,46 +3229,14 @@ export default function ReportsPage() {
                       <label className="text-sm font-medium text-slate-700" htmlFor="report-station-scope">
                         Site
                       </label>
-                      <select
+                      <ReportSiteScopeSelect
                         id="report-station-scope"
-                        aria-label="Filter reports by station, pond, or all sites"
                         value={reportStationId}
-                        onChange={onReportStationSelectChange}
+                        onChange={applyReportSiteScopeChange}
+                        stations={reportStationList}
+                        ponds={aquaculturePonds}
                         className="min-w-[16rem] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                      >
-                        <option value="">All</option>
-                        {reportStationList.filter((s) => s.operates_fuel_retail !== false).length > 0 ? (
-                          <optgroup label="Fuel filling stations">
-                            {reportStationList
-                              .filter((s) => s.operates_fuel_retail !== false)
-                              .map((s) => (
-                                <option key={s.id} value={String(s.id)}>
-                                  {s.station_name}
-                                </option>
-                              ))}
-                          </optgroup>
-                        ) : null}
-                        {reportStationList.filter((s) => s.operates_fuel_retail === false).length > 0 ? (
-                          <optgroup label="Shop hubs (no fuel)">
-                            {reportStationList
-                              .filter((s) => s.operates_fuel_retail === false)
-                              .map((s) => (
-                                <option key={s.id} value={String(s.id)}>
-                                  {s.station_name}
-                                </option>
-                              ))}
-                          </optgroup>
-                        ) : null}
-                        {showPondsInSiteScope ? (
-                          <optgroup label="Ponds">
-                            {aquaculturePonds.map((p) => (
-                              <option key={`pond-${p.id}`} value={formatPondScopeKey(p.id)}>
-                                {p.name || `Pond ${p.id}`}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ) : null}
-                      </select>
+                      />
                     </div>
                     <p className="text-xs text-slate-500 sm:text-right">
                       Saved in this browser · refreshes the open report

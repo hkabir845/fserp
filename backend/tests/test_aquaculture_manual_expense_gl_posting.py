@@ -244,3 +244,61 @@ def test_feeding_advice_create_expense_posts_gl(api_client, company_tenant, auth
     by_code = _lines_by_code(_entry(cid, exp_id))
     assert by_code["6716"].debit == Decimal("300.00")
     assert by_code["1010"].credit == Decimal("300.00")
+
+
+def test_feeding_advice_apply_consume_pond_warehouse(
+    api_client, company_tenant_with_gl, auth_admin_headers
+):
+    """Shop feed at pond → apply approved advice with consume_pond_stock (field feeding path)."""
+    _enable_aq(company_tenant_with_gl)
+    cid = company_tenant_with_gl.id
+    _seed_accounts(cid)
+    inv = ChartOfAccount.objects.filter(company_id=cid, account_type="asset", is_active=True).first()
+    cogs = ChartOfAccount.objects.filter(
+        company_id=cid, account_type="cost_of_goods_sold", is_active=True
+    ).first()
+    feed = Item.objects.create(
+        company_id=cid,
+        name="CP Tilapia Grower",
+        item_number="ITM-APPLY-TEST",
+        unit="sack",
+        content_weight_kg=Decimal("25"),
+        item_type="inventory",
+        quantity_on_hand=Decimal("100"),
+        cost=Decimal("2000"),
+        inventory_account=inv,
+        cogs_account=cogs,
+    )
+    pond = AquaculturePond.objects.create(
+        company_id=cid,
+        name="Ashari-2",
+        is_active=True,
+        default_feed_item=feed,
+    )
+    from api.services.aquaculture_pond_stock_service import add_pond_stock, get_pond_item_stock
+
+    add_pond_stock(cid, pond.id, feed.id, Decimal("31.64"))
+    advice = AquacultureFeedingAdvice.objects.create(
+        company_id=cid,
+        pond=pond,
+        target_date=date(2026, 6, 19),
+        status=AquacultureFeedingAdvice.STATUS_APPROVED,
+        ai_advice_text="Feed 48.3 kg",
+        suggested_feed_kg=Decimal("48.3000"),
+        sack_size_kg=25,
+        approved_advice_text="Feed 48.3 kg",
+    )
+
+    r = api_client.post(
+        f"/api/aquaculture/feeding-advice/{advice.id}/apply/",
+        data=json.dumps({"consume_pond_stock": True, "feed_weight_kg": "48.3000"}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    body = json.loads(r.content.decode())
+    assert body["status"] == AquacultureFeedingAdvice.STATUS_APPLIED
+    assert body.get("created_expense") is not None
+    assert body["created_expense"]["expense_category"] == "feed_consumed"
+    # 48.3 kg @ 25 kg/sack ≈ 1.932 sacks consumed
+    assert get_pond_item_stock(cid, pond.id, feed.id) == Decimal("29.708")

@@ -20,6 +20,8 @@ from api.models import (
     Item,
     PondWarehouseStockReceipt,
     PondWarehouseStockReceiptLine,
+    PondWarehouseStockReturn,
+    PondWarehouseStockReturnLine,
     Station,
     User,
 )
@@ -27,6 +29,7 @@ from api.exceptions import StockBusinessError
 from api.services.aquaculture_pond_stock_service import (
     amend_pond_warehouse_stock_receipt,
     reverse_pond_warehouse_stock_receipt,
+    reverse_pond_warehouse_stock_return,
 )
 from api.services.gl_posting import (
     delete_auto_inventory_adjustment_journal,
@@ -71,6 +74,13 @@ def _pond_receipt_visible_for_user(request, rec: PondWarehouseStockReceipt) -> b
     return int(rec.from_station_id) == h
 
 
+def _pond_return_visible_for_user(request, ret: PondWarehouseStockReturn) -> bool:
+    h = _user_home_station_id(request)
+    if h is None:
+        return True
+    return int(ret.to_station_id) == h
+
+
 def _inventory_line_value_fields(item: Item | None, quantity: Decimal) -> dict:
     qty = quantity or Decimal("0")
     unit_cost = item_inventory_unit_cost(item)
@@ -101,12 +111,49 @@ def _pond_receipt_to_json(rec: PondWarehouseStockReceipt) -> dict:
         )
     return {
         "id": rec.id,
+        "movement_type": "shop_to_pond",
         "receipt_number": rec.receipt_number or "",
+        "document_number": rec.receipt_number or "",
         "created_at": rec.created_at.isoformat() if rec.created_at else None,
         "from_station_id": rec.from_station_id,
         "from_station_name": (rec.from_station.station_name or "") if rec.from_station_id else "",
         "pond_id": rec.pond_id,
         "pond_name": (rec.pond.name or "") if rec.pond_id else "",
+        "to_station_id": None,
+        "to_station_name": "",
+        "total_value": _serialize_decimal(total_value.quantize(Decimal("0.01"))),
+        "lines": line_rows,
+    }
+
+
+def _pond_return_to_json(ret: PondWarehouseStockReturn) -> dict:
+    lines = list(ret.lines.all().select_related("item"))
+    line_rows = []
+    total_value = Decimal("0")
+    for ln in lines:
+        cost_fields = _inventory_line_value_fields(ln.item, ln.quantity or Decimal("0"))
+        total_value += Decimal(cost_fields["line_value"])
+        line_rows.append(
+            {
+                "item_id": ln.item_id,
+                "item_name": (ln.item.name or "") if ln.item_id else "",
+                "quantity": _serialize_decimal(ln.quantity),
+                **cost_fields,
+            }
+        )
+    return {
+        "id": ret.id,
+        "movement_type": "pond_to_shop",
+        "return_number": ret.return_number or "",
+        "document_number": ret.return_number or "",
+        "created_at": ret.created_at.isoformat() if ret.created_at else None,
+        "from_station_id": None,
+        "from_station_name": "",
+        "pond_id": ret.pond_id,
+        "pond_name": (ret.pond.name or "") if ret.pond_id else "",
+        "to_station_id": ret.to_station_id,
+        "to_station_name": (ret.to_station.station_name or "") if ret.to_station_id else "",
+        "memo": ret.memo or "",
         "total_value": _serialize_decimal(total_value.quantize(Decimal("0.01"))),
         "lines": line_rows,
     }
@@ -1072,3 +1119,44 @@ def pond_warehouse_receipt_reverse_view(request, receipt_id: int):
     except StockBusinessError as ex:
         return JsonResponse({"detail": ex.detail}, status=400)
     return JsonResponse({"detail": "Receipt reversed; stock returned to the shop station."}, status=200)
+
+
+@require_GET
+@auth_required
+@require_company_id
+def pond_warehouse_returns_list(request):
+    """
+    GET /api/inventory/pond-warehouse-returns/
+    Pond warehouse → shop moves (immediate); home-station users see returns into their site.
+    """
+    cid = request.company_id
+    line_qs = PondWarehouseStockReturnLine.objects.select_related("item")
+    qs = (
+        PondWarehouseStockReturn.objects.filter(company_id=cid)
+        .select_related("pond", "to_station")
+        .prefetch_related(Prefetch("lines", queryset=line_qs))
+    )
+    h = _user_home_station_id(request)
+    if h is not None:
+        qs = qs.filter(to_station_id=h)
+    qs = qs.order_by("-created_at", "-id")[:200]
+    return JsonResponse([_pond_return_to_json(r) for r in qs], safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def pond_warehouse_return_reverse_view(request, return_id: int):
+    """Undo a pond → shop warehouse move if the shop still holds the quantities."""
+    cid = request.company_id
+    ret = PondWarehouseStockReturn.objects.filter(pk=return_id, company_id=cid).first()
+    if not ret:
+        return JsonResponse({"detail": "Return not found"}, status=404)
+    if not _pond_return_visible_for_user(request, ret):
+        return JsonResponse({"detail": "Return not found"}, status=404)
+    try:
+        reverse_pond_warehouse_stock_return(company_id=cid, return_id=return_id)
+    except StockBusinessError as ex:
+        return JsonResponse({"detail": ex.detail}, status=400)
+    return JsonResponse({"detail": "Return reversed; stock moved back to the pond warehouse."}, status=200)

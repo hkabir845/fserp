@@ -1,7 +1,7 @@
-"""Server-side validation for bill_purpose (station / pond / office) on vendor bills."""
+"""Server-side validation for bill_purpose (station / pond / office / mixed) on vendor bills."""
 from __future__ import annotations
 
-VALID_BILL_PURPOSES = frozenset({"station", "pond", "office"})
+VALID_BILL_PURPOSES = frozenset({"station", "pond", "office", "mixed"})
 
 
 def parse_bill_purpose(body: dict) -> tuple[str, str | None]:
@@ -13,21 +13,39 @@ def parse_bill_purpose(body: dict) -> tuple[str, str | None]:
     if purpose not in VALID_BILL_PURPOSES:
         return (
             "station",
-            f"Unknown bill_purpose: {raw!r}. Use station, pond, or office.",
+            f"Unknown bill_purpose: {raw!r}. Use station, pond, office, or mixed.",
         )
     return purpose, None
 
 
 def infer_bill_purpose_from_parsed_lines(parsed_lines: list[dict]) -> str:
     """When the client omits bill_purpose, infer from expanded line tags."""
+    has_pond = False
+    has_station = False
     for pl in parsed_lines:
         if pl.get("aquaculture_pond_id"):
-            return "pond"
+            has_pond = True
         if (pl.get("fuel_station_expense_category") or "").strip():
-            return "station"
+            has_station = True
         if pl.get("receipt_station_id"):
-            return "station"
+            has_station = True
+    if has_pond and has_station:
+        return "mixed"
+    if has_pond:
+        return "pond"
+    if has_station:
+        return "station"
     return "station"
+
+
+def _line_has_pond_tag(pl: dict) -> bool:
+    return bool(pl.get("aquaculture_pond_id"))
+
+
+def _line_has_station_tag(pl: dict) -> bool:
+    if (pl.get("fuel_station_expense_category") or "").strip():
+        return True
+    return bool(pl.get("receipt_station_id"))
 
 
 def validate_parsed_lines_for_bill_purpose(
@@ -35,8 +53,21 @@ def validate_parsed_lines_for_bill_purpose(
     parsed_lines: list[dict],
 ) -> str | None:
     """Validate expanded bill line dicts against the declared bill purpose."""
+    if purpose == "mixed":
+        for i, pl in enumerate(parsed_lines, start=1):
+            if _line_has_pond_tag(pl) and _line_has_station_tag(pl):
+                return (
+                    f"Line {i}: cannot tag both a pond and a station on the same line."
+                )
+            fuel = (pl.get("fuel_station_expense_category") or "").strip()
+            if fuel and _line_has_pond_tag(pl):
+                return (
+                    f"Line {i}: fuel station expense category cannot be used with a pond tag."
+                )
+        return None
+
     for i, pl in enumerate(parsed_lines, start=1):
-        if pl.get("aquaculture_pond_id"):
+        if _line_has_pond_tag(pl):
             if purpose == "station":
                 return f"Line {i}: station bills cannot tag a pond."
             if purpose == "office":

@@ -1,16 +1,17 @@
-import { formatPondScopeKey, parseReportSiteScopeKey } from '@/app/reports/reportSiteScope'
+import { formatPondScopeKey, formatHeadOfficeScopeKey, parseReportSiteScopeKey } from '@/app/reports/reportSiteScope'
 import type { ReportStationForSegment } from '@/app/reports/reportBusinessSegment'
 
 export type ReportingApplication = 'aquaculture' | 'fuel_station'
 export type ReportingKind = 'expense' | 'income'
 
-/** Scope key: '' = all, plain id = station, `p:{id}` = pond (same as Reports → Site). */
+/** Scope key: '' = all, `ho` = head office, plain id = station, `p:{id}` = pond. */
 export function applicationForScope(
   scopeKey: string,
   stations: ReportStationForSegment[]
 ): ReportingApplication | null {
   const scope = parseReportSiteScopeKey(scopeKey)
   if (scope.kind === 'all') return null
+  if (scope.kind === 'head_office') return 'fuel_station'
   if (scope.kind === 'pond') return 'aquaculture'
   const st = stations.find((s) => s.id === scope.id)
   if (!st) return 'aquaculture'
@@ -20,10 +21,14 @@ export function applicationForScope(
 export function scopeDisplayLabel(
   scopeKey: string,
   stations: ReportStationForSegment[],
-  ponds: { id: number; name: string }[]
+  ponds: { id: number; name: string }[],
+  companyName?: string
 ): string {
   const scope = parseReportSiteScopeKey(scopeKey)
-  if (scope.kind === 'all') return 'All sites'
+  if (scope.kind === 'all') return 'All entities'
+  if (scope.kind === 'head_office') {
+    return companyName?.trim() ? `Head office (${companyName.trim()})` : 'Head office'
+  }
   if (scope.kind === 'station') {
     return stations.find((s) => s.id === scope.id)?.station_name?.trim() || `Station #${scope.id}`
   }
@@ -36,7 +41,10 @@ export function scopeContextBlurb(
 ): string {
   const scope = parseReportSiteScopeKey(scopeKey)
   if (scope.kind === 'all') {
-    return 'View and manage custom income and expense labels for every part of your business — fuel forecourt, shop hubs, and ponds.'
+    return 'View and manage custom income and expense labels for every entity — head office, fuel stations, shop hubs, and ponds.'
+  }
+  if (scope.kind === 'head_office') {
+    return 'Head office categories apply to company-wide costs with no station or pond tag — admin, treasury, and general overhead.'
   }
   if (scope.kind === 'pond') {
     return 'Aquaculture pond categories roll into built-in P&L types for pond expenses, fish sales, and posted GL.'

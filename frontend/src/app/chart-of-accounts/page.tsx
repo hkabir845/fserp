@@ -1355,20 +1355,6 @@ export default function ChartOfAccountsPage() {
                     <p className="mt-1 text-sm text-gray-600 leading-relaxed max-w-3xl">
                       {fuelTemplateMeta.summary}
                     </p>
-                    {fuelTemplateMeta.numbering_scheme && (
-                      <p className="mt-2 text-xs text-gray-500 font-mono bg-white/60 rounded px-2 py-1 inline-block">
-                        {fuelTemplateMeta.numbering_scheme}
-                      </p>
-                    )}
-                    <p className="mt-2 text-xs text-gray-500">
-                      Full ≈ {fuelTemplateMeta.account_counts?.full ?? '—'} accounts · Fuel-first ≈{' '}
-                      {fuelTemplateMeta.account_counts?.retail ?? '—'} accounts
-                      {fuelTemplateMeta.version ? ` · v${fuelTemplateMeta.version}` : ''}
-                    </p>
-                    <p className="mt-2 text-xs text-gray-600">
-                      Each account includes a short explanation of what it is for and (where relevant) how FSERP uses it
-                      in automatic postings.
-                    </p>
                   </div>
                 </div>
                 <div className="flex flex-col sm:flex-row flex-wrap gap-2 lg:shrink-0">

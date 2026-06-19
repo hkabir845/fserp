@@ -1,5 +1,7 @@
 /** Shared helpers for vendor bill lines tagged with fuel-station reporting categories. */
 
+import { coaPickIdIfValid, type CoaPick } from '@/lib/coaDefaults'
+
 export interface FuelStationBillExpenseCategory {
   id: string
   label: string
@@ -25,7 +27,7 @@ export function billFuelCategoriesFromApi(
   if (!rows?.length) return []
   const hasFlag = rows.some((c) => c.bill_create_allowed !== undefined)
   if (!hasFlag) return rows
-  return rows.filter((c) => c.bill_create_allowed)
+  return rows.filter((c) => c.bill_create_allowed !== false)
 }
 
 export function findFuelBillCategory(
@@ -38,7 +40,8 @@ export function findFuelBillCategory(
 
 export function applyFuelCategoryToBillLine<T extends BillLineFuelStationFields>(
   line: T,
-  cat: FuelStationBillExpenseCategory | undefined
+  cat: FuelStationBillExpenseCategory | undefined,
+  coaOptions: CoaPick[] = []
 ): T {
   if (!cat) {
     return { ...line, fuel_station_expense_category: undefined }
@@ -47,10 +50,17 @@ export function applyFuelCategoryToBillLine<T extends BillLineFuelStationFields>
     ...line,
     fuel_station_expense_category: cat.id,
   }
-  if (!next.item_id && cat.default_coa_account_id) {
-    next.expense_account_id = cat.default_coa_account_id
-    if (!next.description?.trim()) {
-      next.description = cat.label
+  if (!next.item_id) {
+    const fromCat = coaPickIdIfValid(cat.default_coa_account_id, coaOptions)
+    const fromLine = coaPickIdIfValid(next.expense_account_id, coaOptions)
+    const resolved = fromCat ?? fromLine
+    if (resolved) {
+      next.expense_account_id = resolved
+      if (!next.description?.trim()) {
+        next.description = cat.label
+      }
+    } else if (fromLine === undefined && next.expense_account_id) {
+      delete next.expense_account_id
     }
   }
   return next

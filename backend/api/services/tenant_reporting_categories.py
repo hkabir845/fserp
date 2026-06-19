@@ -222,6 +222,110 @@ FUEL_STATION_EXPENSE_MAP_CODES: frozenset[str] = frozenset(c for c, _ in FUEL_ST
 FUEL_STATION_INCOME_MAP_CODES: frozenset[str] = frozenset(c for c, _ in FUEL_STATION_INCOME_MAP_TARGETS)
 
 
+def _tenant_category_entity_filter(
+    qs,
+    *,
+    station_id: int | None = None,
+    pond_id: int | None = None,
+    head_office: bool = False,
+):
+    """Include company-wide categories plus rows scoped to the given entity."""
+    company_wide = Q(
+        station_id__isnull=True,
+        aquaculture_pond_id__isnull=True,
+        head_office_only=False,
+    )
+    if head_office:
+        return qs.filter(Q(head_office_only=True) | company_wide)
+    if station_id:
+        return qs.filter(company_wide | Q(station_id=int(station_id))).exclude(head_office_only=True)
+    if pond_id:
+        return qs.filter(company_wide | Q(aquaculture_pond_id=int(pond_id))).exclude(
+            head_office_only=True
+        )
+    return qs.filter(company_wide)
+
+
+def _parse_entity_scope_params(
+    request,
+) -> tuple[int | None, int | None, bool, str | None]:
+    """Parse optional station_id / pond_id / head_office query params (mutually exclusive)."""
+    station_raw = (request.GET.get("station_id") or "").strip()
+    pond_raw = (request.GET.get("pond_id") or "").strip()
+    head_raw = (request.GET.get("head_office") or "").strip().lower()
+    station_id: int | None = None
+    pond_id: int | None = None
+    head_office = head_raw in ("1", "true", "yes")
+    if station_raw:
+        try:
+            station_id = int(station_raw)
+        except (TypeError, ValueError):
+            return None, None, False, "station_id must be a positive integer"
+        if station_id <= 0:
+            return None, None, False, "station_id must be a positive integer"
+    if pond_raw:
+        try:
+            pond_id = int(pond_raw)
+        except (TypeError, ValueError):
+            return None, None, False, "pond_id must be a positive integer"
+        if pond_id <= 0:
+            return None, None, False, "pond_id must be a positive integer"
+    if sum(bool(x) for x in (station_id, pond_id, head_office)) > 1:
+        return None, None, False, "station_id, pond_id, and head_office are mutually exclusive"
+    return station_id, pond_id, head_office, None
+
+
+def _parse_entity_scope_body(
+    body: dict,
+    *,
+    company_id: int,
+    application: str,
+) -> tuple[int | None, int | None, bool, str | None]:
+    """Resolve optional station_id / aquaculture_pond_id / head_office_only on create/update."""
+    from api.models import AquaculturePond, Station
+
+    station_id: int | None = None
+    pond_id: int | None = None
+    head_office_only = bool(body.get("head_office_only")) if "head_office_only" in body else False
+    if "station_id" in body:
+        raw = body.get("station_id")
+        if raw is None or str(raw).strip() == "":
+            station_id = None
+        else:
+            try:
+                station_id = int(raw)
+            except (TypeError, ValueError):
+                return None, None, False, "station_id must be a positive integer"
+            if station_id <= 0:
+                return None, None, False, "station_id must be a positive integer"
+            if not Station.objects.filter(pk=station_id, company_id=company_id).exists():
+                return None, None, False, "station_id not found for this company"
+            head_office_only = False
+    if "aquaculture_pond_id" in body:
+        raw = body.get("aquaculture_pond_id")
+        if raw is None or str(raw).strip() == "":
+            pond_id = None
+        else:
+            try:
+                pond_id = int(raw)
+            except (TypeError, ValueError):
+                return None, None, False, "aquaculture_pond_id must be a positive integer"
+            if pond_id <= 0:
+                return None, None, False, "aquaculture_pond_id must be a positive integer"
+            if not AquaculturePond.objects.filter(pk=pond_id, company_id=company_id).exists():
+                return None, None, False, "aquaculture_pond_id not found for this company"
+            head_office_only = False
+    if station_id and pond_id:
+        return None, None, False, "station_id and aquaculture_pond_id are mutually exclusive"
+    if head_office_only and (station_id or pond_id):
+        return None, None, False, "head_office_only cannot be combined with station_id or aquaculture_pond_id"
+    if application == APP_AQUACULTURE and station_id:
+        return None, None, False, "aquaculture categories cannot be scoped to a station — use aquaculture_pond_id"
+    if application == APP_FUEL_STATION and pond_id:
+        return None, None, False, "fuel station categories cannot be scoped to a pond — use station_id"
+    return station_id, pond_id, head_office_only, None
+
+
 def next_auto_tenant_reporting_category_code(company_id: int, application: str, kind: str) -> str:
     """Lowest free compact code per app/kind (aqe001, fse002, …); reuses gaps after deletes."""
     from api.models import TenantReportingCategory
@@ -563,7 +667,12 @@ def list_map_target_choices(*, application: str, kind: str, company_id: int | No
     return []
 
 
-def merged_aquaculture_expense_category_list_for_api(company_id: int) -> list[dict]:
+def merged_aquaculture_expense_category_list_for_api(
+    company_id: int,
+    *,
+    pond_id: int | None = None,
+    head_office: bool = False,
+) -> list[dict]:
     from api.models import ChartOfAccount, TenantReportingCategory
     from api.services.aquaculture_bill_defaults import (
         BILL_AQUACULTURE_EXPENSE_CATEGORY_CODES,
@@ -617,12 +726,16 @@ def merged_aquaculture_expense_category_list_for_api(company_id: int) -> list[di
         _row(code=c, label=lbl, tenant_defined=False, maps_to=None)
         for c, lbl in AQUACULTURE_EXPENSE_CATEGORY_CHOICES
     ]
-    for r in TenantReportingCategory.objects.filter(
+    tenant_qs = TenantReportingCategory.objects.filter(
         company_id=company_id,
         application=APP_AQUACULTURE,
         kind=KIND_EXPENSE,
         is_active=True,
-    ).order_by("sort_order", "code"):
+    )
+    tenant_qs = _tenant_category_entity_filter(
+        tenant_qs, pond_id=pond_id, head_office=head_office
+    )
+    for r in tenant_qs.order_by("sort_order", "code"):
         mapped = (r.maps_to_code or "").strip()
         out.append(
             _row(code=r.code, label=r.label, tenant_defined=True, maps_to=mapped or None)
@@ -630,7 +743,12 @@ def merged_aquaculture_expense_category_list_for_api(company_id: int) -> list[di
     return out
 
 
-def merged_fuel_station_income_category_list_for_api(company_id: int) -> list[dict]:
+def merged_fuel_station_income_category_list_for_api(
+    company_id: int,
+    *,
+    station_id: int | None = None,
+    head_office: bool = False,
+) -> list[dict]:
     from api.models import ChartOfAccount, TenantReportingCategory
     from api.services.fuel_station_coa_constants import (
         coa_account_code_for_fuel_station_income_rollup,
@@ -670,12 +788,16 @@ def merged_fuel_station_income_category_list_for_api(company_id: int) -> list[di
         _row(code=c, label=lbl, tenant_defined=False, maps_to=c, trc_id=None)
         for c, lbl in FUEL_STATION_INCOME_MAP_TARGETS
     ]
-    for r in TenantReportingCategory.objects.filter(
+    tenant_qs = TenantReportingCategory.objects.filter(
         company_id=company_id,
         application=APP_FUEL_STATION,
         kind=KIND_INCOME,
         is_active=True,
-    ).order_by("sort_order", "code"):
+    )
+    tenant_qs = _tenant_category_entity_filter(
+        tenant_qs, station_id=station_id, head_office=head_office
+    )
+    for r in tenant_qs.order_by("sort_order", "code"):
         mapped = (r.maps_to_code or "").strip() or r.code
         out.append(
             _row(
@@ -689,7 +811,12 @@ def merged_fuel_station_income_category_list_for_api(company_id: int) -> list[di
     return out
 
 
-def merged_fuel_station_expense_category_list_for_api(company_id: int) -> list[dict]:
+def merged_fuel_station_expense_category_list_for_api(
+    company_id: int,
+    *,
+    station_id: int | None = None,
+    head_office: bool = False,
+) -> list[dict]:
     from api.models import ChartOfAccount, TenantReportingCategory
     from api.services.fuel_station_coa_constants import (
         chart_account_id_for_fuel_station_expense_rollup,
@@ -728,12 +855,16 @@ def merged_fuel_station_expense_category_list_for_api(company_id: int) -> list[d
         _row(code=c, label=lbl, tenant_defined=False, maps_to=c, trc_id=None)
         for c, lbl in FUEL_STATION_EXPENSE_MAP_TARGETS
     ]
-    for r in TenantReportingCategory.objects.filter(
+    tenant_qs = TenantReportingCategory.objects.filter(
         company_id=company_id,
         application=APP_FUEL_STATION,
         kind=KIND_EXPENSE,
         is_active=True,
-    ).order_by("sort_order", "code"):
+    )
+    tenant_qs = _tenant_category_entity_filter(
+        tenant_qs, station_id=station_id, head_office=head_office
+    )
+    for r in tenant_qs.order_by("sort_order", "code"):
         mapped = (r.maps_to_code or "").strip() or r.code
         out.append(
             _row(
@@ -748,21 +879,40 @@ def merged_fuel_station_expense_category_list_for_api(company_id: int) -> list[d
 
 
 def merged_reporting_tagging_options_for_api(
-    *, company_id: int, application: str, kind: str
+    *,
+    company_id: int,
+    application: str,
+    kind: str,
+    station_id: int | None = None,
+    pond_id: int | None = None,
+    head_office: bool = False,
 ) -> list[dict]:
     """Built-in + active tenant labels shown together in expense/income tagging dropdowns."""
     if application == APP_AQUACULTURE and kind == KIND_EXPENSE:
-        return merged_aquaculture_expense_category_list_for_api(company_id)
+        return merged_aquaculture_expense_category_list_for_api(
+            company_id, pond_id=pond_id, head_office=head_office
+        )
     if application == APP_AQUACULTURE and kind == KIND_INCOME:
-        return merged_aquaculture_income_type_list_for_api(company_id)
+        return merged_aquaculture_income_type_list_for_api(
+            company_id, pond_id=pond_id, head_office=head_office
+        )
     if application == APP_FUEL_STATION and kind == KIND_EXPENSE:
-        return merged_fuel_station_expense_category_list_for_api(company_id)
+        return merged_fuel_station_expense_category_list_for_api(
+            company_id, station_id=station_id, head_office=head_office
+        )
     if application == APP_FUEL_STATION and kind == KIND_INCOME:
-        return merged_fuel_station_income_category_list_for_api(company_id)
+        return merged_fuel_station_income_category_list_for_api(
+            company_id, station_id=station_id, head_office=head_office
+        )
     return []
 
 
-def merged_aquaculture_income_type_list_for_api(company_id: int) -> list[dict]:
+def merged_aquaculture_income_type_list_for_api(
+    company_id: int,
+    *,
+    pond_id: int | None = None,
+    head_office: bool = False,
+) -> list[dict]:
     from api.models import TenantReportingCategory
     from api.services.aquaculture_constants import (
         AQUACULTURE_INCOME_TYPE_CHOICES,
@@ -779,12 +929,16 @@ def merged_aquaculture_income_type_list_for_api(company_id: int) -> list[dict]:
         }
         for c, lbl in AQUACULTURE_INCOME_TYPE_CHOICES
     ]
-    for r in TenantReportingCategory.objects.filter(
+    tenant_qs = TenantReportingCategory.objects.filter(
         company_id=company_id,
         application=APP_AQUACULTURE,
         kind=KIND_INCOME,
         is_active=True,
-    ).order_by("sort_order", "code"):
+    )
+    tenant_qs = _tenant_category_entity_filter(
+        tenant_qs, pond_id=pond_id, head_office=head_office
+    )
+    for r in tenant_qs.order_by("sort_order", "code"):
         mapped = (r.maps_to_code or "").strip()
         out.append(
             {
@@ -796,3 +950,52 @@ def merged_aquaculture_income_type_list_for_api(company_id: int) -> list[dict]:
             }
         )
     return out
+
+
+CROSS_ENTITY_EXPENSE_CATEGORY_SEED: tuple[tuple[str, str, str, int], ...] = (
+    # label, application, maps_to_code, sort_order
+    ("Automobile Expense", APP_AQUACULTURE, "transportation", 10),
+    ("Automobile Expense", APP_FUEL_STATION, "operating", 10),
+    ("Fuel Tank Lorry Fare", APP_AQUACULTURE, "transportation", 20),
+    ("Fuel Tank Lorry Fare", APP_FUEL_STATION, "freight", 20),
+    ("Travel Expense", APP_AQUACULTURE, "transportation", 30),
+    ("Travel Expense", APP_FUEL_STATION, "operating", 30),
+)
+
+
+def ensure_cross_entity_expense_categories(company_id: int) -> dict[str, int]:
+    """
+    Idempotently seed company-wide expense labels usable on any entity (station, shop, pond, head office).
+    Creates aquaculture rows for pond bills and fuel-station rows for site/head-office bills.
+    """
+    from api.models import TenantReportingCategory
+
+    created = 0
+    for label, application, maps_to, sort_order in CROSS_ENTITY_EXPENSE_CATEGORY_SEED:
+        if validate_maps_to(application=application, kind=KIND_EXPENSE, maps_to_code=maps_to):
+            continue
+        exists = TenantReportingCategory.objects.filter(
+            company_id=company_id,
+            application=application,
+            kind=KIND_EXPENSE,
+            label__iexact=label,
+            station_id__isnull=True,
+            aquaculture_pond_id__isnull=True,
+            head_office_only=False,
+        ).exists()
+        if exists:
+            continue
+        code = next_auto_tenant_reporting_category_code(company_id, application, KIND_EXPENSE)
+        TenantReportingCategory.objects.create(
+            company_id=company_id,
+            application=application,
+            kind=KIND_EXPENSE,
+            code=code,
+            label=label,
+            maps_to_code=maps_to,
+            sort_order=sort_order,
+            is_active=True,
+            head_office_only=False,
+        )
+        created += 1
+    return {"created": created}

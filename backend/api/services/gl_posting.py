@@ -136,6 +136,56 @@ def _aquaculture_revenue_cost_bucket(income_type: str) -> str:
     return s[:40]
 
 
+def _invoice_line_receipt_station_id(line: InvoiceLine, inv: Invoice) -> Optional[int]:
+    """Per-line selling site override, else invoice header station."""
+    lid = getattr(line, "receipt_station_id", None)
+    if lid:
+        return int(lid)
+    bid = getattr(inv, "station_id", None)
+    return int(bid) if bid else None
+
+
+def _invoice_line_pond_id(company_id: int, line: InvoiceLine, inv: Invoice) -> Optional[int]:
+    if getattr(line, "aquaculture_pond_id", None):
+        return int(line.aquaculture_pond_id)
+    pond_id, _cycle_id = _invoice_aquaculture_pond_cycle(company_id, inv)
+    return pond_id
+
+
+def _invoice_line_entity_meta(company_id: int, line: InvoiceLine, inv: Invoice) -> Optional[dict]:
+    """Maps optional invoice line pond/station income tags to journal reporting metadata."""
+    pond_id = _invoice_line_pond_id(company_id, line, inv)
+    if pond_id:
+        meta: dict[str, Any] = {"pond_id": pond_id}
+        code = (getattr(line, "aquaculture_income_category", None) or "").strip()
+        if code:
+            meta["cost_bucket"] = _aquaculture_revenue_cost_bucket(code)
+        trc_id = getattr(line, "tenant_reporting_category_id", None)
+        if trc_id:
+            meta["tenant_reporting_category_id"] = int(trc_id)
+        return meta
+    trc_id = getattr(line, "tenant_reporting_category_id", None)
+    if trc_id:
+        return {"tenant_reporting_category_id": int(trc_id)}
+    return None
+
+
+def _invoice_line_gl_station(company_id: int, line: InvoiceLine, inv: Invoice) -> Optional[int]:
+    if getattr(line, "aquaculture_pond_id", None):
+        return None
+    return _gl_station_id(company_id, _invoice_line_receipt_station_id(line, inv))
+
+
+def _revenue_account_for_invoice_line(company_id: int, line: InvoiceLine) -> Optional[ChartOfAccount]:
+    if getattr(line, "revenue_account_id", None):
+        ra = ChartOfAccount.objects.filter(
+            pk=line.revenue_account_id, company_id=company_id, is_active=True
+        ).first()
+        if ra and is_pl_credit_normal_type(ra.account_type):
+            return ra
+    return _revenue_account_for_item(company_id, line.item)
+
+
 def _journal_line_aquaculture_kwargs(company_id: int, meta: dict | None) -> dict[str, Any]:
     """Validated optional FK + bucket for aquaculture costing on journal lines."""
     if not meta:
@@ -984,10 +1034,17 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
 
     validate_invoice_entity_tags_for_gl(company_id, inv)
 
-    # Split by COGS account, inventory account, and aquaculture cost bucket so mixed feed/medicine lines stay tagged.
-    buckets: dict[tuple[int, int, str], Decimal] = {}
+    lines_qs = InvoiceLine.objects.filter(invoice_id=inv.id).select_related(
+        "item",
+        "receipt_station",
+        "aquaculture_pond",
+        "tenant_reporting_category",
+    )
+
+    # Split by COGS account, inventory account, entity, and cost bucket.
+    buckets: dict[tuple[int, int, str, Optional[int], Optional[int]], Decimal] = {}
     total_cogs = Decimal("0")
-    for line in InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item"):
+    for line in lines_qs:
         it = line.item
         if not it:
             continue
@@ -1005,18 +1062,18 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
         if not inv_acc or not cogs_acc:
             continue
         bkt = item_shop_issue_cost_bucket(it)
-        key = (cogs_acc.id, inv_acc.id, bkt)
+        line_st = _invoice_line_gl_station(company_id, line, inv)
+        line_pond = getattr(line, "aquaculture_pond_id", None)
+        key = (cogs_acc.id, inv_acc.id, bkt, line_st, int(line_pond) if line_pond else None)
         buckets[key] = buckets.get(key, Decimal("0")) + amt
         total_cogs += amt
 
     if total_cogs <= 0:
         return False
 
-    pond_id, cycle_id = _invoice_aquaculture_pond_cycle(company_id, inv)
-
-    lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = []
+    lines: list[tuple] = []
     aq_costing: list[Optional[dict]] = []
-    for (cogs_id, inv_id, bkt), amt in buckets.items():
+    for (cogs_id, inv_id, bkt, line_st, line_pond), amt in buckets.items():
         cogs = ChartOfAccount.objects.filter(
             id=cogs_id, company_id=company_id, is_active=True
         ).first()
@@ -1026,13 +1083,11 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
         if not cogs or not inv_a:
             continue
         memo = _gl_invoice_line_memo(inv, "COGS")
-        lines.append((cogs, amt, Decimal("0"), memo))
-        lines.append((inv_a, Decimal("0"), amt, memo))
         aq_meta: Optional[dict] = None
-        if pond_id:
-            aq_meta = {"pond_id": pond_id, "cost_bucket": bkt}
-            if cycle_id:
-                aq_meta["production_cycle_id"] = cycle_id
+        if line_pond:
+            aq_meta = {"pond_id": line_pond, "cost_bucket": bkt}
+        lines.append((cogs, amt, Decimal("0"), memo, line_st))
+        lines.append((inv_a, Decimal("0"), amt, memo, line_st))
         aq_costing.append(aq_meta)
         aq_costing.append(aq_meta)
 
@@ -1043,7 +1098,6 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
     if debit != credit:
         return False
 
-    inv_st = _gl_station_id(company_id, inv.station_id)
     return (
         _create_posted_entry(
             company_id,
@@ -1051,7 +1105,7 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
             entry_number,
             _gl_invoice_journal_description(inv, "COGS"),
             lines,
-            gl_station_id=inv_st,
+            gl_station_id=None,
             aquaculture_line_costing=aq_costing,
         )
         is not None
@@ -1546,11 +1600,6 @@ def post_invoice_sale_journal(
     validate_invoice_entity_tags_for_gl(company_id, inv)
 
     vat_acc = _coa(company_id, CODE_VAT)
-    rev_splits = _build_revenue_splits(company_id, inv)
-    if not rev_splits:
-        logger.warning("post_invoice_sale_journal: no revenue accounts for company %s", company_id)
-        return False
-
     tax = inv.tax_total or Decimal("0")
     total = inv.total
 
@@ -1572,38 +1621,114 @@ def post_invoice_sale_journal(
         )
         return False
 
-    lines: list[tuple[ChartOfAccount, Decimal, Decimal, str]] = [
-        (debit_acc, total, Decimal("0"), _gl_invoice_line_memo(inv))
-    ]
-    for acc_id, amt in rev_splits.items():
-        acc = ChartOfAccount.objects.filter(
-            id=acc_id, company_id=company_id, is_active=True
-        ).first()
-        if not acc or amt <= 0:
-            continue
-        lines.append(
-            (acc, Decimal("0"), amt, _gl_invoice_line_memo(inv))
-        )
-    if tax > 0 and vat_acc:
-        lines.append(
-            (vat_acc, Decimal("0"), tax, _gl_invoice_line_memo(inv, "VAT"))
-        )
+    aq_sale = (
+        AquacultureFishSale.objects.filter(invoice_id=inv.id, company_id=company_id)
+        .only("income_type")
+        .first()
+    )
+    header_pond_id, header_cycle_id = _invoice_aquaculture_pond_cycle(company_id, inv)
 
-    credit_sum = sum(x[2] for x in lines[1:])
-    debit_sum = lines[0][1]
-    if credit_sum != debit_sum:
-        # Adjust largest revenue line
-        diff = debit_sum - credit_sum
-        if len(lines) > 1:
-            for i in range(1, len(lines)):
-                acc, d, c, desc, st_line, expl = _unpack_gl_line(lines[i])
-                if c > 0:
-                    if expl:
-                        lines[i] = (acc, d, (c + diff).quantize(Decimal("0.01")), desc, st_line)
+    je_lines: list[tuple] = [(debit_acc, total, Decimal("0"), _gl_invoice_line_memo(inv))]
+    aq_line_meta: list[Optional[dict]] = [None]
+
+    use_aggregate_revenue = aq_sale is not None and header_pond_id is not None
+    if use_aggregate_revenue:
+        rev_splits = _build_revenue_splits(company_id, inv)
+        if not rev_splits:
+            logger.warning("post_invoice_sale_journal: no revenue accounts for company %s", company_id)
+            return False
+        for acc_id, amt in rev_splits.items():
+            acc = ChartOfAccount.objects.filter(
+                id=acc_id, company_id=company_id, is_active=True
+            ).first()
+            if not acc or amt <= 0:
+                continue
+            je_lines.append((acc, Decimal("0"), amt, _gl_invoice_line_memo(inv)))
+            base: dict[str, Any] = {"pond_id": header_pond_id}
+            if header_cycle_id:
+                base["production_cycle_id"] = header_cycle_id
+            meta = dict(base)
+            meta["cost_bucket"] = _aquaculture_revenue_cost_bucket(aq_sale.income_type)
+            aq_line_meta.append(meta)
+    else:
+        inv_lines = list(
+            InvoiceLine.objects.filter(invoice_id=inv.id).select_related(
+                "item",
+                "revenue_account",
+                "receipt_station",
+                "aquaculture_pond",
+                "tenant_reporting_category",
+            )
+        )
+        credit_rows: list[tuple[ChartOfAccount, Decimal, str, Optional[int], Optional[dict]]] = []
+        for line in inv_lines:
+            amt = line.amount if line.amount is not None else Decimal("0")
+            if amt <= 0:
+                continue
+            acc = _revenue_account_for_invoice_line(company_id, line)
+            if not acc:
+                continue
+            desc_base = (line.description or "").strip()
+            inv_ref = (inv.invoice_number or f"INV-{inv.id}").strip()
+            memo = f"{inv_ref} — {desc_base}"[:300] if desc_base else _gl_invoice_line_memo(inv)
+            line_st = _invoice_line_gl_station(company_id, line, inv)
+            meta = _invoice_line_entity_meta(company_id, line, inv)
+            credit_rows.append((acc, amt, memo, line_st, meta))
+
+        if not credit_rows:
+            rev_splits = _build_revenue_splits(company_id, inv)
+            if not rev_splits:
+                logger.warning("post_invoice_sale_journal: no revenue accounts for company %s", company_id)
+                return False
+            for acc_id, amt in rev_splits.items():
+                acc = ChartOfAccount.objects.filter(
+                    id=acc_id, company_id=company_id, is_active=True
+                ).first()
+                if not acc or amt <= 0:
+                    continue
+                inv_st = _gl_station_id(company_id, inv.station_id)
+                je_lines.append((acc, Decimal("0"), amt, _gl_invoice_line_memo(inv), inv_st))
+                aq_line_meta.append(None)
+        else:
+            sum_lines = sum(r[1] for r in credit_rows)
+            sub = inv.subtotal or Decimal("0")
+            if sub > 0 and sum_lines > 0 and abs(sum_lines - sub) > Decimal("0.02"):
+                factor = sub / sum_lines
+                scaled: list[tuple] = []
+                run = Decimal("0")
+                for j, (acc, amt, memo, line_st, meta) in enumerate(credit_rows):
+                    if j == len(credit_rows) - 1:
+                        na = (sub - run).quantize(Decimal("0.01"))
                     else:
-                        lines[i] = (acc, d, (c + diff).quantize(Decimal("0.01")), desc)
+                        na = (amt * factor).quantize(Decimal("0.01"))
+                    scaled.append((acc, na, memo, line_st, meta))
+                    run += na
+                credit_rows = scaled
+
+            for acc, amt, memo, line_st, meta in credit_rows:
+                je_lines.append((acc, Decimal("0"), amt, memo, line_st))
+                aq_line_meta.append(meta)
+
+    if tax > 0 and vat_acc:
+        je_lines.append((vat_acc, Decimal("0"), tax, _gl_invoice_line_memo(inv, "VAT")))
+        aq_line_meta.append(None)
+
+    credit_sum = sum(_unpack_gl_line(x)[2] for x in je_lines[1:])
+    debit_sum = je_lines[0][1]
+    if credit_sum != debit_sum:
+        diff = debit_sum - credit_sum
+        if len(je_lines) > 1:
+            for i in range(1, len(je_lines)):
+                raw = je_lines[i]
+                acc, d, c, desc = raw[0], raw[1], raw[2], raw[3]
+                if c > 0:
+                    nc = (c + diff).quantize(Decimal("0.01"))
+                    if len(raw) >= 5:
+                        je_lines[i] = (acc, d, nc, desc, raw[4])
+                    else:
+                        je_lines[i] = (acc, d, nc, desc)
                     break
-        credit_sum = sum(x[2] for x in lines[1:])
+        credit_sum = sum(_unpack_gl_line(x)[2] for x in je_lines[1:])
     if debit_sum != credit_sum:
         logger.warning(
             "post_invoice_sale_journal: still unbalanced inv %s debit=%s credit=%s",
@@ -1613,36 +1738,13 @@ def post_invoice_sale_journal(
         )
         return False
 
-    pond_id, cycle_id = _invoice_aquaculture_pond_cycle(company_id, inv)
-    aq_sale = (
-        AquacultureFishSale.objects.filter(invoice_id=inv.id, company_id=company_id)
-        .only("income_type")
-        .first()
-    )
-    aq_line_meta: list[Optional[dict]] = []
-    if pond_id is not None:
-        base: dict[str, Any] = {"pond_id": pond_id}
-        if cycle_id:
-            base["production_cycle_id"] = cycle_id
-        for i, raw in enumerate(lines):
-            _, _debit, credit, _, _, _ = _unpack_gl_line(raw)
-            meta = dict(base)
-            if i > 0 and (credit or Decimal("0")) > 0:
-                if aq_sale is not None:
-                    meta["cost_bucket"] = _aquaculture_revenue_cost_bucket(aq_sale.income_type)
-                else:
-                    meta["cost_bucket"] = "rev_pos_sale"
-            aq_line_meta.append(meta)
-    else:
-        aq_line_meta = [None] * len(lines)
-
     inv_st = _gl_station_id(company_id, inv.station_id)
     je = _create_posted_entry(
         company_id,
         inv.invoice_date,
         entry_number,
         _gl_invoice_journal_description(inv, "Invoice"),
-        lines,
+        je_lines,
         gl_station_id=inv_st,
         aquaculture_line_costing=aq_line_meta,
     )

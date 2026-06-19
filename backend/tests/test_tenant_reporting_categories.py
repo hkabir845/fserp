@@ -482,3 +482,136 @@ def test_reporting_categories_non_admin_forbidden(api_client, company_tenant, au
         **auth_accountant_headers,
     )
     assert r.status_code == 403
+
+
+@pytest.mark.django_db
+def test_tenant_category_entity_scope_and_filter(api_client, company_tenant, auth_admin_headers):
+    from api.models import AquaculturePond, Station
+
+    Company.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P-Scope", is_active=True)
+    station = Station.objects.filter(company_id=company_tenant.id).first()
+    if station is None:
+        station = Station.objects.create(
+            company_id=company_tenant.id, station_name="Test Station", is_active=True
+        )
+
+    r0 = api_client.post(
+        "/api/reporting-categories/",
+        data=json.dumps(
+            {
+                "application": "aquaculture",
+                "kind": "expense",
+                "label": "Pond-only security",
+                "maps_to_code": "security",
+                "aquaculture_pond_id": pond.id,
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r0.status_code == 201, r0.content.decode()
+    scoped_code = r0.json()["code"]
+
+    r1 = api_client.get(
+        "/api/aquaculture/expense-categories/",
+        {"pond_id": str(pond.id)},
+        **auth_admin_headers,
+    )
+    assert r1.status_code == 200
+    ids = {row["id"] for row in r1.json()}
+    assert scoped_code in ids
+
+    r_unscoped = api_client.get("/api/aquaculture/expense-categories/", **auth_admin_headers)
+    assert r_unscoped.status_code == 200
+    unscoped_ids = {row["id"] for row in r_unscoped.json()}
+    assert scoped_code not in unscoped_ids
+
+    r2 = api_client.post(
+        "/api/reporting-categories/",
+        data=json.dumps(
+            {
+                "application": "fuel_station",
+                "kind": "expense",
+                "label": "Station-only security",
+                "maps_to_code": "security",
+                "station_id": station.id,
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r2.status_code == 201, r2.content.decode()
+    assert r2.json()["station_id"] == station.id
+
+
+@pytest.mark.django_db
+def test_tenant_category_head_office_scope(api_client, company_tenant, auth_admin_headers):
+    r0 = api_client.post(
+        "/api/reporting-categories/",
+        data=json.dumps(
+            {
+                "application": "fuel_station",
+                "kind": "expense",
+                "label": "HQ admin",
+                "maps_to_code": "office_supplies",
+                "head_office_only": True,
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r0.status_code == 201, r0.content.decode()
+    cat_code = r0.json()["code"]
+    assert r0.json()["head_office_only"] is True
+
+    r1 = api_client.get(
+        "/api/fuel-station/expense-categories/",
+        {"head_office": "1"},
+        **auth_admin_headers,
+    )
+    assert r1.status_code == 200
+    ids = {row["id"] for row in r1.json()}
+    assert cat_code in ids
+
+
+@pytest.mark.django_db
+def test_cross_entity_expense_categories_seeded(api_client, company_tenant, auth_admin_headers):
+    from api.services.tenant_reporting_categories import ensure_cross_entity_expense_categories
+
+    ensure_cross_entity_expense_categories(company_tenant.id)
+
+    fuel = api_client.get("/api/fuel-station/expense-categories/", **auth_admin_headers)
+    assert fuel.status_code == 200
+    fuel_labels = {row["label"] for row in fuel.json() if row.get("tenant_defined")}
+    assert "Automobile Expense" in fuel_labels
+    assert "Fuel Tank Lorry Fare" in fuel_labels
+    assert "Travel Expense" in fuel_labels
+
+    Company.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="P-Cat", is_active=True
+    )
+    aq = api_client.get(
+        "/api/aquaculture/expense-categories/",
+        {"pond_id": str(pond.id)},
+        **auth_admin_headers,
+    )
+    assert aq.status_code == 200
+    aq_labels = {row["label"] for row in aq.json() if row.get("tenant_defined")}
+    assert "Automobile Expense" in aq_labels
+    assert "Fuel Tank Lorry Fare" in aq_labels
+    assert "Travel Expense" in aq_labels
+
+    ho = api_client.get(
+        "/api/fuel-station/expense-categories/",
+        {"head_office": "1"},
+        **auth_admin_headers,
+    )
+    assert ho.status_code == 200
+    ho_labels = {row["label"] for row in ho.json() if row.get("tenant_defined")}
+    assert "Travel Expense" in ho_labels

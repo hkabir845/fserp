@@ -9,7 +9,7 @@ import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
-import { preferNursingPondId, pondFishBillLabel, pondPlBillLabel } from '@/lib/aquaculturePondSite'
+import { preferNursingPondId, pondFishBillLabel } from '@/lib/aquaculturePondSite'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -42,6 +42,7 @@ import {
   findFuelBillCategory,
   type FuelStationBillExpenseCategory,
 } from '@/lib/fuelStationBillLine'
+import { clearEntityScopedReportingCategoryCache } from '@/lib/entityScopedReportingCategories'
 import { ReportingCategorySelectOptions } from '@/lib/reportingCategorySelect'
 import {
   resolveReceiptLocationKeyForVendor,
@@ -56,19 +57,21 @@ import {
   resolveBillReceiptLocation,
 } from '@/lib/billReceiptLocation'
 import { BillReceiptLocationSelect } from '@/components/bills/BillReceiptLocationSelect'
+import { VendorReferenceCombobox } from '@/components/reference/VendorReferenceCombobox'
 import {
   type BillPurpose,
   billLinePondCostMode,
   inferBillPurposeFromLines,
+  inferBillPurposeIncludingMixed,
   pondSharePayload,
   stationSharePayload,
   validateBillLinePondAllocation,
   validateBillLineStationAllocation,
 } from '@/lib/billAllocation'
 import { BillPurposeSection } from '@/components/bills/BillPurposeSection'
+import { BillLineEntityTagging } from '@/components/bills/BillLineEntityTagging'
 import { BillLineTypePicker, type BillLineKind } from '@/components/bills/BillLineItemSelect'
-import { BillStationAllocationFields } from '@/components/bills/BillStationAllocationFields'
-import { COA_OFFICE_EXP, suggestedBillLineExpenseAccountId, templateCoaOptionLabel } from '@/lib/coaDefaults'
+import { COA_OFFICE_EXP, coaPickIdIfValid, suggestedBillLineExpenseAccountId, templateCoaOptionLabel } from '@/lib/coaDefaults'
 import { syncLineTouchedForAccount } from '@/lib/coaSuggestForm'
 import { ItemCogsOnSaleHint } from '@/components/items/ItemCogsOnSaleHint'
 import type { CoaPickForItemDefault } from '@/lib/itemGlDefaults'
@@ -275,6 +278,7 @@ interface Item {
   id: number
   item_number: string
   name: string
+  description?: string
   cost: number
   unit: string
   item_type: string  // 'inventory', 'non_inventory', 'service'
@@ -701,7 +705,8 @@ function applyItemSelectionToBillLine(
   tankList: Tank[],
   vendorDefaultExpenseAccountId?: number | null,
   templateFallbackExpenseId?: number | null,
-  defaultNursingPondId?: number | null
+  defaultNursingPondId?: number | null,
+  coaOptions: CoaPickForItemDefault[] = []
 ): BillLineItem {
   const item = itemList.find((i) => i.id === itemId)
   if (!item) return line
@@ -711,15 +716,12 @@ function applyItemSelectionToBillLine(
   const receivesInventory = itype === 'inventory'
   let defaultExpense: number | undefined
   if (!receivesInventory) {
-    if (item.expense_account_id != null && item.expense_account_id > 0) {
-      defaultExpense = item.expense_account_id
-    } else if (
-      vendorDefaultExpenseAccountId != null &&
-      vendorDefaultExpenseAccountId > 0
-    ) {
-      defaultExpense = vendorDefaultExpenseAccountId
-    } else if (templateFallbackExpenseId != null && templateFallbackExpenseId > 0) {
-      defaultExpense = templateFallbackExpenseId
+    defaultExpense = coaPickIdIfValid(item.expense_account_id, coaOptions)
+    if (!defaultExpense) {
+      defaultExpense = coaPickIdIfValid(vendorDefaultExpenseAccountId, coaOptions)
+    }
+    if (!defaultExpense) {
+      defaultExpense = coaPickIdIfValid(templateFallbackExpenseId, coaOptions)
     }
   }
   const next: BillLineItem = {
@@ -761,7 +763,11 @@ function billLineKind(line: BillLineItem): BillLineKind {
   return line.item_id ? 'item' : 'expense'
 }
 
-function serializeBillLineForApi(line: BillLineItem, itemList: Item[]): Record<string, unknown> {
+function serializeBillLineForApi(
+  line: BillLineItem,
+  itemList: Item[],
+  coaOptions: CoaPickForItemDefault[] = []
+): Record<string, unknown> {
   const item = line.item_id ? itemList.find((i) => i.id === line.item_id) : undefined
   const fish = isFishTypeItem(item)
   const normalized = isFishBillLineAutoMode(line, itemList) ? line : syncStandardBillLineAmount(line)
@@ -775,10 +781,17 @@ function serializeBillLineForApi(line: BillLineItem, itemList: Item[]): Record<s
     !fish || c === undefined || c === '' || c === null
       ? null
       : parseInt(String(c), 10)
+  const expenseAccountId = coaPickIdIfValid(normalized.expense_account_id, coaOptions)
+  const lineReceiptStationId = (() => {
+    const r = line.line_receipt_station_id
+    if (r === '' || r == null) return null
+    const n = Number(r)
+    return Number.isFinite(n) ? n : null
+  })()
   return {
     description: normalized.description || null,
     item_id: normalized.item_id || null,
-    expense_account_id: normalized.expense_account_id || null,
+    expense_account_id: expenseAccountId ?? null,
     tank_id: normalized.tank_id || null,
     quantity: normalized.quantity,
     unit_cost: normalized.unit_cost,
@@ -812,9 +825,22 @@ function serializeBillLineForApi(line: BillLineItem, itemList: Item[]): Record<s
     aquaculture_cost_bucket: (line.aquaculture_cost_bucket || '').trim() || null,
     aquaculture_expense_category: (line.aquaculture_expense_category || '').trim() || null,
     fuel_station_expense_category: (line.fuel_station_expense_category || '').trim() || null,
+    line_receipt_station_id: lineReceiptStationId,
     ...pondSharePayload(line),
     ...stationSharePayload(line),
   }
+}
+
+function validateBillLineExpenseAccount(
+  line: BillLineItem,
+  lineIndex: number,
+  coaOptions: CoaPickForItemDefault[]
+): string | null {
+  const expId = line.expense_account_id
+  if (!expId || expId <= 0) return null
+  if (coaPickIdIfValid(expId, coaOptions)) return null
+  const n = lineIndex + 1
+  return `Line ${n}: expense account is invalid or inactive — pick another from the list.`
 }
 
 function BillPondAllocationFields({
@@ -1230,7 +1256,8 @@ interface ExpenseAccount {
 function newAquacultureBillLine(
   pondId: number | '',
   categoryId: string,
-  billCats: AquacultureBillExpenseCategory[]
+  billCats: AquacultureBillExpenseCategory[],
+  coaOptions: CoaPickForItemDefault[] = []
 ): BillLineItem {
   const base: BillLineItem = {
     line_number: 1,
@@ -1243,7 +1270,11 @@ function newAquacultureBillLine(
     aquaculture_production_cycle_id: '',
     aquaculture_expense_category: categoryId,
   }
-  return applyAquacultureCategoryToBillLine(base, findBillCategory(billCats, categoryId))
+  return applyAquacultureCategoryToBillLine(
+    base,
+    findBillCategory(billCats, categoryId),
+    coaOptions
+  )
 }
 
 export default function BillsPage() {
@@ -1255,6 +1286,7 @@ export default function BillsPage() {
   const [items, setItems] = useState<Item[]>([])
   const [expenseAccounts, setExpenseAccounts] = useState<ExpenseAccount[]>([])
   const [coaForItemHints, setCoaForItemHints] = useState<CoaPickForItemDefault[]>([])
+  const [billExpenseCoaOptions, setBillExpenseCoaOptions] = useState<CoaPickForItemDefault[]>([])
   const [tanks, setTanks] = useState<Tank[]>([])  // All tanks for the company
   const [loading, setLoading] = useState(true)
   const [referenceLoading, setReferenceLoading] = useState(false)
@@ -1299,16 +1331,6 @@ export default function BillsPage() {
         })),
     [aquaculturePonds],
   )
-  const pondOptionsForPlTag = useMemo<AquaculturePondOption[]>(
-    () =>
-      aquaculturePonds
-        .filter((p) => p.is_active !== false)
-        .map((p) => ({
-          ...p,
-          name: pondPlBillLabel(p),
-        })),
-    [aquaculturePonds],
-  )
   const [productionCycles, setProductionCycles] = useState<ProductionCycleOption[]>([])
   const [aquacultureBillCategories, setAquacultureBillCategories] = useState<
     AquacultureBillExpenseCategory[]
@@ -1336,18 +1358,15 @@ export default function BillsPage() {
     const vid = formData.vendor_id
     if (!vid) return undefined
     const x = vendors.find((v) => v.id === vid)?.default_expense_account_id
-    return x != null && x > 0 ? x : undefined
-  }, [formData.vendor_id, vendors])
+    return coaPickIdIfValid(x, billExpenseCoaOptions)
+  }, [formData.vendor_id, vendors, billExpenseCoaOptions])
 
   const templateBillExpenseAccountId = useMemo(() => {
     return suggestedBillLineExpenseAccountId({
       vendorDefaultExpenseId: resolvedVendorDefaultExpenseId,
-      options: expenseAccounts.map((a) => ({
-        id: a.id,
-        account_code: a.account_code,
-      })),
+      options: billExpenseCoaOptions,
     })
-  }, [resolvedVendorDefaultExpenseId, expenseAccounts])
+  }, [resolvedVendorDefaultExpenseId, billExpenseCoaOptions])
 
   const billLineExpenseTouchedRef = useRef(new Set<number>())
 
@@ -1366,7 +1385,7 @@ export default function BillsPage() {
     const vendor = vendors.find((v) => v.id === vendor_id)
     const receipt_location_key = resolveReceiptLocationKeyForVendor(vendor, stations, aquaculturePonds)
     const resolved = resolveBillReceiptLocation(receipt_location_key, stations, aquaculturePonds)
-    const coaOpts = expenseAccounts.map((a) => ({ id: a.id, account_code: a.account_code }))
+    const coaOpts = billExpenseCoaOptions
     const vendorExpense = suggestedBillLineExpenseAccountId({
       vendorDefaultExpenseId: vendor?.default_expense_account_id,
       options: coaOpts,
@@ -1430,9 +1449,14 @@ export default function BillsPage() {
       return { receiptStationId: null as number | null, billPurpose: 'office' as BillPurpose }
     }
     const resolved = resolveBillReceiptLocation(formData.receipt_location_key, stations, aquaculturePonds)
+    const billPurpose = inferBillPurposeIncludingMixed(
+      formData.lines,
+      resolved.receiptStationId,
+      aquaculturePonds.length > 0
+    )
     return {
       receiptStationId: resolved.receiptStationId,
-      billPurpose: formData.receipt_location_key ? resolved.billPurpose : formData.bill_purpose,
+      billPurpose,
     }
   }
 
@@ -1459,14 +1483,25 @@ export default function BillsPage() {
 
   /** Active suggest: pre-fill expense on empty bill lines (create + edit). */
   useEffect(() => {
-    if ((!showModal && !showEditModal) || expenseAccounts.length === 0) return
+    if ((!showModal && !showEditModal) || billExpenseCoaOptions.length === 0) return
     const fallback = templateBillExpenseAccountId
-    if (!fallback) return
     setFormData((prev) => {
       let changed = false
       const lines = prev.lines.map((line) => {
+        const stale =
+          line.expense_account_id != null &&
+          line.expense_account_id > 0 &&
+          !coaPickIdIfValid(line.expense_account_id, billExpenseCoaOptions)
+        if (stale && !billLineExpenseTouchedRef.current.has(line.line_number)) {
+          changed = true
+          return {
+            ...line,
+            expense_account_id: fallback || undefined,
+          }
+        }
         if (billLineExpenseTouchedRef.current.has(line.line_number)) return line
         if (line.expense_account_id || line.item_id || billLineKind(line) === 'item') return line
+        if (!fallback) return line
         changed = true
         return { ...line, expense_account_id: fallback }
       })
@@ -1475,7 +1510,7 @@ export default function BillsPage() {
   }, [
     showModal,
     showEditModal,
-    expenseAccounts.length,
+    billExpenseCoaOptions,
     templateBillExpenseAccountId,
     formData.lines.length,
   ])
@@ -1543,6 +1578,7 @@ export default function BillsPage() {
   }, [])
 
   const loadBillReportingCategories = useCallback(async () => {
+    clearEntityScopedReportingCategoryCache()
     try {
       const [aqCatRes, fsCatRes] = await Promise.allSettled([
         api.get('/aquaculture/expense-categories/'),
@@ -1622,6 +1658,24 @@ export default function BillsPage() {
               account_name: String(acc.account_name || ''),
             })
           )
+        )
+        setBillExpenseCoaOptions(
+          active
+            .filter((acc: ExpenseAccount) => {
+              const t = (acc.account_type || '').toLowerCase()
+              return t === 'expense' || t === 'cost_of_goods_sold'
+            })
+            .map(
+              (acc: {
+                id: number
+                account_code?: string
+                account_name?: string
+              }): CoaPickForItemDefault => ({
+                id: acc.id,
+                account_code: String(acc.account_code || ''),
+                account_name: String(acc.account_name || ''),
+              })
+            )
         )
         setExpenseAccounts(
           active.filter((acc: ExpenseAccount) => acc.account_type.toLowerCase() === 'expense'),
@@ -1805,7 +1859,7 @@ export default function BillsPage() {
         bill_purpose: pondId !== '' ? ('pond' as BillPurpose) : ('station' as BillPurpose),
         lines:
           pondId !== '' && catId
-            ? [{ ...newAquacultureBillLine(pondId, catId, billExpenseCategories), line_number: 1 }]
+            ? [{ ...newAquacultureBillLine(pondId, catId, billExpenseCategories, billExpenseCoaOptions), line_number: 1 }]
             : [],
       })
       setApproveBill(false)
@@ -1837,7 +1891,7 @@ export default function BillsPage() {
         const catPrefill = findBillCategory(billExpenseCategories, rawCat)?.id || ''
         if (pondPrefill !== '' && catPrefill) {
           newLine = {
-            ...newAquacultureBillLine(pondPrefill, catPrefill, billExpenseCategories),
+            ...newAquacultureBillLine(pondPrefill, catPrefill, billExpenseCategories, billExpenseCoaOptions),
             line_number: lineNumber,
             line_kind: 'expense',
           }
@@ -1904,7 +1958,8 @@ export default function BillsPage() {
             tanks,
             resolvedVendorDefaultExpenseId,
             templateBillExpenseAccountId || undefined,
-            firstNursingPondId
+            firstNursingPondId,
+            billExpenseCoaOptions
           ),
           line_kind: 'item',
         }
@@ -2007,6 +2062,11 @@ export default function BillsPage() {
         return { ...prev, lines: newLines }
       }
 
+      if (field === '__entity_bundle__') {
+        newLines[index] = { ...newLines[index], ...(value as BillLineItem) }
+        return { ...prev, lines: newLines }
+      }
+
       if (field === 'aquaculture_pond_id') {
         const pid = value === '' || value === undefined ? '' : parseInt(String(value), 10)
         const cleanPond = pid === '' || !Number.isFinite(pid) ? '' : pid
@@ -2032,13 +2092,13 @@ export default function BillsPage() {
 
       if (field === 'aquaculture_expense_category') {
         const cat = findBillCategory(billExpenseCategories, String(value))
-        newLines[index] = applyAquacultureCategoryToBillLine(newLines[index], cat)
+        newLines[index] = applyAquacultureCategoryToBillLine(newLines[index], cat, billExpenseCoaOptions)
         return { ...prev, lines: newLines }
       }
 
       if (field === 'fuel_station_expense_category') {
         const cat = findFuelBillCategory(billFuelCategories, String(value))
-        newLines[index] = applyFuelCategoryToBillLine(newLines[index], cat)
+        newLines[index] = applyFuelCategoryToBillLine(newLines[index], cat, billExpenseCoaOptions)
         return { ...prev, lines: newLines }
       }
 
@@ -2052,7 +2112,8 @@ export default function BillsPage() {
           tanks,
           resolvedVendorDefaultExpenseId,
           templateBillExpenseAccountId || undefined,
-          firstNursingPondId
+          firstNursingPondId,
+          billExpenseCoaOptions
         )
       }
 
@@ -2183,7 +2244,7 @@ export default function BillsPage() {
       acknowledge_tank_overfill: sendAck ? true : undefined,
       lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
-        ...serializeBillLineForApi(line, items),
+        ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
       })),
     })
 
@@ -2236,6 +2297,11 @@ export default function BillsPage() {
       const stErr = validateBillLineStationAllocation(line, i, formData.bill_purpose)
       if (stErr) {
         toast.error(stErr)
+        return
+      }
+      const expErr = validateBillLineExpenseAccount(line, i, billExpenseCoaOptions)
+      if (expErr) {
+        toast.error(expErr)
         return
       }
     }
@@ -2383,7 +2449,7 @@ export default function BillsPage() {
       acknowledge_tank_overfill: sendAck ? true : undefined,
       lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
-        ...serializeBillLineForApi(line, items),
+        ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
       })),
     })
 
@@ -2432,6 +2498,11 @@ export default function BillsPage() {
       const stErr = validateBillLineStationAllocation(line, i, formData.bill_purpose)
       if (stErr) {
         toast.error(stErr)
+        return
+      }
+      const expErr = validateBillLineExpenseAccount(line, i, billExpenseCoaOptions)
+      if (expErr) {
+        toast.error(expErr)
         return
       }
     }
@@ -3297,19 +3368,12 @@ export default function BillsPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Vendor *
                     </label>
-                    <select
-                      required
+                    <VendorReferenceCombobox
                       value={formData.vendor_id}
-                      onChange={(e) => handleFormVendorChange(e.target.value)}
+                      onChange={(id) => handleFormVendorChange(String(id))}
+                      vendors={vendors}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="0">Select Vendor</option>
-                      {vendors.map((vendor) => (
-                        <option key={vendor.id} value={vendor.id}>
-                          {vendor.display_name} ({vendor.vendor_number})
-                        </option>
-                      ))}
-                    </select>
+                    />
                     {selectedVendorReceivingHint ? (
                       <p className="mt-1 text-xs text-teal-800">{selectedVendorReceivingHint}</p>
                     ) : null}
@@ -3422,16 +3486,6 @@ export default function BillsPage() {
                       const lineItem = line.item_id ? items.find((i) => i.id === line.item_id) : undefined
                       const showFishDims = isFishTypeItem(lineItem)
                       const fishLineAuto = showFishDims && itemPiecesPerKg(lineItem) != null
-                      const pondSel =
-                        line.aquaculture_pond_id === '' || line.aquaculture_pond_id == null
-                          ? ''
-                          : Number(line.aquaculture_pond_id)
-                      const cyclesForLine =
-                        pondSel === '' || !Number.isFinite(pondSel)
-                          ? []
-                          : productionCycles.filter((c) => c.pond_id === pondSel)
-                      const showAqTag =
-                        aquaculturePonds.length > 0 || (pondSel !== '' && Number.isFinite(pondSel))
                       return (
                         <div
                           key={index}
@@ -3607,31 +3661,16 @@ export default function BillsPage() {
                               onFieldChange={handleLineChange}
                             />
                           ) : null}
-                          {(formData.bill_purpose === 'pond' || showFishDims) && showAqTag ? (
-                            <BillPondAllocationFields
-                              line={line}
-                              index={index}
-                              ponds={showFishDims ? pondOptionsForFish : pondOptionsForPlTag}
-                              cycles={productionCycles}
-                              billExpenseCategories={billExpenseCategories}
-                              expenseAccounts={expenseAccounts}
-                              onFieldChange={handleLineChange}
-                              directOnly={showFishDims}
-                            />
-                          ) : null}
-                          {formData.bill_purpose === 'station' &&
-                          billFuelCategories.length > 0 &&
-                          !showFishDims ? (
-                            <BillStationAllocationFields
-                              line={line}
-                              index={index}
-                              stations={stations}
-                              billFuelCategories={billFuelCategories}
-                              expenseAccounts={expenseAccounts}
-                              onFieldChange={handleLineChange}
-                              showCategoryBlock={!line.item_id}
-                            />
-                          ) : null}
+                          <BillLineEntityTagging
+                            line={line}
+                            index={index}
+                            stations={stations}
+                            ponds={aquaculturePonds}
+                            billExpenseCategories={billExpenseCategories}
+                            billFuelCategories={billFuelCategories}
+                            billExpenseCoaOptions={billExpenseCoaOptions}
+                            onFieldChange={handleLineChange}
+                          />
                         </div>
                       )
                     })}
@@ -3820,23 +3859,12 @@ export default function BillsPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Vendor *
                     </label>
-                    <select
-                      required
+                    <VendorReferenceCombobox
                       value={formData.vendor_id}
-                      onChange={(e) => handleFormVendorChange(e.target.value)}
+                      onChange={(id) => handleFormVendorChange(String(id))}
+                      vendors={vendors}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="0">Select Vendor</option>
-                      {vendors.length === 0 ? (
-                        <option value="0" disabled>No active vendors available</option>
-                      ) : (
-                        vendors.map((vendor) => (
-                          <option key={vendor.id} value={vendor.id}>
-                            {vendor.display_name} ({vendor.vendor_number})
-                          </option>
-                        ))
-                      )}
-                    </select>
+                    />
                     {vendors.length === 0 && (
                       <p className="mt-1 text-xs text-red-600">
                         No active vendors found. Please create a vendor first or check if vendors are active.
@@ -3962,16 +3990,6 @@ export default function BillsPage() {
                       const lineItem = line.item_id ? items.find((i) => i.id === line.item_id) : undefined
                       const showFishDims = isFishTypeItem(lineItem)
                       const fishLineAuto = showFishDims && itemPiecesPerKg(lineItem) != null
-                      const pondSel =
-                        line.aquaculture_pond_id === '' || line.aquaculture_pond_id == null
-                          ? ''
-                          : Number(line.aquaculture_pond_id)
-                      const cyclesForLine =
-                        pondSel === '' || !Number.isFinite(pondSel)
-                          ? []
-                          : productionCycles.filter((c) => c.pond_id === pondSel)
-                      const showAqTag =
-                        aquaculturePonds.length > 0 || (pondSel !== '' && Number.isFinite(pondSel))
 
                       return (
                         <div
@@ -4161,31 +4179,16 @@ export default function BillsPage() {
                               onFieldChange={handleLineChange}
                             />
                           ) : null}
-                          {(formData.bill_purpose === 'pond' || showFishDims) && showAqTag ? (
-                            <BillPondAllocationFields
-                              line={line}
-                              index={index}
-                              ponds={showFishDims ? pondOptionsForFish : pondOptionsForPlTag}
-                              cycles={productionCycles}
-                              billExpenseCategories={billExpenseCategories}
-                              expenseAccounts={expenseAccounts}
-                              onFieldChange={handleLineChange}
-                              directOnly={showFishDims}
-                            />
-                          ) : null}
-                          {formData.bill_purpose === 'station' &&
-                          billFuelCategories.length > 0 &&
-                          !showFishDims ? (
-                            <BillStationAllocationFields
-                              line={line}
-                              index={index}
-                              stations={stations}
-                              billFuelCategories={billFuelCategories}
-                              expenseAccounts={expenseAccounts}
-                              onFieldChange={handleLineChange}
-                              showCategoryBlock={!line.item_id}
-                            />
-                          ) : null}
+                          <BillLineEntityTagging
+                            line={line}
+                            index={index}
+                            stations={stations}
+                            ponds={aquaculturePonds}
+                            billExpenseCategories={billExpenseCategories}
+                            billFuelCategories={billFuelCategories}
+                            billExpenseCoaOptions={billExpenseCoaOptions}
+                            onFieldChange={handleLineChange}
+                          />
                         </div>
                       )
                     })}

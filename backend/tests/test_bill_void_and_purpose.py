@@ -208,3 +208,64 @@ def test_shared_pond_split_electricity_sets_cost_bucket(
     for ln in bill.lines.all():
         assert ln.aquaculture_cost_bucket == "electricity"
         assert ln.aquaculture_pond_id is not None
+
+
+@pytest.mark.django_db
+def test_mixed_bill_purpose_allows_pond_and_station_lines(
+    api_client, company_tenant, auth_admin_headers
+):
+    Company.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    ensure_aquaculture_chart_accounts(company_tenant.id)
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="P-Mixed", is_active=True
+    )
+    vendor = Vendor.objects.filter(company_id=company_tenant.id).first()
+    if vendor is None:
+        vendor = Vendor.objects.create(
+            company_id=company_tenant.id,
+            company_name="V",
+            display_name="V",
+            vendor_number="V-MIX",
+            is_active=True,
+        )
+    station = company_tenant.stations.filter(is_active=True).first()
+    if station is None:
+        from api.models import Station
+
+        station = Station.objects.create(
+            company_id=company_tenant.id, station_name="Mixed Test Station", is_active=True
+        )
+    r = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor.id,
+                "bill_date": "2026-05-12",
+                "status": "draft",
+                "bill_purpose": "mixed",
+                "lines": [
+                    {
+                        "description": "Pond electricity",
+                        "quantity": 1,
+                        "unit_cost": "100.00",
+                        "amount": "100.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_expense_category": "electricity",
+                    },
+                    {
+                        "description": "Station utilities",
+                        "quantity": 1,
+                        "unit_cost": "50.00",
+                        "amount": "50.00",
+                        "line_receipt_station_id": station.id,
+                        "fuel_station_expense_category": "utilities",
+                    },
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()

@@ -85,6 +85,9 @@ def expense_row_from_model(x: AquacultureExpense) -> dict:
         "source_station_name": src_sname,
         "feed_sack_count": str(x.feed_sack_count) if getattr(x, "feed_sack_count", None) is not None else None,
         "feed_weight_kg": str(x.feed_weight_kg) if getattr(x, "feed_weight_kg", None) is not None else None,
+        "empty_sack_count": (
+            str(x.empty_sack_count) if getattr(x, "empty_sack_count", None) is not None else None
+        ),
         "funding_account_code": getattr(x, "funding_account_code", "") or "",
         "created_at": x.created_at.isoformat() if x.created_at else "",
     }

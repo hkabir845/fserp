@@ -12,6 +12,10 @@ export type BillLineSelectItem = {
   id: number
   item_number: string
   name: string
+  description?: string
+  item_type?: string
+  unit?: string
+  category?: string
   pos_category?: string
   pieces_per_kg?: number | string | null
 }
@@ -55,8 +59,34 @@ function fishItemOptionLabel(item: BillLineSelectItem): string {
   return pcs != null ? `${base} · Line ${formatNumber(pcs)} pcs/kg` : base
 }
 
+function itemDescriptionText(item: BillLineSelectItem): string {
+  return (item.description || '').trim()
+}
+
+function itemMetaText(item: BillLineSelectItem): string {
+  const parts: string[] = []
+  const typeLabel = (item.item_type || '').replace(/_/g, ' ').trim()
+  if (typeLabel) parts.push(typeLabel)
+  if ((item.unit || '').trim()) parts.push(String(item.unit).trim())
+  const pos = (item.pos_category || '').trim()
+  if (pos && pos.toLowerCase() !== 'general') parts.push(pos.replace(/_/g, ' '))
+  if ((item.category || '').trim()) parts.push(String(item.category).trim())
+  return parts.join(' · ')
+}
+
+function itemPickerTitle(item: BillLineSelectItem): string {
+  const lines = [fishItemOptionLabel(item)]
+  const desc = itemDescriptionText(item)
+  if (desc) lines.push(desc)
+  const meta = itemMetaText(item)
+  if (meta) lines.push(meta)
+  return lines.join('\n')
+}
+
 function buildItemSearchText(item: BillLineSelectItem): string {
-  return `${item.name} ${item.item_number} ${item.pos_category || ''}`
+  return `${item.name} ${item.item_number} ${item.description || ''} ${item.item_type || ''} ${
+    item.unit || ''
+  } ${item.category || ''} ${item.pos_category || ''}`
 }
 
 function buildAccountSearchText(account: BillLineSelectAccount): string {
@@ -111,6 +141,14 @@ export function BillLineItemSelect({
     }
     return ''
   }, [itemId, expenseAccountId, items, expenseAccounts])
+
+  const selectedTitle = useMemo(() => {
+    if (itemId) {
+      const item = items.find((i) => i.id === itemId)
+      if (item) return itemPickerTitle(item)
+    }
+    return selectedLabel || placeholder
+  }, [itemId, items, selectedLabel, placeholder])
 
   const { itemOptions, accountOptions, flatOptions } = useMemo(() => {
     const itemOpts: PickerOption[] = []
@@ -189,6 +227,12 @@ export function BillLineItemSelect({
 
   const inputDisplay = open ? query : selectedLabel
 
+  /** Long labels (items, expense COA); widen list beyond the line column. */
+  const listboxLayoutClass =
+    mode === 'expense' || mode === 'item'
+      ? 'left-0 z-50 mt-1 max-h-72 w-max min-w-full max-w-[min(42rem,calc(100vw-2rem))] overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg'
+      : 'z-50 mt-1 max-h-56 w-full min-w-[16rem] overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg'
+
   return (
     <div className="relative min-w-0" ref={rootRef}>
       <div className="relative">
@@ -203,7 +247,8 @@ export function BillLineItemSelect({
           spellCheck={false}
           placeholder={placeholder}
           value={inputDisplay}
-          className={`${className} pr-8`}
+          title={selectedTitle}
+          className={`${className} pr-8 ${open ? '' : 'truncate'}`}
           onFocus={(e) => {
             setOpen(true)
             setQuery(selectedLabel)
@@ -263,7 +308,7 @@ export function BillLineItemSelect({
         <ul
           id={listboxId}
           role="listbox"
-          className="absolute z-50 mt-1 max-h-56 w-full min-w-[16rem] overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg"
+          className={`absolute ${listboxLayoutClass}`}
         >
           {flatOptions.length === 0 ? (
             <li className="px-3 py-2 text-gray-500">No matches. Try another word from the name or number.</li>
@@ -278,19 +323,52 @@ export function BillLineItemSelect({
               {itemOptions.map((opt, idx) => {
                 const flatIdx = idx
                 const active = flatIdx === activeIndex
+                const item = items.find((i) => i.id === opt.id)
+                const desc = item ? itemDescriptionText(item) : ''
+                const meta = item ? itemMetaText(item) : ''
+                const title = item ? itemPickerTitle(item) : opt.label
                 return (
                   <li
                     key={`item-${opt.id}`}
                     role="option"
                     aria-selected={active}
-                    className={`cursor-pointer px-3 py-1.5 truncate ${
+                    title={title}
+                    className={`cursor-pointer px-3 py-2 ${
                       active ? 'bg-blue-50 text-blue-900' : 'text-gray-900 hover:bg-gray-50'
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => setActiveIndex(flatIdx)}
                     onClick={() => pick(opt)}
                   >
-                    {opt.label}
+                    <span className="block text-sm leading-snug whitespace-normal">
+                      {item ? (
+                        <>
+                          <span className="font-medium">{item.name}</span>
+                          {item.item_number ? (
+                            <span className="ml-1.5 font-mono text-xs text-gray-500 tabular-nums">
+                              {item.item_number}
+                            </span>
+                          ) : null}
+                          {isFishTypeItem(item) && itemPiecesPerKg(item) != null ? (
+                            <span className="ml-1.5 text-xs text-gray-600">
+                              · Line {formatNumber(itemPiecesPerKg(item)!)} pcs/kg
+                            </span>
+                          ) : null}
+                        </>
+                      ) : (
+                        opt.label
+                      )}
+                    </span>
+                    {desc ? (
+                      <span className="mt-0.5 block text-xs leading-snug text-gray-600 whitespace-normal">
+                        {desc}
+                      </span>
+                    ) : null}
+                    {meta ? (
+                      <span className="mt-0.5 block text-[11px] leading-tight text-gray-500 capitalize whitespace-normal">
+                        {meta}
+                      </span>
+                    ) : null}
                   </li>
                 )
               })}
@@ -303,19 +381,43 @@ export function BillLineItemSelect({
               {accountOptions.map((opt, idx) => {
                 const flatIdx = itemOptions.length + idx
                 const active = flatIdx === activeIndex
+                const account = expenseAccounts.find((a) => a.id === opt.id)
+                const code = (account?.account_code || '').trim()
+                const name = (account?.account_name || '').trim()
+                const typePart = (account?.account_type || '').replace(/_/g, ' ')
+                const subPart = (account?.account_sub_type || '').replace(/_/g, ' ')
+                const meta =
+                  typePart && subPart
+                    ? `${typePart} · ${subPart}`
+                    : typePart || subPart
                 return (
                   <li
                     key={`account-${opt.id}`}
                     role="option"
                     aria-selected={active}
-                    className={`cursor-pointer px-3 py-1.5 truncate ${
+                    title={opt.label}
+                    className={`cursor-pointer px-3 py-2 ${
                       active ? 'bg-blue-50 text-blue-900' : 'text-gray-900 hover:bg-gray-50'
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => setActiveIndex(flatIdx)}
                     onClick={() => pick(opt)}
                   >
-                    {opt.label}
+                    <span className="block text-sm leading-snug">
+                      {code ? (
+                        <>
+                          <span className="font-medium tabular-nums">{code}</span>
+                          {name ? <span> — {name}</span> : null}
+                        </>
+                      ) : (
+                        name || opt.label
+                      )}
+                    </span>
+                    {meta ? (
+                      <span className="mt-0.5 block text-[11px] leading-tight text-gray-500 capitalize">
+                        {meta}
+                      </span>
+                    ) : null}
                   </li>
                 )
               })}

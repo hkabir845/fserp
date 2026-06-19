@@ -12,7 +12,8 @@ import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
-import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { CoaAccountCombobox } from '@/components/reference/CoaAccountCombobox'
+import { StringReferenceCombobox } from '@/components/reference/StringReferenceCombobox'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 import { formatDate } from '@/utils/date'
 import {
@@ -1582,6 +1583,25 @@ export default function ItemsPage() {
 
   const categoryCounts = listStats?.by_category ?? {}
 
+  const reportCategoryFilterOptions = useMemo(
+    () =>
+      categoryFilterOptions.map((cat) => ({
+        value: cat,
+        label: `${cat} (${categoryCounts[cat] ?? 0})`,
+        searchText: cat,
+      })),
+    [categoryFilterOptions, categoryCounts],
+  )
+
+  const reportingCategoryPresetOptions = useMemo(() => {
+    const presets = [...categoryPresets, ...categoryCustomInUse]
+    return presets.map((c) => ({
+      value: c,
+      label: c,
+      searchText: c,
+    }))
+  }, [categoryPresets, categoryCustomInUse])
+
   const filteredOnHandValue = useMemo(() => {
     const raw = listStats?.on_hand?.total_cost_value
     if (raw == null || raw === '') return 0
@@ -1822,20 +1842,18 @@ export default function ItemsPage() {
             </label>
             <label className="shrink-0 text-sm text-gray-600">
               Report category
-              <select
+              <StringReferenceCombobox
                 value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="ml-2 max-w-[220px] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 focus:border-transparent focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">
-                  All report categories ({listStats?.catalog_total ?? totalCount})
-                </option>
-                {categoryFilterOptions.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat} ({categoryCounts[cat] ?? 0})
-                  </option>
-                ))}
-              </select>
+                onChange={setFilterCategory}
+                options={reportCategoryFilterOptions}
+                groupLabel="Report categories"
+                emptyOption={{
+                  value: '',
+                  label: `All report categories (${listStats?.catalog_total ?? totalCount})`,
+                }}
+                placeholder="Search report category…"
+                className="ml-2 min-w-[16rem] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+              />
             </label>
             {!loading && filterCategory.trim() ? (
               <span className="text-xs text-gray-500 tabular-nums">
@@ -2759,10 +2777,10 @@ export default function ItemsPage() {
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Pond (quantity applies here)
                           </label>
-                          <select
-                            value={selectedFishPondId ?? ''}
-                            onChange={(e) => {
-                              const pid = e.target.value ? parseInt(e.target.value, 10) : null
+                          <StringReferenceCombobox
+                            value={selectedFishPondId != null ? String(selectedFishPondId) : ''}
+                            onChange={(v) => {
+                              const pid = v ? parseInt(v, 10) : null
                               setSelectedFishPondId(pid)
                               const row = fishPondRows.find((r) => r.pond_id === pid)
                               if (row) {
@@ -2772,14 +2790,16 @@ export default function ItemsPage() {
                                 }))
                               }
                             }}
+                            options={fishPondRows.map((p) => ({
+                              value: String(p.pond_id),
+                              label: `${p.pond_name} (on hand: ${formatNumber(p.quantity)} ${formData.unit || 'unit'})`,
+                              searchText: p.pond_name,
+                            }))}
+                            groupLabel="Ponds"
+                            emptyOption={null}
+                            placeholder="Search pond…"
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                          >
-                            {fishPondRows.map((p) => (
-                              <option key={p.pond_id} value={p.pond_id}>
-                                {p.pond_name} (on hand: {formatNumber(p.quantity)} {formData.unit || 'unit'})
-                              </option>
-                            ))}
-                          </select>
+                          />
                           <p className="mt-1 text-xs text-gray-500">
                             Fish SKUs are not stored in shop station bins. Pick the pond whose on-hand amount you are
                             editing; the item card shows the total across ponds.
@@ -2807,10 +2827,10 @@ export default function ItemsPage() {
                               ? 'Shop location (sack count applies here)'
                               : 'Shop location (quantity applies here)'}
                           </label>
-                          <select
-                            value={selectedShopStationId ?? ''}
-                            onChange={(e) => {
-                              const sid = e.target.value ? parseInt(e.target.value, 10) : null
+                          <StringReferenceCombobox
+                            value={selectedShopStationId != null ? String(selectedShopStationId) : ''}
+                            onChange={(v) => {
+                              const sid = v ? parseInt(v, 10) : null
                               userPickedShopStationRef.current = sid
                               setSelectedShopStationId(sid)
                               const row = shopStationRows.find((r) => r.station_id === sid)
@@ -2821,18 +2841,20 @@ export default function ItemsPage() {
                                 }))
                               }
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                          >
-                            {shopStationRows.map((s) => (
-                              <option key={s.station_id} value={s.station_id}>
-                                {s.station_name} (on hand:{' '}
-                                {isFeedItemForm
+                            options={shopStationRows.map((s) => ({
+                              value: String(s.station_id),
+                              label: `${s.station_name} (on hand: ${
+                                isFeedItemForm
                                   ? formatFeedSackQuantityLabel(s.quantity)
-                                  : s.quantity}
-                                )
-                              </option>
-                            ))}
-                          </select>
+                                  : s.quantity
+                              })`,
+                              searchText: s.station_name,
+                            }))}
+                            groupLabel="Shop locations"
+                            emptyOption={null}
+                            placeholder="Search shop location…"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
                           <p className="mt-1 text-xs text-gray-500">
                             Stock is saved for the location you select (when you reopen, the form opens on the site that
                             already has quantity). Cashier only lists this product at a shop when that location has
@@ -2863,21 +2885,21 @@ export default function ItemsPage() {
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Fuel tank (quantity applies here)
                           </label>
-                          <select
-                            value={selectedFuelTankId ?? ''}
-                            onChange={(e) =>
-                              setSelectedFuelTankId(
-                                e.target.value ? parseInt(e.target.value, 10) : null
-                              )
+                          <StringReferenceCombobox
+                            value={selectedFuelTankId != null ? String(selectedFuelTankId) : ''}
+                            onChange={(v) =>
+                              setSelectedFuelTankId(v ? parseInt(v, 10) : null)
                             }
+                            options={fuelTanksForProduct.map((t) => ({
+                              value: String(t.id),
+                              label: t.tank_name,
+                              searchText: t.tank_name,
+                            }))}
+                            groupLabel="Fuel tanks"
+                            emptyOption={null}
+                            placeholder="Search fuel tank…"
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                          >
-                            {fuelTanksForProduct.map((t) => (
-                              <option key={t.id} value={t.id}>
-                                {t.tank_name}
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </div>
                       )}
                       <div>
@@ -2929,21 +2951,20 @@ export default function ItemsPage() {
                       Used for business reports (by category and by item). This is separate from the POS tab (Fuel / General) above.
                       For hatchery fish fry and pond stock, use <strong className="font-medium">Aquaculture</strong> (or Fish buying and selling when appropriate).
                     </p>
-                    <select
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                    <StringReferenceCombobox
                       value=""
-                      onChange={(e) => {
-                        const v = e.target.value
+                      onChange={(v) => {
                         if (v) setFormData((f) => ({ ...f, category: v }))
                       }}
-                    >
-                      <option value="">Apply a common category to the field below…</option>
-                      {[...categoryPresets, ...categoryCustomInUse].map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
+                      options={reportingCategoryPresetOptions}
+                      groupLabel="Common categories"
+                      emptyOption={{
+                        value: '',
+                        label: 'Apply a common category to the field below…',
+                      }}
+                      placeholder="Search reporting category…"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
                     <input
                       type="text"
                       required
@@ -2983,54 +3004,42 @@ export default function ItemsPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Revenue (sales)</label>
-                        <select
-                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                        <CoaAccountCombobox
                           value={formData.revenue_account_id}
-                          onChange={(e) => {
+                          onChange={(accountId) => {
                             syncFieldTouchedForAccountPick(
                               glFieldsTouchedRef.current,
                               'revenue_account_id',
-                              e.target.value
+                              accountId
                             )
-                            setFormData((prev) => ({ ...prev, revenue_account_id: e.target.value }))
+                            setFormData((prev) => ({ ...prev, revenue_account_id: accountId }))
                           }}
-                        >
-                          <option value="">
-                            {templateDefaultOptionLabel(
-                              suggestedRevenueCoaCode(itemGlCtx),
-                              coaAccounts
-                            )}
-                          </option>
-                          {incomeCoaOptions.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {formatCoaOptionLabel(a)}
-                            </option>
-                          ))}
-                        </select>
+                          accounts={incomeCoaOptions}
+                          emptyLabel={templateDefaultOptionLabel(
+                            suggestedRevenueCoaCode(itemGlCtx),
+                            coaAccounts
+                          )}
+                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          placeholder="Search revenue accounts…"
+                        />
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">COGS</label>
-                        <select
-                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                        <CoaAccountCombobox
                           value={formData.cogs_account_id}
-                          onChange={(e) => {
+                          onChange={(accountId) => {
                             syncFieldTouchedForAccountPick(
                               glFieldsTouchedRef.current,
                               'cogs_account_id',
-                              e.target.value
+                              accountId
                             )
-                            setFormData((prev) => ({ ...prev, cogs_account_id: e.target.value }))
+                            setFormData((prev) => ({ ...prev, cogs_account_id: accountId }))
                           }}
-                        >
-                          <option value="">
-                            {templateDefaultOptionLabel(suggestedCogsCoaCode(itemGlCtx), coaAccounts)}
-                          </option>
-                          {cogsCoaOptions.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {formatCoaOptionLabel(a)}
-                            </option>
-                          ))}
-                        </select>
+                          accounts={cogsCoaOptions}
+                          emptyLabel={templateDefaultOptionLabel(suggestedCogsCoaCode(itemGlCtx), coaAccounts)}
+                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          placeholder="Search COGS accounts…"
+                        />
                         {formData.item_type === 'inventory' && (
                           <p className="mt-1 text-xs text-slate-600">
                             COGS on Profit &amp; Loss posts when you <strong>sell</strong> this SKU (POS / invoice), not
@@ -3041,59 +3050,47 @@ export default function ItemsPage() {
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Inventory asset</label>
-                        <select
-                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                        <CoaAccountCombobox
                           value={formData.inventory_account_id}
-                          onChange={(e) => {
+                          onChange={(accountId) => {
                             syncFieldTouchedForAccountPick(
                               glFieldsTouchedRef.current,
                               'inventory_account_id',
-                              e.target.value
+                              accountId
                             )
-                            setFormData((prev) => ({ ...prev, inventory_account_id: e.target.value }))
+                            setFormData((prev) => ({ ...prev, inventory_account_id: accountId }))
                           }}
-                        >
-                          <option value="">
-                            {templateDefaultOptionLabel(
-                              suggestedInventoryCoaCode(itemGlCtx),
-                              coaAccounts
-                            )}
-                          </option>
-                          {assetCoaOptions.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {formatCoaOptionLabel(a)}
-                            </option>
-                          ))}
-                        </select>
+                          accounts={assetCoaOptions}
+                          emptyLabel={templateDefaultOptionLabel(
+                            suggestedInventoryCoaCode(itemGlCtx),
+                            coaAccounts
+                          )}
+                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          placeholder="Search inventory accounts…"
+                        />
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">
                           Expense (non-inventory bills)
                         </label>
-                        <select
-                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                        <CoaAccountCombobox
                           value={formData.expense_account_id}
-                          onChange={(e) => {
+                          onChange={(accountId) => {
                             syncFieldTouchedForAccountPick(
                               glFieldsTouchedRef.current,
                               'expense_account_id',
-                              e.target.value
+                              accountId
                             )
-                            setFormData((prev) => ({ ...prev, expense_account_id: e.target.value }))
+                            setFormData((prev) => ({ ...prev, expense_account_id: accountId }))
                           }}
-                        >
-                          <option value="">
-                            {templateDefaultOptionLabel(
-                              suggestedExpenseCoaCode(itemGlCtx),
-                              coaAccounts
-                            )}
-                          </option>
-                          {expenseCoaOptions.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {formatCoaOptionLabel(a)}
-                            </option>
-                          ))}
-                        </select>
+                          accounts={expenseCoaOptions}
+                          emptyLabel={templateDefaultOptionLabel(
+                            suggestedExpenseCoaCode(itemGlCtx),
+                            coaAccounts
+                          )}
+                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          placeholder="Search expense accounts…"
+                        />
                       </div>
                     </div>
                   </div>

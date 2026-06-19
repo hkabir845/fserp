@@ -26,6 +26,7 @@ from api.models import AquacultureExpense, AquaculturePond, ChartOfAccount, Comp
 from api.services.employee_pond_labor import LABOR_SCOPE_ASSIGNED_POND, LABOR_SCOPE_NOT_APPLICABLE
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 from api.services.aquaculture_medicine_catalog_seed import ensure_aquaculture_medicine_catalog_items
+from api.services.aquaculture_empty_sack_service import ensure_empty_feed_sack_catalog_item
 from api.services.aquaculture_pond_pos_customer import (
     maybe_provision_auto_pos_customer,
     sync_aquaculture_customer_default_stations,
@@ -117,9 +118,10 @@ def hook_aquaculture_module(company_id: int) -> None:
     _sync_aquaculture_expense_category_labels(company_id)
     try:
         ensure_aquaculture_medicine_catalog_items(company_id)
+        ensure_empty_feed_sack_catalog_item(company_id)
     except Exception:
         logger.exception(
-            "release hook medicine catalog seed failed company=%s", company_id
+            "release hook medicine / empty-sack catalog seed failed company=%s", company_id
         )
 
 

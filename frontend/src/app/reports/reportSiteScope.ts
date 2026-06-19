@@ -1,12 +1,20 @@
-/** Parsed value from Reports → Site scope (stations use plain id; ponds use `p:{id}`). */
+/** Parsed value from Reports → Site scope (stations use plain id; ponds use `p:{id}`; head office uses `ho`). */
 export type ReportSiteScope =
   | { kind: 'all' }
+  | { kind: 'head_office' }
   | { kind: 'station'; id: number }
   | { kind: 'pond'; id: number }
+
+export const HEAD_OFFICE_SCOPE_KEY = 'ho'
+
+export function formatHeadOfficeScopeKey(): string {
+  return HEAD_OFFICE_SCOPE_KEY
+}
 
 export function parseReportSiteScopeKey(key: string): ReportSiteScope {
   const k = key.trim()
   if (!k) return { kind: 'all' }
+  if (k === HEAD_OFFICE_SCOPE_KEY) return { kind: 'head_office' }
   const pondMatch = /^p:(\d+)$/.exec(k)
   if (pondMatch) {
     const id = parseInt(pondMatch[1], 10)
@@ -19,14 +27,16 @@ export function parseReportSiteScopeKey(key: string): ReportSiteScope {
   return { kind: 'all' }
 }
 
-/** Query params for API calls that accept Reports → Site scope (station id or p:{pondId}). */
+/** Query params for API calls that accept Reports → Site scope (station id, p:{pondId}, or ho). */
 export function reportScopeQueryParams(scopeKey: string): {
   station_id?: string
   pond_id?: string
+  head_office?: string
 } {
   const scope = parseReportSiteScopeKey(scopeKey)
   if (scope.kind === 'station') return { station_id: String(scope.id) }
   if (scope.kind === 'pond') return { pond_id: String(scope.id) }
+  if (scope.kind === 'head_office') return { head_office: '1' }
   return {}
 }
 
@@ -36,7 +46,7 @@ export function formatPondScopeKey(pondId: number): string {
 
 export function isPersistedReportSiteScopeKey(key: string): boolean {
   const k = key.trim()
-  return k === '' || /^\d+$/.test(k) || /^p:\d+$/.test(k)
+  return k === '' || k === HEAD_OFFICE_SCOPE_KEY || /^\d+$/.test(k) || /^p:\d+$/.test(k)
 }
 
 export function isValidReportSiteScopeKey(
@@ -46,6 +56,7 @@ export function isValidReportSiteScopeKey(
 ): boolean {
   const scope = parseReportSiteScopeKey(key)
   if (scope.kind === 'all') return key.trim() === ''
+  if (scope.kind === 'head_office') return key.trim() === HEAD_OFFICE_SCOPE_KEY
   if (scope.kind === 'station') return stations.some((s) => s.id === scope.id)
   return ponds.some((p) => p.id === scope.id)
 }

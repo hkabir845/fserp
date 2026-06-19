@@ -26,10 +26,16 @@ from api.models import (
     PondWarehouseInterPondTransferLine,
     PondWarehouseStockReceipt,
     PondWarehouseStockReceiptLine,
+    PondWarehouseStockReturn,
+    PondWarehouseStockReturnLine,
     Station,
 )
 from api.services.aquaculture_warehouse_group_service import assert_ponds_allow_inter_warehouse_transfer
 from api.services.aquaculture_shop_stock import _parse_shop_issue_items, _total_cost_at_issue
+from api.services.aquaculture_empty_sack_service import (
+    apply_empty_sacks_from_feed_consumption,
+    empty_sacks_opened_for_feed_consumption,
+)
 from api.services.gl_posting import (
     _item_receives_physical_stock,
     item_inventory_unit_cost,
@@ -37,11 +43,26 @@ from api.services.gl_posting import (
     post_aquaculture_pond_feed_consumption_journal,
 )
 from api.services.inventory_validation import assert_pos_general_lines_within_qoh
-from api.services.station_stock import add_station_stock, decrement_station_lines, item_uses_station_bins
+from api.services.station_stock import add_station_stock, decrement_station_lines, get_station_stock, item_uses_station_bins
 
 logger = logging.getLogger(__name__)
 
 POND_WAREHOUSE_CONSUMPTION_CATEGORIES = frozenset({"feed_consumed", "medicine_consumed"})
+POND_WAREHOUSE_NON_TRANSFERABLE_ITEM_NUMBERS = frozenset({"AQ-EMPTY-SACK"})
+
+
+def _assert_pond_warehouse_transfer_item(company_id: int, item: Item) -> None:
+    """Feed/medicine shop SKUs only — not fuel, hatchery non-bin stock, or pond scrap like empty sacks."""
+    if not item_uses_station_bins(company_id, item):
+        raise StockBusinessError(
+            "Pond warehouse transfers only support shop items tracked per station. "
+            "Use a station-stocked feed/medicine SKU (not tank fuel or non_pos hatchery stock)."
+        )
+    inum = (item.item_number or "").strip().upper()
+    if inum in POND_WAREHOUSE_NON_TRANSFERABLE_ITEM_NUMBERS:
+        raise StockBusinessError(
+            f'"{(item.name or "").strip()}" is pond-side scrap only and cannot move between shop and pond warehouse.'
+        )
 
 
 def feed_inventory_qty_from_kg(
@@ -183,11 +204,7 @@ def transfer_station_stock_to_pond_warehouse(
 
     lines_data = _parse_shop_issue_items(company_id, items)
     for d in lines_data:
-        if not item_uses_station_bins(company_id, d["item"]):
-            raise StockBusinessError(
-                "Pond warehouse transfer only supports shop items tracked per station. "
-                "Use a station-stocked feed/medicine SKU (not tank fuel or non_pos hatchery stock)."
-            )
+        _assert_pond_warehouse_transfer_item(company_id, d["item"])
     assert_pos_general_lines_within_qoh(company_id, lines_data, station_id)
     decrement_station_lines(company_id, station_id, lines_data)
     for d in lines_data:
@@ -210,6 +227,107 @@ def transfer_station_stock_to_pond_warehouse(
 
 
 @transaction.atomic
+def transfer_pond_warehouse_to_station(
+    *,
+    company_id: int,
+    pond_id: int,
+    station_id: int,
+    items: list,
+    memo: str = "",
+) -> PondWarehouseStockReturn:
+    """
+    Move inventory from a pond warehouse back to a shop station bin. No expense or COGS (still company inventory).
+    """
+    st = Station.objects.filter(pk=station_id, company_id=company_id, is_active=True).first()
+    if not st:
+        raise StockBusinessError("Station not found or inactive for this company.")
+    pond = AquaculturePond.objects.filter(pk=pond_id, company_id=company_id).first()
+    if not pond:
+        raise StockBusinessError("Pond not found for this company.")
+
+    lines_data = _parse_shop_issue_items(company_id, items)
+    if not lines_data:
+        raise StockBusinessError("At least one line with item_id and quantity is required.")
+    for d in lines_data:
+        _assert_pond_warehouse_transfer_item(company_id, d["item"])
+    assert_pond_lines_within_qoh(company_id, pond_id, lines_data)
+    decrement_pond_lines(company_id, pond_id, lines_data)
+    for d in lines_data:
+        add_station_stock(company_id, station_id, d["item"].id, d["quantity"])
+
+    ret = PondWarehouseStockReturn.objects.create(
+        company_id=company_id,
+        pond_id=pond.id,
+        to_station_id=st.id,
+        memo=(memo or "")[:500],
+    )
+    PondWarehouseStockReturn.objects.filter(pk=ret.pk).update(
+        return_number=f"PWRT-{ret.pk}",
+    )
+    for d in lines_data:
+        PondWarehouseStockReturnLine.objects.create(
+            stock_return_id=ret.pk,
+            item_id=d["item"].id,
+            quantity=d["quantity"],
+        )
+    return (
+        PondWarehouseStockReturn.objects.filter(pk=ret.pk)
+        .select_related("pond", "to_station")
+        .first()
+        or ret
+    )
+
+
+@transaction.atomic
+def _reverse_pond_return_stock_movement(
+    *,
+    company_id: int,
+    ret: PondWarehouseStockReturn,
+    lines: list[PondWarehouseStockReturnLine],
+) -> None:
+    """Return quantities from shop station back to pond warehouse (no row delete)."""
+    if not lines:
+        raise StockBusinessError("Return has no lines.")
+    for ln in lines:
+        it = ln.item
+        qty = ln.quantity if ln.quantity is not None else Decimal("0")
+        if qty <= 0:
+            continue
+        _assert_pond_warehouse_transfer_item(company_id, it)
+        at_shop = get_station_stock(company_id, ret.to_station_id, it.id)
+        if at_shop < qty:
+            raise StockBusinessError(
+                f'Not enough "{(it.name or "").strip()}" at shop to reverse this return: '
+                f"need {_fmt_qty(qty)} but only {_fmt_qty(at_shop)} remain at the destination station."
+            )
+    for ln in lines:
+        it = ln.item
+        qty = ln.quantity if ln.quantity is not None else Decimal("0")
+        if qty <= 0:
+            continue
+        add_station_stock(company_id, ret.to_station_id, it.id, -qty)
+        add_pond_stock(company_id, ret.pond_id, it.id, qty)
+
+
+@transaction.atomic
+def reverse_pond_warehouse_stock_return(*, company_id: int, return_id: int) -> None:
+    """Undo pond → shop move if both pond and shop still hold the quantities to roll back."""
+    ret = (
+        PondWarehouseStockReturn.objects.select_for_update()
+        .filter(pk=return_id, company_id=company_id)
+        .select_related("pond", "to_station")
+        .first()
+    )
+    if not ret:
+        raise StockBusinessError("Pond warehouse return not found.")
+    lines = list(
+        PondWarehouseStockReturnLine.objects.filter(stock_return_id=ret.pk).select_related("item")
+    )
+    _reverse_pond_return_stock_movement(company_id=company_id, ret=ret, lines=lines)
+    PondWarehouseStockReturn.objects.filter(pk=ret.pk).delete()
+
+
+@transaction.atomic
 def _reverse_pond_receipt_stock_movement(
     *,
     company_id: int,
@@ -224,10 +342,7 @@ def _reverse_pond_receipt_stock_movement(
         qty = ln.quantity if ln.quantity is not None else Decimal("0")
         if qty <= 0:
             continue
-        if not item_uses_station_bins(company_id, it):
-            raise StockBusinessError(
-                f'"{(it.name or "").strip()}" cannot be moved via pond warehouse reversal (not a station-bin SKU).'
-            )
+        _assert_pond_warehouse_transfer_item(company_id, it)
         have = get_pond_item_stock(company_id, rec.pond_id, it.id)
         if have < qty:
             raise StockBusinessError(
@@ -301,11 +416,7 @@ def amend_pond_warehouse_stock_receipt(
     if not lines_data:
         raise StockBusinessError("At least one line with item_id and quantity is required.")
     for d in lines_data:
-        if not item_uses_station_bins(company_id, d["item"]):
-            raise StockBusinessError(
-                "Pond warehouse transfer only supports shop items tracked per station. "
-                "Use a station-stocked feed/medicine SKU (not tank fuel or non_pos hatchery stock)."
-            )
+        _assert_pond_warehouse_transfer_item(company_id, d["item"])
     assert_pos_general_lines_within_qoh(company_id, lines_data, station_id)
     decrement_station_lines(company_id, station_id, lines_data)
     for d in lines_data:
@@ -345,10 +456,7 @@ def transfer_pond_warehouse_between_ponds(
 
     lines_data = _parse_shop_issue_items(company_id, items)
     for d in lines_data:
-        if not item_uses_station_bins(company_id, d["item"]):
-            raise StockBusinessError(
-                "Pond-to-pond transfer only supports shop-style feed/medicine SKUs (station-bin inventory)."
-            )
+        _assert_pond_warehouse_transfer_item(company_id, d["item"])
     assert_pond_lines_within_qoh(company_id, from_pond_id, lines_data)
     decrement_pond_lines(company_id, from_pond_id, lines_data)
     for d in lines_data:
@@ -506,6 +614,7 @@ def consume_pond_warehouse_stock(
     memo: str,
     feed_weight_kg: Decimal | None = None,
     feed_sack_count: Decimal | None = None,
+    sack_size_kg: int | None = None,
 ) -> AquacultureExpense:
     """
     Dr COGS / Cr inventory at average cost; creates expense; decrements pond warehouse.
@@ -537,6 +646,16 @@ def consume_pond_warehouse_stock(
         if cycle_obj.pond_id != pond.id:
             raise StockBusinessError("production_cycle_id does not belong to the selected pond.")
 
+    if ec == "feed_consumed":
+        computed_sacks = empty_sacks_opened_for_feed_consumption(
+            item=item,
+            quantity=quantity,
+            feed_weight_kg=feed_weight_kg,
+            sack_size_kg=sack_size_kg,
+        )
+        if feed_sack_count is None and computed_sacks > 0:
+            feed_sack_count = computed_sacks
+
     x = AquacultureExpense(
         company_id=company_id,
         pond=pond,
@@ -548,6 +667,7 @@ def consume_pond_warehouse_stock(
         vendor_name="",
         feed_weight_kg=feed_weight_kg,
         feed_sack_count=feed_sack_count,
+        empty_sack_count=None,
     )
     x.save()
 
@@ -571,6 +691,19 @@ def consume_pond_warehouse_stock(
         )
 
     decrement_pond_lines(company_id, pond.id, lines_data)
+
+    if ec == "feed_consumed":
+        opened = apply_empty_sacks_from_feed_consumption(
+            company_id=company_id,
+            pond_id=pond.id,
+            item=item,
+            quantity=quantity,
+            feed_weight_kg=feed_weight_kg,
+            sack_size_kg=sack_size_kg,
+        )
+        if opened > 0:
+            AquacultureExpense.objects.filter(pk=x.pk).update(empty_sack_count=opened)
+            x.empty_sack_count = opened
 
     out = (
         AquacultureExpense.objects.filter(pk=x.pk)
@@ -602,12 +735,6 @@ def consume_pond_feed_on_advice_apply(
     if qty <= 0:
         raise StockBusinessError("Computed consumption quantity is zero.")
 
-    sack_count: Decimal | None = None
-    if item.content_weight_kg and item.content_weight_kg > 0:
-        sack_count = (applied_kg / Decimal(item.content_weight_kg)).quantize(Decimal("0.0001"))
-    elif sack_size_kg and sack_size_kg > 0:
-        sack_count = (applied_kg / Decimal(sack_size_kg)).quantize(Decimal("0.0001"))
-
     memo = f"Pond warehouse feed consumed · feeding advice #{advice_id}"[:5000]
     return consume_pond_warehouse_stock(
         company_id=company_id,
@@ -619,7 +746,8 @@ def consume_pond_feed_on_advice_apply(
         quantity=qty,
         memo=memo,
         feed_weight_kg=applied_kg,
-        feed_sack_count=sack_count,
+        feed_sack_count=None,
+        sack_size_kg=sack_size_kg,
     )
 
 

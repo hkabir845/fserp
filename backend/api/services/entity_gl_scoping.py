@@ -184,6 +184,7 @@ def validate_invoice_entity_tags_for_gl(company_id: int, inv: Invoice) -> None:
         _build_revenue_splits,
         _gl_station_id,
         _invoice_aquaculture_pond_cycle,
+        _invoice_line_receipt_station_id,
         item_should_relieve_cogs,
         item_cogs_unit_cost,
     )
@@ -194,27 +195,38 @@ def validate_invoice_entity_tags_for_gl(company_id: int, inv: Invoice) -> None:
     rev_splits = _build_revenue_splits(company_id, inv)
     has_revenue = bool(rev_splits)
     has_cogs = False
-    for line in InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item"):
+    lines = list(InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item"))
+    for line in lines:
         it = line.item
-        if not it or not item_should_relieve_cogs(company_id, it):
-            continue
-        if item_cogs_unit_cost(company_id, it) <= 0:
-            continue
-        qty = line.quantity or Decimal("0")
-        if qty <= 0:
-            continue
-        has_cogs = True
-        break
+        if it and item_should_relieve_cogs(company_id, it):
+            if item_cogs_unit_cost(company_id, it) > 0 and (line.quantity or Decimal("0")) > 0:
+                has_cogs = True
+                break
     if not has_revenue and not has_cogs:
         return
-    pond_id, _cycle_id = _invoice_aquaculture_pond_cycle(company_id, inv)
-    if pond_id:
+
+    header_pond, _cycle_id = _invoice_aquaculture_pond_cycle(company_id, inv)
+    if header_pond:
         return
-    if _gl_station_id(company_id, inv.station_id):
+    header_st = _gl_station_id(company_id, inv.station_id)
+    if header_st:
         return
+
+    any_line_tagged = False
+    for line in lines:
+        if getattr(line, "aquaculture_pond_id", None):
+            any_line_tagged = True
+            break
+        if _gl_station_id(company_id, _invoice_line_receipt_station_id(line, inv)):
+            any_line_tagged = True
+            break
+
+    if any_line_tagged:
+        return
+
     raise GlPostingError(
-        "Cannot post invoice: assign a selling site (station) or link to a pond "
-        "(aquaculture sale or pond customer) so revenue and COGS appear on the correct entity P&L."
+        "Cannot post invoice: assign a selling site (station) or pond on each line "
+        "(or set invoice station / link to a pond sale) so revenue and COGS appear on the correct entity P&L."
     )
 
 

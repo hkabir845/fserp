@@ -20,6 +20,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   SlidersHorizontal,
   Sprout,
@@ -31,6 +32,8 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
+import { isOffsetPagedPayload, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
+import { CatalogItemCombobox } from '@/components/reference/CatalogItemCombobox'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
@@ -64,7 +67,42 @@ type Station = {
   default_aquaculture_pond_sort_order?: number | null
 }
 
-type PosItem = { id: number; name: string; item_number?: string; pos_category?: string }
+type ItemTypeFilter = 'ALL' | 'INVENTORY' | 'NON_INVENTORY' | 'SERVICE'
+
+type CatalogItem = {
+  id: number
+  name: string
+  item_number?: string
+  description?: string
+  item_type?: string
+  pos_category?: string
+  is_active?: boolean
+}
+
+function normalizeCatalogItemType(raw: string | undefined): string {
+  return (raw || '').trim().toLowerCase().replace(/-/g, '_')
+}
+
+function catalogItemMatchesTypeFilter(item: CatalogItem, filter: ItemTypeFilter): boolean {
+  if (filter === 'ALL') return true
+  const t = normalizeCatalogItemType(item.item_type)
+  if (filter === 'INVENTORY') return t === 'inventory'
+  if (filter === 'NON_INVENTORY') return t === 'non_inventory'
+  if (filter === 'SERVICE') return t === 'service'
+  return true
+}
+
+function formatCatalogItemTypeLabel(raw: string | undefined): string {
+  const t = normalizeCatalogItemType(raw)
+  if (!t) return ''
+  return t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+/** Same primary label as Products & Services list rows (name + SKU). */
+function formatCatalogItemLabel(item: CatalogItem): string {
+  const sku = (item.item_number || '').trim()
+  return sku ? `${item.name} (${sku})` : item.name
+}
 
 type TransferLineRow = { item_id: number; quantity: string }
 
@@ -121,14 +159,30 @@ type TransferRecord = {
 
 type PondReceiptRecord = {
   id: number
-  receipt_number: string
+  movement_type?: 'shop_to_pond' | 'pond_to_shop'
+  receipt_number?: string
+  return_number?: string
+  document_number?: string
   created_at: string | null
-  from_station_id: number
-  from_station_name: string
+  from_station_id?: number | null
+  from_station_name?: string
   pond_id: number
   pond_name: string
+  to_station_id?: number | null
+  to_station_name?: string
+  memo?: string
   total_value?: string
   lines: InventoryMoveLine[]
+}
+
+function pondMovementDocNumber(r: PondReceiptRecord): string {
+  if (r.document_number) return r.document_number
+  if (r.movement_type === 'pond_to_shop') return r.return_number || `PWRT-${r.id}`
+  return r.receipt_number || `PWR-${r.id}`
+}
+
+function pondMovementIsReturn(r: PondReceiptRecord): boolean {
+  return r.movement_type === 'pond_to_shop'
 }
 
 function formatInventoryValue(amount: string | number | null | undefined, currencySymbol: string): string {
@@ -208,6 +262,13 @@ function qtyAtSourceEndpoint(
   return from.kind === 'station'
     ? qtyAtSourceStation(data, from.id)
     : qtyAtSourcePond(data, from.id)
+}
+
+function qtyAtDestinationEndpoint(
+  data: AvailabilityResponse,
+  to: TransferEndpoint,
+): { qtyNum: number; unit: string } {
+  return to.kind === 'station' ? qtyAtSourceStation(data, to.id) : qtyAtSourcePond(data, to.id)
 }
 
 function sumQtySameItemOtherLines(rows: TransferLineRow[], itemId: number, exceptIndex: number): number {
@@ -350,11 +411,15 @@ function pondWarehouseReceiptImpactSummary(): string {
   return 'Completed — shop bin −qty, pond warehouse +qty; no GL. Reverse only if the pond still holds these items (not consumed).'
 }
 
+function pondWarehouseReturnImpactSummary(): string {
+  return 'Completed — pond warehouse −qty, shop bin +qty; no GL. Reverse only if the shop still holds these items.'
+}
+
 type ConfirmAction =
   | { kind: 'post'; id: number; label: string }
   | { kind: 'delete'; id: number; label: string }
   | { kind: 'unpost'; id: number; label: string }
-  | { kind: 'reverse'; id: number; label: string }
+  | { kind: 'reverse'; id: number; label: string; movementType?: 'shop_to_pond' | 'pond_to_shop' }
 
 function StatCard({
   label,
@@ -407,7 +472,7 @@ function InventoryContent() {
   const [stations, setStations] = useState<Station[]>([])
   const [ponds, setPonds] = useState<PondListItem[]>([])
   const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
-  const [posItems, setPosItems] = useState<PosItem[]>([])
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([])
   const [transfers, setTransfers] = useState<TransferRecord[]>([])
   const [pondReceipts, setPondReceipts] = useState<PondReceiptRecord[]>([])
   /** When set, API lists only transfers involving this site; creating cross-site moves is not allowed. */
@@ -423,7 +488,7 @@ function InventoryContent() {
   const [toEndpoint, setToEndpoint] = useState<TransferEndpoint | null>(null)
   const [transferDate, setTransferDate] = useState(() => new Date().toISOString().split('T')[0])
   const [transferMemo, setTransferMemo] = useState('')
-  const [lineRows, setLineRows] = useState<TransferLineRow[]>([{ item_id: 0, quantity: '1' }])
+  const [lineRows, setLineRows] = useState<TransferLineRow[]>([{ item_id: 0, quantity: '' }])
   const [saving, setSaving] = useState(false)
   const [transferPostingId, setTransferPostingId] = useState<number | null>(null)
   const [transferDeletingId, setTransferDeletingId] = useState<number | null>(null)
@@ -443,7 +508,7 @@ function InventoryContent() {
   const [lookupItemId, setLookupItemId] = useState<number | ''>('')
   const [availability, setAvailability] = useState<AvailabilityResponse | null>(null)
   const [lookupLoading, setLookupLoading] = useState(false)
-  const [lookupSearch, setLookupSearch] = useState('')
+  const [lookupTypeFilter, setLookupTypeFilter] = useState<ItemTypeFilter>('ALL')
   const [transferSearch, setTransferSearch] = useState('')
   const [transferStatusFilter, setTransferStatusFilter] = useState<'all' | 'draft' | 'posted'>('all')
   const [pondReceiptSearch, setPondReceiptSearch] = useState('')
@@ -458,11 +523,20 @@ function InventoryContent() {
     }
     setLoading(true)
     try {
-      const [stRes, itRes, trRes, pwrRes, coRes] = await Promise.allSettled([
+      const [stRes, itRes, trRes, pwrRes, pwretRes, coRes] = await Promise.allSettled([
         api.get('/stations/'),
-        api.get('/items/', { params: { pos_only: 'true' } }),
+        api.get('/items/', {
+          params: {
+            paged: '1',
+            skip: 0,
+            limit: REFERENCE_FETCH_LIMIT,
+            sort: 'id',
+            dir: 'asc',
+          },
+        }),
         api.get('/inventory/transfers/'),
         api.get('/inventory/pond-warehouse-receipts/').catch(() => ({ data: [] })),
+        api.get('/inventory/pond-warehouse-returns/').catch(() => ({ data: [] })),
         api.get('/companies/current/').catch(() => ({ data: {} })),
       ])
       if (stRes.status === 'fulfilled') {
@@ -511,33 +585,60 @@ function InventoryContent() {
       }
       if (itRes.status === 'fulfilled') {
         const d = itRes.value.data
-        const list = Array.isArray(d) ? d : (d as { items?: PosItem[] })?.items
+        const list = isOffsetPagedPayload(d)
+          ? (d.results as CatalogItem[])
+          : Array.isArray(d)
+            ? (d as CatalogItem[])
+            : (d as { items?: CatalogItem[] })?.items
         if (Array.isArray(list)) {
-          setPosItems(
+          setCatalogItems(
             list
-              .filter(
-                (p: PosItem & { pos_category?: string }) => {
-                  const pc = (p.pos_category || '').toLowerCase()
-                  return pc !== 'fuel' && pc !== 'non_pos'
-                },
+              .map(
+                (p: {
+                  id: unknown
+                  name: string
+                  item_number?: string
+                  description?: string
+                  item_type?: string
+                  pos_category?: string
+                  is_active?: boolean
+                }) => ({
+                  id: typeof p.id === 'number' ? p.id : Number(p.id),
+                  name: String(p.name || '').trim(),
+                  item_number: p.item_number != null ? String(p.item_number) : undefined,
+                  description: p.description != null ? String(p.description) : undefined,
+                  item_type: p.item_type != null ? String(p.item_type) : undefined,
+                  pos_category: p.pos_category,
+                  is_active: p.is_active !== false,
+                }),
               )
-              .map((p: { id: unknown; name: string; item_number?: string; pos_category?: string }) => ({
-                id: typeof p.id === 'number' ? p.id : Number(p.id),
-                name: p.name,
-                item_number: p.item_number,
-                pos_category: p.pos_category,
-              }))
+              .filter(p => Number.isFinite(p.id) && p.id > 0 && p.name),
           )
         }
       }
       if (trRes.status === 'fulfilled' && Array.isArray(trRes.value.data)) {
         setTransfers(trRes.value.data as TransferRecord[])
       }
-      if (pwrRes.status === 'fulfilled' && Array.isArray(pwrRes.value.data)) {
-        setPondReceipts(pwrRes.value.data as PondReceiptRecord[])
-      } else {
-        setPondReceipts([])
-      }
+      const receiptRows: PondReceiptRecord[] =
+        pwrRes.status === 'fulfilled' && Array.isArray(pwrRes.value.data)
+          ? (pwrRes.value.data as PondReceiptRecord[]).map(r => ({
+              ...r,
+              movement_type: r.movement_type || 'shop_to_pond',
+            }))
+          : []
+      const returnRows: PondReceiptRecord[] =
+        pwretRes.status === 'fulfilled' && Array.isArray(pwretRes.value.data)
+          ? (pwretRes.value.data as PondReceiptRecord[]).map(r => ({
+              ...r,
+              movement_type: 'pond_to_shop' as const,
+            }))
+          : []
+      const merged = [...receiptRows, ...returnRows].sort((a, b) => {
+        const ta = a.created_at ? Date.parse(a.created_at) : 0
+        const tb = b.created_at ? Date.parse(b.created_at) : 0
+        return tb - ta
+      })
+      setPondReceipts(merged)
       if (coRes.status === 'fulfilled' && coRes.value && 'data' in coRes.value) {
         const d = coRes.value.data as {
           station_mode?: string
@@ -668,7 +769,7 @@ function InventoryContent() {
     }
   }, [tab, lookupItemId, runLookup])
 
-  const addLineRow = () => setLineRows(prev => [...prev, { item_id: 0, quantity: '1' }])
+  const addLineRow = () => setLineRows(prev => [...prev, { item_id: 0, quantity: '' }])
   const updateLine = (i: number, field: keyof TransferLineRow, value: string | number) => {
     setLineRows(prev => {
       const next = [...prev]
@@ -682,6 +783,17 @@ function InventoryContent() {
   }
   const removeLine = (i: number) => {
     setLineRows(prev => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)))
+  }
+  const clearLineRow = (i: number) => {
+    setLineRows(prev => {
+      const next = [...prev]
+      next[i] = { item_id: 0, quantity: '' }
+      return next
+    })
+    setFromEndpoint(null)
+    setToEndpoint(null)
+    setItemAvail({})
+    setAvailFetchSeq(s => s + 1)
   }
 
   const activeStations = useMemo(() => stations.filter(isStationActive), [stations])
@@ -769,8 +881,8 @@ function InventoryContent() {
       issues.push('Receipt edits are only for shop → pond warehouse moves.')
       return issues
     }
-    if (route === 'pond-station') {
-      issues.push('Pond warehouse → shop moves are not supported here. Reverse a pond receipt or adjust stock.')
+    if (route === 'pond-station' && !canMoveToPondWarehouse) {
+      issues.push('Enable aquaculture and add ponds to return stock from pond warehouses to shop.')
       return issues
     }
     if (route === 'station-station' && !canTransferBetweenSites) {
@@ -912,7 +1024,7 @@ function InventoryContent() {
     setLineRows(
       t.lines?.length
         ? t.lines.map(l => ({ item_id: l.item_id, quantity: String(l.quantity) }))
-        : [{ item_id: 0, quantity: '1' }],
+        : [{ item_id: 0, quantity: '' }],
     )
     setItemAvail({})
     setAvailFetchSeq(s => s + 1)
@@ -941,14 +1053,15 @@ function InventoryContent() {
   }
 
   const loadPondReceiptIntoForm = (r: PondReceiptRecord) => {
-    setFromEndpoint({ kind: 'station', id: r.from_station_id })
+    if (pondMovementIsReturn(r)) return
+    setFromEndpoint({ kind: 'station', id: r.from_station_id! })
     setToEndpoint({ kind: 'pond', id: r.pond_id })
     setTransferDate(new Date().toISOString().split('T')[0])
     setTransferMemo('')
     setLineRows(
       r.lines?.length
         ? r.lines.map(l => ({ item_id: l.item_id, quantity: String(l.quantity) }))
-        : [{ item_id: 0, quantity: '1' }],
+        : [{ item_id: 0, quantity: '' }],
     )
     setItemAvail({})
     setAvailFetchSeq(s => s + 1)
@@ -969,7 +1082,7 @@ function InventoryContent() {
     setEditingInterStationTransferId(null)
     setAmendingPostedTransferId(null)
     setEditingPondReceiptId(null)
-    setLineRows([{ item_id: 0, quantity: '1' }])
+    setLineRows([{ item_id: 0, quantity: '' }])
     setTransferMemo('')
     setToEndpoint(null)
     setItemAvail({})
@@ -987,9 +1100,10 @@ function InventoryContent() {
     }
     const route = classifyTransferRoute(fromEndpoint, toEndpoint)
     const lines = lineRows
-      .map(r => ({
+      .map((r, idx) => ({
         item_id: r.item_id,
         q: parseQtyInput(r.quantity),
+        idx,
       }))
       .filter(r => r.item_id > 0 && Number.isFinite(r.q) && r.q > 0)
     if (!lines.length) {
@@ -1049,11 +1163,23 @@ function InventoryContent() {
           memo: transferMemo || '',
         })
         toast.success('Stock moved between pond warehouses (immediate — no draft).')
+      } else if (route === 'pond-station') {
+        const sm = activeStations.find(s => s.id === toEndpoint.id)
+        const sname = (sm && formatStationTransferLabel(sm)) || `Site #${toEndpoint.id}`
+        const pm = activePondsOrdered.find(p => p.id === fromEndpoint.id)
+        const pname = (pm?.name || '').trim() || `Pond #${fromEndpoint.id}`
+        await api.post('/aquaculture/pond-warehouse-return/', {
+          station_id: toEndpoint.id,
+          pond_id: fromEndpoint.id,
+          items: linePayload,
+          memo: transferMemo || '',
+        })
+        toast.success(`Stock returned from ${pname} warehouse to ${sname}.`)
       } else {
         toast.error('This transfer route is not supported.')
         return
       }
-      setLineRows([{ item_id: 0, quantity: '1' }])
+      setLineRows([{ item_id: 0, quantity: '' }])
       setTransferMemo('')
       setItemAvail({})
       await refreshAfterInventoryChange()
@@ -1112,14 +1238,19 @@ function InventoryContent() {
     }
   }
 
-  const reversePondReceipt = async (id: number) => {
-    setPondReceiptReversingId(id)
+  const reversePondMovement = async (r: PondReceiptRecord) => {
+    setPondReceiptReversingId(r.id)
     try {
-      await api.post(`/inventory/pond-warehouse-receipts/${id}/reverse/`)
-      toast.success('Pond warehouse receipt reversed')
+      if (pondMovementIsReturn(r)) {
+        await api.post(`/inventory/pond-warehouse-returns/${r.id}/reverse/`)
+        toast.success('Pond warehouse return reversed')
+      } else {
+        await api.post(`/inventory/pond-warehouse-receipts/${r.id}/reverse/`)
+        toast.success('Pond warehouse receipt reversed')
+      }
       await refreshAfterInventoryChange()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not reverse receipt'))
+      toast.error(extractErrorMessage(e, 'Could not reverse move'))
     } finally {
       setPondReceiptReversingId(null)
     }
@@ -1132,7 +1263,14 @@ function InventoryContent() {
       if (confirmAction.kind === 'post') await postTransfer(confirmAction.id)
       else if (confirmAction.kind === 'delete') await deleteDraft(confirmAction.id)
       else if (confirmAction.kind === 'unpost') await unpostTransfer(confirmAction.id)
-      else if (confirmAction.kind === 'reverse') await reversePondReceipt(confirmAction.id)
+      else if (confirmAction.kind === 'reverse') {
+        const row = pondReceipts.find(
+          r =>
+            r.id === confirmAction.id &&
+            (confirmAction.movementType ? r.movement_type === confirmAction.movementType : true),
+        )
+        if (row) await reversePondMovement(row)
+      }
       setConfirmAction(null)
     } finally {
       setConfirmBusy(false)
@@ -1177,9 +1315,11 @@ function InventoryContent() {
     if (!q) return pondReceipts
     return pondReceipts.filter(r => {
       const hay = [
-        r.receipt_number,
+        pondMovementDocNumber(r),
         r.from_station_name,
+        r.to_station_name,
         r.pond_name,
+        r.movement_type,
         ...(r.lines?.map(l => `${l.item_name} ${l.quantity}`) || []),
       ]
         .join(' ')
@@ -1188,15 +1328,19 @@ function InventoryContent() {
     })
   }, [pondReceipts, pondReceiptSearch])
 
+  const typeFilteredCatalogItems = useMemo(() => {
+    return catalogItems.filter(p => catalogItemMatchesTypeFilter(p, lookupTypeFilter))
+  }, [catalogItems, lookupTypeFilter])
+
   const filteredLookupItems = useMemo(() => {
-    const q = lookupSearch.trim().toLowerCase()
-    if (!q) return posItems
-    return posItems.filter(
-      p =>
-        p.name.toLowerCase().includes(q) ||
-        (p.item_number && p.item_number.toLowerCase().includes(q)),
-    )
-  }, [posItems, lookupSearch])
+    if (typeof lookupItemId === 'number' && lookupItemId > 0) {
+      const selected = catalogItems.find(p => p.id === lookupItemId)
+      if (selected && !typeFilteredCatalogItems.some(p => p.id === selected.id)) {
+        return [selected, ...typeFilteredCatalogItems]
+      }
+    }
+    return typeFilteredCatalogItems
+  }, [catalogItems, lookupTypeFilter, lookupItemId, typeFilteredCatalogItems])
 
   useEffect(() => {
     if (loading) return
@@ -1255,12 +1399,19 @@ function InventoryContent() {
           danger: true,
         }
       case 'reverse':
-        return {
-          title: 'Reverse pond receipt?',
-          body: 'Quantities move back to the shop site only if the pond still has enough on hand.',
-          confirmLabel: 'Reverse receipt',
-          danger: true,
-        }
+        return confirmAction.movementType === 'pond_to_shop'
+          ? {
+              title: 'Reverse pond → shop move?',
+              body: 'Quantities move back to the pond warehouse only if the shop still has enough on hand.',
+              confirmLabel: 'Reverse return',
+              danger: true,
+            }
+          : {
+              title: 'Reverse shop → pond receipt?',
+              body: 'Quantities move back to the shop site only if the pond still has enough on hand.',
+              confirmLabel: 'Reverse receipt',
+              danger: true,
+            }
       default:
         return { title: '', body: '', confirmLabel: 'Confirm', danger: false }
     }
@@ -1352,8 +1503,8 @@ function InventoryContent() {
                 ) : (
                   <StatCard
                     label="Tracked products"
-                    value={posItems.length}
-                    hint="Shop SKUs available to move"
+                    value={catalogItems.length}
+                    hint="Same catalog as Products & Services"
                     icon={Package}
                   />
                 )}
@@ -1437,49 +1588,49 @@ function InventoryContent() {
                   Pick a product to see shop bins by site and pond warehouse quantities.
                 </p>
               </div>
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.5fr)_auto] lg:items-end">
                 <div className="min-w-0">
-                  <label className="text-sm font-medium" htmlFor="inv-lookup-search">
-                    Search products
+                  <label className="text-sm font-medium" htmlFor="inv-lookup-type">
+                    Type
                   </label>
-                  <div className="relative mt-1">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      id="inv-lookup-search"
-                      type="search"
-                      placeholder="Name or SKU…"
-                      className={inputClassName + ' pl-9'}
-                      value={lookupSearch}
-                      onChange={e => setLookupSearch(e.target.value)}
-                    />
-                  </div>
+                  <select
+                    id="inv-lookup-type"
+                    className={selectClassName + ' mt-1'}
+                    value={lookupTypeFilter}
+                    onChange={e => setLookupTypeFilter(e.target.value as ItemTypeFilter)}
+                  >
+                    {(['ALL', 'INVENTORY', 'NON_INVENTORY', 'SERVICE'] as const).map(type => (
+                      <option key={type} value={type}>
+                        {type === 'ALL' ? 'All types' : type.replace('_', ' ')}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="min-w-0">
                   <label className="text-sm font-medium" htmlFor="inv-lookup-item">
                     Product
                   </label>
-                  <select
+                  <CatalogItemCombobox
                     id="inv-lookup-item"
-                    className={selectClassName + ' mt-1'}
-                    value={lookupItemId === '' ? '' : String(lookupItemId)}
-                    onChange={e => {
-                      const v = e.target.value
-                      setLookupItemId(v ? parseInt(v, 10) : '')
+                    value={lookupItemId}
+                    onChange={id => {
+                      setLookupItemId(id)
                       const q = new URLSearchParams(searchParams.toString())
                       q.set('tab', 'lookup')
-                      if (v) q.set('item_id', v)
+                      if (typeof id === 'number' && id > 0) q.set('item_id', String(id))
                       else q.delete('item_id')
                       router.replace(`/inventory?${q.toString()}`, { scroll: false })
                     }}
-                  >
-                    <option value="">— Select a product —</option>
-                    {filteredLookupItems.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                        {p.item_number ? ` (${p.item_number})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                    items={filteredLookupItems}
+                    emptyLabel="— Select a product —"
+                    placeholder="Search products & services…"
+                    className={selectClassName + ' mt-1'}
+                    includeSelectedWhenFilteredOut
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {typeFilteredCatalogItems.length} of {catalogItems.length} products
+                    {lookupTypeFilter !== 'ALL' ? ` · ${lookupTypeFilter.replace('_', ' ').toLowerCase()}` : ''}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -1506,7 +1657,7 @@ function InventoryContent() {
                   <Package className="mx-auto h-10 w-10 text-muted-foreground/70" />
                   <p className="mt-3 text-sm font-medium text-foreground">Select a product to view stock</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Search by name or SKU, then choose from the list.
+                    Filter by type, then search by name, SKU, or description — same catalog as Products &amp; Services.
                   </p>
                 </div>
               )}
@@ -1703,6 +1854,8 @@ function InventoryContent() {
                               ? 'Site-to-site moves save as drafts — post to shift bins and record the journal.'
                               : transferRoute === 'station-pond'
                                 ? 'Shop → pond warehouse moves apply immediately (no draft).'
+                                : transferRoute === 'pond-station'
+                                  ? 'Pond → shop moves apply immediately (no draft). Empty sacks and fuel cannot move this way.'
                                 : transferRoute === 'pond-pond'
                                   ? 'Pond warehouse reallocations apply immediately (no draft).'
                                   : 'Choose source and destination from the same list of sites and pond warehouses.'}
@@ -1863,58 +2016,52 @@ function InventoryContent() {
                       </div>
 
                       <div className="overflow-x-auto rounded-lg border border-border">
-                        <table className="w-full min-w-[600px] text-sm">
+                        <table className="w-full min-w-[920px] text-sm">
                           <thead>
                             <tr className="border-b bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                               <th className="w-10 px-3 py-2.5">#</th>
                               <th className="min-w-[200px] px-3 py-2.5">Product</th>
                               <th className="min-w-[100px] px-3 py-2.5">SKU</th>
-                              <th className="min-w-[140px] px-3 py-2.5 text-right">Available at source</th>
-                              <th className="min-w-[120px] px-3 py-2.5 text-right">Transfer qty</th>
-                              <th className="w-[120px] px-3 py-2.5 text-right">Actions</th>
+                              <th className="min-w-[128px] px-3 py-2.5 text-right">Source on hand</th>
+                              <th className="min-w-[128px] px-3 py-2.5 text-right">Dest on hand</th>
+                              <th className="min-w-[100px] px-3 py-2.5 text-right">Transfer qty</th>
+                              <th className="min-w-[148px] px-3 py-2.5 text-right">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
                             {lineRows.map((row, i) => {
-                              const product = posItems.find(p => p.id === row.item_id)
+                              const product = catalogItems.find(p => p.id === row.item_id)
                               const st = row.item_id > 0 ? itemAvail[row.item_id] : undefined
                               const qVal = parseQtyInput(row.quantity)
                               let availMain: ReactNode = (
                                 <span className="text-muted-foreground">—</span>
                               )
                               let availSub: ReactNode = null
+                              let destMain: ReactNode = (
+                                <span className="text-muted-foreground">—</span>
+                              )
+                              let destSub: ReactNode = null
                               let rowWarn = false
 
                               if (row.item_id <= 0) {
                                 availMain = <span className="text-muted-foreground">Choose a product</span>
+                                destMain = <span className="text-muted-foreground">—</span>
                               } else if (!fromEndpoint) {
                                 availMain = (
                                   <span className="text-xs text-muted-foreground">Select send-from first</span>
                                 )
-                              } else if (!st || st.status === 'loading') {
-                                availMain = (
-                                  <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    Loading…
-                                  </span>
+                              } else if (!toEndpoint) {
+                                destMain = (
+                                  <span className="text-xs text-muted-foreground">Select destination first</span>
                                 )
-                              } else if (st.status === 'error') {
-                                availMain = <span className="text-xs text-destructive">{st.message}</span>
-                                rowWarn = true
-                              } else if (st.status !== 'ok') {
-                                availMain = (
-                                  <span className="text-xs text-muted-foreground">
-                                    Use Refresh quantities to load stock.
-                                  </span>
-                                )
-                              } else if (!st.data.tracks_per_station) {
-                                availMain = (
-                                  <span className="text-xs text-amber-800 dark:text-amber-200">
-                                    Not movable here (fuel / not in shop bins)
-                                  </span>
-                                )
-                                rowWarn = true
-                              } else {
+                              }
+
+                              if (
+                                row.item_id > 0 &&
+                                fromEndpoint &&
+                                st?.status === 'ok' &&
+                                st.data.tracks_per_station
+                              ) {
                                 const { qtyNum, unit } = qtyAtSourceEndpoint(st.data, fromEndpoint)
                                 const others = sumQtySameItemOtherLines(lineRows, row.item_id, i)
                                 const maxLine = Math.max(0, qtyNum - others)
@@ -1931,14 +2078,14 @@ function InventoryContent() {
                                 if (qtyNum <= 0) {
                                   availSub = (
                                     <span className="mt-0.5 block text-xs text-amber-800 dark:text-amber-200">
-                                      No stock at source — cannot transfer until receipt or adjustment.
+                                      No stock at source
                                     </span>
                                   )
                                   rowWarn = true
                                 } else if (others > 0) {
                                   availSub = (
                                     <span className="mt-0.5 block text-xs text-muted-foreground">
-                                      Max on this line after other lines:{' '}
+                                      Max this line:{' '}
                                       <span className="font-medium text-foreground">
                                         {maxLine.toLocaleString(undefined, { maximumFractionDigits: 6 })} {unit}
                                       </span>
@@ -1947,6 +2094,66 @@ function InventoryContent() {
                                 }
                                 if (Number.isFinite(qVal) && qVal > maxLine + 1e-9) rowWarn = true
                                 if (Number.isFinite(qVal) && qVal <= 0 && row.item_id > 0) rowWarn = true
+                              } else if (row.item_id > 0 && fromEndpoint) {
+                                if (!st || st.status === 'loading') {
+                                  availMain = (
+                                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      Loading…
+                                    </span>
+                                  )
+                                } else if (st.status === 'error') {
+                                  availMain = <span className="text-xs text-destructive">{st.message}</span>
+                                  rowWarn = true
+                                } else if (st.status !== 'ok') {
+                                  availMain = (
+                                    <span className="text-xs text-muted-foreground">
+                                      Refresh quantities
+                                    </span>
+                                  )
+                                } else if (!st.data.tracks_per_station) {
+                                  availMain = (
+                                    <span className="text-xs text-amber-800 dark:text-amber-200">
+                                      Not movable (fuel / not in shop bins)
+                                    </span>
+                                  )
+                                  rowWarn = true
+                                }
+                              }
+
+                              if (
+                                row.item_id > 0 &&
+                                toEndpoint &&
+                                st?.status === 'ok' &&
+                                st.data.tracks_per_station
+                              ) {
+                                const { qtyNum: destQty, unit: destUnit } = qtyAtDestinationEndpoint(
+                                  st.data,
+                                  toEndpoint,
+                                )
+                                destMain = (
+                                  <span className="tabular-nums">
+                                    <span className="font-semibold text-foreground">
+                                      {destQty.toLocaleString(undefined, {
+                                        maximumFractionDigits: 6,
+                                      })}
+                                    </span>{' '}
+                                    <span className="text-muted-foreground">{destUnit}</span>
+                                  </span>
+                                )
+                                if (Number.isFinite(qVal) && qVal > 0) {
+                                  destSub = (
+                                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                                      After move:{' '}
+                                      <span className="font-medium text-foreground">
+                                        {(destQty + qVal).toLocaleString(undefined, {
+                                          maximumFractionDigits: 6,
+                                        })}{' '}
+                                        {destUnit}
+                                      </span>
+                                    </span>
+                                  )
+                                }
                               }
 
                               return (
@@ -1959,25 +2166,21 @@ function InventoryContent() {
                                     <label className="sr-only" htmlFor={`tli-${i}`}>
                                       Product line {i + 1}
                                     </label>
-                                    <select
+                                    <CatalogItemCombobox
                                       id={`tli-${i}`}
-                                      className={selectClassName}
-                                      value={row.item_id || ''}
-                                      onChange={e =>
+                                      value={row.item_id > 0 ? row.item_id : ''}
+                                      onChange={id =>
                                         updateLine(
                                           i,
                                           'item_id',
-                                          e.target.value ? parseInt(e.target.value, 10) : 0,
+                                          typeof id === 'number' ? id : 0,
                                         )
                                       }
-                                    >
-                                      <option value="">Select product…</option>
-                                      {posItems.map(p => (
-                                        <option key={p.id} value={p.id}>
-                                          {p.name}
-                                        </option>
-                                      ))}
-                                    </select>
+                                      items={catalogItems}
+                                      emptyLabel="Select product…"
+                                      placeholder="Search products & services…"
+                                      className={selectClassName}
+                                    />
                                   </td>
                                   <td className="px-3 py-2.5 align-top text-muted-foreground tabular-nums">
                                     {product?.item_number || '—'}
@@ -1985,6 +2188,10 @@ function InventoryContent() {
                                   <td className="px-3 py-2.5 align-top text-right">
                                     <div>{availMain}</div>
                                     {availSub}
+                                  </td>
+                                  <td className="px-3 py-2.5 align-top text-right">
+                                    <div>{destMain}</div>
+                                    {destSub}
                                   </td>
                                   <td className="px-3 py-2.5 align-top text-right">
                                     <label className="sr-only" htmlFor={`tlq-${i}`}>
@@ -1995,37 +2202,63 @@ function InventoryContent() {
                                       className={inputClassName + ' text-right tabular-nums'}
                                       inputMode="decimal"
                                       autoComplete="off"
+                                      placeholder="Enter qty"
                                       value={row.quantity}
                                       onChange={e => updateLine(i, 'quantity', e.target.value)}
                                       aria-invalid={rowWarn}
                                     />
-                                    {fromEndpoint &&
-                                      row.item_id > 0 &&
-                                      st?.status === 'ok' &&
-                                      st.data.tracks_per_station && (
-                                        <button
-                                          type="button"
-                                          className="mt-1 text-xs font-medium text-primary hover:underline"
-                                          onClick={() => applyMaxQty(i)}
-                                        >
-                                          Use max for this line
-                                        </button>
-                                      )}
                                   </td>
-                                  <td className="px-3 py-2.5 align-top text-right">
-                                    {lineRows.length > 1 ? (
+                                  <td className="px-3 py-2.5 align-top">
+                                    <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
                                       <button
                                         type="button"
-                                        aria-label={`Remove line ${i + 1}`}
-                                        title="Remove this line from the draft"
-                                        className={btnDanger + ' !p-2'}
-                                        onClick={() => removeLine(i)}
+                                        className={
+                                          btnSecondary +
+                                          ' !w-full !justify-center !px-2.5 !py-1.5 !text-xs sm:!w-auto'
+                                        }
+                                        disabled={
+                                          saving ||
+                                          (row.item_id <= 0 &&
+                                            !String(row.quantity).trim() &&
+                                            !fromEndpoint &&
+                                            !toEndpoint)
+                                        }
+                                        title="Clear product, quantity, send-from, and destination"
+                                        onClick={() => clearLineRow(i)}
                                       >
-                                        <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                                        <RotateCcw className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                        Clear
                                       </button>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">—</span>
-                                    )}
+                                      {fromEndpoint &&
+                                      row.item_id > 0 &&
+                                      st?.status === 'ok' &&
+                                      st.data.tracks_per_station ? (
+                                        <button
+                                          type="button"
+                                          className={
+                                            btnSecondary +
+                                            ' !w-full !justify-center !px-2.5 !py-1.5 !text-xs sm:!w-auto'
+                                          }
+                                          disabled={saving}
+                                          onClick={() => applyMaxQty(i)}
+                                        >
+                                          Use max qty
+                                        </button>
+                                      ) : null}
+                                      {lineRows.length > 1 ? (
+                                        <button
+                                          type="button"
+                                          aria-label={`Remove line ${i + 1}`}
+                                          title="Remove this line"
+                                          className={btnDanger + ' !w-full !justify-center !py-1.5 !text-xs sm:!w-auto'}
+                                          disabled={saving}
+                                          onClick={() => removeLine(i)}
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                          Remove line
+                                        </button>
+                                      ) : null}
+                                    </div>
                                   </td>
                                 </tr>
                               )
@@ -2052,8 +2285,8 @@ function InventoryContent() {
 
                       <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
                         <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-                          Quantities must be greater than zero and cannot exceed available stock at the
-                          source location.
+                          Source and destination on-hand update after each move. Transfer qty cannot exceed
+                          source stock. Use the button below to move all lines.
                         </p>
                         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
                           {editingInterStationTransferId != null ||
@@ -2089,6 +2322,8 @@ function InventoryContent() {
                                   ? 'Save draft'
                                 : transferRoute === 'station-pond'
                                   ? 'Move to pond warehouse'
+                                  : transferRoute === 'pond-station'
+                                    ? 'Return to shop'
                                   : transferRoute === 'pond-pond'
                                     ? 'Move between ponds'
                                     : 'Save transfer'}
@@ -2326,16 +2561,16 @@ function InventoryContent() {
                   <div className="border-b border-border bg-muted/30 px-4 py-4 sm:px-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                       <div>
-                        <h2 className="text-base font-semibold tracking-tight">Pond warehouse receipts</h2>
+                        <h2 className="text-base font-semibold tracking-tight">Shop ↔ pond warehouse</h2>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          Immediate shop → pond moves (no draft).
+                          Immediate moves between shop bins and pond warehouses (no draft, no GL).
                         </p>
                       </div>
                       <div className="relative w-full sm:max-w-xs">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <input
                           type="search"
-                          placeholder="Search receipts…"
+                          placeholder="Search moves…"
                           value={pondReceiptSearch}
                           onChange={e => setPondReceiptSearch(e.target.value)}
                           className={inputClassName + ' pl-9'}
@@ -2367,31 +2602,51 @@ function InventoryContent() {
                                     : 'No matching receipts'}
                                 </p>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                  Use Aquaculture to move stock into pond warehouses.
+                                  Use the form above to move stock between shop and pond warehouses.
                                 </p>
                               </div>
                             </td>
                           </tr>
                         ) : (
                           filteredPondReceipts.map(r => (
-                            <tr key={r.id} className="border-t border-border/80 transition-colors hover:bg-muted/30">
+                            <tr
+                              key={`${r.movement_type || 'shop_to_pond'}-${r.id}`}
+                              className="border-t border-border/80 transition-colors hover:bg-muted/30"
+                            >
                               <td className="px-4 py-3 font-mono text-xs">
-                                {r.receipt_number || `PWR-${r.id}`}
+                                {pondMovementDocNumber(r)}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
                                 {r.created_at ? formatDateOnly(r.created_at) : '—'}
                               </td>
                               <td className="px-4 py-3">
-                                <span className="font-medium">
-                                  {r.from_station_name || r.from_station_id}
-                                </span>
-                                <span className="mx-1.5 text-muted-foreground">→</span>
-                                <Link
-                                  href={`/aquaculture/ponds/${r.pond_id}`}
-                                  className="font-medium text-primary underline-offset-2 hover:underline"
-                                >
-                                  {r.pond_name || `Pond #${r.pond_id}`}
-                                </Link>
+                                {pondMovementIsReturn(r) ? (
+                                  <>
+                                    <Link
+                                      href={`/aquaculture/ponds/${r.pond_id}`}
+                                      className="font-medium text-primary underline-offset-2 hover:underline"
+                                    >
+                                      {r.pond_name || `Pond #${r.pond_id}`}
+                                    </Link>
+                                    <span className="mx-1.5 text-muted-foreground">→</span>
+                                    <span className="font-medium">
+                                      {r.to_station_name || r.to_station_id || 'Shop'}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="font-medium">
+                                      {r.from_station_name || r.from_station_id}
+                                    </span>
+                                    <span className="mx-1.5 text-muted-foreground">→</span>
+                                    <Link
+                                      href={`/aquaculture/ponds/${r.pond_id}`}
+                                      className="font-medium text-primary underline-offset-2 hover:underline"
+                                    >
+                                      {r.pond_name || `Pond #${r.pond_id}`}
+                                    </Link>
+                                  </>
+                                )}
                               </td>
                               <td className="max-w-xs px-4 py-3 text-muted-foreground">
                                 <span className="line-clamp-2">
@@ -2413,13 +2668,13 @@ function InventoryContent() {
                                   >
                                     <Eye className="h-5 w-5 shrink-0" aria-hidden />
                                   </button>
-                                  {canMoveToPondWarehouse ? (
+                                  {canMoveToPondWarehouse && !pondMovementIsReturn(r) ? (
                                     <button
                                       type="button"
                                       className={btnRowIconMuted}
                                       disabled={transferListBusy || saving}
                                       title="Edit — reverses prior move, then applies your changes"
-                                      aria-label={`Edit pond receipt ${r.receipt_number || r.id}`}
+                                      aria-label={`Edit pond receipt ${pondMovementDocNumber(r)}`}
                                       onClick={() => startEditPondReceipt(r)}
                                     >
                                       <Pencil className="h-5 w-5 shrink-0" aria-hidden />
@@ -2429,13 +2684,18 @@ function InventoryContent() {
                                     type="button"
                                     className={btnRowIconDanger}
                                     disabled={transferListBusy}
-                                    title={pondWarehouseReceiptImpactSummary()}
-                                    aria-label={`Reverse pond receipt ${r.receipt_number || r.id}`}
+                                    title={
+                                      pondMovementIsReturn(r)
+                                        ? pondWarehouseReturnImpactSummary()
+                                        : pondWarehouseReceiptImpactSummary()
+                                    }
+                                    aria-label={`Reverse ${pondMovementDocNumber(r)}`}
                                     onClick={() =>
                                       setConfirmAction({
                                         kind: 'reverse',
                                         id: r.id,
-                                        label: r.receipt_number || `PWR-${r.id}`,
+                                        label: pondMovementDocNumber(r),
+                                        movementType: r.movement_type || 'shop_to_pond',
                                       })
                                     }
                                   >

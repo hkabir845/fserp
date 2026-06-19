@@ -282,6 +282,11 @@ urlpatterns = [
         "inventory/pond-warehouse-receipts/<int:receipt_id>/reverse/",
         inventory_views.pond_warehouse_receipt_reverse_view,
     ),
+    path("inventory/pond-warehouse-returns/", inventory_views.pond_warehouse_returns_list),
+    path(
+        "inventory/pond-warehouse-returns/<int:return_id>/reverse/",
+        inventory_views.pond_warehouse_return_reverse_view,
+    ),
     path("inventory/transfers/", inventory_views.inventory_transfers_list_or_create),
     path(
         "inventory/transfers/<int:transfer_id>/",
@@ -519,6 +524,10 @@ urlpatterns = [
     path(
         "aquaculture/pond-warehouse-transfer/",
         aquaculture_views.aquaculture_pond_warehouse_transfer,
+    ),
+    path(
+        "aquaculture/pond-warehouse-return/",
+        aquaculture_views.aquaculture_pond_warehouse_return,
     ),
     path(
         "aquaculture/pond-warehouse-consume/",

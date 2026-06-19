@@ -1,5 +1,7 @@
 /** Shared helpers for vendor bill lines tagged to aquaculture ponds. */
 
+import { coaPickIdIfValid, type CoaPick } from '@/lib/coaDefaults'
+
 export interface AquacultureBillExpenseCategory {
   id: string
   label: string
@@ -44,17 +46,24 @@ export function billExpenseCategoriesFromApi(
 
 export function applyAquacultureCategoryToBillLine<
   T extends BillLineAquacultureFields,
->(line: T, cat: AquacultureBillExpenseCategory | undefined): T {
+>(line: T, cat: AquacultureBillExpenseCategory | undefined, coaOptions: CoaPick[] = []): T {
   if (!cat) return line
   const next: T = {
     ...line,
     aquaculture_expense_category: cat.id,
     aquaculture_cost_bucket: cat.default_cost_bucket || line.aquaculture_cost_bucket,
   }
-  if (!next.item_id && cat.default_coa_account_id) {
-    next.expense_account_id = cat.default_coa_account_id
-    if (!next.description?.trim()) {
-      next.description = cat.label
+  if (!next.item_id) {
+    const fromCat = coaPickIdIfValid(cat.default_coa_account_id, coaOptions)
+    const fromLine = coaPickIdIfValid(next.expense_account_id, coaOptions)
+    const resolved = fromCat ?? fromLine
+    if (resolved) {
+      next.expense_account_id = resolved
+      if (!next.description?.trim()) {
+        next.description = cat.label
+      }
+    } else if (fromLine === undefined && next.expense_account_id) {
+      delete next.expense_account_id
     }
   }
   return next

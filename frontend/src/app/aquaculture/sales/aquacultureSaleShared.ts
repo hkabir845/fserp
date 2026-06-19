@@ -85,6 +85,11 @@ export function isNonFishSaleIncome(incomeType: string | undefined, types: Incom
   return NON_BIOLOGICAL_INCOME_TYPES.has(incomeType)
 }
 
+/** Empty feed sack sales use weight_kg as sack count (not kg). */
+export function isEmptyFeedSackSaleIncome(incomeType: string | undefined): boolean {
+  return (incomeType || '').trim() === 'empty_feed_sack_sale'
+}
+
 export function fishPerKg(weightKg: number, fishCount: number | null | undefined): number | null {
   if (fishCount == null || fishCount <= 0 || !Number.isFinite(weightKg) || weightKg <= 0) return null
   return fishCount / weightKg

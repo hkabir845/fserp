@@ -37,21 +37,17 @@ import {
   parseSuggestedCoaId,
   syncLineTouchedForAccount,
 } from '@/lib/coaSuggestForm'
+import { InvoiceLineFormList, type InvoiceFormLine } from '@/components/invoices/InvoiceLineFormList'
+import { CustomerReferenceCombobox } from '@/components/reference/CustomerReferenceCombobox'
+import type { InvoiceLineKind } from '@/components/invoices/InvoiceLineTypePicker'
+import type { AquacultureInvoiceIncomeCategory } from '@/lib/aquacultureInvoiceLine'
+import { invoiceAquacultureIncomeFromApi } from '@/lib/aquacultureInvoiceLine'
+import type { BillReceiptLocationPond, BillReceiptLocationStation } from '@/lib/billReceiptLocation'
+import type { FuelStationInvoiceIncomeCategory } from '@/lib/fuelStationInvoiceLine'
+import { invoiceFuelCategoriesFromApi } from '@/lib/fuelStationInvoiceLine'
+import { clearEntityScopedReportingCategoryCache } from '@/lib/entityScopedReportingCategories'
 
-interface InvoiceLineItem {
-  id?: number
-  line_number: number
-  description?: string
-  item_id?: number
-  /** From API when item relation is present (POS / list detail). */
-  item_name?: string
-  /** Line-level revenue GL override (income-type accounts). */
-  revenue_account_id?: number
-  quantity: number
-  unit_price: number
-  amount: number
-  tax_amount: number
-}
+interface InvoiceLineItem extends InvoiceFormLine {}
 
 interface Invoice {
   id: number
@@ -118,6 +114,20 @@ function normalizeInvoiceLinesFromApi(raw: Record<string, unknown>): InvoiceLine
       row.revenue_account_id != null && row.revenue_account_id !== ''
         ? Number(row.revenue_account_id)
         : undefined,
+    line_receipt_station_id:
+      row.line_receipt_station_id != null && row.line_receipt_station_id !== ''
+        ? Number(row.line_receipt_station_id)
+        : row.receipt_station_id != null && row.receipt_station_id !== ''
+          ? Number(row.receipt_station_id)
+          : undefined,
+    aquaculture_pond_id:
+      row.aquaculture_pond_id != null && row.aquaculture_pond_id !== ''
+        ? Number(row.aquaculture_pond_id)
+        : undefined,
+    fuel_station_income_category:
+      typeof row.fuel_station_income_category === 'string' ? row.fuel_station_income_category : '',
+    aquaculture_income_category:
+      typeof row.aquaculture_income_category === 'string' ? row.aquaculture_income_category : '',
   }))
 }
 
@@ -161,6 +171,11 @@ export default function InvoicesPage() {
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [printBranding, setPrintBranding] = useState<PrintBranding | null>(null)
   const [revenueCoaOptions, setRevenueCoaOptions] = useState<CoaIncomeRow[]>([])
+  const [stations, setStations] = useState<BillReceiptLocationStation[]>([])
+  const [ponds, setPonds] = useState<BillReceiptLocationPond[]>([])
+  const [pondIncomeCategories, setPondIncomeCategories] = useState<AquacultureInvoiceIncomeCategory[]>([])
+  const [stationIncomeCategories, setStationIncomeCategories] = useState<FuelStationInvoiceIncomeCategory[]>([])
+  const [companyName, setCompanyName] = useState('')
   /** Line numbers where the user explicitly picked a revenue account (do not auto-overwrite). */
   const invoiceLineRevenueTouchedRef = useRef(new Set<number>())
   const [formData, setFormData] = useState({
@@ -194,6 +209,52 @@ export default function InvoicesPage() {
     }
   }, [])
 
+  const loadInvoiceReferenceData = useCallback(async () => {
+    clearEntityScopedReportingCategoryCache()
+    try {
+      const [stationsRes, pondsRes, aqIncRes, fsIncRes, companyRes] = await Promise.allSettled([
+        api.get('/stations/'),
+        api.get('/aquaculture/ponds/'),
+        api.get('/aquaculture/income-types/'),
+        api.get('/fuel-station/income-categories/'),
+        api.get('/companies/current'),
+      ])
+      if (stationsRes.status === 'fulfilled' && Array.isArray(stationsRes.value.data)) {
+        setStations(
+          stationsRes.value.data.map((s: Record<string, unknown>) => ({
+            id: Number(s.id),
+            station_name: String(s.station_name || ''),
+            station_number: s.station_number != null ? String(s.station_number) : undefined,
+            operates_fuel_retail: s.operates_fuel_retail as boolean | undefined,
+            is_active: s.is_active as boolean | undefined,
+          }))
+        )
+      }
+      if (pondsRes.status === 'fulfilled' && Array.isArray(pondsRes.value.data)) {
+        setPonds(
+          pondsRes.value.data.map((p: Record<string, unknown>) => ({
+            id: Number(p.id),
+            name: String(p.name || ''),
+            pond_role: p.pond_role != null ? String(p.pond_role) : undefined,
+            is_active: p.is_active as boolean | undefined,
+          }))
+        )
+      }
+      if (aqIncRes.status === 'fulfilled' && Array.isArray(aqIncRes.value.data)) {
+        setPondIncomeCategories(invoiceAquacultureIncomeFromApi(aqIncRes.value.data))
+      }
+      if (fsIncRes.status === 'fulfilled' && Array.isArray(fsIncRes.value.data)) {
+        setStationIncomeCategories(invoiceFuelCategoriesFromApi(fsIncRes.value.data))
+      }
+      if (companyRes.status === 'fulfilled') {
+        const name = String(companyRes.value.data?.name || companyRes.value.data?.company_name || '').trim()
+        if (name) setCompanyName(name)
+      }
+    } catch (error) {
+      console.error('Error loading invoice reference data:', error)
+    }
+  }, [])
+
   useEffect(() => {
     const token = localStorage.getItem('access_token')
     if (!token) {
@@ -207,11 +268,11 @@ export default function InvoicesPage() {
   // Fetch customers and items when modal opens
   useEffect(() => {
     if (showModal || showEditModal) {
-      // Always fetch to ensure fresh data
       fetchCustomersAndItems()
       void loadRevenueCoa()
+      void loadInvoiceReferenceData()
     }
-  }, [showModal, showEditModal, loadRevenueCoa])
+  }, [showModal, showEditModal, loadRevenueCoa, loadInvoiceReferenceData])
 
   const invoiceRevenueRecommendLabel = useMemo(
     () =>
@@ -558,47 +619,101 @@ export default function InvoicesPage() {
     return quantity * unitPrice
   }
 
-  const applyInvoiceLineItemFromSelect = useCallback(
-    (index: number, selectedValue: string) => {
-      if (selectedValue && selectedValue !== '') {
-        const probeId = parseInt(selectedValue, 10)
-        if (Number.isFinite(probeId) && probeId > 0 && !items.some((i) => i.id === probeId)) {
-          toast.error(`Item with ID ${probeId} not found`)
-          return
-        }
+  const calculateTotals = () => {
+    const subtotal = formData.lines.reduce((sum, line) => sum + (line.amount || 0), 0)
+    const taxAmount = formData.lines.reduce((sum, line) => sum + (line.tax_amount || 0), 0)
+    const total = subtotal + taxAmount
+    return { subtotal, taxAmount, total }
+  }
+
+  const handleAddLine = () => {
+    const lineNumber = formData.lines.length + 1
+    const defRev = defaultInvoiceRevenueAccountId()
+    setFormData({
+      ...formData,
+      lines: [
+        ...formData.lines,
+        {
+          line_number: lineNumber,
+          line_kind: 'item',
+          description: '',
+          quantity: 1,
+          unit_price: 0,
+          amount: 0,
+          tax_amount: 0,
+          ...(defRev ? { revenue_account_id: defRev } : {}),
+        },
+      ],
+    })
+  }
+
+  const handleRemoveLine = (index: number) => {
+    const newLines = formData.lines.filter((_, i) => i !== index)
+      .map((line, i) => ({ ...line, line_number: i + 1 }))
+    setFormData({ ...formData, lines: newLines })
+  }
+
+  const handleLineChange = (index: number, field: string, value: unknown) => {
+    const newLines = [...formData.lines]
+    newLines[index] = { ...newLines[index], [field]: value }
+    if (field === 'revenue_account_id') {
+      syncLineTouchedForAccount(
+        invoiceLineRevenueTouchedRef.current,
+        newLines[index].line_number,
+        value as number | undefined
+      )
+    }
+
+    if (field === 'quantity' || field === 'unit_price') {
+      const quantity =
+        field === 'quantity' ? parseFloat(String(value)) || 0 : newLines[index].quantity
+      const unitPrice =
+        field === 'unit_price' ? parseFloat(String(value)) || 0 : newLines[index].unit_price
+      newLines[index].amount = calculateLineAmount(quantity, unitPrice)
+    }
+
+    setFormData({ ...formData, lines: newLines })
+  }
+
+  const handleLineBundle = (index: number, patch: Partial<InvoiceLineItem>) => {
+    const newLines = [...formData.lines]
+    newLines[index] = { ...newLines[index], ...patch }
+    setFormData({ ...formData, lines: newLines })
+  }
+
+  const handleChangeLineKind = (index: number, kind: InvoiceLineKind) => {
+    const newLines = [...formData.lines]
+    newLines[index] = {
+      ...newLines[index],
+      line_kind: kind,
+      item_id: undefined,
+      description: '',
+      unit_price: 0,
+      amount: calculateLineAmount(newLines[index].quantity || 1, 0),
+      aquaculture_income_category: '',
+      fuel_station_income_category: '',
+    }
+    if (!invoiceLineRevenueTouchedRef.current.has(newLines[index].line_number)) {
+      const defRev = defaultInvoiceRevenueAccountId()
+      newLines[index].revenue_account_id = defRev
+    }
+    setFormData({ ...formData, lines: newLines })
+  }
+
+  const applyInvoiceLineFromPicker = useCallback(
+    (index: number, itemId: number, kind: InvoiceLineKind) => {
+      const item = items.find((i) => i.id === itemId)
+      if (!item) {
+        toast.error(`Item with ID ${itemId} not found`)
+        return
       }
-      let warnItemName: string | null = null
+      const unitPrice =
+        item.unit_price != null && item.unit_price !== undefined
+          ? parseFloat(String(item.unit_price))
+          : 0
       setFormData((prev) => {
         const newLines = [...prev.lines]
-        const row = { ...newLines[index] }
-        if (!selectedValue || selectedValue === '') {
-          row.item_id = undefined
-          row.unit_price = 0
-          row.description = ''
-          if (!invoiceLineRevenueTouchedRef.current.has(row.line_number)) {
-            row.revenue_account_id = mergeSuggestedLineAccountId(
-              undefined,
-              defaultInvoiceRevenueAccountId(),
-              false
-            )
-          }
-          row.amount = calculateLineAmount(row.quantity || 1, 0)
-          newLines[index] = row
-          return { ...prev, lines: newLines }
-        }
-        const itemId = parseInt(selectedValue, 10)
-        if (!Number.isFinite(itemId) || itemId <= 0) {
-          return prev
-        }
-        const item = items.find((i) => i.id === itemId)
-        if (!item) {
-          return prev
-        }
-        const unitPrice =
-          item.unit_price != null && item.unit_price !== undefined
-            ? parseFloat(String(item.unit_price))
-            : 0
-        row.item_id = itemId
+        const row = { ...newLines[index], line_kind: kind, item_id: itemId }
         row.unit_price = unitPrice
         row.description = item.name || ''
         if (!invoiceLineRevenueTouchedRef.current.has(row.line_number)) {
@@ -620,69 +735,38 @@ export default function InvoicesPage() {
         }
         row.amount = calculateLineAmount(row.quantity || 1, unitPrice)
         newLines[index] = row
-        if (unitPrice === 0) warnItemName = item.name || null
         return { ...prev, lines: newLines }
       })
-      if (warnItemName) {
-        toast.warning(
-          `Item "${warnItemName}" has no unit price set. Please enter a price manually.`
-        )
+      if (unitPrice === 0) {
+        toast.warning(`Item "${item.name}" has no unit price set. Please enter a price manually.`)
       }
     },
     [items, toast, defaultInvoiceRevenueAccountId, revenueCoaOptions]
   )
 
-  const calculateTotals = () => {
-    const subtotal = formData.lines.reduce((sum, line) => sum + (line.amount || 0), 0)
-    const taxAmount = formData.lines.reduce((sum, line) => sum + (line.tax_amount || 0), 0)
-    const total = subtotal + taxAmount
-    return { subtotal, taxAmount, total }
-  }
-
-  const handleAddLine = () => {
-    const lineNumber = formData.lines.length + 1
-    const defRev = defaultInvoiceRevenueAccountId()
-    setFormData({
-      ...formData,
-      lines: [
-        ...formData.lines,
-        {
-          line_number: lineNumber,
-          description: '',
-          quantity: 1,
-          unit_price: 0,
-          amount: 0,
-          tax_amount: 0,
-          ...(defRev ? { revenue_account_id: defRev } : {}),
-        },
-      ],
-    })
-  }
-
-  const handleRemoveLine = (index: number) => {
-    const newLines = formData.lines.filter((_, i) => i !== index)
-      .map((line, i) => ({ ...line, line_number: i + 1 }))
-    setFormData({ ...formData, lines: newLines })
-  }
-
-  const handleLineChange = (index: number, field: string, value: any) => {
-    const newLines = [...formData.lines]
-    newLines[index] = { ...newLines[index], [field]: value }
-    if (field === 'revenue_account_id') {
-      syncLineTouchedForAccount(
-        invoiceLineRevenueTouchedRef.current,
-        newLines[index].line_number,
-        value as number | undefined
-      )
+  const serializeInvoiceLinePayload = (line: InvoiceLineItem) => {
+    const quantity = parseFloat(line.quantity.toString())
+    const unitPrice = parseFloat(line.unit_price.toString())
+    return {
+      item_id: line.item_id && line.item_id > 0 ? line.item_id : null,
+      description: line.description && line.description.trim() ? line.description.trim() : null,
+      quantity,
+      unit_price: unitPrice,
+      revenue_account_id:
+        line.revenue_account_id != null && line.revenue_account_id > 0
+          ? line.revenue_account_id
+          : null,
+      line_receipt_station_id:
+        line.line_receipt_station_id != null && line.line_receipt_station_id !== ''
+          ? Number(line.line_receipt_station_id)
+          : null,
+      aquaculture_pond_id:
+        line.aquaculture_pond_id != null && line.aquaculture_pond_id !== ''
+          ? Number(line.aquaculture_pond_id)
+          : null,
+      fuel_station_income_category: (line.fuel_station_income_category || '').trim() || null,
+      aquaculture_income_category: (line.aquaculture_income_category || '').trim() || null,
     }
-
-    if (field === 'quantity' || field === 'unit_price') {
-      const quantity = field === 'quantity' ? parseFloat(value) || 0 : newLines[index].quantity
-      const unitPrice = field === 'unit_price' ? parseFloat(value) || 0 : newLines[index].unit_price
-      newLines[index].amount = calculateLineAmount(quantity, unitPrice)
-    }
-    
-    setFormData({ ...formData, lines: newLines })
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -740,25 +824,13 @@ export default function InvoicesPage() {
         line_items: validLines.map((line) => {
           const quantity = parseFloat(line.quantity.toString())
           const unitPrice = parseFloat(line.unit_price.toString())
-          
-          // Validate each line item
           if (quantity <= 0) {
             throw new Error(`Line item ${validLines.indexOf(line) + 1}: Quantity must be greater than 0`)
           }
           if (unitPrice < 0) {
             throw new Error(`Line item ${validLines.indexOf(line) + 1}: Unit price cannot be negative`)
           }
-          
-          return {
-            item_id: line.item_id && line.item_id > 0 ? line.item_id : null,
-            description: line.description && line.description.trim() ? line.description.trim() : null,
-            quantity: quantity,
-            unit_price: unitPrice,
-            revenue_account_id:
-              line.revenue_account_id != null && line.revenue_account_id > 0
-                ? line.revenue_account_id
-                : null,
-          }
+          return serializeInvoiceLinePayload(line)
         })
       }
       
@@ -972,16 +1044,7 @@ export default function InvoicesPage() {
         subtotal,
         tax_total: taxAmount,
         total,
-        line_items: validLines.map((line) => ({
-          item_id: line.item_id && line.item_id > 0 ? line.item_id : null,
-          description: line.description && line.description.trim() ? line.description.trim() : null,
-          quantity: parseFloat(line.quantity.toString()) || 0,
-          unit_price: parseFloat(line.unit_price.toString()) || 0,
-          revenue_account_id:
-            line.revenue_account_id != null && line.revenue_account_id > 0
-              ? line.revenue_account_id
-              : null,
-        }))
+        line_items: validLines.map((line) => serializeInvoiceLinePayload(line))
       })
 
       if (response.status === 200) {
@@ -1401,23 +1464,12 @@ export default function InvoicesPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Customer *
                     </label>
-                    <select
-                      required
+                    <CustomerReferenceCombobox
                       value={formData.customer_id}
-                      onChange={(e) => setFormData({ ...formData, customer_id: parseInt(e.target.value) })}
+                      onChange={(customerId) => setFormData({ ...formData, customer_id: customerId })}
+                      customers={customers}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="0">Select Customer</option>
-                      {customers.length === 0 ? (
-                        <option value="0" disabled>Loading customers...</option>
-                      ) : (
-                        customers.map((customer) => (
-                          <option key={customer.id} value={customer.id}>
-                            {customer.display_name} ({customer.customer_number})
-                          </option>
-                        ))
-                      )}
-                    </select>
+                    />
                     {customers.length === 0 && (
                       <p className="mt-1 text-xs text-red-600">
                         No active customers found. Please create a customer first.
@@ -1475,129 +1527,24 @@ export default function InvoicesPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    {formData.lines.map((line, index) => (
-                      <div key={index} className="space-y-2 p-3 border border-gray-200 rounded-lg">
-                      <div className="grid grid-cols-12 gap-2">
-                        <div className="col-span-12 md:col-span-3">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Item</label>
-                          <select
-                            value={line.item_id || ''}
-                            onChange={(e) => applyInvoiceLineItemFromSelect(index, e.target.value)}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            disabled={loadingItems}
-                          >
-                            <option value="">Select Item...</option>
-                            {loadingItems ? (
-                              <option value="" disabled>Loading items...</option>
-                            ) : items.length === 0 ? (
-                              <option value="" disabled>No items available</option>
-                            ) : (
-                              items.map((item) => (
-                                <option key={item.id} value={item.id}>
-                                  {item.name} {item.item_number ? `(${item.item_number})` : ''}
-                                </option>
-                              ))
-                            )}
-                          </select>
-                          {loadingItems && (
-                            <p className="mt-1 text-xs text-gray-500">Loading items...</p>
-                          )}
-                          {!loadingItems && items.length === 0 && (
-                            <p className="mt-1 text-xs text-red-600">
-                              No items available. Please create items first.
-                            </p>
-                          )}
-                        </div>
-                        <div className="col-span-12 md:col-span-2">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
-                          <input
-                            type="text"
-                            value={line.description || ''}
-                            onChange={(e) => handleLineChange(index, 'description', e.target.value)}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-2">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Quantity</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={line.quantity}
-                            onChange={(e) => handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-2">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Unit Price</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={line.unit_price}
-                            onChange={(e) => handleLineChange(index, 'unit_price', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div className="col-span-12 md:col-span-2">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
-                          <input
-                            type="text"
-                            value={formatNumber(line.amount)}
-                            readOnly
-                            title={`${currencySymbol}${formatNumber(line.amount)}`}
-                            className={AMOUNT_READ_ONLY_INPUT_CLASS}
-                          />
-                        </div>
-                        <div className="col-span-12 md:col-span-1 flex items-end">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveLine(index)}
-                            className="w-full px-2 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
-                          >
-                            <Trash2 className="h-4 w-4 mx-auto" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-12 gap-2">
-                        <div className="col-span-12 md:col-span-10">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Revenue account (optional)
-                          </label>
-                          <select
-                            value={line.revenue_account_id ? String(line.revenue_account_id) : ''}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              if (v === '') {
-                                handleLineChange(index, 'revenue_account_id', undefined)
-                                return
-                              }
-                              const n = parseInt(v, 10)
-                              handleLineChange(
-                                index,
-                                'revenue_account_id',
-                                Number.isFinite(n) && n > 0 ? n : undefined
-                              )
-                            }}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
-                          >
-                            <option value="">{invoiceRevenueRecommendLabel}</option>
-                            {revenueCoaOptions.map((a) => (
-                              <option key={a.id} value={String(a.id)}>
-                                {formatCoaOptionLabel(a)}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="mt-0.5 text-[11px] text-gray-500">
-                            Auto-fills template revenue (4100 / 4200) or the item&apos;s revenue account; override per
-                            line anytime.
-                          </p>
-                        </div>
-                      </div>
-                      </div>
-                    ))}
-                  </div>
+                  <InvoiceLineFormList
+                    lines={formData.lines}
+                    items={items}
+                    stations={stations}
+                    ponds={ponds}
+                    pondIncomeCategories={pondIncomeCategories}
+                    stationIncomeCategories={stationIncomeCategories}
+                    revenueCoaOptions={revenueCoaOptions}
+                    revenueRecommendLabel={invoiceRevenueRecommendLabel}
+                    currencySymbol={currencySymbol}
+                    loadingItems={loadingItems}
+                    companyName={companyName}
+                    onApplyItem={applyInvoiceLineFromPicker}
+                    onLineChange={handleLineChange}
+                    onLineBundle={handleLineBundle}
+                    onRemoveLine={handleRemoveLine}
+                    onChangeLineKind={handleChangeLineKind}
+                  />
 
                   {formData.lines.length === 0 && (
                     <p className="text-center text-gray-500 py-4">No line items added. Click "Add Line" to add items.</p>
@@ -1834,19 +1781,12 @@ export default function InvoicesPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Customer *
                     </label>
-                    <select
-                      required
+                    <CustomerReferenceCombobox
                       value={formData.customer_id}
-                      onChange={(e) => setFormData({ ...formData, customer_id: parseInt(e.target.value) })}
+                      onChange={(customerId) => setFormData({ ...formData, customer_id: customerId })}
+                      customers={customers}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="0">Select Customer</option>
-                      {customers.map((customer) => (
-                        <option key={customer.id} value={customer.id}>
-                          {customer.display_name} ({customer.customer_number})
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1899,129 +1839,24 @@ export default function InvoicesPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    {formData.lines.map((line, index) => (
-                      <div key={index} className="space-y-2 p-3 border border-gray-200 rounded-lg">
-                      <div className="grid grid-cols-12 gap-2">
-                        <div className="col-span-12 md:col-span-3">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Item</label>
-                          <select
-                            value={line.item_id || ''}
-                            onChange={(e) => applyInvoiceLineItemFromSelect(index, e.target.value)}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            disabled={loadingItems}
-                          >
-                            <option value="">Select Item...</option>
-                            {loadingItems ? (
-                              <option value="" disabled>Loading items...</option>
-                            ) : items.length === 0 ? (
-                              <option value="" disabled>No items available</option>
-                            ) : (
-                              items.map((item) => (
-                                <option key={item.id} value={item.id}>
-                                  {item.name} {item.item_number ? `(${item.item_number})` : ''}
-                                </option>
-                              ))
-                            )}
-                          </select>
-                          {loadingItems && (
-                            <p className="mt-1 text-xs text-gray-500">Loading items...</p>
-                          )}
-                          {!loadingItems && items.length === 0 && (
-                            <p className="mt-1 text-xs text-red-600">
-                              No items available. Please create items first.
-                            </p>
-                          )}
-                        </div>
-                        <div className="col-span-12 md:col-span-2">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
-                          <input
-                            type="text"
-                            value={line.description || ''}
-                            onChange={(e) => handleLineChange(index, 'description', e.target.value)}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-2">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Quantity</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={line.quantity}
-                            onChange={(e) => handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-2">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Unit Price</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={line.unit_price}
-                            onChange={(e) => handleLineChange(index, 'unit_price', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div className="col-span-12 md:col-span-2">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
-                          <input
-                            type="text"
-                            value={formatNumber(line.amount)}
-                            readOnly
-                            title={`${currencySymbol}${formatNumber(line.amount)}`}
-                            className={AMOUNT_READ_ONLY_INPUT_CLASS}
-                          />
-                        </div>
-                        <div className="col-span-12 md:col-span-1 flex items-end">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveLine(index)}
-                            className="w-full px-2 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
-                          >
-                            <Trash2 className="h-4 w-4 mx-auto" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-12 gap-2">
-                        <div className="col-span-12 md:col-span-10">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Revenue account (optional)
-                          </label>
-                          <select
-                            value={line.revenue_account_id ? String(line.revenue_account_id) : ''}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              if (v === '') {
-                                handleLineChange(index, 'revenue_account_id', undefined)
-                                return
-                              }
-                              const n = parseInt(v, 10)
-                              handleLineChange(
-                                index,
-                                'revenue_account_id',
-                                Number.isFinite(n) && n > 0 ? n : undefined
-                              )
-                            }}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white"
-                          >
-                            <option value="">{invoiceRevenueRecommendLabel}</option>
-                            {revenueCoaOptions.map((a) => (
-                              <option key={a.id} value={String(a.id)}>
-                                {formatCoaOptionLabel(a)}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="mt-0.5 text-[11px] text-gray-500">
-                            Auto-fills template revenue (4100 / 4200) or the item&apos;s revenue account; override per
-                            line anytime.
-                          </p>
-                        </div>
-                      </div>
-                      </div>
-                    ))}
-                  </div>
+                  <InvoiceLineFormList
+                    lines={formData.lines}
+                    items={items}
+                    stations={stations}
+                    ponds={ponds}
+                    pondIncomeCategories={pondIncomeCategories}
+                    stationIncomeCategories={stationIncomeCategories}
+                    revenueCoaOptions={revenueCoaOptions}
+                    revenueRecommendLabel={invoiceRevenueRecommendLabel}
+                    currencySymbol={currencySymbol}
+                    loadingItems={loadingItems}
+                    companyName={companyName}
+                    onApplyItem={applyInvoiceLineFromPicker}
+                    onLineChange={handleLineChange}
+                    onLineBundle={handleLineBundle}
+                    onRemoveLine={handleRemoveLine}
+                    onChangeLineKind={handleChangeLineKind}
+                  />
 
                   {formData.lines.length === 0 && (
                     <p className="text-center text-gray-500 py-4">No line items added. Click "Add Line" to add items.</p>

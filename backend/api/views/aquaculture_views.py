@@ -83,6 +83,11 @@ from api.services.aquaculture_landlord_opening import (
     apply_landlord_opening_from_body,
     landlord_opening_fields_for_api,
 )
+from api.services.aquaculture_empty_sack_service import (
+    deduct_empty_sacks_for_sale,
+    is_empty_feed_sack_sale_income,
+    reconcile_empty_sack_sale_stock,
+)
 from api.services.aquaculture_sale_cleanup import (
     cleanup_aquaculture_fish_sale_effects,
     reconcile_aquaculture_fish_sale_with_invoice,
@@ -139,12 +144,14 @@ from api.services.aquaculture_pond_stock_service import (
     pond_warehouse_stock_rows,
     reverse_pond_warehouse_inter_pond_transfer,
     transfer_pond_warehouse_between_ponds,
+    transfer_pond_warehouse_to_station,
     transfer_station_stock_to_pond_warehouse,
 )
 from api.services.gl_posting import item_inventory_unit_cost
 from api.services.aquaculture_warehouse_group_service import warehouse_group_pool_rows
 from api.services.aquaculture_shop_stock import execute_aquaculture_shop_stock_issue
 from api.services.tenant_reporting_categories import (
+    _parse_entity_scope_params,
     aquaculture_expense_label,
     aquaculture_income_label,
     income_type_is_non_biological_for_company,
@@ -973,7 +980,20 @@ def aquaculture_expense_categories(request):
     err = _aquaculture_access(request)
     if err:
         return err
-    return JsonResponse(merged_aquaculture_expense_category_list_for_api(request.company_id), safe=False)
+    station_id, pond_id, head_office, scope_err = _parse_entity_scope_params(request)
+    if scope_err:
+        return JsonResponse({"detail": scope_err}, status=400)
+    if station_id:
+        return JsonResponse(
+            {"detail": "station_id is not valid for aquaculture expense categories"},
+            status=400,
+        )
+    return JsonResponse(
+        merged_aquaculture_expense_category_list_for_api(
+            request.company_id, pond_id=pond_id, head_office=head_office
+        ),
+        safe=False,
+    )
 
 
 @csrf_exempt
@@ -984,7 +1004,20 @@ def aquaculture_income_types(request):
     err = _aquaculture_access(request)
     if err:
         return err
-    return JsonResponse(merged_aquaculture_income_type_list_for_api(request.company_id), safe=False)
+    station_id, pond_id, head_office, scope_err = _parse_entity_scope_params(request)
+    if scope_err:
+        return JsonResponse({"detail": scope_err}, status=400)
+    if station_id:
+        return JsonResponse(
+            {"detail": "station_id is not valid for aquaculture income types"},
+            status=400,
+        )
+    return JsonResponse(
+        merged_aquaculture_income_type_list_for_api(
+            request.company_id, pond_id=pond_id, head_office=head_office
+        ),
+        safe=False,
+    )
 
 
 @csrf_exempt
@@ -1909,6 +1942,9 @@ def _expense_to_json(x: AquacultureExpense) -> dict:
         "source_station_id": src_sid,
         "source_station_name": src_sname,
         "feed_sack_count": str(x.feed_sack_count) if getattr(x, "feed_sack_count", None) is not None else None,
+        "empty_sack_count": (
+            str(x.empty_sack_count) if getattr(x, "empty_sack_count", None) is not None else None
+        ),
         "feed_weight_kg": str(x.feed_weight_kg) if getattr(x, "feed_weight_kg", None) is not None else None,
         "funding_account_code": getattr(x, "funding_account_code", "") or "",
         "created_at": x.created_at.isoformat() if x.created_at else "",
@@ -2167,6 +2203,61 @@ def aquaculture_pond_warehouse_transfer(request):
         return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
     rows = pond_warehouse_stock_rows(cid, pond_id)
     return JsonResponse({"pond_id": pond_id, "items": rows}, status=201)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def aquaculture_pond_warehouse_return(request):
+    """
+    Move pond warehouse stock back to a shop station bin (no COGS — still company inventory).
+    """
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    body, e = parse_json_body(request)
+    if e:
+        return e
+    cid = request.company_id
+    raw_sid = body.get("station_id")
+    raw_pid = body.get("pond_id")
+    if raw_sid is None or raw_sid == "":
+        return JsonResponse({"detail": "station_id is required"}, status=400)
+    if raw_pid is None or raw_pid == "":
+        return JsonResponse({"detail": "pond_id is required"}, status=400)
+    try:
+        station_id = int(raw_sid)
+        pond_id = int(raw_pid)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "station_id and pond_id must be integers"}, status=400)
+    lock_err = _pond_write_lock_response(cid, pond_id)
+    if lock_err:
+        return lock_err
+    items = body.get("items")
+    if not isinstance(items, list):
+        return JsonResponse({"detail": "items must be an array of { item_id, quantity }"}, status=400)
+    memo = str(body.get("memo") or "")[:500]
+    try:
+        ret = transfer_pond_warehouse_to_station(
+            company_id=cid,
+            pond_id=pond_id,
+            station_id=station_id,
+            items=items,
+            memo=memo,
+        )
+    except StockBusinessError as ex:
+        return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
+    rows = pond_warehouse_stock_rows(cid, pond_id)
+    return JsonResponse(
+        {
+            "pond_id": pond_id,
+            "return_id": ret.id,
+            "return_number": ret.return_number or "",
+            "items": rows,
+        },
+        status=201,
+    )
 
 
 @csrf_exempt
@@ -3017,9 +3108,14 @@ def aquaculture_sales_list_or_create(request):
         buyer_name=(body.get("buyer_name") or "")[:200],
         memo=(body.get("memo") or "")[:5000],
     )
-    with transaction.atomic():
-        s.save()
-        sync_biomass_sample_from_fish_sale(s)
+    try:
+        with transaction.atomic():
+            s.save()
+            if is_empty_feed_sack_sale_income(it):
+                deduct_empty_sacks_for_sale(cid, pond.id, wk)
+            sync_biomass_sample_from_fish_sale(s)
+    except StockBusinessError as ex:
+        return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
     s = AquacultureFishSale.objects.filter(pk=s.pk).select_related(
         "pond", "production_cycle", "invoice"
     ).first()
@@ -3048,6 +3144,9 @@ def aquaculture_sale_detail(request, sale_id: int):
         lock_err = _pond_write_lock_response(cid, s.pond_id, s.sale_date)
         if lock_err:
             return lock_err
+        old_pond_id = s.pond_id
+        old_income_type = s.income_type
+        old_weight_kg = s.weight_kg
         body, e = parse_json_body(request)
         if e:
             return e
@@ -3158,14 +3257,26 @@ def aquaculture_sale_detail(request, sale_id: int):
                 "fish_species_other",
             )
         )
-        with transaction.atomic():
-            s.save()
-            if s.invoice_id and material_sale:
-                ok_sync, err_sync = reconcile_aquaculture_fish_sale_with_invoice(cid, s)
-                if not ok_sync:
-                    return JsonResponse({"detail": err_sync}, status=409)
-            else:
-                sync_biomass_sample_from_fish_sale(s)
+        try:
+            with transaction.atomic():
+                s.save()
+                reconcile_empty_sack_sale_stock(
+                    company_id=cid,
+                    old_pond_id=old_pond_id,
+                    old_income_type=old_income_type,
+                    old_sack_count=old_weight_kg if is_empty_feed_sack_sale_income(old_income_type) else Decimal("0"),
+                    new_pond_id=s.pond_id,
+                    new_income_type=s.income_type,
+                    new_sack_count=s.weight_kg if is_empty_feed_sack_sale_income(s.income_type) else Decimal("0"),
+                )
+                if s.invoice_id and material_sale:
+                    ok_sync, err_sync = reconcile_aquaculture_fish_sale_with_invoice(cid, s)
+                    if not ok_sync:
+                        return JsonResponse({"detail": err_sync}, status=409)
+                else:
+                    sync_biomass_sample_from_fish_sale(s)
+        except StockBusinessError as ex:
+            return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
         s = AquacultureFishSale.objects.filter(pk=s.pk).select_related(
             "pond", "production_cycle", "invoice"
         ).first()

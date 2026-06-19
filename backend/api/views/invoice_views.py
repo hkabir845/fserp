@@ -18,6 +18,7 @@ from api.services.document_posting_lifecycle import (
     reconcile_invoice_after_material_edit,
 )
 from api.services.gl_posting import cleanup_invoice_posting_effects, sync_invoice_gl
+from api.services.invoice_line_parsing import parse_invoice_line_row
 from api.services.invoice_station import (
     default_station_id_for_document,
     parse_valid_station_id,
@@ -44,7 +45,15 @@ def _derive_invoice_list_source(inv: Invoice) -> str:
 
 
 def _invoice_to_json(inv, company_id: int):
-    lines = list(inv.lines.all().select_related("item", "revenue_account"))
+    lines = list(
+        inv.lines.all().select_related(
+            "item",
+            "revenue_account",
+            "receipt_station",
+            "aquaculture_pond",
+            "tenant_reporting_category",
+        )
+    )
     return {
         "id": inv.id,
         "invoice_number": inv.invoice_number,
@@ -82,6 +91,12 @@ def _invoice_to_json(inv, company_id: int):
                 "unit_price": str(l.unit_price),
                 "amount": str(l.amount),
                 "revenue_account_id": getattr(l, "revenue_account_id", None),
+                "line_receipt_station_id": getattr(l, "receipt_station_id", None),
+                "receipt_station_id": getattr(l, "receipt_station_id", None),
+                "aquaculture_pond_id": getattr(l, "aquaculture_pond_id", None),
+                "fuel_station_income_category": (l.fuel_station_income_category or "").strip(),
+                "aquaculture_income_category": (l.aquaculture_income_category or "").strip(),
+                "tenant_reporting_category_id": getattr(l, "tenant_reporting_category_id", None),
             }
             for i, l in enumerate(lines, start=1)
         ],
@@ -173,10 +188,14 @@ def invoices_list_or_create(request):
         inv.save()
         line_rows = list(body.get("lines") or body.get("line_items") or [])
         for row in line_rows:
-            amount = _decimal(row.get("amount"), _decimal(row.get("quantity"), 1) * _decimal(row.get("unit_price"), 0))
+            pl, parse_err = parse_invoice_line_row(cid, row)
+            if parse_err:
+                return parse_err
+            assert pl is not None
+            amount = _decimal(pl.get("amount"), _decimal(pl.get("quantity"), 1) * _decimal(pl.get("unit_price"), 0))
             rid, rerr = parse_optional_chart_account_id(
                 cid,
-                row.get("revenue_account_id"),
+                pl.get("revenue_account_id"),
                 allowed_normalized_types=ALLOWED_INCOME,
                 field_label="revenue_account_id",
             )
@@ -184,12 +203,17 @@ def invoices_list_or_create(request):
                 return JsonResponse({"detail": rerr}, status=400)
             InvoiceLine.objects.create(
                 invoice=inv,
-                item_id=row.get("item_id") or None,
-                description=row.get("description") or "",
-                quantity=_decimal(row.get("quantity"), 1),
-                unit_price=_decimal(row.get("unit_price"), 0),
+                item_id=pl.get("item_id") or None,
+                description=pl.get("description") or "",
+                quantity=_decimal(pl.get("quantity"), 1),
+                unit_price=_decimal(pl.get("unit_price"), 0),
                 amount=amount,
                 revenue_account_id=rid,
+                receipt_station_id=pl.get("receipt_station_id"),
+                aquaculture_pond_id=pl.get("aquaculture_pond_id"),
+                fuel_station_income_category=pl.get("fuel_station_income_category") or "",
+                aquaculture_income_category=pl.get("aquaculture_income_category") or "",
+                tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
             )
         if line_rows:
             _refresh_invoice_totals_from_lines(inv)
@@ -264,10 +288,14 @@ def invoice_detail(request, invoice_id: int):
         if line_payload is not None:
             inv.lines.all().delete()
             for row in line_payload or []:
-                amount = _decimal(row.get("amount"), _decimal(row.get("quantity"), 1) * _decimal(row.get("unit_price"), 0))
+                pl, parse_err = parse_invoice_line_row(cid, row)
+                if parse_err:
+                    return parse_err
+                assert pl is not None
+                amount = _decimal(pl.get("amount"), _decimal(pl.get("quantity"), 1) * _decimal(pl.get("unit_price"), 0))
                 rid, rerr = parse_optional_chart_account_id(
                     cid,
-                    row.get("revenue_account_id"),
+                    pl.get("revenue_account_id"),
                     allowed_normalized_types=ALLOWED_INCOME,
                     field_label="revenue_account_id",
                 )
@@ -275,12 +303,17 @@ def invoice_detail(request, invoice_id: int):
                     return JsonResponse({"detail": rerr}, status=400)
                 InvoiceLine.objects.create(
                     invoice=inv,
-                    item_id=row.get("item_id") or None,
-                    description=row.get("description") or "",
-                    quantity=_decimal(row.get("quantity"), 1),
-                    unit_price=_decimal(row.get("unit_price"), 0),
+                    item_id=pl.get("item_id") or None,
+                    description=pl.get("description") or "",
+                    quantity=_decimal(pl.get("quantity"), 1),
+                    unit_price=_decimal(pl.get("unit_price"), 0),
                     amount=amount,
                     revenue_account_id=rid,
+                    receipt_station_id=pl.get("receipt_station_id"),
+                    aquaculture_pond_id=pl.get("aquaculture_pond_id"),
+                    fuel_station_income_category=pl.get("fuel_station_income_category") or "",
+                    aquaculture_income_category=pl.get("aquaculture_income_category") or "",
+                    tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
                 )
             _refresh_invoice_totals_from_lines(inv)
         inv.refresh_from_db()

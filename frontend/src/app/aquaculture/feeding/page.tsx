@@ -593,6 +593,9 @@ export default function AquacultureFeedingPage() {
       setApplyKg(data.suggested_feed_kg ?? '')
       setApplySacks(sacksStrFromKg(data.suggested_feed_kg ?? '', rowSackKg(data)))
       void loadList()
+      requestAnimationFrame(() => {
+        document.getElementById('feeding-apply-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Approve failed'))
     }
@@ -739,7 +742,13 @@ export default function AquacultureFeedingPage() {
           ? Number.parseInt(applyFeedItemId, 10)
           : selected.pond_default_feed_item_id ?? null
       const { data } = await api.post<
-        FeedingAdviceRow & { created_expense?: { expense_category?: string; feed_sack_count?: string | null } }
+        FeedingAdviceRow & {
+          created_expense?: {
+            expense_category?: string
+            feed_sack_count?: string | null
+            empty_sack_count?: string | null
+          }
+        }
       >(`/aquaculture/feeding-advice/${selected.id}/apply/`, body)
       setSelected(data)
       void loadList()
@@ -770,13 +779,23 @@ export default function AquacultureFeedingPage() {
           feedItemIdForStock != null && Number.isFinite(feedItemIdForStock)
             ? whItems.find((r) => r.item_id === feedItemIdForStock)
             : undefined
+        const emptySackRow = whItems.find((r) => /empty sack/i.test(r.item_name || ''))
         const sacksLabel = applySacks.trim() || data.created_expense?.feed_sack_count || ''
+        const emptyAdded = data.created_expense?.empty_sack_count?.trim()
+        const emptyPart =
+          emptyAdded && Number.parseFloat(emptyAdded) > 0
+            ? `${emptyAdded} empty sack(s) added to pond warehouse${
+                emptySackRow ? ` (${emptySackRow.quantity} ${emptySackRow.unit} on hand)` : ''
+              }. `
+            : ''
         if (stockRow) {
           toast.success(
-            `Applied — ${sacksLabel ? `${sacksLabel} sack(s) consumed. ` : ''}Pond warehouse now shows ${stockRow.quantity} ${stockRow.unit} on hand.`,
+            `Applied — ${sacksLabel ? `${sacksLabel} sack(s) consumed. ` : ''}${emptyPart}Pond warehouse now shows ${stockRow.quantity} ${stockRow.unit} feed on hand.`,
           )
         } else {
-          toast.success('Applied — feed deducted from pond warehouse (COGS posted).')
+          toast.success(
+            `Applied — feed deducted from pond warehouse (COGS posted).${emptyPart ? ` ${emptyPart.trim()}` : ''}`,
+          )
         }
       } else if (!applyCreateExp && !applyConsumePond) {
         toast.success('Applied — field record only (no pond stock or expense was changed).')
@@ -1296,10 +1315,14 @@ export default function AquacultureFeedingPage() {
               )}
 
               {selected.status === 'approved' && (
-                <section className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
+                <section
+                  id="feeding-apply-section"
+                  className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm"
+                >
                   <h3 className="text-sm font-semibold text-emerald-950">Apply in field</h3>
                   <p className="mt-1 text-xs text-emerald-900/90">
-                    Feed amount is set above. Consume pond warehouse stock or record a feed purchase expense.
+                    Feed amount is set above. Choose how to record this feeding, then click{' '}
+                    <strong>Apply plan</strong> (not the workflow pill above — that is only a progress indicator).
                   </p>
                   <label className="mt-3 block text-xs font-medium text-slate-700">
                     Feed product

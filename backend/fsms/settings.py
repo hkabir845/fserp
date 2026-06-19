@@ -227,6 +227,14 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # current data is written here immediately before a destructive restore overwrites it,
 # making an accidental restore of the wrong file recoverable. Disabled (no snapshot)
 # when empty. Point this at a path with adequate space/rotation in production.
+#
+# Production example (Linux VPS — create dir, owned by the Gunicorn user):
+#   sudo mkdir -p /var/backups/fserp/pre-restore
+#   sudo chown www-data:www-data /var/backups/fserp/pre-restore
+#   TENANT_SAFETY_BACKUP_DIR=/var/backups/fserp/pre-restore
+#
+# Matches Django upload caps below (256 MiB) and nginx `client_max_body_size` in
+# deploy/nginx-fserp.example.conf for restore uploads.
 TENANT_SAFETY_BACKUP_DIR = (os.environ.get("TENANT_SAFETY_BACKUP_DIR") or "").strip() or None
 
 if _use_whitenoise:

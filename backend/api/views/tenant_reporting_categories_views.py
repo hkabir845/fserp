@@ -1,6 +1,7 @@
 """CRUD for tenant-defined reporting categories (Aquaculture + Fuel station)."""
 from __future__ import annotations
 
+from django.db.models import Q
 from django.db.utils import OperationalError, ProgrammingError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -13,6 +14,8 @@ from api.services.tenant_reporting_categories import (
     APP_FUEL_STATION,
     KIND_EXPENSE,
     KIND_INCOME,
+    _parse_entity_scope_body,
+    _parse_entity_scope_params,
     list_map_target_choices,
     merged_fuel_station_expense_category_list_for_api,
     merged_fuel_station_income_category_list_for_api,
@@ -67,6 +70,11 @@ def _serialize_row(r: TenantReportingCategory) -> dict:
         "code": r.code,
         "label": r.label,
         "maps_to_code": r.maps_to_code,
+        "station_id": r.station_id,
+        "station_name": (r.station.station_name or "").strip() if r.station_id and r.station else None,
+        "aquaculture_pond_id": r.aquaculture_pond_id,
+        "pond_name": (r.aquaculture_pond.name or "").strip() if r.aquaculture_pond_id and r.aquaculture_pond else None,
+        "head_office_only": bool(r.head_office_only),
         "is_active": r.is_active,
         "sort_order": r.sort_order,
         "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -109,11 +117,29 @@ def reporting_categories_list_or_create(request):
     if request.method == "GET":
         app = (request.GET.get("application") or "").strip().lower()
         kind = (request.GET.get("kind") or "").strip().lower()
-        qs = TenantReportingCategory.objects.filter(company_id=cid)
+        station_id, pond_id, head_office, scope_err = _parse_entity_scope_params(request)
+        if scope_err:
+            return JsonResponse({"detail": scope_err}, status=400)
+        qs = TenantReportingCategory.objects.filter(company_id=cid).select_related(
+            "station", "aquaculture_pond"
+        )
         if app in (APP_AQUACULTURE, APP_FUEL_STATION):
             qs = qs.filter(application=app)
         if kind in (KIND_EXPENSE, KIND_INCOME):
             qs = qs.filter(kind=kind)
+        company_wide = Q(
+            station_id__isnull=True,
+            aquaculture_pond_id__isnull=True,
+            head_office_only=False,
+        )
+        if head_office:
+            qs = qs.filter(Q(head_office_only=True) | company_wide)
+        elif station_id:
+            qs = qs.filter(company_wide | Q(station_id=station_id)).exclude(head_office_only=True)
+        elif pond_id:
+            qs = qs.filter(company_wide | Q(aquaculture_pond_id=pond_id)).exclude(
+                head_office_only=True
+            )
         qs = qs.order_by("application", "kind", "sort_order", "code")
         try:
             rows = [_serialize_row(r) for r in qs]
@@ -143,6 +169,11 @@ def reporting_categories_list_or_create(request):
     merr = validate_maps_to(application=app, kind=kind, maps_to_code=maps_to)
     if merr:
         return JsonResponse({"detail": merr}, status=400)
+    station_id, pond_id, head_office_only, entity_err = _parse_entity_scope_body(
+        body, company_id=cid, application=app
+    )
+    if entity_err:
+        return JsonResponse({"detail": entity_err}, status=400)
     if TenantReportingCategory.objects.filter(
         company_id=cid, application=app, kind=kind, code__iexact=code
     ).exists():
@@ -154,6 +185,9 @@ def reporting_categories_list_or_create(request):
         code=code,
         label=label[:200],
         maps_to_code=maps_to,
+        station_id=station_id,
+        aquaculture_pond_id=pond_id,
+        head_office_only=head_office_only,
         is_active=bool(body.get("is_active", True)),
         sort_order=int(body.get("sort_order") or 0),
     )
@@ -209,6 +243,15 @@ def reporting_category_detail(request, category_id: int):
             r.sort_order = int(body.get("sort_order") or 0)
         except (TypeError, ValueError):
             return JsonResponse({"detail": "sort_order must be an integer"}, status=400)
+    if "station_id" in body or "aquaculture_pond_id" in body or "head_office_only" in body:
+        station_id, pond_id, head_office_only, entity_err = _parse_entity_scope_body(
+            body, company_id=cid, application=r.application
+        )
+        if entity_err:
+            return JsonResponse({"detail": entity_err}, status=400)
+        r.station_id = station_id
+        r.aquaculture_pond_id = pond_id
+        r.head_office_only = head_office_only
     r.save()
     maps_to_changed = (old_maps_to_code or "").strip() != (r.maps_to_code or "").strip()
     label_changed = (old_label or "").strip() != (r.label or "").strip()
@@ -232,9 +275,16 @@ def fuel_station_expense_categories(request):
     """Merged built-in + tenant fuel-station expense categories for vendor bills."""
     from api.chart_templates.fuel_station import ensure_fuel_station_reporting_rollup_accounts
 
+    station_id, pond_id, head_office, scope_err = _parse_entity_scope_params(request)
+    if scope_err:
+        return JsonResponse({"detail": scope_err}, status=400)
+    if pond_id:
+        return JsonResponse({"detail": "pond_id is not valid for fuel-station expense categories"}, status=400)
     try:
         ensure_fuel_station_reporting_rollup_accounts(request.company_id)
-        rows = merged_fuel_station_expense_category_list_for_api(request.company_id)
+        rows = merged_fuel_station_expense_category_list_for_api(
+            request.company_id, station_id=station_id, head_office=head_office
+        )
     except (ProgrammingError, OperationalError) as exc:
         return _db_error_response(exc)
     return JsonResponse(rows, safe=False)
@@ -252,11 +302,17 @@ def reporting_category_tagging_options(request):
         return JsonResponse({"detail": "application must be aquaculture or fuel_station"}, status=400)
     if kind not in (KIND_EXPENSE, KIND_INCOME):
         return JsonResponse({"detail": "kind must be expense or income"}, status=400)
+    station_id, pond_id, head_office, scope_err = _parse_entity_scope_params(request)
+    if scope_err:
+        return JsonResponse({"detail": scope_err}, status=400)
     try:
         rows = merged_reporting_tagging_options_for_api(
             company_id=request.company_id,
             application=app,
             kind=kind,
+            station_id=station_id,
+            pond_id=pond_id,
+            head_office=head_office,
         )
     except (ProgrammingError, OperationalError) as exc:
         return _db_error_response(exc)
@@ -269,8 +325,15 @@ def reporting_category_tagging_options(request):
 @require_company_id
 def fuel_station_income_categories(request):
     """Merged built-in + tenant fuel-station income categories for tagging."""
+    station_id, pond_id, head_office, scope_err = _parse_entity_scope_params(request)
+    if scope_err:
+        return JsonResponse({"detail": scope_err}, status=400)
+    if pond_id:
+        return JsonResponse({"detail": "pond_id is not valid for fuel-station income categories"}, status=400)
     try:
-        rows = merged_fuel_station_income_category_list_for_api(request.company_id)
+        rows = merged_fuel_station_income_category_list_for_api(
+            request.company_id, station_id=station_id, head_office=head_office
+        )
     except (ProgrammingError, OperationalError) as exc:
         return _db_error_response(exc)
     return JsonResponse(rows, safe=False)

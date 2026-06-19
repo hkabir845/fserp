@@ -42,3 +42,8 @@ def ensure_master_template_after_migrate(sender, **kwargs):
             summary.get("company_id"),
             summary.get("created"),
         )
+    from api.models import Company
+    from api.services.tenant_reporting_categories import ensure_cross_entity_expense_categories
+
+    for cid in Company.objects.filter(is_deleted=False).values_list("id", flat=True):
+        ensure_cross_entity_expense_categories(int(cid))

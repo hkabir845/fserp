@@ -20,6 +20,7 @@ from api.models import (
     Item,
     ItemStationStock,
     JournalEntryLine,
+    PondWarehouseStockReturn,
     Station,
     Vendor,
 )
@@ -71,6 +72,43 @@ def test_backup_includes_aquaculture_and_inventory_models(company_tenant):
     assert "api.aquaculturepond" in labels
     assert "api.inventorytransfer" in labels
     assert "api.itemstationstock" in labels
+
+
+def test_pond_warehouse_stock_return_backup_restore_roundtrip(company_tenant):
+    from decimal import Decimal
+
+    from api.services.aquaculture_pond_stock_service import add_pond_stock, transfer_pond_warehouse_to_station
+    from api.services.station_stock import set_station_stock
+
+    Company.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    st = Station.objects.create(company=company_tenant, station_name="Backup Shop", is_active=True)
+    pond = AquaculturePond.objects.create(company=company_tenant, name="Backup Pond Return")
+    item = Item.objects.create(company=company_tenant, name="Return SKU", item_type="inventory")
+    set_station_stock(company_tenant.id, st.id, item.id, Decimal("0"))
+    add_pond_stock(company_tenant.id, pond.id, item.id, Decimal("10"))
+    transfer_pond_warehouse_to_station(
+        company_id=company_tenant.id,
+        pond_id=pond.id,
+        station_id=st.id,
+        items=[{"item_id": item.id, "quantity": "4"}],
+    )
+    assert PondWarehouseStockReturn.objects.filter(company_id=company_tenant.id).count() == 1
+
+    bundle = json.loads(backup_bundle_json_bytes(company_tenant.id).decode("utf-8"))
+    assert "api.pondwarehousestockreturn" in bundle["model_labels"]
+    assert "api.pondwarehousestockreturnline" in bundle["model_labels"]
+
+    PondWarehouseStockReturn.objects.filter(company_id=company_tenant.id).delete()
+    assert not PondWarehouseStockReturn.objects.filter(company_id=company_tenant.id).exists()
+
+    restore_bundle(bundle, company_tenant.id, confirm_replace=RESTORE_CONFIRM_PHRASE)
+    ret = PondWarehouseStockReturn.objects.filter(company_id=company_tenant.id).first()
+    assert ret is not None
+    assert ret.pond_id == pond.id
+    assert ret.to_station_id == st.id
+    assert ret.lines.count() == 1
 
 
 def test_aquaculture_pond_backup_restore_roundtrip(company_tenant):

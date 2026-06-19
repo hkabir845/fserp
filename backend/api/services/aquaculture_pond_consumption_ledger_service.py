@@ -152,6 +152,9 @@ def compute_pond_warehouse_consumption_rows(
                 "feed_sack_count": (
                     str(x.feed_sack_count) if x.feed_sack_count is not None else None
                 ),
+                "empty_sack_count": (
+                    str(x.empty_sack_count) if getattr(x, "empty_sack_count", None) is not None else None
+                ),
                 "memo": (x.memo or "").strip(),
                 "vendor_name": (x.vendor_name or "").strip(),
                 "source": source,

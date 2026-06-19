@@ -20,6 +20,7 @@ import {
   emptyFishHarvestLine,
   emptyNonFishLine,
   fishPerKg,
+  isEmptyFeedSackSaleIncome,
   isNonFishSaleIncome,
   newLineLocalId,
   saleRowToLineDraft,
@@ -161,8 +162,10 @@ function buildPayload(
 
 function validateLine(line: SaleLineDraft, index: number, incomeTypes: IncomeTypeOpt[]): string | null {
   const nonFish = lineIsNonFish(line, incomeTypes)
+  const emptySacks = isEmptyFeedSackSaleIncome(line.income_type)
   const wk = Number(line.weight_kg)
   if (!Number.isFinite(wk) || wk <= 0) {
+    if (emptySacks) return `Line ${index + 1}: sack count must be positive`
     return `Line ${index + 1}: ${nonFish ? 'quantity' : 'weight (kg)'} must be positive`
   }
   const pTrim = line.sale_price_per_kg.trim().replace(/,/g, '')
@@ -655,6 +658,7 @@ export function AquacultureSaleFormModal({
                 <tbody>
                   {lines.map((line, idx) => {
                     const nonFish = lineIsNonFish(line, incomeTypes)
+                    const emptySacks = isEmptyFeedSackSaleIncome(line.income_type)
                     const avail = nonFish ? null : availabilityForLine(line, stockRows)
                     const sampleRef = nonFish ? null : sampleByScope[lineSampleScopeKey(header, line)] ?? null
                     const reqWeight = Number(line.weight_kg)
@@ -750,7 +754,12 @@ export function AquacultureSaleFormModal({
                             min="0"
                             step="0.0001"
                             className={`${inputCls} text-right tabular-nums`}
-                            placeholder={nonFish ? 'Qty' : 'kg'}
+                            placeholder={emptySacks ? 'Sacks' : nonFish ? 'Qty' : 'kg'}
+                            title={
+                              emptySacks
+                                ? 'Number of empty feed sacks sold (auto-created when feed is consumed at this pond)'
+                                : undefined
+                            }
                             value={line.weight_kg}
                             onChange={(e) => updateLine(line.localId, { weight_kg: e.target.value })}
                           />

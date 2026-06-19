@@ -376,8 +376,10 @@ export function feedingDoseListLabel(r: FeedingAdviceRow): string {
 
 export function workflowStepIndex(status: string): number {
   if (status === 'cancelled') return -1
-  const order = ['pending_review', 'approved', 'applied'] as const
-  return order.indexOf(status as (typeof order)[number])
+  if (status === 'pending_review') return 0
+  if (status === 'approved') return 2
+  if (status === 'applied') return 3
+  return 0
 }
 
 export function primaryFeedKg(r: FeedingAdviceRow): string | null {

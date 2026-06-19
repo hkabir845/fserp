@@ -60,6 +60,8 @@ from api.models import (
     AquacultureWarehouseGroup,
     PondWarehouseInterPondTransfer,
     PondWarehouseInterPondTransferLine,
+    PondWarehouseStockReturn,
+    PondWarehouseStockReturnLine,
     BankAccount,
     BankDeposit,
     Bill,
@@ -179,6 +181,8 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.inventoryadjustmentline",
     "api.pondwarehousestockreceipt",
     "api.pondwarehousestockreceiptline",
+    "api.pondwarehousestockreturn",
+    "api.pondwarehousestockreturnline",
     "api.pondwarehouseinterpondtransfer",
     "api.pondwarehouseinterpondtransferline",
     "api.invoice",
@@ -273,6 +277,9 @@ def _init_backup_row_exists_overrides() -> None:
             ).exists(),
             "api.pondwarehousestockreceiptline": lambda cid: PondWarehouseStockReceiptLine.objects.filter(
                 receipt__company_id=cid
+            ).exists(),
+            "api.pondwarehousestockreturnline": lambda cid: PondWarehouseStockReturnLine.objects.filter(
+                stock_return__company_id=cid
             ).exists(),
             "api.pondwarehouseinterpondtransferline": lambda cid: PondWarehouseInterPondTransferLine.objects.filter(
                 transfer__company_id=cid
@@ -466,6 +473,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     LoanRepayment.objects.filter(loan__company_id=cid).delete()
     LoanDisbursement.objects.filter(loan__company_id=cid).delete()
     PondWarehouseStockReceiptLine.objects.filter(receipt__company_id=cid).delete()
+    PondWarehouseStockReturnLine.objects.filter(stock_return__company_id=cid).delete()
     PondWarehouseInterPondTransferLine.objects.filter(transfer__company_id=cid).delete()
     InventoryTransferLine.objects.filter(transfer__company_id=cid).delete()
     InventoryAdjustmentLine.objects.filter(adjustment__company_id=cid).delete()
@@ -485,6 +493,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     # --- Documents that PROTECT stations, items, COA, or loans ---
     AquacultureFinancingAllocation.objects.filter(company_id=cid).delete()
     PondWarehouseStockReceipt.objects.filter(company_id=cid).delete()
+    PondWarehouseStockReturn.objects.filter(company_id=cid).delete()
     PondWarehouseInterPondTransfer.objects.filter(company_id=cid).delete()
     InventoryTransfer.objects.filter(company_id=cid).delete()
     InventoryAdjustment.objects.filter(company_id=cid).delete()
@@ -587,6 +596,7 @@ def delete_station_operational_data(
     ).delete()
     InventoryAdjustment.objects.filter(company_id=cid, station_id=sid).delete()
     PondWarehouseStockReceipt.objects.filter(company_id=cid, from_station_id=sid).delete()
+    PondWarehouseStockReturn.objects.filter(company_id=cid, to_station_id=sid).delete()
 
     _del("shift_sessions", ShiftSession.objects.filter(company_id=cid, station_id=sid))
     _del("tank_dips", TankDip.objects.filter(company_id=cid, tank__station_id=sid))
@@ -704,6 +714,10 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
     _serialize_many(records, PondWarehouseStockReceipt.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(
         records, PondWarehouseStockReceiptLine.objects.filter(receipt__company_id=cid).order_by("id")
+    )
+    _serialize_many(records, PondWarehouseStockReturn.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records, PondWarehouseStockReturnLine.objects.filter(stock_return__company_id=cid).order_by("id")
     )
     _serialize_many(records, PondWarehouseInterPondTransfer.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(

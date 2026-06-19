@@ -23,6 +23,7 @@ from api.services.aquaculture_pond_stock_service import (
     add_pond_stock,
     decrement_pond_lines,
 )
+from api.services.aquaculture_empty_sack_service import reverse_empty_sacks_from_feed_consumption
 from api.services.aquaculture_shop_stock import _total_cost_at_issue
 from api.services.gl_posting import (
     post_aquaculture_manual_expense_journal,
@@ -96,6 +97,13 @@ def cleanup_aquaculture_expense_posting_effects(company_id: int, expense_id: int
                     )
             elif exp.pond_id is not None:
                 add_pond_stock(company_id, int(exp.pond_id), int(it.id), qty)
+
+        if exp.pond_id is not None and getattr(exp, "empty_sack_count", None):
+            reverse_empty_sacks_from_feed_consumption(
+                company_id=company_id,
+                pond_id=int(exp.pond_id),
+                empty_sack_count=exp.empty_sack_count,
+            )
 
         JournalEntry.objects.filter(
             company_id=company_id,

@@ -260,6 +260,7 @@ const WH_POS_GROUP_LABEL: Record<string, string> = {
   medicine: 'Medicine & treatment',
   general: 'General & supplies',
   fuel: 'Fuel',
+  scrap: 'Empty sacks & scrap',
   non_pos: 'Non-POS / hatchery',
 }
 

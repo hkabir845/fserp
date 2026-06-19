@@ -25,18 +25,20 @@ import api, { isSuperAdminRole, isTenantAdminRole } from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { connectionErrorUserMessage, isConnectionError } from '@/utils/connectionError'
 import type { ReportStationForSegment } from '@/app/reports/reportBusinessSegment'
-import { formatPondScopeKey } from '@/app/reports/reportSiteScope'
+import { parseReportSiteScopeKey } from '@/app/reports/reportSiteScope'
 import {
   applicationForScope,
   applicationLabel,
   kindLabel,
   scopeContextBlurb,
   scopeDisplayLabel,
-  groupReportingMapTargets,
   type ReportingApplication,
   type ReportingKind,
   type ReportingMapTarget,
 } from './reportingCategoriesScope'
+import { entityScopeKeyFromCategoryRow, countBusinessEntities, formatEntityCountSummary, entityScopeParamsFromKey } from '@/lib/billLineEntity'
+import { BillLineEntitySelect } from '@/components/bills/BillLineEntitySelect'
+import { ReportingMapTargetCombobox } from '@/components/reference/ReportingMapTargetCombobox'
 
 interface CategoryRow {
   id: number
@@ -45,6 +47,11 @@ interface CategoryRow {
   code: string
   label: string
   maps_to_code: string
+  station_id?: number | null
+  station_name?: string | null
+  aquaculture_pond_id?: number | null
+  pond_name?: string | null
+  head_office_only?: boolean | null
   is_active: boolean
   sort_order: number
 }
@@ -148,6 +155,7 @@ export default function ReportingCategoriesPage() {
     maps_to_code: '',
     sort_order: '0',
     is_active: true,
+    entity_scope_key: '',
   })
   const [editingRow, setEditingRow] = useState<CategoryRow | null>(null)
   const [formSaving, setFormSaving] = useState(false)
@@ -159,9 +167,14 @@ export default function ReportingCategoriesPage() {
     [scopeKey, stations]
   )
   const scopeLabel = useMemo(
-    () => scopeDisplayLabel(scopeKey, stations, ponds),
-    [scopeKey, stations, ponds]
+    () => scopeDisplayLabel(scopeKey, stations, ponds, selectedCompany?.name),
+    [scopeKey, stations, ponds, selectedCompany?.name]
   )
+  const entityCounts = useMemo(
+    () => countBusinessEntities(stations, ponds),
+    [stations, ponds]
+  )
+  const entityCountLabel = useMemo(() => formatEntityCountSummary(entityCounts), [entityCounts])
   const contextBlurb = useMemo(() => scopeContextBlurb(scopeKey, stations), [scopeKey, stations])
   const showPonds = aquacultureEnabled !== false && ponds.length > 0
 
@@ -190,8 +203,18 @@ export default function ReportingCategoriesPage() {
     let cancelled = false
     setStationsLoading(true)
     Promise.allSettled([
-      api.get<{ id: number; station_name: string; operates_fuel_retail?: boolean }[]>('/stations/'),
-      api.get<{ id: number; name: string }[]>('/aquaculture/ponds/'),
+      api.get<
+        {
+          id: number
+          station_name: string
+          station_number?: string
+          operates_fuel_retail?: boolean
+          is_active?: boolean
+        }[]
+      >('/stations/'),
+      api.get<
+        { id: number; name: string; pond_role?: string; is_active?: boolean }[]
+      >('/aquaculture/ponds/'),
       api.get<{ aquaculture_enabled?: boolean }>('/companies/current'),
     ]).then(([stRes, pondRes, coRes]) => {
       if (cancelled) return
@@ -201,7 +224,9 @@ export default function ReportingCategoriesPage() {
           raw.map((s) => ({
             id: s.id,
             station_name: (s.station_name || `Station ${s.id}`).trim(),
-            operates_fuel_retail: s.operates_fuel_retail !== false,
+            station_number: s.station_number != null ? String(s.station_number) : undefined,
+            operates_fuel_retail: s.operates_fuel_retail === false ? false : true,
+            is_active: s.is_active !== false,
           }))
         )
       } else {
@@ -209,7 +234,16 @@ export default function ReportingCategoriesPage() {
       }
       if (pondRes.status === 'fulfilled') {
         const raw = Array.isArray(pondRes.value.data) ? pondRes.value.data : []
-        setPonds(raw.filter((p) => Number.isFinite(p.id)).map((p) => ({ id: p.id, name: p.name || `Pond ${p.id}` })))
+        setPonds(
+          raw
+            .filter((p) => Number.isFinite(p.id))
+            .map((p) => ({
+              id: p.id,
+              name: p.name || `Pond ${p.id}`,
+              pond_role: p.pond_role != null ? String(p.pond_role) : undefined,
+              is_active: p.is_active !== false,
+            })),
+        )
       } else {
         setPonds([])
       }
@@ -244,7 +278,7 @@ export default function ReportingCategoriesPage() {
   const formVisible = editingRow != null || resolvedApplication != null
 
   const resetForm = () => {
-    setForm({ label: '', maps_to_code: '', sort_order: '0', is_active: true })
+    setForm({ label: '', maps_to_code: '', sort_order: '0', is_active: true, entity_scope_key: scopeKey })
   }
 
   const loadTargets = useCallback(async () => {
@@ -273,6 +307,7 @@ export default function ReportingCategoriesPage() {
     try {
       const params: Record<string, string> = { kind }
       if (resolvedApplication) params.application = resolvedApplication
+      Object.assign(params, entityScopeParamsFromKey(scopeKey))
       const { data } = await api.get<CategoryRow[]>('/reporting-categories/', { params })
       setRows(Array.isArray(data) ? data : [])
     } catch (e) {
@@ -292,7 +327,7 @@ export default function ReportingCategoriesPage() {
     try {
       const { data } = await api.get<{ options: TaggingOptionRow[] }>(
         '/reporting-categories/tagging-options/',
-        { params: { application: resolvedApplication, kind } },
+        { params: { application: resolvedApplication, kind, ...entityScopeParamsFromKey(scopeKey) } },
       )
       setTaggingOptions(Array.isArray(data?.options) ? data.options : [])
     } catch (e) {
@@ -314,6 +349,11 @@ export default function ReportingCategoriesPage() {
   }, [kind, scopeKey])
 
   useEffect(() => {
+    if (editingRow) return
+    setForm((f) => ({ ...f, entity_scope_key: scopeKey }))
+  }, [scopeKey, editingRow])
+
+  useEffect(() => {
     if (!authReady) return
     void loadRows()
   }, [authReady, loadRows])
@@ -332,6 +372,20 @@ export default function ReportingCategoriesPage() {
     const custom = rows.filter((o) => o.tenant_defined)
     return { standard, custom }
   }, [taggingOptions, resolvedApplication, kind])
+
+  const entityPayloadFromScopeKey = (key: string) => {
+    const scope = parseReportSiteScopeKey(key)
+    if (scope.kind === 'station') {
+      return { station_id: scope.id, aquaculture_pond_id: null, head_office_only: false }
+    }
+    if (scope.kind === 'pond') {
+      return { station_id: null, aquaculture_pond_id: scope.id, head_office_only: false }
+    }
+    if (scope.kind === 'head_office') {
+      return { station_id: null, aquaculture_pond_id: null, head_office_only: true }
+    }
+    return { station_id: null, aquaculture_pond_id: null, head_office_only: false }
+  }
 
   const onCreate = async () => {
     if (!canCallApi) {
@@ -355,6 +409,7 @@ export default function ReportingCategoriesPage() {
         maps_to_code: form.maps_to_code,
         sort_order: Number(form.sort_order) || 0,
         is_active: true,
+        ...entityPayloadFromScopeKey(form.entity_scope_key),
       })
       toast.success('Category created')
       resetForm()
@@ -385,6 +440,7 @@ export default function ReportingCategoriesPage() {
       maps_to_code: row.maps_to_code,
       sort_order: String(row.sort_order),
       is_active: row.is_active,
+      entity_scope_key: entityScopeKeyFromCategoryRow(row),
     })
     document.getElementById('rc-category-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
@@ -407,6 +463,7 @@ export default function ReportingCategoriesPage() {
         maps_to_code: form.maps_to_code,
         sort_order: Number(form.sort_order) || 0,
         is_active: form.is_active,
+        ...entityPayloadFromScopeKey(form.entity_scope_key),
       })
       const propagation = data?.propagation as
         | {
@@ -455,7 +512,6 @@ export default function ReportingCategoriesPage() {
     }
   }
 
-  const groupedMapTargets = useMemo(() => groupReportingMapTargets(mapTargets), [mapTargets])
   const selectedMapTarget = useMemo(
     () => mapTargets.find((m) => m.id === form.maps_to_code),
     [mapTargets, form.maps_to_code]
@@ -464,6 +520,13 @@ export default function ReportingCategoriesPage() {
   const rollupLabel = (code: string) => {
     const hit = mapTargets.find((m) => m.id === code)
     return hit ? hit.label : code.replace(/_/g, ' ')
+  }
+
+  const entityLabel = (row: CategoryRow) => {
+    if (row.aquaculture_pond_id) return row.pond_name || `Pond #${row.aquaculture_pond_id}`
+    if (row.station_id) return row.station_name || `Station #${row.station_id}`
+    if (row.head_office_only) return 'Head office'
+    return 'All entities'
   }
 
   const mapsToMissingFromPicker =
@@ -525,41 +588,35 @@ export default function ReportingCategoriesPage() {
                 <div>
                   <p className="font-medium text-slate-800">Business context</p>
                   <p className="mt-1 text-slate-500">{contextBlurb}</p>
+                  {!stationsLoading && canCallApi ? (
+                    <p className="mt-2 text-xs font-medium text-slate-600">{entityCountLabel}</p>
+                  ) : null}
                 </div>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-medium text-slate-700" htmlFor="rc-business-scope">
-                    Application
+                    Entity
                   </label>
-                  <select
-                    id="rc-business-scope"
-                    aria-label="Filter categories by station, pond, or all sites"
-                    value={scopeKey}
-                    onChange={(e) => onScopeChange(e.target.value)}
-                    disabled={!canCallApi || stationsLoading}
-                    className={SELECT_CLASS}
+                  <div
+                    className={
+                      !canCallApi || stationsLoading ? 'pointer-events-none opacity-60' : undefined
+                    }
                   >
-                    <option value="">All</option>
-                    {stations.length > 0 ? (
-                      <optgroup label="Stations">
-                        {stations.map((s) => (
-                          <option key={s.id} value={String(s.id)}>
-                            {s.station_name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                    {showPonds ? (
-                      <optgroup label="Ponds">
-                        {ponds.map((p) => (
-                          <option key={`pond-${p.id}`} value={formatPondScopeKey(p.id)}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                  </select>
+                    <BillLineEntitySelect
+                      id="rc-business-scope"
+                      value={scopeKey}
+                      onChange={onScopeChange}
+                      stations={stations}
+                      ponds={ponds}
+                      companyName={selectedCompany?.name}
+                      className={SELECT_CLASS}
+                      showHeadOffice
+                      showAllEntitiesOption
+                      emptyLabel="All entities"
+                      placeholder="Search entity…"
+                    />
+                  </div>
                   <p className="text-xs text-slate-500">
                     {scopeKey ? (
                       <>
@@ -569,7 +626,7 @@ export default function ReportingCategoriesPage() {
                         ) : null}
                       </>
                     ) : (
-                      'Showing categories for all applications'
+                      `Showing categories for all entities · ${entityCountLabel}`
                     )}
                   </p>
                 </div>
@@ -681,34 +738,43 @@ export default function ReportingCategoriesPage() {
                     </p>
                   ) : null}
                   <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
+                    Directed to (entity)
+                    <span className="font-normal text-slate-500">
+                      Optional — limit this label to one station or pond. Leave as &quot;All entities&quot; for
+                      company-wide use.
+                    </span>
+                    <BillLineEntitySelect
+                      value={form.entity_scope_key}
+                      onChange={(key) => setForm((f) => ({ ...f, entity_scope_key: key }))}
+                      stations={stations}
+                      ponds={ponds}
+                      companyName={selectedCompany?.name}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      showHeadOffice
+                      showAllEntitiesOption
+                      emptyLabel="All entities (company-wide)"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
                     Rolls up to
                     <span className="font-normal text-slate-500">
                       Which built-in P&amp;L bucket this label counts under — grouped by how reports and GL treat
                       each type. Automatic-only rollups (feed consumed, depreciation, etc.) are not listed.
                     </span>
-                    <select
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    <ReportingMapTargetCombobox
                       value={form.maps_to_code}
-                      onChange={(e) => setForm((f) => ({ ...f, maps_to_code: e.target.value }))}
-                      disabled={!canCallApi || formSaving}
-                    >
-                      <option value="">— select rollup —</option>
-                      {mapsToMissingFromPicker ? (
-                        <option value={form.maps_to_code}>
-                          {rollupLabel(form.maps_to_code)} (not on vendor bills — change rollup)
-                        </option>
-                      ) : null}
-                      {groupedMapTargets.map(({ group, items }) => (
-                        <optgroup key={group || 'default'} label={group}>
-                          {items.map((m) => (
-                            <option key={m.id} value={m.id} title={m.hint || undefined}>
-                              {m.label}
-                              {m.coa_code ? ` (${m.coa_code})` : ''}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
+                      onChange={(code) => setForm((f) => ({ ...f, maps_to_code: code }))}
+                      targets={mapTargets}
+                      missingOption={
+                        mapsToMissingFromPicker
+                          ? {
+                              value: form.maps_to_code,
+                              label: `${rollupLabel(form.maps_to_code)} (not on vendor bills — change rollup)`,
+                            }
+                          : undefined
+                      }
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
                     {selectedMapTarget?.hint ? (
                       <p className="mt-1 flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 font-normal text-slate-600">
                         <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
@@ -820,6 +886,7 @@ export default function ReportingCategoriesPage() {
                       ) : null}
                       <th className="px-4 py-3 text-left font-medium text-slate-600 sm:px-5">Code</th>
                       <th className="px-4 py-3 text-left font-medium text-slate-600 sm:px-5">Label</th>
+                      <th className="px-4 py-3 text-left font-medium text-slate-600 sm:px-5">Directed to</th>
                       <th className="px-4 py-3 text-left font-medium text-slate-600 sm:px-5">Rolls up to</th>
                       <th className="px-4 py-3 text-right font-medium text-slate-600 sm:px-5">Order</th>
                       <th className="px-4 py-3 text-right font-medium text-slate-600 sm:px-5">Actions</th>
@@ -845,6 +912,7 @@ export default function ReportingCategoriesPage() {
                           ) : null}
                         </td>
                         <td className="px-4 py-3 text-slate-800 sm:px-5">{r.label}</td>
+                        <td className="px-4 py-3 text-slate-600 sm:px-5">{entityLabel(r)}</td>
                         <td className="px-4 py-3 text-slate-600 sm:px-5">
                           <span className="font-mono text-xs text-slate-500">{r.maps_to_code}</span>
                           <span className="mx-1 text-slate-300">·</span>

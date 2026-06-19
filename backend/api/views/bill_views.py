@@ -140,12 +140,33 @@ def _refresh_bill_totals_from_lines(bill: Bill) -> None:
     bill.save(update_fields=["subtotal", "total", "updated_at"])
 
 
+def _drop_invalid_bill_line_expense_account_id(company_id: int, row: dict) -> None:
+    """
+    Clear stale client expense_account_id so pond/fuel category defaults can refill.
+    Vendor bills only accept active expense / COGS accounts for this company.
+    """
+    raw = row.get("expense_account_id")
+    if raw in (None, ""):
+        return
+    eid, err = parse_optional_chart_account_id(
+        company_id,
+        raw,
+        allowed_normalized_types=ALLOWED_BILL_EXPENSE_DEBIT,
+        field_label="expense_account_id",
+    )
+    if err:
+        row["expense_account_id"] = None
+    else:
+        row["expense_account_id"] = eid
+
+
 def _parse_bill_lines_from_body(
     company_id: int, lines_body: list | None
 ) -> tuple[list[dict], JsonResponse | None]:
     """Parse request line rows into BillLine create kwargs (with optional pond-share expansion)."""
     parsed_lines: list[dict] = []
     for row in lines_body or []:
+        _drop_invalid_bill_line_expense_account_id(company_id, row)
         shared_err = validate_and_apply_shared_pond_bill_line_category(company_id, row)
         if shared_err:
             return [], JsonResponse({"detail": shared_err}, status=400)

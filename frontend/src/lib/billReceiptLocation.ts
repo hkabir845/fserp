@@ -4,9 +4,9 @@
  */
 
 import type { BillPurpose } from '@/lib/billAllocation'
-import { formatPondScopeKey, parseReportSiteScopeKey } from '@/app/reports/reportSiteScope'
+import { formatPondScopeKey, formatHeadOfficeScopeKey, HEAD_OFFICE_SCOPE_KEY, parseReportSiteScopeKey } from '@/app/reports/reportSiteScope'
 
-export { formatPondScopeKey, parseReportSiteScopeKey as parseBillReceiptLocationKey }
+export { formatPondScopeKey, formatHeadOfficeScopeKey, HEAD_OFFICE_SCOPE_KEY, parseReportSiteScopeKey as parseBillReceiptLocationKey }
 
 export interface BillReceiptLocationStation {
   id: number
@@ -61,6 +61,14 @@ export function resolveBillReceiptLocation(
     }
   }
   const scope = parseReportSiteScopeKey(key)
+  if (scope.kind === 'head_office') {
+    return {
+      locationKey: formatHeadOfficeScopeKey(),
+      receiptStationId: null,
+      billPurpose: 'office',
+      headerPondId: null,
+    }
+  }
   if (scope.kind === 'pond' && ponds.some((p) => p.id === scope.id)) {
     return {
       locationKey: formatPondScopeKey(scope.id),

@@ -18,6 +18,7 @@ from api.models import Company, Organization, User
 from api.chart_templates.fuel_station import seed_fuel_station_if_empty
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 from api.services.aquaculture_medicine_catalog_seed import ensure_aquaculture_medicine_catalog_items
+from api.services.aquaculture_empty_sack_service import ensure_empty_feed_sack_catalog_item
 from api.services.permission_service import normalize_role_key
 from api.services.tenant_backup import RESTORE_CONFIRM_PHRASE, delete_tenant_company_data
 from api.services.company_code import resolved_company_code
@@ -505,6 +506,7 @@ def companies_list_or_create(request):
             if getattr(c, "aquaculture_enabled", False):
                 aquaculture_chart_accounts_created = ensure_aquaculture_chart_accounts(c.id)
                 ensure_aquaculture_medicine_catalog_items(c.id)
+                ensure_empty_feed_sack_catalog_item(c.id)
 
             provision_result = provision_new_tenant(c)
 
@@ -751,6 +753,7 @@ def company_detail(request, company_id: int):
             if should_seed_aquaculture_coa:
                 payload["aquaculture_chart_accounts_created"] = ensure_aquaculture_chart_accounts(company.id)
                 ensure_aquaculture_medicine_catalog_items(company.id)
+                ensure_empty_feed_sack_catalog_item(company.id)
             return JsonResponse(payload)
         except Exception as e:
             return JsonResponse(
@@ -967,6 +970,7 @@ def company_group_entity_create(request):
             if getattr(c, "aquaculture_licensed", False):
                 aquaculture_chart_accounts_created = ensure_aquaculture_chart_accounts(c.id)
                 ensure_aquaculture_medicine_catalog_items(c.id)
+                ensure_empty_feed_sack_catalog_item(c.id)
 
             provision_result = provision_new_tenant(c)
 

@@ -7,6 +7,10 @@ from django.db import transaction
 
 from api.models import AquacultureBiomassSample, AquacultureFishSale, Invoice, InvoiceLine
 from api.services.aquaculture_sale_accounting import _build_sale_line_description, _refresh_invoice_totals
+from api.services.aquaculture_empty_sack_service import (
+    is_empty_feed_sack_sale_income,
+    restore_empty_sacks_for_sale,
+)
 from api.services.document_posting_lifecycle import (
     assert_invoice_change_allowed,
     reconcile_invoice_after_material_edit,
@@ -28,6 +32,9 @@ def cleanup_aquaculture_fish_sale_effects(company_id: int, sale: AquacultureFish
             return True, ""
 
         AquacultureBiomassSample.objects.filter(source_fish_sale_id=locked.id).delete()
+
+        if is_empty_feed_sack_sale_income(locked.income_type) and locked.weight_kg and locked.weight_kg > 0:
+            restore_empty_sacks_for_sale(company_id, locked.pond_id, locked.weight_kg)
 
         delete_aquaculture_fish_sale_bio_relief_journal(company_id, locked.id)
 

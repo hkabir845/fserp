@@ -562,6 +562,44 @@ class PondWarehouseStockReceiptLine(models.Model):
         db_table = "pond_warehouse_stock_receipt_line"
 
 
+class PondWarehouseStockReturn(models.Model):
+    """
+    Audit trail: pond warehouse → shop station bin (ItemPondStock → ItemStationStock). No GL.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="pond_warehouse_returns")
+    pond = models.ForeignKey(
+        "AquaculturePond",
+        on_delete=models.CASCADE,
+        related_name="warehouse_stock_returns",
+    )
+    to_station = models.ForeignKey(
+        "Station",
+        on_delete=models.PROTECT,
+        related_name="pond_warehouse_returns_in",
+    )
+    return_number = models.CharField(max_length=64, blank=True)
+    memo = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "pond_warehouse_stock_return"
+        ordering = ["-created_at", "-id"]
+
+
+class PondWarehouseStockReturnLine(models.Model):
+    stock_return = models.ForeignKey(
+        PondWarehouseStockReturn,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name="pond_warehouse_return_lines")
+    quantity = models.DecimalField(max_digits=14, decimal_places=4)
+
+    class Meta:
+        db_table = "pond_warehouse_stock_return_line"
+
+
 class PondWarehouseInterPondTransfer(models.Model):
     """
     Reallocate feed/medicine between pond warehouses (no GL; company inventory unchanged).
@@ -1048,6 +1086,26 @@ class TenantReportingCategory(models.Model):
         max_length=64,
         help_text="Built-in aquaculture code, or fuel-station rollup key, used for GL / bucket logic.",
     )
+    station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="tenant_reporting_categories",
+        help_text="When set, category applies only to this station. Null = all stations in application.",
+    )
+    aquaculture_pond = models.ForeignKey(
+        "AquaculturePond",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="tenant_reporting_categories",
+        help_text="When set, category applies only to this pond. Null = all ponds in application.",
+    )
+    head_office_only = models.BooleanField(
+        default=False,
+        help_text="When true, category applies only to head office (no station or pond tag).",
+    )
     is_active = models.BooleanField(default=True)
     sort_order = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1060,6 +1118,18 @@ class TenantReportingCategory(models.Model):
             models.UniqueConstraint(
                 fields=["company", "application", "kind", "code"],
                 name="tenant_reporting_cat_company_app_kind_code_uniq",
+            ),
+            models.CheckConstraint(
+                check=~models.Q(station__isnull=False, aquaculture_pond__isnull=False),
+                name="tenant_reporting_cat_station_pond_mutually_exclusive",
+            ),
+            models.CheckConstraint(
+                check=~models.Q(head_office_only=True, station__isnull=False),
+                name="tenant_reporting_cat_ho_not_with_station",
+            ),
+            models.CheckConstraint(
+                check=~models.Q(head_office_only=True, aquaculture_pond__isnull=False),
+                name="tenant_reporting_cat_ho_not_with_pond",
             ),
         ]
 
@@ -1314,6 +1384,42 @@ class InvoiceLine(models.Model):
         on_delete=models.SET_NULL,
         related_name="invoice_lines_revenue_override",
         help_text="Optional revenue GL for this line; overrides item-level revenue and template splits.",
+    )
+    receipt_station = models.ForeignKey(
+        "Station",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="invoice_lines_receipt",
+        help_text="Optional per-line selling site for revenue/COGS entity P&L (overrides invoice header).",
+    )
+    aquaculture_pond = models.ForeignKey(
+        "AquaculturePond",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="invoice_lines",
+        help_text="When set, revenue/COGS from this line are tagged for aquaculture pond P&L.",
+    )
+    fuel_station_income_category = models.CharField(
+        max_length=64,
+        blank=True,
+        db_index=True,
+        help_text="Fuel-station income rollup or tenant category code (station P&L on invoices).",
+    )
+    aquaculture_income_category = models.CharField(
+        max_length=64,
+        blank=True,
+        db_index=True,
+        help_text="Aquaculture income type or tenant category code (pond P&L on invoices).",
+    )
+    tenant_reporting_category = models.ForeignKey(
+        "TenantReportingCategory",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="invoice_lines",
+        help_text="Resolved tenant reporting row for custom income/expense sub-tags.",
     )
 
     class Meta:
@@ -2582,6 +2688,13 @@ class AquacultureExpense(models.Model):
         null=True,
         blank=True,
         help_text="Optional number of feed sacks for this line (feed purchase / shop issue).",
+    )
+    empty_sack_count = models.DecimalField(
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Empty feed sacks auto-created at the pond when feed sacks were opened (feed_consumed).",
     )
     feed_weight_kg = models.DecimalField(
         max_digits=14,

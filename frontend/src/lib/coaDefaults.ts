@@ -213,6 +213,15 @@ export function pickCoaIdInSubset(
   return first && first.id > 0 ? first.id : 0
 }
 
+/** Return id only when it exists in the loaded COA list (avoids stale vendor/category defaults). */
+export function coaPickIdIfValid(
+  id: number | null | undefined,
+  options: CoaPick[]
+): number | undefined {
+  if (id == null || id <= 0) return undefined
+  return options.some((a) => a.id === id) ? id : undefined
+}
+
 export function suggestedBillLineExpenseAccountId(args: {
   vendorDefaultExpenseId?: number | null
   categoryDefaultExpenseId?: number | null
@@ -220,13 +229,12 @@ export function suggestedBillLineExpenseAccountId(args: {
   options: CoaPick[]
 }): number | undefined {
   const { vendorDefaultExpenseId, categoryDefaultExpenseId, itemExpenseId, options } = args
-  if (itemExpenseId != null && itemExpenseId > 0) return itemExpenseId
-  if (categoryDefaultExpenseId != null && categoryDefaultExpenseId > 0) {
-    return categoryDefaultExpenseId
-  }
-  if (vendorDefaultExpenseId != null && vendorDefaultExpenseId > 0) {
-    return vendorDefaultExpenseId
-  }
+  const item = coaPickIdIfValid(itemExpenseId, options)
+  if (item) return item
+  const category = coaPickIdIfValid(categoryDefaultExpenseId, options)
+  if (category) return category
+  const vendor = coaPickIdIfValid(vendorDefaultExpenseId, options)
+  if (vendor) return vendor
   const fallback = coaIdForCode(COA_STATION_OPERATING, options) || coaIdForCode(COA_OFFICE_EXP, options)
   return fallback ? parseInt(fallback, 10) : undefined
 }

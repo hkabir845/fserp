@@ -44,7 +44,8 @@ npm run build
 - **Schema v2** (current): full per-tenant application export — core ERP, forecourt, aquaculture (ponds, cycles, sales, feeding, landlords, Data Bank pond closes), inventory transfers, pond warehouse groups, station/pond stock, payroll pond allocations, custom roles, reporting categories, tenant group (`Organization` portal settings), and related lines.
 - **Scope:** One backup file = one **Company** (legal entity). Super admins use `/admin/backup` for any tenant; company admins use `/backup` for their own tenant. Host-level PostgreSQL backups remain the way to snapshot the entire platform database.
 - **Schema v1** backups still restore but may omit aquaculture/stock; the API returns a warning when restoring v1 files.
-- Large tenants: the frontend uses a **15-minute** Axios timeout for backup/restore; nginx/proxy timeouts should allow the same (or higher).
+- Large tenants: the frontend uses a **15-minute** Axios timeout for backup/restore; nginx/proxy timeouts should allow the same (or higher). Example: `deploy/nginx-fserp.example.conf` sets `client_max_body_size 256M` and `proxy_read_timeout 900s` (matches Django `DATA_UPLOAD_MAX_MEMORY_SIZE` in `fsms/settings.py`).
+- **Pre-restore safety snapshot (optional):** set **`TENANT_SAFETY_BACKUP_DIR`** in `backend/.env` to a writable directory (e.g. `/var/backups/fserp/pre-restore`). Before each restore, the API saves the tenant’s current JSON there; path appears in Backup activity history. Rotate or prune old files with cron. Omit the variable to disable.
 - Automated tests: `tests/test_password_reset_and_backup.py`, `tests/test_tenant_backup_full.py`, `tests/test_delete_tenant_company.py`.
 - **Password reset tokens** are not stored in tenant backups (security). Tenant delete/restore purges pending tokens. Schedule `python manage.py purge_password_reset_tokens` (e.g. daily cron) to remove expired and aged used rows.
 
@@ -61,6 +62,7 @@ npm run build
 | `FSERP_SECURE_SSL_REDIRECT` | Set `1` when Django terminates HTTPS (often off if nginx redirects only) |
 | `FSERP_SECURE_HSTS_SECONDS` | e.g. `31536000` after you are sure HTTPS is correct everywhere |
 | `DJANGO_CACHE_URL` or `REDIS_URL` | Recommended for multiple Gunicorn workers (OTP, rate limits) |
+| `TENANT_SAFETY_BACKUP_DIR` | Optional: writable path for pre-restore tenant JSON snapshots (see §3) |
 
 Copy from `backend/env.example` and fill values. Never commit real `.env`.
 
@@ -125,6 +127,8 @@ cd /path/to/FSERP
 git pull
 bash scripts/deploy-vps.sh
 ```
+
+After deploy, confirm **Backup & Restore** if you rely on it: download a test backup from `/backup` (or `/admin/backup`). If restore uploads fail with 413, raise nginx `client_max_body_size` and Django upload caps together.
 
 Manual steps (if not using the script):
 

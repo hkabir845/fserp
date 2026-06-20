@@ -8,7 +8,7 @@ import re
 from datetime import date
 from typing import TYPE_CHECKING
 
-from api.models import AquaculturePond, AquacultureProductionCycle, Company
+from api.models import AquaculturePond, AquacultureProductionCycle, Bill, BillLine, Company
 from api.services.aquaculture_constants import fish_species_display_label, normalize_fish_species
 
 if TYPE_CHECKING:
@@ -394,3 +394,105 @@ def assign_auto_production_cycles_for_parsed_bill_lines(
         nid = new_cycle_id_by_pond.get(pid_i)
         if nid:
             pl["aquaculture_production_cycle_id"] = nid
+
+
+_BILL_REF_IN_NOTES = re.compile(r"Auto-created from vendor bill\s+(\S+)", re.I)
+_BILL_REF_TOKEN = re.compile(r"BILL-\d+", re.I)
+
+
+def _normalize_bill_ref_token(raw: str) -> str:
+    s = (raw or "").strip().rstrip(".,;:")
+    m = _BILL_REF_TOKEN.search(s)
+    return m.group(0).upper() if m else s
+
+
+def extract_vendor_bill_ref_from_cycle(cycle: AquacultureProductionCycle) -> str | None:
+    """Parse bill number from auto-batch notes or legacy name patterns (e.g. '— BILL-304')."""
+    notes = (cycle.notes or "").strip()
+    m = _BILL_REF_IN_NOTES.search(notes)
+    if m:
+        ref = _normalize_bill_ref_token(m.group(1))
+        return ref or None
+    name = (cycle.name or "").strip()
+    if not name:
+        return None
+    for seg in reversed(re.split(r"\s*—\s*", name)):
+        seg = seg.strip()
+        bare = seg.strip("()")
+        if _BILL_REF_TOKEN.fullmatch(bare):
+            return bare.upper()
+        m2 = _BILL_REF_TOKEN.search(seg)
+        if m2:
+            return m2.group(0).upper()
+    return None
+
+
+def link_production_cycles_to_vendor_bills(
+    company_id: int,
+    *,
+    bill_ids: list[int] | None = None,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """
+    Attach existing auto-created stocking batches to bill lines on the vendor bill they
+    came from (notes/name reference). Does not create new cycles.
+    """
+    stats = {
+        "cycles_scanned": 0,
+        "cycles_matched": 0,
+        "cycles_unmatched": 0,
+        "bills_touched": 0,
+        "lines_linked": 0,
+        "lines_already_linked": 0,
+        "conflicts_skipped": 0,
+    }
+    bills_by_number: dict[str, Bill] = {}
+    for b in Bill.objects.filter(company_id=company_id).only("id", "bill_number"):
+        key = (b.bill_number or "").strip()
+        if key:
+            bills_by_number[key.casefold()] = b
+
+    cycle_by_bill_pond: dict[tuple[int, int], int] = {}
+    for cycle in AquacultureProductionCycle.objects.filter(company_id=company_id).order_by("id"):
+        stats["cycles_scanned"] += 1
+        ref = extract_vendor_bill_ref_from_cycle(cycle)
+        if not ref:
+            stats["cycles_unmatched"] += 1
+            continue
+        bill = bills_by_number.get(ref.casefold())
+        if not bill:
+            stats["cycles_unmatched"] += 1
+            continue
+        if bill_ids and bill.id not in bill_ids:
+            continue
+        stats["cycles_matched"] += 1
+        key = (bill.id, cycle.pond_id)
+        if key in cycle_by_bill_pond and cycle_by_bill_pond[key] != cycle.id:
+            stats["conflicts_skipped"] += 1
+            continue
+        cycle_by_bill_pond[key] = cycle.id
+
+    touched_bills: set[int] = set()
+    for (bill_id, pond_id), cycle_id in cycle_by_bill_pond.items():
+        lines = BillLine.objects.filter(
+            bill_id=bill_id,
+            aquaculture_pond_id=pond_id,
+        )
+        for line in lines:
+            if line.aquaculture_production_cycle_id == cycle_id:
+                stats["lines_already_linked"] += 1
+                continue
+            if (
+                line.aquaculture_production_cycle_id
+                and line.aquaculture_production_cycle_id != cycle_id
+            ):
+                stats["conflicts_skipped"] += 1
+                continue
+            if not dry_run:
+                line.aquaculture_production_cycle_id = cycle_id
+                line.save(update_fields=["aquaculture_production_cycle_id"])
+            stats["lines_linked"] += 1
+            touched_bills.add(bill_id)
+
+    stats["bills_touched"] = len(touched_bills)
+    return stats

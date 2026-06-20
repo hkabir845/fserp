@@ -6,6 +6,8 @@ import pytest
 from api.models import AquaculturePond, AquacultureProductionCycle, Company
 from api.services.aquaculture_production_cycle_service import (
     ensure_destination_cycle_for_transfer,
+    extract_vendor_bill_ref_from_cycle,
+    link_production_cycles_to_vendor_bills,
     suggest_grow_out_batch_name,
     suggest_nursing_batch_name,
 )
@@ -126,3 +128,45 @@ def test_tilapia_creates_new_batch_per_bill(company_tenant):
         lines = [{"aquaculture_pond_id": pond.id, "aquaculture_fish_species": "tilapia"}]
         assign_auto_production_cycles_for_parsed_bill_lines(company_tenant.id, bill, lines)
     assert AquacultureProductionCycle.objects.filter(company_id=company_tenant.id, pond_id=pond.id).count() == 2
+
+
+@pytest.mark.django_db
+def test_link_production_cycles_to_vendor_bills(company_tenant):
+    from api.models import Bill, BillLine, Vendor
+
+    Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Mynuddin Pond", pond_role="grow_out", code="P01"
+    )
+    vendor = Vendor.objects.create(company_id=company_tenant.id, company_name="Hatchery")
+    bill = Bill.objects.create(
+        company_id=company_tenant.id,
+        vendor=vendor,
+        bill_number="BILL-304",
+        bill_date=date(2026, 6, 20),
+        status="open",
+        total=100,
+    )
+    BillLine.objects.create(
+        bill=bill,
+        description="Fry",
+        quantity=1,
+        unit_price=100,
+        amount=100,
+        aquaculture_pond_id=pond.id,
+    )
+    cycle = AquacultureProductionCycle.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        name="Mynuddin Pond — BILL-304",
+        code="C01",
+        fish_species="tilapia",
+        start_date=date(2026, 6, 20),
+        notes="Auto-created from vendor bill BILL-304.",
+    )
+    assert extract_vendor_bill_ref_from_cycle(cycle) == "BILL-304"
+
+    stats = link_production_cycles_to_vendor_bills(company_tenant.id)
+    assert stats["lines_linked"] == 1
+    bill.lines.get().refresh_from_db()
+    assert bill.lines.get().aquaculture_production_cycle_id == cycle.id

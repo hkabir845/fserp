@@ -40,7 +40,7 @@ AQUACULTURE_MODULE_PERMISSIONS: list[dict[str, str]] = [
     {"id": "app.aquaculture.dashboard", "label": "Operations dashboard"},
     {"id": "app.aquaculture.ponds", "label": "Ponds"},
     {"id": "app.aquaculture.landlords", "label": "Landlords"},
-    {"id": "app.aquaculture.cycles", "label": "Production cycles"},
+    {"id": "app.aquaculture.cycles", "label": "Stocking batches"},
     {"id": "app.aquaculture.transfers", "label": "Pond transfers"},
     {"id": "app.aquaculture.stock", "label": "Pond stock"},
     {"id": "app.aquaculture.sampling", "label": "Biomass sampling"},

@@ -60,7 +60,12 @@ export const AQUACULTURE_NAV_GROUPS: AquacultureNavGroup[] = [
     label: 'Fish production',
     description: 'Cycles, movements, inventory, and biology',
     items: [
-      { href: '/aquaculture/cycles', label: 'Production cycles', icon: Layers },
+      {
+        href: '/aquaculture/cycles',
+        label: 'Stocking batches',
+        sidebarLabel: 'Stocking batches',
+        icon: Layers,
+      },
       { href: '/aquaculture/transfers', label: 'Pond transfers', sidebarLabel: 'Fish pond transfers', icon: ArrowRightLeft },
       { href: '/aquaculture/stock', label: 'Pond stock', sidebarLabel: 'Pond stock', icon: Fish },
       { href: '/aquaculture/sampling', label: 'Biomass sampling', icon: Gauge },

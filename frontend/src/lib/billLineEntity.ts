@@ -10,6 +10,7 @@ import { isShopHubStationId, stationIsShopHub } from '@/utils/stationCapabilitie
 
 export type BillLineEntityFields = {
   aquaculture_pond_id?: number | '' | null
+  aquaculture_production_cycle_id?: number | '' | null
   line_receipt_station_id?: number | '' | null
   aquaculture_expense_category?: string
   fuel_station_expense_category?: string
@@ -70,6 +71,13 @@ export function applyBillLineEntityKey<T extends BillLineEntityFields>(
 ): T {
   const scope = parseReportSiteScopeKey(key)
   if (scope.kind === 'pond') {
+    const prevPond =
+      line.aquaculture_pond_id !== '' &&
+      line.aquaculture_pond_id != null &&
+      Number.isFinite(Number(line.aquaculture_pond_id))
+        ? Number(line.aquaculture_pond_id)
+        : null
+    const pondChanged = prevPond !== null && prevPond !== scope.id
     return {
       ...line,
       aquaculture_pond_id: scope.id,
@@ -78,6 +86,10 @@ export function applyBillLineEntityKey<T extends BillLineEntityFields>(
       station_cost_mode: 'direct',
       shared_equal_station_ids: [],
       station_shares: [],
+      aquaculture_cost_mode: 'direct',
+      shared_equal_pond_ids: [],
+      pond_shares: [],
+      aquaculture_production_cycle_id: pondChanged ? '' : line.aquaculture_production_cycle_id,
     }
   }
   if (scope.kind === 'station') {
@@ -87,6 +99,7 @@ export function applyBillLineEntityKey<T extends BillLineEntityFields>(
         ...line,
         line_receipt_station_id: scope.id,
         aquaculture_pond_id: '',
+        aquaculture_production_cycle_id: '',
         fuel_station_expense_category: '',
         station_cost_mode: 'direct',
         shared_equal_station_ids: [],
@@ -97,6 +110,7 @@ export function applyBillLineEntityKey<T extends BillLineEntityFields>(
       ...line,
       line_receipt_station_id: scope.id,
       aquaculture_pond_id: '',
+      aquaculture_production_cycle_id: '',
       aquaculture_expense_category: '',
       aquaculture_cost_mode: 'direct',
       shared_equal_pond_ids: [],
@@ -106,6 +120,7 @@ export function applyBillLineEntityKey<T extends BillLineEntityFields>(
   return {
     ...line,
     aquaculture_pond_id: '',
+    aquaculture_production_cycle_id: '',
     line_receipt_station_id: '',
     aquaculture_expense_category: '',
     fuel_station_expense_category: '',

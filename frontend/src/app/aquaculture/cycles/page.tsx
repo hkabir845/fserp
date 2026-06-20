@@ -8,16 +8,32 @@ import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 
+import { STOCKING_BATCH_WORKFLOW, suggestContinuousBatchName, suggestNursingBatchName, usesSeasonalStockingBatches } from '@/lib/stockingBatch'
+import { isNursingRole } from '@/lib/aquaculturePondSite'
+
 interface Pond {
   id: number
   name: string
+  pond_role?: string
+}
+
+interface FishSpeciesOpt {
+  id: string
+  label: string
 }
 
 interface CycleRow {
   id: number
   pond_id: number
+  pond_name?: string
+  pond_role?: string
   name: string
   code: string
+  fish_species?: string
+  fish_species_label?: string
+  source_production_cycle_id?: number | null
+  source_production_cycle_name?: string
+  source_production_cycle_code?: string
   start_date: string
   end_date: string | null
   sort_order: number
@@ -54,6 +70,7 @@ function suggestNextCycleCode(existingCodes: string[]): string {
 export default function AquacultureCyclesPage() {
   const toast = useToast()
   const [ponds, setPonds] = useState<Pond[]>([])
+  const [fishSpecies, setFishSpecies] = useState<FishSpeciesOpt[]>([])
   const [filterPond, setFilterPond] = useState('')
   const [rows, setRows] = useState<CycleRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,6 +81,8 @@ export default function AquacultureCyclesPage() {
     pond_id: '',
     name: '',
     code: '',
+    fish_species: 'tilapia',
+    fish_species_other: '',
     start_date: '',
     end_date: '',
     sort_order: '0',
@@ -73,8 +92,12 @@ export default function AquacultureCyclesPage() {
 
   const loadPonds = useCallback(async () => {
     try {
-      const { data } = await api.get<Pond[]>('/aquaculture/ponds/')
-      setPonds(Array.isArray(data) ? data : [])
+      const [pondsRes, speciesRes] = await Promise.all([
+        api.get<Pond[]>('/aquaculture/ponds/'),
+        api.get<FishSpeciesOpt[]>('/aquaculture/fish-species/').catch(() => ({ data: [] })),
+      ])
+      setPonds(Array.isArray(pondsRes.data) ? pondsRes.data : [])
+      setFishSpecies(Array.isArray(speciesRes.data) ? speciesRes.data : [])
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not load ponds'))
     }
@@ -112,6 +135,22 @@ export default function AquacultureCyclesPage() {
 
   const pondName = (id: number) => ponds.find((p) => p.id === id)?.name ?? `Pond #${id}`
 
+  const speciesLabel = (id: string) =>
+    fishSpecies.find((s) => s.id === id)?.label || (id === 'tilapia' ? 'Tilapia' : id)
+
+  const applySuggestedName = (pondId: string, code: string, startDate: string, speciesId: string) => {
+    const pond = ponds.find((p) => String(p.id) === pondId)
+    if (!pond || !startDate) return ''
+    const sp = speciesLabel(speciesId)
+    if (isNursingRole(pond)) {
+      return suggestNursingBatchName(sp, pond.name, code, startDate)
+    }
+    if (!usesSeasonalStockingBatches(speciesId)) {
+      return suggestContinuousBatchName(sp, pond.name)
+    }
+    return `${sp} batch ${code ? `${code} ` : ''}— ${pond.name}`.trim()
+  }
+
   const openNew = () => {
     setEditing(null)
     const today = new Date().toISOString().slice(0, 10)
@@ -122,10 +161,15 @@ export default function AquacultureCyclesPage() {
           ? String(ponds[0].id)
           : ''
     const nextCode = pid ? suggestNextCycleCode(codesForPond(pid)) : ''
+    const suggested = pid
+      ? applySuggestedName(pid, nextCode, today, 'tilapia')
+      : ''
     setForm({
       pond_id: pid,
-      name: '',
+      name: suggested,
       code: nextCode,
+      fish_species: 'tilapia',
+      fish_species_other: '',
       start_date: today,
       end_date: '',
       sort_order: '0',
@@ -141,6 +185,8 @@ export default function AquacultureCyclesPage() {
       pond_id: String(r.pond_id),
       name: r.name,
       code: r.code || '',
+      fish_species: r.fish_species || 'tilapia',
+      fish_species_other: '',
       start_date: r.start_date.slice(0, 10),
       end_date: r.end_date ? r.end_date.slice(0, 10) : '',
       sort_order: String(r.sort_order ?? 0),
@@ -162,6 +208,7 @@ export default function AquacultureCyclesPage() {
       sort_order: parseInt(form.sort_order, 10) || 0,
       is_active: form.is_active,
       notes: form.notes.trim(),
+      fish_species: form.fish_species || 'tilapia',
     }
     if (form.end_date.trim()) {
       payload.end_date = form.end_date.trim()
@@ -226,11 +273,12 @@ export default function AquacultureCyclesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 id="aq-cycles-title" className="text-xl font-bold tracking-tight text-slate-900">
-            Production cycles
+            Stocking batches
           </h1>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Optional profit-center tags under each pond (crop or batch window). Assign fish sales and direct operating
-            expenses to a cycle for clearer segment reporting; shared costs stay pond-level per the aquaculture rule.
+            Each <strong>tilapia</strong> fry purchase is a new batch (C01, C02, C03 per season).{' '}
+            <strong>Other species</strong> usually share one open batch per pond that keeps growing — FSERP
+            reuses it on new bills unless you start a 2nd batch on purpose.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -294,17 +342,29 @@ export default function AquacultureCyclesPage() {
             className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
-            Add cycle
+            Add batch
           </button>
         </div>
       </div>
+
+      <section className="mt-6 rounded-xl border border-teal-100 bg-teal-50/40 p-4 text-sm text-teal-950">
+        <h2 className="font-semibold text-teal-900">{STOCKING_BATCH_WORKFLOW.title}</h2>
+        <ol className="mt-3 space-y-2">
+          {STOCKING_BATCH_WORKFLOW.steps.map((s) => (
+            <li key={s.phase} className="flex gap-2">
+              <span className="shrink-0 font-medium text-teal-800">{s.phase}:</span>
+              <span className="text-teal-900/90">{s.detail}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
 
       {ponds.length === 0 ? (
         <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
           <Link href="/aquaculture/ponds" className="font-medium text-teal-800 underline">
             Create a pond
           </Link>{' '}
-          first, then define production cycles.
+          first, then open stocking batches for each fry purchase.
         </div>
       ) : loading ? (
         <div className="mt-10 flex justify-center">
@@ -316,8 +376,8 @@ export default function AquacultureCyclesPage() {
           aria-labelledby="aq-cycles-title"
         >
           {filterPond
-            ? 'No cycles for this pond in this view. Add a cycle or clear the pond filter.'
-            : 'No production cycles yet. Add a batch or crop window to tag sales and direct costs.'}
+            ? 'No batches for this pond in this view. Add a batch or clear the pond filter.'
+            : 'No stocking batches yet. Add one when you buy fry, or let FSERP create it when you post a fry bill to the nursing pond.'}
         </div>
       ) : viewMode === 'list' ? (
         <div
@@ -327,8 +387,9 @@ export default function AquacultureCyclesPage() {
           <table className="min-w-[800px] w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">Cycle</th>
+                <th className="px-4 py-3">Batch</th>
                 <th className="px-4 py-3">Pond</th>
+                <th className="px-4 py-3">Species</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Period</th>
                 <th className="px-4 py-3 text-right">Sort</th>
@@ -343,12 +404,20 @@ export default function AquacultureCyclesPage() {
                     <p className="mt-0.5 text-xs text-slate-500">
                       {r.code?.trim() ? `Code ${r.code.trim()} · ` : ''}Order {r.sort_order ?? 0}
                     </p>
-                    {r.notes?.trim() ? (
-                      <p className="mt-1 line-clamp-2 max-w-md text-xs text-slate-500">{r.notes.trim()}</p>
+                    {r.source_production_cycle_name || r.source_production_cycle_code ? (
+                      <p className="mt-1 text-xs text-teal-800">
+                        From nursing: {r.source_production_cycle_code || r.source_production_cycle_name}
+                      </p>
                     ) : null}
                     <p className="mt-1 text-xs text-slate-600 md:hidden">{periodLabel(r)}</p>
                   </td>
-                  <td className="px-4 py-3 text-slate-700">{pondName(r.pond_id)}</td>
+                  <td className="px-4 py-3 text-slate-700">
+                    {r.pond_name || pondName(r.pond_id)}
+                    {r.pond_role === 'nursing' ? (
+                      <span className="ml-1 text-xs text-violet-700">(nursing)</span>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3 text-slate-700">{r.fish_species_label || 'Tilapia'}</td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -436,7 +505,7 @@ export default function AquacultureCyclesPage() {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold">{editing ? 'Edit cycle' : 'New cycle'}</h2>
+            <h2 className="text-lg font-semibold">{editing ? 'Edit stocking batch' : 'New stocking batch'}</h2>
             <div className="mt-4 space-y-3">
               <label className="block text-sm font-medium text-slate-700">
                 Pond
@@ -450,11 +519,21 @@ export default function AquacultureCyclesPage() {
                       setForm((f) => ({ ...f, pond_id: pid }))
                       return
                     }
-                    setForm((f) => ({
-                      ...f,
-                      pond_id: pid,
-                      code: pid ? suggestNextCycleCode(codesForPond(pid)) : '',
-                    }))
+                    const code = pid ? suggestNextCycleCode(codesForPond(pid)) : ''
+                    setForm((f) => {
+                      const next = {
+                        ...f,
+                        pond_id: pid,
+                        code,
+                      }
+                      const suggested = applySuggestedName(
+                        pid,
+                        code,
+                        f.start_date || new Date().toISOString().slice(0, 10),
+                        f.fish_species || 'tilapia',
+                      )
+                      return suggested ? { ...next, name: suggested } : next
+                    })
                   }}
                 >
                   {ponds.map((p) => (
@@ -465,7 +544,48 @@ export default function AquacultureCyclesPage() {
                 </select>
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Name
+                Species
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  value={form.fish_species}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setForm((f) => {
+                      const next = { ...f, fish_species: v }
+                      if (!editing && f.pond_id) {
+                        const suggested = applySuggestedName(
+                          f.pond_id,
+                          f.code,
+                          f.start_date || new Date().toISOString().slice(0, 10),
+                          v,
+                        )
+                        if (suggested) next.name = suggested
+                      }
+                      return next
+                    })
+                  }}
+                >
+                  {fishSpecies.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                  {fishSpecies.length === 0 ? <option value="tilapia">Tilapia</option> : null}
+                </select>
+                {!usesSeasonalStockingBatches(form.fish_species) ? (
+                  <span className="mt-1 block text-xs font-normal text-slate-500">
+                    One continuous batch per pond is normal for this species. Only add a 2nd batch if you are
+                    deliberately starting a new rare stocking.
+                  </span>
+                ) : (
+                  <span className="mt-1 block text-xs font-normal text-slate-500">
+                    Tilapia: up to three fry batches per season (C01, C02, C03) on nursing, then linked grow-out
+                    batches.
+                  </span>
+                )}
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                Batch name
                 <input
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.name}

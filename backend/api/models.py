@@ -2625,6 +2625,22 @@ class AquacultureProductionCycle(models.Model):
         blank=True,
         help_text="Optional short code for filters and exports.",
     )
+    fish_species = models.CharField(
+        max_length=64,
+        db_index=True,
+        default="tilapia",
+        blank=True,
+        help_text="Primary species in this stocking batch (e.g. tilapia fry cohort).",
+    )
+    fish_species_other = models.CharField(max_length=120, blank=True)
+    source_production_cycle = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="derived_production_cycles",
+        help_text="Nursing batch this grow-out batch was stocked from (fingerling transfer).",
+    )
     start_date = models.DateField(db_index=True)
     end_date = models.DateField(
         null=True,

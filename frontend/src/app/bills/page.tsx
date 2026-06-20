@@ -43,7 +43,6 @@ import {
   type FuelStationBillExpenseCategory,
 } from '@/lib/fuelStationBillLine'
 import { clearEntityScopedReportingCategoryCache } from '@/lib/entityScopedReportingCategories'
-import { ReportingCategorySelectOptions } from '@/lib/reportingCategorySelect'
 import {
   resolveReceiptLocationKeyForVendor,
   vendorUsualReceivingSummary,
@@ -76,6 +75,7 @@ import {
 } from '@/lib/billAllocation'
 import { BillPurposeSection } from '@/components/bills/BillPurposeSection'
 import { BillLineEntityTagging } from '@/components/bills/BillLineEntityTagging'
+import { BillPondSupplementFields } from '@/components/bills/BillPondSupplementFields'
 import { BillLineTypePicker, type BillLineKind } from '@/components/bills/BillLineItemSelect'
 import { COA_OFFICE_EXP, coaPickIdIfValid, suggestedBillLineExpenseAccountId, templateCoaOptionLabel } from '@/lib/coaDefaults'
 import { syncLineTouchedForAccount } from '@/lib/coaSuggestForm'
@@ -173,6 +173,8 @@ interface Bill {
   vendor_number?: string
   receipt_station_id?: number | null
   receipt_station_name?: string | null
+  receipt_pond_id?: number | null
+  receipt_pond_display_name?: string | null
   bill_date: string
   due_date?: string
   vendor_reference?: string
@@ -849,289 +851,6 @@ function validateBillLineExpenseAccount(
   return `Line ${n}: expense account is invalid or inactive — pick another from the list.`
 }
 
-function BillPondAllocationFields({
-  line,
-  index,
-  ponds,
-  cycles,
-  billExpenseCategories,
-  expenseAccounts,
-  onFieldChange,
-  selectClassName = 'w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500',
-  directOnly = false,
-}: {
-  line: BillLineItem
-  index: number
-  ponds: AquaculturePondOption[]
-  cycles: ProductionCycleOption[]
-  billExpenseCategories: AquacultureBillExpenseCategory[]
-  expenseAccounts: ExpenseAccount[]
-  onFieldChange: (index: number, field: string, value: unknown) => void
-  selectClassName?: string
-  /** Fish lines: one pond only (no shared split UI). */
-  directOnly?: boolean
-}) {
-  const mode = directOnly ? 'direct' : billLinePondCostMode(line)
-  const pondSel =
-    line.aquaculture_pond_id === '' || line.aquaculture_pond_id == null
-      ? ''
-      : Number(line.aquaculture_pond_id)
-  const cyclesForLine =
-    pondSel === '' || !Number.isFinite(pondSel) ? [] : cycles.filter((c) => c.pond_id === pondSel)
-  const sharedIds = line.shared_equal_pond_ids ?? []
-  const manualShares = line.pond_shares ?? []
-  const showCategory =
-    !line.item_id &&
-    (mode === 'direct' ? pondSel !== '' && Number.isFinite(pondSel) : true)
-
-  const toggleSharedPond = (pid: number) => {
-    const next = sharedIds.includes(pid) ? sharedIds.filter((x) => x !== pid) : [...sharedIds, pid]
-    onFieldChange(index, 'shared_equal_pond_ids', next)
-  }
-
-  return (
-    <div className="mt-2 space-y-2 border-t border-dashed border-teal-200 pt-2">
-      {!directOnly ? (
-      <fieldset className="w-full rounded-lg border border-teal-100 bg-teal-50/30 p-2 space-y-1">
-        <legend className="px-1 text-xs font-medium uppercase tracking-wide text-teal-800">
-          Pond cost allocation
-        </legend>
-        <label className="flex items-center gap-2 text-sm text-gray-800">
-          <input
-            type="radio"
-            name={`pond_cost_mode_${index}`}
-            checked={mode === 'direct'}
-            onChange={() => onFieldChange(index, 'aquaculture_cost_mode', 'direct')}
-          />
-          Direct to one pond
-        </label>
-        <label className="flex items-center gap-2 text-sm text-gray-800">
-          <input
-            type="radio"
-            name={`pond_cost_mode_${index}`}
-            checked={mode === 'shared_equal'}
-            onChange={() => onFieldChange(index, 'aquaculture_cost_mode', 'shared_equal')}
-          />
-          Shared — equal split
-        </label>
-        <label className="flex items-center gap-2 text-sm text-gray-800">
-          <input
-            type="radio"
-            name={`pond_cost_mode_${index}`}
-            checked={mode === 'shared_manual'}
-            onChange={() => onFieldChange(index, 'aquaculture_cost_mode', 'shared_manual')}
-          />
-          Shared — manual amounts
-        </label>
-      </fieldset>
-      ) : null}
-
-      {mode === 'direct' ? (
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-[10rem] flex-1">
-            <label className="block text-xs font-medium text-gray-700 mb-1">Pond (P&amp;L tag)</label>
-            <select
-              value={pondSel === '' ? '' : String(pondSel)}
-              onChange={(e) => {
-                const v = e.target.value
-                onFieldChange(index, 'aquaculture_pond_id', v === '' ? '' : parseInt(v, 10))
-              }}
-              className={selectClassName}
-            >
-              <option value="">— Not tagged —</option>
-              {ponds.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-              {pondSel !== '' &&
-                Number.isFinite(pondSel) &&
-                !ponds.some((p) => p.id === pondSel) && (
-                  <option value={String(pondSel)}>Pond #{pondSel}</option>
-                )}
-            </select>
-          </div>
-          {showCategory ? (
-            <div className="min-w-[11rem] flex-1">
-              <label className="block text-xs font-medium text-teal-900 mb-1">Pond expense category *</label>
-              <select
-                required
-                value={line.aquaculture_expense_category || ''}
-                onChange={(e) => onFieldChange(index, 'aquaculture_expense_category', e.target.value)}
-                className="w-full min-w-0 px-2 py-1 text-sm border border-teal-300 rounded focus:ring-1 focus:ring-teal-500 bg-teal-50/40"
-              >
-                <option value="">Select category…</option>
-                <ReportingCategorySelectOptions categories={billExpenseCategories} />
-              </select>
-              {line.expense_account_id ? (
-                <p className="mt-0.5 text-[11px] text-teal-800">
-                  GL:{' '}
-                  {formatCoaOptionLabel(
-                    expenseAccounts.find((a) => a.id === line.expense_account_id) || {
-                      id: 0,
-                      account_code: '',
-                      account_name: '—',
-                      account_type: 'expense',
-                    }
-                  )}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="min-w-[10rem] flex-1">
-            <label className="block text-xs font-medium text-gray-700 mb-1">Production cycle (optional)</label>
-            <select
-              disabled={pondSel === '' || !Number.isFinite(pondSel)}
-              value={
-                line.aquaculture_production_cycle_id === '' ||
-                line.aquaculture_production_cycle_id == null
-                  ? ''
-                  : String(line.aquaculture_production_cycle_id)
-              }
-              onChange={(e) => {
-                const v = e.target.value
-                onFieldChange(
-                  index,
-                  'aquaculture_production_cycle_id',
-                  v === '' ? '' : parseInt(v, 10)
-                )
-              }}
-              className={`${selectClassName} disabled:bg-gray-100 disabled:text-gray-500`}
-            >
-              <option value="">— Any / not set —</option>
-              {cyclesForLine.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      ) : mode === 'shared_equal' ? (
-        <div className="rounded-lg border border-teal-100 bg-white p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-medium text-teal-900">
-              Select at least two ponds (equal split of line amount). Use for shared feed, medicine, or utilities
-              charged on one bill.
-            </p>
-            <button
-              type="button"
-              className="text-xs font-medium text-teal-700 hover:text-teal-900 underline"
-              onClick={() =>
-                onFieldChange(
-                  index,
-                  'shared_equal_pond_ids',
-                  ponds.map((p) => p.id)
-                )
-              }
-            >
-              All active ponds
-            </button>
-          </div>
-          <ul className="mt-2 max-h-36 space-y-1 overflow-y-auto">
-            {ponds.map((p) => (
-              <li key={p.id}>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="rounded border-gray-300"
-                    checked={sharedIds.includes(p.id)}
-                    onChange={() => toggleSharedPond(p.id)}
-                  />
-                  {p.name}
-                </label>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <div className="space-y-2 rounded-lg border border-teal-100 bg-white p-3">
-          <p className="text-xs text-gray-600">
-            Each row: pond and amount (≥2 rows; amounts must sum to the line amount)
-          </p>
-          {manualShares.map((row, sidx) => (
-            <div key={sidx} className="flex flex-wrap gap-2 items-center">
-              <select
-                className="min-w-[8rem] flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
-                value={row.pond_id === '' ? '' : String(row.pond_id)}
-                onChange={(e) => {
-                  const next = [...manualShares]
-                  next[sidx] = {
-                    ...next[sidx],
-                    pond_id: e.target.value === '' ? '' : parseInt(e.target.value, 10),
-                  }
-                  onFieldChange(index, 'pond_shares', next)
-                }}
-              >
-                <option value="">Pond</option>
-                {ponds.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Amount"
-                className="w-28 rounded border border-gray-300 px-2 py-1 text-sm tabular-nums"
-                value={row.amount === 0 ? '' : row.amount}
-                onChange={(e) => {
-                  const next = [...manualShares]
-                  next[sidx] = { ...next[sidx], amount: parseFloat(e.target.value) || 0 }
-                  onFieldChange(index, 'pond_shares', next)
-                }}
-              />
-              {manualShares.length > 2 ? (
-                <button
-                  type="button"
-                  className="text-xs text-red-600 hover:underline"
-                  onClick={() => {
-                    const next = manualShares.filter((_, i) => i !== sidx)
-                    onFieldChange(index, 'pond_shares', next)
-                  }}
-                >
-                  Remove
-                </button>
-              ) : null}
-            </div>
-          ))}
-          <button
-            type="button"
-            className="text-xs font-medium text-teal-700 hover:underline"
-            onClick={() =>
-              onFieldChange(index, 'pond_shares', [...manualShares, { pond_id: '', amount: 0 }])
-            }
-          >
-            + Add pond row
-          </button>
-        </div>
-      )}
-
-      {showCategory && mode !== 'direct' ? (
-        <div className="min-w-[11rem] max-w-md">
-          <label className="block text-xs font-medium text-teal-900 mb-1">Pond expense category *</label>
-          <select
-            required
-            value={line.aquaculture_expense_category || ''}
-            onChange={(e) => onFieldChange(index, 'aquaculture_expense_category', e.target.value)}
-            className="w-full min-w-0 px-2 py-1 text-sm border border-teal-300 rounded focus:ring-1 focus:ring-teal-500 bg-teal-50/40"
-          >
-            <option value="">Select category…</option>
-            <ReportingCategorySelectOptions categories={billExpenseCategories} />
-          </select>
-        </div>
-      ) : null}
-
-      <p className="text-xs text-gray-500 pb-1">
-        {mode === 'direct'
-          ? 'Tags P&L to one pond when the bill posts. For fish-type SKUs use kg and headcount on one pond.'
-          : 'On save, this line expands to one bill line per pond with the split amounts (lease, shared electricity, etc.).'}
-      </p>
-    </div>
-  )
-}
 
 interface Tank {
   id: number
@@ -1397,18 +1116,41 @@ export default function BillsPage() {
   )
 
   const resolveBillReceiptLabel = useCallback(
-    (bill: Pick<Bill, 'receipt_station_id' | 'receipt_station_name' | 'lines'>) => {
+    (
+      bill: Pick<
+        Bill,
+        | 'receipt_station_id'
+        | 'receipt_station_name'
+        | 'receipt_pond_id'
+        | 'receipt_pond_display_name'
+        | 'lines'
+      >,
+    ) => {
       const stationName = (bill.receipt_station_name || '').trim()
       const pondIds = new Set<number>()
       for (const line of bill.lines || []) {
         const pid = line.aquaculture_pond_id
         if (pid != null && Number(pid) > 0) pondIds.add(Number(pid))
       }
+      const summaryPondId =
+        bill.receipt_pond_id != null && Number(bill.receipt_pond_id) > 0
+          ? Number(bill.receipt_pond_id)
+          : null
+      if (summaryPondId != null) pondIds.add(summaryPondId)
       if (pondIds.size === 1) {
         const pid = [...pondIds][0]
         const pond = aquaculturePonds.find((p) => p.id === pid)
-        const pondLabel = pond?.name || `Pond #${pid}`
-        return stationName ? `${pondLabel} · ${stationName}` : pondLabel
+        const pondLabel =
+          (bill.receipt_pond_display_name || '').trim() ||
+          (() => {
+            if (!pond) return `Pond #${pid}`
+            const role = (pond.pond_role || '').toLowerCase()
+            if (role === 'nursing') {
+              return (pond.nursing_display_name || '').trim() || `${pond.name} Nursing`
+            }
+            return (pond.operational_display_name || '').trim() || pond.name || `Pond #${pid}`
+          })()
+        return pondLabel
       }
       if (stationName) return stationName
       const sid = bill.receipt_station_id
@@ -1967,6 +1709,8 @@ export default function BillsPage() {
     setFormData((prev) => {
       const newLines = [...prev.lines]
       if (pick.kind === 'item') {
+        const headerNursingPond =
+          headerPondIdFromLocationKey(prev.receipt_location_key) ?? firstNursingPondId
         newLines[index] = {
           ...applyItemSelectionToBillLine(
             newLines[index],
@@ -1975,7 +1719,7 @@ export default function BillsPage() {
             tanks,
             resolvedVendorDefaultExpenseId,
             templateBillExpenseAccountId || undefined,
-            firstNursingPondId,
+            headerNursingPond,
             billExpenseCoaOptions
           ),
           line_kind: 'item',
@@ -2081,6 +1825,20 @@ export default function BillsPage() {
 
       if (field === '__entity_bundle__') {
         newLines[index] = { ...newLines[index], ...(value as BillLineItem) }
+        const cleanPond =
+          newLines[index].aquaculture_pond_id === '' || newLines[index].aquaculture_pond_id == null
+            ? ''
+            : Number(newLines[index].aquaculture_pond_id)
+        const cycRaw = newLines[index].aquaculture_production_cycle_id
+        if (cycRaw !== '' && cycRaw != null) {
+          const cid = parseInt(String(cycRaw), 10)
+          if (Number.isFinite(cid)) {
+            const cRow = productionCycles.find((c) => c.id === cid)
+            if (!cRow || cleanPond === '' || !Number.isFinite(cleanPond) || cRow.pond_id !== cleanPond) {
+              newLines[index].aquaculture_production_cycle_id = ''
+            }
+          }
+        }
         return { ...prev, lines: newLines }
       }
 
@@ -2640,32 +2398,7 @@ export default function BillsPage() {
   }
 
   const billReceivingLocationLabel = (bill: Bill): string => {
-    const pondIds = new Set<number>()
-    const pondNames = new Map<number, string>()
-    for (const line of bill.lines || []) {
-      const pid = line.aquaculture_pond_id
-      if (pid != null && Number(pid) > 0) {
-        const n = Number(pid)
-        pondIds.add(n)
-        const label = (line.pond_name || '').trim()
-        if (label) pondNames.set(n, label)
-        const display = (line.pond_display_name || '').trim()
-        if (display) pondNames.set(n, display)
-      }
-    }
-    if (pondIds.size === 1) {
-      const pid = [...pondIds][0]
-      const pond = aquaculturePonds.find((p) => p.id === pid)
-      const pondLabel = pond?.name || pondNames.get(pid) || `Pond #${pid}`
-      const shop =
-        bill.receipt_station_name ||
-        (bill.receipt_station_id ? `Station #${bill.receipt_station_id}` : '')
-      return shop ? `Pond: ${pondLabel} · Shop hub: ${shop}` : `Pond: ${pondLabel}`
-    }
-    return (
-      bill.receipt_station_name ||
-      (bill.receipt_station_id ? `Station #${bill.receipt_station_id}` : '')
-    )
+    return resolveBillReceiptLabel(bill)
   }
 
   const billExportLine = (line: BillLineItem): BillLineExport => {
@@ -3704,6 +3437,17 @@ export default function BillsPage() {
                             onFieldChange={handleLineChange}
                             billPurpose={formData.bill_purpose}
                           />
+                          {aquaculturePonds.length > 0 ? (
+                            <BillPondSupplementFields
+                              line={line}
+                              index={index}
+                              ponds={aquaculturePonds.filter((p) => p.is_active !== false)}
+                              productionCycles={productionCycles}
+                              billExpenseCategories={billExpenseCategories}
+                              onFieldChange={handleLineChange}
+                              directOnly={Boolean(line.item_id)}
+                            />
+                          ) : null}
                         </div>
                       )
                     })}
@@ -4228,6 +3972,17 @@ export default function BillsPage() {
                             onFieldChange={handleLineChange}
                             billPurpose={formData.bill_purpose}
                           />
+                          {aquaculturePonds.length > 0 ? (
+                            <BillPondSupplementFields
+                              line={line}
+                              index={index}
+                              ponds={aquaculturePonds.filter((p) => p.is_active !== false)}
+                              productionCycles={productionCycles}
+                              billExpenseCategories={billExpenseCategories}
+                              onFieldChange={handleLineChange}
+                              directOnly={Boolean(line.item_id)}
+                            />
+                          ) : null}
                         </div>
                       )
                     })}

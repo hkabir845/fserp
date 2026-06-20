@@ -364,3 +364,76 @@ def test_posted_fish_bill_pond_receipt_prefers_fish_count_over_line_quantity(
     assert row.quantity == Decimal("300000")
     fry.refresh_from_db()
     assert fry.quantity_on_hand == Decimal("300000")
+
+
+@pytest.mark.django_db
+def test_bill_list_includes_receipt_pond_summary_without_full_lines(
+    api_client, company_tenant, auth_admin_headers
+):
+    """List view omits line payloads but must still show the receiving pond for fry bills."""
+    h = auth_admin_headers
+    station = Station.objects.create(
+        company_id=company_tenant.id, station_name="Chabagan Station", is_active=True
+    )
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id,
+        name="Digonta",
+        pond_role="nursing",
+        physical_site_name="Digonta",
+        is_active=True,
+    )
+    v = api_client.post(
+        "/api/vendors/",
+        data=json.dumps({"company_name": "CP Bangladesh Limited"}),
+        content_type="application/json",
+        **h,
+    )
+    vendor_id = json.loads(v.content)["id"]
+    fry = Item.objects.create(
+        company_id=company_tenant.id,
+        name="Live Fry",
+        item_type="inventory",
+        pos_category="fish",
+        unit="piece",
+        category="Aquaculture",
+        pieces_per_kg=3000,
+    )
+    bill_r = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor_id,
+                "receipt_station_id": station.id,
+                "bill_date": "2026-06-20",
+                "subtotal": "1100000",
+                "tax_total": "0",
+                "total": "1100000",
+                "status": "open",
+                "lines": [
+                    {
+                        "description": "Live Fry",
+                        "item_id": fry.id,
+                        "quantity": "366.6667",
+                        "unit_cost": "3000",
+                        "amount": "1100000",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
+                        "aquaculture_fish_count": 1100000,
+                    },
+                ],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert bill_r.status_code == 201, bill_r.content.decode()
+
+    list_r = api_client.get("/api/bills/?skip=0&limit=25", **h)
+    assert list_r.status_code == 200
+    body = json.loads(list_r.content)
+    rows = body["results"] if isinstance(body, dict) and "results" in body else body
+    row = next(r for r in rows if r["bill_number"])
+    assert row["receipt_station_name"] == "Chabagan Station"
+    assert row["receipt_pond_id"] == pond.id
+    assert "Digonta" in row["receipt_pond_display_name"]
+    assert row["lines"] == []

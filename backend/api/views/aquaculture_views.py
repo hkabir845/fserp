@@ -99,7 +99,11 @@ from api.services.gl_posting import (
     post_aquaculture_manual_expense_journal,
     sync_landlord_lease_payment_journal,
 )
-from api.services.aquaculture_production_cycle_service import cycle_code_conflict, next_automatic_cycle_code
+from api.services.aquaculture_production_cycle_service import (
+    cycle_code_conflict,
+    ensure_destination_cycle_for_transfer,
+    next_automatic_cycle_code,
+)
 from api.services.reference_code import assign_string_code_if_empty
 from api.services.aquaculture_cutover import (
     get_stored_cutover_date,
@@ -701,11 +705,24 @@ def _cycle_for_company(company_id: int, cycle_id: int) -> AquacultureProductionC
 
 
 def _cycle_to_json(c: AquacultureProductionCycle) -> dict:
+    pond = getattr(c, "pond", None)
+    pond_name = (pond.name or "").strip() if pond else ""
+    pond_role = (getattr(pond, "pond_role", None) or "grow_out") if pond else "grow_out"
+    src = getattr(c, "source_production_cycle", None)
+    sp_code = (c.fish_species or "").strip() or "tilapia"
     return {
         "id": c.id,
         "pond_id": c.pond_id,
+        "pond_name": pond_name,
+        "pond_role": pond_role,
         "name": c.name or "",
         "code": c.code or "",
+        "fish_species": sp_code,
+        "fish_species_other": c.fish_species_other or "",
+        "fish_species_label": fish_species_display_label(sp_code, c.fish_species_other),
+        "source_production_cycle_id": c.source_production_cycle_id,
+        "source_production_cycle_name": (src.name or "").strip() if src else "",
+        "source_production_cycle_code": (src.code or "").strip() if src else "",
         "start_date": c.start_date.isoformat(),
         "end_date": c.end_date.isoformat() if c.end_date else None,
         "sort_order": c.sort_order,
@@ -1044,7 +1061,9 @@ def aquaculture_production_cycles_list_or_create(request):
         return err
     cid = request.company_id
     if request.method == "GET":
-        qs = AquacultureProductionCycle.objects.filter(company_id=cid).select_related("pond")
+        qs = AquacultureProductionCycle.objects.filter(company_id=cid).select_related(
+            "pond", "source_production_cycle"
+        )
         pid = request.GET.get("pond_id")
         if pid and str(pid).strip().isdigit():
             p_int = int(pid)
@@ -1076,11 +1095,28 @@ def aquaculture_production_cycles_list_or_create(request):
     if ed and ed < sd:
         return JsonResponse({"detail": "end_date must be on or after start_date"}, status=400)
     auto_code = next_automatic_cycle_code(cid, pond_id)
+    sp, sperr = normalize_fish_species(body.get("fish_species") or "tilapia")
+    if sperr:
+        return JsonResponse({"detail": sperr}, status=400)
+    sp_other = normalize_fish_species_other(body.get("fish_species_other"), sp)
+    raw_src = body.get("source_production_cycle_id")
+    source_cycle = None
+    if raw_src not in (None, ""):
+        try:
+            src_id = int(raw_src)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "source_production_cycle_id must be an integer"}, status=400)
+        source_cycle = _cycle_for_company(cid, src_id)
+        if not source_cycle:
+            return JsonResponse({"detail": "source_production_cycle_id not found"}, status=404)
     c = AquacultureProductionCycle(
         company_id=cid,
         pond=pond,
         name=name[:200],
         code=auto_code[:64],
+        fish_species=sp,
+        fish_species_other=sp_other,
+        source_production_cycle=source_cycle,
         start_date=sd,
         end_date=ed,
         sort_order=int(body.get("sort_order") or 0),
@@ -1100,7 +1136,9 @@ def aquaculture_production_cycle_detail(request, cycle_id: int):
     if err:
         return err
     cid = request.company_id
-    c = AquacultureProductionCycle.objects.filter(pk=cycle_id, company_id=cid).select_related("pond").first()
+    c = AquacultureProductionCycle.objects.filter(pk=cycle_id, company_id=cid).select_related(
+        "pond", "source_production_cycle"
+    ).first()
     if not c:
         return JsonResponse({"detail": "Not found"}, status=404)
     if request.method == "GET":
@@ -1145,6 +1183,15 @@ def aquaculture_production_cycle_detail(request, cycle_id: int):
             c.is_active = bool(body["is_active"])
         if "notes" in body:
             c.notes = str(body.get("notes") or "")[:5000]
+        if "fish_species" in body:
+            sp, sperr = normalize_fish_species(body.get("fish_species"))
+            if sperr:
+                return JsonResponse({"detail": sperr}, status=400)
+            c.fish_species = sp
+        if "fish_species_other" in body:
+            c.fish_species_other = normalize_fish_species_other(
+                body.get("fish_species_other"), c.fish_species
+            )
         c.save()
         return JsonResponse(_cycle_to_json(c))
     lock_err = _pond_write_lock_response(cid, c.pond_id, c.start_date)
@@ -4597,6 +4644,15 @@ def _parse_fish_transfer_payload(
             ).first()
             if not to_cycle:
                 return JsonResponse({"detail": f"lines[{i}].to_production_cycle_id not found for destination pond"}, status=404), None
+        elif from_cycle_obj is not None:
+            to_cycle = ensure_destination_cycle_for_transfer(
+                company_id=cid,
+                from_cycle=from_cycle_obj,
+                to_pond=to_pond,
+                transfer_date=td,
+                fish_species=sp,
+                fish_species_other=sp_other,
+            )
         pcs_raw = row.get("pcs_per_kg")
         pcs_dec = None
         if pcs_raw not in (None, ""):

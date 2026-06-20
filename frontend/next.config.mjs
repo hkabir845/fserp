@@ -89,6 +89,8 @@ function assertProductionBuildUsesNonLoopbackPublicUrls() {
 }
 assertProductionBuildUsesNonLoopbackPublicUrls()
 
+const isNextDev = process.argv.includes('dev')
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -135,6 +137,17 @@ const nextConfig = {
       },
     ]
   },
+}
+
+// Webpack dev compiles on this app can exceed the default chunk script timeout on Windows.
+// Only attach for `next dev` — omit for `next build` (Turbopack default) to avoid config errors.
+if (isNextDev) {
+  nextConfig.webpack = (config, { dev, isServer }) => {
+    if (dev && !isServer) {
+      config.output.chunkLoadTimeout = 300_000
+    }
+    return config
+  }
 }
 
 export default nextConfig

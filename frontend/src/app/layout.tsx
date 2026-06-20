@@ -5,6 +5,7 @@ import './globals.css'
 import { Providers } from '@/components/Providers'
 import { ErrorFilter } from '@/components/ErrorFilter'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { ChunkLoadRecovery } from '@/components/ChunkLoadRecovery'
 import { SuppressWarnings } from '@/components/SuppressWarnings'
 
 const inter = localFont({
@@ -61,6 +62,7 @@ export default function RootLayout({
             Please enable JavaScript to run this app.
           </div>
         </noscript>
+        <ChunkLoadRecovery />
         <ErrorBoundary>
           <ErrorFilter />
           <SuppressWarnings />

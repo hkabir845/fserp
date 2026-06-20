@@ -188,9 +188,11 @@ export function applyHeaderPondToBillLines<T extends BillLinePondTagFields>(
   isFishLine: (line: T) => boolean
 ): T[] {
   return lines.map((line) => {
-    if (isFishLine(line)) return line
     if (line.aquaculture_cost_mode === 'shared_equal' || line.aquaculture_cost_mode === 'shared_manual') {
       return line
+    }
+    if (isFishLine(line)) {
+      return { ...line, aquaculture_pond_id: pondId }
     }
     const cur = line.aquaculture_pond_id
     if (cur !== '' && cur != null && Number(cur) > 0) return line

@@ -1260,7 +1260,7 @@ export default function AquacultureFishTransfersPage() {
                 </label>
               </div>
               <label className="block text-sm font-medium text-slate-700">
-                Source production cycle (optional)
+                Source stocking batch (nursing cohort)
                 <select
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={fromCycleId}
@@ -1273,6 +1273,10 @@ export default function AquacultureFishTransfersPage() {
                     </option>
                   ))}
                 </select>
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  Pick the fry batch leaving nursing (e.g. C02). FSERP opens a linked grow-out batch on each
+                  destination pond when you leave destination batch blank.
+                </span>
               </label>
               <label className="block text-sm font-medium text-slate-700">
                 Species

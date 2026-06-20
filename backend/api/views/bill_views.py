@@ -6,7 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q, Sum
+from django.db.models import Prefetch, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -533,6 +533,22 @@ def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
     }
 
 
+def _bill_receipt_pond_summary(b) -> tuple[int | None, str]:
+    """When all tagged lines share one pond, surface it on list responses (lines omitted)."""
+    pond_by_id: dict[int, str] = {}
+    for line in b.lines.all():
+        pid = getattr(line, "aquaculture_pond_id", None)
+        if not pid:
+            continue
+        pond = getattr(line, "aquaculture_pond", None)
+        label = bill_line_pond_display_name(pond, line) if pond else ""
+        pond_by_id[int(pid)] = label or (pond.name.strip() if pond and pond.name else f"Pond #{pid}")
+    if len(pond_by_id) == 1:
+        pid, label = next(iter(pond_by_id.items()))
+        return pid, label
+    return None, ""
+
+
 def _bill_to_json(b, *, include_lines: bool = True):
     total = b.total or Decimal("0")
     tax = b.tax_total or Decimal("0")
@@ -569,6 +585,9 @@ def _bill_to_json(b, *, include_lines: bool = True):
         "balance_due": str(bal),
     }
     if not include_lines:
+        receipt_pond_id, receipt_pond_display_name = _bill_receipt_pond_summary(b)
+        payload["receipt_pond_id"] = receipt_pond_id
+        payload["receipt_pond_display_name"] = receipt_pond_display_name
         payload["lines"] = []
         return payload
     lines = list(
@@ -683,10 +702,16 @@ def bills_list_or_create(request):
 
 
 def _bills_list(request):
+    pond_line_qs = BillLine.objects.filter(aquaculture_pond_id__isnull=False).select_related(
+        "aquaculture_pond", "item"
+    )
     qs = (
         Bill.objects.filter(company_id=request.company_id)
         .select_related("vendor", "receipt_station")
-        .prefetch_related("payment_allocations")
+        .prefetch_related(
+            Prefetch("lines", queryset=pond_line_qs),
+            "payment_allocations",
+        )
         .order_by("-bill_date", "-id")
     )
     status_filter = request.GET.get("status_filter", "").strip()

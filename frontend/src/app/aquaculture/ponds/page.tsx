@@ -858,7 +858,7 @@ export default function AquaculturePondsPage() {
   return (
     <>
       <div className="flex min-h-full min-w-0 flex-col">
-        <header className="sticky top-0 z-20 border-b border-slate-200/90 bg-slate-50/95 px-4 py-3 backdrop-blur-md sm:px-6 lg:px-8">
+        <header className="border-b border-slate-200/90 bg-slate-50 px-4 py-3 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1800px]">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div className="min-w-0 flex-1">

@@ -6,7 +6,7 @@ All SaaS tenants share the same APK. Users download it once, install (sideload),
 
 ## Prerequisites
 
-- Node.js 20+ (Capacitor CLI 8 recommends 22+; Node 20 usually works for `cap sync`)
+- Node.js 20+ (Capacitor 7 — matches the main frontend; Capacitor 8 requires Node 22+)
 - [Android Studio](https://developer.android.com/studio) with SDK 34+
 - JDK 17
 

@@ -140,6 +140,63 @@ function pcsPerKgFromSample(r: SampleRow): number | null {
   return c / tw
 }
 
+function sampleGroupKey(r: SampleRow): string {
+  const cycle = r.production_cycle_id ?? 'none'
+  return `${r.pond_id}:${cycle}`
+}
+
+function daysBetweenSampleDates(start: string, end: string): number {
+  const a = new Date(start.split('T')[0])
+  const b = new Date(end.split('T')[0])
+  const diff = Math.round((b.getTime() - a.getTime()) / 86400000)
+  return Math.max(1, diff)
+}
+
+/** ADG (g/fish/day) since the previous sample in the same pond + batch. */
+function intervalAdgFromSamples(prev: SampleRow, cur: SampleRow): number | null {
+  const prevMean = displayAvgWeightKg(prev)
+  const curMean = displayAvgWeightKg(cur)
+  if (prevMean == null || curMean == null || prevMean <= 0) return null
+  const days = daysBetweenSampleDates(prev.sample_date, cur.sample_date)
+  return ((curMean - prevMean) * 1000) / days
+}
+
+type SampleGrowthMetrics = {
+  pcsPerKg: number | null
+  adgGPerFishPerDay: number | null
+  daysSincePrev: number | null
+  prevSampleDate: string | null
+}
+
+function buildSampleGrowthMetrics(rows: SampleRow[]): Map<number, SampleGrowthMetrics> {
+  const byGroup = new Map<string, SampleRow[]>()
+  for (const r of rows) {
+    const key = sampleGroupKey(r)
+    const list = byGroup.get(key) ?? []
+    list.push(r)
+    byGroup.set(key, list)
+  }
+
+  const out = new Map<number, SampleGrowthMetrics>()
+  for (const list of byGroup.values()) {
+    const sorted = [...list].sort((a, b) => {
+      const byDate = a.sample_date.localeCompare(b.sample_date)
+      return byDate !== 0 ? byDate : a.id - b.id
+    })
+    for (let i = 0; i < sorted.length; i++) {
+      const cur = sorted[i]
+      const prev = i > 0 ? sorted[i - 1] : null
+      out.set(cur.id, {
+        pcsPerKg: pcsPerKgFromSample(cur),
+        adgGPerFishPerDay: prev ? intervalAdgFromSamples(prev, cur) : null,
+        daysSincePrev: prev ? daysBetweenSampleDates(prev.sample_date, cur.sample_date) : null,
+        prevSampleDate: prev ? prev.sample_date.split('T')[0] : null,
+      })
+    }
+  }
+  return out
+}
+
 function displayAvgWeightKg(r: SampleRow): number | null {
   const c = r.estimated_fish_count
   const w = r.estimated_total_weight_kg
@@ -311,6 +368,8 @@ export default function AquacultureSamplingPage() {
     [ponds],
   )
 
+  const growthBySampleId = useMemo(() => buildSampleGrowthMetrics(rows), [rows])
+
   const pondLabel = useCallback(
     (p: Pond) => p.operational_display_name?.trim() || p.name,
     [],
@@ -407,6 +466,58 @@ export default function AquacultureSamplingPage() {
     () => computeAvgWeightKg(form.estimated_fish_count, form.estimated_total_weight_kg),
     [form.estimated_fish_count, form.estimated_total_weight_kg],
   )
+
+  const computedPcsPerKg = useMemo(() => {
+    const n = parseInt(form.estimated_fish_count, 10)
+    const w = Number(String(form.estimated_total_weight_kg).replace(/,/g, ''))
+    if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(w) || w <= 0) return null
+    return n / w
+  }, [form.estimated_fish_count, form.estimated_total_weight_kg])
+
+  const modalGrowthPreview = useMemo(() => {
+    if (!form.pond_id || computedAvgWeightKg == null || !form.sample_date) {
+      return { pcsPerKg: computedPcsPerKg, adg: null, days: null, prevDate: null }
+    }
+    const cycleKey = form.production_cycle_id ? form.production_cycle_id : 'none'
+    const groupKey = `${form.pond_id}:${cycleKey}`
+    const sampleDay = form.sample_date.split('T')[0]
+    const priorSamples = rows
+      .filter((r) => sampleGroupKey(r) === groupKey && r.id !== editing?.id)
+      .filter((r) => r.sample_date.split('T')[0] <= sampleDay)
+      .sort((a, b) => {
+        const byDate = a.sample_date.localeCompare(b.sample_date)
+        return byDate !== 0 ? byDate : a.id - b.id
+      })
+    const prev = priorSamples.length > 0 ? priorSamples[priorSamples.length - 1] : null
+    if (!prev) {
+      return { pcsPerKg: computedPcsPerKg, adg: null, days: null, prevDate: null }
+    }
+    const prevMean = displayAvgWeightKg(prev)
+    if (prevMean == null || prevMean <= 0) {
+      return {
+        pcsPerKg: computedPcsPerKg,
+        adg: null,
+        days: daysBetweenSampleDates(prev.sample_date, form.sample_date),
+        prevDate: prev.sample_date.split('T')[0],
+      }
+    }
+    const days = daysBetweenSampleDates(prev.sample_date, form.sample_date)
+    const adg = ((computedAvgWeightKg - prevMean) * 1000) / days
+    return {
+      pcsPerKg: computedPcsPerKg,
+      adg,
+      days,
+      prevDate: prev.sample_date.split('T')[0],
+    }
+  }, [
+    form.pond_id,
+    form.production_cycle_id,
+    form.sample_date,
+    computedAvgWeightKg,
+    computedPcsPerKg,
+    rows,
+    editing,
+  ])
 
   const modalExtrapolation = useMemo(() => {
     const n = parseInt(form.estimated_fish_count, 10)
@@ -701,6 +812,10 @@ export default function AquacultureSamplingPage() {
                   What you measured
                   <span className={thSub}>Fish caught in the net and their weight</span>
                 </th>
+                <th scope="col" className={`${thMain} min-w-[7.5rem]`}>
+                  Size & growth
+                  <span className={thSub}>Pcs/kg and ADG since last sample</span>
+                </th>
                 <th scope="col" className={`${thMain} min-w-[8rem]`}>
                   Books at save
                   <span className={thSub}>Head count and avg weight from Pond stock</span>
@@ -734,6 +849,7 @@ export default function AquacultureSamplingPage() {
                 const bioMargin = parseNum(r.bioasset_margin)
                 const fullMargin = parseNum(r.full_cycle_margin)
                 const load = harvestAdviceLines(r, lang)
+                const growth = growthBySampleId.get(r.id)
                 const species = r.fish_species_label || r.fish_species || ''
                 const cycle = r.production_cycle_name?.trim()
                 const notes = (r.notes || '').trim()
@@ -771,6 +887,44 @@ export default function AquacultureSamplingPage() {
                             label: 'Average per fish',
                             value: avgKg != null ? `${formatMeanKgPerFish(avgKg)} kg each` : '—',
                           },
+                        ]}
+                      />
+                    </td>
+                    <td className={tdCell}>
+                      <MetricCell
+                        lines={[
+                          {
+                            label: 'Pcs/kg',
+                            value:
+                              growth?.pcsPerKg != null
+                                ? `${formatNumber(growth.pcsPerKg, 1)} fish per kg`
+                                : '—',
+                          },
+                          {
+                            label: 'ADG',
+                            value:
+                              growth?.adgGPerFishPerDay != null && Number.isFinite(growth.adgGPerFishPerDay)
+                                ? `${formatNumber(growth.adgGPerFishPerDay, 2)} g/fish/day${
+                                    growth.daysSincePrev != null ? ` · ${growth.daysSincePrev} d` : ''
+                                  }`
+                                : growth?.prevSampleDate
+                                  ? '— (needs net count + kg on both samples)'
+                                  : 'First sample in batch',
+                            valueClass:
+                              growth?.adgGPerFishPerDay == null
+                                ? 'text-slate-500'
+                                : growth.adgGPerFishPerDay >= 0
+                                  ? 'text-emerald-800'
+                                  : 'text-rose-800',
+                          },
+                          ...(growth?.prevSampleDate
+                            ? [
+                                {
+                                  label: 'Since',
+                                  value: formatDateOnly(growth.prevSampleDate),
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     </td>
@@ -875,7 +1029,7 @@ export default function AquacultureSamplingPage() {
               })}
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
+                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
                     No sampling records yet. After a net catch, click{' '}
                     <span className="font-medium text-slate-700">Log sample</span>.
                   </td>
@@ -1029,15 +1183,38 @@ export default function AquacultureSamplingPage() {
                   placeholder="e.g. 5"
                 />
               </label>
-              <div className="block text-sm font-medium text-slate-700">
-                Sample mean weight (kg/fish)
-                <div
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800 tabular-nums"
-                  aria-live="polite"
-                >
-                  {computedAvgWeightKg != null ? formatNumber(computedAvgWeightKg) : '—'}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="block text-sm font-medium text-slate-700">
+                  Sample mean weight (kg/fish)
+                  <div
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800 tabular-nums"
+                    aria-live="polite"
+                  >
+                    {computedAvgWeightKg != null ? formatNumber(computedAvgWeightKg) : '—'}
+                  </div>
+                </div>
+                <div className="block text-sm font-medium text-slate-700">
+                  Pcs/kg (from net sample)
+                  <div
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800 tabular-nums"
+                    aria-live="polite"
+                  >
+                    {modalGrowthPreview.pcsPerKg != null ? formatNumber(modalGrowthPreview.pcsPerKg, 1) : '—'}
+                  </div>
                 </div>
               </div>
+              {modalGrowthPreview.prevDate ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Growth vs last sample</p>
+                  <p className="mt-1 tabular-nums text-slate-800">
+                    {modalGrowthPreview.adg != null && Number.isFinite(modalGrowthPreview.adg)
+                      ? `${formatNumber(modalGrowthPreview.adg, 2)} g/fish/day · ${modalGrowthPreview.days ?? '—'} d since ${formatDateOnly(modalGrowthPreview.prevDate)}`
+                      : `ADG unavailable — needs net count + kg on sample from ${formatDateOnly(modalGrowthPreview.prevDate)}`}
+                  </p>
+                </div>
+              ) : computedPcsPerKg != null ? (
+                <p className="text-xs text-slate-500">First sample for this pond and batch — ADG will appear on the next sample.</p>
+              ) : null}
 
               {modalExtrapolation ? (
                 <div className="rounded-lg border border-teal-100 bg-teal-50/60 p-3 text-sm">

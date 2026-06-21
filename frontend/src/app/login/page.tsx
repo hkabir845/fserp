@@ -7,6 +7,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import { getApiBaseUrl, getBackendOrigin, getApiDocsUrl, setAuthApiOriginStamp } from '@/lib/api'
 import { formatApiErrorJson } from '@/utils/errorHandler'
 import { getDefaultLandingHref } from '@/utils/dashboardLanding'
+import { AndroidAppDownload } from '@/components/AndroidAppDownload'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -393,8 +394,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4 py-8">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl sm:p-8">
+    <div className="auth-page-scroll fixed inset-0 z-0 overflow-y-auto overscroll-y-contain bg-gradient-to-br from-blue-50 to-indigo-100 px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:py-8">
+      <div className="mx-auto flex min-h-full w-full max-w-md items-center justify-center py-2">
+        <div className="w-full rounded-lg bg-white p-5 shadow-xl sm:p-8">
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Filling Station ERP</h1>
           <p className="text-gray-600 mt-2">QuickBooks Style Business Management</p>
@@ -460,7 +462,7 @@ export default function LoginPage() {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 text-base border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent sm:py-2"
               placeholder="Your login name or email"
               autoComplete="username"
               required
@@ -477,7 +479,7 @@ export default function LoginPage() {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 pr-11 text-base border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent sm:py-2"
                 placeholder="Enter your password"
                 autoComplete="current-password"
                 required
@@ -485,7 +487,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
@@ -504,19 +506,13 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full min-h-11 bg-blue-600 text-white py-3 px-4 text-base rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors sm:py-2 sm:text-sm"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-gray-600">
-          <p className="font-medium text-gray-700">First time? Create a user in the backend folder:</p>
-          <p className="font-mono mt-2 text-blue-600 font-semibold">python manage.py create_superuser</p>
-          <p className="text-xs mt-1 text-gray-500">Default username: <strong>admin</strong>. You will be prompted for a password. Then log in here with that username and password.</p>
-          <p className="text-xs mt-2">
-            <a href={apiDocsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Check backend → API docs</a>
-          </p>
+        <AndroidAppDownload />
         </div>
       </div>
     </div>

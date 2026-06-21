@@ -24,58 +24,7 @@ function isIosLike(): boolean {
   return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
 }
 
-/** Bump ?v= when sw.js behavior changes so browsers pick up the new worker. */
-const SERVICE_WORKER_URL = '/sw.js?v=3'
-
-function registerServiceWorker(): void {
-  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
-  const { protocol, hostname } = window.location
-  const secure = protocol === 'https:' || hostname === 'localhost' || hostname === '127.0.0.1'
-  if (!secure) return
-
-  void (async () => {
-    // Never control the origin with a SW in dev: stale chunks and RSC fetches → 404 / wrong MIME.
-    if (process.env.NODE_ENV === 'development') {
-      try {
-        const regs = await navigator.serviceWorker.getRegistrations()
-        await Promise.all(regs.map((reg) => reg.unregister()))
-        const keys = await caches.keys()
-        await Promise.all(keys.map((k) => caches.delete(k)))
-      } catch {
-        /* ignore */
-      }
-      return
-    }
-
-    try {
-      const regs = await navigator.serviceWorker.getRegistrations()
-      await Promise.all(
-        regs.map((reg) => {
-          const u =
-            reg.installing?.scriptURL ||
-            reg.waiting?.scriptURL ||
-            reg.active?.scriptURL ||
-            ''
-          // Unregister legacy /sw.js (no query) so the cross-origin-safe worker is used.
-          if (u.includes('sw.js') && !u.includes('sw.js?v=')) {
-            return reg.unregister()
-          }
-          return Promise.resolve()
-        })
-      )
-    } catch {
-      /* ignore */
-    }
-    try {
-      await navigator.serviceWorker.register(SERVICE_WORKER_URL, {
-        scope: '/',
-        updateViaCache: 'none',
-      })
-    } catch {
-      /* non-fatal: install prompt may still appear in some setups */
-    }
-  })()
-}
+import { registerPwaServiceWorker } from '@/lib/pwaServiceWorker'
 
 /**
  * Bottom card prompting users to install the app (Chromium `beforeinstallprompt`)
@@ -112,7 +61,7 @@ export function PwaInstallBanner() {
     }
     window.addEventListener('appinstalled', onInstalled)
 
-    registerServiceWorker()
+    registerPwaServiceWorker()
 
     const isIos = isIosLike()
     setShowIos(isIos)

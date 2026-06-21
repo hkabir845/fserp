@@ -154,6 +154,11 @@
     @apply min-h-11 min-w-11;
   }
 
+  /** Public auth pages (login) scroll inside fixed shell — body stays overflow-hidden for ERP shell */
+  .auth-page-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+
   /* ── ERP app shell (world-standard SaaS layout) ── */
   .erp-sidebar {
     @apply text-[hsl(var(--sidebar-fg))];

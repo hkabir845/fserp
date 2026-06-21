@@ -22,6 +22,8 @@ export const viewport: Viewport = {
   /** Allow pinch-zoom for accessibility (avoid locking maximumScale to 1). */
   maximumScale: 5,
   themeColor: '#1d4ed8',
+  /** Notched Android / iOS — pairs with env(safe-area-inset-*) in CSS */
+  viewportFit: 'cover',
 }
 
 export const metadata: Metadata = {
@@ -38,9 +40,12 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
   },
   icons: {
-    icon: '/favicon.svg',
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+    ],
     shortcut: '/favicon.svg',
-    apple: '/favicon.svg',
+    apple: '/icons/icon-192.png',
   },
 }
 

@@ -16,6 +16,7 @@ from api.models import (
     AquacultureExpense,
     AquacultureFishPondTransfer,
     AquacultureFishSale,
+    AquacultureFishStockLedger,
     AquaculturePond,
     AquaculturePondProfitTransfer,
     AquacultureProductionCycle,
@@ -26,18 +27,39 @@ from api.models import (
     ItemStationStock,
     Station,
 )
-from api.services.aquaculture_constants import fish_species_display_label
+from api.services.aquaculture_constants import (
+    STOCK_LEDGER_ENTRY_KIND_LABELS,
+    STOCK_LEDGER_LOSS_REASON_LABELS,
+    fish_species_display_label,
+)
 from api.services.aquaculture_fcr_service import fcr_period_summary_block
+from api.services.aquaculture_fish_biomass_ledger_service import compute_fish_biomass_ledger_rows
 from api.services.aquaculture_growth_service import build_fish_growth_report
 from api.services.aquaculture_pond_performance_service import build_pond_performance_report
 from api.services.aquaculture_pond_stock_service import pond_warehouse_stock_matrix
-from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
+from api.services.aquaculture_stock_service import (
+    compute_fish_stock_position_breakdown_rows,
+    compute_fish_stock_position_rows,
+)
 from api.services.gl_posting import item_inventory_unit_cost
 from api.services.station_stock import item_uses_station_bins
 from api.services.tenant_reporting_categories import aquaculture_expense_label, aquaculture_income_label
 from api.services.reporting import _is_fuel_line
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.permission_service import user_may_access_aquaculture_api
+from api.services.report_i18n import (
+    note_equipment_assets,
+    note_expenses_station_scope,
+    note_fish_biomass_movements,
+    note_fish_stock_adjustments,
+    note_fish_stock_breakdown,
+    note_fish_stock_position,
+    note_pond_sales_comprehensive,
+    note_pond_total_inventory,
+    note_pond_warehouse_stock,
+    note_sampling,
+    note_shop_station_stock,
+)
 from django.http import HttpRequest, JsonResponse
 
 
@@ -53,6 +75,15 @@ def _decimal(s: str) -> Decimal:
         return Decimal(str(s))
     except Exception:
         return Decimal("0")
+
+
+def _fish_per_kg_from_count_weight(count: int | None, weight_kg) -> str:
+    if count is None or count <= 0 or weight_kg is None:
+        return ""
+    w = _decimal(str(weight_kg))
+    if w <= 0:
+        return ""
+    return str((Decimal(count) / w).quantize(Decimal("0.01")))
 
 
 def _pond_filter(company_id: int, raw: str | None) -> tuple[int | None, JsonResponse | None]:
@@ -150,6 +181,12 @@ def build_aquaculture_report(
         payload = _report_pond_warehouse_stock(company_id, end, request, stock_kind="supplies")
     elif report_id == "aquaculture-fish-stock-position":
         payload = _report_fish_stock_position(company_id, end, request)
+    elif report_id == "aquaculture-fish-stock-breakdown":
+        payload = _report_fish_stock_breakdown(company_id, end, request)
+    elif report_id == "aquaculture-fish-biomass-movements":
+        payload = _report_fish_biomass_movements(company_id, start, end, request)
+    elif report_id == "aquaculture-fish-stock-adjustments":
+        payload = _report_fish_stock_adjustments(company_id, start, end, request)
     elif report_id == "aquaculture-shop-station-stock":
         payload = _report_shop_station_stock(company_id, end, request)
     elif report_id == "aquaculture-equipment-assets":
@@ -180,6 +217,9 @@ def build_aquaculture_report(
             "aquaculture-fish-transfers",
             "aquaculture-equipment-assets",
             "aquaculture-fish-stock-position",
+            "aquaculture-fish-stock-breakdown",
+            "aquaculture-fish-biomass-movements",
+            "aquaculture-fish-stock-adjustments",
         }
         if report_id in date_range_reports:
             _attach_fcr_to_report(payload, company_id, start, end, request)
@@ -297,10 +337,7 @@ def _report_pond_warehouse_stock(
             "total_quantity": str(grand_qty),
             "total_value": str(_money_q(grand_val)),
         },
-        "accounting_note": (
-            "On-hand quantities in each pond warehouse (ItemPondStock). "
-            "Values use average inventory unit cost. Snapshot as of the report end date."
-        ),
+        "accounting_note": note_pond_warehouse_stock(company_id),
     }
 
 
@@ -387,10 +424,7 @@ def _report_fish_stock_position(
             "total_implied_weight_kg": str(_money_q(total_kg)),
             "total_implied_fish_count": total_count,
         },
-        "accounting_note": (
-            "Biological fish position per pond from transfers, vendor fry bills, sales, stock ledger, "
-            "and latest biomass sample. Not the same as inventoried fry SKUs in the pond warehouse."
-        ),
+        "accounting_note": note_fish_stock_position(company_id),
     }
 
 
@@ -483,10 +517,7 @@ def _report_shop_station_stock(
         "summary": summary,
         "groups": groups,
         "totals": {"line_count": grand_lines, "total_value": str(_money_q(grand_val))},
-        "accounting_note": (
-            "Shop / station bin on-hand (ItemStationStock) for SKUs tracked per station — feed, medicine, "
-            "fish fry SKUs, and general supplies. Excludes motor fuel. Transfer to ponds via pond warehouse transfer."
-        ),
+        "accounting_note": note_shop_station_stock(company_id),
     }
 
 
@@ -697,14 +728,7 @@ def _report_pond_total_inventory(
         "summary": summary,
         "groups": groups,
         "totals": {"grand_total_bdt": str(_money_q(grand_total)), "pond_count": len(groups)},
-        "accounting_note": (
-            "Per-pond total inventory and asset value as of the report end date. "
-            "Pond warehouse lines use on-hand quantity × average unit cost. "
-            "Live fish uses implied biomass kg × production cost per kg (same basis as inter-pond transfers). "
-            "Equipment & site assets are cumulative equipment, repair, and miscellaneous pond expenses through "
-            "that date (expensed purchases — aerators, boats, nets, tools, wire, pumps, etc.). "
-            "Shop station stock is not included until transferred to the pond."
-        ),
+        "accounting_note": note_pond_total_inventory(company_id),
     }
 
 
@@ -787,11 +811,7 @@ def _report_equipment_assets(
         "summary": summary,
         "groups": groups,
         "totals": {"total_amount": str(_money_q(grand)), "line_count": summary["line_count"]},
-        "accounting_note": (
-            "Operating purchases for equipment, repair & maintenance, and miscellaneous pond assets "
-            "(aerators, boats, nets, tools, cameras, wire, etc.). Durable items may also be tracked in "
-            "Accounting → Fixed Assets (/fixed-assets) with straight-line depreciation and AUTO-FA-DEP journals."
-        ),
+        "accounting_note": note_equipment_assets(company_id),
     }
 
 
@@ -1070,10 +1090,7 @@ def _report_pond_sales_comprehensive(
         },
         "fish_sales": {"groups": fish["groups"], "totals": fish["totals"], "summary": fish["summary"]},
         "pos_shop_sales": pos,
-        "accounting_note": (
-            "Fish: all Aquaculture pond income lines in the period (every income_type). "
-            "POS: invoices to each pond's linked POS customer; lines classified as motor fuel are excluded."
-        ),
+        "accounting_note": note_pond_sales_comprehensive(company_id),
     }
 
 
@@ -1180,11 +1197,7 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
         out["filter_pond_id"] = pond_filter_id
     elif station_filter_id is not None:
         out["filter_station_id"] = station_filter_id
-        out["accounting_note"] = (
-            "Aquaculture expense register rows with source station matching Site scope. "
-            "Posted GL pond costs on vendor bills are on Profit & Loss (pond scope) or All Ponds — P&L Summary, "
-            "not on station P&L when the line is pond-tagged."
-        )
+        out["accounting_note"] = note_expenses_station_scope(company_id)
     return out
 
 
@@ -1198,7 +1211,7 @@ def _report_sampling(company_id: int, start: date, end: date, request: HttpReque
             sample_date__gte=start,
             sample_date__lte=end,
         )
-        .select_related("pond")
+        .select_related("pond", "production_cycle")
         .order_by("pond_id", "-sample_date", "id")
     )
     if pond_filter_id is not None:
@@ -1213,18 +1226,41 @@ def _report_sampling(company_id: int, start: date, end: date, request: HttpReque
             {
                 "id": b.id,
                 "sample_date": b.sample_date.isoformat(),
+                "production_cycle_id": b.production_cycle_id,
+                "production_cycle_name": (
+                    (b.production_cycle.name or "").strip()
+                    if getattr(b, "production_cycle_id", None) and getattr(b, "production_cycle", None)
+                    else ""
+                ),
                 "fish_species": sp,
                 "fish_species_other": spo,
                 "fish_species_label": fish_species_display_label(sp, spo),
                 "estimated_fish_count": b.estimated_fish_count,
                 "estimated_total_weight_kg": str(b.estimated_total_weight_kg) if b.estimated_total_weight_kg is not None else "",
+                "fish_per_kg": _fish_per_kg_from_count_weight(b.estimated_fish_count, b.estimated_total_weight_kg),
                 "avg_weight_kg": str(b.avg_weight_kg) if b.avg_weight_kg is not None else "",
+                "avg_weight_g": (
+                    str((_decimal(str(b.avg_weight_kg)) * Decimal("1000")).quantize(Decimal("0.1")))
+                    if b.avg_weight_kg is not None
+                    else ""
+                ),
                 "stock_reference_fish_count": b.stock_reference_fish_count,
+                "stock_reference_net_weight_kg": (
+                    str(b.stock_reference_net_weight_kg) if b.stock_reference_net_weight_kg is not None else ""
+                ),
                 "stock_reference_avg_weight_kg": (
                     str(b.stock_reference_avg_weight_kg) if b.stock_reference_avg_weight_kg is not None else ""
                 ),
                 "extrapolated_biomass_kg": str(b.extrapolated_biomass_kg) if b.extrapolated_biomass_kg is not None else "",
                 "biomass_gain_kg": str(b.biomass_gain_kg) if b.biomass_gain_kg is not None else "",
+                "market_price_per_kg": str(b.market_price_per_kg) if b.market_price_per_kg is not None else "",
+                "market_value": str(b.market_value) if b.market_value is not None else "",
+                "book_bioasset_value": str(b.book_bioasset_value) if b.book_bioasset_value is not None else "",
+                "book_cost_per_kg": str(b.book_cost_per_kg) if b.book_cost_per_kg is not None else "",
+                "bioasset_margin": str(b.bioasset_margin) if b.bioasset_margin is not None else "",
+                "bioasset_margin_per_kg": str(b.bioasset_margin_per_kg) if b.bioasset_margin_per_kg is not None else "",
+                "full_cycle_margin": str(b.full_cycle_margin) if b.full_cycle_margin is not None else "",
+                "full_cycle_margin_per_kg": str(b.full_cycle_margin_per_kg) if b.full_cycle_margin_per_kg is not None else "",
                 "notes": (b.notes or "")[:200],
             }
         )
@@ -1256,6 +1292,257 @@ def _report_sampling(company_id: int, start: date, end: date, request: HttpReque
         "summary": summary,
         "groups": groups,
         "totals": {"sample_count": total_samples},
+        "accounting_note": note_sampling(company_id),
+    }
+
+
+def _report_fish_stock_breakdown(
+    company_id: int, as_of: date, request: HttpRequest
+) -> dict[str, Any] | JsonResponse:
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    rows = compute_fish_stock_position_breakdown_rows(
+        company_id,
+        pond_id=pond_filter_id,
+        production_cycle_id=cycle_filter_id,
+        include_inactive_ponds=False,
+    )
+    by_pond: dict[int, list[dict]] = defaultdict(list)
+    pond_names: dict[int, str] = {}
+    total_kg = Decimal("0")
+    total_count = 0
+    for r in rows:
+        pid = int(r.get("pond_id") or 0)
+        kg = _decimal(r.get("implied_net_weight_kg") or "0")
+        cnt = int(r.get("implied_net_fish_count") or 0)
+        total_kg += kg
+        total_count += cnt
+        pond_names[pid] = r.get("pond_name") or f"Pond #{pid}"
+        by_pond[pid].append(
+            {
+                "production_cycle_id": r.get("production_cycle_id"),
+                "production_cycle_name": r.get("production_cycle_name") or "",
+                "fish_species": r.get("fish_species"),
+                "fish_species_label": r.get("fish_species_label") or "",
+                "implied_net_weight_kg": r.get("implied_net_weight_kg"),
+                "implied_net_fish_count": r.get("implied_net_fish_count"),
+                "stocked_weight_kg": r.get("stocked_weight_kg"),
+                "stocked_fish_count": r.get("stocked_fish_count"),
+                "sale_weight_kg": r.get("sale_weight_kg"),
+                "sale_fish_count": r.get("sale_fish_count"),
+                "mortality_weight_kg": r.get("mortality_weight_kg"),
+                "mortality_fish_count": r.get("mortality_fish_count"),
+                "other_adjustment_weight_kg": r.get("other_adjustment_weight_kg"),
+                "other_adjustment_fish_count": r.get("other_adjustment_fish_count"),
+                "current_fish_per_kg": r.get("current_fish_per_kg"),
+                "current_avg_weight_kg": r.get("current_avg_weight_kg"),
+                "latest_sample_date": r.get("latest_sample_date"),
+                "stock_density_kg_per_decimal": r.get("stock_density_kg_per_decimal"),
+                "load_level_label": r.get("load_level_label"),
+            }
+        )
+
+    groups: list[dict[str, Any]] = []
+    for pid in sorted(by_pond.keys(), key=lambda x: (pond_names.get(x, ""), x)):
+        lines = by_pond[pid]
+        sub_kg = sum((_decimal(str(ln.get("implied_net_weight_kg") or "0")) for ln in lines), Decimal("0"))
+        sub_cnt = sum(int(ln.get("implied_net_fish_count") or 0) for ln in lines)
+        groups.append(
+            {
+                "pond_id": pid,
+                "pond_name": pond_names.get(pid, f"Pond #{pid}"),
+                "lines": lines,
+                "subtotal_weight_kg": str(_money_q(sub_kg)),
+                "subtotal_fish_count": sub_cnt,
+                "line_count": len(lines),
+            }
+        )
+
+    summary = {
+        "as_of_date": as_of.isoformat(),
+        "pond_count": len(groups),
+        "bucket_count": sum(len(g["lines"]) for g in groups),
+        "total_implied_weight_kg": float(_money_q(total_kg)),
+        "total_implied_fish_count": total_count,
+    }
+    return {
+        "period": {"start_date": as_of.isoformat(), "end_date": as_of.isoformat()},
+        "as_of_date": as_of.isoformat(),
+        "currency_code": BDT,
+        "summary": summary,
+        "groups": groups,
+        "totals": {
+            "pond_count": len(groups),
+            "bucket_count": summary["bucket_count"],
+            "total_implied_weight_kg": str(_money_q(total_kg)),
+            "total_implied_fish_count": total_count,
+        },
+        "accounting_note": note_fish_stock_breakdown(company_id),
+    }
+
+
+def _report_fish_biomass_movements(
+    company_id: int, start: date, end: date, request: HttpRequest
+) -> dict[str, Any] | JsonResponse:
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    rows = compute_fish_biomass_ledger_rows(
+        company_id,
+        pond_id=pond_filter_id,
+        production_cycle_id=cycle_filter_id,
+        date_from=start,
+        date_to=end,
+        limit=5000,
+    )
+    by_pond: dict[int, list[dict]] = defaultdict(list)
+    pond_names: dict[int, str] = {}
+    grand_kg = Decimal("0")
+    grand_fish = 0
+    for r in rows:
+        pid = int(r.get("pond_id") or 0)
+        pond_names[pid] = (r.get("pond_name") or "").strip() or f"Pond #{pid}"
+        by_pond[pid].append(r)
+        grand_kg += _decimal(str(r.get("weight_kg_delta") or "0"))
+        grand_fish += int(r.get("fish_count_delta") or 0)
+
+    groups: list[dict[str, Any]] = []
+    for pid in sorted(by_pond.keys(), key=lambda x: (pond_names.get(x, ""), x)):
+        lines = by_pond[pid]
+        sub_kg = sum((_decimal(str(ln.get("weight_kg_delta") or "0")) for ln in lines), Decimal("0"))
+        sub_fish = sum(int(ln.get("fish_count_delta") or 0) for ln in lines)
+        groups.append(
+            {
+                "pond_id": pid,
+                "pond_name": pond_names.get(pid, f"Pond #{pid}"),
+                "lines": lines,
+                "subtotal_weight_kg_delta": str(_money_q(sub_kg)),
+                "subtotal_fish_count_delta": sub_fish,
+                "line_count": len(lines),
+            }
+        )
+
+    summary = {
+        "movement_count": len(rows),
+        "pond_group_count": len(groups),
+        "total_weight_kg_delta": float(_money_q(grand_kg)),
+        "total_fish_count_delta": grand_fish,
+    }
+    return {
+        "period": _period_block(start, end),
+        "currency_code": BDT,
+        "summary": summary,
+        "groups": groups,
+        "totals": {
+            "movement_count": len(rows),
+            "total_weight_kg_delta": str(_money_q(grand_kg)),
+            "total_fish_count_delta": grand_fish,
+        },
+        "accounting_note": note_fish_biomass_movements(company_id),
+    }
+
+
+def _report_fish_stock_adjustments(
+    company_id: int, start: date, end: date, request: HttpRequest
+) -> dict[str, Any] | JsonResponse:
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    qs = (
+        AquacultureFishStockLedger.objects.filter(
+            company_id=company_id,
+            entry_date__gte=start,
+            entry_date__lte=end,
+        )
+        .select_related("pond", "production_cycle", "journal_entry")
+        .order_by("pond_id", "-entry_date", "-id")
+    )
+    if pond_filter_id is not None:
+        qs = qs.filter(pond_id=pond_filter_id)
+
+    by_pond: dict[int, list[dict]] = defaultdict(list)
+    pond_names: dict[int, str] = {}
+    grand_kg = Decimal("0")
+    grand_fish = 0
+    loss_kg = Decimal("0")
+    loss_fish = 0
+    for x in qs:
+        lr = (x.loss_reason or "").strip()
+        cyc_id = getattr(x, "production_cycle_id", None)
+        cname = ""
+        if cyc_id and getattr(x, "production_cycle", None):
+            cname = (x.production_cycle.name or "").strip()
+        je = x.journal_entry
+        line = {
+            "id": x.id,
+            "entry_date": x.entry_date.isoformat(),
+            "entry_kind": x.entry_kind,
+            "entry_kind_label": STOCK_LEDGER_ENTRY_KIND_LABELS.get(x.entry_kind, x.entry_kind),
+            "loss_reason": lr,
+            "loss_reason_label": STOCK_LEDGER_LOSS_REASON_LABELS.get(lr, "") or None,
+            "production_cycle_name": cname,
+            "fish_species_label": fish_species_display_label(x.fish_species, x.fish_species_other),
+            "fish_count_delta": x.fish_count_delta,
+            "weight_kg_delta": str(x.weight_kg_delta),
+            "book_value": str(x.book_value),
+            "post_to_books": bool(x.post_to_books),
+            "memo": (x.memo or "")[:200],
+            "journal_entry_number": (je.entry_number or "") if je else "",
+        }
+        by_pond[x.pond_id].append(line)
+        pond_names[x.pond_id] = (x.pond.name or "").strip() if x.pond_id else ""
+        wkd = _decimal(str(x.weight_kg_delta))
+        fcd = int(x.fish_count_delta or 0)
+        grand_kg += wkd
+        grand_fish += fcd
+        if x.entry_kind == "loss":
+            loss_kg += wkd
+            loss_fish += fcd
+
+    groups: list[dict[str, Any]] = []
+    for pid in sorted(by_pond.keys(), key=lambda x: (pond_names.get(x, ""), x)):
+        lines = by_pond[pid]
+        sub_kg = sum((_decimal(str(ln.get("weight_kg_delta") or "0")) for ln in lines), Decimal("0"))
+        sub_fish = sum(int(ln.get("fish_count_delta") or 0) for ln in lines)
+        groups.append(
+            {
+                "pond_id": pid,
+                "pond_name": pond_names.get(pid, f"Pond #{pid}"),
+                "lines": lines,
+                "subtotal_weight_kg_delta": str(_money_q(sub_kg)),
+                "subtotal_fish_count_delta": sub_fish,
+                "line_count": len(lines),
+            }
+        )
+
+    summary = {
+        "entry_count": qs.count(),
+        "pond_group_count": len(groups),
+        "total_weight_kg_delta": float(_money_q(grand_kg)),
+        "total_fish_count_delta": grand_fish,
+        "loss_weight_kg_delta": float(_money_q(loss_kg)),
+        "loss_fish_count_delta": loss_fish,
+    }
+    return {
+        "period": _period_block(start, end),
+        "currency_code": BDT,
+        "summary": summary,
+        "groups": groups,
+        "totals": {
+            "entry_count": summary["entry_count"],
+            "total_weight_kg_delta": str(_money_q(grand_kg)),
+            "total_fish_count_delta": grand_fish,
+            "loss_weight_kg_delta": str(_money_q(loss_kg)),
+            "loss_fish_count_delta": loss_fish,
+        },
+        "accounting_note": note_fish_stock_adjustments(company_id),
     }
 
 

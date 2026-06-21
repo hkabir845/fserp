@@ -45,6 +45,7 @@ def _company_station_api_context(request, company: Company) -> dict:
 
 ALLOWED_DATE_FORMATS = frozenset({"YYYY-MM-DD", "DD/MM/YYYY", "MM/DD/YYYY", "DD-MM-YYYY"})
 ALLOWED_TIME_FORMATS = frozenset({"HH:mm", "hh:mm A"})
+ALLOWED_LANGUAGES = frozenset({"en", "bn"})
 
 
 def _parse_station_mode_value(body, key: str = "station_mode") -> tuple[str | None, str | None]:
@@ -97,6 +98,11 @@ def _coerce_date_format(value) -> str:
 def _coerce_time_format(value) -> str:
     s = str(value or "").strip()
     return s if s in ALLOWED_TIME_FORMATS else "HH:mm"
+
+
+def _coerce_language(value) -> str:
+    s = str(value or "").strip().lower()
+    return s if s in ALLOWED_LANGUAGES else "en"
 
 
 def _validate_time_zone(value) -> tuple[str | None, str | None]:
@@ -277,6 +283,7 @@ def _company_to_json(c: Company) -> dict:
         "date_format": _coerce_date_format(getattr(c, "date_format", None)),
         "time_format": _coerce_time_format(getattr(c, "time_format", None)),
         "time_zone": (getattr(c, "time_zone", None) or "Asia/Dhaka")[:64],
+        "language": _coerce_language(getattr(c, "language", None)),
         "station_mode": (getattr(c, "station_mode", None) or "single")[:16],
         "aquaculture_licensed": bool(getattr(c, "aquaculture_licensed", False)),
         "aquaculture_enabled": bool(getattr(c, "aquaculture_enabled", False)),
@@ -642,6 +649,8 @@ def company_detail(request, company_id: int):
                 company.date_format = _coerce_date_format(body.get("date_format"))[:32]
             if "time_format" in body:
                 company.time_format = _coerce_time_format(body.get("time_format"))[:32]
+            if "language" in body:
+                company.language = _coerce_language(body.get("language"))[:8]
             if "time_zone" in body:
                 raw = body.get("time_zone")
                 if raw is None or (isinstance(raw, str) and not str(raw).strip()):

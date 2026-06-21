@@ -17,6 +17,8 @@ export type TenantLocaleConfig = {
   timeZone: string
   /** From GET /companies/current/; default multi when unset. */
   stationMode: StationMode
+  /** en | bn — aquaculture advice and related UI labels. */
+  language: 'en' | 'bn'
 }
 
 const defaults: TenantLocaleConfig = {
@@ -24,6 +26,7 @@ const defaults: TenantLocaleConfig = {
   timeFormat: DEFAULT_COMPANY_TIME_FORMAT,
   timeZone: DEFAULT_COMPANY_TIME_ZONE,
   stationMode: 'single',
+  language: 'en',
 }
 
 let clientConfig: TenantLocaleConfig | null = null

@@ -42,6 +42,7 @@ export function aquacultureModulePermissionForHref(href: string): string | null 
   if (HREF_TO_MODULE[path]) return HREF_TO_MODULE[path]
   if (path.startsWith('/aquaculture/ponds/')) return 'app.aquaculture.ponds'
   if (path.startsWith('/aquaculture/landlords/')) return 'app.aquaculture.landlords'
+  if (path.startsWith('/aquaculture/stock')) return 'app.aquaculture.stock'
   if (path.startsWith('/aquaculture')) return AQUACULTURE_ALL
   if (href.includes('aquaculture-pl-management')) return 'app.aquaculture.report_pl'
   return null

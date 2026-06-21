@@ -10,6 +10,15 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 
 from api.services.aquaculture_constants import POND_ROLE_CODES
+from api.services.aquaculture_i18n import (
+    load_advice_summary,
+    load_level_label,
+    load_reference_note,
+    load_set_water_area_summary,
+    load_unknown_reference_note,
+    load_volume_density_extra,
+    normalize_lang,
+)
 
 # 1 decimal = 435.6 sq ft (1 acre = 43,560 sq ft; 1 decimal = 1/100 acre).
 SQ_FT_PER_BANGLADESH_DECIMAL = Decimal("435.6")
@@ -66,16 +75,17 @@ def compute_water_volume_cu_ft(
     return vol.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-# Indicative kg biomass per decimal of *water surface* for semi-intensive tropical pond culture (management only).
-# Bands differ slightly by pond_role; tune over time with extension guidance.
-_GROW_LIGHT = Decimal("4")
-_GROW_COMFORT = Decimal("14")
-_GROW_STRESS = Decimal("22")
+# Indicative kg biomass per decimal of *water surface* for intensive tropical pond culture (management only).
+# Grow-out bands align with Bangladesh GIFT monoculture harvest targets (~8–12 t/ha ≈ 32–48 kg/decimal).
+# 1 ha ≈ 247 decimals; bands differ slightly by pond_role.
+_GROW_LIGHT = Decimal("15")
+_GROW_COMFORT = Decimal("40")
+_GROW_STRESS = Decimal("55")
 
 _ROLE_BANDS: dict[str, tuple[Decimal, Decimal, Decimal]] = {
     "grow_out": (_GROW_LIGHT, _GROW_COMFORT, _GROW_STRESS),
-    "nursing": (Decimal("3"), Decimal("12"), Decimal("20")),
-    "broodstock": (Decimal("2"), Decimal("8"), Decimal("16")),
+    "nursing": (Decimal("6"), Decimal("18"), Decimal("30")),
+    "broodstock": (Decimal("3"), Decimal("10"), Decimal("20")),
     "other": (_GROW_LIGHT, _GROW_COMFORT, _GROW_STRESS),
 }
 
@@ -93,6 +103,7 @@ def compute_stocking_load_advice(
     water_area_decimal: Decimal | None,
     water_volume_cu_ft: Decimal | None,
     pond_role: str | None,
+    lang: str | None = "en",
 ) -> dict:
     """
     Returns density metrics and a coarse load_level + short narrative (not a substitute for field advice).
@@ -101,6 +112,7 @@ def compute_stocking_load_advice(
     """
     light, comfort, stress = _bands_for_role(pond_role)
     bio = biomass_kg if biomass_kg > 0 else Decimal("0")
+    lang_n = normalize_lang(lang)
 
     kg_per_dec: Decimal | None = None
     if water_area_decimal is not None and water_area_decimal > 0:
@@ -117,43 +129,27 @@ def compute_stocking_load_advice(
             "stock_density_kg_per_decimal": None,
             "stock_density_kg_per_1000_cu_ft": str(kg_per_kcuft) if kg_per_kcuft is not None else None,
             "load_level": "unknown",
-            "load_level_label": "Unknown",
-            "advice_summary": "Set water area (decimal) on the pond to estimate kg per decimal and load.",
-            "reference_note": (
-                "Indicative bands for semi-intensive pond culture; aeration, species, and water quality change safe limits."
-            ),
+            "load_level_label": load_level_label("unknown", lang_n),
+            "advice_summary": load_set_water_area_summary(lang_n),
+            "reference_note": load_unknown_reference_note(lang_n),
         }
 
     kpd = kg_per_dec
     if kpd < light:
         level = "understocked"
-        label = "Light load"
-        summary = (
-            f"About {kpd} kg per decimal of water surface — below typical semi-intensive stocking for this role; "
-            "room to grow biomass if production targets allow."
-        )
     elif kpd < comfort:
         level = "moderate"
-        label = "Moderate"
-        summary = (
-            f"About {kpd} kg per decimal — within a common comfort range for this pond role; monitor DO and growth."
-        )
     elif kpd < stress:
         level = "full"
-        label = "Full"
-        summary = (
-            f"About {kpd} kg per decimal — approaching high biomass; watch dissolved oxygen, feeding, and losses closely."
-        )
     else:
         level = "high_risk"
-        label = "High load"
-        summary = (
-            f"About {kpd} kg per decimal — stress risk is elevated; consider harvest timing, aeration, or thinning transfers."
-        )
+
+    label = load_level_label(level, lang_n)
+    summary = load_advice_summary(level, kpd, lang_n)
 
     extra = ""
     if kg_per_kcuft is not None:
-        extra = f" Volume density ≈ {kg_per_kcuft} kg per 1,000 cu ft."
+        extra = load_volume_density_extra(kg_per_kcuft, lang_n)
 
     return {
         "stock_density_kg_per_decimal": str(kg_per_dec),
@@ -161,7 +157,5 @@ def compute_stocking_load_advice(
         "load_level": level,
         "load_level_label": label,
         "advice_summary": summary + extra,
-        "reference_note": (
-            "Rule-of-thumb bands (not regulatory): tuned for Bangladesh decimal × ft volume; adjust with your species mix."
-        ),
+        "reference_note": load_reference_note(lang_n),
     }

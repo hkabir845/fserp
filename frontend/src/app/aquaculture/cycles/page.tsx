@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Edit2, LayoutGrid, List, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
@@ -69,6 +70,7 @@ function suggestNextCycleCode(existingCodes: string[]): string {
 
 export default function AquacultureCyclesPage() {
   const toast = useToast()
+  const searchParams = useSearchParams()
   const [ponds, setPonds] = useState<Pond[]>([])
   const [fishSpecies, setFishSpecies] = useState<FishSpeciesOpt[]>([])
   const [filterPond, setFilterPond] = useState('')
@@ -132,6 +134,13 @@ export default function AquacultureCyclesPage() {
   useEffect(() => {
     void loadRows()
   }, [loadRows])
+
+  useEffect(() => {
+    const pid = (searchParams.get('pond_id') || '').trim()
+    if (pid && /^\d+$/.test(pid)) {
+      setFilterPond(pid)
+    }
+  }, [searchParams])
 
   const pondName = (id: number) => ponds.find((p) => p.id === id)?.name ?? `Pond #${id}`
 

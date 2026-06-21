@@ -7,6 +7,17 @@ from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal
 
+from api.services.aquaculture_i18n import (
+    company_language,
+    fish_per_kg_source,
+    normalize_lang,
+    owner_decision_grow,
+    owner_decision_monitor,
+    owner_decision_partial_harvest,
+    owner_decision_set_pond_area_fallback,
+    partial_harvest_no_thin_rationale,
+    partial_harvest_rationale,
+)
 from api.services.aquaculture_units import _bands_for_role, compute_stocking_load_advice
 
 
@@ -22,7 +33,7 @@ def _d(val) -> Decimal:
 def current_fish_per_kg_from_position_row(row: dict) -> tuple[Decimal | None, str]:
     """
     Best available pcs/kg for a stock position row.
-    Returns (pcs_per_kg, source_label).
+    Returns (pcs_per_kg, source_key for i18n).
     """
     samp_fc = row.get("latest_sample_estimated_fish_count")
     samp_tw = row.get("latest_sample_estimated_total_weight_kg")
@@ -33,7 +44,7 @@ def current_fish_per_kg_from_position_row(row: dict) -> tuple[Decimal | None, st
             if fc > 0 and tw > 0:
                 return (
                     (Decimal(fc) / tw).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP),
-                    "latest biomass sample",
+                    "latest_biomass_sample",
                 )
         except (TypeError, ValueError):
             pass
@@ -45,7 +56,7 @@ def current_fish_per_kg_from_position_row(row: dict) -> tuple[Decimal | None, st
             if avg > 0:
                 return (
                     (Decimal("1") / avg).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP),
-                    "latest sample avg weight",
+                    "latest_sample_avg_weight",
                 )
         except Exception:
             pass
@@ -60,7 +71,7 @@ def current_fish_per_kg_from_position_row(row: dict) -> tuple[Decimal | None, st
     if n > 0 and tw > 0:
         return (
             (Decimal(n) / tw).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP),
-            "implied net stock",
+            "implied_net_stock",
         )
     return None, ""
 
@@ -73,6 +84,7 @@ def compute_partial_harvest_suggestion(
     pond_role: str | None,
     current_fish_per_kg: Decimal | None = None,
     load_level: str | None = None,
+    lang: str | None = "en",
 ) -> dict:
     """
     When load is full or high_risk, suggest kg and heads to remove to reach the comfort band.
@@ -94,6 +106,7 @@ def compute_partial_harvest_suggestion(
     if bio <= 0 or water_area_decimal is None or water_area_decimal <= 0:
         return empty
 
+    lang_n = normalize_lang(lang)
     _light, comfort, _stress = _bands_for_role(pond_role)
     kg_per_dec = (bio / water_area_decimal).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
     level = (load_level or "").strip()
@@ -103,6 +116,7 @@ def compute_partial_harvest_suggestion(
             water_area_decimal=water_area_decimal,
             water_volume_cu_ft=None,
             pond_role=pond_role,
+            lang=lang_n,
         )
         level = advice.get("load_level") or ""
 
@@ -110,9 +124,8 @@ def compute_partial_harvest_suggestion(
         return {
             **empty,
             "partial_harvest_target_kg_per_decimal": str(comfort),
-            "partial_harvest_rationale": (
-                f"Load is {kg_per_dec} kg/decimal ({level or 'within range'}). "
-                f"No thinning suggested; comfort target is about {comfort} kg/decimal."
+            "partial_harvest_rationale": partial_harvest_no_thin_rationale(
+                kg_per_dec, level, comfort, lang_n
             ),
         }
 
@@ -133,13 +146,14 @@ def compute_partial_harvest_suggestion(
         remove_heads = max(1, int((Decimal(fish_count) * frac).quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
 
     post_kpd = (target_bio / water_area_decimal).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
-    level_lbl = "high load" if level == "high_risk" else "full load"
-    heads_note = f" (~{remove_heads:,} fish)" if remove_heads else ""
-    rationale = (
-        f"Pond is at {level_lbl} ({kg_per_dec} kg/decimal). "
-        f"To reach the comfort band (~{comfort} kg/decimal), consider removing about "
-        f"{remove_kg} kg{heads_note}. Post-harvest load would be ~{post_kpd} kg/decimal. "
-        "You may adjust the harvest amount based on field conditions."
+    rationale = partial_harvest_rationale(
+        level=level,
+        kg_per_dec=kg_per_dec,
+        comfort=comfort,
+        remove_kg=remove_kg,
+        remove_heads=remove_heads,
+        post_kpd=post_kpd,
+        lang=lang_n,
     )
 
     return {
@@ -180,9 +194,132 @@ def effective_biomass_kg_from_position_row(row: dict) -> Decimal:
     return implied_w
 
 
-def enrich_position_row_with_fish_metrics(row: dict, *, water_area_decimal) -> dict:
+def compute_biomass_load_advice_dict(
+    *,
+    biomass_kg: Decimal,
+    fish_count: int,
+    water_area_decimal: Decimal | None,
+    pond_role: str | None,
+    water_volume_cu_ft: Decimal | None = None,
+    fish_per_kg: Decimal | None = None,
+    lang: str | None = "en",
+) -> dict:
+    """
+    Load level and partial-harvest hint from biomass kg and head count (e.g. sample extrapolation).
+
+    owner_decision_recommended is True when load is full or high_risk — manager should consider thinning.
+    """
+    lang_n = normalize_lang(lang)
+    bio = biomass_kg if biomass_kg > 0 else Decimal("0")
+    advice = compute_stocking_load_advice(
+        bio,
+        water_area_decimal=water_area_decimal,
+        water_volume_cu_ft=water_volume_cu_ft,
+        pond_role=pond_role,
+        lang=lang_n,
+    )
+    harvest = compute_partial_harvest_suggestion(
+        bio,
+        fish_count,
+        water_area_decimal=water_area_decimal,
+        pond_role=pond_role,
+        current_fish_per_kg=fish_per_kg,
+        load_level=advice.get("load_level"),
+        lang=lang_n,
+    )
+    level = (advice.get("load_level") or "").strip()
+    decision = level in ("full", "high_risk")
+    _light, comfort, _stress = _bands_for_role(pond_role)
+
+    if water_area_decimal is None or water_area_decimal <= 0:
+        summary = advice.get("advice_summary") or owner_decision_set_pond_area_fallback(lang_n)
+        action = "set_pond_area"
+    elif decision and harvest.get("partial_harvest_applicable"):
+        sk = harvest.get("partial_harvest_suggested_kg")
+        sh = harvest.get("partial_harvest_suggested_fish_count")
+        kpd = advice.get("stock_density_kg_per_decimal")
+        summary = owner_decision_partial_harvest(
+            load_label=advice.get("load_level_label") or level,
+            level=level,
+            kpd=kpd,
+            sk=sk,
+            sh=int(sh) if sh else None,
+            comfort=comfort,
+            lang=lang_n,
+        )
+        action = "partial_harvest"
+    elif level == "understocked":
+        summary = owner_decision_grow(advice.get("stock_density_kg_per_decimal"), comfort, lang_n)
+        action = "grow"
+    elif level == "moderate":
+        summary = owner_decision_monitor(advice.get("stock_density_kg_per_decimal"), lang_n)
+        action = "monitor"
+    else:
+        summary = advice.get("advice_summary") or ""
+        action = "monitor"
+
+    return {
+        **advice,
+        **harvest,
+        "water_area_decimal": str(water_area_decimal) if water_area_decimal and water_area_decimal > 0 else None,
+        "comfort_kg_per_decimal": str(comfort),
+        "owner_decision_recommended": decision,
+        "owner_decision_summary": summary,
+        "owner_action": action,
+        "biomass_kg_for_load": str(bio),
+        "fish_count_for_load": fish_count,
+    }
+
+
+def sample_load_advice_from_sample(sample, *, pond=None) -> dict:
+    """Load / partial-harvest fields for a saved biomass sample row."""
+    pond_obj = pond or getattr(sample, "pond", None)
+    if pond_obj is None:
+        return {}
+    bio_raw = getattr(sample, "extrapolated_biomass_kg", None)
+    if bio_raw is None:
+        return {}
+    bio = _d(bio_raw)
+    if bio <= 0:
+        return {}
+    try:
+        fish_n = int(getattr(sample, "stock_reference_fish_count", None) or 0)
+    except (TypeError, ValueError):
+        fish_n = 0
+    if fish_n <= 0:
+        return {}
+    wa_dec = getattr(pond_obj, "water_area_decimal", None)
+    depth_ft = getattr(pond_obj, "pond_depth_ft", None)
+    from api.services.aquaculture_units import compute_water_volume_cu_ft
+
+    vol = compute_water_volume_cu_ft(wa_dec, depth_ft)
+    role = getattr(pond_obj, "pond_role", None) or "grow_out"
+    pcs: Decimal | None = None
+    sfc = getattr(sample, "estimated_fish_count", None)
+    stw = getattr(sample, "estimated_total_weight_kg", None)
+    if sfc and stw:
+        try:
+            tw = _d(stw)
+            fc = int(sfc)
+            if fc > 0 and tw > 0:
+                pcs = (Decimal(fc) / tw).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        except (TypeError, ValueError):
+            pass
+    return compute_biomass_load_advice_dict(
+        biomass_kg=bio,
+        fish_count=fish_n,
+        water_area_decimal=wa_dec,
+        pond_role=role,
+        water_volume_cu_ft=vol,
+        fish_per_kg=pcs,
+        lang=company_language(getattr(pond_obj, "company_id", None)),
+    )
+
+
+def enrich_position_row_with_fish_metrics(row: dict, *, water_area_decimal, lang: str | None = "en") -> dict:
     """Add current pcs/kg and partial-harvest suggestion fields to a stock position dict."""
-    pcs, pcs_src = current_fish_per_kg_from_position_row(row)
+    lang_n = normalize_lang(lang)
+    pcs, pcs_src_key = current_fish_per_kg_from_position_row(row)
     avg_kg: str | None = None
     if pcs is not None and pcs > 0:
         avg_kg = str((Decimal("1") / pcs).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP))
@@ -203,11 +340,12 @@ def enrich_position_row_with_fish_metrics(row: dict, *, water_area_decimal) -> d
         pond_role=row.get("pond_role"),
         current_fish_per_kg=pcs,
         load_level=row.get("load_level"),
+        lang=lang_n,
     )
 
     out = {**row}
     out["current_fish_per_kg"] = str(pcs) if pcs is not None else None
-    out["current_fish_per_kg_source"] = pcs_src or None
+    out["current_fish_per_kg_source"] = fish_per_kg_source(pcs_src_key, lang_n) if pcs_src_key else None
     out["current_avg_weight_kg"] = avg_kg
     out["effective_net_weight_kg"] = str(bio)
     out["book_net_weight_kg"] = str(txn_bio)

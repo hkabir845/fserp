@@ -19,6 +19,7 @@ const initialCtx: TenantLocaleConfig = {
   timeFormat: DEFAULT_COMPANY_TIME_FORMAT,
   timeZone: DEFAULT_COMPANY_TIME_ZONE,
   stationMode: 'single',
+  language: 'en',
 }
 
 export function CompanyLocaleProvider({ children }: { children: ReactNode }) {
@@ -48,14 +49,17 @@ export function CompanyLocaleProvider({ children }: { children: ReactNode }) {
           time_format?: string
           time_zone?: string
           station_mode?: string
+          language?: string
         }>('/companies/current/')
         if (cancelled) return
         const sm = String(data?.station_mode ?? 'single').toLowerCase()
+        const langRaw = String(data?.language ?? 'en').toLowerCase()
         const next: TenantLocaleConfig = {
           dateFormat: data?.date_format?.trim() || DEFAULT_COMPANY_DATE_FORMAT,
           timeFormat: data?.time_format?.trim() || DEFAULT_COMPANY_TIME_FORMAT,
           timeZone: (data?.time_zone || DEFAULT_COMPANY_TIME_ZONE).trim() || DEFAULT_COMPANY_TIME_ZONE,
           stationMode: sm === 'single' ? 'single' : 'multi',
+          language: langRaw === 'bn' ? 'bn' : 'en',
         }
         setTenantLocaleConfig(next)
         setCtx(next)

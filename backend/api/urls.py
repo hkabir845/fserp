@@ -575,6 +575,14 @@ urlpatterns = [
         aquaculture_views.aquaculture_biomass_sample_last_reference,
     ),
     path("aquaculture/samples/", aquaculture_views.aquaculture_samples_list_or_create),
+    path(
+        "aquaculture/samples/valuation-preview/",
+        aquaculture_views.aquaculture_sample_valuation_preview,
+    ),
+    path(
+        "aquaculture/samples/load-advice-preview/",
+        aquaculture_views.aquaculture_sample_load_advice_preview,
+    ),
     path("aquaculture/samples/<int:sample_id>/", aquaculture_views.aquaculture_sample_detail),
     path("aquaculture/pl-summary/", aquaculture_views.aquaculture_pl_summary),
     path("aquaculture/financing/", aquaculture_financing_views.aquaculture_financing_overview),

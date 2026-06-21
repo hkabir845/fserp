@@ -1,14 +1,18 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, Info, Pen, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Info, Pen, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatNumber } from '@/utils/currency'
 import { formatDateOnly, localDateISO } from '@/utils/date'
 import { CompanyDateInput } from '@/components/CompanyDateInput'
+import { PartialHarvestAdvicePanel } from '../PartialHarvestAdvicePanel'
+import { loadLevelBadgeClass, type StockMetricsRow } from '../aquacultureFishMetrics'
+import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
+import { aquacultureT, type AdviceLanguage } from '@/lib/aquacultureI18n'
 
 interface Pond {
   id: number
@@ -42,6 +46,36 @@ interface SampleRow {
   biomass_gain_kg?: string | null
   notes: string
   source_fish_sale_id?: number | null
+  market_price_per_kg?: string | null
+  market_value?: string | null
+  book_bioasset_value?: string | null
+  book_cost_per_kg?: string | null
+  bioasset_margin?: string | null
+  bioasset_margin_per_kg?: string | null
+  biological_production_cost?: string | null
+  full_cost_base?: string | null
+  full_cycle_margin?: string | null
+  full_cycle_margin_per_kg?: string | null
+  load_level?: string
+  load_level_label?: string
+  stock_density_kg_per_decimal?: string | null
+  partial_harvest_applicable?: boolean
+  partial_harvest_suggested_kg?: string | null
+  partial_harvest_suggested_fish_count?: number | null
+  owner_decision_recommended?: boolean
+  owner_decision_summary?: string
+  owner_action?: string
+  comfort_kg_per_decimal?: string | null
+  water_area_decimal?: string | null
+  advice_summary?: string
+  partial_harvest_rationale?: string
+}
+
+type LoadAdvicePreview = StockMetricsRow & {
+  owner_decision_recommended?: boolean
+  owner_decision_summary?: string
+  owner_action?: string
+  comfort_kg_per_decimal?: string | null
 }
 
 interface CycleRow {
@@ -54,6 +88,20 @@ interface PositionRow {
   implied_net_weight_kg: string
   stocked_fish_count?: number
   stocked_weight_kg?: string
+}
+
+interface ValuationPreview {
+  market_price_per_kg: string
+  extrapolated_biomass_kg: string
+  market_value: string | null
+  book_bioasset_value: string | null
+  book_cost_per_kg: string | null
+  bioasset_margin: string | null
+  bioasset_margin_per_kg: string | null
+  biological_production_cost: string | null
+  full_cost_base: string | null
+  full_cycle_margin: string | null
+  full_cycle_margin_per_kg: string | null
 }
 
 function formatMeanKgPerFish(v: number | null | undefined): string {
@@ -112,6 +160,86 @@ function parseNum(s: string | null | undefined): number | null {
   return Number.isFinite(x) ? x : null
 }
 
+function formatMoney(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return '—'
+  return formatNumber(v, 2)
+}
+
+function marginClass(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return ''
+  return v >= 0 ? 'text-emerald-800' : 'text-rose-800'
+}
+
+/** Two-line cell: muted label + value (plain language, no cryptic abbreviations). */
+function MetricCell({
+  lines,
+  align = 'left',
+}: {
+  lines: { label: string; value: ReactNode; valueClass?: string }[]
+  align?: 'left' | 'right'
+}) {
+  return (
+    <div className={`space-y-1 ${align === 'right' ? 'text-right' : ''}`}>
+      {lines.map((line) => (
+        <div key={line.label} className={align === 'right' ? '' : ''}>
+          <div className="text-[10px] font-medium leading-tight text-slate-500">{line.label}</div>
+          <div className={`text-xs tabular-nums leading-snug text-slate-800 ${line.valueClass || ''}`}>
+            {line.value}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function harvestAdviceLines(
+  r: SampleRow,
+  lang: AdviceLanguage
+): { lines: { label: string; value: ReactNode; valueClass?: string }[]; title?: string } {
+  const title = r.owner_decision_summary || r.partial_harvest_rationale || r.advice_summary || undefined
+  if (!r.load_level_label) {
+    return { lines: [{ label: aquacultureT('pondLoad', lang), value: '—' }], title }
+  }
+  const density = r.stock_density_kg_per_decimal
+    ? `${formatNumber(Number(r.stock_density_kg_per_decimal), 1)} ${aquacultureT('kgPerDecimalWater', lang)}`
+    : r.water_area_decimal
+      ? '—'
+      : aquacultureT('setWaterAreaOnPond', lang)
+  const lines: { label: string; value: ReactNode; valueClass?: string }[] = [
+    {
+      label: aquacultureT('stockingLoad', lang),
+      value: (
+        <span className={`inline-flex rounded px-1.5 py-0.5 text-[11px] font-semibold ${loadLevelBadgeClass(r.load_level)}`}>
+          {r.load_level_label}
+        </span>
+      ),
+    },
+    { label: aquacultureT('density', lang), value: density },
+  ]
+  if (r.partial_harvest_applicable && r.partial_harvest_suggested_kg) {
+    const kg = formatNumber(Number(r.partial_harvest_suggested_kg), 0)
+    const fish = r.partial_harvest_suggested_fish_count
+    lines.push({
+      label: aquacultureT('suggestedPartialHarvest', lang),
+      value: fish
+        ? `${aquacultureT('removeAboutKg', lang)} ${kg} kg (~${formatNumber(fish, 0)} ${aquacultureT('fish', lang)})`
+        : `${aquacultureT('removeAboutKg', lang)} ${kg} ${aquacultureT('removeAboutKgSuffix', lang)}`,
+      valueClass: 'font-medium text-amber-900',
+    })
+  } else if (r.owner_action === 'monitor' || r.owner_action === 'grow') {
+    lines.push({
+      label: aquacultureT('harvest', lang),
+      value: aquacultureT('noThinningNeeded', lang),
+      valueClass: 'text-emerald-800',
+    })
+  }
+  return { lines, title }
+}
+
+const thMain = 'px-2.5 py-2 text-left text-xs font-semibold text-slate-800'
+const thSub = 'mt-0.5 block text-[10px] font-normal leading-snug text-slate-500'
+const tdCell = 'px-2.5 py-2 align-top'
+
 /** Live preview: same logic as backend apply_aquaculture_biomass_sample_extrapolation */
 function extrapolationPreview(
   sampleCount: number,
@@ -151,6 +279,7 @@ function extrapolationPreview(
 
 export default function AquacultureSamplingPage() {
   const toast = useToast()
+  const { language: lang } = useCompanyLocale()
   const [ponds, setPonds] = useState<Pond[]>([])
   const [fishSpeciesOpts, setFishSpeciesOpts] = useState<FishSpeciesOpt[]>([])
   const [cycles, setCycles] = useState<CycleRow[]>([])
@@ -167,10 +296,15 @@ export default function AquacultureSamplingPage() {
     fish_species_other: '',
     estimated_fish_count: '',
     estimated_total_weight_kg: '',
+    market_price_per_kg: '',
     notes: '',
   })
   const [stockPreview, setStockPreview] = useState<PositionRow | null>(null)
   const [stockPreviewLoading, setStockPreviewLoading] = useState(false)
+  const [valuationPreview, setValuationPreview] = useState<ValuationPreview | null>(null)
+  const [valuationPreviewLoading, setValuationPreviewLoading] = useState(false)
+  const [loadAdvicePreview, setLoadAdvicePreview] = useState<LoadAdvicePreview | null>(null)
+  const [loadAdviceLoading, setLoadAdviceLoading] = useState(false)
 
   const activePonds = useMemo(
     () => ponds.filter((p) => p.is_active !== false),
@@ -281,6 +415,81 @@ export default function AquacultureSamplingPage() {
     return extrapolationPreview(n, w, stockPreview)
   }, [form.estimated_fish_count, form.estimated_total_weight_kg, stockPreview])
 
+  const refreshValuationPreview = useCallback(async () => {
+    const pid = form.pond_id
+    const price = parseNum(form.market_price_per_kg)
+    const biomass = modalExtrapolation?.biomassKg ?? null
+    if (!modal || !pid || !form.sample_date || price == null || price <= 0 || biomass == null || biomass <= 0) {
+      setValuationPreview(null)
+      return
+    }
+    setValuationPreviewLoading(true)
+    try {
+      const params: Record<string, string> = {
+        pond_id: pid,
+        sample_date: form.sample_date,
+        extrapolated_biomass_kg: String(biomass),
+        market_price_per_kg: String(price),
+      }
+      if (form.production_cycle_id) params.production_cycle_id = form.production_cycle_id
+      const { data } = await api.get<ValuationPreview>('/aquaculture/samples/valuation-preview/', { params })
+      setValuationPreview(data)
+    } catch {
+      setValuationPreview(null)
+    } finally {
+      setValuationPreviewLoading(false)
+    }
+  }, [modal, form.pond_id, form.sample_date, form.production_cycle_id, form.market_price_per_kg, modalExtrapolation])
+
+  useEffect(() => {
+    if (!modal) {
+      setValuationPreview(null)
+      return
+    }
+    const t = window.setTimeout(() => void refreshValuationPreview(), 300)
+    return () => window.clearTimeout(t)
+  }, [modal, refreshValuationPreview])
+
+  const refreshLoadAdvicePreview = useCallback(async () => {
+    const pid = form.pond_id
+    const biomass = modalExtrapolation?.biomassKg ?? null
+    const heads = modalExtrapolation?.refHead ?? null
+    if (!modal || !pid || biomass == null || biomass <= 0 || heads == null || heads <= 0) {
+      setLoadAdvicePreview(null)
+      return
+    }
+    const sampleCount = parseInt(form.estimated_fish_count, 10)
+    const sampleKg = Number(String(form.estimated_total_weight_kg).replace(/,/g, ''))
+    const fishPerKg =
+      Number.isFinite(sampleCount) && sampleCount > 0 && Number.isFinite(sampleKg) && sampleKg > 0
+        ? sampleCount / sampleKg
+        : null
+    setLoadAdviceLoading(true)
+    try {
+      const params: Record<string, string> = {
+        pond_id: pid,
+        extrapolated_biomass_kg: String(biomass),
+        fish_count: String(heads),
+      }
+      if (fishPerKg != null && fishPerKg > 0) params.fish_per_kg = String(fishPerKg)
+      const { data } = await api.get<LoadAdvicePreview>('/aquaculture/samples/load-advice-preview/', { params })
+      setLoadAdvicePreview(data)
+    } catch {
+      setLoadAdvicePreview(null)
+    } finally {
+      setLoadAdviceLoading(false)
+    }
+  }, [modal, form.pond_id, form.estimated_fish_count, form.estimated_total_weight_kg, modalExtrapolation])
+
+  useEffect(() => {
+    if (!modal) {
+      setLoadAdvicePreview(null)
+      return
+    }
+    const t = window.setTimeout(() => void refreshLoadAdvicePreview(), 250)
+    return () => window.clearTimeout(t)
+  }, [modal, refreshLoadAdvicePreview])
+
   const openNew = () => {
     setEditing(null)
     const today = localDateISO()
@@ -292,6 +501,7 @@ export default function AquacultureSamplingPage() {
       fish_species_other: '',
       estimated_fish_count: '',
       estimated_total_weight_kg: '',
+      market_price_per_kg: '',
       notes: '',
     })
     setModal(true)
@@ -307,6 +517,7 @@ export default function AquacultureSamplingPage() {
       fish_species_other: r.fish_species_other || '',
       estimated_fish_count: r.estimated_fish_count != null ? String(r.estimated_fish_count) : '',
       estimated_total_weight_kg: r.estimated_total_weight_kg || '',
+      market_price_per_kg: r.market_price_per_kg || '',
       notes: r.notes || '',
     })
     setModal(true)
@@ -340,6 +551,8 @@ export default function AquacultureSamplingPage() {
     }
     const autoAvg = computeAvgWeightKg(form.estimated_fish_count, form.estimated_total_weight_kg)
     payload.avg_weight_kg = autoAvg !== null ? autoAvg : null
+    const mpp = parseNum(form.market_price_per_kg)
+    payload.market_price_per_kg = mpp != null && mpp > 0 ? mpp : null
     if (editing) {
       payload.production_cycle_id = form.production_cycle_id ? parseInt(form.production_cycle_id, 10) : null
     } else if (form.production_cycle_id) {
@@ -417,28 +630,39 @@ export default function AquacultureSamplingPage() {
         </div>
       </div>
 
-      <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-sm leading-relaxed text-slate-700">
-        <div className="flex gap-2">
+      <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex gap-3">
           <Info className="mt-0.5 h-5 w-5 shrink-0 text-teal-700" aria-hidden />
-          <div>
-            <p className="font-medium text-slate-900">How the numbers work</p>
-            <p className="mt-1">
-              Example: 20 fish in the net, 5&nbsp;kg total → sample mean 0.25&nbsp;kg/fish. If Fish stock shows 70,000 head
-              and 14,000&nbsp;kg net for that species → book mean 0.20&nbsp;kg/fish. Estimated pond biomass ≈ 0.25 ×
-              70,000 = 17,500&nbsp;kg; estimated gain vs book mean ≈ (0.25 − 0.20) × 70,000 = 3,500&nbsp;kg. Rows in the
-              table store a <strong className="font-medium text-slate-800">snapshot</strong> of Fish stock at save time
-              (not historical replay).
-            </p>
-            <p className="mt-2">
-              <Link
-                href="/aquaculture/stock"
-                className="inline-flex items-center gap-1 font-medium text-teal-800 underline decoration-teal-600/40 hover:decoration-teal-800"
-              >
-                Pond stock (fish biomass)
-                <ExternalLink className="h-3.5 w-3.5 opacity-80" aria-hidden />
+          <div className="min-w-0 flex-1 space-y-4 text-sm text-slate-700">
+            <div>
+              <p className="font-semibold text-slate-900">{aquacultureT('fieldGuideTitle', lang)}</p>
+              <p className="mt-1 leading-relaxed">{aquacultureT('fieldGuideBody', lang)}</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
+                <p className="text-xs font-semibold text-teal-900">1 · Net sample</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                  e.g. 12 fish weighing 4&nbsp;kg → average <strong>0.33&nbsp;kg per fish</strong> in the sample.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
+                <p className="text-xs font-semibold text-teal-900">2 · Pond total (estimate)</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                  Multiply that average by the <strong>fish head count in your books</strong> (from Pond stock). If books
+                  show 109,400 fish → about 36,100&nbsp;kg in the pond.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
+                <p className="text-xs font-semibold text-teal-900">{aquacultureT('stepLoadHarvest', lang)}</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">{aquacultureT('stepLoadHarvestBody', lang)}</p>
+              </div>
+            </div>
+            <p className="text-xs leading-relaxed text-slate-500">
+              {aquacultureT('bookFiguresNote', lang)}{' '}
+              <Link href="/aquaculture/stock" className="font-medium text-teal-800 underline hover:text-teal-950">
+                {aquacultureT('pondStock', lang)}
               </Link>
-              {' — '}
-              keep head count and biological kg aligned with your operations so extrapolation is meaningful.
+              .
             </p>
           </div>
         </div>
@@ -460,116 +684,189 @@ export default function AquacultureSamplingPage() {
           </Link>
         </div>
       ) : (
-        <div className="mt-6 w-full min-w-0 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full min-w-[1100px] text-left text-sm" aria-labelledby="aq-sampling-title">
+        <div className="mt-6 w-full min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full text-left" aria-labelledby="aq-sampling-title">
             <caption className="sr-only">Aquaculture net samples and pond biomass extrapolation</caption>
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
-                <th scope="col" className="px-3 py-2.5">
-                  Date
+                <th scope="col" className={thMain}>
+                  When
+                  <span className={thSub}>Sample date</span>
                 </th>
-                <th scope="col" className="px-3 py-2.5">
-                  Pond
+                <th scope="col" className={thMain}>
+                  Where
+                  <span className={thSub}>Pond, species, batch</span>
                 </th>
-                <th scope="col" className="px-3 py-2.5">
-                  Cycle
+                <th scope="col" className={`${thMain} min-w-[8.5rem]`}>
+                  What you measured
+                  <span className={thSub}>Fish caught in the net and their weight</span>
                 </th>
-                <th scope="col" className="px-3 py-2.5">
-                  Species
+                <th scope="col" className={`${thMain} min-w-[8rem]`}>
+                  Books at save
+                  <span className={thSub}>Head count and avg weight from Pond stock</span>
                 </th>
-                <th scope="col" className="px-3 py-2.5 text-right normal-case">
-                  Sample fish
+                <th scope="col" className={`${thMain} min-w-[9rem]`}>
+                  Pond estimate
+                  <span className={thSub}>Total kg if sample average applies to all fish</span>
                 </th>
-                <th scope="col" className="px-3 py-2.5 text-right normal-case">
-                  Sample kg
+                <th scope="col" className={`${thMain} min-w-[8rem]`}>
+                  Market (optional)
+                  <span className={thSub}>Price, value, profit vs books</span>
                 </th>
-                <th scope="col" className="px-3 py-2.5 text-right normal-case">
-                  Sample mean kg
+                <th scope="col" className={`${thMain} min-w-[9.5rem]`}>
+                  {aquacultureT('shouldYouThin', lang)}
+                  <span className={thSub}>{aquacultureT('loadPerDecimalHarvest', lang)}</span>
                 </th>
-                <th scope="col" className="px-3 py-2.5 text-right normal-case">
-                  Book head
-                </th>
-                <th scope="col" className="px-3 py-2.5 text-right normal-case">
-                  Book mean kg
-                </th>
-                <th scope="col" className="px-3 py-2.5 text-right normal-case">
-                  Est. biomass kg
-                </th>
-                <th scope="col" className="px-3 py-2.5 text-right normal-case">
-                  Est. Δ kg
-                </th>
-                <th scope="col" className="px-3 py-2.5 text-right normal-case">
-                  Fish/kg
-                </th>
-                <th scope="col" className="px-3 py-2.5 normal-case">
-                  Notes
-                </th>
-                <th scope="col" className="w-24 px-3 py-2.5 text-right normal-case">
-                  Actions
+                <th scope="col" className={`${thMain} w-14`}>
+                  <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
-            <tbody className="text-slate-800">
+            <tbody className="divide-y divide-slate-100">
               {rows.map((r) => {
                 const avgKg = displayAvgWeightKg(r)
-                const pk = pcsPerKgFromSample(r)
                 const bookHead = r.stock_reference_fish_count
                 const bookMean = parseNum(r.stock_reference_avg_weight_kg)
                 const estBio = parseNum(r.extrapolated_biomass_kg)
                 const estGain = parseNum(r.biomass_gain_kg)
+                const mktPrice = parseNum(r.market_price_per_kg)
+                const mktValue = parseNum(r.market_value)
+                const bioMargin = parseNum(r.bioasset_margin)
+                const fullMargin = parseNum(r.full_cycle_margin)
+                const load = harvestAdviceLines(r, lang)
+                const species = r.fish_species_label || r.fish_species || ''
+                const cycle = r.production_cycle_name?.trim()
+                const notes = (r.notes || '').trim()
                 return (
-                  <tr key={r.id} className="border-b border-slate-100">
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <span>{formatDateOnly(r.sample_date)}</span>
+                  <tr key={r.id} className="hover:bg-slate-50/50">
+                    <td className={tdCell}>
+                      <div className="text-xs font-medium text-slate-900">{formatDateOnly(r.sample_date)}</div>
                       {r.source_fish_sale_id != null ? (
-                        <span className="ml-1.5 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-700">
-                          Sale
+                        <span className="mt-1 inline-block rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                          From harvest sale
                         </span>
                       ) : null}
                     </td>
-                    <td className="px-3 py-2">{r.pond_name}</td>
-                    <td className="px-3 py-2 text-slate-600">{r.production_cycle_name?.trim() || '—'}</td>
-                    <td className="px-3 py-2">{r.fish_species_label || r.fish_species || '—'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.estimated_fish_count ?? '—'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {r.estimated_total_weight_kg != null ? formatNumber(Number(r.estimated_total_weight_kg)) : '—'}
+                    <td className={tdCell}>
+                      <div className="text-xs font-semibold text-slate-900">{r.pond_name}</div>
+                      {species ? <div className="text-[11px] text-slate-600">{species}</div> : null}
+                      {cycle ? <div className="text-[11px] text-slate-500">{cycle}</div> : null}
+                      {notes ? (
+                        <div className="mt-1 text-[11px] leading-snug text-slate-500" title={notes}>
+                          Note: {notes.length > 40 ? `${notes.slice(0, 37)}…` : notes}
+                        </div>
+                      ) : null}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{avgKg != null ? formatMeanKgPerFish(avgKg) : '—'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                      {bookHead != null && bookHead > 0 ? formatNumber(bookHead, 0) : '—'}
+                    <td className={tdCell}>
+                      <MetricCell
+                        lines={[
+                          {
+                            label: 'In the net',
+                            value:
+                              r.estimated_fish_count != null && r.estimated_total_weight_kg != null
+                                ? `${formatNumber(r.estimated_fish_count, 0)} fish · ${formatNumber(Number(r.estimated_total_weight_kg))} kg`
+                                : '—',
+                          },
+                          {
+                            label: 'Average per fish',
+                            value: avgKg != null ? `${formatMeanKgPerFish(avgKg)} kg each` : '—',
+                          },
+                        ]}
+                      />
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                      {bookMean != null ? formatMeanKgPerFish(bookMean) : '—'}
+                    <td className={tdCell}>
+                      <MetricCell
+                        lines={[
+                          {
+                            label: 'Fish in books',
+                            value:
+                              bookHead != null && bookHead > 0 ? `${formatNumber(bookHead, 0)} head` : '—',
+                          },
+                          {
+                            label: 'Book avg weight',
+                            value: bookMean != null ? `${formatMeanKgPerFish(bookMean)} kg each` : '—',
+                          },
+                        ]}
+                      />
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{estBio != null ? formatNumber(estBio) : '—'}</td>
-                    <td
-                      className={`px-3 py-2 text-right tabular-nums ${
-                        estGain == null ? '' : estGain >= 0 ? 'text-emerald-800' : 'text-rose-800'
-                      }`}
-                    >
-                      {estGain != null ? formatNumber(estGain) : '—'}
+                    <td className={tdCell}>
+                      <MetricCell
+                        lines={[
+                          {
+                            label: 'Estimated in pond',
+                            value: estBio != null ? `${formatNumber(estBio)} kg total` : '—',
+                            valueClass: 'font-semibold',
+                          },
+                          {
+                            label: 'Change vs books',
+                            value:
+                              estGain != null
+                                ? `${estGain >= 0 ? '+' : ''}${formatNumber(estGain)} kg (fish grew or shrank)`
+                                : '—',
+                            valueClass:
+                              estGain == null ? '' : estGain >= 0 ? 'text-emerald-800' : 'text-rose-800',
+                          },
+                        ]}
+                      />
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-slate-600">{pk != null ? formatNumber(pk) : '—'}</td>
-                    <td className="max-w-[140px] truncate px-3 py-2 text-slate-600">{r.notes || '—'}</td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-0.5">
+                    <td className={tdCell}>
+                      {mktPrice != null || mktValue != null ? (
+                        <MetricCell
+                          lines={[
+                            {
+                              label: 'Market price',
+                              value: mktPrice != null ? `${formatMoney(mktPrice)} BDT/kg` : '—',
+                            },
+                            {
+                              label: 'Value at market',
+                              value: mktValue != null ? `${formatMoney(mktValue)} BDT` : '—',
+                            },
+                            ...(bioMargin != null
+                              ? [
+                                  {
+                                    label: 'Profit vs bio-asset books',
+                                    value: `${formatMoney(bioMargin)} BDT`,
+                                    valueClass: marginClass(bioMargin),
+                                  },
+                                ]
+                              : []),
+                            ...(fullMargin != null
+                              ? [
+                                  {
+                                    label: 'Profit vs full pond cost',
+                                    value: `${formatMoney(fullMargin)} BDT`,
+                                    valueClass: marginClass(fullMargin),
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
+                      ) : (
+                        <span className="text-xs text-slate-400">No market price entered</span>
+                      )}
+                    </td>
+                    <td className={tdCell} title={load.title}>
+                      <MetricCell lines={load.lines} />
+                    </td>
+                    <td className={tdCell}>
+                      <div className="flex flex-col items-end gap-0.5">
                         <button
                           type="button"
                           onClick={() => openEdit(r)}
-                          className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                          title="Edit"
+                          className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                          title="Edit sample"
                         >
-                          <Pen className="h-4 w-4" aria-hidden />
+                          <Pen className="h-3.5 w-3.5" aria-hidden />
                           <span className="sr-only">Edit</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => void remove(r)}
-                          className="rounded p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-700"
+                          className="rounded p-1 text-slate-500 hover:bg-rose-50 hover:text-rose-700"
                           title="Delete sample"
                         >
-                          <Trash2 className="h-4 w-4" aria-hidden />
-                          <span className="sr-only">Delete sample</span>
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                          <span className="sr-only">Delete</span>
                         </button>
                       </div>
                     </td>
@@ -578,9 +875,9 @@ export default function AquacultureSamplingPage() {
               })}
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-3 py-10 text-center text-slate-500">
-                    No sampling records yet. Use <span className="font-medium text-slate-700">Log sample</span> after a net
-                    catch.
+                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
+                    No sampling records yet. After a net catch, click{' '}
+                    <span className="font-medium text-slate-700">Log sample</span>.
                   </td>
                 </tr>
               ) : null}
@@ -601,7 +898,7 @@ export default function AquacultureSamplingPage() {
             ) : null}
 
             <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-xs text-slate-600">
-              <li>Choose pond, optional production cycle, and species.</li>
+              <li>Choose pond, optional stocking batch, and species.</li>
               <li>Enter how many fish were in the net and their combined weight (kg).</li>
               <li>Review live extrapolation vs current Fish stock, then save (values are snapshotted).</li>
             </ol>
@@ -622,7 +919,7 @@ export default function AquacultureSamplingPage() {
                 </select>
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Production cycle (optional)
+                Stocking batch (optional)
                 <select
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.production_cycle_id}
@@ -780,6 +1077,87 @@ export default function AquacultureSamplingPage() {
                     </p>
                   ) : null}
                 </div>
+              ) : null}
+
+              {loadAdviceLoading ? (
+                <p className="text-sm text-slate-500">{aquacultureT('computingLoadAdvice', lang)}</p>
+              ) : loadAdvicePreview ? (
+                <PartialHarvestAdvicePanel row={loadAdvicePreview} />
+              ) : null}
+
+              <label className="block text-sm font-medium text-slate-700">
+                Market price (BDT/kg)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  value={form.market_price_per_kg}
+                  onChange={(e) => setForm((f) => ({ ...f, market_price_per_kg: e.target.value }))}
+                  placeholder="e.g. 180"
+                />
+              </label>
+              <p className="-mt-1 text-xs text-slate-500">
+                Optional. When set, the app compares estimated pond market value to bio-asset book value and full pond
+                costs.
+              </p>
+
+              {valuationPreviewLoading ? (
+                <p className="text-sm text-slate-500">Computing valuation…</p>
+              ) : valuationPreview ? (
+                <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-3 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-950">Valuation preview</p>
+                  <dl className="mt-2 space-y-1.5">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-violet-900/80">Market value (est.)</dt>
+                      <dd className="tabular-nums font-medium text-violet-950">
+                        {formatMoney(parseNum(valuationPreview.market_value))} BDT
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-violet-900/80">Book bio-asset</dt>
+                      <dd className="tabular-nums font-medium text-violet-950">
+                        {formatMoney(parseNum(valuationPreview.book_bioasset_value))} BDT
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-violet-900/80">Margin vs bio-asset</dt>
+                      <dd
+                        className={`tabular-nums font-medium ${marginClass(parseNum(valuationPreview.bioasset_margin))}`}
+                      >
+                        {formatMoney(parseNum(valuationPreview.bioasset_margin))} BDT
+                        {valuationPreview.bioasset_margin_per_kg ? (
+                          <span className="ml-1 text-xs text-violet-800/80">
+                            ({formatMoney(parseNum(valuationPreview.bioasset_margin_per_kg))}/kg)
+                          </span>
+                        ) : null}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-violet-900/80">Full cost base (P&amp;L)</dt>
+                      <dd className="tabular-nums font-medium text-violet-950">
+                        {formatMoney(parseNum(valuationPreview.full_cost_base))} BDT
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-violet-900/80">Margin vs full cost</dt>
+                      <dd
+                        className={`tabular-nums font-medium ${marginClass(parseNum(valuationPreview.full_cycle_margin))}`}
+                      >
+                        {formatMoney(parseNum(valuationPreview.full_cycle_margin))} BDT
+                        {valuationPreview.full_cycle_margin_per_kg ? (
+                          <span className="ml-1 text-xs text-violet-800/80">
+                            ({formatMoney(parseNum(valuationPreview.full_cycle_margin_per_kg))}/kg)
+                          </span>
+                        ) : null}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              ) : parseNum(form.market_price_per_kg) != null && parseNum(form.market_price_per_kg)! > 0 ? (
+                <p className="text-xs text-amber-800">
+                  Enter sample fish count and weight with positive Fish stock head count to preview valuation.
+                </p>
               ) : null}
 
               <label className="block text-sm font-medium text-slate-700">

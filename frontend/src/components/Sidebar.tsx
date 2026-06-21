@@ -372,17 +372,24 @@ export default function Sidebar() {
     const Icon = item.icon
     const isActive = activeNavHref !== null && item.href === activeNavHref
     const activeClass = mode === 'saas_dashboard' ? SAAS_NAV_ITEM_ACTIVE_CLASS : NAV_ITEM_ACTIVE_CLASS
+    const depth = item.menuDepth ?? 0
     return (
       <Link
         key={item.href}
         href={item.href}
         data-nav-active={isActive ? 'true' : undefined}
-        className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors group ${
-          isActive ? activeClass : NAV_ITEM_IDLE_CLASS
-        }`}
+        className={`flex items-center gap-2 rounded-md border py-1.5 transition-colors group ${
+          depth > 0 ? 'ml-3 border-transparent px-2' : 'px-2'
+        } ${isActive ? activeClass : NAV_ITEM_IDLE_CLASS}`}
       >
-        <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-white' : 'opacity-80 group-hover:opacity-100'}`} />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
+        <Icon
+          className={`${depth > 0 ? 'h-3.5 w-3.5' : 'h-4 w-4'} shrink-0 ${
+            isActive ? 'text-white' : 'opacity-80 group-hover:opacity-100'
+          }`}
+        />
+        <span className={`min-w-0 flex-1 truncate font-medium ${depth > 0 ? 'text-xs' : 'text-sm'}`}>
+          {item.label}
+        </span>
       </Link>
     )
   }

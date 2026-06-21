@@ -243,6 +243,21 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
         "group": "Reports — Aquaculture",
     },
     {
+        "report_id": "aquaculture-fish-stock-breakdown",
+        "label": "Aquaculture — Fish stock by batch & species",
+        "group": "Reports — Aquaculture",
+    },
+    {
+        "report_id": "aquaculture-fish-biomass-movements",
+        "label": "Aquaculture — Fish biomass movements",
+        "group": "Reports — Aquaculture",
+    },
+    {
+        "report_id": "aquaculture-fish-stock-adjustments",
+        "label": "Aquaculture — Mortality & stock adjustments",
+        "group": "Reports — Aquaculture",
+    },
+    {
         "report_id": "aquaculture-fcr-biomass",
         "label": "Aquaculture — FCR, feed & pond load",
         "group": "Reports — Aquaculture",

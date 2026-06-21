@@ -52,6 +52,11 @@ class Company(models.Model):
         default="Asia/Dhaka",
         help_text="IANA time zone (e.g. Asia/Dhaka) for business date and local time display.",
     )
+    language = models.CharField(
+        max_length=8,
+        default="en",
+        help_text="UI and aquaculture advice language: en (English) or bn (Bangla).",
+    )
     fiscal_year_start = models.CharField(max_length=5, default="01-01")
     address_line1 = models.CharField(max_length=200, blank=True)
     address_line2 = models.CharField(max_length=200, blank=True)
@@ -3012,6 +3017,76 @@ class AquacultureBiomassSample(models.Model):
         help_text="When fish_species is 'other', optional name (e.g. local variety).",
     )
     notes = models.TextField(blank=True)
+    market_price_per_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Optional market price (BDT/kg) for valuation at sample time.",
+    )
+    market_value = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="extrapolated_biomass_kg × market_price_per_kg when both are set.",
+    )
+    book_bioasset_value = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Bio-asset book value (1581 settlement) snapshot at save.",
+    )
+    book_cost_per_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Book bio-asset ÷ on-hand kg, or production cost/kg when settlement is unavailable.",
+    )
+    bioasset_margin = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="market_value − book_bioasset_value.",
+    )
+    bioasset_margin_per_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="market_price_per_kg − book_cost_per_kg.",
+    )
+    biological_production_cost = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Fry, feed, medicine, preparation, and transfer-in costs in the pond/cycle window.",
+    )
+    full_cost_base = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Total pond/cycle costs (operating expenses + payroll) in the valuation window.",
+    )
+    full_cycle_margin = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="market_value − full_cost_base.",
+    )
+    full_cycle_margin_per_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Per-kg margin vs full_cost_base ÷ extrapolated biomass.",
+    )
     source_fish_sale = models.OneToOneField(
         "AquacultureFishSale",
         null=True,

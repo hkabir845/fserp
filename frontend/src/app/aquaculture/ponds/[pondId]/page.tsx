@@ -1072,7 +1072,7 @@ export default function PondDetailViewPage() {
                 {pond.warehouse_group_name ? (
                   <p className="mt-0.5 text-xs text-slate-600">
                     Shared store: <span className="font-medium text-teal-900">{pond.warehouse_group_name}</span> — use{' '}
-                    <Link href="/aquaculture/stock?tab=warehouse" className="font-medium text-teal-800 hover:underline">
+                    <Link href="/aquaculture/stock/supplies" className="font-medium text-teal-800 hover:underline">
                       Stock → Move between ponds
                     </Link>{' '}
                     to reallocate.

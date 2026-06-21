@@ -1,10 +1,12 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Beaker,
   BookOpen,
+  ChevronDown,
   Fish,
   Loader2,
   MapPin,
@@ -13,6 +15,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
+import { useT, type I18nKey } from '@/lib/i18n'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
@@ -156,6 +159,8 @@ function QuantityFromSampleFields({
   weightLabel,
   weightHint,
   fishCountPlaceholder = 'e.g. 250',
+  weightPlaceholder = 'e.g. 4.5',
+  t,
 }: {
   lastSample: LastSampleReference | null
   lastSampleLoading: boolean
@@ -171,21 +176,23 @@ function QuantityFromSampleFields({
   weightLabel: string
   weightHint?: string
   fishCountPlaceholder?: string
+  weightPlaceholder?: string
+  t: (key: I18nKey) => string
 }) {
   return (
     <div className="mt-4 space-y-3">
       {lastSampleLoading ? (
-        <p className="text-xs text-slate-500">Loading last biomass sample…</p>
+        <p className="text-xs text-slate-500">{t('stockLoadingLastSample')}</p>
       ) : lastSample ? (
         <div className="flex flex-wrap items-start gap-2 rounded-lg border border-violet-200 bg-violet-50/80 px-3 py-2.5 text-xs text-violet-950">
           <Beaker className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" aria-hidden />
           <div className="min-w-0 flex-1">
             <p>
-              <span className="font-medium">Last sample</span> {formatDateOnly(lastSample.sample_date)}
+              <span className="font-medium">{t('stockLastSample')}</span> {formatDateOnly(lastSample.sample_date)}
               {lastSample.fish_species_label ? ` · ${lastSample.fish_species_label}` : ''}:{' '}
               <span className="tabular-nums">
                 {lastSample.estimated_fish_count != null
-                  ? `${formatNumber(lastSample.estimated_fish_count, 0)} fish`
+                  ? `${formatNumber(lastSample.estimated_fish_count, 0)} ${t('stockFish')}`
                   : '—'}
                 {lastSample.estimated_total_weight_kg
                   ? ` · ${formatNumber(Number(lastSample.estimated_total_weight_kg), 2)} kg`
@@ -199,14 +206,12 @@ function QuantityFromSampleFields({
               onClick={onReapplySample}
               className="mt-1 font-medium text-violet-900 underline hover:text-violet-950"
             >
-              Re-apply from last sample
+              {t('stockReapplySample')}
             </button>
           </div>
         </div>
       ) : (
-        <p className="text-xs text-slate-500">
-          No biomass sample for this pond, cycle, and species — enter fish/kg manually.
-        </p>
+        <p className="text-xs text-slate-500">{t('stockNoSampleHint')}</p>
       )}
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="block">
@@ -224,31 +229,31 @@ function QuantityFromSampleFields({
         </label>
         <label className="block">
           <span className={labelCls}>
-            Fish per kg <span className="text-red-600">*</span>
-          </span>
-          <input
-            className={`${inputCls} mt-1.5`}
-            inputMode="decimal"
-            placeholder="e.g. 5.2"
-            value={fishPerKg}
-            onChange={(e) => onFishPerKgChange(e.target.value)}
-          />
-          <span className="mt-1 block text-xs text-slate-500">Pieces per kg (from sample or manual)</span>
-        </label>
-        <label className="block">
-          <span className={labelCls}>
             {weightLabel} <span className="text-red-600">*</span>
           </span>
           <input
             className={`${inputCls} mt-1.5`}
             inputMode="decimal"
-            placeholder="Auto from count ÷ fish/kg"
+            placeholder={weightPlaceholder}
             value={weightKg}
             onChange={(e) => onWeightKgChange(e.target.value)}
           />
           <span className="mt-1 block text-xs text-slate-500">
-            {weightHint ?? 'Fills automatically; editable override'}
+            {weightHint ?? t('stockTotalBiomassHint')}
           </span>
+        </label>
+        <label className="block">
+          <span className={labelCls}>
+            {t('stockFishPerKg')} <span className="text-red-600">*</span>
+          </span>
+          <input
+            className={`${inputCls} mt-1.5`}
+            inputMode="decimal"
+            placeholder={t('stockFishPerKgAutoPh')}
+            value={fishPerKg}
+            onChange={(e) => onFishPerKgChange(e.target.value)}
+          />
+          <span className="mt-1 block text-xs text-slate-500">{t('stockFishPerKgHint')}</span>
         </label>
       </div>
     </div>
@@ -331,6 +336,7 @@ export function AquacultureStockLedgerFormModal({
   onSaved,
 }: Props) {
   const toast = useToast()
+  const { t } = useT()
   const sym = getCurrencySymbol(currency)
   const isEdit = editing != null
   const glLinked = Boolean(editing?.journal_entry_id)
@@ -346,7 +352,7 @@ export function AquacultureStockLedgerFormModal({
   const [lastSample, setLastSample] = useState<LastSampleReference | null>(null)
   const [lastSampleLoading, setLastSampleLoading] = useState(false)
   const [bookValueTouched, setBookValueTouched] = useState(false)
-  const [weightKgTouched, setWeightKgTouched] = useState(false)
+  const [fishPerKgTouched, setFishPerKgTouched] = useState(false)
   const [debouncedSpeciesOther, setDebouncedSpeciesOther] = useState('')
   const prevOpenRef = useRef(false)
   const quantitiesDirtyRef = useRef(false)
@@ -372,7 +378,7 @@ export function AquacultureStockLedgerFormModal({
         editing ? formFromRow(editing) : emptyForm(ponds, defaultPondId, defaultSpecies, defaultCycleId),
       )
       setBookValueTouched(false)
-      setWeightKgTouched(false)
+      setFishPerKgTouched(false)
       quantitiesDirtyRef.current = false
       prefScopeRef.current = ''
       prevPrefillScopeRef.current = ''
@@ -396,7 +402,7 @@ export function AquacultureStockLedgerFormModal({
     quantitiesDirtyRef.current = false
     prefScopeRef.current = ''
     setBookValueTouched(false)
-    setWeightKgTouched(false)
+    setFishPerKgTouched(false)
   }, [open, prefillScope])
 
   useEffect(() => {
@@ -494,21 +500,29 @@ export function AquacultureStockLedgerFormModal({
         ? String(ref.estimated_fish_count)
         : ''
     const kg = ref.estimated_total_weight_kg?.trim() || ''
-    setWeightKgTouched(false)
+    const kgResolved =
+      kg ||
+      (entryKind === 'loss'
+        ? kgFromFishCountAndPerKg(count, ref.fish_per_kg, false)
+        : kgFromFishCountAndPerKg(count, ref.fish_per_kg, true))
+    const countN = parseInt(count, 10)
+    const kgN = Number(String(kgResolved).replace(/,/g, ''))
+    const derivedFpk = deriveFishPerKg(Math.abs(countN), Math.abs(kgN)) || ref.fish_per_kg
+    setFishPerKgTouched(false)
     setForm((f) => {
       if (entryKind === 'loss') {
         return {
           ...f,
-          fish_per_kg: ref.fish_per_kg,
           fish_removed: count || f.fish_removed,
-          kg_removed: kg || f.kg_removed,
+          kg_removed: kgResolved || f.kg_removed,
+          fish_per_kg: derivedFpk,
         }
       }
       return {
         ...f,
-        fish_per_kg: ref.fish_per_kg,
         adj_fish_count: count || f.adj_fish_count,
-        adj_weight_kg: kg || f.adj_weight_kg,
+        adj_weight_kg: kgResolved || f.adj_weight_kg,
+        fish_per_kg: derivedFpk,
       }
     })
   }, [])
@@ -547,24 +561,29 @@ export function AquacultureStockLedgerFormModal({
   }, [open, form.pond_id])
 
   useEffect(() => {
-    if (glLinked || bookPostingLocked || weightKgTouched) return
+    if (glLinked || bookPostingLocked || fishPerKgTouched) return
     if (form.entry_kind === 'loss') {
-      const kg = kgFromFishCountAndPerKg(form.fish_removed, form.fish_per_kg, false)
-      if (!kg) return
-      setForm((f) => (f.kg_removed === kg ? f : { ...f, kg_removed: kg }))
+      const count = parseInt(form.fish_removed, 10)
+      const kg = Number(String(form.kg_removed).replace(/,/g, ''))
+      const fpk = deriveFishPerKg(count, kg)
+      if (!fpk) return
+      setForm((f) => (f.fish_per_kg === fpk ? f : { ...f, fish_per_kg: fpk }))
       return
     }
-    const kg = kgFromFishCountAndPerKg(form.adj_fish_count, form.fish_per_kg, true)
-    if (!kg) return
-    setForm((f) => (f.adj_weight_kg === kg ? f : { ...f, adj_weight_kg: kg }))
+    const count = parseInt(form.adj_fish_count, 10)
+    const kg = Number(String(form.adj_weight_kg).replace(/,/g, ''))
+    const fpk = deriveFishPerKg(Math.abs(count), Math.abs(kg))
+    if (!fpk) return
+    setForm((f) => (f.fish_per_kg === fpk ? f : { ...f, fish_per_kg: fpk }))
   }, [
     form.entry_kind,
     form.fish_removed,
-    form.fish_per_kg,
+    form.kg_removed,
     form.adj_fish_count,
+    form.adj_weight_kg,
     glLinked,
     bookPostingLocked,
-    weightKgTouched,
+    fishPerKgTouched,
   ])
 
   const applyLastSampleQuantities = () => {
@@ -576,21 +595,30 @@ export function AquacultureStockLedgerFormModal({
         ? String(lastSample.estimated_fish_count)
         : ''
     const kg = lastSample.estimated_total_weight_kg?.trim() || ''
-    setWeightKgTouched(false)
+    const kgResolved =
+      kg ||
+      (form.entry_kind === 'loss'
+        ? kgFromFishCountAndPerKg(count, lastSample.fish_per_kg, false)
+        : kgFromFishCountAndPerKg(count, lastSample.fish_per_kg, true))
+    const countN = parseInt(count, 10)
+    const kgN = Number(String(kgResolved).replace(/,/g, ''))
+    const derivedFpk =
+      deriveFishPerKg(Math.abs(countN), Math.abs(kgN)) || lastSample.fish_per_kg
+    setFishPerKgTouched(false)
     setForm((f) => {
       if (f.entry_kind === 'loss') {
         return {
           ...f,
-          fish_per_kg: lastSample.fish_per_kg,
           fish_removed: count,
-          kg_removed: kg || kgFromFishCountAndPerKg(count, lastSample.fish_per_kg, false),
+          kg_removed: kgResolved,
+          fish_per_kg: derivedFpk,
         }
       }
       return {
         ...f,
-        fish_per_kg: lastSample.fish_per_kg,
         adj_fish_count: count,
-        adj_weight_kg: kg || kgFromFishCountAndPerKg(count, lastSample.fish_per_kg, true),
+        adj_weight_kg: kgResolved,
+        fish_per_kg: derivedFpk,
       }
     })
   }
@@ -646,7 +674,7 @@ export function AquacultureStockLedgerFormModal({
   const buildBody = (): Record<string, unknown> | null => {
     const pond_id = parseInt(form.pond_id, 10)
     if (!Number.isFinite(pond_id)) {
-      toast.error('Select a pond')
+      toast.error(t('stockSelectPond'))
       return null
     }
     let fish_count_delta = 0
@@ -654,33 +682,33 @@ export function AquacultureStockLedgerFormModal({
     if (form.entry_kind === 'loss') {
       const hr = parseInt(form.fish_removed, 10)
       if (!Number.isFinite(hr) || hr <= 0) {
-        toast.error('Enter fish removed (heads) as a positive number')
+        toast.error(t('stockEnterFishRemoved'))
         return null
       }
       fish_count_delta = -Math.abs(hr)
       const kg = Number(String(form.kg_removed).replace(/,/g, ''))
       if (!Number.isFinite(kg) || kg <= 0) {
-        toast.error('Enter weight removed (kg) as a number greater than zero')
+        toast.error(t('stockEnterWeightRemoved'))
         return null
       }
       weight_kg_delta = -Math.abs(kg)
     } else {
       if (form.adj_fish_count.trim() === '') {
-        toast.error('Fish count change is required (use negative for fewer fish)')
+        toast.error(t('stockFishCountRequired'))
         return null
       }
       fish_count_delta = parseInt(form.adj_fish_count, 10)
       if (!Number.isFinite(fish_count_delta) || fish_count_delta === 0) {
-        toast.error('Fish count adjustment must be a non-zero integer')
+        toast.error(t('stockFishCountNonZero'))
         return null
       }
       if (form.adj_weight_kg.trim() === '') {
-        toast.error('Weight change (kg) is required (use negative for less biomass)')
+        toast.error(t('stockWeightRequired'))
         return null
       }
       weight_kg_delta = Number(String(form.adj_weight_kg).replace(/,/g, ''))
       if (!Number.isFinite(weight_kg_delta) || weight_kg_delta === 0) {
-        toast.error('Weight adjustment must be a non-zero number')
+        toast.error(t('stockWeightNonZero'))
         return null
       }
     }
@@ -707,7 +735,7 @@ export function AquacultureStockLedgerFormModal({
     try {
       if (editing?.journal_entry_id) {
         await api.put(`/aquaculture/fish-stock-ledger/${editing.id}/`, { memo: form.memo })
-        toast.success('Memo updated')
+        toast.success(t('stockMemoUpdated'))
         onSaved()
         onClose()
         return
@@ -716,15 +744,15 @@ export function AquacultureStockLedgerFormModal({
       if (!body) return
       if (editing) {
         await api.put(`/aquaculture/fish-stock-ledger/${editing.id}/`, body)
-        toast.success('Ledger entry updated')
+        toast.success(t('stockEntryUpdated'))
       } else {
         await api.post('/aquaculture/fish-stock-ledger/', body)
-        toast.success('Ledger entry saved')
+        toast.success(t('stockEntrySaved'))
       }
       onSaved()
       onClose()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Save failed'))
+      toast.error(extractErrorMessage(e, t('stockSaveFailed')))
     } finally {
       setSubmitting(false)
     }
@@ -733,8 +761,8 @@ export function AquacultureStockLedgerFormModal({
   if (!open) return null
 
   const entryKinds = refData?.entry_kind ?? [
-    { id: 'loss', label: 'Loss' },
-    { id: 'adjustment', label: 'Adjustment' },
+    { id: 'loss', label: t('stockEntryLoss') },
+    { id: 'adjustment', label: t('stockEntryAdjustment') },
   ]
   const lossReasons = refData?.loss_reason ?? []
 
@@ -749,14 +777,14 @@ export function AquacultureStockLedgerFormModal({
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-teal-50 to-white px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <h2 id="aq-stock-ledger-form-title" className="text-xl font-bold tracking-tight text-slate-900">
-              {glLinked ? 'Edit memo' : isEdit ? 'Edit stock ledger entry' : 'Record stock ledger entry'}
+              {glLinked ? t('stockEditMemo') : isEdit ? t('stockEditEntry') : t('stockRecordEntry')}
             </h2>
             <p className="mt-1 text-sm text-slate-600">
               {glLinked
-                ? 'This row is posted to the general ledger — only the memo can be changed here.'
+                ? t('stockGlPostedHint')
                 : isEdit
-                  ? 'Update mortality, adjustment, or notes. Book value and GL posting are fixed after create.'
-                  : 'Record mortality, predation, theft, or a manual count/weight correction for implied stock.'}
+                  ? t('stockEditHint')
+                  : t('stockCreateHint')}
             </p>
           </div>
           <button
@@ -784,6 +812,53 @@ export function AquacultureStockLedgerFormModal({
               Book value and “Post journal” were set at creation. To change GL posting, roll back this row and add a new
               one.
             </p>
+          ) : null}
+
+          {!glLinked && !isEdit ? (
+            <details className="group mb-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-slate-800 marker:content-none [&::-webkit-details-marker]:hidden">
+                <ChevronDown
+                  className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180"
+                  aria-hidden
+                />
+                <BookOpen className="h-4 w-4 shrink-0 text-teal-700" aria-hidden />
+                Example: 500 fish mortality with GL posting
+              </summary>
+              <div className="border-t border-slate-200 px-4 py-3 text-sm leading-relaxed text-slate-700">
+                <p className="text-slate-600">
+                  Morning check: ~500 dead tilapia. Recent sampling suggests ~4 fish/kg. You want stock, P&amp;L, and
+                  account <strong className="font-medium text-slate-800">1581</strong> updated.
+                </p>
+                <ol className="mt-3 list-decimal space-y-2 pl-5 text-xs sm:text-sm">
+                  <li>
+                    <strong className="font-medium text-slate-800">Where &amp; when:</strong> pick the grow pond, today&apos;s
+                    date, optional stocking batch, species Tilapia.
+                  </li>
+                  <li>
+                    <strong className="font-medium text-slate-800">What happened:</strong> entry type{' '}
+                    <span className="rounded bg-rose-50 px-1 font-medium text-rose-900">Loss</span>, reason Mortality,
+                    fish removed <span className="tabular-nums">500</span>, fish/kg{' '}
+                    <span className="tabular-nums">4</span> → kg removed{' '}
+                    <span className="tabular-nums">125</span> (preview: −500 fish · −125 kg).
+                  </li>
+                  <li>
+                    <strong className="font-medium text-slate-800">Book value:</strong> if cost/kg is {sym}120, book value
+                    ≈ {sym}15,000 (125 × 120, capped at pond bio-asset balance). Check{' '}
+                    <strong className="font-medium text-slate-800">Post journal on save</strong> to post Dr{' '}
+                    <span className="tabular-nums">6726</span> / Cr <span className="tabular-nums">1581</span>.
+                  </li>
+                  <li>
+                    <strong className="font-medium text-slate-800">Memo:</strong> e.g. &quot;Morning mortality after low DO —
+                    ~500 fish, est. 125 kg @ 4 fish/kg&quot;.
+                  </li>
+                </ol>
+                <p className="mt-3 text-xs text-slate-500">
+                  <strong className="font-medium text-slate-600">After save:</strong> implied pond stock drops; biomass
+                  sampling uses lower book head; P&amp;L shows biological write-off when book value is set; GL moves only
+                  when posted. Stock-only (no GL): enter fish + kg, leave book value at 0 and Post journal unchecked.
+                </p>
+              </div>
+            </details>
           ) : null}
 
           {!glLinked && preview ? (
@@ -840,7 +915,7 @@ export function AquacultureStockLedgerFormModal({
                 />
               </label>
               <label className="block sm:col-span-2">
-                <span className={labelCls}>Production cycle</span>
+                <span className={labelCls}>Stocking batch (optional)</span>
                 <select
                   className={`${inputCls} mt-1.5`}
                   value={form.production_cycle_id}
@@ -854,9 +929,26 @@ export function AquacultureStockLedgerFormModal({
                     </option>
                   ))}
                 </select>
-                <p className="mt-1 text-xs text-slate-500">
-                  Tag a cycle so this entry appears in cycle × species breakdown and filtered totals.
-                </p>
+                {form.pond_id && cycles.length === 0 ? (
+                  <p className="mt-1 text-xs text-amber-800">
+                    No batches for this pond yet — pond-level mortality still works, or{' '}
+                    <Link
+                      href={`/aquaculture/cycles?pond_id=${encodeURIComponent(form.pond_id)}`}
+                      className="font-medium text-teal-800 underline hover:text-teal-950"
+                    >
+                      create a stocking batch
+                    </Link>
+                    .
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Tag a batch so this entry appears in batch × species breakdown and filtered totals. Same record as{' '}
+                    <Link href="/aquaculture/cycles" className="font-medium text-teal-800 underline hover:text-teal-950">
+                      Stocking batches
+                    </Link>
+                    .
+                  </p>
+                )}
               </label>
               <label className="block sm:col-span-2">
                 <span className={labelCls}>Fish species</span>
@@ -918,8 +1010,8 @@ export function AquacultureStockLedgerFormModal({
                         <span className="block font-semibold">{o.label}</span>
                         <span className="mt-0.5 block text-xs font-normal text-slate-500">
                           {o.id === 'loss'
-                            ? 'Mortality, predators, theft, culling'
-                            : 'Opening balance, recount, correction'}
+                            ? t('stockLossKindsHint')
+                            : t('stockAdjKindsHint')}
                         </span>
                       </button>
                     )
@@ -961,6 +1053,7 @@ export function AquacultureStockLedgerFormModal({
                     weightKg={form.kg_removed}
                     onFishPerKgChange={(v) => {
                       markQuantitiesDirty()
+                      setFishPerKgTouched(true)
                       setForm((f) => ({ ...f, fish_per_kg: v }))
                     }}
                     onFishCountChange={(v) => {
@@ -969,13 +1062,13 @@ export function AquacultureStockLedgerFormModal({
                     }}
                     onWeightKgChange={(v) => {
                       markQuantitiesDirty()
-                      setWeightKgTouched(true)
                       setForm((f) => ({ ...f, kg_removed: v }))
                     }}
                     onReapplySample={applyLastSampleQuantities}
-                    fishCountLabel="Fish count (heads)"
-                    fishCountHint="Heads lost (positive)"
-                    weightLabel="Total weight (kg)"
+                    fishCountLabel={t('stockFishCountHeads')}
+                    fishCountHint={t('stockHeadsLost')}
+                    weightLabel={t('stockTotalWeightKg')}
+                    t={t}
                   />
                 </>
               ) : (
@@ -987,6 +1080,7 @@ export function AquacultureStockLedgerFormModal({
                   weightKg={form.adj_weight_kg}
                   onFishPerKgChange={(v) => {
                     markQuantitiesDirty()
+                    setFishPerKgTouched(true)
                     setForm((f) => ({ ...f, fish_per_kg: v }))
                   }}
                   onFishCountChange={(v) => {
@@ -995,15 +1089,15 @@ export function AquacultureStockLedgerFormModal({
                   }}
                   onWeightKgChange={(v) => {
                     markQuantitiesDirty()
-                    setWeightKgTouched(true)
                     setForm((f) => ({ ...f, adj_weight_kg: v }))
                   }}
                   onReapplySample={applyLastSampleQuantities}
-                  fishCountLabel="Δ Fish count"
-                  fishCountHint="Negative = fewer, positive = more"
-                  weightLabel="Δ Total weight (kg)"
-                  weightHint="Sign follows fish count Δ"
+                  fishCountLabel={t('stockFishCountDelta')}
+                  fishCountHint={t('stockFishCountDeltaHint')}
+                  weightLabel={t('stockWeightDeltaKg')}
+                  weightHint={t('stockWeightSignHint')}
                   fishCountPlaceholder="e.g. -120 or +50000"
+                  t={t}
                 />
               )}
             </section>
@@ -1013,14 +1107,12 @@ export function AquacultureStockLedgerFormModal({
             <section className="mt-5 rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:p-5">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <BookOpen className="h-4 w-4 text-teal-700" aria-hidden />
-                General ledger (optional)
+                {t('stockGlOptional')}
               </div>
               {refData?.coa_note ? (
                 <p className="mt-1 text-xs text-slate-500">{refData.coa_note}</p>
               ) : (
-                <p className="mt-1 text-xs text-slate-500">
-                  Post only when you need a journal entry (accounts 1581 / 6726 / 4244).
-                </p>
+                <p className="mt-1 text-xs text-slate-500">{t('stockGlHint')}</p>
               )}
               <div className="mt-4 space-y-3">
                 {bioCostLoading ? (
@@ -1134,7 +1226,7 @@ export function AquacultureStockLedgerFormModal({
             className="inline-flex min-w-[7rem] items-center justify-center gap-2 rounded-lg bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-            {glLinked ? 'Save memo' : isEdit ? 'Save changes' : 'Save entry'}
+            {glLinked ? t('stockSaveMemo') : isEdit ? t('stockSaveChanges') : t('stockSaveEntry')}
           </button>
         </div>
       </div>

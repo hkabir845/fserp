@@ -13,6 +13,7 @@ from api.services.aquaculture_fcr_service import (
     sum_feed_kg_for_period,
 )
 from api.services.aquaculture_partial_harvest import (
+    compute_biomass_load_advice_dict,
     compute_partial_harvest_suggestion,
     current_fish_per_kg_from_position_row,
     enrich_position_row_with_fish_metrics,
@@ -41,13 +42,76 @@ def test_partial_harvest_suggestion_when_high_load():
 @pytest.mark.django_db
 def test_partial_harvest_not_applicable_when_moderate_load():
     sug = compute_partial_harvest_suggestion(
-        Decimal("20"),
+        Decimal("60"),
         50_000,
         water_area_decimal=Decimal("2.0"),
         pond_role="grow_out",
         load_level="moderate",
     )
     assert sug["partial_harvest_applicable"] is False
+
+
+def test_biomass_load_advice_recommends_partial_harvest_at_high_load():
+    out = compute_biomass_load_advice_dict(
+        biomass_kg=Decimal("300"),
+        fish_count=120_000,
+        water_area_decimal=Decimal("2.0"),
+        pond_role="grow_out",
+        fish_per_kg=Decimal("400"),
+    )
+    assert out["owner_decision_recommended"] is True
+    assert out["owner_action"] == "partial_harvest"
+    assert out["partial_harvest_applicable"] is True
+    assert Decimal(out["partial_harvest_suggested_kg"]) > 0
+    assert out["partial_harvest_suggested_fish_count"] is not None
+    assert "kg/decimal" in (out["owner_decision_summary"] or "")
+
+
+def test_biomass_load_advice_monitor_when_moderate():
+    out = compute_biomass_load_advice_dict(
+        biomass_kg=Decimal("60"),
+        fish_count=50_000,
+        water_area_decimal=Decimal("2.0"),
+        pond_role="grow_out",
+    )
+    assert out["load_level"] == "moderate"
+    assert out["owner_decision_recommended"] is False
+    assert out["owner_action"] == "monitor"
+    assert out["partial_harvest_applicable"] is False
+
+
+def test_biomass_load_advice_intensive_grow_out_bands():
+    """Grow-out bands: light <15, moderate 15–40, full 40–55, high_risk ≥55 kg/decimal."""
+    understocked = compute_biomass_load_advice_dict(
+        biomass_kg=Decimal("20"),
+        fish_count=10_000,
+        water_area_decimal=Decimal("2.0"),
+        pond_role="grow_out",
+    )
+    assert understocked["load_level"] == "understocked"
+
+    full = compute_biomass_load_advice_dict(
+        biomass_kg=Decimal("90"),
+        fish_count=50_000,
+        water_area_decimal=Decimal("2.0"),
+        pond_role="grow_out",
+    )
+    assert full["load_level"] == "full"
+    assert full["owner_decision_recommended"] is True
+    assert full["partial_harvest_applicable"] is True
+
+
+def test_biomass_load_advice_bangla():
+    out = compute_biomass_load_advice_dict(
+        biomass_kg=Decimal("60"),
+        fish_count=50_000,
+        water_area_decimal=Decimal("2.0"),
+        pond_role="grow_out",
+        lang="bn",
+    )
+    assert out["load_level"] == "moderate"
+    assert out["load_level_label"] == "মাঝারি"
+    assert "kg/ডেসিমেল" in (out["owner_decision_summary"] or "")
 
 
 @pytest.mark.django_db

@@ -26,6 +26,7 @@ import {
   formatCompanyDate,
   formatCompanyTime,
 } from '@/utils/companyLocaleFormats'
+import { aquacultureT } from '@/lib/aquacultureI18n'
 import {
   COMPANY_TIME_ZONE_OPTIONS,
   DEFAULT_COMPANY_TIME_ZONE,
@@ -53,6 +54,8 @@ type CompanyForm = {
   time_zone: string
   /** single = one site; multi = many stations */
   station_mode: 'single' | 'multi'
+  /** en | bn for aquaculture advice */
+  language: 'en' | 'bn'
   subdomain: string
   custom_domain: string
 }
@@ -76,6 +79,7 @@ const emptyForm = (): CompanyForm => ({
   time_format: DEFAULT_COMPANY_TIME_FORMAT,
   time_zone: DEFAULT_COMPANY_TIME_ZONE,
   station_mode: 'single',
+  language: 'en',
   subdomain: '',
   custom_domain: '',
 })
@@ -144,6 +148,7 @@ export default function CompanyPage() {
         station_mode: String((data as { station_mode?: string }).station_mode ?? 'single').toLowerCase() === 'multi'
           ? 'multi'
           : 'single',
+        language: String((data as { language?: string }).language ?? 'en').toLowerCase() === 'bn' ? 'bn' : 'en',
         subdomain: String(data.subdomain ?? ''),
         custom_domain: String(data.custom_domain ?? ''),
       })
@@ -200,6 +205,7 @@ export default function CompanyPage() {
         date_format: formData.date_format,
         time_format: formData.time_format,
         time_zone: formData.time_zone,
+        language: formData.language,
         subdomain: formData.subdomain.trim(),
         custom_domain: formData.custom_domain.trim(),
       }
@@ -424,6 +430,24 @@ export default function CompanyPage() {
                           </option>
                         ))}
                       </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                        {aquacultureT('languageLabel', formData.language)}
+                      </label>
+                      <select
+                        value={formData.language}
+                        onChange={(e) =>
+                          updateField('language', e.target.value === 'bn' ? 'bn' : 'en')
+                        }
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      >
+                        <option value="en">{aquacultureT('languageEnglish', 'en')}</option>
+                        <option value="bn">{aquacultureT('languageBangla', 'bn')}</option>
+                      </select>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {aquacultureT('languageHelp', formData.language)}
+                      </p>
                     </div>
                     <div className="md:col-span-2">
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">Time zone</label>

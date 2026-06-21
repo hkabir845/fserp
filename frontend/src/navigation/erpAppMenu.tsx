@@ -31,6 +31,7 @@ import {
 
 import { buildAppPageHrefPermissionMap } from '@/navigation/appPagePermissions'
 import { getAquacultureMenuItemsFlatWithGroup } from '@/navigation/aquacultureNavConfig'
+import { AQUACULTURE_STOCK_SUB_NAV } from '@/navigation/aquacultureStockNavConfig'
 import { hasAnyAquacultureModuleInList, menuHrefAllowedForAquaculture } from '@/navigation/aquaculturePermissions'
 /** Sidebar search hints (unchanged from Sidebar) */
 export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
@@ -73,6 +74,8 @@ export interface ErpAppMenuItem {
   /** Optional sub-section grouping inside `section` (currently used by Aquaculture). */
   subGroupId?: string
   subGroupLabel?: string
+  /** Indented child link under a parent module (e.g. Pond stock sub-pages). */
+  menuDepth?: number
 }
 
 function tile(iconBg: string, iconText: string) {
@@ -89,6 +92,7 @@ const AQUACULTURE_TILE_BY_HREF: Record<string, string> = {
   '/aquaculture/cycles': tile('bg-sky-100', 'text-sky-800'),
   '/aquaculture/transfers': tile('bg-cyan-100', 'text-cyan-800'),
   '/aquaculture/stock': tile('bg-teal-100', 'text-teal-800'),
+  '/aquaculture/stock/options': tile('bg-teal-50', 'text-teal-800'),
   '/aquaculture/sampling': tile('bg-lime-100', 'text-lime-800'),
   '/aquaculture/feeding': tile('bg-amber-100', 'text-amber-800'),
   '/aquaculture/medicine': tile('bg-violet-100', 'text-violet-800'),
@@ -125,6 +129,7 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   '/aquaculture/cycles': ['app.aquaculture', 'app.aquaculture.cycles'],
   '/aquaculture/transfers': ['app.aquaculture', 'app.aquaculture.transfers'],
   '/aquaculture/stock': ['app.aquaculture', 'app.aquaculture.stock'],
+  '/aquaculture/stock/options': ['app.aquaculture', 'app.aquaculture.stock'],
   '/aquaculture/landlords': ['app.aquaculture', 'app.aquaculture.landlords'],
   '/aquaculture/financing': ['app.aquaculture', 'app.aquaculture.financing'],
   '/aquaculture/data-bank': ['app.aquaculture', 'app.aquaculture.data_bank'],
@@ -219,15 +224,31 @@ export function getFsmsErpMenuItems(): ErpAppMenuItem[] {
     },
     { href: '/backup', label: 'Backup & Restore', section: 'management', icon: Database, tileClass: tile('bg-neutral-100', 'text-neutral-600') },
 
-    ...getAquacultureMenuItemsFlatWithGroup().map((item) => ({
-      href: item.href,
-      label: item.sidebarLabel ?? item.label,
-      section: 'aquaculture' as const,
-      icon: item.icon,
-      tileClass: AQUACULTURE_TILE_BY_HREF[item.href] ?? tile('bg-slate-100', 'text-slate-700'),
-      subGroupId: item.groupId,
-      subGroupLabel: item.groupLabel,
-    })),
+    ...getAquacultureMenuItemsFlatWithGroup().flatMap((item) => {
+      const base = {
+        href: item.href,
+        label: item.sidebarLabel ?? item.label,
+        section: 'aquaculture' as const,
+        icon: item.icon,
+        tileClass: AQUACULTURE_TILE_BY_HREF[item.href] ?? tile('bg-slate-100', 'text-slate-700'),
+        subGroupId: item.groupId,
+        subGroupLabel: item.groupLabel,
+      }
+      if (item.href !== '/aquaculture/stock') return [base]
+      return [
+        base,
+        ...AQUACULTURE_STOCK_SUB_NAV.filter((sub) => sub.href !== '/aquaculture/stock').map((sub) => ({
+          href: sub.href,
+          label: sub.sidebarLabel ?? sub.label,
+          section: 'aquaculture' as const,
+          icon: sub.icon,
+          tileClass: AQUACULTURE_TILE_BY_HREF[sub.href] ?? tile('bg-teal-50', 'text-teal-800'),
+          subGroupId: item.groupId,
+          subGroupLabel: item.groupLabel,
+          menuDepth: 1,
+        })),
+      ]
+    }),
 
     { href: '/reports', label: 'Reports', section: 'reports', icon: BarChart3, tileClass: tile('bg-violet-100', 'text-violet-600') },
   ]

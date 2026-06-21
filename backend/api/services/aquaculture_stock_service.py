@@ -18,6 +18,7 @@ from api.models import (
     Item,
 )
 from api.services.aquaculture_constants import fish_species_display_label, normalize_fish_species
+from api.services.aquaculture_i18n import company_language
 from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
 from api.services.aquaculture_biomass_sample_reference_service import last_biomass_sample_reference_for_ledger
 from api.services.aquaculture_partial_harvest import (
@@ -105,6 +106,7 @@ def compute_fish_stock_position_rows(
     and sales tagged with that production_cycle_id).
     """
     cid = company_id
+    lang = company_language(cid)
     species_filter_code: str | None = None
     if fish_species_filter is not None and str(fish_species_filter).strip() != "":
         species_filter_code, _ = normalize_fish_species(fish_species_filter)
@@ -287,6 +289,7 @@ def compute_fish_stock_position_rows(
             water_area_decimal=wa_dec,
             water_volume_cu_ft=vol_cu,
             pond_role=role,
+            lang=lang,
         )
         row = {
             "pond_id": pid,
@@ -328,7 +331,7 @@ def compute_fish_stock_position_rows(
             "production_cycle_id": cy_id,
             **advice,
         }
-        out_rows.append(enrich_position_row_with_fish_metrics(row, water_area_decimal=wa_dec))
+        out_rows.append(enrich_position_row_with_fish_metrics(row, water_area_decimal=wa_dec, lang=lang))
     return out_rows
 
 
@@ -356,6 +359,7 @@ def _position_row_from_bucket(
     adjustment_in_c: int = 0,
     adjustment_out_w: Decimal = Decimal("0"),
     adjustment_out_c: int = 0,
+    lang: str = "en",
 ) -> dict:
     tw = in_w - out_w + bill_w - sale_w + ledger_w
     tc = in_c - out_c + bill_c - sale_c + ledger_c
@@ -376,6 +380,7 @@ def _position_row_from_bucket(
         water_area_decimal=wa_dec,
         water_volume_cu_ft=vol_cu,
         pond_role=role,
+        lang=lang,
     )
     base_row = {
         "pond_id": p.id,
@@ -420,7 +425,7 @@ def _position_row_from_bucket(
         ),
         **advice,
     }
-    return enrich_position_row_with_fish_metrics(base_row, water_area_decimal=wa_dec)
+    return enrich_position_row_with_fish_metrics(base_row, water_area_decimal=wa_dec, lang=lang)
 
 
 def compute_fish_stock_position_breakdown_rows(
@@ -437,6 +442,7 @@ def compute_fish_stock_position_breakdown_rows(
     Respects the same pond / cycle / species filters as compute_fish_stock_position_rows.
     """
     cid = company_id
+    lang = company_language(cid)
     species_filter_code: str | None = None
     if fish_species_filter is not None and str(fish_species_filter).strip() != "":
         species_filter_code, _ = normalize_fish_species(fish_species_filter)
@@ -685,6 +691,7 @@ def compute_fish_stock_position_breakdown_rows(
                 adjustment_out_w=adj_out_w,
                 adjustment_out_c=adj_out_c,
                 smp=smp,
+                lang=lang,
             )
         )
     return out_rows

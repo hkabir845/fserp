@@ -4,13 +4,11 @@ import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft,
   BarChart3,
   Beaker,
   ChevronDown,
   ChevronRight,
   ExternalLink,
-  Fish,
   ListOrdered,
   Package,
   Pencil,
@@ -18,10 +16,10 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  Undo2,
   ArrowRightLeft,
   Eye,
 } from 'lucide-react'
+import { parseAquacultureStockRoute } from '@/navigation/aquacultureStockNavConfig'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import Modal from '@/components/ui/Modal'
@@ -31,13 +29,19 @@ import { formatDateOnly } from '@/utils/date'
 import { aquacultureExpenseDeleteConfirmMessage } from '@/lib/aquacultureExpensePolicy'
 import { PondWarehouseAddStockModal } from '@/components/aquaculture/PondWarehouseAddStockModal'
 import { PondWarehouseInterPondModal } from '@/components/aquaculture/PondWarehouseInterPondModal'
-import { AquacultureWarehouseGroupsPanel } from '@/components/aquaculture/AquacultureWarehouseGroupsPanel'
 import { AquacultureStockLedgerFormModal } from './AquacultureStockLedgerFormModal'
 
 const iconAction =
-  'inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:pointer-events-none disabled:opacity-40'
+  'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:pointer-events-none disabled:opacity-40'
+const iconActionSm = `${iconAction} size-10 px-0`
+const iconActionLabeled = `${iconAction} px-2 py-1.5 text-xs font-medium`
 const iconActionDanger =
-  'inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-rose-200/80 bg-rose-50/50 text-rose-700 transition-colors hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30 disabled:pointer-events-none disabled:opacity-40'
+  'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-rose-200/80 bg-rose-50/50 text-rose-700 transition-colors hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30 disabled:pointer-events-none disabled:opacity-40'
+const iconActionDangerLabeled = `${iconActionDanger} px-2 py-1.5 text-xs font-medium`
+const stickyActionsHeader =
+  'sticky right-0 z-[2] bg-slate-50/95 px-2 py-2.5 text-right shadow-[-6px_0_10px_-6px_rgba(15,23,42,0.12)] backdrop-blur-sm'
+const stickyActionsCell =
+  'sticky right-0 z-[1] bg-white px-2 py-2.5 shadow-[-6px_0_10px_-6px_rgba(15,23,42,0.08)] group-hover:bg-slate-50/90'
 
 interface Pond {
   id: number
@@ -493,9 +497,10 @@ function AquacultureStockPageContent() {
   const [rollbackTarget, setRollbackTarget] = useState<LedgerRow | null>(null)
   const [rollbackBusy, setRollbackBusy] = useState(false)
   const [ledgerQuery, setLedgerQuery] = useState('')
-  const [mainTab, setMainTab] = useState<'fish' | 'warehouse'>('fish')
-  const [fishSubTab, setFishSubTab] = useState<'manual' | 'movements'>('manual')
-  const [whSubTab, setWhSubTab] = useState<'on_hand' | 'movements' | 'consumed'>('on_hand')
+  const { mainTab, fishSubTab, whSubTab, isOptionsPage } = useMemo(
+    () => parseAquacultureStockRoute(pathname || ''),
+    [pathname],
+  )
   const [whRows, setWhRows] = useState<WarehouseMatrixRow[]>([])
   const [whLoading, setWhLoading] = useState(false)
   const [whPond, setWhPond] = useState('')
@@ -951,6 +956,13 @@ function AquacultureStockPageContent() {
     void loadPonds()
   }, [loadPonds])
 
+  useEffect(() => {
+    const tab = searchParams.get('tab')?.toLowerCase()
+    if (tab === 'warehouse' && pathname === '/aquaculture/stock') {
+      router.replace('/aquaculture/stock/supplies')
+    }
+  }, [searchParams, pathname, router])
+
   /** Deep link: `?fish_species=tilapia` (or `species=`) — stays in sync when the query string changes. */
   useEffect(() => {
     const raw = (searchParams.get('fish_species') || searchParams.get('species') || '').trim().toLowerCase()
@@ -978,7 +990,7 @@ function AquacultureStockPageContent() {
   }, [mainTab, whSubTab, loadWarehouseMatrix, loadWhMovements, loadConsumption])
 
   useEffect(() => {
-    if (mainTab !== 'fish' || fishSubTab !== 'movements') return
+    if (mainTab !== 'fish' || fishSubTab !== 'history') return
     void loadMovements()
   }, [mainTab, fishSubTab, loadMovements])
 
@@ -1059,6 +1071,13 @@ function AquacultureStockPageContent() {
     setModal(true)
   }
 
+  const startNewAdjustment = () => {
+    if (pathname !== '/aquaculture/stock/adjustments') {
+      router.push('/aquaculture/stock/adjustments')
+    }
+    openNew()
+  }
+
   const openEdit = (r: LedgerRow) => {
     setEditingRow(r)
     setModal(true)
@@ -1069,13 +1088,18 @@ function AquacultureStockPageContent() {
     setEditingRow(null)
   }
 
+  const viewAdjustmentsForPond = (pondId: number) => {
+    setPosPond(String(pondId))
+    router.push('/aquaculture/stock/adjustments')
+  }
+
   const executeRollback = async () => {
     const r = rollbackTarget
     if (!r) return
     setRollbackBusy(true)
     try {
       await api.delete(`/aquaculture/fish-stock-ledger/${r.id}/`)
-      toast.success('Entry rolled back — stock position and ledger updated')
+      toast.success('Entry deleted — stock position and ledger updated')
       setRollbackTarget(null)
       void loadRows()
       void loadPosition()
@@ -1086,207 +1110,112 @@ function AquacultureStockPageContent() {
     }
   }
 
+  if (isOptionsPage) return null
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <Link
-            href="/aquaculture"
-            className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:text-teal-950"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Dashboard
-          </Link>
-          <h1 id="aq-stock-title" className="text-2xl font-bold tracking-tight text-slate-900">
-            Pond stock
-          </h1>
-          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-600">
-            Fish biomass (live weight and head counts in water) is separate from pond warehouse inventory (feed,
-            medicine, and supplies). Use the tabs below—each is tracked and updated differently.
+    <>
+      <div className="mb-6 flex flex-wrap items-center justify-end gap-2">
+        {mainTab === 'fish' && ref?.coa_note ? (
+          <p className="mr-auto max-w-2xl text-xs text-slate-500">{ref.coa_note}</p>
+        ) : null}
+        {mainTab === 'warehouse' ? (
+          <p className="mr-auto max-w-2xl text-xs leading-relaxed text-slate-500">
+            Move stock from your shop with <strong className="font-medium text-slate-700">Add stock</strong>, or use{' '}
+            <Link href="/inventory" className="font-medium text-teal-800 underline hover:text-teal-950">
+              Inventory
+            </Link>{' '}
+            for advanced transfers. Consumption is recorded on{' '}
+            <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline hover:text-teal-950">
+              feeding
+            </Link>{' '}
+            and{' '}
+            <Link href="/aquaculture/medicine" className="font-medium text-teal-800 underline hover:text-teal-950">
+              medicine
+            </Link>
+            .
           </p>
-          <div
-            className="mt-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
-            role="tablist"
-            aria-label="Stock view"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mainTab === 'fish'}
-              id="stock-tab-fish"
-              aria-controls="stock-panel-fish"
-              onClick={() => setMainTab('fish')}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                mainTab === 'fish'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span className="inline-flex items-center gap-1.5">
-                <Fish className="h-4 w-4 text-current opacity-90" aria-hidden />
-                Fish biomass
-              </span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mainTab === 'warehouse'}
-              id="stock-tab-warehouse"
-              aria-controls="stock-panel-warehouse"
-              onClick={() => setMainTab('warehouse')}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                mainTab === 'warehouse'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span className="inline-flex items-center gap-1.5">
-                <Package className="h-4 w-4 text-current opacity-90" aria-hidden />
-                Feed &amp; supplies
-              </span>
-            </button>
-          </div>
-          {mainTab === 'fish' && ref?.coa_note ? <p className="mt-3 text-xs text-slate-500">{ref.coa_note}</p> : null}
-          {mainTab === 'warehouse' ? (
-            <p className="mt-3 max-w-3xl text-xs leading-relaxed text-slate-500">
-              Feed, medicine, and supplies stored at each pond. Use <strong className="font-medium text-slate-700">Add stock</strong>{' '}
-              to move from your shop, or{' '}
-              <Link href="/inventory" className="font-medium text-teal-800 underline hover:text-teal-950">
-                Inventory
-              </Link>{' '}
-              for advanced transfers. Consumption happens on{' '}
-              <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline hover:text-teal-950">
-                feeding advice
-              </Link>{' '}
-              and{' '}
-              <Link href="/aquaculture/medicine" className="font-medium text-teal-800 underline hover:text-teal-950">
-                medicine
-              </Link>
-              .
-            </p>
-          ) : null}
-          {mainTab === 'fish' ? (
-            <p className="mt-3 max-w-3xl text-xs leading-relaxed text-slate-500">
-              Mortality, predation, theft, and manual corrections: each ledger entry needs both a fish count delta and a
-              weight (kg) delta. Optional GL posting uses your aquaculture COA accounts.
-            </p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
+        ) : null}
+        <button
+          type="button"
+          onClick={() => {
+            void loadRows()
+            void loadPosition()
+            if (mainTab === 'warehouse') {
+              if (whSubTab === 'on_hand') void loadWarehouseMatrix()
+              else if (whSubTab === 'movements') void loadWhMovements()
+              else void loadConsumption()
+            }
+            if (mainTab === 'fish' && fishSubTab === 'history') void loadMovements()
+          }}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          <RefreshCw
+            className={`h-4 w-4 ${
+              loading || positionLoading || whLoading || movementsLoading || consumptionLoading
+                ? 'animate-spin'
+                : ''
+            }`}
+            aria-hidden
+          />
+          Refresh
+        </button>
+        {mainTab === 'fish' ? (
           <button
             type="button"
-            onClick={() => {
-              void loadRows()
-              void loadPosition()
-              if (mainTab === 'warehouse') {
-                if (whSubTab === 'on_hand') void loadWarehouseMatrix()
-                else void loadConsumption()
-              }
-              if (mainTab === 'fish' && fishSubTab === 'movements') void loadMovements()
-            }}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            onClick={startNewAdjustment}
+            disabled={ponds.length === 0}
+            title={ponds.length === 0 ? 'Add a pond first' : undefined}
+            className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${
-                loading || positionLoading || whLoading || movementsLoading || consumptionLoading
-                  ? 'animate-spin'
-                  : ''
-              }`}
-              aria-hidden
-            />
-            Refresh
+            <Plus className="h-4 w-4" aria-hidden />
+            Record loss / adjustment
           </button>
-          {mainTab === 'fish' ? (
-            <button
-              type="button"
-              onClick={openNew}
-              disabled={ponds.length === 0}
-              title={ponds.length === 0 ? 'Add a pond first' : undefined}
-              className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              Add ledger entry
-            </button>
-          ) : null}
-        </div>
+        ) : null}
       </div>
 
       {mainTab === 'fish' ? (
-        <div className="mb-6 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <BarChart3 className="h-3.5 w-3.5 text-teal-700" aria-hidden />
-              Implied position
-            </div>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
-              {positionLoading ? '—' : formatNumber(positionSummary.totalKg, 2)}{' '}
-              <span className="text-base font-normal text-slate-500">kg</span>
-            </p>
-            <p className="mt-0.5 text-sm text-slate-600">
-              {positionLoading
-                ? 'Loading…'
-                : `${formatNumber(positionSummary.totalFish, 0)} fish est. · ${positionSummary.pondCount} pond${
-                    positionSummary.pondCount === 1 ? '' : 's'
-                  }`}
-            </p>
-            <p className="mt-2 border-t border-slate-100 pt-2 text-xs leading-snug text-slate-500">
-              Includes transfers, vendor fry lines, sales, and manual ledger — not the manual table alone.
-              {posSpecies === 'tilapia' ? (
-                <>
-                  {' '}
-                  Matches the <span className="font-medium text-slate-600">Tilapia stock</span> column on Ponds (vendor
-                  fish lines default to tilapia unless the item suggests pangasius/basa).
-                </>
-              ) : posSpecies ? (
-                <> Only this species counts toward transfers, sales, samples, and manual ledger rows.</>
-              ) : null}
+        <div className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm">
+          <div>
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Total stock</span>
+            <p className="mt-0.5 font-semibold tabular-nums text-slate-900">
+              {positionLoading ? '—' : `${formatNumber(positionSummary.totalKg, 2)} kg`}
+              <span className="ml-2 text-sm font-normal text-slate-500">
+                · {positionLoading ? '—' : `${formatNumber(positionSummary.totalFish, 0)} fish`}
+                · {positionLoading ? '—' : `${positionSummary.pondCount} pond${positionSummary.pondCount === 1 ? '' : 's'}`}
+              </span>
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <ListOrdered className="h-3.5 w-3.5 text-teal-700" aria-hidden />
-              Manual ledger (in implied balance)
-            </div>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+          <div className="hidden h-8 w-px bg-slate-200 sm:block" aria-hidden />
+          <div>
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Manual changes</span>
+            <p className="mt-0.5 font-semibold tabular-nums text-slate-900">
               {loading || positionLoading
                 ? '—'
-                : `${formatNumber(ledgerComponentFromPosition.kg, 2)} kg`}
-            </p>
-            <p className="mt-0.5 text-sm text-slate-600">
-              {loading || positionLoading
-                ? 'Loading…'
-                : `${formatNumber(ledgerComponentFromPosition.fish, 0)} fish Δ · ${
-                    ledgerListMeta?.total_row_count ?? rows.length
-                  } entr${(ledgerListMeta?.total_row_count ?? rows.length) === 1 ? 'y' : 'ies'} (full history)`}
-            </p>
-            <p className="mt-2 border-t border-slate-100 pt-2 text-xs leading-snug text-slate-500">
-              Same pond / cycle / species scope as the table below. Totals match the “Manual ledger Δ” column in implied
-              position.
-              {ledgerTruncated ? (
-                <span className="mt-1 block font-medium text-amber-800">
-                  Only the most recent {ledgerListMeta?.returned} rows are loaded; raise limit or filter by pond if you
-                  need the full list.
-                </span>
-              ) : null}
-              {ledgerTotalsDrift ? (
-                <span className="mt-1 block font-medium text-rose-800">
-                  Ledger totals from the server do not match the implied-position ledger component — refresh or contact
-                  support.
-                </span>
-              ) : null}
+                : `${formatNumber(ledgerComponentFromPosition.kg, 2)} kg · ${formatNumber(ledgerComponentFromPosition.fish, 0)} fish`}
+              <span className="ml-2 text-sm font-normal text-slate-500">
+                · {ledgerListMeta?.total_row_count ?? rows.length} entr
+                {(ledgerListMeta?.total_row_count ?? rows.length) === 1 ? 'y' : 'ies'}
+              </span>
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <Fish className="h-3.5 w-3.5 text-teal-700" aria-hidden />
-              Operations
-            </div>
-            <p className="mt-2 text-sm leading-snug text-slate-600">
-              <span className="font-medium text-slate-800">Edit</span> updates a row;{' '}
-              <span className="font-medium text-slate-800">Rollback</span> deletes it and reverses biological deltas (and
-              removes the automatic GL journal when applicable).
+          {posSpecies ? (
+            <>
+              <div className="hidden h-8 w-px bg-slate-200 sm:block" aria-hidden />
+              <div>
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Species filter</span>
+                <p className="mt-0.5 font-medium text-teal-900">
+                  {fishSpecies.find((s) => s.id === posSpecies)?.label || posSpecies}
+                </p>
+              </div>
+            </>
+          ) : null}
+          {(ledgerTruncated || ledgerTotalsDrift) && (
+            <p className="w-full text-xs text-amber-800">
+              {ledgerTruncated
+                ? `Showing the most recent ${ledgerListMeta?.returned} manual entries only — filter by pond to narrow the list.`
+                : 'Manual entry totals do not match stock summary — try Refresh.'}
             </p>
-          </div>
+          )}
         </div>
       ) : (
         <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1358,108 +1287,85 @@ function AquacultureStockPageContent() {
         </div>
       ) : null}
 
-      <div
-        className="mb-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
-        role="tablist"
-        aria-label="Fish ledger view"
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={fishSubTab === 'manual'}
-          onClick={() => setFishSubTab('manual')}
-          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-            fishSubTab === 'manual'
-              ? 'bg-teal-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          Manual entries
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={fishSubTab === 'movements'}
-          onClick={() => setFishSubTab('movements')}
-          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-            fishSubTab === 'movements'
-              ? 'bg-teal-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          Movements (all sources)
-        </button>
-      </div>
-
-      <section className="mb-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">Implied stock position</h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Net fish count and kg from transfers, sales, and manual ledger; <span className="font-medium text-slate-600">Manual ledger Δ</span>{' '}
-          is only mortality and adjustments. Latest sample is for comparison. Open a pond for depth, feeding, and detail.
-        </p>
-        <p className="mt-1 text-xs text-slate-500">
-          <span className="font-medium text-slate-600">Cycle:</span> when you pick one production cycle, only movements
-          and sales tagged to that cycle count — and manual stock-ledger rows with <em>no</em> cycle are left out, so
-          implied net can look low or negative while the pond still has fish. Use &quot;All cycles&quot; for a full pond
-          total. <span className="font-medium text-slate-600">Tilapia:</span> vendor fry/fish bill lines count as
-          tilapia unless the item name suggests pangasius/basa.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-3">
-          <select
-            value={posPond}
-            onChange={(e) => setPosPond(e.target.value)}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          >
-            <option value="">All ponds</option>
-            {ponds.map((p) => (
-              <option key={p.id} value={String(p.id)}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={posCycle}
-            onChange={(e) => setPosCycle(e.target.value)}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            disabled={!posPond}
-          >
-            <option value="">All cycles (pond total)</option>
-            {posCycles.map((c) => (
-              <option key={c.id} value={String(c.id)}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={posSpecies}
-            onChange={(e) => {
-              const v = e.target.value
-              setPosSpecies(v)
-              replaceFishSpeciesQuery(v)
-            }}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            aria-label="Filter implied position by fish species"
-            title="Restrict the implied balance to one species (useful for polyculture ponds)"
-          >
-            <option value="">All species</option>
-            {fishSpecies.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          <Link
-            href="/aquaculture/stock?fish_species=tilapia"
-            className="inline-flex items-center self-center rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-medium text-teal-900 hover:bg-teal-100"
-            title="Opens this page with Tilapia selected — Refresh for latest server data"
-          >
-            Tilapia stock &amp; ledger
-          </Link>
+      <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs font-medium text-slate-600">
+            Pond
+            <select
+              value={posPond}
+              onChange={(e) => setPosPond(e.target.value)}
+              className="mt-1 block min-w-[10rem] rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            >
+              <option value="">All ponds</option>
+              {ponds.map((p) => (
+                <option key={p.id} value={String(p.id)}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-medium text-slate-600">
+            Stocking batch
+            <select
+              value={posCycle}
+              onChange={(e) => setPosCycle(e.target.value)}
+              className="mt-1 block min-w-[12rem] rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+              disabled={!posPond}
+            >
+              <option value="">All batches (pond total)</option>
+              {posCycles.map((c) => (
+                <option key={c.id} value={String(c.id)}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-medium text-slate-600">
+            Species
+            <select
+              value={posSpecies}
+              onChange={(e) => {
+                const v = e.target.value
+                setPosSpecies(v)
+                replaceFishSpeciesQuery(v)
+              }}
+              className="mt-1 block min-w-[10rem] rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            >
+              <option value="">All species</option>
+              {fishSpecies.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {posPond && !positionLoading && posCycles.length === 0 ? (
+            <p className="w-full text-xs text-slate-600">
+              No stocking batch yet —{' '}
+              <Link
+                href={`/aquaculture/cycles?pond_id=${encodeURIComponent(posPond)}`}
+                className="font-medium text-teal-800 underline hover:text-teal-950"
+              >
+                create one
+              </Link>
+              .
+            </p>
+          ) : null}
+          {posCycle ? (
+            <p className="w-full rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
+              Batch filter is on — manual entries without a batch are hidden. Use &quot;All batches&quot; for the full
+              pond picture.
+            </p>
+          ) : null}
         </div>
-        <p className="mt-2 text-xs text-slate-500">
-          Share or bookmark <span className="font-mono text-[11px] text-slate-600">/aquaculture/stock?fish_species=tilapia</span>{' '}
-          for a Tilapia-only view. Use <span className="font-medium text-slate-600">Refresh</span> to pull up-to-date
-          position and ledger from the server.
+      </section>
+
+      {fishSubTab === 'overview' ? (
+      <section className="mb-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-900">Stock by pond</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Current fish from stocking, sales, transfers, and your manual entries. Click a pond name for details, or{' '}
+          <span className="font-medium text-slate-700">Manage entries</span> to edit mortality and adjustments.
         </p>
         <div className="mt-4 overflow-x-auto">
           {positionLoading ? (
@@ -1469,20 +1375,19 @@ function AquacultureStockPageContent() {
               <thead>
                 <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
                   <th className="py-2 pr-4">Pond</th>
-                  <th className="py-2 pr-4">Water vol.</th>
-                  <th className="py-2 pr-4">Net fish / kg</th>
-                  <th className="py-2 pr-4">Manual ledger Δ</th>
-                  <th className="py-2 pr-4">Density / load</th>
+                  <th className="py-2 pr-4">Current stock</th>
+                  <th className="py-2 pr-4">Manual changes</th>
+                  <th className="py-2 pr-4">Load</th>
                   <th className="py-2 pr-4">Latest sample</th>
-                  <th className="py-2">Sample vs net</th>
+                  <th className="py-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {position.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-500">
-                      No implied position for this filter yet. Positions build from transfers, posted vendor fry (pond
-                      lines), pond sales, and ledger entries.
+                    <td colSpan={6} className="py-8 text-center text-slate-500">
+                      No stock for this filter yet. Stock builds from vendor bills, transfers, sales, and manual
+                      entries.
                     </td>
                   </tr>
                 ) : (
@@ -1490,10 +1395,6 @@ function AquacultureStockPageContent() {
                     const netC = r.implied_net_fish_count
                     const samp = r.latest_sample_estimated_fish_count
                     const diff = samp != null && netC != null ? samp - netC : null
-                    const vol =
-                      r.water_volume_cu_ft != null && r.water_volume_cu_ft !== ''
-                        ? `${formatNumber(Number(r.water_volume_cu_ft), 0)} cu ft`
-                        : '—'
                     const densityLine =
                       r.stock_density_kg_per_decimal != null && r.stock_density_kg_per_decimal !== ''
                         ? `${formatNumber(Number(r.stock_density_kg_per_decimal), 2)} kg/dec`
@@ -1522,22 +1423,21 @@ function AquacultureStockPageContent() {
                             <ExternalLink className="h-3 w-3 opacity-60" aria-hidden />
                           </Link>
                         </td>
-                        <td className="py-2 pr-4 tabular-nums text-slate-700">{vol}</td>
                         <td className="py-2 pr-4 tabular-nums">
-                          <div>{formatNumber(Number(r.implied_net_weight_kg), 2)} kg</div>
-                          <div className="text-xs font-normal text-slate-500">
-                            {formatNumber(r.implied_net_fish_count, 0)} fish (est.)
+                          <div className="font-medium text-slate-900">
+                            {formatNumber(Number(r.implied_net_weight_kg), 2)} kg
                           </div>
-                          {r.current_fish_per_kg ? (
-                            <div className="text-xs font-medium text-teal-800">
-                              {formatNumber(Number(r.current_fish_per_kg), 1)} pcs/kg
-                            </div>
-                          ) : null}
+                          <div className="text-xs text-slate-500">
+                            {formatNumber(r.implied_net_fish_count, 0)} fish
+                            {r.current_fish_per_kg
+                              ? ` · ${formatNumber(Number(r.current_fish_per_kg), 1)} pcs/kg`
+                              : ''}
+                          </div>
                         </td>
                         <td className="py-2 pr-4 tabular-nums text-slate-700">
                           <div>{formatNumber(Number(r.ledger_weight_kg_delta), 2)} kg</div>
-                          <div className="text-xs font-normal text-slate-500">
-                            {formatNumber(r.ledger_fish_count_delta, 0)} fish Δ
+                          <div className="text-xs text-slate-500">
+                            {formatNumber(r.ledger_fish_count_delta, 0)} fish
                           </div>
                         </td>
                         <td className="py-2 pr-4 text-slate-700">
@@ -1571,16 +1471,35 @@ function AquacultureStockPageContent() {
                           </div>
                         </td>
                         <td className="py-2 pr-4 text-slate-600">
-                          {r.latest_sample_date ? formatDateOnly(r.latest_sample_date) : '—'}
-                          {r.latest_sample_estimated_fish_count != null
-                            ? ` · ~${formatNumber(r.latest_sample_estimated_fish_count, 0)} fish`
-                            : ''}
-                          {r.latest_sample_fish_species_label
-                            ? ` · ${r.latest_sample_fish_species_label}`
-                            : ''}
+                          {r.latest_sample_date ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span>{formatDateOnly(r.latest_sample_date)}</span>
+                              {r.latest_sample_estimated_fish_count != null ? (
+                                <span className="text-xs text-slate-500">
+                                  ~{formatNumber(r.latest_sample_estimated_fish_count, 0)} fish
+                                </span>
+                              ) : null}
+                              {diff != null && diff !== 0 ? (
+                                <span
+                                  className={`text-xs font-medium ${diff > 0 ? 'text-emerald-700' : 'text-rose-700'}`}
+                                >
+                                  {diff > 0 ? '+' : ''}
+                                  {formatNumber(diff, 0)} vs books
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400">No sample</span>
+                          )}
                         </td>
-                        <td className="py-2 text-slate-600">
-                          {diff == null ? '—' : `${diff > 0 ? '+' : ''}${formatNumber(diff, 0)} vs implied net`}
+                        <td className="py-2">
+                          <button
+                            type="button"
+                            onClick={() => viewAdjustmentsForPond(r.pond_id)}
+                            className="rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-900 hover:bg-teal-100"
+                          >
+                            Manage entries
+                          </button>
                         </td>
                       </tr>
                     )
@@ -1591,15 +1510,13 @@ function AquacultureStockPageContent() {
           )}
         </div>
       </section>
+      ) : null}
 
+      {fishSubTab === 'breakdown' ? (
       <section className="mb-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">By species &amp; production cycle</h2>
+        <h2 className="text-sm font-semibold text-slate-900">Batch detail</h2>
         <p className="mt-1 text-xs text-slate-500">
-          One row per pond, production cycle, and species. Each row reconciles as{' '}
-          <span className="font-medium text-slate-700">
-            Stocked − Sold − Mortality + Other adj. = Present stock
-          </span>
-          . Expand a row for the chronological detail ledger with running balance after each movement.
+          Stocked − sold − mortality + other adjustments = present stock. Expand a row for the full movement history.
         </p>
         <div className="mt-4 overflow-x-auto">
           {positionLoading ? (
@@ -1610,7 +1527,7 @@ function AquacultureStockPageContent() {
                 <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
                   <th className="w-8 py-2 pr-2" aria-label="Expand" />
                   <th className="py-2 pr-3">Pond</th>
-                  <th className="py-2 pr-3">Cycle</th>
+                  <th className="py-2 pr-3">Batch</th>
                   <th className="py-2 pr-3">Species</th>
                   <th
                     className="py-2 pr-4"
@@ -1646,7 +1563,7 @@ function AquacultureStockPageContent() {
                 {positionBreakdown.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="py-8 text-center text-slate-500">
-                      No cycle × species buckets for this filter yet.
+                      No batch × species buckets for this filter yet.
                     </td>
                   </tr>
                 ) : (
@@ -1662,7 +1579,7 @@ function AquacultureStockPageContent() {
                             <button
                               type="button"
                               onClick={() => void toggleBreakdownDetail(r)}
-                              className={iconAction}
+                              className={iconActionSm}
                               aria-expanded={open}
                               aria-label={open ? 'Hide detail ledger' : 'Show detail ledger'}
                             >
@@ -1683,7 +1600,7 @@ function AquacultureStockPageContent() {
                           </td>
                           <td className="py-2 pr-3 text-slate-700">
                             {r.production_cycle_name?.trim() || (
-                              <span className="text-slate-400">— No cycle</span>
+                              <span className="text-slate-400">— No batch</span>
                             )}
                           </td>
                           <td className="py-2 pr-3 text-slate-700">{r.fish_species_label || r.fish_species || '—'}</td>
@@ -1757,20 +1674,19 @@ function AquacultureStockPageContent() {
           )}
         </div>
       </section>
+      ) : null}
 
-      {fishSubTab === 'manual' ? (
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      {fishSubTab === 'adjustments' ? (
+      <section id="stock-manual-ledger" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Stock ledger (manual entries)</h2>
+            <h2 className="text-sm font-semibold text-slate-900">Mortality &amp; adjustments</h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Mortality, predation, theft, and manual count/weight adjustments. Rollback reverses biological deltas
-              and removes the automatic GL journal when applicable. The list uses the same pond, production cycle, and
-              species filters as <span className="font-medium text-slate-600">Implied stock position</span> above so
-              totals match the ledger component of that balance.
+              Record deaths, theft, predation, and manual corrections. Use <span className="font-medium">Edit</span> or{' '}
+              <span className="font-medium">Delete</span> on each row — delete reverses the stock change.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <div className="relative min-w-[12rem] flex-1 sm:max-w-xs sm:flex-initial">
               <Search
                 className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
@@ -1785,31 +1701,8 @@ function AquacultureStockPageContent() {
                 aria-label="Search ledger"
               />
             </div>
-            <select
-              value={posPond}
-              onChange={(e) => setPosPond(e.target.value)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              aria-label="Filter ledger by pond (same as implied position)"
-            >
-              <option value="">All ponds</option>
-              {ponds.map((p) => (
-                <option key={p.id} value={String(p.id)}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
-        {posCycle ? (
-          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
-            <span className="font-medium">Production cycle filter is on.</span> Only manual ledger lines linked to this
-            cycle are listed. Rows with no cycle or on another cycle are omitted, so the latest date here can be older
-            than your most recent pond activity. Pick <span className="font-medium">All cycles (pond total)</span> in{' '}
-            <span className="font-medium text-slate-800">Implied stock position</span> to see the full manual history for
-            the pond, or open <span className="font-medium text-slate-800">Movements (all sources)</span> for sales,
-            transfers, and manual lines together.
-          </div>
-        ) : null}
         {loading ? (
           <div className="space-y-2 py-6" aria-busy="true">
             {[0, 1, 2].map((i) => (
@@ -1822,7 +1715,7 @@ function AquacultureStockPageContent() {
               <thead className="sticky top-0 z-[1] bg-slate-50/95 backdrop-blur-sm">
                 <tr className="border-b border-slate-200 text-xs font-medium uppercase tracking-wide text-slate-500">
                   <th className="whitespace-nowrap px-3 py-2.5">Date</th>
-                  <th className="px-3 py-2.5">Pond / cycle</th>
+                  <th className="px-3 py-2.5">Pond / batch</th>
                   <th className="px-3 py-2.5">Kind</th>
                   <th className="px-3 py-2.5">Reason</th>
                   <th className="px-3 py-2.5">Species</th>
@@ -1831,17 +1724,23 @@ function AquacultureStockPageContent() {
                   <th className="px-3 py-2.5 text-right">Book</th>
                   <th className="px-3 py-2.5">GL</th>
                   <th className="min-w-[8rem] px-3 py-2.5">Memo</th>
-                  <th className="whitespace-nowrap px-2 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Actions
-                  </th>
+                  <th className={`whitespace-nowrap ${stickyActionsHeader}`}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="px-3 py-10 text-center text-slate-500">
-                      No ledger rows yet. Use <strong className="text-slate-700">Add entry</strong> for mortality,
-                      predation, theft, or count/weight corrections.
+                      <p>No mortality or adjustment rows yet.</p>
+                      <button
+                        type="button"
+                        onClick={startNewAdjustment}
+                        disabled={ponds.length === 0}
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Plus className="h-4 w-4" aria-hidden />
+                        Record loss / adjustment
+                      </button>
                     </td>
                   </tr>
                 ) : filteredLedgerRows.length === 0 ? (
@@ -1872,7 +1771,7 @@ function AquacultureStockPageContent() {
                     return (
                       <tr
                         key={r.id}
-                        className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/90"
+                        className="group border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/90"
                       >
                         <td className="whitespace-nowrap px-3 py-2.5 text-slate-800">
                           {formatDateOnly(r.entry_date)}
@@ -1918,7 +1817,7 @@ function AquacultureStockPageContent() {
                         <td className="max-w-[12rem] px-3 py-2.5 text-xs text-slate-600" title={memoFull || undefined}>
                           {memoShort || '—'}
                         </td>
-                        <td className="px-2 py-2.5">
+                        <td className={stickyActionsCell}>
                           <div
                             className="flex items-center justify-end gap-1 rounded-md border border-slate-100 bg-slate-50/50 p-0.5"
                             role="group"
@@ -1926,7 +1825,7 @@ function AquacultureStockPageContent() {
                           >
                             <button
                               type="button"
-                              className={iconAction}
+                              className={iconActionSm}
                               title="View entry details"
                               aria-label={`View ledger entry ${r.id}`}
                               onClick={() => setViewLedgerRow(r)}
@@ -1936,20 +1835,20 @@ function AquacultureStockPageContent() {
                             <button
                               type="button"
                               onClick={() => openEdit(r)}
-                              className={iconAction}
+                              className={iconActionLabeled}
                               title={r.journal_entry_id ? 'Edit memo (GL-linked row)' : 'Edit entry'}
                             >
-                              <Pencil className="h-5 w-5" aria-hidden />
-                              <span className="sr-only">Edit</span>
+                              <Pencil className="h-4 w-4 shrink-0" aria-hidden />
+                              <span>Edit</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => setRollbackTarget(r)}
-                              className={iconActionDanger}
-                              title="Rollback entry — reverse deltas and remove automatic GL if applicable"
+                              className={iconActionDangerLabeled}
+                              title="Delete entry — reverse stock deltas and remove automatic GL if applicable"
                             >
-                              <Undo2 className="h-5 w-5" aria-hidden />
-                              <span className="sr-only">Rollback entry</span>
+                              <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                              <span>Delete</span>
                             </button>
                           </div>
                         </td>
@@ -1979,7 +1878,7 @@ function AquacultureStockPageContent() {
                             : null}
                         </>
                       ) : !ledgerQuery.trim() ? (
-                        <>Should match “Manual ledger Δ” in implied position for this filter.</>
+                        <>Totals should match manual changes in Stock by pond.</>
                       ) : null}
                     </td>
                   </tr>
@@ -1991,20 +1890,21 @@ function AquacultureStockPageContent() {
       </section>
       ) : null}
 
-      {fishSubTab === 'movements' ? (
+      {fishSubTab === 'history' ? (
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">Movements (all sources)</h2>
+              <h2 className="text-sm font-semibold text-slate-900">All movements</h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                Every event that moved fish biomass: vendor stocking, transfers in/out, sales, manual losses and
-                adjustments. Read-only — open the source document to edit or void.{' '}
-                <span className="font-medium text-slate-600">Jointly (all species):</span> leave species as “All species”
-                above. <span className="font-medium text-slate-600">Singly:</span> pick a species there — this list
-                matches. <span className="font-medium text-slate-600">Ins vs outs:</span> positive Δ fish/kg are adds
-                (stocking, transfer in, positive adjustments); negative are removals (sales, transfer out, losses). Or
-                filter <span className="font-medium text-slate-600">Source</span> to only ins (e.g. transfer in, vendor)
-                or only outs (sale, transfer out, loss).
+                Read-only history of every stock change — vendor stocking, transfers, sales, and manual entries. To
+                edit mortality, use{' '}
+                <Link
+                  href="/aquaculture/stock/adjustments"
+                  className="font-medium text-teal-800 underline hover:text-teal-950"
+                >
+                  Mortality &amp; adjustments
+                </Link>
+                .
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -2195,65 +2095,9 @@ function AquacultureStockPageContent() {
 
       {mainTab === 'warehouse' ? (
         <div id="stock-panel-warehouse" role="tabpanel" aria-labelledby="stock-tab-warehouse">
-          <div
-            className="mb-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
-            role="tablist"
-            aria-label="Warehouse view"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={whSubTab === 'on_hand'}
-              onClick={() => setWhSubTab('on_hand')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                whSubTab === 'on_hand'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span className="inline-flex items-center gap-1.5">
-                <Package className="h-3.5 w-3.5 text-current opacity-90" aria-hidden />
-                On hand
-              </span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={whSubTab === 'movements'}
-              onClick={() => setWhSubTab('movements')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                whSubTab === 'movements'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span className="inline-flex items-center gap-1.5">
-                <ArrowRightLeft className="h-3.5 w-3.5 text-current opacity-90" aria-hidden />
-                Movements
-              </span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={whSubTab === 'consumed'}
-              onClick={() => setWhSubTab('consumed')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                whSubTab === 'consumed'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span className="inline-flex items-center gap-1.5">
-                <Beaker className="h-3.5 w-3.5 text-current opacity-90" aria-hidden />
-                Consumed (feed &amp; medicine)
-              </span>
-            </button>
-          </div>
-
           {whSubTab === 'on_hand' ? (
           <>
-          <AquacultureWarehouseGroupsPanel onChanged={() => void loadWarehouseMatrix()} />
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm mt-4">
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold text-slate-900">Pond warehouse on hand</h2>
@@ -2511,7 +2355,7 @@ function AquacultureStockPageContent() {
                               <div className="flex flex-wrap items-center justify-end gap-1.5">
                                 <button
                                   type="button"
-                                  className={iconAction}
+                                  className={iconActionSm}
                                   title="View details"
                                   aria-label={`View ${docNum}`}
                                   onClick={() => setViewWhMovement(row)}
@@ -2520,7 +2364,7 @@ function AquacultureStockPageContent() {
                                 </button>
                                 <button
                                   type="button"
-                                  className={iconAction}
+                                  className={iconActionSm}
                                   title="Edit — reverses prior move, then applies your changes"
                                   aria-label={`Edit ${docNum}`}
                                   onClick={() => {
@@ -2653,7 +2497,7 @@ function AquacultureStockPageContent() {
                     <thead className="sticky top-0 z-[1] bg-slate-50/95 backdrop-blur-sm">
                       <tr className="border-b border-slate-200 text-xs font-medium uppercase tracking-wide text-slate-500">
                         <th className="whitespace-nowrap px-3 py-2.5">Date</th>
-                        <th className="px-3 py-2.5">Pond / cycle</th>
+                        <th className="px-3 py-2.5">Pond / batch</th>
                         <th className="px-3 py-2.5">Type</th>
                         <th className="px-3 py-2.5">Source</th>
                         <th className="px-3 py-2.5 text-right">Feed kg</th>
@@ -2748,7 +2592,7 @@ function AquacultureStockPageContent() {
                                 <div className="flex flex-wrap items-center justify-center gap-1.5">
                                   <button
                                     type="button"
-                                    className={iconAction}
+                                    className={iconActionSm}
                                     title="View consumption details"
                                     aria-label={`View ${r.kind_label} on ${r.pond_name}`}
                                     onClick={() => setViewConsumption(r)}
@@ -2757,7 +2601,7 @@ function AquacultureStockPageContent() {
                                   </button>
                                   <button
                                     type="button"
-                                    className={iconAction}
+                                    className={iconActionSm}
                                     title="Edit amount / memo — reverses and reposts COGS & stock"
                                     aria-label={`Edit ${r.kind_label} on ${r.pond_name}`}
                                     onClick={() => openEditConsumption(r)}
@@ -2843,15 +2687,15 @@ function AquacultureStockPageContent() {
           >
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700">
-                <Undo2 className="h-5 w-5" aria-hidden />
+                <Trash2 className="h-5 w-5" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
                 <h3 id="rollback-dialog-title" className="text-lg font-semibold text-slate-900">
-                  Roll back this ledger entry?
+                  Delete this entry?
                 </h3>
                 <p id="rollback-dialog-desc" className="mt-2 text-sm leading-relaxed text-slate-600">
-                  This permanently removes the row and <strong className="font-medium text-slate-800">reverses</strong>{' '}
-                  its fish count and weight deltas in implied stock.
+                  This removes the row and <strong className="font-medium text-slate-800">reverses</strong> its fish
+                  and weight from pond stock.
                   {rollbackTarget.journal_entry_id ? (
                     <>
                       {' '}
@@ -2891,9 +2735,9 @@ function AquacultureStockPageContent() {
                 {rollbackBusy ? (
                   <RefreshCw className="h-4 w-4 animate-spin" aria-hidden />
                 ) : (
-                  <Undo2 className="h-4 w-4" aria-hidden />
+                  <Trash2 className="h-4 w-4" aria-hidden />
                 )}
-                Roll back entry
+                Delete entry
               </button>
             </div>
           </div>
@@ -3133,7 +2977,7 @@ function AquacultureStockPageContent() {
           </div>
         ) : null}
       </Modal>
-    </div>
+    </>
   )
 }
 

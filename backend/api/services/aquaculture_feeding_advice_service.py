@@ -21,6 +21,7 @@ from django.utils import timezone as django_timezone
 from api.models import AquacultureExpense, AquaculturePond, AquacultureProductionCycle
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 from api.services.aquaculture_constants import POND_ROLE_LABELS
+from api.services.aquaculture_i18n import company_language, normalize_lang, temp_factor_note, weather_tier_label, _pick
 from api.services.aquaculture_units import format_pond_area_decimal_for_api, format_two_decimal_places_for_api
 
 # Public citation string stored in JSON snapshots for auditors.
@@ -154,22 +155,8 @@ def _select_biomass_for_feeding_kg(stock_row: dict) -> tuple[Decimal, str]:
     return Decimal("0"), ""
 
 
-def _temp_factor(water_temp_c: Decimal | None) -> tuple[Decimal, str]:
-    """Simple extension-style appetite scalar vs ~28 °C optimum."""
-    if water_temp_c is None:
-        return Decimal("1"), "temperature not provided — assuming favourable grow-out conditions (~26–30 °C)"
-    t = water_temp_c
-    if t < Decimal("18"):
-        return Decimal("0.45"), f"cool water ({t} °C) — strong ration cut; verify fish are feeding"
-    if t < Decimal("22"):
-        return Decimal("0.65"), f"sub-optimal temperature ({t} °C) — reduce ration"
-    if t < Decimal("26"):
-        return Decimal("0.85"), f"moderate temperature ({t} °C) — slight reduction vs peak appetite"
-    if t <= Decimal("30"):
-        return Decimal("1.0"), f"near-optimal band ({t} °C) — tables align with ~28 °C references"
-    if t <= Decimal("32"):
-        return Decimal("0.9"), f"warm ({t} °C) — watch DO; avoid over-feeding"
-    return Decimal("0.75"), f"hot ({t} °C) — heat stress risk; feed conservatively"
+def _temp_factor(water_temp_c: Decimal | None, lang: str | None = "en") -> tuple[Decimal, str]:
+    return temp_factor_note(water_temp_c, lang)
 
 
 def _load_bias(load_level: str | None) -> Decimal:
@@ -190,13 +177,15 @@ def worldfish_daily_bw_percent(
     stock_row: dict,
     *,
     water_temp_c: Decimal | None,
+    lang: str | None = "en",
 ) -> dict:
     """
     Picks a single % body weight / day from WorldFish-style bands + load + temperature guards.
     """
+    lang_n = normalize_lang(lang)
     mean_g, prov = _mean_fish_weight_g_from_stock_row(stock_row)
     load_level = stock_row.get("load_level") if isinstance(stock_row.get("load_level"), str) else None
-    tf, temp_note = _temp_factor(water_temp_c)
+    tf, temp_note = _temp_factor(water_temp_c, lang_n)
 
     if mean_g is None:
         pct = _rate_pct_for_load(load_level)
@@ -208,8 +197,8 @@ def worldfish_daily_bw_percent(
             "bw_pct_low": None,
             "bw_pct_high": None,
             "chosen_bw_pct_per_day": str(pct),
-            "meals_hint": "2–3× / day if fish actively eat; align with farm SOP",
-            "feed_form_hint": "Match pellet size to mouth gape",
+            "meals_hint": _pick(lang_n, "2–3× / day if fish actively eat; align with farm SOP", "2–3 বার/দিন যদি মাছ খায়; খামারের নিয়ম মেনে"),
+            "feed_form_hint": _pick(lang_n, "Match pellet size to mouth gape", "মুখের আকার অনুযায়ী পেলেট সাইজ"),
             "temperature_factor": str(tf),
             "temperature_note": temp_note,
             "reference": WORLDFISH_FEEDING_REFERENCE,
@@ -255,22 +244,8 @@ def _rate_pct_for_load(load_level: str | None) -> Decimal:
     return Decimal("2.5")
 
 
-def _weather_tier_from_temp(water_temp_c: Decimal | None) -> tuple[str, str]:
-    """Returns (tier_key, short_label) — tier drives clock windows and frequency hints."""
-    if water_temp_c is None:
-        return ("unknown", "Weather (water): not recorded — enter °C when generating advice")
-    wt = water_temp_c
-    if wt < Decimal("18"):
-        return ("very_cold", f"Weather (water): very cold (~{wt} °C) — strong appetite reduction")
-    if wt < Decimal("20"):
-        return ("cold", f"Weather (water): cold (~{wt} °C) — low appetite")
-    if wt < Decimal("24"):
-        return ("cool", f"Weather (water): cool (~{wt} °C) — moderate appetite")
-    if wt <= Decimal("28"):
-        return ("optimal", f"Weather (water): favourable (~{wt} °C) — good feeding window")
-    if wt <= Decimal("31"):
-        return ("warm", f"Weather (water): warm (~{wt} °C) — watch DO; avoid harsh mid-day")
-    return ("very_hot", f"Weather (water): hot (~{wt} °C) — feed only in coolest hours")
+def _weather_tier_from_temp(water_temp_c: Decimal | None, lang: str | None = "en") -> tuple[str, str]:
+    return weather_tier_label(water_temp_c, lang)
 
 
 def _infer_meals_per_day(times_line: str, base_meals: str) -> int:
@@ -360,11 +335,13 @@ def feeding_schedule_recommendation(
     *,
     suggested_daily_feed_kg: Decimal | None = None,
     body_weight_percent_per_day: Decimal | None = None,
+    lang: str | None = "en",
 ) -> dict:
     """
     How much feed (kg), how often, and clock windows — from water temperature (weather proxy),
     pond stocking, fish stage, and biomass outlook.
     """
+    lang_n = normalize_lang(lang)
     base_meals = (worldfish.get("meals_hint") or "2–3× / day").strip()
     load_level = (stock_row.get("load_level") or "unknown").strip()
     load_lbl = (stock_row.get("load_level_label") or "").strip()
@@ -374,7 +351,7 @@ def feeding_schedule_recommendation(
     advice_summary = (stock_row.get("advice_summary") or "").strip()
     samp_date = stock_row.get("latest_sample_date")
 
-    weather_tier, weather_label = _weather_tier_from_temp(water_temp_c)
+    weather_tier, weather_label = _weather_tier_from_temp(water_temp_c, lang_n)
 
     times_line = base_meals
     bullets: list[str] = []
@@ -563,7 +540,9 @@ def _build_narrative(
     feeding_schedule: dict | None = None,
     biomass_basis_kg: Decimal | None = None,
     biomass_basis_source: str = "",
+    lang: str | None = "en",
 ) -> str:
+    lang_n = normalize_lang(lang)
     pname = (pond.name or "").strip() or f"Pond #{pond.id}"
     role_lbl = POND_ROLE_LABELS.get(getattr(pond, "pond_role", None) or "grow_out", "Grow-out")
     bio = _d(stock_row.get("implied_net_weight_kg"))
@@ -574,16 +553,30 @@ def _build_narrative(
 
     paras: list[str] = []
     paras.append(
-        f"**{pname}** ({role_lbl}) — suggested feeding focus for **{target_date.isoformat()}**."
-        + (f" Production cycle: **{cycle.name}**." if cycle else "")
+        _pick(
+            lang_n,
+            f"**{pname}** ({role_lbl}) — suggested feeding focus for **{target_date.isoformat()}**."
+            + (f" Production cycle: **{cycle.name}**." if cycle else ""),
+            f"**{pname}** ({role_lbl}) — **{target_date.isoformat()}** এর জন্য খাবার পরামর্শ।"
+            + (f" উৎপাদন চক্র: **{cycle.name}**।" if cycle else ""),
+        )
     )
     paras.append(
-        "**Pond status (from records):** "
-        f"estimated biomass ≈ **{bio} kg**; load **{load_lbl}**"
-        + (f" (~{density} kg/dec water)" if density else "")
-        + f"; latest biomass sample date **{samp_date}** ({species})."
+        _pick(
+            lang_n,
+            "**Pond status (from records):** "
+            f"estimated biomass ≈ **{bio} kg**; load **{load_lbl}**"
+            + (f" (~{density} kg/dec water)" if density else "")
+            + f"; latest biomass sample date **{samp_date}** ({species}).",
+            "**পুকুরের অবস্থা (রেকর্ড থেকে):** "
+            f"আনুমানিক বায়োমাস ≈ **{bio} kg**; লোড **{load_lbl}**"
+            + (f" (~{density} kg/ডেসিমেল জল)" if density else "")
+            + f"; সর্বশেষ নমুনা **{samp_date}** ({species})।",
+        )
     )
-    paras.append(f"**Stocking hint:** {stock_row.get('advice_summary') or '—'}")
+    paras.append(
+        _pick(lang_n, f"**Stocking hint:** {stock_row.get('advice_summary') or '—'}", f"**স্টকিং ইঙ্গিত:** {stock_row.get('advice_summary') or '—'}")
+    )
 
     wf_stage = worldfish.get("worldfish_stage")
     mean_g = worldfish.get("mean_fish_weight_g")
@@ -593,71 +586,122 @@ def _build_narrative(
     temp_note = worldfish.get("temperature_note") or ""
     if wf_stage:
         paras.append(
-            "**WorldFish-style tilapia guide (Nile tilapia, semi-intensive pond):** "
-            f"mean fish ≈ **{mean_g} g** ({msrc}) → **{wf_stage}** stage; "
-            f"published tables suggest roughly **{worldfish.get('bw_pct_low')}%–{worldfish.get('bw_pct_high')}%** "
-            "of body weight per day at favourable temperature, adjusted here for **stocking load** and **water temperature**. "
-            f"**Meals:** {meals}. **Feed type:** {form_hint}. "
-            f"_{temp_note}_"
+            _pick(
+                lang_n,
+                "**WorldFish-style tilapia guide (Nile tilapia, semi-intensive pond):** "
+                f"mean fish ≈ **{mean_g} g** ({msrc}) → **{wf_stage}** stage; "
+                f"published tables suggest roughly **{worldfish.get('bw_pct_low')}%–{worldfish.get('bw_pct_high')}%** "
+                "of body weight per day at favourable temperature, adjusted here for **stocking load** and **water temperature**. "
+                f"**Meals:** {meals}. **Feed type:** {form_hint}. "
+                f"_{temp_note}_",
+                "**WorldFish-স্টাইল টিলাপিয়া গাইড:** "
+                f"গড় মাছ ≈ **{mean_g} g** ({msrc}) → **{wf_stage}** পর্যায়; "
+                f"টেবিলে প্রায় **{worldfish.get('bw_pct_low')}%–{worldfish.get('bw_pct_high')}%** "
+                "দৈনিক শরীরের ওজন (অনুকূল তাপে), এখানে **লোড** ও **পানির তাপ** অনুযায়ী ঠিক করা। "
+                f"**খাওয়ানো:** {meals}. **খাবারের ধরন:** {form_hint}. "
+                f"_{temp_note}_",
+            )
         )
     else:
         paras.append(
-            "**WorldFish-style tilapia guide:** mean fish weight is **unknown** — update **sampling** or ensure **fish count** "
-            "with biomass so the system can pick fry / fingerling / grower bands from extension tables. "
-            f"For now, daily rate uses **stocking load** only (~**{rate_pct}%** BW/day baseline). "
-            f"_{temp_note}_"
+            _pick(
+                lang_n,
+                "**WorldFish-style tilapia guide:** mean fish weight is **unknown** — update **sampling** or ensure **fish count** "
+                "with biomass so the system can pick fry / fingerling / grower bands from extension tables. "
+                f"For now, daily rate uses **stocking load** only (~**{rate_pct}%** BW/day baseline). "
+                f"_{temp_note}_",
+                "**WorldFish গাইড:** গড় ওজন **অজানা** — **নমুনা** বা **মাছের সংখ্যা** আপডেট করুন। "
+                f"এখন শুধু **লোড** দিয়ে (~**{rate_pct}%** BW/দিন) হিসাব। "
+                f"_{temp_note}_",
+            )
         )
 
     if feeding_schedule:
         tp = (feeding_schedule.get("times_per_day") or "").strip()
         if tp:
             paras.append(
-                "**How often to feed (today):** "
-                f"**{tp}** — considers **weather (water °C)**, pond stocking/load, fish stage/size, and biomass outlook "
-                "(clock windows and kg split are in `feeding_schedule`)."
+                _pick(
+                    lang_n,
+                    "**How often to feed (today):** "
+                    f"**{tp}** — considers **weather (water °C)**, pond stocking/load, fish stage/size, and biomass outlook "
+                    "(clock windows and kg split are in `feeding_schedule`).",
+                    "**আজ কতবার খাবার:** "
+                    f"**{tp}** — **পানির °C**, লোড, মাছের পর্যায়/আকার ও বায়োমাস বিবেচনা করে "
+                    "(`feeding_schedule`-এ সময় ও kg ভাগ)।",
+                )
             )
             amt = feeding_schedule.get("daily_feed_amount_kg")
             if amt:
                 paras.append(
-                    f"**Target feed amount for the day:** **{amt} kg** total — split across the recommended meals/times "
-                    "(see `per_meal_feed_kg_approx` and `recommended_feeding_times`)."
+                    _pick(
+                        lang_n,
+                        f"**Target feed amount for the day:** **{amt} kg** total — split across the recommended meals/times "
+                        "(see `per_meal_feed_kg_approx` and `recommended_feeding_times`).",
+                        f"**আজকের লক্ষ্য খাবার:** মোট **{amt} kg** — পরামর্শিত খাওয়ানোর সময়ে ভাগ করুন।",
+                    )
                 )
 
     if recent_feed_kg > 0:
         paras.append(
-            f"**Recent feed (7d, direct feed expenses):** about **{recent_feed_kg} kg** recorded on this pond — "
-            "use this only as context; POS-on-account feed may not appear here."
+            _pick(
+                lang_n,
+                f"**Recent feed (7d, direct feed expenses):** about **{recent_feed_kg} kg** recorded on this pond — "
+                "use this only as context; POS-on-account feed may not appear here.",
+                f"**সাম্প্রতিক খাবার (7 দিন):** এই পুকুরে **{recent_feed_kg} kg** রেকর্ড — শুধু প্রসঙ্গ; POS খাবার এখানে নাও থাকতে পারে।",
+            )
         )
     else:
         paras.append(
-            "**Recent feed (7d):** no direct **feed purchase** kg recorded on this pond — if you feed via POS on account, "
-            "rely on your shop records too."
+            _pick(
+                lang_n,
+                "**Recent feed (7d):** no direct **feed purchase** kg recorded on this pond — if you feed via POS on account, "
+                "rely on your shop records too.",
+                "**সাম্প্রতিক খাবার (7 দিন):** সরাসরি ক্রয় রেকর্ড নেই — POS দিয়ে খাওয়ালে দোকানের রেকর্ডও দেখুন।",
+            )
         )
 
     if suggested_kg is not None and suggested_kg > 0:
         basis_clause = ""
         if biomass_basis_kg is not None and biomass_basis_kg > 0 and biomass_basis_source:
-            basis_clause = (
-                f" Biomass basis: **~{biomass_basis_kg} kg** ({biomass_basis_source})."
+            basis_clause = _pick(
+                lang_n,
+                f" Biomass basis: **~{biomass_basis_kg} kg** ({biomass_basis_source}).",
+                f" বায়োমাস ভিত্তি: **~{biomass_basis_kg} kg** ({biomass_basis_source})।",
             )
         paras.append(
-            f"**Suggested ration (editable):** about **{suggested_kg} kg** total for the day "
-            f"(≈ **{rate_pct}%** of estimated biomass per day; **{meals}** where practical)."
-            f"{basis_clause} "
-            "Stop feeding if feed remains after ~15 minutes (avoid water quality stress). "
-            "**Edit** the narrative or kg below, then **approve**."
+            _pick(
+                lang_n,
+                f"**Suggested ration (editable):** about **{suggested_kg} kg** total for the day "
+                f"(≈ **{rate_pct}%** of estimated biomass per day; **{meals}** where practical)."
+                f"{basis_clause} "
+                "Stop feeding if feed remains after ~15 minutes (avoid water quality stress). "
+                "**Edit** the narrative or kg below, then **approve**.",
+                f"**পরামর্শিত খাবার (সম্পাদনযোগ্য):** দিনে মোট **{suggested_kg} kg** "
+                f"(≈ **{rate_pct}%** বায়োমাস; **{meals}**)।"
+                f"{basis_clause} "
+                "~15 মিনিট পর খাবার থাকলে বন্ধ করুন। নিচে সম্পাদন করে **অনুমোদন** দিন।",
+            )
         )
     else:
         paras.append(
-            "**Suggested ration:** could not estimate kg (no positive biomass from transactions or biomass samples). "
-            "Add a **biomass sample** (estimated total fish count and total kg) for this pond / cycle, "
-            "or enter your own kg target, then approve."
+            _pick(
+                lang_n,
+                "**Suggested ration:** could not estimate kg (no positive biomass from transactions or biomass samples). "
+                "Add a **biomass sample** (estimated total fish count and total kg) for this pond / cycle, "
+                "or enter your own kg target, then approve.",
+                "**পরামর্শিত খাবার:** kg হিসাব করা যায়নি (বায়োমাস নেই)। **নমুনা** দিন বা নিজের kg লিখে **অনুমোদন** দিন।",
+            )
         )
 
     paras.append(
-        "_Source: WorldFish / CGIAR extension tables for tilapia (see snapshot `worldfish` block). "
-        "This is generated from FSERP pond metrics — not a live external AI. "
-        "Managers must confirm with field conditions before feeding._"
+        _pick(
+            lang_n,
+            "_Source: WorldFish / CGIAR extension tables for tilapia (see snapshot `worldfish` block). "
+            "This is generated from FSERP pond metrics — not a live external AI. "
+            "Managers must confirm with field conditions before feeding._",
+            "_উৎস: WorldFish/CGIAR টিলাপিয়া টেবিল (`worldfish` ব্লক)। FSERP মেট্রিক থেকে — বাইরের AI নয়। "
+            "মাঠের অবস্থা দেখে সিদ্ধান্ত নিন।_",
+        )
     )
     return "\n\n".join(paras)
 
@@ -696,9 +740,10 @@ def build_feeding_advice_payload(
     if not rows:
         return None, "Could not compute stock position"
     stock_row = rows[0]
+    lang = company_language(company_id)
 
     biomass, biomass_basis_source = _select_biomass_for_feeding_kg(stock_row)
-    worldfish = worldfish_daily_bw_percent(stock_row, water_temp_c=water_temp_c)
+    worldfish = worldfish_daily_bw_percent(stock_row, water_temp_c=water_temp_c, lang=lang)
     rate_pct = _d(worldfish.get("chosen_bw_pct_per_day"))
 
     suggested: Decimal | None = None
@@ -713,6 +758,7 @@ def build_feeding_advice_payload(
         water_temp_c,
         suggested_daily_feed_kg=suggested,
         body_weight_percent_per_day=rate_pct,
+        lang=lang,
     )
 
     now = django_timezone.now()
@@ -756,6 +802,7 @@ def build_feeding_advice_payload(
         feeding_schedule=schedule,
         biomass_basis_kg=biomass if biomass > 0 else None,
         biomass_basis_source=biomass_basis_source,
+        lang=lang,
     )
 
     return {

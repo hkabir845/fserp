@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from api.models import AquacultureBiomassSample, AquacultureFishSale
 from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
+from api.services.aquaculture_biomass_sample_valuation_service import apply_biomass_sample_valuation
 from api.services.tenant_reporting_categories import resolve_aquaculture_income_to_builtin
 
 
@@ -32,6 +33,7 @@ def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
 
     avg_kg = (sale.weight_kg / Decimal(sale.fish_count)).quantize(Decimal("0.000001"))
     fish_per_kg = (Decimal(sale.fish_count) / sale.weight_kg).quantize(Decimal("0.0001"))
+    market_price = (sale.total_amount / sale.weight_kg).quantize(Decimal("0.01"))
     notes = (
         f"Auto from fish harvest sale #{sale.id}. "
         f"Approx. {fish_per_kg} fish per kg (pcs/kg); avg {avg_kg} kg per fish."
@@ -50,7 +52,9 @@ def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
             "fish_species": sale.fish_species or "tilapia",
             "fish_species_other": (sale.fish_species_other or "")[:120],
             "notes": notes[:5000],
+            "market_price_per_kg": market_price,
         },
     )
     apply_aquaculture_biomass_sample_extrapolation(obj)
+    apply_biomass_sample_valuation(obj)
     obj.save()

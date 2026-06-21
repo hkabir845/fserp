@@ -52,6 +52,12 @@ from api.services.aquaculture_transfer_cost import (
     resolve_auto_transfer_line_cost,
 )
 from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
+from api.services.aquaculture_biomass_sample_valuation_service import (
+    apply_biomass_sample_valuation,
+    compute_biomass_sample_valuation_dict,
+)
+from api.services.aquaculture_partial_harvest import compute_biomass_load_advice_dict, sample_load_advice_from_sample
+from api.services.aquaculture_i18n import company_language, stock_ledger_coa_note, stock_ledger_entry_kind_label, stock_ledger_loss_reason_label
 from api.services.aquaculture_stock_service import (
     assert_outbound_fish_within_implied_stock,
     compute_fish_stock_position_breakdown_rows,
@@ -3381,7 +3387,7 @@ def _sample_to_json(b: AquacultureBiomassSample) -> dict:
     spo = getattr(b, "fish_species_other", None) or ""
     pond_obj = b.pond if getattr(b, "pond_id", None) else None
     pond_display = pond_operational_display_name(pond_obj) if pond_obj else ""
-    return {
+    base = {
         "id": b.id,
         "pond_id": b.pond_id,
         "pond_name": pond_display or ((pond_obj.name or "").strip() if pond_obj else ""),
@@ -3405,8 +3411,45 @@ def _sample_to_json(b: AquacultureBiomassSample) -> dict:
         "fish_species_label": fish_species_display_label(sp, spo),
         "notes": b.notes or "",
         "source_fish_sale_id": getattr(b, "source_fish_sale_id", None),
+        "market_price_per_kg": str(b.market_price_per_kg) if b.market_price_per_kg is not None else None,
+        "market_value": str(b.market_value) if b.market_value is not None else None,
+        "book_bioasset_value": str(b.book_bioasset_value) if b.book_bioasset_value is not None else None,
+        "book_cost_per_kg": str(b.book_cost_per_kg) if b.book_cost_per_kg is not None else None,
+        "bioasset_margin": str(b.bioasset_margin) if b.bioasset_margin is not None else None,
+        "bioasset_margin_per_kg": str(b.bioasset_margin_per_kg) if b.bioasset_margin_per_kg is not None else None,
+        "biological_production_cost": (
+            str(b.biological_production_cost) if b.biological_production_cost is not None else None
+        ),
+        "full_cost_base": str(b.full_cost_base) if b.full_cost_base is not None else None,
+        "full_cycle_margin": str(b.full_cycle_margin) if b.full_cycle_margin is not None else None,
+        "full_cycle_margin_per_kg": (
+            str(b.full_cycle_margin_per_kg) if b.full_cycle_margin_per_kg is not None else None
+        ),
         "created_at": b.created_at.isoformat() if b.created_at else "",
     }
+    load = sample_load_advice_from_sample(b, pond=pond_obj)
+    if load:
+        base.update(
+            {
+                "load_level": load.get("load_level"),
+                "load_level_label": load.get("load_level_label"),
+                "stock_density_kg_per_decimal": load.get("stock_density_kg_per_decimal"),
+                "stock_density_kg_per_1000_cu_ft": load.get("stock_density_kg_per_1000_cu_ft"),
+                "advice_summary": load.get("advice_summary"),
+                "partial_harvest_applicable": load.get("partial_harvest_applicable"),
+                "partial_harvest_suggested_kg": load.get("partial_harvest_suggested_kg"),
+                "partial_harvest_suggested_fish_count": load.get("partial_harvest_suggested_fish_count"),
+                "partial_harvest_target_kg_per_decimal": load.get("partial_harvest_target_kg_per_decimal"),
+                "partial_harvest_post_load_kg_per_decimal": load.get("partial_harvest_post_load_kg_per_decimal"),
+                "partial_harvest_rationale": load.get("partial_harvest_rationale"),
+                "owner_decision_recommended": load.get("owner_decision_recommended"),
+                "owner_decision_summary": load.get("owner_decision_summary"),
+                "owner_action": load.get("owner_action"),
+                "comfort_kg_per_decimal": load.get("comfort_kg_per_decimal"),
+                "water_area_decimal": load.get("water_area_decimal"),
+            }
+        )
+    return base
 
 
 @csrf_exempt
@@ -3489,6 +3532,12 @@ def aquaculture_samples_list_or_create(request):
             status=400,
         )
     fso = normalize_fish_species_other(body.get("fish_species_other"), fs)
+    mpp = body.get("market_price_per_kg")
+    mpp_d = None
+    if mpp is not None and str(mpp).strip() != "":
+        mpp_d = _decimal(mpp)
+        if mpp_d < 0:
+            return JsonResponse({"detail": "market_price_per_kg cannot be negative"}, status=400)
     if efc_i is None or efc_i <= 0:
         return JsonResponse(
             {"detail": "estimated_fish_count is required and must be greater than zero."},
@@ -3510,8 +3559,10 @@ def aquaculture_samples_list_or_create(request):
         fish_species=fs,
         fish_species_other=fso,
         notes=(body.get("notes") or "")[:5000],
+        market_price_per_kg=mpp_d,
     )
     apply_aquaculture_biomass_sample_extrapolation(b)
+    apply_biomass_sample_valuation(b)
     b.save()
     b = AquacultureBiomassSample.objects.filter(pk=b.pk).select_related("pond", "production_cycle").first()
     return JsonResponse(_sample_to_json(b), status=201)
@@ -3600,6 +3651,15 @@ def aquaculture_sample_detail(request, sample_id: int):
                 b.production_cycle = cy
         if "notes" in body:
             b.notes = str(body.get("notes") or "")[:5000]
+        if "market_price_per_kg" in body:
+            mpp = body.get("market_price_per_kg")
+            if mpp is None or str(mpp).strip() == "":
+                b.market_price_per_kg = None
+            else:
+                d = _decimal(mpp)
+                if d < 0:
+                    return JsonResponse({"detail": "market_price_per_kg cannot be negative"}, status=400)
+                b.market_price_per_kg = d
         if "fish_species" in body:
             fs, fserr = normalize_fish_species(body.get("fish_species"))
             if fserr:
@@ -3627,6 +3687,7 @@ def aquaculture_sample_detail(request, sample_id: int):
                 status=400,
             )
         apply_aquaculture_biomass_sample_extrapolation(b)
+        apply_biomass_sample_valuation(b)
         b.save()
         b = AquacultureBiomassSample.objects.filter(pk=b.pk).select_related("pond", "production_cycle").first()
         return JsonResponse(_sample_to_json(b))
@@ -3635,6 +3696,127 @@ def aquaculture_sample_detail(request, sample_id: int):
         return lock_err
     b.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def aquaculture_sample_valuation_preview(request):
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    try:
+        pond_id = int(request.GET.get("pond_id") or "")
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "pond_id is required and must be an integer"}, status=400)
+    pond = _pond_for_company(cid, pond_id)
+    if not pond:
+        return JsonResponse({"detail": "Pond not found"}, status=404)
+    sd = _parse_date(request.GET.get("sample_date"))
+    if not sd:
+        return JsonResponse({"detail": "sample_date is required (YYYY-MM-DD)"}, status=400)
+    mpp_raw = request.GET.get("market_price_per_kg")
+    if mpp_raw is None or str(mpp_raw).strip() == "":
+        return JsonResponse({"detail": "market_price_per_kg is required"}, status=400)
+    mpp = _decimal(mpp_raw)
+    if mpp < 0:
+        return JsonResponse({"detail": "market_price_per_kg cannot be negative"}, status=400)
+    bio_raw = request.GET.get("extrapolated_biomass_kg")
+    if bio_raw is None or str(bio_raw).strip() == "":
+        return JsonResponse({"detail": "extrapolated_biomass_kg is required"}, status=400)
+    biomass = _decimal(bio_raw)
+    if biomass <= 0:
+        return JsonResponse({"detail": "extrapolated_biomass_kg must be greater than zero"}, status=400)
+    cycle_obj = None
+    raw_cy = request.GET.get("production_cycle_id")
+    if raw_cy not in (None, ""):
+        try:
+            cy_id = int(raw_cy)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "production_cycle_id must be an integer or null"}, status=400)
+        cycle_obj = _cycle_for_company(cid, cy_id)
+        if not cycle_obj:
+            return JsonResponse({"detail": "Production cycle not found"}, status=404)
+        if cycle_obj.pond_id != pond.id:
+            return JsonResponse({"detail": "production_cycle_id does not belong to the selected pond"}, status=400)
+    vals = compute_biomass_sample_valuation_dict(
+        company_id=cid,
+        pond_id=pond_id,
+        sample_date=sd,
+        extrapolated_biomass_kg=biomass,
+        market_price_per_kg=mpp,
+        production_cycle=cycle_obj,
+    )
+    return JsonResponse(
+        {
+            "market_price_per_kg": str(mpp),
+            "extrapolated_biomass_kg": str(biomass),
+            **vals,
+        }
+    )
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def aquaculture_sample_load_advice_preview(request):
+    """Load per decimal and partial-harvest hint from extrapolated sample biomass."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    try:
+        pond_id = int(request.GET.get("pond_id") or "")
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "pond_id is required and must be an integer"}, status=400)
+    pond = _pond_for_company(cid, pond_id)
+    if not pond:
+        return JsonResponse({"detail": "Pond not found"}, status=404)
+    bio_raw = request.GET.get("extrapolated_biomass_kg")
+    if bio_raw is None or str(bio_raw).strip() == "":
+        return JsonResponse({"detail": "extrapolated_biomass_kg is required"}, status=400)
+    biomass = _decimal(bio_raw)
+    if biomass <= 0:
+        return JsonResponse({"detail": "extrapolated_biomass_kg must be greater than zero"}, status=400)
+    fish_raw = request.GET.get("fish_count")
+    if fish_raw is None or str(fish_raw).strip() == "":
+        return JsonResponse({"detail": "fish_count is required"}, status=400)
+    try:
+        fish_count = int(fish_raw)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "fish_count must be an integer"}, status=400)
+    if fish_count <= 0:
+        return JsonResponse({"detail": "fish_count must be greater than zero"}, status=400)
+    pcs: Decimal | None = None
+    raw_pcs = request.GET.get("fish_per_kg")
+    if raw_pcs not in (None, ""):
+        pcs = _decimal(raw_pcs)
+        if pcs <= 0:
+            pcs = None
+    wa_dec = getattr(pond, "water_area_decimal", None)
+    depth_ft = getattr(pond, "pond_depth_ft", None)
+    vol = compute_water_volume_cu_ft(wa_dec, depth_ft)
+    role = getattr(pond, "pond_role", None) or "grow_out"
+    payload = compute_biomass_load_advice_dict(
+        biomass_kg=biomass,
+        fish_count=fish_count,
+        water_area_decimal=wa_dec,
+        pond_role=role,
+        water_volume_cu_ft=vol,
+        fish_per_kg=pcs,
+        lang=company_language(cid),
+    )
+    payload["pond_id"] = pond_id
+    payload["pond_name"] = (pond.name or "").strip()
+    payload["implied_net_fish_count"] = fish_count
+    payload["implied_net_weight_kg"] = str(biomass)
+    if pcs is not None:
+        payload["current_fish_per_kg"] = str(pcs)
+        payload["current_fish_per_kg_source"] = "net sample"
+    return JsonResponse(payload)
 
 
 def _stock_ledger_to_json(x: AquacultureFishStockLedger) -> dict:
@@ -3678,11 +3860,18 @@ def aquaculture_stock_ledger_reference(request):
     err = _aquaculture_access(request)
     if err:
         return err
+    lang = company_language(request.company_id)
     return JsonResponse(
         {
-            "entry_kind": [{"id": c, "label": lbl} for c, lbl in STOCK_LEDGER_ENTRY_KIND_CHOICES],
-            "loss_reason": [{"id": c, "label": lbl} for c, lbl in STOCK_LEDGER_LOSS_REASON_CHOICES],
-            "coa_note": STOCK_LEDGER_COA_NOTE,
+            "entry_kind": [
+                {"id": c, "label": stock_ledger_entry_kind_label(c, lang)}
+                for c, _ in STOCK_LEDGER_ENTRY_KIND_CHOICES
+            ],
+            "loss_reason": [
+                {"id": c, "label": stock_ledger_loss_reason_label(c, lang)}
+                for c, _ in STOCK_LEDGER_LOSS_REASON_CHOICES
+            ],
+            "coa_note": stock_ledger_coa_note(lang),
         }
     )
 

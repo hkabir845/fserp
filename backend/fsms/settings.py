@@ -258,17 +258,24 @@ _PROD_ORIGINS = [
     "https://mahasoftcorporation.com",
     "https://www.mahasoftcorporation.com",
 ]
+# Capacitor Android/iOS WebView origins (API calls from the native app shell).
+_CAPACITOR_ORIGINS = [
+    "https://localhost",
+    "http://localhost",
+    "capacitor://localhost",
+    "ionic://localhost",
+]
 _LOCALHOST_SUBDOMAIN = r"^http://[a-zA-Z0-9-]+\.localhost(:\d+)?$"
 
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_PRIVATE_NETWORK = True
 _env_cors = _csv("FSERP_CORS_ALLOWED_ORIGINS")
 if _env_cors:
-    CORS_ALLOWED_ORIGINS = _env_cors
+    CORS_ALLOWED_ORIGINS = _uniq(_env_cors, _CAPACITOR_ORIGINS)
 elif _is_runserver:
-    CORS_ALLOWED_ORIGINS = _uniq(_PROD_ORIGINS, _LOCAL)
+    CORS_ALLOWED_ORIGINS = _uniq(_PROD_ORIGINS, _LOCAL, _CAPACITOR_ORIGINS)
 else:
-    CORS_ALLOWED_ORIGINS = list(_PROD_ORIGINS)
+    CORS_ALLOWED_ORIGINS = _uniq(_PROD_ORIGINS, _CAPACITOR_ORIGINS)
 _env_cors_regexes = _csv("FSERP_CORS_ORIGIN_REGEXES")
 if _env_cors_regexes:
     CORS_ALLOWED_ORIGIN_REGEXES = _env_cors_regexes

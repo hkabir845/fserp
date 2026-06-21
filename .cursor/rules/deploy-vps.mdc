@@ -1,0 +1,16 @@
+---
+description: VPS deploy — use only the standard three-command workflow
+alwaysApply: true
+---
+
+# FSERP VPS deploy
+
+When the user asks how to deploy, update, or restart on the VPS, give **only** these commands (no alternatives unless they explicitly ask):
+
+```bash
+cd ~/fserp/fserp
+git pull
+bash scripts/deploy-vps.sh
+```
+
+Do not list manual migrate/build/PM2 steps, quick-restart variants, or frontend-only/backend-only paths unless the user explicitly requests a different workflow.

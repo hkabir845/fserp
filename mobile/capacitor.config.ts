@@ -22,6 +22,10 @@ const config: CapacitorConfig = {
     captureInput: true,
   },
   plugins: {
+    /** Native HTTP for API calls — avoids WebView CORS blocking login on Android. */
+    CapacitorHttp: {
+      enabled: true,
+    },
     SplashScreen: {
       launchShowDuration: 1200,
       backgroundColor: '#1d4ed8',

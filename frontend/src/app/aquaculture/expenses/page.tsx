@@ -4,7 +4,10 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BookOpen, Edit2, Eye, FileText, Package, RefreshCw, Store, Trash2 } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -15,6 +18,8 @@ import {
   aquacultureExpenseEditAllowed,
   aquacultureExpenseEditBlockedReason,
 } from '@/lib/aquacultureExpensePolicy'
+import { aquacultureT } from '@/lib/aquacultureI18n'
+import { useT } from '@/lib/i18n'
 import {
   aquacultureExpenseRegisterRowKey,
   parseAquacultureExpenseRegister,
@@ -99,6 +104,8 @@ interface ExpenseRow extends AquacultureExpenseRegisterRow {}
 type CostMode = 'direct' | 'shared_equal' | 'shared_manual'
 
 export default function AquacultureExpensesPage() {
+  const pageMeta = usePageMeta()
+  const { lang, t } = useT()
   const toast = useToast()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -594,83 +601,19 @@ export default function AquacultureExpensesPage() {
   }
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-[1800px] px-4 py-6 sm:px-6 lg:px-8">
-      <datalist id="aquaculture-vendor-suggestions">
-        {vendors.map((v) => (
-          <option key={v.id} value={vendorPickLabel(v)} />
-        ))}
-      </datalist>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium text-teal-800">
-            <Link href="/aquaculture" className="hover:underline">
-              Aquaculture
-            </Link>
-            <span className="text-slate-400" aria-hidden>
-              {' '}
-              /{' '}
-            </span>
-            <span className="text-slate-700">Pond costs</span>
-          </p>
-          <h1 id="aq-expenses-title" className="mt-1 text-xl font-bold tracking-tight text-slate-900">
-            Pond costs
-          </h1>
-          <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-slate-500">
-            Record on vendor bills (posted to GL)
-          </p>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            <span className="font-medium text-slate-800">Shop inventory (feed sacks, medicine SKUs):</span> ring them
-            out on <Link href="/cashier" className="font-medium text-teal-800 underline">Cashier (POS)</Link> on account
-            to the customer linked on each pond (
-            <Link href="/aquaculture/ponds" className="font-medium text-teal-800 underline">
-              Ponds
-            </Link>
-            )—that keeps perpetual SKU quantity and GL aligned with{' '}
-            <Link href="/inventory" className="font-medium text-teal-800 underline">Inventory</Link>. Fish kg and head
-            in the pond are tracked under{' '}
-            <Link href="/aquaculture/stock" className="font-medium text-teal-800 underline">Pond stock</Link> and{' '}
-            <Link href="/aquaculture/sales" className="font-medium text-teal-800 underline">Pond &amp; fish sales</Link>, not here.{' '}
-            <span className="font-medium text-slate-800">Record new costs</span> on{' '}
-            <Link href="/bills" className="font-medium text-teal-800 underline">
-              Vendor bills
-            </Link>
-            : tag the pond, pick an expense category (chart account 671x is suggested), post the bill, then pay from{' '}
-            <Link href="/payments" className="font-medium text-teal-800 underline">
-              Payments
-            </Link>
-            .{' '}
-            <span className="font-medium text-slate-800">Lease payments to landlords</span> belong under{' '}
-            <Link href="/aquaculture/landlords" className="font-medium text-teal-800 underline">
-              Landlords
-            </Link>{' '}
-            (register + pond allocation).{' '}
-            <span className="font-medium text-slate-800">Payroll wages</span> belong in{' '}
-            <Link href="/payroll" className="font-medium text-teal-800 underline">
-              Payroll
-            </Link>{' '}
-            with optional pond splits when you post—avoid duplicating those amounts here.{' '}
-            <span className="font-medium text-slate-800">Feed and medicine inventory</span> are not added with{' '}
-            <span className="font-medium text-slate-800">Add expense</span>—use Bills, POS on account, or{' '}
-            <span className="font-medium text-slate-800">Advanced: internal stock issue</span> below (sacks/kg there for
-            feed).{' '}
-            <span className="font-medium text-slate-800">Direct cost:</span> one pond (optional production cycle).{' '}
-            <span className="font-medium text-slate-800">Shared cost:</span> leave pond unset and split across at least
-            two ponds; shared lines cannot use a production cycle.{' '}
-            <span className="font-medium text-slate-800">Day &amp; contract labor</span> (daily hired workers, not
-            employees) belongs on{' '}
-            <Link href="/bills" className="font-medium text-teal-800 underline">
-              Vendor bills
-            </Link>{' '}
-            with category Day &amp; contract labor or your custom label — same flow as electricity or repairs.{' '}
-            <span className="font-medium text-slate-800">Miscellaneous</span> covers boats, wiring, site meals, and
-            anything else—use Memo.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="text-xs text-slate-600">
-            Filter pond
+    <AquaculturePageShell
+      titleId="aq-expenses-title"
+      eyebrow={pageMeta.eyebrow}
+      title={pageMeta.title}
+      titleIcon={BookOpen}
+      description={pageMeta.description}
+      maxWidthClass="max-w-[1800px]"
+      actions={
+        <>
+          <label className="text-xs font-medium text-teal-100">
+            {aquacultureT('filterPondLabel', lang)}
             <select
-              className="ml-1 block rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
               value={filterPond}
               onChange={(e) => {
                 const v = e.target.value
@@ -678,7 +621,7 @@ export default function AquacultureExpensesPage() {
                 pushFilterUrl({ pond: v, from: filterDateFrom, to: filterDateTo })
               }}
             >
-              <option value="">All</option>
+              <option value="">{t('all')}</option>
               {ponds.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -686,11 +629,11 @@ export default function AquacultureExpensesPage() {
               ))}
             </select>
           </label>
-          <label className="text-xs text-slate-600">
-            From
+          <label className="text-xs font-medium text-teal-100">
+            {aquacultureT('fromDate', lang)}
             <input
               type="date"
-              className="ml-1 block rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
               value={filterDateFrom}
               onChange={(e) => {
                 const v = e.target.value
@@ -699,11 +642,11 @@ export default function AquacultureExpensesPage() {
               }}
             />
           </label>
-          <label className="text-xs text-slate-600">
-            To
+          <label className="text-xs font-medium text-teal-100">
+            {aquacultureT('toDate', lang)}
             <input
               type="date"
-              className="ml-1 block rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
               value={filterDateTo}
               onChange={(e) => {
                 const v = e.target.value
@@ -715,23 +658,19 @@ export default function AquacultureExpensesPage() {
           {(filterDateFrom || filterDateTo) && (
             <button
               type="button"
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+              className={AQ_HERO_BTN_GHOST}
               onClick={() => {
                 setFilterDateFrom('')
                 setFilterDateTo('')
                 pushFilterUrl({ pond: filterPond, from: '', to: '' })
               }}
             >
-              Clear dates
+              {aquacultureT('clearDates', lang)}
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => void loadRows()}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
+          <button type="button" onClick={() => void loadRows()} className={AQ_HERO_BTN_GHOST}>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            {aquacultureT('refresh', lang)}
           </button>
           <button
             type="button"
@@ -743,25 +682,35 @@ export default function AquacultureExpensesPage() {
               router.push(`/bills?${q.toString()}`)
             }}
             disabled={loading || ponds.length === 0}
-            className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className={AQ_HERO_BTN_PRIMARY}
           >
-            <FileText className="h-4 w-4" />
-            Record vendor bill
+            <FileText className="h-3.5 w-3.5" aria-hidden />
+            {aquacultureT('recordVendorBill', lang)}
           </button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <datalist id="aquaculture-vendor-suggestions">
+        {vendors.map((v) => (
+          <option key={v.id} value={vendorPickLabel(v)} />
+        ))}
+      </datalist>
 
-      <div className="mt-5 rounded-xl border border-indigo-200/90 bg-indigo-50/80 px-4 py-3 text-sm text-indigo-950 shadow-sm">
+      <div className="rounded-xl border border-indigo-200/90 bg-indigo-50/80 px-4 py-3 text-sm text-indigo-950 shadow-sm">
         <div className="flex gap-2">
           <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-indigo-700" aria-hidden />
           <div>
-            <p className="font-semibold text-indigo-950">Bills-first accounting</p>
+            <p className="font-semibold text-indigo-950">{aquacultureT('expensesBillsFirstTitle', lang)}</p>
             <p className="mt-1 leading-relaxed text-indigo-950/95">
-              New pond operating costs are recorded on <strong className="text-indigo-950">Vendor bills</strong> (pond tag
-              + expense category → automatic 671x chart account). After posting, use{' '}
-              <strong className="text-indigo-950">Payments</strong> for bank/cash. The table lists{' '}
-              <strong className="text-indigo-950">vendor bill lines</strong> and legacy shop/warehouse entries — use{' '}
-              <span className="font-medium">View</span> on bill rows to open the source document.
+              {aquacultureT('expensesBillsFirstPart1', lang)}
+              <strong className="text-indigo-950">{aquacultureT('expensesBillsFirstVendorBills', lang)}</strong>
+              {aquacultureT('expensesBillsFirstPart2', lang)}
+              <strong className="text-indigo-950">{aquacultureT('expensesBillsFirstPayments', lang)}</strong>
+              {aquacultureT('expensesBillsFirstPart3', lang)}
+              <strong className="text-indigo-950">{aquacultureT('expensesBillsFirstVendorBillLines', lang)}</strong>
+              {aquacultureT('expensesBillsFirstPart4', lang)}
+              <span className="font-medium">{aquacultureT('expensesBillsFirstView', lang)}</span>
+              {aquacultureT('expensesBillsFirstPart5', lang)}
             </p>
           </div>
         </div>
@@ -773,37 +722,41 @@ export default function AquacultureExpensesPage() {
         </div>
       ) : ponds.length === 0 ? (
         <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
-          <p className="font-medium">Create a pond first</p>
+          <p className="font-medium">{aquacultureT('createPondFirst', lang)}</p>
           <Link href="/aquaculture/ponds" className="mt-2 inline-block font-medium text-teal-800 underline">
-            Go to Ponds
+            {aquacultureT('goToPonds', lang)}
           </Link>
         </div>
       ) : (
         <>
         <div className="mt-6 rounded-xl border border-teal-100 bg-gradient-to-br from-teal-50/90 to-white px-4 py-4 text-sm text-slate-800 shadow-sm">
-          <p className="font-semibold text-teal-950">Recommended: stock to ponds via POS on account</p>
+          <p className="font-semibold text-teal-950">{aquacultureT('expensesPosRecommendedTitle', lang)}</p>
           <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-slate-700">
             <li>
-              On <Link href="/aquaculture/ponds" className="font-medium text-teal-800 underline">Ponds</Link>, each new
-              production unit gets a POS customer automatically; change or clear there if you use a different AR
-              account.
+              {aquacultureT('expensesPosStep1EnPrefix', lang)}
+              <Link href="/aquaculture/ponds" className="font-medium text-teal-800 underline">
+                {aquacultureT('pondsPage', lang)}
+              </Link>
+              {aquacultureT('expensesPosStep1Suffix', lang)}
             </li>
             <li>
-              Open{' '}
+              {aquacultureT('expensesPosStep2EnPrefix', lang)}
               <Link href="/cashier" className="inline-flex items-center gap-1 font-medium text-teal-800 underline">
                 <Store className="h-3.5 w-3.5" aria-hidden />
-                Cashier
-              </Link>{' '}
-              (or use “Open POS” from the pond row), add inventoried lines, and settle on account for that customer.
+                {aquacultureT('cashier', lang)}
+              </Link>
+              {aquacultureT('expensesPosStep2Suffix', lang)}
             </li>
             <li>
-              On the pond list, use <span className="font-medium text-slate-800">Ledger</span> or{' '}
-              <span className="font-medium text-slate-800">POS</span> shortcuts on each row to review A/R or sell again.
+              {aquacultureT('expensesPosStep3Prefix', lang)}
+              <span className="font-medium text-slate-800">{aquacultureT('expensesPosLedger', lang)}</span>
+              {aquacultureT('expensesPosStep3Middle', lang)}
+              <span className="font-medium text-slate-800">{aquacultureT('expensesPosPosShortcut', lang)}</span>
+              {aquacultureT('expensesPosStep3Suffix', lang)}
             </li>
           </ol>
           <p className="mt-2 text-xs leading-relaxed text-slate-600">
-            Record non-POS spend below. Only use the advanced internal issue if you intentionally move stock at average
-            cost without a POS sale—and never for the same physical goods already invoiced on POS.
+            {aquacultureT('expensesPosFooter', lang)}
           </p>
         </div>
         <details
@@ -813,16 +766,14 @@ export default function AquacultureExpensesPage() {
         >
           <summary className="cursor-pointer select-none font-medium text-slate-800">
             <Package className="mr-1 inline h-4 w-4 align-text-bottom text-slate-600" aria-hidden />
-            Advanced: internal stock issue at cost (optional)
+            {aquacultureT('expensesAdvancedStockIssue', lang)}
           </summary>
           <p className="mt-2 text-xs leading-relaxed text-slate-600">
-            Bypasses POS: decrements station quantity, posts COGS / inventory at average cost, and creates one pond
-            expense. Use sparingly—for example a true internal transfer with no sale document. Items need cost or unit
-            price and sufficient per-station QOH. You can set each station&apos;s default pond on the{' '}
+            {aquacultureT('expensesAdvancedStockIssueBodyPrefix', lang)}
             <Link href="/stations" className="font-medium text-teal-800 underline">
-              Stations
-            </Link>{' '}
-            page (optional prefill only).
+              {aquacultureT('stationsPage', lang)}
+            </Link>
+            {aquacultureT('expensesAdvancedStockIssueBodySuffix', lang)}
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="block text-xs font-medium text-slate-700">
@@ -1424,6 +1375,6 @@ export default function AquacultureExpensesPage() {
           </div>
         </div>
       )}
-    </div>
+    </AquaculturePageShell>
   )
 }

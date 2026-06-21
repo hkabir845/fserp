@@ -2,12 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
-import { 
-  Check, X, Crown, Zap, Building2, Sparkles, 
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
+import {
+  Check, X, Crown, Zap, Building2, Sparkles,
   TrendingUp, Calendar, CreditCard, BarChart3,
   AlertCircle, CheckCircle2, Clock, XCircle,
-  ArrowRight, Star, Shield, Zap as ZapIcon
+  ArrowRight, Star, Shield, Zap as ZapIcon,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { formatDateOnly } from '@/utils/date'
@@ -74,6 +77,8 @@ interface Payment {
 export default function SubscriptionsPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
+  const tr = useErpCommonT()
   const [activeTab, setActiveTab] = useState<'plans' | 'current' | 'usage' | 'billing'>('current')
   const [plans, setPlans] = useState<Plan[]>([])
   const [subscription, setSubscription] = useState<Subscription | null>(null)
@@ -312,34 +317,35 @@ export default function SubscriptionsPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
         </div>
-      </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="page-with-sidebar flex h-screen bg-gray-50">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto app-scroll-pad">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Subscription & Billing</h1>
-            <p className="text-gray-600 text-lg">Manage your subscription plan and billing information</p>
-          </div>
-
-          {/* Tabs */}
-          <div className="mb-8 border-b border-gray-200">
+    <PageLayout className="bg-slate-50">
+      <div className="app-scroll-pad">
+        <ErpPageShell
+          flush
+          showBackLink={false}
+          title={pageMeta.title}
+          titleIcon={CreditCard}
+          eyebrow={pageMeta.eyebrow}
+          eyebrowIcon={CreditCard}
+          description={pageMeta.description}
+          maxWidthClass="max-w-7xl"
+          contentClassName="mt-4"
+        >
+          <div className="mb-8 border-b border-slate-200">
             <nav className="flex space-x-8">
               {[
-                { id: 'current', label: 'Current Plan', icon: CreditCard },
-                { id: 'plans', label: 'Browse Plans', icon: Star },
-                { id: 'usage', label: 'Usage & Limits', icon: BarChart3 },
-                { id: 'billing', label: 'Billing History', icon: Calendar }
+                { id: 'current', label: tr('subTabCurrent'), icon: CreditCard },
+                { id: 'plans', label: tr('subTabPlans'), icon: Star },
+                { id: 'usage', label: tr('subTabUsage'), icon: BarChart3 },
+                { id: 'billing', label: tr('subTabBilling'), icon: Calendar },
               ].map((tab) => {
                 const Icon = tab.icon
                 return (
@@ -741,9 +747,9 @@ export default function SubscriptionsPage() {
               </button>
             </div>
           )}
-        </div>
+        </ErpPageShell>
       </div>
-    </div>
+    </PageLayout>
   )
 }
 

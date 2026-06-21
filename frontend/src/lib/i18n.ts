@@ -7,6 +7,7 @@
  */
 import { useCallback, useMemo } from 'react'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
+import { commonUiStrings } from '@/lib/i18n/commonUi'
 
 export type AppLanguage = 'en' | 'bn'
 
@@ -21,7 +22,9 @@ export function pick(lang: AppLanguage, en: string, bn: string): string {
 type StringRow = { en: string; bn: string }
 
 const strings = {
-  // —— Common ——
+  ...commonUiStrings,
+
+  // —— Common (legacy keys) ——
   loading: { en: 'Loading…', bn: 'লোড হচ্ছে…' },
   save: { en: 'Save', bn: 'সংরক্ষণ' },
   cancel: { en: 'Cancel', bn: 'বাতিল' },
@@ -116,6 +119,29 @@ const strings = {
   stockSaveMemo: { en: 'Save memo', bn: 'মেমো সংরক্ষণ' },
   stockSaveChanges: { en: 'Save changes', bn: 'পরিবর্তন সংরক্ষণ' },
   stockSaveEntry: { en: 'Save entry', bn: 'এন্ট্রি সংরক্ষণ' },
+
+  // —— Sidebar / chrome ——
+  searchMenu: { en: 'Search menu', bn: 'মেনু খুঁজুন' },
+  clearSearch: { en: 'Clear menu search', bn: 'খোঁজ সাফ করুন' },
+  logOut: { en: 'Log out', bn: 'লগ আউট' },
+  logout: { en: 'Logout', bn: 'লগআউট' },
+  password: { en: 'Password', bn: 'পাসওয়ার্ড' },
+  openNavMenu: { en: 'Open navigation menu', bn: 'নেভিগেশন মেনু খুলুন' },
+  closeMenu: { en: 'Close menu', bn: 'মেনু বন্ধ' },
+  closeNavigation: { en: 'Close navigation', bn: 'নেভিগেশন বন্ধ' },
+  resizeSidebar: { en: 'Resize navigation sidebar', bn: 'সাইডবারের আকার বদলান' },
+  fsmsErpTab: { en: 'FSMS ERP', bn: 'FSMS ERP' },
+  saasTab: { en: 'SaaS', bn: 'SaaS' },
+  applicationMode: { en: 'Application mode', bn: 'অ্যাপ্লিকেশন মোড' },
+  edit: { en: 'Edit', bn: 'সম্পাদনা' },
+  delete: { en: 'Delete', bn: 'মুছুন' },
+  refresh: { en: 'Refresh', bn: 'রিফ্রেশ' },
+  all: { en: 'All', bn: 'সব' },
+  actions: { en: 'Actions', bn: 'কর্ম' },
+  updated: { en: 'Updated', bn: 'আপডেট হয়েছে' },
+  deleted: { en: 'Deleted', bn: 'মুছে ফেলা হয়েছে' },
+  saveFailed: { en: 'Save failed', bn: 'সংরক্ষণ ব্যর্থ' },
+  deleteFailed: { en: 'Delete failed', bn: 'মুছতে ব্যর্থ' },
 
   // —— Reports (aquaculture client hints) ——
   reportPeriodRowsFiltered: {

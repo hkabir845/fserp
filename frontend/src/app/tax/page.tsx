@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import {
   Plus,
   Pencil,
@@ -77,6 +79,7 @@ const BD_PRESETS = [
 export default function TaxPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
   const [taxes, setTaxes] = useState<Tax[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -323,63 +326,59 @@ export default function TaxPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div
-          className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"
-          aria-label="Loading"
-        />
-      </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div
+            className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"
+            aria-label="Loading"
+          />
+        </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 page-with-sidebar">
-      <Sidebar />
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-        <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          {/* Header */}
-          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-                Tax management
-              </h1>
-              <p className="mt-1 max-w-2xl text-sm text-slate-600">
-                Configure tax names, rates, and effective dates. One deployment — changes apply to this company
-                only.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={Percent}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fetchTaxes()}
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20"
+            >
+              <RefreshCw className="h-4 w-4 shrink-0" />
+              Refresh
+            </button>
+            {canInitBangladesh && (
               <button
                 type="button"
-                onClick={() => fetchTaxes()}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+                onClick={initBangladesh}
+                className="inline-flex items-center gap-2 rounded-full bg-emerald-400/90 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-emerald-300"
               >
-                <RefreshCw className="h-4 w-4 shrink-0" />
-                Refresh
+                <Building2 className="h-4 w-4 shrink-0" />
+                Bangladesh defaults
               </button>
-              {canInitBangladesh && (
-                <button
-                  type="button"
-                  onClick={initBangladesh}
-                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900 shadow-sm transition hover:bg-emerald-100"
-                >
-                  <Building2 className="h-4 w-4 shrink-0" />
-                  Bangladesh defaults
-                </button>
-              )}
-              {canManageTax && (
-                <button
-                  type="button"
-                  onClick={openCreate}
-                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                >
-                  <Plus className="h-4 w-4 shrink-0" />
-                  New tax
-                </button>
-              )}
-            </div>
+            )}
+            {canManageTax && (
+              <button
+                type="button"
+                onClick={openCreate}
+                className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                New tax
+              </button>
+            )}
           </div>
-
+        }
+      >
           {/* Info */}
           <div className="mb-6 rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm ring-1 ring-slate-900/5">
             <div className="flex gap-3">
@@ -569,9 +568,6 @@ export default function TaxPage() {
               )}
             </div>
           )}
-        </div>
-      </div>
-
       {/* Tax modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[1px]">
@@ -764,6 +760,7 @@ export default function TaxPage() {
           </div>
         </div>
       )}
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

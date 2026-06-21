@@ -2,7 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { Package } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
+import { aquacultureT } from '@/lib/aquacultureI18n'
+import { navLabel } from '@/lib/erpNavI18n'
+import { pageMetaForPath } from '@/lib/pageMetaI18n'
 import {
   AQUACULTURE_STOCK_SUB_NAV,
   isAquacultureStockNavActive,
@@ -16,116 +21,109 @@ const menubarTabClass = (active: boolean) =>
 
 export default function AquacultureStockLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const { language: lang } = useCompanyLocale()
   const route = parseAquacultureStockRoute(pathname || '')
+  const meta = pageMetaForPath(
+    route.isOptionsPage ? '/aquaculture/stock/options' : '/aquaculture/stock',
+    lang,
+  )
   const fishItems = AQUACULTURE_STOCK_SUB_NAV.filter((i) => i.group === 'fish')
   const warehouseItems = AQUACULTURE_STOCK_SUB_NAV.filter((i) => i.group === 'warehouse')
   const setupItems = AQUACULTURE_STOCK_SUB_NAV.filter((i) => i.group === 'setup')
 
+  const stockDescription = route.isOptionsPage
+    ? pageMetaForPath('/aquaculture/stock/options', lang).description
+    : route.mainTab === 'fish'
+      ? meta.description
+      : aquacultureT('warehouseStockHint', lang)
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <Link
-            href="/aquaculture"
-            className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:text-teal-950"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Dashboard
-          </Link>
-          <h1 id="aq-stock-title" className="text-2xl font-bold tracking-tight text-slate-900">
-            Pond stock
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            {route.isOptionsPage
-              ? 'Configure shared feed and medicine stores used by multiple ponds.'
-              : route.mainTab === 'fish'
-                ? 'See how many fish you have in each pond. Record mortality, theft, and corrections under Adjustments.'
-                : 'Feed, medicine, and supplies stored at each pond — separate from live fish in the water.'}
-          </p>
-
-          <nav
-            className="mt-4 space-y-2"
-            aria-label="Pond stock sections"
-          >
-            <div
-              className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
-              role="tablist"
-              aria-label="Fish stock views"
-            >
-              {fishItems.map((item) => {
-                const Icon = item.icon
-                const active = isAquacultureStockNavActive(pathname || '', item.href)
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    role="tab"
-                    aria-selected={active}
-                    className={menubarTabClass(active)}
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <Icon className="h-4 w-4 text-current opacity-90" aria-hidden />
-                      {item.label}
-                    </span>
-                  </Link>
-                )
-              })}
-            </div>
-
-            <div
-              className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
-              role="tablist"
-              aria-label="Pond warehouse views"
-            >
-              {warehouseItems.map((item) => {
-                const Icon = item.icon
-                const active = isAquacultureStockNavActive(pathname || '', item.href)
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    role="tab"
-                    aria-selected={active}
-                    className={menubarTabClass(active)}
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <Icon className="h-4 w-4 text-current opacity-90" aria-hidden />
-                      {item.label}
-                    </span>
-                  </Link>
-                )
-              })}
-            </div>
-
-            <div
-              className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
-              role="tablist"
-              aria-label="Stock options"
-            >
-              {setupItems.map((item) => {
-                const Icon = item.icon
-                const active = isAquacultureStockNavActive(pathname || '', item.href)
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    role="tab"
-                    aria-selected={active}
-                    className={menubarTabClass(active)}
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <Icon className="h-4 w-4 text-current opacity-90" aria-hidden />
-                      {item.label}
-                    </span>
-                  </Link>
-                )
-              })}
-            </div>
-          </nav>
+    <AquaculturePageShell
+      titleId="aq-stock-title"
+      title={meta.title}
+      titleIcon={Package}
+      description={stockDescription}
+      maxWidthClass="max-w-[1440px]"
+      contentClassName="mt-4"
+    >
+      <nav className="space-y-2" aria-label={aquacultureT('pondStockSections', lang)}>
+        <div
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
+          role="tablist"
+          aria-label={aquacultureT('fishStockViews', lang)}
+        >
+          {fishItems.map((item) => {
+            const Icon = item.icon
+            const active = isAquacultureStockNavActive(pathname || '', item.href)
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                role="tab"
+                aria-selected={active}
+                className={menubarTabClass(active)}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Icon className="h-4 w-4 text-current opacity-90" aria-hidden />
+                  {navLabel(item.href, lang)}
+                </span>
+              </Link>
+            )
+          })}
         </div>
-      </div>
+
+        <div
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
+          role="tablist"
+          aria-label={aquacultureT('pondWarehouseViews', lang)}
+        >
+          {warehouseItems.map((item) => {
+            const Icon = item.icon
+            const active = isAquacultureStockNavActive(pathname || '', item.href)
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                role="tab"
+                aria-selected={active}
+                className={menubarTabClass(active)}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Icon className="h-4 w-4 text-current opacity-90" aria-hidden />
+                  {navLabel(item.href, lang)}
+                </span>
+              </Link>
+            )
+          })}
+        </div>
+
+        <div
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
+          role="tablist"
+          aria-label={aquacultureT('stockOptions', lang)}
+        >
+          {setupItems.map((item) => {
+            const Icon = item.icon
+            const active = isAquacultureStockNavActive(pathname || '', item.href)
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                role="tab"
+                aria-selected={active}
+                className={menubarTabClass(active)}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Icon className="h-4 w-4 text-current opacity-90" aria-hidden />
+                  {navLabel(item.href, lang)}
+                </span>
+              </Link>
+            )
+          })}
+        </div>
+      </nav>
 
       {children}
-    </div>
+    </AquaculturePageShell>
   )
 }

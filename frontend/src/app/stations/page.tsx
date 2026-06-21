@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { Plus, Edit, Trash2, Search, Building2, AlertTriangle, RefreshCw, Phone, MapPin, Fuel, Sprout } from 'lucide-react'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api, { getApiDocsUrl } from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { stationHasFuelForecourt } from '@/utils/stationCapabilities'
@@ -27,6 +29,7 @@ interface Station {
 export default function StationsPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
   const apiDocsUrl = getApiDocsUrl()
   const [stations, setStations] = useState<Station[]>([])
   const [loading, setLoading] = useState(true)
@@ -234,20 +237,36 @@ export default function StationsPage() {
 
   return (
     <CompanyProvider>
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-auto app-scroll-pad">
-          <div className="mb-4">
-            <h1 className="text-3xl font-bold text-gray-900">Stations</h1>
-            <p className="text-gray-600 mt-1 max-w-3xl">
-              Manage operating locations: fuel forecourts, retail shops, and—when Aquaculture is licensed—dedicated farm or
-              hub sites without underground fuel. Each site can be linked to a default pond for stock issues and POS.
-            </p>
-
-            <div
-              className="mt-4 flex flex-col gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-              data-testid="station-site-overview"
+      <PageLayout className="bg-slate-50">
+        <ErpPageShell
+          showBackLink={false}
+          titleId="stations-title"
+          eyebrow={pageMeta.eyebrow}
+          eyebrowIcon={pageMeta.eyebrow ? MapPin : undefined}
+          title={pageMeta.title}
+          titleIcon={MapPin}
+          description={pageMeta.description ?? undefined}
+          maxWidthClass="max-w-[1600px]"
+          contentClassName="mt-4"
+          actions={
+            <button
+              onClick={() => {
+                resetForm()
+                setShowModal(true)
+              }}
+              disabled={atStationLimit}
+              title={atStationLimit ? 'One active site: deactivate an existing station or set Multiple stations in Company profile to add more.' : undefined}
+              className="flex items-center gap-2 px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-500 transition-colors font-medium shadow-sm shrink-0 disabled:cursor-not-allowed disabled:bg-slate-500/50 disabled:hover:bg-slate-500/50"
             >
+              <Plus className="h-5 w-5" />
+              <span>Add Station</span>
+            </button>
+          }
+        >
+          <div
+            className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+            data-testid="station-site-overview"
+          >
               <div className="flex flex-wrap items-center gap-2 min-w-0">
                 <span
                   className={
@@ -300,7 +319,6 @@ export default function StationsPage() {
                 )}
               </p>
             </div>
-          </div>
 
           {stationMode === 'single' && (
             <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -319,8 +337,8 @@ export default function StationsPage() {
             </div>
           )}
 
-          <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
-            <div className="relative flex-1 min-w-0 max-w-md">
+          <div className="mb-6 flex flex-wrap items-center gap-4">
+            <div className="relative min-w-0 max-w-md flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5 pointer-events-none" />
               <input
                 type="text"
@@ -330,18 +348,6 @@ export default function StationsPage() {
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm"
               />
             </div>
-            <button
-              onClick={() => {
-                resetForm()
-                setShowModal(true)
-              }}
-              disabled={atStationLimit}
-              title={atStationLimit ? 'One active site: deactivate an existing station or set Multiple stations in Company profile to add more.' : undefined}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm shrink-0 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:hover:bg-gray-300"
-            >
-              <Plus className="h-5 w-5" />
-              <span>Add Station</span>
-            </button>
           </div>
 
           {loading ? (
@@ -740,8 +746,8 @@ export default function StationsPage() {
               </div>
             </div>
           )}
-        </div>
-      </div>
+        </ErpPageShell>
+      </PageLayout>
     </CompanyProvider>
   )
 }

@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Clock, PlayCircle, StopCircle, Edit2, Trash2, Plus, X, History } from 'lucide-react'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { useToast } from '@/components/Toast'
 import { formatCurrency } from '@/utils/currency'
@@ -122,6 +124,7 @@ interface ShiftSession {
 export default function ShiftManagementPage() {
   const { timeFormat } = useCompanyLocale()
   const toast = useToast()
+  const pageMeta = usePageMeta()
   /** Remount template time fields when the modal open payload changes so 12h controls stay in sync. */
   const [templateTimeFieldsKey, setTemplateTimeFieldsKey] = useState(0)
   const [activeSession, setActiveSession] = useState<ShiftSession | null>(null)
@@ -593,24 +596,24 @@ export default function ShiftManagementPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-auto app-scroll-pad">
-          <div className="text-center text-gray-600">Loading shift management…</div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center text-gray-600">
+          Loading shift management…
         </div>
-      </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Shift Management</h1>
-          <p className="text-gray-600">Open and close cashier shifts by template and station</p>
-        </div>
-
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={Clock}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+      >
         {openSessions.length > 0 && closingSession && (
           <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -1342,7 +1345,7 @@ export default function ShiftManagementPage() {
           </div>
         )}
 
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

@@ -33,6 +33,13 @@ import { buildAppPageHrefPermissionMap } from '@/navigation/appPagePermissions'
 import { getAquacultureMenuItemsFlatWithGroup } from '@/navigation/aquacultureNavConfig'
 import { AQUACULTURE_STOCK_SUB_NAV } from '@/navigation/aquacultureStockNavConfig'
 import { hasAnyAquacultureModuleInList, menuHrefAllowedForAquaculture } from '@/navigation/aquaculturePermissions'
+import {
+  aquacultureGroupLabel,
+  navLabel,
+  navSectionLabel,
+  type ErpNavSectionId,
+} from '@/lib/erpNavI18n'
+import type { AppLanguage } from '@/lib/i18n'
 /** Sidebar search hints (unchanged from Sidebar) */
 export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
   main: 'home apps launcher dashboard pos cashier point of sale register',
@@ -148,122 +155,128 @@ function menuItemAllowedByPermissions(href: string, perms: string[]): boolean {
   return false
 }
 
+function fsmsNavItem(
+  href: string,
+  section: ErpAppSection,
+  icon: LucideIcon,
+  tileClassName: string,
+  lang: AppLanguage,
+  extra?: Partial<ErpAppMenuItem>
+): ErpAppMenuItem {
+  return {
+    href,
+    label: navLabel(href, lang),
+    section,
+    icon,
+    tileClass: tileClassName,
+    ...extra,
+  }
+}
+
 /**
  * Full FSMS ERP menu (icons + pastel tile classes for app launcher).
  * Order matches previous Sidebar `fsmsErpMenuItems`.
  */
-export function getFsmsErpMenuItems(): ErpAppMenuItem[] {
+export function getFsmsErpMenuItems(lang: AppLanguage = 'en'): ErpAppMenuItem[] {
   return [
-    {
-      href: '/apps',
-      label: 'Apps',
-      section: 'main',
-      icon: LayoutGrid,
-      tileClass: tile('bg-slate-100', 'text-slate-600'),
-    },
-    {
-      href: '/dashboard',
-      label: 'Dashboard',
-      section: 'main',
-      icon: LayoutDashboard,
-      tileClass: tile('bg-sky-100', 'text-sky-600'),
-    },
-    {
-      href: '/cashier',
-      label: 'POS / Cashier',
-      section: 'main',
-      icon: ShoppingCart,
-      tileClass: tile('bg-cyan-100', 'text-cyan-600'),
-    },
+    fsmsNavItem('/apps', 'main', LayoutGrid, tile('bg-slate-100', 'text-slate-600'), lang),
+    fsmsNavItem('/dashboard', 'main', LayoutDashboard, tile('bg-sky-100', 'text-sky-600'), lang),
+    fsmsNavItem('/cashier', 'main', ShoppingCart, tile('bg-cyan-100', 'text-cyan-600'), lang),
 
-    { href: '/stations', label: 'Stations', section: 'station', icon: Building2, tileClass: tile('bg-amber-100', 'text-amber-600') },
-    { href: '/tanks', label: 'Tanks', section: 'station', icon: Droplet, tileClass: tile('bg-orange-100', 'text-orange-600') },
-    { href: '/islands', label: 'Islands', section: 'station', icon: MapPin, tileClass: tile('bg-yellow-100', 'text-yellow-700') },
-    { href: '/dispensers', label: 'Dispensers', section: 'station', icon: Zap, tileClass: tile('bg-lime-100', 'text-lime-700') },
-    { href: '/meters', label: 'Meters', section: 'station', icon: Gauge, tileClass: tile('bg-emerald-100', 'text-emerald-600') },
-    { href: '/nozzles', label: 'Nozzles', section: 'station', icon: Fuel, tileClass: tile('bg-teal-100', 'text-teal-600') },
+    fsmsNavItem('/stations', 'station', Building2, tile('bg-amber-100', 'text-amber-600'), lang),
+    fsmsNavItem('/tanks', 'station', Droplet, tile('bg-orange-100', 'text-orange-600'), lang),
+    fsmsNavItem('/islands', 'station', MapPin, tile('bg-yellow-100', 'text-yellow-700'), lang),
+    fsmsNavItem('/dispensers', 'station', Zap, tile('bg-lime-100', 'text-lime-700'), lang),
+    fsmsNavItem('/meters', 'station', Gauge, tile('bg-emerald-100', 'text-emerald-600'), lang),
+    fsmsNavItem('/nozzles', 'station', Fuel, tile('bg-teal-100', 'text-teal-600'), lang),
 
-    { href: '/shift-management', label: 'Shift Management', section: 'operations', icon: Clock, tileClass: tile('bg-violet-100', 'text-violet-600') },
-    { href: '/tank-dips', label: 'Tank Dips', section: 'operations', icon: Droplet, tileClass: tile('bg-fuchsia-100', 'text-fuchsia-600') },
+    fsmsNavItem('/shift-management', 'operations', Clock, tile('bg-violet-100', 'text-violet-600'), lang),
+    fsmsNavItem('/tank-dips', 'operations', Droplet, tile('bg-fuchsia-100', 'text-fuchsia-600'), lang),
 
-    { href: '/chart-of-accounts', label: 'Chart of Accounts', section: 'accounting', icon: BookOpen, tileClass: tile('bg-indigo-100', 'text-indigo-600') },
-    { href: '/journal-entries', label: 'Journal Entries', section: 'accounting', icon: Receipt, tileClass: tile('bg-purple-100', 'text-purple-600') },
-    { href: '/fund-transfers', label: 'Fund Transfer', section: 'accounting', icon: TrendingUp, tileClass: tile('bg-blue-100', 'text-blue-600') },
-    { href: '/loans', label: 'Loans', section: 'accounting', icon: Landmark, tileClass: tile('bg-slate-100', 'text-slate-700') },
-    { href: '/fixed-assets', label: 'Fixed Assets', section: 'accounting', icon: Boxes, tileClass: tile('bg-stone-100', 'text-stone-700') },
+    fsmsNavItem('/chart-of-accounts', 'accounting', BookOpen, tile('bg-indigo-100', 'text-indigo-600'), lang),
+    fsmsNavItem('/journal-entries', 'accounting', Receipt, tile('bg-purple-100', 'text-purple-600'), lang),
+    fsmsNavItem('/fund-transfers', 'accounting', TrendingUp, tile('bg-blue-100', 'text-blue-600'), lang),
+    fsmsNavItem('/loans', 'accounting', Landmark, tile('bg-slate-100', 'text-slate-700'), lang),
+    fsmsNavItem('/fixed-assets', 'accounting', Boxes, tile('bg-stone-100', 'text-stone-700'), lang),
 
-    { href: '/customers', label: 'Customers', section: 'sales', icon: Users, tileClass: tile('bg-green-100', 'text-green-600') },
-    { href: '/vendors', label: 'Vendors', section: 'sales', icon: Users, tileClass: tile('bg-emerald-100', 'text-emerald-700') },
-    { href: '/invoices', label: 'Invoices', section: 'sales', icon: FileText, tileClass: tile('bg-rose-100', 'text-rose-600') },
-    { href: '/bills', label: 'Bills', section: 'sales', icon: Receipt, tileClass: tile('bg-pink-100', 'text-pink-600') },
-    { href: '/payments', label: 'Payments', section: 'sales', icon: DollarSign, tileClass: tile('bg-green-100', 'text-green-700') },
+    fsmsNavItem('/customers', 'sales', Users, tile('bg-green-100', 'text-green-600'), lang),
+    fsmsNavItem('/vendors', 'sales', Users, tile('bg-emerald-100', 'text-emerald-700'), lang),
+    fsmsNavItem('/invoices', 'sales', FileText, tile('bg-rose-100', 'text-rose-600'), lang),
+    fsmsNavItem('/bills', 'sales', Receipt, tile('bg-pink-100', 'text-pink-600'), lang),
+    fsmsNavItem('/payments', 'sales', DollarSign, tile('bg-green-100', 'text-green-700'), lang),
 
-    { href: '/items', label: 'Products & services', section: 'inventory', icon: Package, tileClass: tile('bg-cyan-100', 'text-cyan-700') },
-    {
-      href: '/inventory',
-      label: 'Inventory & transfers',
-      section: 'inventory',
-      icon: ArrowRightLeft,
-      tileClass: tile('bg-teal-100', 'text-teal-700'),
-    },
+    fsmsNavItem('/items', 'inventory', Package, tile('bg-cyan-100', 'text-cyan-700'), lang),
+    fsmsNavItem('/inventory', 'inventory', ArrowRightLeft, tile('bg-teal-100', 'text-teal-700'), lang),
 
-    { href: '/employees', label: 'Employees', section: 'hr', icon: Users, tileClass: tile('bg-orange-100', 'text-orange-700') },
-    { href: '/payroll', label: 'Payroll', section: 'hr', icon: DollarSign, tileClass: tile('bg-amber-100', 'text-amber-700') },
+    fsmsNavItem('/employees', 'hr', Users, tile('bg-orange-100', 'text-orange-700'), lang),
+    fsmsNavItem('/payroll', 'hr', DollarSign, tile('bg-amber-100', 'text-amber-700'), lang),
 
-    { href: '/company', label: 'Company', section: 'management', icon: Building2, tileClass: tile('bg-slate-100', 'text-slate-600') },
-    { href: '/subscriptions', label: 'Subscriptions', section: 'management', icon: Crown, tileClass: tile('bg-amber-100', 'text-amber-600') },
-    { href: '/users', label: 'Users', section: 'management', icon: Users, tileClass: tile('bg-zinc-100', 'text-zinc-600') },
-    { href: '/roles', label: 'Roles & access', section: 'management', icon: Shield, tileClass: tile('bg-indigo-100', 'text-indigo-700') },
-    { href: '/tax', label: 'Tax', section: 'management', icon: Receipt, tileClass: tile('bg-stone-100', 'text-stone-600') },
-    {
-      href: '/reporting-categories',
-      label: 'Reporting categories',
-      section: 'management',
-      icon: Tags,
-      tileClass: tile('bg-sky-100', 'text-sky-800'),
-    },
-    { href: '/backup', label: 'Backup & Restore', section: 'management', icon: Database, tileClass: tile('bg-neutral-100', 'text-neutral-600') },
+    fsmsNavItem('/company', 'management', Building2, tile('bg-slate-100', 'text-slate-600'), lang),
+    fsmsNavItem('/subscriptions', 'management', Crown, tile('bg-amber-100', 'text-amber-600'), lang),
+    fsmsNavItem('/users', 'management', Users, tile('bg-zinc-100', 'text-zinc-600'), lang),
+    fsmsNavItem('/roles', 'management', Shield, tile('bg-indigo-100', 'text-indigo-700'), lang),
+    fsmsNavItem('/tax', 'management', Receipt, tile('bg-stone-100', 'text-stone-600'), lang),
+    fsmsNavItem('/reporting-categories', 'management', Tags, tile('bg-sky-100', 'text-sky-800'), lang),
+    fsmsNavItem('/backup', 'management', Database, tile('bg-neutral-100', 'text-neutral-600'), lang),
 
     ...getAquacultureMenuItemsFlatWithGroup().flatMap((item) => {
-      const base = {
-        href: item.href,
-        label: item.sidebarLabel ?? item.label,
-        section: 'aquaculture' as const,
-        icon: item.icon,
-        tileClass: AQUACULTURE_TILE_BY_HREF[item.href] ?? tile('bg-slate-100', 'text-slate-700'),
-        subGroupId: item.groupId,
-        subGroupLabel: item.groupLabel,
-      }
+      const base = fsmsNavItem(
+        item.href,
+        'aquaculture',
+        item.icon,
+        AQUACULTURE_TILE_BY_HREF[item.href] ?? tile('bg-slate-100', 'text-slate-700'),
+        lang,
+        {
+          subGroupId: item.groupId,
+          subGroupLabel: aquacultureGroupLabel(item.groupId, lang, item.groupLabel),
+        }
+      )
       if (item.href !== '/aquaculture/stock') return [base]
       return [
         base,
-        ...AQUACULTURE_STOCK_SUB_NAV.filter((sub) => sub.href !== '/aquaculture/stock').map((sub) => ({
-          href: sub.href,
-          label: sub.sidebarLabel ?? sub.label,
-          section: 'aquaculture' as const,
-          icon: sub.icon,
-          tileClass: AQUACULTURE_TILE_BY_HREF[sub.href] ?? tile('bg-teal-50', 'text-teal-800'),
-          subGroupId: item.groupId,
-          subGroupLabel: item.groupLabel,
-          menuDepth: 1,
-        })),
+        ...AQUACULTURE_STOCK_SUB_NAV.filter((sub) => sub.href !== '/aquaculture/stock').map((sub) =>
+          fsmsNavItem(
+            sub.href,
+            'aquaculture',
+            sub.icon,
+            AQUACULTURE_TILE_BY_HREF[sub.href] ?? tile('bg-teal-50', 'text-teal-800'),
+            lang,
+            {
+              subGroupId: item.groupId,
+              subGroupLabel: aquacultureGroupLabel(item.groupId, lang, item.groupLabel),
+              menuDepth: 1,
+            }
+          )
+        ),
       ]
     }),
 
-    { href: '/reports', label: 'Reports', section: 'reports', icon: BarChart3, tileClass: tile('bg-violet-100', 'text-violet-600') },
+    fsmsNavItem('/reports', 'reports', BarChart3, tile('bg-violet-100', 'text-violet-600'), lang),
   ]
 }
 
-export function getSaasMenuItems(companiesCount: number, usersCount: number): ErpAppMenuItem[] {
+export function getSaasMenuItems(
+  companiesCount: number,
+  usersCount: number,
+  lang: AppLanguage = 'en'
+): ErpAppMenuItem[] {
   return [
-    { href: '/admin/overview', label: 'Platform Overview', section: 'saas', icon: BarChart3, tileClass: tile('bg-sky-100', 'text-sky-600') },
-    { href: '/admin/subscription-billing', label: 'Subscription & Billing', section: 'saas', icon: CreditCard, tileClass: tile('bg-violet-100', 'text-violet-600') },
-    { href: '/admin/companies', label: `Companies (${companiesCount})`, section: 'saas', icon: Building2, tileClass: tile('bg-amber-100', 'text-amber-600'), count: companiesCount },
-    { href: '/admin/users', label: `All Users (${usersCount})`, section: 'saas', icon: Users, tileClass: tile('bg-cyan-100', 'text-cyan-600'), count: usersCount },
-    { href: '/admin/contracts', label: 'Contract Management', section: 'saas', icon: FileText, tileClass: tile('bg-emerald-100', 'text-emerald-600') },
-    { href: '/admin/subscription-ledger', label: 'Subscription Ledger', section: 'saas', icon: Receipt, tileClass: tile('bg-fuchsia-100', 'text-fuchsia-600') },
-    { href: '/admin/broadcasting', label: 'Broadcasting', section: 'saas', icon: Megaphone, tileClass: tile('bg-orange-100', 'text-orange-600') },
-    { href: '/admin/backup', label: 'Backup & Restore', section: 'saas', icon: Database, tileClass: tile('bg-slate-100', 'text-slate-600') },
+    fsmsNavItem('/admin/overview', 'saas', BarChart3, tile('bg-sky-100', 'text-sky-600'), lang),
+    fsmsNavItem('/admin/subscription-billing', 'saas', CreditCard, tile('bg-violet-100', 'text-violet-600'), lang),
+    {
+      ...fsmsNavItem('/admin/companies', 'saas', Building2, tile('bg-amber-100', 'text-amber-600'), lang),
+      label: navLabel('/admin/companies', lang, { count: companiesCount }),
+      count: companiesCount,
+    },
+    {
+      ...fsmsNavItem('/admin/users', 'saas', Users, tile('bg-cyan-100', 'text-cyan-600'), lang),
+      label: navLabel('/admin/users', lang, { count: usersCount }),
+      count: usersCount,
+    },
+    fsmsNavItem('/admin/contracts', 'saas', FileText, tile('bg-emerald-100', 'text-emerald-600'), lang),
+    fsmsNavItem('/admin/subscription-ledger', 'saas', Receipt, tile('bg-fuchsia-100', 'text-fuchsia-600'), lang),
+    fsmsNavItem('/admin/broadcasting', 'saas', Megaphone, tile('bg-orange-100', 'text-orange-600'), lang),
+    fsmsNavItem('/admin/backup', 'saas', Database, tile('bg-slate-100', 'text-slate-600'), lang),
   ]
 }
 
@@ -461,29 +474,34 @@ export function filterTenantBackupMenuItem(
   })
 }
 
-const FSMS_SECTIONS_ALL: { id: ErpAppSection; label: string }[] = [
-  { id: 'main', label: 'Main' },
-  { id: 'station', label: 'Station Management' },
-  { id: 'operations', label: 'Operations' },
-  { id: 'accounting', label: 'Accounting' },
-  { id: 'sales', label: 'Sales & Customers' },
-  { id: 'inventory', label: 'Products & services' },
-  { id: 'hr', label: 'HR & Payroll' },
-  { id: 'management', label: 'Management' },
-  { id: 'aquaculture', label: 'Aquaculture' },
-  { id: 'reports', label: 'Reports & Analytics' },
+const FSMS_SECTION_IDS: ErpAppSection[] = [
+  'main',
+  'station',
+  'operations',
+  'accounting',
+  'sales',
+  'inventory',
+  'hr',
+  'management',
+  'aquaculture',
+  'reports',
 ]
 
 export function getSectionDefinitions(
   isSuperAdmin: boolean,
   mode: 'fsms_erp' | 'saas_dashboard',
-  visibleItemSections: Set<ErpAppSection>
+  visibleItemSections: Set<ErpAppSection>,
+  lang: AppLanguage = 'en'
 ): { id: ErpAppSection; label: string }[] {
   if (isSuperAdmin && mode === 'saas_dashboard') {
-    return [{ id: 'saas', label: 'SaaS Management' }]
+    return [{ id: 'saas', label: navSectionLabel('saas', lang) }]
   }
+  const sections = FSMS_SECTION_IDS.map((id) => ({
+    id,
+    label: navSectionLabel(id as ErpNavSectionId, lang),
+  }))
   if (isSuperAdmin && mode === 'fsms_erp') {
-    return FSMS_SECTIONS_ALL
+    return sections
   }
-  return FSMS_SECTIONS_ALL.filter((s) => visibleItemSections.has(s.id))
+  return sections.filter((s) => visibleItemSections.has(s.id))
 }

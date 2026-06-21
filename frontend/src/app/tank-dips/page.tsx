@@ -12,7 +12,9 @@ import {
   Trash2,
   RefreshCcw,
 } from 'lucide-react'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { useCompany } from '@/contexts/CompanyContext'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
@@ -103,6 +105,7 @@ function asArray<T>(data: unknown): T[] {
 
 export default function TankDipsPage() {
   const router = useRouter()
+  const pageMeta = usePageMeta()
   const { selectedCompany } = useCompany()
   const [tanks, setTanks] = useState<Tank[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -431,46 +434,27 @@ export default function TankDipsPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-auto app-scroll-pad">
-          <div className="text-center">Loading...</div>
-        </div>
-      </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center text-gray-600">Loading...</div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Tank Dip Readings</h1>
-            <p className="text-gray-600">Stock Reconciliation & Gain/Loss Tracking</p>
-            {selectedCompany?.name && (
-              <p className="text-sm text-gray-500 mt-1">Company: {selectedCompany.name}</p>
-            )}
-            {dipsSorted.length > 0 && (
-              <p className="text-sm text-gray-700 mt-2">
-                <span className="font-semibold text-indigo-800">{dipsSorted.length}</span> dip reading
-                {dipsSorted.length === 1 ? '' : 's'} on file — shown in{' '}
-                <a href="#dip-history-summary" className="text-indigo-600 underline font-medium">
-                  summary
-                </a>{' '}
-                and{' '}
-                <a href="#dip-readings-detail-table" className="text-indigo-600 underline font-medium">
-                  full table
-                </a>
-                . (Dips are stick readings, not POS sales.)
-              </p>
-            )}
-          </div>
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={Droplet}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => loadData()}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm font-medium"
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20"
             >
               Refresh
             </button>
@@ -483,7 +467,7 @@ export default function TankDipsPage() {
                   ? 'Record at least one dip before syncing book'
                   : 'Set book stock on every tank to its latest dip reading'
               }
-              className="px-4 py-2 border border-slate-300 rounded-lg text-slate-800 hover:bg-slate-50 text-sm font-medium inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <RefreshCcw className={`h-4 w-4 ${syncingBook ? 'animate-spin' : ''}`} />
               {syncingBook ? 'Syncing…' : 'Sync book to latest dips'}
@@ -497,7 +481,7 @@ export default function TankDipsPage() {
                   ? 'Record dips first'
                   : 'Re-post all dip variance journals using current Diesel/Petrol cost (inventory 1200)'
               }
-              className="px-4 py-2 border border-indigo-300 rounded-lg text-indigo-900 hover:bg-indigo-50 text-sm font-medium inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <RefreshCcw className={`h-4 w-4 ${resyncingGl ? 'animate-spin' : ''}`} />
               {resyncingGl ? 'Re-posting GL…' : 'Re-post all dip variance GL'}
@@ -508,13 +492,33 @@ export default function TankDipsPage() {
                 if (!showForm) setSkipVarianceGl(false)
                 setShowForm(!showForm)
               }}
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+              className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
             >
               <Plus className="h-5 w-5" />
               <span>Record Dip</span>
             </button>
           </div>
-        </div>
+        }
+      >
+        {(selectedCompany?.name || dipsSorted.length > 0) && (
+          <div className="mb-6 text-sm text-gray-600">
+            {selectedCompany?.name && <p>Company: {selectedCompany.name}</p>}
+            {dipsSorted.length > 0 && (
+              <p className="mt-1 text-gray-700">
+                <span className="font-semibold text-indigo-800">{dipsSorted.length}</span> dip reading
+                {dipsSorted.length === 1 ? '' : 's'} on file — shown in{' '}
+                <a href="#dip-history-summary" className="text-indigo-600 underline font-medium">
+                  summary
+                </a>{' '}
+                and{' '}
+                <a href="#dip-readings-detail-table" className="text-indigo-600 underline font-medium">
+                  full table
+                </a>
+                . (Dips are stick readings, not POS sales.)
+              </p>
+            )}
+          </div>
+        )}
 
         {loadError && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -1140,8 +1144,8 @@ export default function TankDipsPage() {
           </table>
         </div>
       </div>
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }
 

@@ -14,7 +14,10 @@ import {
   Trash2,
   Wallet,
 } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
@@ -64,6 +67,7 @@ function iconBtnClass(variant: 'default' | 'danger' = 'default') {
 }
 
 export default function AquacultureLandlordsPage() {
+  const pageMeta = usePageMeta()
   const toast = useToast()
   const router = useRouter()
   const [rows, setRows] = useState<LandlordRow[]>([])
@@ -187,28 +191,23 @@ export default function AquacultureLandlordsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-8">
-      <div className="mb-8 flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-6">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-slate-900">
-            <Landmark className="h-7 w-7 shrink-0 text-teal-700" aria-hidden />
-            Landlords & lease obligations
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Pond-level lease metrics for the selected period. Use{' '}
-            <span className="font-medium text-slate-800">View</span> for the full ledger,{' '}
-            <span className="font-medium text-slate-800">Edit</span> for profile and pond shares, and{' '}
-            <span className="font-medium text-slate-800">Pay</span> to record a payment without leaving the list.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            <Droplets className="h-4 w-4 text-slate-500" aria-hidden />
-            <span className="font-medium">Pond</span>
+    <AquaculturePageShell
+      titleIcon={Landmark}
+      title={pageMeta.title}
+      description={pageMeta.description}
+      eyebrow={pageMeta.eyebrow}
+      maxWidthClass="max-w-[1400px]"
+      actions={
+        <>
+          <label className="text-xs font-medium text-teal-100">
+            <span className="inline-flex items-center gap-1">
+              <Droplets className="h-3.5 w-3.5" aria-hidden />
+              Pond
+            </span>
             <select
               value={pondId}
               onChange={(e) => setPondId(e.target.value)}
-              className="max-w-[200px] rounded border border-slate-300 bg-white px-2 py-1 text-sm font-medium text-slate-900"
+              className="mt-1 block max-w-[200px] rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
             >
               <option value="">All ponds</option>
               {ponds.map((p) => (
@@ -218,51 +217,47 @@ export default function AquacultureLandlordsPage() {
               ))}
             </select>
           </label>
-          <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            <CalendarRange className="h-4 w-4 text-slate-500" aria-hidden />
-            <span className="font-medium">Period</span>
-            <select
-              value={periodMode}
-              onChange={(e) => setPeriodMode(e.target.value as PeriodMode)}
-              className="rounded border border-slate-300 bg-white px-2 py-1 text-sm font-medium text-slate-900"
-            >
-              <option value="all">All</option>
-              <option value="year">Year</option>
-            </select>
-            {periodMode === 'year' ? (
+          <label className="text-xs font-medium text-teal-100">
+            <span className="inline-flex items-center gap-1">
+              <CalendarRange className="h-3.5 w-3.5" aria-hidden />
+              Period
+            </span>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
               <select
-                value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm font-medium text-slate-900"
+                value={periodMode}
+                onChange={(e) => setPeriodMode(e.target.value as PeriodMode)}
+                className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
               >
-                {yearOptions.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
+                <option value="all">All</option>
+                <option value="year">Year</option>
               </select>
-            ) : null}
+              {periodMode === 'year' ? (
+                <select
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                  className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+            </div>
           </label>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
-          >
-            <RefreshCw className="h-4 w-4" aria-hidden />
+          <button type="button" onClick={() => void load()} className={AQ_HERO_BTN_GHOST}>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
             Refresh
           </button>
-          <button
-            type="button"
-            onClick={() => setFormModal({ mode: 'create' })}
-            className="inline-flex items-center gap-1 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
+          <button type="button" onClick={() => setFormModal({ mode: 'create' })} className={AQ_HERO_BTN_PRIMARY}>
+            <Plus className="h-3.5 w-3.5" aria-hidden />
             New landlord
           </button>
-        </div>
-      </div>
-
-      <p className="mb-4 text-xs text-slate-500">
+        </>
+      }
+    >
+      <p className="text-xs text-slate-500">
         Period columns use ledger entry dates for <span className="font-medium text-slate-700">{periodDescription}</span>
         , matched to each row&apos;s pond when the line has a pond. Remaining contract payable is measured from{' '}
         <span className="font-medium text-slate-700">{metricsAsOf}</span> through each pond&apos;s lease end (when set).
@@ -500,6 +495,6 @@ export default function AquacultureLandlordsPage() {
           onSuccess={() => void load()}
         />
       ) : null}
-    </div>
+    </AquaculturePageShell>
   )
 }

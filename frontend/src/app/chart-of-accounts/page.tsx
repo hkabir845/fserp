@@ -3,9 +3,19 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import Sidebar from '@/components/Sidebar'
-import { Plus, Edit2, Trash2, X, FileText, Filter, AlertTriangle, RefreshCw, LayoutTemplate, Loader2, Printer, ExternalLink } from 'lucide-react'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { Plus, Edit2, Trash2, X, FileText, Filter, AlertTriangle, RefreshCw, LayoutTemplate, Loader2, Printer, ExternalLink, BookOpen } from 'lucide-react'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useChartOfAccountsT, coaAccountTypeLabel } from '@/lib/moduleI18n/chartOfAccounts'
+import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
+import {
+  localizeCoaAccountName,
+  localizeCoaAccountDescription,
+  localizeCoaAccountSubType,
+  coaAccountNameMatchesFilter,
+} from '@/lib/coaAccountI18n'
 import api, { getBackendOrigin, isSuperAdminRole } from '@/lib/api'
 import { useCompany } from '@/contexts/CompanyContext'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -402,6 +412,9 @@ function accountStatementToLedgerPrintInput(
 export default function ChartOfAccountsPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
+  const t = useChartOfAccountsT()
+  const { language } = useCompanyLocale()
   const { selectedCompany } = useCompany()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -503,10 +516,7 @@ export default function ChartOfAccountsPage() {
 
   const handleSeedFuelTemplate = async (profile: 'full' | 'retail', replace: boolean) => {
     if (replace) {
-      const ok = window.confirm(
-        'Replace all chart of accounts for this company? Existing accounts will be deleted. ' +
-          'Linked journal entries may become invalid. This cannot be undone.'
-      )
+      const ok = window.confirm(t('replaceConfirm'))
       if (!ok) return
     }
     setSeedBusy(true)
@@ -520,13 +530,13 @@ export default function ChartOfAccountsPage() {
       const skipped = res.data?.skipped ?? 0
       toast.success(
         replace
-          ? `Chart replaced: ${added} account(s) imported.`
-          : `Template applied: ${added} new account(s), ${skipped} already existed (skipped).`
+          ? t('toastChartReplaced', { added })
+          : t('toastTemplateApplied', { added, skipped })
       )
       await fetchAccounts(true)
     } catch (error: any) {
       const detail = error.response?.data?.detail
-      toast.error(typeof detail === 'string' ? detail : 'Could not import chart template.')
+      toast.error(typeof detail === 'string' ? detail : t('toastImportFailed'))
     } finally {
       setSeedBusy(false)
     }
@@ -537,15 +547,11 @@ export default function ChartOfAccountsPage() {
     try {
       const res = await api.post('/chart-of-accounts/backfill-descriptions/', { only_blank: true })
       const u = res.data?.updated ?? 0
-      toast.success(
-        u > 0
-          ? `Updated ${u} account description(s) from the built-in guide.`
-          : 'No empty descriptions to fill (or no matching template codes).'
-      )
+      toast.success(u > 0 ? t('toastDescriptionsUpdated', { u }) : t('toastNoDescriptions'))
       await fetchAccounts(true)
     } catch (error: unknown) {
       const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(typeof detail === 'string' ? detail : 'Could not backfill descriptions.')
+      toast.error(typeof detail === 'string' ? detail : t('toastBackfillFailed'))
     } finally {
       setBackfillBusy(false)
     }
@@ -1169,94 +1175,110 @@ export default function ChartOfAccountsPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-auto app-scroll-pad">
+      <PageLayout className="bg-slate-50">
+        <ErpPageShell
+          showBackLink={false}
+          titleId="coa-title"
+          eyebrow={pageMeta.eyebrow}
+          eyebrowIcon={pageMeta.eyebrow ? BookOpen : undefined}
+          title={pageMeta.title}
+          titleIcon={BookOpen}
+          description={pageMeta.description ?? undefined}
+          maxWidthClass="max-w-[1600px]"
+          contentClassName="mt-4"
+        >
           <div className="flex flex-col justify-center items-center h-64 bg-white rounded-lg shadow">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-            <p className="text-gray-600">Loading chart of accounts...</p>
+            <p className="text-gray-600">{t('loading')}</p>
           </div>
-        </div>
-      </div>
+        </ErpPageShell>
+      </PageLayout>
     )
   }
 
   if (error) {
     return (
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-auto app-scroll-pad">
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900">Chart of accounts</h1>
-            <p className="text-gray-600 mt-1">Manage your accounting chart of accounts</p>
-          </div>
+      <PageLayout className="bg-slate-50">
+        <ErpPageShell
+          showBackLink={false}
+          titleId="coa-title"
+          eyebrow={pageMeta.eyebrow}
+          eyebrowIcon={pageMeta.eyebrow ? BookOpen : undefined}
+          title={pageMeta.title}
+          titleIcon={BookOpen}
+          description={pageMeta.description ?? t('manageFallback')}
+          maxWidthClass="max-w-[1600px]"
+          contentClassName="mt-4"
+        >
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
             <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-red-800 mb-2">Error Loading Chart of Accounts</h3>
+            <h3 className="text-xl font-bold text-red-800 mb-2">{t('errorTitle')}</h3>
             <p className="text-red-700 mb-4">{error}</p>
             <button
               onClick={handleRetry}
               className="inline-flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
             >
               <RefreshCw className="h-5 w-5" />
-              <span>Retry</span>
+              <span>{t('retry')}</span>
             </button>
           </div>
-        </div>
-      </div>
+        </ErpPageShell>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <div className="app-scroll-pad">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Chart of accounts</h1>
-              <p className="text-gray-600 mt-1">
-                All account types in one list (QuickBooks-style). Add bank and cash accounts here with institution and
-                account number — they drive deposits, payments, and fund transfers.
-              </p>
-              <p className="text-gray-500 text-sm mt-2">
-                Bank lines use type <strong>Asset</strong> with sub-type <strong>Checking</strong> or{' '}
-                <strong>Cash on hand</strong>, or type <strong>Bank account</strong>. Clear the type filter below if you
-                do not see every account.
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                resetForm()
-                setShowModal(true)
-              }}
-              className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg font-medium"
-            >
-              <Plus className="h-5 w-5" />
-              <span>New Account</span>
-            </button>
-          </div>
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        titleId="coa-title"
+        eyebrow={pageMeta.eyebrow}
+        eyebrowIcon={pageMeta.eyebrow ? BookOpen : undefined}
+        title={pageMeta.title}
+        titleIcon={BookOpen}
+        description={pageMeta.description ?? undefined}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <button
+            onClick={() => {
+              resetForm()
+              setShowModal(true)
+            }}
+            className="flex items-center space-x-2 px-5 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-500 transition-all shadow-md hover:shadow-lg font-medium"
+          >
+            <Plus className="h-5 w-5" />
+            <span>{t('newAccount')}</span>
+          </button>
+        }
+      >
+          {pageMeta.descriptionNote ? (
+            <p className="text-gray-500 text-sm mb-4">{pageMeta.descriptionNote}</p>
+          ) : null}
 
           <div className="mb-6 rounded-lg border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-950 shadow-sm">
-            <p className="font-semibold text-sky-900">Where is my cashier / POS sale money?</p>
+            <p className="font-semibold text-sky-900">{t('posMoneyTitle')}</p>
             <p className="mt-1 text-sky-900/95 leading-relaxed">
-              It is <strong>not</strong> missing — it is booked as a <strong>debit</strong> on a <strong>cash asset</strong>{' '}
-              in this chart (after you seed the fuel template, usually code{' '}
-              <strong className="font-mono">1010</strong> Petty cash or <strong className="font-mono">1020</strong> Cash
-              clearing / undeposited). <strong>Card</strong> sales use <strong className="font-mono">1120</strong> card
-              clearing. There is no separate “Undeposited funds” menu: open the account here and use{' '}
-              <strong>View statement</strong> to see each sale. On <strong>Reports → Trial balance</strong>, widen the date
-              range to include the sale dates and scroll for codes <span className="font-mono">1010</span>,{' '}
-              <span className="font-mono">1020</span>, or <span className="font-mono">1120</span>. To hit a specific bank
-              line instead, use the optional <strong>Where to record this sale&apos;s cash</strong> picker on the
-              Cashier screen.
+              {t('posMoneyP1a')} <strong>{t('posMoneyNot')}</strong> {t('posMoneyP1b')}{' '}
+              <strong>{t('posMoneyDebit')}</strong> {t('posMoneyP1c')} <strong>{t('posMoneyCashAsset')}</strong>{' '}
+              {t('posMoneyP1d')}{' '}
+              <strong className="font-mono">1010</strong> {t('posMoneyP1e')}{' '}
+              <strong className="font-mono">1020</strong> {t('posMoneyP1f')}{' '}
+              <strong>{t('posMoneyCard')}</strong> {t('posMoneyP2a')}{' '}
+              <strong className="font-mono">1120</strong> {t('posMoneyP2b')}{' '}
+              <strong>{t('posMoneyViewStatement')}</strong> {t('posMoneyP3a')}{' '}
+              <strong>{t('posMoneyTrialBalance')}</strong>
+              {t('posMoneyP3b')}{' '}
+              <span className="font-mono">1010</span>, <span className="font-mono">1020</span>, {t('posMoneyP3c')}{' '}
+              <span className="font-mono">1120</span>. {t('posMoneyP3d')}{' '}
+              <strong>{t('posMoneyCashPicker')}</strong> {t('posMoneyP3e')}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-sky-800">Quick filter:</span>
+              <span className="text-xs font-medium text-sky-800">{t('quickFilter')}</span>
               {[
                 { code: '1010', label: '1010' },
-                { code: '1020', label: '1020 Undeposited' },
-                { code: '1120', label: '1120 Card' },
+                { code: '1020', label: t('filter1020') },
+                { code: '1120', label: t('filter1120') },
               ].map(x => (
                 <button
                   key={x.code}
@@ -1280,7 +1302,7 @@ export default function ChartOfAccountsPage() {
                 }}
                 className="rounded-md border border-sky-300 bg-white px-2.5 py-1 text-xs font-medium text-sky-900 hover:bg-sky-100"
               >
-                Name contains “undeposited”
+                {t('filterNameUndeposited')}
               </button>
               <button
                 type="button"
@@ -1291,19 +1313,19 @@ export default function ChartOfAccountsPage() {
                 }}
                 className="rounded-md border border-sky-200 bg-sky-100/80 px-2.5 py-1 text-xs text-sky-800 hover:bg-sky-100"
               >
-                Clear filters
+                {t('clearFilters')}
               </button>
             </div>
           </div>
 
           {unlinkedBanks.length > 0 && (
             <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-950 shadow-sm">
-              <p className="font-semibold">Bank registers are not on this list yet</p>
+              <p className="font-semibold">{t('unlinkedBanksTitle')}</p>
               <p className="mt-1 text-amber-900/95">
-                Only <strong>chart</strong> accounts appear in the table below. You still have{' '}
-                <strong>{unlinkedBanks.length}</strong> bank/cash register
-                {unlinkedBanks.length === 1 ? '' : 's'} that were never given a chart line (for example from the old Bank
-                Accounts flow). Use the button to create matching chart lines with automatic codes.
+                {t('unlinkedBanksBody', {
+                  count: unlinkedBanks.length,
+                  plural: unlinkedBanks.length === 1 ? '' : language === 'bn' ? '' : 's',
+                })}
               </p>
               <ul className="mt-2 max-h-32 overflow-y-auto list-disc pl-5 text-amber-900/90">
                 {unlinkedBanks.slice(0, 12).map((b) => (
@@ -1313,7 +1335,9 @@ export default function ChartOfAccountsPage() {
                   </li>
                 ))}
                 {unlinkedBanks.length > 12 && (
-                  <li className="list-none pl-0 text-amber-800/90">…and {unlinkedBanks.length - 12} more</li>
+                  <li className="list-none pl-0 text-amber-800/90">
+                    {t('unlinkedBanksMore', { n: unlinkedBanks.length - 12 })}
+                  </li>
                 )}
               </ul>
               <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -1324,17 +1348,14 @@ export default function ChartOfAccountsPage() {
                   className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {syncingBanks ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {syncingBanks ? 'Syncing…' : 'Sync banks to chart (auto codes)'}
+                  {syncingBanks ? t('syncingBanks') : t('syncBanksToChart')}
                 </button>
-                <span className="text-xs text-amber-900/80">
-                  Creates one asset line per register; then they show in the table with institution and account number.
-                </span>
+                <span className="text-xs text-amber-900/80">{t('syncBanksHint')}</span>
               </div>
               {isSuperAdminUser && (
                 <p className="mt-3 border-t border-amber-200/80 pt-3 text-xs text-amber-900/85">
-                  <strong>Super admin:</strong> bank data is scoped to the <strong>selected company</strong>. If you see
-                  no banks here, open the company selector and choose the tenant where Adib / United Commercial accounts
-                  were created, then refresh this page.
+                  <strong>{t('superAdminLabel')}</strong>{' '}
+                  {t('superAdminHint')}
                 </p>
               )}
             </div>
@@ -1350,10 +1371,10 @@ export default function ChartOfAccountsPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-semibold text-gray-900">
-                      {fuelTemplateMeta.name || 'Fuel station chart of accounts'}
+                      {t('fuelTemplateName')}
                     </h2>
                     <p className="mt-1 text-sm text-gray-600 leading-relaxed max-w-3xl">
-                      {fuelTemplateMeta.summary}
+                      {t('fuelTemplateSummary')}
                     </p>
                   </div>
                 </div>
@@ -1365,7 +1386,7 @@ export default function ChartOfAccountsPage() {
                     className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-indigo-700 disabled:opacity-50"
                   >
                     {seedBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    Import full template
+                    {t('importFullTemplate')}
                   </button>
                   <button
                     type="button"
@@ -1373,7 +1394,7 @@ export default function ChartOfAccountsPage() {
                     onClick={() => handleSeedFuelTemplate('retail', false)}
                     className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-300 bg-white px-4 py-2.5 text-sm font-medium text-indigo-800 hover:bg-indigo-50 disabled:opacity-50"
                   >
-                    Import fuel-first (retail)
+                    {t('importFuelFirst')}
                   </button>
                   <button
                     type="button"
@@ -1381,17 +1402,17 @@ export default function ChartOfAccountsPage() {
                     onClick={() => handleSeedFuelTemplate('full', true)}
                     className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-800 hover:bg-red-100 disabled:opacity-50"
                   >
-                    Replace all with full template
+                    {t('replaceAllTemplate')}
                   </button>
                   <button
                     type="button"
                     disabled={backfillBusy || accounts.length === 0}
                     onClick={() => void handleBackfillDescriptions()}
                     className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    title="Fill only accounts that still have an empty description"
+                    title={t('fillMissingDescriptionsTitle')}
                   >
                     {backfillBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    Fill missing descriptions
+                    {t('fillMissingDescriptions')}
                   </button>
                 </div>
               </div>
@@ -1423,7 +1444,7 @@ export default function ChartOfAccountsPage() {
                   <div key={type.value} className={`bg-white rounded-lg shadow-md p-5 border-l-4 ${colors.border}`}>
                     <div className="flex items-center justify-between mb-2">
                       <h3 className={`text-sm font-semibold ${colors.text} uppercase tracking-wide`}>
-                        {type.label}
+                        {coaAccountTypeLabel(type.value, language)}
                       </h3>
                       <span className={`text-xs px-2 py-1 rounded-full ${colors.bg} ${colors.text} font-medium`}>
                         {accountCount}
@@ -1433,7 +1454,8 @@ export default function ChartOfAccountsPage() {
                       {currencySymbol}{formatNumber(Math.abs(totalBalance))}
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      {accountCount} {accountCount === 1 ? 'account' : 'accounts'}
+                      {accountCount}{' '}
+                      {accountCount === 1 ? t('accountSingular') : t('accountPlural')}
                     </p>
                   </div>
                 )
@@ -1446,7 +1468,7 @@ export default function ChartOfAccountsPage() {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2">
                 <Filter className="h-5 w-5 text-gray-600" />
-                <h2 className="text-lg font-semibold text-gray-900">Search & Filter</h2>
+                <h2 className="text-lg font-semibold text-gray-900">{t('searchAndFilter')}</h2>
               </div>
               {(filterCode || filterAccountName || filterType) && (
                 <button
@@ -1457,48 +1479,48 @@ export default function ChartOfAccountsPage() {
                   }}
                   className="text-sm text-blue-600 hover:text-blue-700 font-medium"
                 >
-                  Clear All
+                  {t('clearAll')}
                 </button>
               )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Account Code
+                  {t('accountCode')}
                 </label>
                 <input
                   type="text"
                   value={filterCode}
                   onChange={(e) => setFilterCode(e.target.value)}
-                  placeholder="Search by code..."
+                  placeholder={t('searchByCode')}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Account Name
+                  {t('accountName')}
                 </label>
                 <input
                   type="text"
                   value={filterAccountName}
                   onChange={(e) => setFilterAccountName(e.target.value)}
-                  placeholder="Search by name..."
+                  placeholder={t('searchByName')}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Account Type
+                  {t('accountType')}
                 </label>
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm bg-white"
                 >
-                  <option value="">All Types</option>
+                  <option value="">{t('allTypesOption')}</option>
                   {ACCOUNT_TYPES.map(type => (
                     <option key={type.value} value={type.value}>
-                      {type.label}
+                      {coaAccountTypeLabel(type.value, language)}
                     </option>
                   ))}
                 </select>
@@ -1512,25 +1534,25 @@ export default function ChartOfAccountsPage() {
                 <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
                   <tr>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Code
+                      {t('code')}
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Account Name
+                      {t('accountName')}
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Type
+                      {t('type')}
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Sub-Type
+                      {t('subType')}
                     </th>
                     <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Balance
+                      {t('balance')}
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Status
+                      {t('status')}
                     </th>
                     <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Actions
+                      {t('actions')}
                     </th>
                   </tr>
                 </thead>
@@ -1540,7 +1562,7 @@ export default function ChartOfAccountsPage() {
                       if (filterCode && !account.account_code.toLowerCase().includes(filterCode.toLowerCase())) {
                         return false
                       }
-                      if (filterAccountName && !account.account_name.toLowerCase().includes(filterAccountName.toLowerCase())) {
+                      if (filterAccountName && !coaAccountNameMatchesFilter(account.account_code, account.account_name, filterAccountName, language)) {
                         return false
                       }
                       if (filterType && account.account_type !== filterType) {
@@ -1558,12 +1580,10 @@ export default function ChartOfAccountsPage() {
                                 <FileText className="h-10 w-10 text-gray-400" />
                               </div>
                               <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                                {accounts.length === 0 ? 'No Accounts Found' : 'No Matching Accounts'}
+                                {accounts.length === 0 ? t('noAccountsFound') : t('noMatchingAccounts')}
                               </h3>
                               <p className="text-gray-600 mb-4 max-w-md text-center">
-                                {accounts.length === 0
-                                  ? 'Use Import full template above for the complete fuel-station chart with descriptions, or add a single custom account.'
-                                  : 'No accounts match your current filters. Try adjusting your search criteria.'}
+                                {accounts.length === 0 ? t('emptyChartHint') : t('noFilterMatch')}
                               </p>
                               {accounts.length === 0 && (
                                 <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3">
@@ -1574,7 +1594,7 @@ export default function ChartOfAccountsPage() {
                                     className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50"
                                   >
                                     {seedBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <LayoutTemplate className="h-5 w-5" />}
-                                    <span>Import full template</span>
+                                    <span>{t('importFullTemplate')}</span>
                                   </button>
                                   <button
                                     onClick={() => {
@@ -1584,7 +1604,7 @@ export default function ChartOfAccountsPage() {
                                     className="px-4 py-2 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
                                   >
                                     <Plus className="h-5 w-5" />
-                                    <span>Create one account</span>
+                                    <span>{t('createOneAccount')}</span>
                                   </button>
                                 </div>
                               )}
@@ -1626,16 +1646,25 @@ export default function ChartOfAccountsPage() {
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-sm font-medium text-gray-900">
-                              {account.account_name || 'Unnamed Account'}
+                              {localizeCoaAccountName(account.account_code, account.account_name, language) ||
+                                t('unnamedAccount')}
                             </div>
-                            {account.description && (
-                              <div
-                                className="text-xs text-gray-600 mt-1 max-w-xl line-clamp-4 whitespace-pre-line"
-                                title={account.description}
-                              >
-                                {account.description}
-                              </div>
-                            )}
+                            {(() => {
+                              const desc = localizeCoaAccountDescription(
+                                account.account_code,
+                                account.description,
+                                language
+                              )
+                              if (!desc) return null
+                              return (
+                                <div
+                                  className="text-xs text-gray-600 mt-1 max-w-xl line-clamp-4 whitespace-pre-line"
+                                  title={desc}
+                                >
+                                  {desc}
+                                </div>
+                              )
+                            })()}
                             {account.bank_register && (
                               <div className="mt-1.5 text-xs text-cyan-900 font-medium">
                                 {account.bank_register.bank_name}
@@ -1656,7 +1685,7 @@ export default function ChartOfAccountsPage() {
                                   <span
                                     key={lb.id}
                                     className="inline-flex items-center rounded-md border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-xs font-medium text-cyan-900"
-                                    title="Bank / deposit details"
+                                    title={t('bankDepositDetails')}
                                   >
                                     {lb.bank_name}
                                     {lb.account_number ? ` · ${lb.account_number}` : ''}
@@ -1667,13 +1696,13 @@ export default function ChartOfAccountsPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${typeColors.bg} ${typeColors.text}`}>
-                              {ACCOUNT_TYPES.find(t => t.value === account.account_type)?.label || account.account_type || 'Unknown'}
+                              {coaAccountTypeLabel(account.account_type || '', language) || t('unknown')}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-gray-600">
                               {account.account_sub_type ? (
-                                <span className="capitalize">{String(account.account_sub_type).replace(/_/g, ' ')}</span>
+                                <span>{localizeCoaAccountSubType(account.account_sub_type, language)}</span>
                               ) : (
                                 <span className="text-gray-400">—</span>
                               )}
@@ -1694,7 +1723,7 @@ export default function ChartOfAccountsPage() {
                                 ? 'bg-green-100 text-green-800' 
                                 : 'bg-red-100 text-red-800'
                             }`}>
-                              {account.is_active !== false ? 'Active' : 'Inactive'}
+                              {account.is_active !== false ? t('active') : t('inactive')}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -1703,7 +1732,7 @@ export default function ChartOfAccountsPage() {
                                 type="button"
                                 onClick={() => fetchStatement(account.id)}
                                 className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors"
-                                title="View statement"
+                                title={t('viewStatement')}
                                 aria-label={`Statement for ${account.account_code}`}
                               >
                                 <FileText className="h-4 w-4" />
@@ -1712,7 +1741,7 @@ export default function ChartOfAccountsPage() {
                                 type="button"
                                 onClick={() => handleEdit(account)}
                                 className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Edit / update account"
+                                title={t('editAccount')}
                                 aria-label={`Edit account ${account.account_code}`}
                               >
                                 <Edit2 className="h-4 w-4" />
@@ -1775,8 +1804,6 @@ export default function ChartOfAccountsPage() {
               return null
             })()}
           </div>
-        </div>
-        </div>
 
       {/* Statement Modal */}
       {showStatement && statement && (
@@ -1801,10 +1828,16 @@ export default function ChartOfAccountsPage() {
                 ) : null}
                 <h2 className="text-2xl font-bold text-gray-900">GL account statement</h2>
                 <p className="text-gray-600 mt-1">
-                  {statement.account.account_code} - {statement.account.account_name}
+                  {statement.account.account_code} -{' '}
+                  {localizeCoaAccountName(
+                    statement.account.account_code,
+                    statement.account.account_name,
+                    language
+                  )}
                 </p>
                 <p className="text-sm text-gray-500">
-                  {statement.account.account_type} / {statement.account.account_sub_type}
+                  {coaAccountTypeLabel(statement.account.account_type, language)} /{' '}
+                  {localizeCoaAccountSubType(statement.account.account_sub_type, language)}
                 </p>
                 {statement.filter_station_id != null ? (
                   <p className="mt-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
@@ -2494,6 +2527,7 @@ export default function ChartOfAccountsPage() {
           </div>
         </div>
       )}
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

@@ -14,7 +14,10 @@ import {
   Store,
   FileBarChart,
 } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import { useCompany } from '@/contexts/CompanyContext'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -156,6 +159,7 @@ function readIsAdmin(): boolean {
 }
 
 export default function AquacultureDataBankPage() {
+  const pageMeta = usePageMeta()
   const toast = useToast()
   const { selectedCompany, isClientReady } = useCompany()
   const isAdmin = useMemo(() => readIsAdmin(), [])
@@ -446,30 +450,20 @@ export default function AquacultureDataBankPage() {
     })
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-teal-700">
-            <Archive className="h-6 w-6" aria-hidden />
-            <h1 className="text-2xl font-semibold text-slate-900">Data Bank</h1>
-          </div>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Year-end close for one pond or every pond at a shop station. The pond&apos;s structure
-            (Site &amp; lease attributes) stays the same; operational data for the closed dates is
-            archived and read-only. The farmer then prepares the pond for the next season — new
-            cycles and stocking use dates after the period end.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+    <AquaculturePageShell
+      titleIcon={Archive}
+      title={pageMeta.title}
+      description={pageMeta.description}
+      eyebrow={pageMeta.eyebrow}
+      maxWidthClass="max-w-5xl"
+      actions={
+        <button type="button" onClick={() => void load()} className={AQ_HERO_BTN_GHOST}>
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden />
           Refresh
         </button>
-      </div>
-
+      }
+    >
+      <div className="space-y-8">
       <section
         className="rounded-xl border border-slate-200 bg-slate-50/90 p-5"
         aria-labelledby="data-bank-lock-meaning"
@@ -932,6 +926,7 @@ export default function AquacultureDataBankPage() {
           })
         )}
       </section>
-    </div>
+      </div>
+    </AquaculturePageShell>
   )
 }

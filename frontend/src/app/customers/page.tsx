@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, Users, UserCheck, DollarSign, X, Mail, Phone, ArrowUpDown, ArrowUp, ArrowDown, BookOpen, Building2 } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
@@ -22,6 +23,10 @@ import {
 } from '@/utils/businessDocumentExport'
 import { buildContactListPrintHtml } from '@/utils/listExportHelpers'
 import { usePagedListExport } from '@/hooks/usePagedListExport'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useT } from '@/lib/i18n'
+import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
+import { useContactsT } from '@/lib/moduleI18n/contacts'
 
 interface Customer {
   id: number
@@ -57,6 +62,10 @@ interface StationOption {
 export default function CustomersPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
+  const { t } = useT()
+  const tr = useErpCommonT()
+  const ct = useContactsT()
   const backendOrigin = getBackendOrigin()
   const apiDocsUrl = getApiDocsUrl()
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -191,11 +200,11 @@ export default function CustomersPage() {
           }
         } else {
           console.error('Invalid paged data format received:', data)
-          setError('Invalid data format received from server')
+          setError(tr('invalidDataFormat'))
           setCustomers([])
           setTotalCount(0)
           setListStats(null)
-          toast.error('Received invalid data format from server')
+          toast.error(tr('invalidDataToast'))
         }
       } catch (apiError: unknown) {
         console.error('API Error fetching customers:', apiError)
@@ -210,14 +219,9 @@ export default function CustomersPage() {
           ax.message?.includes('timeout') ||
           ax.message?.includes('exceeded')
         ) {
-          const errorMsg =
-            'Backend server is not responding (timeout). The backend may be:\n' +
-            '• Not running - Please start the backend server\n' +
-            '• Frozen/hanging - Check backend logs for errors\n' +
-            '• Database connection issues - Check database is running\n\n' +
-            `Please check the backend console and ensure it's running on ${backendOrigin}`
+          const errorMsg = ct('backendTimeoutDetail', { origin: backendOrigin })
           setError(errorMsg)
-          toast.error('Backend timeout - Server may not be running. Check backend console.', 10000)
+          toast.error(tr('backendTimeout'), 10000)
           setCustomers([])
           setTotalCount(0)
           setListStats(null)
@@ -236,21 +240,16 @@ export default function CustomersPage() {
             ax.message?.includes('Network Error') ||
             ax.message?.includes('Failed to fetch'))
         ) {
-          const errorMsg =
-            'Cannot connect to backend server.\n\n' +
-            'Please ensure:\n' +
-            `• Backend is running on ${backendOrigin}\n` +
-            '• No firewall is blocking the connection\n' +
-            '• Check backend console for startup errors'
+          const errorMsg = ct('cannotConnectDetail', { origin: backendOrigin })
           setError(errorMsg)
-          toast.error('Cannot connect to backend. Is it running?', 10000)
+          toast.error(tr('cannotConnectBackend'), 10000)
           setCustomers([])
           setTotalCount(0)
           setListStats(null)
           return
         }
 
-        const errorMsg = ax.response?.data?.detail || ax.message || 'Failed to load customers'
+        const errorMsg = ax.response?.data?.detail || ax.message || tr('failedLoadEntity', { entity: ct('customers') })
         setError(errorMsg)
         toast.error(errorMsg)
         setCustomers([])
@@ -260,10 +259,10 @@ export default function CustomersPage() {
     } catch (error) {
       console.error('Unexpected error fetching customers:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      let userMessage = 'Error connecting to server'
+      let userMessage = tr('errorConnecting')
 
       if (errorMessage.includes('fetch') || errorMessage.includes('Failed to fetch')) {
-        userMessage = `Cannot connect to backend server. Please ensure the backend is running on ${backendOrigin}`
+        userMessage = ct('cannotConnectBackendOrigin', { origin: backendOrigin })
       } else {
         userMessage = `Error: ${errorMessage}`
       }
@@ -319,7 +318,7 @@ export default function CustomersPage() {
             : null,
         ...(customerRefCode.trim() ? { customer_number: customerRefCode.trim() } : {}),
       })
-      toast.success('Customer created successfully!')
+      toast.success(tr('entityCreated', { entity: ct('Customer') }))
       setShowModal(false)
       fetchCustomers()
       resetForm()
@@ -327,7 +326,7 @@ export default function CustomersPage() {
       const ax = error as { response?: { data?: unknown; status?: number; statusText?: string } }
       const message = formatJsonApiError(
         ax.response?.data,
-        'Failed to create customer',
+        tr('failedCreateEntity', { entity: ct('customer') }),
         ax.response
           ? { status: ax.response.status ?? 0, statusText: ax.response.statusText ?? '' }
           : undefined
@@ -392,7 +391,7 @@ export default function CustomersPage() {
             ? parseInt(String(formData.default_station_id), 10)
             : null,
       })
-      toast.success('Customer updated successfully!')
+      toast.success(tr('entityUpdated', { entity: ct('Customer') }))
       setShowModal(false)
       setEditingCustomer(null)
       fetchCustomers()
@@ -401,7 +400,7 @@ export default function CustomersPage() {
       const ax = error as { response?: { data?: unknown; status?: number; statusText?: string } }
       const message = formatJsonApiError(
         ax.response?.data,
-        'Failed to update customer',
+        tr('failedUpdateEntity', { entity: ct('customer') }),
         ax.response
           ? { status: ax.response.status ?? 0, statusText: ax.response.statusText ?? '' }
           : undefined
@@ -412,7 +411,7 @@ export default function CustomersPage() {
   }
 
   const handleAddDummyCustomers = async () => {
-    if (!confirm('This will add 12 dummy customers (3 cash customers and 9 credit customers) to the database. Continue?')) {
+    if (!confirm(ct('confirmDummyCustomers'))) {
       return
     }
     
@@ -420,12 +419,12 @@ export default function CustomersPage() {
     try {
       const response = await api.post('/customers/add-dummy')
       const newCustomers = response.data
-      toast.success(`Successfully added ${newCustomers.length} dummy customers!`)
+      toast.success(ct('dummyCustomersAdded', { count: newCustomers.length }))
       // Refresh the customer list
       await fetchCustomers()
     } catch (error: any) {
       console.error('Error adding dummy customers:', error)
-      const errorMsg = error.response?.data?.detail || error.message || 'Failed to add dummy customers'
+      const errorMsg = error.response?.data?.detail || error.message || ct('failedDummyCustomers')
       toast.error(errorMsg)
     } finally {
       setAddingDummy(false)
@@ -435,14 +434,14 @@ export default function CustomersPage() {
   const handleDelete = async (customerId: number) => {
     try {
       await api.delete(`/customers/${customerId}/`)
-      toast.success('Customer deleted successfully!')
+      toast.success(tr('entityDeleted', { entity: ct('Customer') }))
       setShowDeleteConfirm(null)
       fetchCustomers()
     } catch (error: unknown) {
       const ax = error as { response?: { data?: unknown; status?: number; statusText?: string } }
       const message = formatJsonApiError(
         ax.response?.data,
-        'Failed to delete customer',
+        tr('failedDeleteEntity', { entity: ct('customer') }),
         ax.response
           ? { status: ax.response.status ?? 0, statusText: ax.response.statusText ?? '' }
           : undefined
@@ -522,9 +521,9 @@ export default function CustomersPage() {
 
   const exportSubtitle = () =>
     [
-      debouncedSearch.trim() && `Search: ${debouncedSearch.trim()}`,
-      sortField && `Sort: ${String(sortField)} (${sortDirection})`,
-      `Generated ${formatDate(new Date(), true)}`,
+      debouncedSearch.trim() && tr('searchLabel', { q: debouncedSearch.trim() }),
+      sortField && tr('sortLabel', { field: String(sortField), dir: sortDirection }),
+      tr('generated', { date: formatDate(new Date(), true) }),
     ]
       .filter(Boolean)
       .join(' · ')
@@ -534,14 +533,14 @@ export default function CustomersPage() {
       fetchRows: fetchCustomersForExport,
       totalCount,
       labels: {
-        entity: 'customer',
-        entities: 'customers',
-        emptyPrint: 'No customers to print for the current filter.',
-        emptyExport: 'No customers to export.',
+        entity: ct('customer'),
+        entities: ct('customers'),
+        emptyPrint: tr('noEntityPrint', { entities: ct('customers') }),
+        emptyExport: tr('noEntityExport', { entities: ct('customers') }),
       },
       csvFilenamePrefix: 'customers',
       subtitle: exportSubtitle,
-      printTitle: 'Customer list',
+      printTitle: tr('entityList', { entity: ct('Customer') }),
       buildPrintContent: (rows, cappedTotal) =>
         buildContactListPrintHtml('customer', rows, currencySymbol, cappedTotal),
       buildCsv: buildCustomerListCsv,
@@ -549,49 +548,49 @@ export default function CustomersPage() {
 
   return (
     <CompanyProvider>
-      <div className="page-with-sidebar flex h-screen bg-gray-50">
-        <Sidebar />
-        <div className="flex-1 overflow-auto">
-          <div className="app-scroll-pad">
-            {/* Header */}
-            <div className="mb-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">Customers</h1>
-                  <p className="text-gray-600">Manage your customer accounts and track receivables</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <DocumentExportButtons
-                    onPrint={() => void handlePrintList()}
-                    onDownloadCsv={() => void handleDownloadListCsv()}
-                    onDownloadJson={() => void handleDownloadListJson()}
-                    printLabel="Print list"
-                  />
-                  <button
-                    onClick={() => setShowDebug(!showDebug)}
-                    className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-                    title="Toggle debug info"
-                  >
-                    {showDebug ? 'Hide' : 'Show'} Debug
-                  </button>
-                </div>
+      <PageLayout className="bg-slate-50">
+        <div className="app-scroll-pad">
+          <ErpPageShell
+            flush
+            showBackLink={false}
+            title={pageMeta.title}
+            titleIcon={Users}
+            description={pageMeta.description}
+            maxWidthClass="max-w-[1600px]"
+            contentClassName="mt-4"
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                <DocumentExportButtons
+                  onPrint={() => void handlePrintList()}
+                  onDownloadCsv={() => void handleDownloadListCsv()}
+                  onDownloadJson={() => void handleDownloadListJson()}
+                  printLabel={tr('printList')}
+                />
+                <button
+                  onClick={() => setShowDebug(!showDebug)}
+                  className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  title={tr('toggleDebug')}
+                >
+                  {showDebug ? tr('hideDebug') : tr('showDebug')}
+                </button>
               </div>
-              {showDebug && (
-                <div className="mt-4 p-4 bg-gray-100 rounded-lg text-xs font-mono">
-                  <div className="mb-2"><strong>Total Customers:</strong> {totalCustomers}</div>
-                  <div className="mb-2"><strong>Rows (this page):</strong> {customers.length}</div>
-                  <div className="mb-2"><strong>API Response:</strong> {apiResponse ? JSON.stringify(apiResponse, null, 2).substring(0, 500) : 'Not loaded yet'}</div>
-                  <div><strong>First Customer:</strong> {customers.length > 0 ? JSON.stringify(customers[0], null, 2).substring(0, 300) : 'None'}</div>
-                </div>
-              )}
-            </div>
+            }
+          >
+            {showDebug && (
+              <div className="mb-6 p-4 bg-gray-100 rounded-lg text-xs font-mono">
+                <div className="mb-2"><strong>{tr('totalRows', { entity: ct('Customers') })}</strong> {totalCustomers}</div>
+                <div className="mb-2"><strong>{tr('rowsThisPage')}</strong> {customers.length}</div>
+                <div className="mb-2"><strong>{tr('apiResponse')}</strong> {apiResponse ? JSON.stringify(apiResponse, null, 2).substring(0, 500) : tr('notLoadedYet')}</div>
+                <div><strong>{tr('firstRow', { entity: ct('Customer') })}</strong> {customers.length > 0 ? JSON.stringify(customers[0], null, 2).substring(0, 300) : tr('none')}</div>
+              </div>
+            )}
 
             {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 mb-1">Total Customers</p>
+                    <p className="text-sm font-medium text-gray-600 mb-1">{tr('totalCustomers')}</p>
                     <p className="text-2xl font-bold text-gray-900">{totalCustomers}</p>
                   </div>
                   <div className="bg-blue-100 rounded-full p-3">
@@ -603,7 +602,7 @@ export default function CustomersPage() {
               <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 mb-1">Active Customers</p>
+                    <p className="text-sm font-medium text-gray-600 mb-1">{tr('activeCustomers')}</p>
                     <p className="text-2xl font-bold text-gray-900">{activeCustomers}</p>
                   </div>
                   <div className="bg-green-100 rounded-full p-3">
@@ -615,7 +614,7 @@ export default function CustomersPage() {
               <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 mb-1">Total Receivables</p>
+                    <p className="text-sm font-medium text-gray-600 mb-1">{tr('totalReceivables')}</p>
                     <p className="text-2xl font-bold text-gray-900">
                       {currencySymbol}{formatNumber(totalReceivable)}
                     </p>
@@ -629,7 +628,7 @@ export default function CustomersPage() {
               <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 mb-1">Net Balance</p>
+                    <p className="text-sm font-medium text-gray-600 mb-1">{tr('netBalance')}</p>
                     <p className={`text-2xl font-bold ${totalBalance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
                       {currencySymbol}{formatNumber(Math.abs(totalBalance))}
                     </p>
@@ -648,7 +647,7 @@ export default function CustomersPage() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                   <input
                     type="text"
-                    placeholder="Search by name, email, phone, customer #, or default site…"
+                    placeholder={ct('searchCustomers')}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -660,17 +659,17 @@ export default function CustomersPage() {
                       onClick={handleAddDummyCustomers}
                       disabled={addingDummy}
                       className="flex items-center space-x-2 px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Add 12 dummy customers (3 cash + 9 credit)"
+                      title={ct('addDummyTitle')}
                     >
                       {addingDummy ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                          <span>Adding...</span>
+                          <span>{tr('adding')}</span>
                         </>
                       ) : (
                         <>
                           <Users className="h-4 w-4" />
-                          <span>Add Dummy Customers</span>
+                          <span>{ct('addDummyCustomers')}</span>
                         </>
                       )}
                     </button>
@@ -684,7 +683,7 @@ export default function CustomersPage() {
                     className="flex items-center space-x-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-medium"
                   >
                     <Plus className="h-5 w-5" />
-                    <span>Add Customer</span>
+                    <span>{tr('addEntity', { entity: ct('Customer') })}</span>
                   </button>
                 </div>
               </div>
@@ -714,7 +713,7 @@ export default function CustomersPage() {
               <div className="bg-red-50 border border-red-200 rounded-lg p-4 sm:p-6 md:p-8">
                 <div className="text-center mb-6">
                   <AlertTriangle className="h-16 w-16 text-red-600 mx-auto mb-4" />
-                  <h3 className="text-xl font-bold text-red-800 mb-2">Backend Connection Error</h3>
+                  <h3 className="text-xl font-bold text-red-800 mb-2">{tr('backendConnectionError')}</h3>
                   <p className="text-red-700 whitespace-pre-line text-left max-w-2xl mx-auto mb-6">{error}</p>
                 </div>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -723,7 +722,7 @@ export default function CustomersPage() {
                     className="inline-flex items-center space-x-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
                   >
                     <RefreshCw className="h-5 w-5" />
-                    <span>Retry Connection</span>
+                    <span>{tr('retryConnection')}</span>
                   </button>
                   <a
                     href={apiDocsUrl}
@@ -731,16 +730,16 @@ export default function CustomersPage() {
                     rel="noopener noreferrer"
                     className="inline-flex items-center space-x-2 px-6 py-3 border border-red-300 text-red-700 rounded-lg hover:bg-red-100 transition-colors font-medium"
                   >
-                    <span>Check Backend Status</span>
+                    <span>{tr('checkBackendStatus')}</span>
                   </a>
                 </div>
                 <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-left max-w-2xl mx-auto">
-                  <p className="text-sm text-yellow-800 font-semibold mb-2">💡 Troubleshooting Steps:</p>
+                  <p className="text-sm text-yellow-800 font-semibold mb-2">{tr('troubleshootingTitle')}</p>
                   <ol className="text-sm text-yellow-700 list-decimal list-inside space-y-1">
-                    <li>Check if backend is running: Open {apiDocsUrl} (with Django DEBUG enabled)</li>
-                    <li>Check backend console for errors or hanging processes</li>
-                    <li>Restart the backend server if needed</li>
-                    <li>Verify database connection in backend logs</li>
+                    <li>{tr('troubleshootApiDocs', { url: apiDocsUrl })}</li>
+                    <li>{tr('troubleshootConsole')}</li>
+                    <li>{tr('troubleshootRestart')}</li>
+                    <li>{tr('troubleshootDb')}</li>
                   </ol>
                 </div>
               </div>
@@ -749,17 +748,17 @@ export default function CustomersPage() {
                 <Users className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">
                   {debouncedSearch.trim()
-                    ? 'No customers found'
+                    ? tr('noEntityFound', { entities: ct('customers') })
                     : totalCustomers === 0
-                      ? 'No customers in database'
-                      : 'No customers to show'}
+                      ? tr('noEntityInDb', { entities: ct('customers') })
+                      : tr('noEntityToShow', { entities: ct('customers') })}
                 </h3>
                 <p className="text-gray-600 mb-6">
                   {debouncedSearch.trim()
-                    ? 'Try adjusting your search terms.'
+                    ? tr('tryAdjustSearch')
                     : totalCustomers === 0
-                      ? 'The database appears to be empty. Click below to add dummy customers (cash and credit) or add your first customer manually.'
-                      : 'Get started by adding your first customer'}
+                      ? tr('emptyDbHint', { entities: ct('customers'), entity: ct('customer') })
+                      : tr('getStartedAdd', { entity: ct('customer') })}
                 </p>
                 <div className="flex items-center justify-center gap-3 flex-wrap">
                   {!debouncedSearch.trim() && totalCustomers === 0 && (
@@ -771,12 +770,12 @@ export default function CustomersPage() {
                       {addingDummy ? (
                         <>
                           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                          <span>Adding Dummy Customers...</span>
+                          <span>{ct('addingDummyCustomers')}</span>
                         </>
                       ) : (
                         <>
                           <Users className="h-5 w-5" />
-                          <span>Add Dummy Customers (12 customers)</span>
+                          <span>{ct('addDummyCustomersCount')}</span>
                         </>
                       )}
                     </button>
@@ -791,7 +790,7 @@ export default function CustomersPage() {
                       className="inline-flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                     >
                       <Plus className="h-5 w-5" />
-                      <span>{totalCustomers === 0 ? 'Add Your First Customer' : 'Add New Customer'}</span>
+                      <span>{totalCustomers === 0 ? tr('addYourFirst', { entity: ct('Customer') }) : tr('addNew', { entity: ct('Customer') })}</span>
                     </button>
                   )}
                   <button
@@ -799,20 +798,20 @@ export default function CustomersPage() {
                     className="inline-flex items-center space-x-2 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
                   >
                     <RefreshCw className="h-5 w-5" />
-                    <span>Refresh</span>
+                    <span>{t('refresh')}</span>
                   </button>
                 </div>
                 {totalCustomers === 0 && (
                   <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-left max-w-2xl mx-auto">
                     <p className="text-sm text-blue-800 mb-2">
-                      <strong>💡 Quick Start:</strong> Click "Add Dummy Customers" to instantly populate your database with:
+                      <strong>{ct('quickStartTitle')}</strong>
                     </p>
                     <ul className="text-sm text-blue-700 list-disc list-inside space-y-1">
-                      <li>3 Cash customers (immediate payment, no balance)</li>
-                      <li>9 Credit customers (with outstanding balances and payment terms)</li>
+                      <li>{ct('quickStartCash')}</li>
+                      <li>{ct('quickStartCredit')}</li>
                     </ul>
                     <p className="text-xs text-blue-600 mt-3">
-                      This is perfect for testing and demonstration purposes.
+                      {ct('quickStartDemo')}
                     </p>
                   </div>
                 )}
@@ -828,7 +827,7 @@ export default function CustomersPage() {
                           onClick={() => handleSort('customer_number')}
                         >
                           <div className="flex items-center">
-                            Customer #
+                            {tr('customerHash')}
                             <SortIcon field="customer_number" />
                           </div>
                         </th>
@@ -837,7 +836,7 @@ export default function CustomersPage() {
                           onClick={() => handleSort('display_name')}
                         >
                           <div className="flex items-center">
-                            Name
+                            {t('name')}
                             <SortIcon field="display_name" />
                           </div>
                         </th>
@@ -847,19 +846,19 @@ export default function CustomersPage() {
                         >
                           <div className="flex items-center">
                             <Building2 className="h-3.5 w-3.5 mr-1 text-amber-600/90 shrink-0" />
-                            Default site
+                            {tr('defaultSite')}
                             <SortIcon field={'default_station_name' as keyof Customer} />
                           </div>
                         </th>
                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                          Contact
+                          {tr('contact')}
                         </th>
                         <th 
                           className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                           onClick={() => handleSort('current_balance')}
                         >
                           <div className="flex items-center justify-end">
-                            Balance
+                            {tr('balance')}
                             <SortIcon field="current_balance" />
                           </div>
                         </th>
@@ -868,12 +867,12 @@ export default function CustomersPage() {
                           onClick={() => handleSort('is_active')}
                         >
                           <div className="flex items-center justify-center">
-                            Status
+                            {t('status')}
                             <SortIcon field="is_active" />
                           </div>
                         </th>
                         <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                          Actions
+                          {t('actions')}
                         </th>
                       </tr>
                     </thead>
@@ -939,7 +938,7 @@ export default function CustomersPage() {
                                   ? 'bg-green-100 text-green-800' 
                                   : 'bg-red-100 text-red-800'
                               }`}>
-                                {customer.is_active ? 'Active' : 'Inactive'}
+                                {customer.is_active ? t('active') : t('inactive')}
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -947,21 +946,21 @@ export default function CustomersPage() {
                                 <Link
                                   href={`/customers/${customer.id}/ledger`}
                                   className="text-emerald-600 hover:text-emerald-900 transition-colors"
-                                  title="Customer ledger"
+                                  title={tr('viewLedger', { entity: ct('Customer') })}
                                 >
                                   <BookOpen className="h-4 w-4" />
                                 </Link>
                                 <button 
                                   onClick={() => handleEdit(customer)}
                                   className="text-blue-600 hover:text-blue-900 transition-colors"
-                                  title="Edit customer"
+                                  title={tr('editTitle', { entity: ct('customer') })}
                                 >
                                   <Edit className="h-4 w-4" />
                                 </button>
                                 <button 
                                   onClick={() => setShowDeleteConfirm(customer.id)}
                                   className="text-red-600 hover:text-red-900 transition-colors"
-                                  title="Delete customer"
+                                  title={tr('deleteTitle', { entity: ct('customer') })}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </button>
@@ -989,8 +988,10 @@ export default function CustomersPage() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       {sortField && (
                         <p className="text-xs text-gray-500">
-                          Sorted by {String(sortField).replace('_', ' ')} (
-                          {sortDirection === 'asc' ? 'ascending' : 'descending'})
+                          {tr('sortedBy', {
+                            field: String(sortField).replace('_', ' '),
+                            dir: sortDirection === 'asc' ? tr('ascending') : tr('descending'),
+                          })}
                         </p>
                       )}
                     </div>
@@ -1004,7 +1005,7 @@ export default function CustomersPage() {
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold text-gray-900">Delete Customer</h2>
+                    <h2 className="text-xl font-bold text-gray-900">{tr('deleteEntity', { entity: ct('Customer') })}</h2>
                     <button
                       onClick={() => setShowDeleteConfirm(null)}
                       className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -1013,20 +1014,20 @@ export default function CustomersPage() {
                     </button>
                   </div>
                   <p className="text-gray-600 mb-6">
-                    Are you sure you want to delete this customer? This action cannot be undone and will mark the customer as inactive.
+                    {tr('deleteCustomerBody')}
                   </p>
                   <div className="flex justify-end space-x-3">
                     <button
                       onClick={() => setShowDeleteConfirm(null)}
                       className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
                     >
-                      Cancel
+                      {t('cancel')}
                     </button>
                     <button
                       onClick={() => handleDelete(showDeleteConfirm)}
                       className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
                     >
-                      Delete
+                      {t('delete')}
                     </button>
                   </div>
                 </div>
@@ -1039,7 +1040,7 @@ export default function CustomersPage() {
                 <div className="bg-white rounded-lg app-modal-pad max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-xl my-8">
                   <div className="flex items-center justify-between mb-6">
                     <h2 className="text-2xl font-bold text-gray-900">
-                      {editingCustomer ? 'Edit Customer' : 'Add New Customer'}
+                      {editingCustomer ? tr('editEntity', { entity: ct('Customer') }) : tr('addNewEntity', { entity: ct('Customer') })}
                     </h2>
                     <button
                       onClick={handleCloseModal}
@@ -1053,7 +1054,7 @@ export default function CustomersPage() {
                       <ReferenceCodePicker
                         kind="customer"
                         id="customer_ref_code_ro"
-                        label="Customer number"
+                        label={ct('customerNumber')}
                         value={editingCustomer.customer_number || ''}
                         onChange={() => {}}
                         disabled
@@ -1064,7 +1065,7 @@ export default function CustomersPage() {
                         key={createCodeNonce}
                         kind="customer"
                         id="customer_ref_code"
-                        label="Customer number"
+                        label={ct('customerNumber')}
                         value={customerRefCode}
                         onChange={setCustomerRefCode}
                         className="mb-6"
@@ -1073,52 +1074,52 @@ export default function CustomersPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Company Name
+                          {tr('companyName')}
                         </label>
                         <input
                           type="text"
                           value={formData.company_name}
                           onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Enter company name"
+                          placeholder={ct('enterCompanyName')}
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Contact Person
+                          {tr('contactPerson')}
                         </label>
                         <input
                           type="text"
                           value={formData.contact_person}
                           onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Enter contact person name"
+                          placeholder={ct('enterContactPerson')}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">{tr('email')}</label>
                         <input
                           type="email"
                           value={formData.email}
                           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="customer@example.com"
+                          placeholder={ct('emailPlaceholder')}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">{tr('phone')}</label>
                         <input
                           type="text"
                           value={formData.phone}
                           onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="+1 234 567 8900"
+                          placeholder={ct('phonePlaceholder')}
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2 inline-flex items-center gap-1.5">
                           <Building2 className="h-4 w-4 text-amber-600" />
-                          Default site
+                          {tr('defaultSite')}
                         </label>
                         <select
                           value={formData.default_station_id === '' ? '' : String(formData.default_station_id)}
@@ -1130,7 +1131,7 @@ export default function CustomersPage() {
                           }
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                         >
-                          <option value="">— Not set —</option>
+                          <option value="">{tr('notSet')}</option>
                           {stations.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.station_name}
@@ -1138,15 +1139,15 @@ export default function CustomersPage() {
                           ))}
                         </select>
                         <p className="mt-1.5 text-xs text-gray-500">
-                          Usual site for this account (new invoices and AR reporting default here when not specified).
+                          {ct('defaultSiteHint')}
                         </p>
                       </div>
                       <div className="md:col-span-2">
-                        <p className="text-sm font-semibold text-gray-800 mb-3">Bank details (optional)</p>
+                        <p className="text-sm font-semibold text-gray-800 mb-3">{tr('bankDetailsOptional')}</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Account number
+                              {tr('accountNumber')}
                             </label>
                             <input
                               type="text"
@@ -1160,7 +1161,7 @@ export default function CustomersPage() {
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Bank name
+                              {tr('bankName')}
                             </label>
                             <input
                               type="text"
@@ -1173,7 +1174,7 @@ export default function CustomersPage() {
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Branch
+                              {tr('branch')}
                             </label>
                             <input
                               type="text"
@@ -1186,7 +1187,7 @@ export default function CustomersPage() {
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Routing number
+                              {tr('routingNumber')}
                             </label>
                             <input
                               type="text"
@@ -1195,14 +1196,14 @@ export default function CustomersPage() {
                                 setFormData({ ...formData, bank_routing_number: e.target.value })
                               }
                               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              placeholder="ABA / sort code / SWIFT as needed"
+                              placeholder={tr('routingPlaceholder')}
                             />
                           </div>
                         </div>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Opening Balance ({currencySymbol})
+                          {tr('openingBalance', { sym: currencySymbol })}
                         </label>
                         <input
                           type="number"
@@ -1213,12 +1214,12 @@ export default function CustomersPage() {
                           placeholder="0.00"
                         />
                         <p className="mt-1.5 text-xs text-gray-500">
-                          {editingCustomer ? 'Update opening balance if needed' : 'Starting balance owed by this customer'}
+                          {editingCustomer ? ct('openingBalanceHintEdit') : ct('openingBalanceHintCreate')}
                         </p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          As of Date
+                          {tr('asOfDate')}
                         </label>
                         <input
                           type="date"
@@ -1227,7 +1228,7 @@ export default function CustomersPage() {
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                         <p className="mt-1.5 text-xs text-gray-500">
-                          Date of the opening balance
+                          {ct('openingBalanceDateHint')}
                         </p>
                       </div>
                       <div className="md:col-span-2">
@@ -1238,7 +1239,7 @@ export default function CustomersPage() {
                             onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                             className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                           />
-                          <span className="text-sm font-medium text-gray-700">Active Customer</span>
+                          <span className="text-sm font-medium text-gray-700">{ct('activeCustomer')}</span>
                         </label>
                       </div>
                     </div>
@@ -1248,22 +1249,22 @@ export default function CustomersPage() {
                         onClick={handleCloseModal}
                         className="px-6 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
                       >
-                        Cancel
+                        {t('cancel')}
                       </button>
                       <button
                         type="submit"
                         className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
                       >
-                        {editingCustomer ? 'Update Customer' : 'Create Customer'}
+                        {editingCustomer ? tr('updateEntity', { entity: ct('Customer') }) : tr('createEntity', { entity: ct('Customer') })}
                       </button>
                     </div>
                   </form>
                 </div>
               </div>
             )}
-          </div>
+          </ErpPageShell>
         </div>
-      </div>
+      </PageLayout>
     </CompanyProvider>
   )
 }

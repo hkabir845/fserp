@@ -6,7 +6,9 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import api from '@/lib/api'
+import { aquacultureT } from '@/lib/aquacultureI18n'
 import { isAquacultureNavUnlocked } from '@/navigation/erpAppMenu'
 import { ShieldAlert } from 'lucide-react'
 
@@ -30,6 +32,7 @@ function readSessionRoleAndPermissions(): {
 export default function AquacultureLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { mode } = useCompany()
+  const { language: lang } = useCompanyLocale()
   const [ready, setReady] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [navUnlocked, setNavUnlocked] = useState(false)
@@ -88,16 +91,17 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
           <TenantCompanyBanner />
           <main className="flex-1 p-6 sm:p-10" role="main">
             <div className="mx-auto max-w-lg rounded-xl border border-amber-200/80 bg-amber-50/90 p-6 text-amber-950 shadow-sm">
-              <h1 className="text-lg font-semibold tracking-tight text-amber-950">Aquaculture is not active</h1>
+              <h1 className="text-lg font-semibold tracking-tight text-amber-950">
+                {aquacultureT('aqNotActiveTitle', lang)}
+              </h1>
               <p className="mt-2 text-sm leading-relaxed text-amber-900/95">
-                A platform administrator must license Aquaculture for this tenant, then the company Admin turns it on
-                under Company settings. Until both steps are done, Aquaculture stays hidden in the menu.
+                {aquacultureT('aqNotActiveBody', lang)}
               </p>
               <Link
                 href="/company"
                 className="mt-4 inline-block text-sm font-medium text-teal-800 underline decoration-teal-600/40 underline-offset-2 hover:decoration-teal-900"
               >
-                Company settings
+                {aquacultureT('companySettings', lang)}
               </Link>
             </div>
           </main>
@@ -120,17 +124,18 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
                   <ShieldAlert className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-lg font-semibold tracking-tight text-slate-900">Access restricted</h1>
+                  <h1 className="text-lg font-semibold tracking-tight text-slate-900">
+                    {aquacultureT('accessRestricted', lang)}
+                  </h1>
                   <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                    Your account does not have Aquaculture access. Ask a company Admin to enable the module and assign
-                    Aquaculture permissions on Roles &amp; access, or sign in with an Admin account.
+                    {aquacultureT('aqAccessRestrictedBody', lang)}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-3 text-sm font-medium">
                     <Link href="/users" className="text-teal-800 underline decoration-teal-600/40 underline-offset-2">
-                      Users
+                      {aquacultureT('users', lang)}
                     </Link>
                     <Link href="/apps" className="text-slate-700 underline decoration-slate-400 underline-offset-2">
-                      Apps
+                      {aquacultureT('apps', lang)}
                     </Link>
                   </div>
                 </div>

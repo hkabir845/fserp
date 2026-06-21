@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { Plus, Eye, DollarSign, X, Calendar, FileText, CheckCircle, Clock, XCircle, Edit2, Trash2, BookOpen, Landmark, ArrowRight, User } from 'lucide-react'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import { getCurrencySymbol, formatNumber, formatAmountPlain } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import api, { readApiErrorDetail } from '@/lib/api'
@@ -303,6 +306,7 @@ function mapPondRows(raw: unknown): PondOption[] {
 export default function PayrollPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
   const { selectedCompany } = useCompany()
   const [payrolls, setPayrolls] = useState<PayrollRun[]>([])
   const [loading, setLoading] = useState(true)
@@ -1220,9 +1224,11 @@ export default function PayrollPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center p-6">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </PageLayout>
     )
   }
 
@@ -1231,27 +1237,30 @@ export default function PayrollPage() {
   const totalNet = payrolls.reduce((sum, p) => sum + (Number(p.total_net) || 0), 0)
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <div className="app-scroll-pad">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Payroll</h1>
-              <p className="text-gray-600 mt-1">Manage employee payroll</p>
-            </div>
-            <button 
+    <PageLayout className="bg-slate-50">
+      <div className="app-scroll-pad">
+        <ErpPageShell
+          flush
+          showBackLink={false}
+          title={pageMeta.title}
+          titleIcon={DollarSign}
+          description={pageMeta.description}
+          maxWidthClass="max-w-[1600px]"
+          contentClassName="mt-4"
+          actions={
+            <button
+              type="button"
               onClick={() => {
                 resetForm()
                 setShowModal(true)
               }}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className={AQ_HERO_BTN_PRIMARY}
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-4 w-4" aria-hidden />
               <span>New Payroll Run</span>
             </button>
-          </div>
-
+          }
+        >
           <div className="mb-8 rounded-xl border border-blue-100 bg-blue-50/80 p-5 text-sm text-gray-800">
             <div className="mb-2 flex items-center gap-2 font-semibold text-blue-900">
               <BookOpen className="h-5 w-5" />
@@ -1406,7 +1415,7 @@ export default function PayrollPage() {
               </div>
             )}
           </div>
-        </div>
+        </ErpPageShell>
       </div>
 
       {/* New Payroll Run Modal */}
@@ -2509,6 +2518,6 @@ export default function PayrollPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

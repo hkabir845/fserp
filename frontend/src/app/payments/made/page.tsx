@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -110,6 +112,7 @@ type PaymentFilter = 'all' | 'made' | 'outstanding'
 
 export default function PaymentMadePage() {
   const router = useRouter()
+  const pageMeta = usePageMeta()
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [vendors, setVendors] = useState<Vendor[]>([])
@@ -358,52 +361,41 @@ export default function PaymentMadePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+        </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <div className="app-scroll-pad">
-          <Link
-            href="/payments"
-            className="mb-4 inline-flex items-center text-sm font-medium text-gray-600 hover:text-gray-900"
-          >
-            <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden />
-            Back to Payments
-          </Link>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Payments — Made</h1>
-              <p className="text-gray-600 mt-1 max-w-3xl">
-                Pay vendor bills and update accounts payable. Use{' '}
-                <strong className="text-gray-700">Pencil / Trash</strong> to edit or delete; both run in a{' '}
-                <strong className="text-gray-700">single transaction</strong> (reverse AUTO-PAY, update books,
-                re-post). Receipts tied to a <strong className="text-gray-700">bank deposit</strong> stay locked
-                until the deposit is adjusted.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <DocumentExportButtons
-                onPrint={() => void handlePrintList()}
-                onDownloadCsv={handleDownloadListCsv}
-                onDownloadJson={handleDownloadListJson}
-                printLabel="Print list"
-              />
-              <Link
-                href="/payments/made/new"
-                className="inline-flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                <Plus className="h-5 w-5" />
-                <span>New Payment</span>
-              </Link>
-            </div>
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={DollarSign}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <DocumentExportButtons
+              onPrint={() => void handlePrintList()}
+              onDownloadCsv={handleDownloadListCsv}
+              onDownloadJson={handleDownloadListJson}
+              printLabel="Print list"
+            />
+            <Link
+              href="/payments/made/new"
+              className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+            >
+              <Plus className="h-5 w-5" />
+              <span>New Payment</span>
+            </Link>
           </div>
-
+        }
+      >
           {policyBanner && (
             <div className="mb-6 flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900">
               <div className="flex gap-2">
@@ -797,8 +789,7 @@ export default function PaymentMadePage() {
               await fetchAllOutstandingBills()
             }}
           />
-        </div>
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

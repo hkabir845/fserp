@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
 import Link from 'next/link'
 import { Building2, Users, MapPin, TrendingUp, CreditCard, ChevronRight } from 'lucide-react'
@@ -10,6 +11,7 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { formatCurrency } from '@/utils/currency'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
+import { usePageMeta } from '@/hooks/usePageMeta'
 
 interface PlatformStats {
   total_companies: number
@@ -27,6 +29,7 @@ interface PlatformStats {
 function OverviewPageContent() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
   const { mode } = useCompany()
   const [stats, setStats] = useState<PlatformStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -118,50 +121,56 @@ function OverviewPageContent() {
   // Also handle case where mode might not be initialized yet
   if (!mode || mode !== 'saas_dashboard') {
     return (
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex min-h-0 flex-1 overflow-y-auto p-4 sm:p-8">
-          <div className="w-full rounded-lg bg-white p-6 text-center shadow sm:p-8">
-            <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Platform Overview</h2>
-            <p className="text-gray-600 mb-4">Please switch to SaaS Dashboard mode to view platform overview.</p>
-            <p className="text-sm text-gray-500">Use the mode switcher in the sidebar to switch to SaaS Dashboard mode.</p>
+      <PageLayout className="bg-slate-50">
+        <div className="app-scroll-pad">
+          <div className="w-full rounded-2xl border border-slate-200/90 bg-white p-6 text-center shadow-sm sm:p-8">
+            <Building2 className="mx-auto mb-4 h-12 w-12 text-slate-400" />
+            <h2 className="mb-2 text-xl font-semibold text-slate-900">{pageMeta.title}</h2>
+            <p className="mb-4 text-slate-600">Please switch to SaaS Dashboard mode to view platform overview.</p>
+            <p className="text-sm text-slate-500">Use the mode switcher in the sidebar to switch to SaaS Dashboard mode.</p>
           </div>
         </div>
-      </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex min-h-0 flex-1 overflow-y-auto">
-        <div className="w-full min-w-0 p-4 sm:p-6 lg:p-8">
+    <PageLayout className="bg-slate-50">
+      <div className="app-scroll-pad">
+        <ErpPageShell
+          flush
+          showBackLink={false}
+          title={pageMeta.title}
+          titleIcon={Building2}
+          eyebrow={pageMeta.eyebrow}
+          description={pageMeta.description}
+          maxWidthClass="max-w-[1600px]"
+          contentClassName="mt-4"
+          actions={
+            <Link
+              href="/admin/subscription-billing"
+              className="group flex max-w-md items-center gap-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-3 shadow-sm transition-all hover:border-indigo-300 hover:shadow"
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">
+                <CreditCard className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 text-left">
+                <p className="text-sm font-semibold text-indigo-950">Subscription &amp; Billing</p>
+                <p className="text-xs text-indigo-800/90">
+                  Manage tenant cycles, renewals, and SaaS ledger invoices in one place.
+                </p>
+              </div>
+              <ChevronRight className="h-5 w-5 shrink-0 text-indigo-400 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+          }
+        >
           {loading ? (
-            <div className="bg-white rounded-lg shadow app-modal-pad text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading platform statistics...</p>
+            <div className="rounded-2xl border border-slate-200/90 bg-white p-8 text-center shadow-sm">
+              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+              <p className="text-slate-600">Loading platform statistics...</p>
             </div>
           ) : stats ? (
             <>
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
-                <h1 className="text-2xl font-bold text-gray-900">Platform Overview</h1>
-                <Link
-                  href="/admin/subscription-billing"
-                  className="group flex items-center gap-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-3 shadow-sm hover:border-indigo-300 hover:shadow transition-all max-w-md"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">
-                    <CreditCard className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0 text-left">
-                    <p className="text-sm font-semibold text-indigo-950">Subscription &amp; Billing</p>
-                    <p className="text-xs text-indigo-800/90">
-                      Manage tenant cycles, renewals, and SaaS ledger invoices in one place.
-                    </p>
-                  </div>
-                  <ChevronRight className="h-5 w-5 text-indigo-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                </Link>
-              </div>
               {/* Platform Statistics */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="bg-white rounded-lg shadow p-6">
@@ -288,9 +297,9 @@ function OverviewPageContent() {
               </button>
             </div>
           )}
-        </div>
+        </ErpPageShell>
       </div>
-    </div>
+    </PageLayout>
   )
 }
 

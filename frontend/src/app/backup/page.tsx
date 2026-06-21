@@ -8,6 +8,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import BackupRestorePanel from '@/components/backup/BackupRestorePanel'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { Database } from 'lucide-react'
@@ -17,6 +19,7 @@ import { safeLogError } from '@/utils/connectionError'
 
 function TenantBackupRestoreContent() {
   const router = useRouter()
+  const pageMeta = usePageMeta()
   const [loading, setLoading] = useState(true)
   const [companyLabel, setCompanyLabel] = useState('')
   const [userRole, setUserRole] = useState<string | null>(null)
@@ -63,15 +66,17 @@ function TenantBackupRestoreContent() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
-      </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+        </div>
+      </PageLayout>
     )
   }
 
   if (!canAccessBackup(userRole)) {
     return (
-      <PageLayout>
+      <PageLayout className="bg-slate-50">
         <div className="flex min-h-[50vh] items-center justify-center px-4 py-8 sm:p-8">
           <div className="max-w-lg rounded-xl border border-gray-200 bg-white p-6 text-center shadow-sm">
             <p className="text-gray-700">
@@ -89,25 +94,18 @@ function TenantBackupRestoreContent() {
   }
 
   return (
-    <PageLayout>
-      <div className="mx-auto max-w-3xl app-scroll-pad">
-        <div className="mb-8 flex items-start gap-3">
-          <div className="rounded-lg bg-blue-100 p-3">
-            <Database className="h-8 w-8 text-blue-700" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">Management</p>
-            <h1 className="text-3xl font-bold text-gray-900">Backup &amp; Restore</h1>
-            <p className="mt-1 text-gray-600">
-              Export or replace the full application data for{' '}
-              <span className="font-semibold text-gray-800">{companyLabel || 'your company'}</span> (schema v2): ERP,
-              forecourt, aquaculture, inventory, payroll, loans, and related records.
-            </p>
-          </div>
-        </div>
-
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        eyebrow={pageMeta.eyebrow}
+        title={pageMeta.title}
+        titleIcon={Database}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+      >
         <BackupRestorePanel scope="tenant" api={api} companyLabel={companyLabel} />
-      </div>
+      </ErpPageShell>
     </PageLayout>
   )
 }

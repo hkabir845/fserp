@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import {
   Plus,
   Edit2,
@@ -167,6 +169,7 @@ function filterCoa(options: CoaPick[], types: string[], subTypes?: string[]) {
 export default function FixedAssetsPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
   const [assets, setAssets] = useState<FixedAsset[]>([])
   const [coaOptions, setCoaOptions] = useState<CoaPick[]>([])
   const [stations, setStations] = useState<Station[]>([])
@@ -486,35 +489,30 @@ export default function FixedAssetsPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-auto app-scroll-pad flex items-center justify-center text-gray-600">
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center text-gray-600">
           Loading fixed assets…
         </div>
-      </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-              <Boxes className="h-8 w-8 text-stone-600" />
-              Fixed Assets & Depreciation
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Asset register with straight-line depreciation and automatic GL journals
-            </p>
-          </div>
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={Boxes}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={handleBatchDepreciate}
               disabled={batchRunning}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20 disabled:opacity-50"
             >
               <RefreshCw className={`h-4 w-4 ${batchRunning ? 'animate-spin' : ''}`} />
               Batch depreciate
@@ -522,14 +520,14 @@ export default function FixedAssetsPage() {
             <button
               type="button"
               onClick={openCreate}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
             >
               <Plus className="h-4 w-4" />
               New asset
             </button>
           </div>
-        </div>
-
+        }
+      >
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="xl:col-span-2 bg-white rounded-lg shadow overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
@@ -1069,7 +1067,7 @@ export default function FixedAssetsPage() {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

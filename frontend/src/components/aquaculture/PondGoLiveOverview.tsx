@@ -10,6 +10,8 @@ import {
   type GoLiveCheck,
   type PondOpeningSummary,
 } from './pondOpeningShared'
+import { aquacultureT } from '@/lib/aquacultureI18n'
+import { useT } from '@/lib/i18n'
 
 type Props = {
   ponds: PondOpeningSummary[]
@@ -17,7 +19,6 @@ type Props = {
   cutoverDate: string
   readyPonds: number
   totalPonds: number
-  message?: string
   onGoToTab: (tab: string, pondId?: number) => void
 }
 
@@ -45,20 +46,24 @@ function CheckRow({ check, onGo }: { check: GoLiveCheck; onGo: () => void }) {
   )
 }
 
-export function PondGoLiveOverview({ ponds, sym, cutoverDate, readyPonds, totalPonds, message, onGoToTab }: Props) {
+export function PondGoLiveOverview({ ponds, sym, cutoverDate, readyPonds, totalPonds, onGoToTab }: Props) {
+  const { lang } = useT()
   const pct = totalPonds > 0 ? Math.round((100 * readyPonds) / totalPonds) : 0
 
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-4">
-        <p className="text-sm font-semibold text-teal-950">Cutover date: {cutoverDate}</p>
+        <p className="text-sm font-semibold text-teal-950">
+          {aquacultureT('goLiveCutoverDateLabel', lang)} {cutoverDate}
+        </p>
         <p className="mt-1 text-xs leading-relaxed text-slate-700">
-          {message ||
-            'Record the state of each pond as of this date. After cutover, day-to-day work uses Sales, Expenses, Feeding, Stock, and Landlords.'}
+          {aquacultureT('goLiveOverviewMessage', lang)}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-4">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ponds ready</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              {aquacultureT('goLivePondsReadyLabel', lang)}
+            </p>
             <p className="text-2xl font-bold tabular-nums text-teal-900">
               {readyPonds}
               <span className="text-base font-medium text-slate-500"> / {totalPonds}</span>
@@ -66,7 +71,9 @@ export function PondGoLiveOverview({ ponds, sym, cutoverDate, readyPonds, totalP
           </div>
           <div className="h-10 w-px bg-teal-200" aria-hidden />
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fleet readiness</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              {aquacultureT('goLiveFleetReadinessLabel', lang)}
+            </p>
             <p className="text-2xl font-bold tabular-nums text-slate-900">{pct}%</p>
           </div>
         </div>

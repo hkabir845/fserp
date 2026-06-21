@@ -3,10 +3,15 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import { Plus, Edit, Trash2, Search, Package, Box, Wrench, Camera, X, Grid3x3, List, ArrowRightLeft, ScrollText } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useT } from '@/lib/i18n'
+import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
+import { useItemsT } from '@/lib/moduleI18n/items'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
@@ -273,6 +278,10 @@ export default function ItemsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const toast = useToast()
+  const pageMeta = usePageMeta()
+  const { t } = useT()
+  const erp = useErpCommonT()
+  const it = useItemsT()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [listPage, setListPage] = useState(1)
@@ -911,12 +920,12 @@ export default function ItemsPage() {
           setItems([])
           setTotalCount(0)
           setListStats(null)
-          toast.error('Unexpected items list format')
+          toast.error(it('unexpectedListFormat'))
         }
       }
     } catch (error) {
       console.error('Error fetching items:', error)
-      toast.error('Failed to load items')
+      toast.error(it('failedLoadItems'))
       setItems([])
       setTotalCount(0)
       setListStats(null)
@@ -940,7 +949,7 @@ export default function ItemsPage() {
 
       // Validate required fields
       if (!formData.name || formData.name.trim() === '') {
-        toast.error('Item name is required')
+        toast.error(it('nameRequired'))
         return
       }
 
@@ -1166,7 +1175,7 @@ export default function ItemsPage() {
       })
 
       if (response.status === 200 || response.status === 201) {
-        toast.success(editingId ? 'Item updated successfully!' : 'Item created successfully!')
+        toast.success(editingId ? it('itemUpdated') : it('itemCreated'))
         setShowModal(false)
         setEditingId(null)
         fetchItems()
@@ -1287,7 +1296,7 @@ export default function ItemsPage() {
       })
 
       if (response.status === 204 || response.status === 200) {
-        toast.success('Item deleted successfully!')
+        toast.success(it('itemDeleted'))
         fetchItems()
       }
     } catch (error: any) {
@@ -1345,7 +1354,7 @@ export default function ItemsPage() {
       const item = items.find((i) => i.id === id)
       if (!item) {
         if (items.length > 0) {
-          toast.error('Item not found.')
+          toast.error(it('itemNotFound'))
           urlEditHydratedIdRef.current = null
           router.replace('/items', { scroll: false })
         }
@@ -1383,13 +1392,13 @@ export default function ItemsPage() {
     // Validate file type
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
     if (!allowedTypes.includes(file.type)) {
-      toast.error('Invalid file type. Please upload a JPEG, PNG, GIF, or WebP image.')
+      toast.error(it('invalidImageType'))
       return
     }
 
     // Validate file size (max 10MB)
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('Image size must be less than 10MB.')
+      toast.error(it('imageTooLarge'))
       return
     }
 
@@ -1413,11 +1422,11 @@ export default function ItemsPage() {
         const apiBaseUrl = getBackendOrigin()
         const fullImageUrl = imageUrl.startsWith('http') ? imageUrl : `${apiBaseUrl}${imageUrl}`
         setImagePreview(fullImageUrl)
-        toast.success('Image uploaded and resized successfully!')
+        toast.success(it('imageUploaded'))
       }
     } catch (error: any) {
       console.error('Error uploading image:', error)
-      toast.error('Failed to upload image. Please try again.')
+      toast.error(it('imageUploadFailed'))
     } finally {
       setUploadingImage(false)
     }
@@ -1512,18 +1521,18 @@ export default function ItemsPage() {
             const apiBaseUrl = getBackendOrigin()
             const fullImageUrl = imageUrl.startsWith('http') ? imageUrl : `${apiBaseUrl}${imageUrl}`
             setImagePreview(fullImageUrl)
-            toast.success('Photo captured and uploaded successfully!')
+            toast.success(it('photoCaptured'))
           }
         } catch (error: any) {
           console.error('Error uploading captured image:', error)
-          toast.error('Failed to upload captured image. Please try again.')
+          toast.error(it('captureUploadFailed'))
         } finally {
           setUploadingImage(false)
         }
       }, 'image/jpeg', 0.9)
     } catch (error: any) {
       console.error('Error capturing photo:', error)
-      toast.error('Failed to capture photo. Please try again.')
+      toast.error(it('captureFailed'))
     }
   }
 
@@ -1698,7 +1707,7 @@ export default function ItemsPage() {
     try {
       const rows = await fetchItemsForExport()
       if (rows.length === 0) {
-        toast.error('No products to print for the current filter.')
+        toast.error(it('noProductsPrint'))
         return
       }
       const vendorLabels = exportOpts.includeSuppliers ? await fetchVendorLabels() : {}
@@ -1712,9 +1721,9 @@ export default function ItemsPage() {
         totalCount,
       )
       const ok = await printHtmlDocument('Product catalog', bodyHtml, branding)
-      if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
+      if (!ok) toast.error(erp('allowPopupsPrint'))
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Print failed'))
+      toast.error(extractErrorMessage(e, it('printFailed')))
     }
   }
 
@@ -1722,7 +1731,7 @@ export default function ItemsPage() {
     try {
       const rows = await fetchItemsForExport()
       if (rows.length === 0) {
-        toast.error('No products to export.')
+        toast.error(it('noProductsExport'))
         return
       }
       const vendorLabels = exportOpts.includeSuppliers ? await fetchVendorLabels() : {}
@@ -1732,7 +1741,7 @@ export default function ItemsPage() {
         buildItemListCsv(payload, exportOpts, currencySymbol),
       )
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Export failed'))
+      toast.error(extractErrorMessage(e, it('exportFailed')))
     }
   }
 
@@ -1740,7 +1749,7 @@ export default function ItemsPage() {
     try {
       const rows = await fetchItemsForExport()
       if (rows.length === 0) {
-        toast.error('No products to export.')
+        toast.error(it('noProductsExport'))
         return
       }
       const vendorLabels = exportOpts.includeSuppliers ? await fetchVendorLabels() : {}
@@ -1749,50 +1758,56 @@ export default function ItemsPage() {
         itemsAsExport(rows, vendorLabels),
       )
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Export failed'))
+      toast.error(extractErrorMessage(e, it('exportFailed')))
     }
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-3xl font-bold text-gray-900">Products & Services</h1>
-            <p className="mt-1 text-gray-600">Manage inventory, non-inventory items, and services</p>
-            {!loading ? (
-              <div className="mt-3 flex max-w-2xl flex-wrap items-stretch gap-2">
-                <div className="min-w-[7.5rem] flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                    Matching items
-                  </p>
-                  <p className="mt-0.5 text-lg font-semibold tabular-nums leading-tight text-slate-900">
-                    {totalCount}
-                  </p>
-                </div>
-                <div
-                  className="min-w-[11rem] flex-[2] rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2 shadow-sm"
-                  title="Total for inventory rows in the current filter. Non-inventory and service items are excluded."
-                >
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-                    On-hand value
-                  </p>
-                  <p className="mt-0.5 truncate text-lg font-semibold tabular-nums leading-tight text-emerald-950">
-                    {currencySymbol}
-                    {formatNumber(filteredOnHandValue, 2)}
-                  </p>
-                </div>
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        titleId="items-title"
+        eyebrow={pageMeta.eyebrow}
+        eyebrowIcon={pageMeta.eyebrow ? Package : undefined}
+        title={pageMeta.title}
+        titleIcon={Package}
+        description={pageMeta.description ?? undefined}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        stats={
+          !loading ? (
+            <div className="flex max-w-2xl flex-wrap items-stretch gap-2">
+              <div className="min-w-[7.5rem] flex-1 rounded-lg border border-white/20 bg-white/10 px-3 py-2 backdrop-blur">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-teal-200/90">
+                  Matching items
+                </p>
+                <p className="mt-0.5 text-lg font-semibold tabular-nums leading-tight text-white">
+                  {totalCount}
+                </p>
               </div>
-            ) : null}
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm max-w-xl w-full shrink-0">
-            <p className="text-sm font-medium text-gray-900 mb-2">Print / download catalog</p>
-            <p className="text-xs text-gray-500 mb-3">
+              <div
+                className="min-w-[11rem] flex-[2] rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 backdrop-blur"
+                title="Total for inventory rows in the current filter. Non-inventory and service items are excluded."
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-200/90">
+                  On-hand value
+                </p>
+                <p className="mt-0.5 truncate text-lg font-semibold tabular-nums leading-tight text-white">
+                  {currencySymbol}
+                  {formatNumber(filteredOnHandValue, 2)}
+                </p>
+              </div>
+            </div>
+          ) : null
+        }
+        actions={
+          <div className="rounded-lg border border-white/20 bg-white/10 p-4 backdrop-blur max-w-xl w-full shrink-0">
+            <p className="text-sm font-medium text-white mb-2">Print / download catalog</p>
+            <p className="text-xs text-teal-100/80 mb-3">
               Choose columns, then print or export up to {REFERENCE_FETCH_LIMIT} products matching your
               current search and type filter.
             </p>
-            <div className="flex flex-wrap gap-x-4 gap-y-2 mb-3 text-sm text-gray-700">
+            <div className="flex flex-wrap gap-x-4 gap-y-2 mb-3 text-sm text-teal-50/90">
               {(
                 [
                   ['includeQty', 'Quantity on hand'],
@@ -1808,7 +1823,7 @@ export default function ItemsPage() {
                     onChange={(e) =>
                       setExportOpts((prev) => ({ ...prev, [key]: e.target.checked }))
                     }
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-white/30 text-teal-400 focus:ring-teal-400"
                   />
                   {label}
                 </label>
@@ -1822,8 +1837,8 @@ export default function ItemsPage() {
               printLabel="Print catalog"
             />
           </div>
-        </div>
-
+        }
+      >
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0">
             <label className="shrink-0 text-sm text-gray-600">
@@ -1864,7 +1879,7 @@ export default function ItemsPage() {
               <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-gray-400" />
               <input
                 type="text"
-                placeholder="Search items..."
+                placeholder={it('searchItems')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
@@ -1916,7 +1931,7 @@ export default function ItemsPage() {
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Plus className="h-5 w-5" />
-              <span>Add Item</span>
+              <span>{it('addItem')}</span>
             </button>
           </div>
         </div>
@@ -1941,7 +1956,7 @@ export default function ItemsPage() {
               className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               <Plus className="h-5 w-5" />
-              <span>Add Item</span>
+              <span>{it('addItem')}</span>
             </button>
           </div>
         ) : (
@@ -3252,8 +3267,8 @@ export default function ItemsPage() {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }
 

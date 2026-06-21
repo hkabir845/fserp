@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { PondWarehouseAddStockModal } from '@/components/aquaculture/PondWarehouseAddStockModal'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import {
   parseAquacultureExpenseRegister,
@@ -354,6 +355,7 @@ function fmtMoney(n: number | null | undefined, digits = 2): string {
 }
 
 export default function PondDetailViewPage() {
+  const pageMeta = usePageMeta()
   const params = useParams()
   const pondIdRaw = params?.pondId
   const pondId = typeof pondIdRaw === 'string' ? pondIdRaw : Array.isArray(pondIdRaw) ? pondIdRaw[0] : ''
@@ -688,7 +690,7 @@ export default function PondDetailViewPage() {
             ) : null}
           </h1>
         ) : (
-          <h1 className="text-xl font-bold text-slate-900">Pond</h1>
+          <h1 className="text-xl font-bold text-slate-900">{pageMeta.title}</h1>
         )}
         <button
           type="button"

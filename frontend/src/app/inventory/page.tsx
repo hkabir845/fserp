@@ -4,7 +4,13 @@ import type { ReactNode } from 'react'
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
+import { useT } from '@/lib/i18n'
+import { inventoryT } from '@/lib/moduleI18n/inventory'
+import type { AppLanguage } from '@/lib/i18n'
 import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import Modal from '@/components/ui/Modal'
 import {
   ArrowRight,
@@ -358,6 +364,7 @@ function renderTransferEndpointOptions(
   other: TransferEndpoint | null,
   userHomeStation: { id: number; name: string } | null,
   side: 'from' | 'to',
+  lang: AppLanguage,
 ): ReactNode {
   const stationNodes = stations.map(s => {
     const endpoint: TransferEndpoint = { kind: 'station', id: s.id }
@@ -385,7 +392,7 @@ function renderTransferEndpointOptions(
               value={transferEndpointKey(endpoint)}
               disabled={sameAsOther || homeLocked}
             >
-              {p.name} (pond warehouse)
+              {p.name}{inventoryT('pondWarehouseSuffix', lang)}
             </option>
           )
         })
@@ -393,26 +400,26 @@ function renderTransferEndpointOptions(
 
   return (
     <>
-      {stations.length ? <optgroup label="Sites">{stationNodes}</optgroup> : null}
-      {pondNodes ? <optgroup label="Pond warehouses">{pondNodes}</optgroup> : null}
+      {stations.length ? <optgroup label={inventoryT('sitesOptgroup', lang)}>{stationNodes}</optgroup> : null}
+      {pondNodes ? <optgroup label={inventoryT('pondWarehousesOptgroup', lang)}>{pondNodes}</optgroup> : null}
     </>
   )
 }
 
-function interStationTransferImpactSummary(t: TransferRecord): string {
+function interStationTransferImpactSummary(t: TransferRecord, lang: AppLanguage): string {
   if (t.status === 'draft') {
-    return 'Draft — station bins unchanged until you post. No GL.'
+    return inventoryT('impactDraft', lang)
   }
   const je = t.auto_journal_entry_number?.trim() || `AUTO-ISTR-${t.id}`
-  return `Posted — stock left the source bin and was added at the destination; journal ${je} (inventory asset unchanged). Roll back only if the destination still has the quantities.`
+  return inventoryT('impactPosted', lang, { je })
 }
 
-function pondWarehouseReceiptImpactSummary(): string {
-  return 'Completed — shop bin −qty, pond warehouse +qty; no GL. Reverse only if the pond still holds these items (not consumed).'
+function pondWarehouseReceiptImpactSummary(lang: AppLanguage): string {
+  return inventoryT('impactPondReceipt', lang)
 }
 
-function pondWarehouseReturnImpactSummary(): string {
-  return 'Completed — pond warehouse −qty, shop bin +qty; no GL. Reverse only if the shop still holds these items.'
+function pondWarehouseReturnImpactSummary(lang: AppLanguage): string {
+  return inventoryT('impactPondReturn', lang)
 }
 
 type ConfirmAction =
@@ -464,6 +471,9 @@ function InventoryContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const toast = useToast()
+  const pageMeta = usePageMeta()
+  const { language } = useCompanyLocale()
+  const { t } = useT()
 
   const tabParam = (searchParams.get('tab') || 'transfers').toLowerCase()
   const [tab, setTab] = useState<'transfers' | 'lookup'>(tabParam === 'lookup' ? 'lookup' : 'transfers')
@@ -690,7 +700,7 @@ function InventoryContent() {
       }
     } catch (e) {
       console.error(e)
-      toast.error('Failed to load inventory data')
+      toast.error(inventoryT('toastLoadFailed', language))
     } finally {
       setLoading(false)
     }
@@ -751,7 +761,7 @@ function InventoryContent() {
         const r = await api.get('/inventory/availability/', { params: { item_id: itemId } })
         setAvailability(r.data as AvailabilityResponse)
       } catch (e) {
-        toast.error(extractErrorMessage(e, 'Could not load availability'))
+        toast.error(extractErrorMessage(e, inventoryT('toastLoadAvailabilityFailed', language)))
       } finally {
         setLookupLoading(false)
       }
@@ -850,7 +860,7 @@ function InventoryContent() {
           if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return
           setItemAvail(prev => ({
             ...prev,
-            [id]: { status: 'error', message: extractErrorMessage(e, 'Could not load stock') },
+            [id]: { status: 'error', message: extractErrorMessage(e, inventoryT('toastLoadStockFailed', language)) },
           }))
         }
       }),
@@ -862,55 +872,55 @@ function InventoryContent() {
     const issues: string[] = []
     const route = classifyTransferRoute(fromEndpoint, toEndpoint)
     if (!fromEndpoint || !toEndpoint) {
-      issues.push('Select both a source and a destination.')
+      issues.push(inventoryT('issueSelectBoth', language))
       return issues
     }
     if (transferEndpointsEqual(fromEndpoint, toEndpoint)) {
-      issues.push('Source and destination must be different.')
+      issues.push(inventoryT('issueSourceDestDifferent', language))
       return issues
     }
     if (editingInterStationTransferId != null && route !== 'station-station') {
-      issues.push('Draft edits are only for site-to-site transfers.')
+      issues.push(inventoryT('issueDraftEditOnly', language))
       return issues
     }
     if (amendingPostedTransferId != null && route !== 'station-station') {
-      issues.push('Posted transfer edits are only for site-to-site moves.')
+      issues.push(inventoryT('issuePostedEditOnly', language))
       return issues
     }
     if (editingPondReceiptId != null && route !== 'station-pond') {
-      issues.push('Receipt edits are only for shop → pond warehouse moves.')
+      issues.push(inventoryT('issueReceiptEditOnly', language))
       return issues
     }
     if (route === 'pond-station' && !canMoveToPondWarehouse) {
-      issues.push('Enable aquaculture and add ponds to return stock from pond warehouses to shop.')
+      issues.push(inventoryT('issueEnablePondsReturn', language))
       return issues
     }
     if (route === 'station-station' && !canTransferBetweenSites) {
-      issues.push('At least two active sites are required for site-to-site draft transfers.')
+      issues.push(inventoryT('issueTwoSitesRequired', language))
       return issues
     }
     if (route === 'station-pond' && !canMoveToPondWarehouse) {
-      issues.push('Enable aquaculture and add ponds to move stock into pond warehouses.')
+      issues.push(inventoryT('issueEnablePondsMove', language))
       return issues
     }
     if (route === 'pond-pond' && activePondsOrdered.length < 2) {
-      issues.push('At least two ponds are required for pond-to-pond warehouse moves.')
+      issues.push(inventoryT('issueTwoPondsRequired', language))
       return issues
     }
     const validLines = lineRows
       .map((r, i) => ({ ...r, i, q: parseQtyInput(r.quantity) }))
       .filter(x => x.item_id > 0)
     if (!validLines.length) {
-      issues.push('Add at least one product with a quantity greater than zero (zero is not allowed).')
+      issues.push(inventoryT('issueAddProduct', language))
     }
     for (const row of validLines) {
       if (!Number.isFinite(row.q) || row.q <= 0) {
-        issues.push(`Line ${row.i + 1}: enter a quantity greater than zero.`)
+        issues.push(inventoryT('issueLineQty', language, { n: row.i + 1 }))
         continue
       }
       const st = itemAvail[row.item_id]
       if (!st || st.status === 'loading') {
-        issues.push(`Line ${row.i + 1}: loading stock for this product…`)
+        issues.push(inventoryT('issueLineLoading', language, { n: row.i + 1 }))
         continue
       }
       if (st.status === 'error') {
@@ -919,14 +929,14 @@ function InventoryContent() {
       }
       if (st.status !== 'ok') {
         if (st.status === 'idle') {
-          issues.push(`Line ${row.i + 1}: stock for this product is not loaded yet — use Refresh quantities.`)
+          issues.push(inventoryT('issueLineNotLoaded', language, { n: row.i + 1 }))
         }
         continue
       }
       const data = st.data
       if (!data.tracks_per_station) {
         issues.push(
-          `Line ${row.i + 1}: "${data.name}" cannot be moved here (fuel / not tracked in shop bins).`,
+          inventoryT('issueLineNotMovable', language, { n: row.i + 1, name: data.name }),
         )
         continue
       }
@@ -942,19 +952,31 @@ function InventoryContent() {
       const effectiveAtSource = qtyNum + credit
       const maxForLine = effectiveAtSource - others
       if (effectiveAtSource <= 0 && row.q > 0) {
-        issues.push(
-          `Line ${row.i + 1}: no stock at source for this product — receive or adjust stock before transferring.`,
-        )
+        issues.push(inventoryT('issueLineNoStock', language, { n: row.i + 1 }))
       } else if (row.q > maxForLine + 1e-9) {
+        const creditPart =
+          credit > 0
+            ? inventoryT('creditWhenUpdated', language, {
+                qty: credit.toLocaleString(),
+                unit,
+              })
+            : ''
+        const othersPart =
+          others > 0
+            ? inventoryT('othersOnLines', language, {
+                qty: others.toLocaleString(),
+                unit,
+              })
+            : ''
         issues.push(
-          `Line ${row.i + 1}: quantity exceeds what you can send (${effectiveAtSource.toLocaleString()} ${unit} at source` +
-            (credit > 0
-              ? ` including ${credit.toLocaleString()} ${unit} returned when this transfer is updated`
-              : '') +
-            (others > 0
-              ? `; ${others.toLocaleString()} ${unit} already on other lines for this SKU`
-              : '') +
-            `; max for this line ${Math.max(0, maxForLine).toLocaleString()} ${unit}).`,
+          inventoryT('issueLineExceeds', language, {
+            n: row.i + 1,
+            atSource: effectiveAtSource.toLocaleString(),
+            unit,
+            credit: creditPart,
+            others: othersPart,
+            max: Math.max(0, maxForLine).toLocaleString(),
+          }),
         )
       }
     }
@@ -972,6 +994,7 @@ function InventoryContent() {
     canTransferBetweenSites,
     canMoveToPondWarehouse,
     activePondsOrdered.length,
+    language,
   ])
 
   const applyMaxQty = useCallback(
@@ -1091,11 +1114,11 @@ function InventoryContent() {
 
   const submitTransferDraft = async () => {
     if (transferDraftIssues.length > 0) {
-      toast.error(transferDraftIssues[0] || 'Fix the form before saving.')
+      toast.error(transferDraftIssues[0] || inventoryT('toastFixForm', language))
       return
     }
     if (!fromEndpoint || !toEndpoint) {
-      toast.error('Select a source and destination.')
+      toast.error(inventoryT('toastSelectSourceDest', language))
       return
     }
     const route = classifyTransferRoute(fromEndpoint, toEndpoint)
@@ -1107,7 +1130,7 @@ function InventoryContent() {
       }))
       .filter(r => r.item_id > 0 && Number.isFinite(r.q) && r.q > 0)
     if (!lines.length) {
-      toast.error('Add at least one line with an item and positive quantity')
+      toast.error(inventoryT('toastAddLine', language))
       return
     }
     setSaving(true)
@@ -1124,8 +1147,8 @@ function InventoryContent() {
         })
         toast.success(
           amendingPostedTransferId != null
-            ? 'Transfer updated — both sites adjusted and journal refreshed.'
-            : 'Draft updated.',
+            ? inventoryT('toastTransferUpdatedSites', language)
+            : inventoryT('toastDraftUpdated', language),
         )
         setEditingInterStationTransferId(null)
         setAmendingPostedTransferId(null)
@@ -1137,24 +1160,24 @@ function InventoryContent() {
           memo: transferMemo || '',
           lines: linePayload,
         })
-        toast.success('Transfer draft created. Post it to move stock.')
+        toast.success(inventoryT('toastDraftCreated', language))
       } else if (route === 'station-pond' && editingPondReceiptId != null) {
         await api.put(`/inventory/pond-warehouse-receipts/${editingPondReceiptId}/`, {
           station_id: fromEndpoint.id,
           pond_id: toEndpoint.id,
           items: linePayload,
         })
-        toast.success('Pond receipt updated — shop and pond warehouse quantities adjusted.')
+        toast.success(inventoryT('toastPondReceiptUpdated', language))
         setEditingPondReceiptId(null)
       } else if (route === 'station-pond') {
         const pm = activePondsOrdered.find(p => p.id === toEndpoint.id)
-        const pname = (pm?.name || '').trim() || `Pond #${toEndpoint.id}`
+        const pname = (pm?.name || '').trim() || inventoryT('pondNum', language, { id: toEndpoint.id })
         await api.post('/aquaculture/pond-warehouse-transfer/', {
           station_id: fromEndpoint.id,
           pond_id: toEndpoint.id,
           items: linePayload,
         })
-        toast.success(`Stock moved to ${pname} warehouse (immediate — no draft).`)
+        toast.success(inventoryT('toastStockMovedToPond', language, { name: pname }))
       } else if (route === 'pond-pond') {
         await api.post('/aquaculture/pond-warehouse-inter-pond-transfers/', {
           from_pond_id: fromEndpoint.id,
@@ -1162,21 +1185,21 @@ function InventoryContent() {
           items: linePayload,
           memo: transferMemo || '',
         })
-        toast.success('Stock moved between pond warehouses (immediate — no draft).')
+        toast.success(inventoryT('toastPondMoved', language))
       } else if (route === 'pond-station') {
         const sm = activeStations.find(s => s.id === toEndpoint.id)
-        const sname = (sm && formatStationTransferLabel(sm)) || `Site #${toEndpoint.id}`
+        const sname = (sm && formatStationTransferLabel(sm)) || inventoryT('siteNum', language, { id: toEndpoint.id })
         const pm = activePondsOrdered.find(p => p.id === fromEndpoint.id)
-        const pname = (pm?.name || '').trim() || `Pond #${fromEndpoint.id}`
+        const pname = (pm?.name || '').trim() || inventoryT('pondNum', language, { id: fromEndpoint.id })
         await api.post('/aquaculture/pond-warehouse-return/', {
           station_id: toEndpoint.id,
           pond_id: fromEndpoint.id,
           items: linePayload,
           memo: transferMemo || '',
         })
-        toast.success(`Stock returned from ${pname} warehouse to ${sname}.`)
+        toast.success(inventoryT('toastStockReturned', language, { pond: pname, site: sname }))
       } else {
-        toast.error('This transfer route is not supported.')
+        toast.error(inventoryT('toastRouteNotSupported', language))
         return
       }
       setLineRows([{ item_id: 0, quantity: '' }])
@@ -1190,8 +1213,8 @@ function InventoryContent() {
           editingInterStationTransferId != null ||
           amendingPostedTransferId != null ||
           editingPondReceiptId != null
-            ? 'Could not update transfer'
-            : 'Could not create transfer',
+            ? inventoryT('toastUpdateFailed', language)
+            : inventoryT('toastCreateFailed', language),
         ),
       )
     } finally {
@@ -1203,10 +1226,10 @@ function InventoryContent() {
     setTransferPostingId(id)
     try {
       await api.post(`/inventory/transfers/${id}/`)
-      toast.success('Transfer posted')
+      toast.success(inventoryT('toastPosted', language))
       await refreshAfterInventoryChange()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not post transfer'))
+      toast.error(extractErrorMessage(e, inventoryT('toastPostFailed', language)))
     } finally {
       setTransferPostingId(null)
     }
@@ -1216,10 +1239,10 @@ function InventoryContent() {
     setTransferDeletingId(id)
     try {
       await api.delete(`/inventory/transfers/${id}/delete/`)
-      toast.success('Draft deleted')
+      toast.success(inventoryT('toastDraftDeleted', language))
       await refreshAfterInventoryChange()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not delete'))
+      toast.error(extractErrorMessage(e, inventoryT('toastDeleteFailed', language)))
     } finally {
       setTransferDeletingId(null)
     }
@@ -1229,10 +1252,10 @@ function InventoryContent() {
     setTransferUnpostingId(id)
     try {
       await api.post(`/inventory/transfers/${id}/unpost/`)
-      toast.success('Transfer rolled back to draft')
+      toast.success(inventoryT('toastRolledBack', language))
       await refreshAfterInventoryChange()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not roll back transfer'))
+      toast.error(extractErrorMessage(e, inventoryT('toastRollBackFailed', language)))
     } finally {
       setTransferUnpostingId(null)
     }
@@ -1243,14 +1266,14 @@ function InventoryContent() {
     try {
       if (pondMovementIsReturn(r)) {
         await api.post(`/inventory/pond-warehouse-returns/${r.id}/reverse/`)
-        toast.success('Pond warehouse return reversed')
+        toast.success(inventoryT('toastReturnReversed', language))
       } else {
         await api.post(`/inventory/pond-warehouse-receipts/${r.id}/reverse/`)
-        toast.success('Pond warehouse receipt reversed')
+        toast.success(inventoryT('toastReceiptReversed', language))
       }
       await refreshAfterInventoryChange()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not reverse move'))
+      toast.error(extractErrorMessage(e, inventoryT('toastReverseFailed', language)))
     } finally {
       setPondReceiptReversingId(null)
     }
@@ -1375,85 +1398,80 @@ function InventoryContent() {
   }
 
   const confirmCopy = useMemo(() => {
-    if (!confirmAction) return { title: '', body: '', confirmLabel: 'Confirm', danger: false }
+    if (!confirmAction) return { title: '', body: '', confirmLabel: inventoryT('confirm', language), danger: false }
     switch (confirmAction.kind) {
       case 'post':
         return {
-          title: 'Post transfer?',
-          body: 'Stock will move between sites and an automatic journal entry will be created.',
-          confirmLabel: 'Post transfer',
+          title: inventoryT('postTransferTitle', language),
+          body: inventoryT('postTransferBody', language),
+          confirmLabel: inventoryT('postTransferLabel', language),
           danger: false,
         }
       case 'delete':
         return {
-          title: 'Delete draft?',
-          body: 'This draft transfer will be permanently removed. This cannot be undone.',
-          confirmLabel: 'Delete draft',
+          title: inventoryT('deleteDraftConfirmTitle', language),
+          body: inventoryT('deleteDraftBody', language),
+          confirmLabel: inventoryT('deleteDraftLabel', language),
           danger: true,
         }
       case 'unpost':
         return {
-          title: 'Roll back transfer?',
-          body: 'Stock returns to the source site, the automatic GL entry is removed, and the record becomes a draft again.',
-          confirmLabel: 'Roll back',
+          title: inventoryT('rollBackTitle', language),
+          body: inventoryT('rollBackBody', language),
+          confirmLabel: inventoryT('rollBackLabel', language),
           danger: true,
         }
       case 'reverse':
         return confirmAction.movementType === 'pond_to_shop'
           ? {
-              title: 'Reverse pond → shop move?',
-              body: 'Quantities move back to the pond warehouse only if the shop still has enough on hand.',
-              confirmLabel: 'Reverse return',
+              title: inventoryT('reversePondShopTitle', language),
+              body: inventoryT('reversePondShopBody', language),
+              confirmLabel: inventoryT('reverseReturnLabel', language),
               danger: true,
             }
           : {
-              title: 'Reverse shop → pond receipt?',
-              body: 'Quantities move back to the shop site only if the pond still has enough on hand.',
-              confirmLabel: 'Reverse receipt',
+              title: inventoryT('reverseShopPondTitle', language),
+              body: inventoryT('reverseShopPondBody', language),
+              confirmLabel: inventoryT('reverseReceiptLabel', language),
               danger: true,
             }
       default:
-        return { title: '', body: '', confirmLabel: 'Confirm', danger: false }
+        return { title: '', body: '', confirmLabel: inventoryT('confirm', language), danger: false }
     }
-  }, [confirmAction])
+  }, [confirmAction, language])
 
   return (
-    <PageLayout containScroll>
+    <PageLayout containScroll className="bg-slate-50">
       <div className="flex h-full min-h-0 flex-col">
         <div className="shrink-0 app-scroll-pad pb-3">
-          <div className="mx-auto w-full max-w-7xl space-y-6">
-          <header className="space-y-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Inventory operations
-                </p>
-                <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                  Inventory &amp; transfers
-                </h1>
-                <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                  Move shop stock between sites, send feed and supplies into pond warehouses, and check
-                  quantities by location. Fuel stays in tanks; product master data lives under Products.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
+          <ErpPageShell
+            flush
+            showBackLink={false}
+            eyebrow={pageMeta.eyebrow ?? inventoryT('inventoryEyebrow', language)}
+            title={pageMeta.title}
+            titleIcon={Package}
+            description={pageMeta.description}
+            maxWidthClass="max-w-[1600px]"
+            contentClassName="mt-4"
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
                 <Link
                   href="/items"
-                  className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-muted/60"
+                  className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-white/20"
                 >
                   <Package className="h-4 w-4" />
-                  Products
+                  {inventoryT('productsLink', language)}
                 </Link>
                 <Link
                   href="/cashier"
-                  className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-muted/60"
+                  className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-white/20"
                 >
                   <ArrowRightLeft className="h-4 w-4" />
-                  Cashier
+                  {inventoryT('cashierLink', language)}
                 </Link>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-muted/60 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-white/20 disabled:opacity-50"
                   onClick={() => void loadCore()}
                   disabled={loading}
                 >
@@ -1462,65 +1480,64 @@ function InventoryContent() {
                   ) : (
                     <RefreshCw className="h-4 w-4" />
                   )}
-                  Refresh
+                  {t('refresh')}
                 </button>
               </div>
-            </div>
-
-            {!loading ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard
-                  label="Active sites"
-                  value={activeStationCount}
-                  hint={
-                    stationMode === 'single'
-                      ? 'Single-site company preference'
-                      : 'Multi-site operations enabled'
-                  }
-                  icon={Building2}
-                />
-                <StatCard
-                  label="Draft transfers"
-                  value={transferStats.draftCount}
-                  hint="Awaiting post to move stock"
-                  icon={FileEdit}
-                  accent="amber"
-                />
-                <StatCard
-                  label="Posted transfers"
-                  value={transferStats.postedCount}
-                  hint="Completed inter-site moves"
-                  icon={CheckCircle2}
-                  accent="emerald"
-                />
-                {aquacultureEnabled ? (
+            }
+            stats={
+              !loading ? (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <StatCard
-                    label="Pond receipts"
-                    value={transferStats.pondReceiptCount}
-                    hint="Shop → pond warehouse moves"
-                    icon={Sprout}
-                    accent="teal"
+                    label={inventoryT('activeSites', language)}
+                    value={activeStationCount}
+                    hint={
+                      stationMode === 'single'
+                        ? inventoryT('singleSiteHint', language)
+                        : inventoryT('multiSiteHint', language)
+                    }
+                    icon={Building2}
                   />
-                ) : (
                   <StatCard
-                    label="Tracked products"
-                    value={catalogItems.length}
-                    hint="Same catalog as Products & Services"
-                    icon={Package}
+                    label={inventoryT('draftTransfers', language)}
+                    value={transferStats.draftCount}
+                    hint={inventoryT('draftTransfersHint', language)}
+                    icon={FileEdit}
+                    accent="amber"
                   />
-                )}
-              </div>
-            ) : null}
-          </header>
-
+                  <StatCard
+                    label={inventoryT('postedTransfers', language)}
+                    value={transferStats.postedCount}
+                    hint={inventoryT('postedTransfersHint', language)}
+                    icon={CheckCircle2}
+                    accent="emerald"
+                  />
+                  {aquacultureEnabled ? (
+                    <StatCard
+                      label={inventoryT('pondReceipts', language)}
+                      value={transferStats.pondReceiptCount}
+                      hint={inventoryT('pondReceiptsHint', language)}
+                      icon={Sprout}
+                      accent="teal"
+                    />
+                  ) : (
+                    <StatCard
+                      label={inventoryT('trackedProducts', language)}
+                      value={catalogItems.length}
+                      hint={inventoryT('trackedProductsHint', language)}
+                      icon={Package}
+                    />
+                  )}
+                </div>
+              ) : undefined
+            }
+          >
           {userHomeStation && (
             <div className="flex items-start gap-3 rounded-xl border border-sky-200/90 bg-gradient-to-r from-sky-50/95 to-card px-4 py-3 text-sm text-sky-950 shadow-sm dark:border-sky-800/60 dark:from-sky-950/30 dark:to-card dark:text-sky-100">
               <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
               <div>
-                <p className="font-medium">Your site: {userHomeStation.name}</p>
+                <p className="font-medium">{inventoryT('yourSite', language)} {userHomeStation.name}</p>
                 <p className="mt-1 text-sky-900/90 dark:text-sky-200/90">
-                  Transfers list only moves involving {userHomeStation.name}. Send from is fixed to your home
-                  site; choose any other site or pond warehouse as the destination (same list on both sides).
+                  {inventoryT('yourSiteHint', language, { site: userHomeStation.name })}
                 </p>
               </div>
             </div>
@@ -1529,7 +1546,7 @@ function InventoryContent() {
           <div
             className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-muted/50 p-1 shadow-sm"
             role="tablist"
-            aria-label="Inventory views"
+            aria-label={inventoryT('inventoryViews', language)}
           >
             <button
               type="button"
@@ -1543,7 +1560,7 @@ function InventoryContent() {
               }`}
             >
               <ArrowRightLeft className="h-4 w-4 shrink-0" />
-              Transfers
+              {inventoryT('tabTransfers', language)}
               {!loading && transferStats.draftCount > 0 ? (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
                   {transferStats.draftCount}
@@ -1562,42 +1579,42 @@ function InventoryContent() {
               }`}
             >
               <Search className="h-4 w-4 shrink-0" />
-              Stock by station
+              {inventoryT('tabStockByStation', language)}
             </button>
             <Link
               href="/inventory/adjustments"
               className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-background/80 hover:text-foreground"
             >
               <SlidersHorizontal className="h-4 w-4 shrink-0" />
-              Stock adjustments
+              {inventoryT('tabAdjustments', language)}
             </Link>
           </div>
-          </div>
+          </ErpPageShell>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <div className="app-scroll-pad pt-0">
-            <div className="mx-auto w-full max-w-7xl space-y-6">
+            <div className="mx-auto w-full max-w-[1600px] space-y-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-border bg-card px-10 py-16 text-center shadow-sm">
               <Loader2 className="h-10 w-10 animate-spin text-primary" />
               <div>
-                <p className="text-sm font-medium text-foreground">Loading inventory</p>
-                <p className="mt-1 text-xs text-muted-foreground">Sites, products, and transfer history</p>
+                <p className="text-sm font-medium text-foreground">{inventoryT('loadingInventory', language)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{inventoryT('loadingInventoryHint', language)}</p>
               </div>
             </div>
           ) : tab === 'lookup' ? (
             <div className="space-y-6 rounded-2xl border border-border bg-card p-5 shadow-md ring-1 ring-black/5 dark:ring-white/10 sm:p-7">
               <div>
-                <h2 className="text-lg font-semibold tracking-tight">Availability by location</h2>
+                <h2 className="text-lg font-semibold tracking-tight">{inventoryT('availabilityByLocation', language)}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Pick a product to see shop bins by site and pond warehouse quantities.
+                  {inventoryT('availabilityHint', language)}
                 </p>
               </div>
               <div className="grid gap-3 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.5fr)_auto] lg:items-end">
                 <div className="min-w-0">
                   <label className="text-sm font-medium" htmlFor="inv-lookup-type">
-                    Type
+                    {inventoryT('type', language)}
                   </label>
                   <select
                     id="inv-lookup-type"
@@ -1607,14 +1624,14 @@ function InventoryContent() {
                   >
                     {(['ALL', 'INVENTORY', 'NON_INVENTORY', 'SERVICE'] as const).map(type => (
                       <option key={type} value={type}>
-                        {type === 'ALL' ? 'All types' : type.replace('_', ' ')}
+                        {type === 'ALL' ? inventoryT('allTypes', language) : type.replace('_', ' ')}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="min-w-0">
                   <label className="text-sm font-medium" htmlFor="inv-lookup-item">
-                    Product
+                    {inventoryT('product', language)}
                   </label>
                   <CatalogItemCombobox
                     id="inv-lookup-item"
@@ -1628,13 +1645,16 @@ function InventoryContent() {
                       router.replace(`/inventory?${q.toString()}`, { scroll: false })
                     }}
                     items={filteredLookupItems}
-                    emptyLabel="— Select a product —"
-                    placeholder="Search products & services…"
+                    emptyLabel={inventoryT('selectProductDash', language)}
+                    placeholder={inventoryT('searchProducts', language)}
                     className={selectClassName + ' mt-1'}
                     includeSelectedWhenFilteredOut
                   />
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {typeFilteredCatalogItems.length} of {catalogItems.length} products
+                    {inventoryT('productsOfTotal', language, {
+                      count: typeFilteredCatalogItems.length,
+                      total: catalogItems.length,
+                    })}
                     {lookupTypeFilter !== 'ALL' ? ` · ${lookupTypeFilter.replace('_', ' ').toLowerCase()}` : ''}
                   </p>
                 </div>
@@ -1648,7 +1668,7 @@ function InventoryContent() {
                   disabled={lookupLoading}
                 >
                   {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  Refresh
+                  {inventoryT('refresh', language)}
                 </button>
               </div>
 
@@ -1661,9 +1681,9 @@ function InventoryContent() {
               {!lookupLoading && !availability && (
                 <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-muted/20 px-6 py-10 text-center">
                   <Package className="mx-auto h-10 w-10 text-muted-foreground/70" />
-                  <p className="mt-3 text-sm font-medium text-foreground">Select a product to view stock</p>
+                  <p className="mt-3 text-sm font-medium text-foreground">{inventoryT('selectProductView', language)}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Filter by type, then search by name, SKU, or description — same catalog as Products &amp; Services.
+                    {inventoryT('selectProductViewHint', language)}
                   </p>
                 </div>
               )}
@@ -1675,9 +1695,9 @@ function InventoryContent() {
                       <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
                       <div>
                         <p className="font-semibold">{availability.name}</p>
-                        <p className="mt-1">{availability.message || 'Not tracked per station.'}</p>
+                        <p className="mt-1">{availability.message || inventoryT('notTrackedPerStation', language)}</p>
                         <p className="mt-2 text-xs text-amber-900/80 dark:text-amber-200/80">
-                          Fuel is managed under Tanks. Other non-bin items are adjusted elsewhere.
+                          {inventoryT('fuelManagedHint', language)}
                         </p>
                       </div>
                     </div>
@@ -1685,34 +1705,34 @@ function InventoryContent() {
                     <>
                       <div className="rounded-xl border border-border/80 bg-gradient-to-br from-muted/30 to-card p-4 shadow-sm">
                         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          Company total
+                          {inventoryT('companyTotal', language)}
                         </p>
                         <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
                           {availability.total_on_hand}{' '}
                           <span className="text-base font-medium text-muted-foreground">
-                            {availability.unit || 'units'}
+                            {availability.unit || inventoryT('units', language)}
                           </span>
                         </p>
                       </div>
                       <div className="grid gap-4 xl:grid-cols-2">
                         <div className="overflow-hidden rounded-xl border border-border">
                           <div className="border-b border-border bg-muted/40 px-4 py-3">
-                            <h3 className="text-sm font-semibold">Shop sites</h3>
-                            <p className="text-xs text-muted-foreground">Per-site bin quantities</p>
+                            <h3 className="text-sm font-semibold">{inventoryT('shopSites', language)}</h3>
+                            <p className="text-xs text-muted-foreground">{inventoryT('perSiteBins', language)}</p>
                           </div>
                           <div className="overflow-x-auto">
                             <table className="w-full min-w-[320px] text-sm">
                               <thead className="bg-muted/30 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                                 <tr>
-                                  <th className="px-4 py-2.5">Site</th>
-                                  <th className="px-4 py-2.5 text-right">Quantity</th>
+                                  <th className="px-4 py-2.5">{inventoryT('site', language)}</th>
+                                  <th className="px-4 py-2.5 text-right">{inventoryT('quantity', language)}</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {availability.stations.length === 0 ? (
                                   <tr>
                                     <td colSpan={2} className="px-4 py-8 text-center text-muted-foreground">
-                                      No per-site rows yet
+                                      {inventoryT('noPerSiteRows', language)}
                                     </td>
                                   </tr>
                                 ) : (
@@ -1735,7 +1755,7 @@ function InventoryContent() {
                                           </span>
                                           {isMySite ? (
                                             <span className="ml-2 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
-                                              Your site
+                                              {inventoryT('yourSiteBadge', language)}
                                             </span>
                                           ) : null}
                                         </td>
@@ -1755,18 +1775,18 @@ function InventoryContent() {
                           <div className="overflow-hidden rounded-xl border border-teal-200/80 dark:border-teal-900/40">
                             <div className="border-b border-teal-200/70 bg-teal-50/90 px-4 py-3 dark:border-teal-900/40 dark:bg-teal-950/35">
                               <h3 className="text-sm font-semibold text-teal-950 dark:text-teal-100">
-                                Pond warehouses
+                                {inventoryT('pondWarehouses', language)}
                               </h3>
                               <p className="text-xs text-teal-800/80 dark:text-teal-200/80">
-                                Used by aquaculture feeding and pond operations
+                                {inventoryT('pondWarehousesHint', language)}
                               </p>
                             </div>
                             <div className="overflow-x-auto">
                               <table className="w-full min-w-[320px] text-sm">
                                 <thead className="bg-teal-50/60 text-left text-xs font-medium uppercase tracking-wide text-teal-900/70 dark:bg-teal-950/25 dark:text-teal-200/70">
                                   <tr>
-                                    <th className="px-4 py-2.5">Pond</th>
-                                    <th className="px-4 py-2.5 text-right">Quantity</th>
+                                    <th className="px-4 py-2.5">{inventoryT('pond', language)}</th>
+                                    <th className="px-4 py-2.5 text-right">{inventoryT('quantity', language)}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -1791,9 +1811,9 @@ function InventoryContent() {
                           <div className="flex items-center justify-center rounded-xl border border-dashed border-muted-foreground/30 bg-muted/15 px-6 py-10 text-center">
                             <div>
                               <Sprout className="mx-auto h-8 w-8 text-muted-foreground/60" />
-                              <p className="mt-2 text-sm font-medium text-foreground">No pond warehouse stock</p>
+                              <p className="mt-2 text-sm font-medium text-foreground">{inventoryT('noPondWarehouseStock', language)}</p>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                Transfer from a site under the Transfers tab, or stock was already consumed.
+                                {inventoryT('noPondWarehouseStockHint', language)}
                               </p>
                             </div>
                           </div>
@@ -1809,17 +1829,17 @@ function InventoryContent() {
               {!canShowTransferForm ? (
                 <div className="rounded-2xl border border-dashed border-muted-foreground/35 bg-muted/20 p-6 text-center shadow-sm sm:p-8">
                   <ArrowRightLeft className="mx-auto h-10 w-10 text-muted-foreground/60" />
-                  <h2 className="mt-3 text-lg font-semibold text-foreground">Transfers not available</h2>
+                  <h2 className="mt-3 text-lg font-semibold text-foreground">{inventoryT('transfersNotAvailable', language)}</h2>
                   <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-                    Add active sites and/or ponds under Sites and Aquaculture to move stock between locations.
+                    {inventoryT('transfersNotAvailableHintAlt', language)}
                   </p>
                   <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                     <Link href="/stations" className={btnSecondary}>
                       <Building2 className="h-4 w-4" />
-                      Manage sites
+                      {inventoryT('manageSites', language)}
                     </Link>
                     <Link href="/company" className={btnSecondary}>
-                      Company settings
+                      {inventoryT('companySettings', language)}
                     </Link>
                   </div>
                 </div>
@@ -1833,38 +1853,41 @@ function InventoryContent() {
                       <div>
                         <h2 className="text-lg font-semibold tracking-tight">
                           {editingPondReceiptId != null
-                            ? `Edit pond receipt ${
-                                pondReceipts.find(x => x.id === editingPondReceiptId)?.receipt_number ||
-                                `PWR-${editingPondReceiptId}`
-                              }`
+                            ? inventoryT('editPondReceipt', language, {
+                                num:
+                                  pondReceipts.find(x => x.id === editingPondReceiptId)?.receipt_number ||
+                                  `PWR-${editingPondReceiptId}`,
+                              })
                             : amendingPostedTransferId != null
-                              ? `Edit posted ${
-                                  transfers.find(x => x.id === amendingPostedTransferId)?.transfer_number ||
-                                  `TR-${amendingPostedTransferId}`
-                                }`
+                              ? inventoryT('editPostedTransfer', language, {
+                                  num:
+                                    transfers.find(x => x.id === amendingPostedTransferId)?.transfer_number ||
+                                    `TR-${amendingPostedTransferId}`,
+                                })
                               : editingInterStationTransferId != null
-                                ? `Edit draft ${
-                                    transfers.find(x => x.id === editingInterStationTransferId)?.transfer_number ||
-                                    `TR-${editingInterStationTransferId}`
-                                  }`
-                                : 'New stock transfer'}
+                                ? inventoryT('editDraftTransfer', language, {
+                                    num:
+                                      transfers.find(x => x.id === editingInterStationTransferId)?.transfer_number ||
+                                      `TR-${editingInterStationTransferId}`,
+                                  })
+                                : inventoryT('newStockTransfer', language)}
                         </h2>
                         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
                           {editingPondReceiptId != null
-                            ? 'Saving reverses the prior shop → pond move, applies your changes, and updates both locations.'
+                            ? inventoryT('hintEditPondReceipt', language)
                             : amendingPostedTransferId != null
-                            ? 'Saving reverses the prior move on both sites, applies your changes, and refreshes the automatic journal.'
+                            ? inventoryT('hintEditPosted', language)
                             : transferRoute === 'station-station' ||
                                 editingInterStationTransferId != null ||
                                 amendingPostedTransferId != null
-                              ? 'Site-to-site moves save as drafts — post to shift bins and record the journal.'
+                              ? inventoryT('hintSiteToSite', language)
                               : transferRoute === 'station-pond'
-                                ? 'Shop → pond warehouse moves apply immediately (no draft).'
+                                ? inventoryT('hintShopToPond', language)
                                 : transferRoute === 'pond-station'
-                                  ? 'Pond → shop moves apply immediately (no draft). Empty sacks and fuel cannot move this way.'
+                                  ? inventoryT('hintPondToShop', language)
                                 : transferRoute === 'pond-pond'
-                                  ? 'Pond warehouse reallocations apply immediately (no draft).'
-                                  : 'Choose source and destination from the same list of sites and pond warehouses.'}
+                                  ? inventoryT('hintPondToPond', language)
+                                  : inventoryT('hintChooseRoute', language)}
                         </p>
                       </div>
                       {canCreateSiteTransfer ? (
@@ -1872,14 +1895,12 @@ function InventoryContent() {
                           <summary className="cursor-pointer list-none font-medium text-foreground [&::-webkit-details-marker]:hidden">
                             <span className="inline-flex items-center gap-1.5">
                               <Info className="h-4 w-4 text-muted-foreground" />
-                              How posting affects books
+                              {inventoryT('howPostingAffects', language)}
                               <ChevronDown className="h-4 w-4 text-muted-foreground" />
                             </span>
                           </summary>
                           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                            Bin quantities shift between sites. The ledger gets an auto journal on each
-                            line&apos;s inventory account (debit at receiver, credit at sender). Company-wide
-                            inventory value stays the same; sales and bank accounts are not touched.
+                            {inventoryT('postingBooksHint', language)}
                           </p>
                         </details>
                       ) : null}
@@ -1896,12 +1917,12 @@ function InventoryContent() {
                         className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                       >
                         <ArrowRightLeft className="h-3.5 w-3.5" aria-hidden />
-                        Route &amp; document
+                        {inventoryT('routeAndDocument', language)}
                       </h3>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                         <div className="min-w-0 flex-1 space-y-1">
                           <label className="text-sm font-medium text-foreground" htmlFor="inv-from-st">
-                            Send from
+                            {inventoryT('sendFrom', language)}
                           </label>
                           <select
                             id="inv-from-st"
@@ -1913,7 +1934,7 @@ function InventoryContent() {
                               setFromEndpoint(parseTransferEndpointKey(e.target.value))
                             }
                           >
-                            <option value="">From…</option>
+                            <option value="">{inventoryT('fromPlaceholder', language)}</option>
                             {renderTransferEndpointOptions(
                               transferStationsOrdered,
                               activePondsOrdered,
@@ -1921,10 +1942,11 @@ function InventoryContent() {
                               toEndpoint,
                               userHomeStation,
                               'from',
+                              language,
                             )}
                           </select>
                           <p className="text-xs text-muted-foreground">
-                            Quantities use stock at the selected site bin or pond warehouse.
+                            {inventoryT('sendFromHint', language)}
                           </p>
                         </div>
                         <div
@@ -1935,7 +1957,7 @@ function InventoryContent() {
                         </div>
                         <div className="min-w-0 flex-1 space-y-1">
                           <label className="text-sm font-medium text-foreground" htmlFor="inv-to-st">
-                            Transfer to
+                            {inventoryT('transferTo', language)}
                           </label>
                           <select
                             id="inv-to-st"
@@ -1943,7 +1965,7 @@ function InventoryContent() {
                             value={transferEndpointKey(toEndpoint)}
                             onChange={e => setToEndpoint(parseTransferEndpointKey(e.target.value))}
                           >
-                            <option value="">To…</option>
+                            <option value="">{inventoryT('toPlaceholder', language)}</option>
                             {renderTransferEndpointOptions(
                               transferStationsOrdered,
                               activePondsOrdered,
@@ -1951,16 +1973,17 @@ function InventoryContent() {
                               fromEndpoint,
                               userHomeStation,
                               'to',
+                              language,
                             )}
                           </select>
                           <p className="text-xs text-muted-foreground">
-                            Same sites and pond warehouses as Send from — pick a different destination.
+                            {inventoryT('transferToHint', language)}
                           </p>
                         </div>
                       </div>
                       <div className="border-t border-border/50 pt-3">
                         <h3 id="inv-doc-heading" className="sr-only">
-                          Document details
+                          {inventoryT('documentDetails', language)}
                         </h3>
                         <div className="grid gap-3 sm:grid-cols-2">
                           {transferRoute === 'station-station' ||
@@ -1968,7 +1991,7 @@ function InventoryContent() {
                           amendingPostedTransferId != null ? (
                             <div className="space-y-1">
                               <label className="text-sm font-medium" htmlFor="inv-transfer-date">
-                                Date
+                                {inventoryT('date', language)}
                               </label>
                               <input
                                 id="inv-transfer-date"
@@ -1981,7 +2004,8 @@ function InventoryContent() {
                           ) : null}
                           <div className="space-y-1 sm:col-span-2">
                             <label className="text-sm font-medium" htmlFor="inv-transfer-memo">
-                              Memo <span className="font-normal text-muted-foreground">(optional)</span>
+                              {inventoryT('memo', language)}{' '}
+                              <span className="font-normal text-muted-foreground">{inventoryT('memoOptional', language)}</span>
                             </label>
                             <textarea
                               id="inv-transfer-memo"
@@ -1989,7 +2013,7 @@ function InventoryContent() {
                               className={inputClassName + ' min-h-[60px] resize-y py-2'}
                               value={transferMemo}
                               onChange={e => setTransferMemo(e.target.value)}
-                              placeholder="e.g. Weekly replenishment"
+                              placeholder={inventoryT('memoPlaceholder', language)}
                             />
                           </div>
                         </div>
@@ -2003,7 +2027,7 @@ function InventoryContent() {
                           className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                         >
                           <Package className="h-3.5 w-3.5" aria-hidden />
-                          Line items
+                          {inventoryT('lineItems', language)}
                         </h3>
                         <div className="flex flex-wrap gap-2">
                           <button
@@ -2012,11 +2036,11 @@ function InventoryContent() {
                             onClick={() => refreshLineAvailability()}
                             disabled={!lineItemIdsKey}
                           >
-                            Refresh quantities
+                            {inventoryT('refreshQuantitiesBtn', language)}
                           </button>
                           <button type="button" className={btnSecondary + ' !py-1.5 !text-xs'} onClick={addLineRow}>
                             <Plus className="h-3.5 w-3.5" />
-                            Add line
+                            {inventoryT('addLine', language)}
                           </button>
                         </div>
                       </div>
@@ -2026,12 +2050,12 @@ function InventoryContent() {
                           <thead>
                             <tr className="border-b bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                               <th className="w-10 px-3 py-2.5">#</th>
-                              <th className="min-w-[200px] px-3 py-2.5">Product</th>
-                              <th className="min-w-[100px] px-3 py-2.5">SKU</th>
-                              <th className="min-w-[128px] px-3 py-2.5 text-right">Source on hand</th>
-                              <th className="min-w-[128px] px-3 py-2.5 text-right">Dest on hand</th>
-                              <th className="min-w-[100px] px-3 py-2.5 text-right">Transfer qty</th>
-                              <th className="min-w-[148px] px-3 py-2.5 text-right">Actions</th>
+                              <th className="min-w-[200px] px-3 py-2.5">{inventoryT('product', language)}</th>
+                              <th className="min-w-[100px] px-3 py-2.5">{inventoryT('sku', language)}</th>
+                              <th className="min-w-[128px] px-3 py-2.5 text-right">{inventoryT('sourceOnHand', language)}</th>
+                              <th className="min-w-[128px] px-3 py-2.5 text-right">{inventoryT('destOnHand', language)}</th>
+                              <th className="min-w-[100px] px-3 py-2.5 text-right">{inventoryT('transferQty', language)}</th>
+                              <th className="min-w-[148px] px-3 py-2.5 text-right">{inventoryT('actions', language)}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2050,15 +2074,15 @@ function InventoryContent() {
                               let rowWarn = false
 
                               if (row.item_id <= 0) {
-                                availMain = <span className="text-muted-foreground">Choose a product</span>
+                                availMain = <span className="text-muted-foreground">{inventoryT('chooseProduct', language)}</span>
                                 destMain = <span className="text-muted-foreground">—</span>
                               } else if (!fromEndpoint) {
                                 availMain = (
-                                  <span className="text-xs text-muted-foreground">Select send-from first</span>
+                                  <span className="text-xs text-muted-foreground">{inventoryT('selectSendFromFirst', language)}</span>
                                 )
                               } else if (!toEndpoint) {
                                 destMain = (
-                                  <span className="text-xs text-muted-foreground">Select destination first</span>
+                                  <span className="text-xs text-muted-foreground">{inventoryT('selectDestFirst', language)}</span>
                                 )
                               }
 
@@ -2084,14 +2108,14 @@ function InventoryContent() {
                                 if (qtyNum <= 0) {
                                   availSub = (
                                     <span className="mt-0.5 block text-xs text-amber-800 dark:text-amber-200">
-                                      No stock at source
+                                      {inventoryT('noStockAtSource', language)}
                                     </span>
                                   )
                                   rowWarn = true
                                 } else if (others > 0) {
                                   availSub = (
                                     <span className="mt-0.5 block text-xs text-muted-foreground">
-                                      Max this line:{' '}
+                                      {inventoryT('maxThisLine', language)}{' '}
                                       <span className="font-medium text-foreground">
                                         {maxLine.toLocaleString(undefined, { maximumFractionDigits: 6 })} {unit}
                                       </span>
@@ -2105,7 +2129,7 @@ function InventoryContent() {
                                   availMain = (
                                     <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      Loading…
+                                      {inventoryT('loading', language)}
                                     </span>
                                   )
                                 } else if (st.status === 'error') {
@@ -2114,13 +2138,13 @@ function InventoryContent() {
                                 } else if (st.status !== 'ok') {
                                   availMain = (
                                     <span className="text-xs text-muted-foreground">
-                                      Refresh quantities
+                                      {inventoryT('refreshQuantities', language)}
                                     </span>
                                   )
                                 } else if (!st.data.tracks_per_station) {
                                   availMain = (
                                     <span className="text-xs text-amber-800 dark:text-amber-200">
-                                      Not movable (fuel / not in shop bins)
+                                      {inventoryT('notMovable', language)}
                                     </span>
                                   )
                                   rowWarn = true
@@ -2150,7 +2174,7 @@ function InventoryContent() {
                                 if (Number.isFinite(qVal) && qVal > 0) {
                                   destSub = (
                                     <span className="mt-0.5 block text-xs text-muted-foreground">
-                                      After move:{' '}
+                                      {inventoryT('afterMove', language)}{' '}
                                       <span className="font-medium text-foreground">
                                         {(destQty + qVal).toLocaleString(undefined, {
                                           maximumFractionDigits: 6,
@@ -2170,7 +2194,7 @@ function InventoryContent() {
                                   <td className="px-3 py-2.5 align-top text-muted-foreground tabular-nums">{i + 1}</td>
                                   <td className="px-3 py-2.5 align-top">
                                     <label className="sr-only" htmlFor={`tli-${i}`}>
-                                      Product line {i + 1}
+                                      {inventoryT('productLine', language, { n: i + 1 })}
                                     </label>
                                     <CatalogItemCombobox
                                       id={`tli-${i}`}
@@ -2183,8 +2207,8 @@ function InventoryContent() {
                                         )
                                       }
                                       items={catalogItems}
-                                      emptyLabel="Select product…"
-                                      placeholder="Search products & services…"
+                                      emptyLabel={inventoryT('selectProductPh', language)}
+                                      placeholder={inventoryT('searchProducts', language)}
                                       className={selectClassName}
                                     />
                                   </td>
@@ -2201,14 +2225,14 @@ function InventoryContent() {
                                   </td>
                                   <td className="px-3 py-2.5 align-top text-right">
                                     <label className="sr-only" htmlFor={`tlq-${i}`}>
-                                      Quantity line {i + 1}
+                                      {inventoryT('quantityLine', language, { n: i + 1 })}
                                     </label>
                                     <input
                                       id={`tlq-${i}`}
                                       className={inputClassName + ' text-right tabular-nums'}
                                       inputMode="decimal"
                                       autoComplete="off"
-                                      placeholder="Enter qty"
+                                      placeholder={inventoryT('enterQty', language)}
                                       value={row.quantity}
                                       onChange={e => updateLine(i, 'quantity', e.target.value)}
                                       aria-invalid={rowWarn}
@@ -2229,11 +2253,11 @@ function InventoryContent() {
                                             !fromEndpoint &&
                                             !toEndpoint)
                                         }
-                                        title="Clear product, quantity, send-from, and destination"
+                                        title={inventoryT('clearLineTitle', language)}
                                         onClick={() => clearLineRow(i)}
                                       >
                                         <RotateCcw className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                        Clear
+                                        {inventoryT('clear', language)}
                                       </button>
                                       {fromEndpoint &&
                                       row.item_id > 0 &&
@@ -2248,20 +2272,20 @@ function InventoryContent() {
                                           disabled={saving}
                                           onClick={() => applyMaxQty(i)}
                                         >
-                                          Use max qty
+                                          {inventoryT('useMaxQty', language)}
                                         </button>
                                       ) : null}
                                       {lineRows.length > 1 ? (
                                         <button
                                           type="button"
                                           aria-label={`Remove line ${i + 1}`}
-                                          title="Remove this line"
+                                          title={inventoryT('removeLineTitle', language)}
                                           className={btnDanger + ' !w-full !justify-center !py-1.5 !text-xs sm:!w-auto'}
                                           disabled={saving}
                                           onClick={() => removeLine(i)}
                                         >
                                           <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                          Remove line
+                                          {inventoryT('removeLine', language)}
                                         </button>
                                       ) : null}
                                     </div>
@@ -2291,8 +2315,7 @@ function InventoryContent() {
 
                       <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
                         <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-                          Source and destination on-hand update after each move. Transfer qty cannot exceed
-                          source stock. Use the button below to move all lines.
+                          {inventoryT('formFooterHint', language)}
                         </p>
                         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
                           {editingInterStationTransferId != null ||
@@ -2304,7 +2327,7 @@ function InventoryContent() {
                               disabled={saving}
                               onClick={() => cancelEditInterStationDraft()}
                             >
-                              Cancel edit
+                              {inventoryT('cancelEdit', language)}
                             </button>
                           ) : null}
                           <button
@@ -2319,20 +2342,20 @@ function InventoryContent() {
                               <Package className="h-4 w-4" />
                             )}
                             {editingPondReceiptId != null
-                              ? 'Save & update locations'
+                              ? inventoryT('saveUpdateLocations', language)
                               : amendingPostedTransferId != null
-                                ? 'Save & update sites'
+                                ? inventoryT('saveUpdateSites', language)
                                 : editingInterStationTransferId != null
-                                  ? 'Save changes'
+                                  ? inventoryT('saveChanges', language)
                                 : transferRoute === 'station-station'
-                                  ? 'Save draft'
+                                  ? inventoryT('saveDraft', language)
                                 : transferRoute === 'station-pond'
-                                  ? 'Move to pond warehouse'
+                                  ? inventoryT('moveToPondWarehouse', language)
                                   : transferRoute === 'pond-station'
-                                    ? 'Return to shop'
+                                    ? inventoryT('returnToShop', language)
                                   : transferRoute === 'pond-pond'
-                                    ? 'Move between ponds'
-                                    : 'Save transfer'}
+                                    ? inventoryT('moveBetweenPonds', language)
+                                    : inventoryT('saveTransfer', language)}
                           </button>
                         </div>
                       </div>
@@ -2345,10 +2368,12 @@ function InventoryContent() {
                 <div className="border-b border-border bg-muted/30 px-4 py-4 sm:px-5">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                     <div>
-                      <h2 className="text-base font-semibold tracking-tight">Inter-station transfers</h2>
+                      <h2 className="text-base font-semibold tracking-tight">{inventoryT('interStationTransfers', language)}</h2>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        Drafts and posted moves between sites.
-                        {userHomeStation ? ` Filtered to ${userHomeStation.name}.` : ''}
+                        {inventoryT('interStationHint', language)}
+                        {userHomeStation
+                          ? inventoryT('filteredTo', language, { site: userHomeStation.name })
+                          : ''}
                       </p>
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
@@ -2356,7 +2381,7 @@ function InventoryContent() {
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <input
                           type="search"
-                          placeholder="Search transfers…"
+                          placeholder={inventoryT('searchTransfers', language)}
                           value={transferSearch}
                           onChange={e => setTransferSearch(e.target.value)}
                           className={inputClassName + ' pl-9'}
@@ -2368,11 +2393,11 @@ function InventoryContent() {
                         onChange={e =>
                           setTransferStatusFilter(e.target.value as 'all' | 'draft' | 'posted')
                         }
-                        aria-label="Filter by status"
+                        aria-label={inventoryT('filterByStatus', language)}
                       >
-                        <option value="all">All statuses</option>
-                        <option value="draft">Draft</option>
-                        <option value="posted">Posted</option>
+                        <option value="all">{inventoryT('allStatuses', language)}</option>
+                        <option value="draft">{inventoryT('draft', language)}</option>
+                        <option value="posted">{inventoryT('posted', language)}</option>
                       </select>
                     </div>
                   </div>
@@ -2382,12 +2407,12 @@ function InventoryContent() {
                     <thead className="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       <tr>
                         <th className="px-4 py-2.5">#</th>
-                        <th className="px-4 py-2.5">Date</th>
-                        <th className="px-4 py-2.5">Route</th>
-                        <th className="px-4 py-2.5">Status</th>
-                        <th className="px-4 py-2.5">Lines</th>
-                        <th className="px-4 py-2.5 text-right">Value</th>
-                        <th className="px-4 py-2.5 text-right whitespace-nowrap">Actions</th>
+                        <th className="px-4 py-2.5">{inventoryT('date', language)}</th>
+                        <th className="px-4 py-2.5">{inventoryT('route', language)}</th>
+                        <th className="px-4 py-2.5">{inventoryT('status', language)}</th>
+                        <th className="px-4 py-2.5">{inventoryT('lines', language)}</th>
+                        <th className="px-4 py-2.5 text-right">{inventoryT('value', language)}</th>
+                        <th className="px-4 py-2.5 text-right whitespace-nowrap">{inventoryT('actions', language)}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2397,12 +2422,14 @@ function InventoryContent() {
                             <div className="mx-auto max-w-sm">
                               <ArrowRightLeft className="mx-auto h-8 w-8 text-muted-foreground/50" />
                               <p className="mt-3 font-medium text-foreground">
-                                {transfers.length === 0 ? 'No transfers yet' : 'No matching transfers'}
+                                {transfers.length === 0
+                                  ? inventoryT('noTransfersYet', language)
+                                  : inventoryT('noMatchingTransfers', language)}
                               </p>
                               <p className="mt-1 text-sm text-muted-foreground">
                                 {transfers.length === 0
-                                  ? 'Create a draft above to move stock between sites.'
-                                  : 'Try a different search or status filter.'}
+                                  ? inventoryT('noTransfersHint', language)
+                                  : inventoryT('noTransfersFilterHint', language)}
                               </p>
                             </div>
                           </td>
@@ -2428,9 +2455,11 @@ function InventoryContent() {
                                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200'
                                     : 'bg-amber-100 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200'
                                 }`}
-                                title={interStationTransferImpactSummary(t)}
+                                title={interStationTransferImpactSummary(t, language)}
                               >
-                                {t.status}
+                                {t.status === 'posted'
+                                  ? inventoryT('posted', language)
+                                  : inventoryT('draft', language)}
                               </span>
                             </td>
                             <td className="max-w-xs px-4 py-3 text-muted-foreground">
@@ -2448,7 +2477,7 @@ function InventoryContent() {
                                     type="button"
                                     className={btnRowIconMuted}
                                     disabled={transferListBusy}
-                                    title="View transfer details"
+                                    title={inventoryT('viewTransferDetails', language)}
                                     aria-label={`View draft ${t.transfer_number || t.id}`}
                                     onClick={() => setViewTransfer(t)}
                                   >
@@ -2459,7 +2488,7 @@ function InventoryContent() {
                                       type="button"
                                       className={btnRowIconMuted}
                                       disabled={transferListBusy || saving}
-                                      title="Edit draft in the form above"
+                                      title={inventoryT('editDraftInForm', language)}
                                       aria-label={`Edit draft ${t.transfer_number || t.id}`}
                                       onClick={() => startEditInterStationDraft(t)}
                                     >
@@ -2470,7 +2499,7 @@ function InventoryContent() {
                                     type="button"
                                     className={btnRowIconPrimary}
                                     disabled={transferListBusy}
-                                    title={interStationTransferImpactSummary(t)}
+                                    title={interStationTransferImpactSummary(t, language)}
                                     aria-label={`Post transfer ${t.transfer_number || t.id}`}
                                     onClick={() =>
                                       setConfirmAction({
@@ -2490,7 +2519,7 @@ function InventoryContent() {
                                     type="button"
                                     className={btnRowIconDanger}
                                     disabled={transferListBusy}
-                                    title="Delete draft"
+                                    title={inventoryT('deleteDraftTitle', language)}
                                     aria-label={`Delete draft ${t.transfer_number || t.id}`}
                                     onClick={() =>
                                       setConfirmAction({
@@ -2513,7 +2542,7 @@ function InventoryContent() {
                                     type="button"
                                     className={btnRowIconMuted}
                                     disabled={transferListBusy}
-                                    title="View transfer details"
+                                    title={inventoryT('viewTransferDetails', language)}
                                     aria-label={`View posted transfer ${t.transfer_number || t.id}`}
                                     onClick={() => setViewTransfer(t)}
                                   >
@@ -2524,7 +2553,7 @@ function InventoryContent() {
                                       type="button"
                                       className={btnRowIconMuted}
                                       disabled={transferListBusy || saving}
-                                      title="Edit — reverses prior move on both sites, then applies your changes"
+                                      title={inventoryT('editPostedHint', language)}
                                       aria-label={`Edit posted transfer ${t.transfer_number || t.id}`}
                                       onClick={() => startAmendPostedTransfer(t)}
                                     >
@@ -2535,7 +2564,7 @@ function InventoryContent() {
                                     type="button"
                                     className={btnRowIconWarning}
                                     disabled={transferListBusy}
-                                    title={interStationTransferImpactSummary(t)}
+                                    title={interStationTransferImpactSummary(t, language)}
                                     aria-label={`Roll back posted transfer ${t.transfer_number || t.id}`}
                                     onClick={() =>
                                       setConfirmAction({
@@ -2567,16 +2596,16 @@ function InventoryContent() {
                   <div className="border-b border-border bg-muted/30 px-4 py-4 sm:px-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                       <div>
-                        <h2 className="text-base font-semibold tracking-tight">Shop ↔ pond warehouse</h2>
+                        <h2 className="text-base font-semibold tracking-tight">{inventoryT('shopPondWarehouse', language)}</h2>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          Immediate moves between shop bins and pond warehouses (no draft, no GL).
+                          {inventoryT('shopPondHint', language)}
                         </p>
                       </div>
                       <div className="relative w-full sm:max-w-xs">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <input
                           type="search"
-                          placeholder="Search moves…"
+                          placeholder={inventoryT('searchMoves', language)}
                           value={pondReceiptSearch}
                           onChange={e => setPondReceiptSearch(e.target.value)}
                           className={inputClassName + ' pl-9'}
@@ -2589,11 +2618,11 @@ function InventoryContent() {
                       <thead className="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         <tr>
                           <th className="px-4 py-2.5">#</th>
-                          <th className="px-4 py-2.5">When</th>
-                          <th className="px-4 py-2.5">Route</th>
-                          <th className="px-4 py-2.5">Lines</th>
-                          <th className="px-4 py-2.5 text-right">Value</th>
-                          <th className="px-4 py-2.5 text-right whitespace-nowrap">Actions</th>
+                          <th className="px-4 py-2.5">{inventoryT('when', language)}</th>
+                          <th className="px-4 py-2.5">{inventoryT('route', language)}</th>
+                          <th className="px-4 py-2.5">{inventoryT('lines', language)}</th>
+                          <th className="px-4 py-2.5 text-right">{inventoryT('value', language)}</th>
+                          <th className="px-4 py-2.5 text-right whitespace-nowrap">{inventoryT('actions', language)}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2604,11 +2633,11 @@ function InventoryContent() {
                                 <Sprout className="mx-auto h-8 w-8 text-muted-foreground/50" />
                                 <p className="mt-3 font-medium text-foreground">
                                   {pondReceipts.length === 0
-                                    ? 'No pond warehouse moves yet'
-                                    : 'No matching receipts'}
+                                    ? inventoryT('noPondMovesYet', language)
+                                    : inventoryT('noMatchingReceipts', language)}
                                 </p>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                  Use the form above to move stock between shop and pond warehouses.
+                                  {inventoryT('pondMovesHint', language)}
                                 </p>
                               </div>
                             </td>
@@ -2632,11 +2661,11 @@ function InventoryContent() {
                                       href={`/aquaculture/ponds/${r.pond_id}`}
                                       className="font-medium text-primary underline-offset-2 hover:underline"
                                     >
-                                      {r.pond_name || `Pond #${r.pond_id}`}
+                                      {r.pond_name || inventoryT('pondNum', language, { id: r.pond_id })}
                                     </Link>
                                     <span className="mx-1.5 text-muted-foreground">→</span>
                                     <span className="font-medium">
-                                      {r.to_station_name || r.to_station_id || 'Shop'}
+                                      {r.to_station_name || r.to_station_id || inventoryT('shop', language)}
                                     </span>
                                   </>
                                 ) : (
@@ -2649,7 +2678,7 @@ function InventoryContent() {
                                       href={`/aquaculture/ponds/${r.pond_id}`}
                                       className="font-medium text-primary underline-offset-2 hover:underline"
                                     >
-                                      {r.pond_name || `Pond #${r.pond_id}`}
+                                      {r.pond_name || inventoryT('pondNum', language, { id: r.pond_id })}
                                     </Link>
                                   </>
                                 )}
@@ -2668,7 +2697,7 @@ function InventoryContent() {
                                     type="button"
                                     className={btnRowIconMuted}
                                     disabled={transferListBusy}
-                                    title="View receipt details"
+                                    title={inventoryT('viewReceiptDetails', language)}
                                     aria-label={`View pond receipt ${r.receipt_number || r.id}`}
                                     onClick={() => setViewPondReceipt(r)}
                                   >
@@ -2679,7 +2708,7 @@ function InventoryContent() {
                                       type="button"
                                       className={btnRowIconMuted}
                                       disabled={transferListBusy || saving}
-                                      title="Edit — reverses prior move, then applies your changes"
+                                      title={inventoryT('editReceiptTitle', language)}
                                       aria-label={`Edit pond receipt ${pondMovementDocNumber(r)}`}
                                       onClick={() => startEditPondReceipt(r)}
                                     >
@@ -2692,8 +2721,8 @@ function InventoryContent() {
                                     disabled={transferListBusy}
                                     title={
                                       pondMovementIsReturn(r)
-                                        ? pondWarehouseReturnImpactSummary()
-                                        : pondWarehouseReceiptImpactSummary()
+                                        ? pondWarehouseReturnImpactSummary(language)
+                                        : pondWarehouseReceiptImpactSummary(language)
                                     }
                                     aria-label={`Reverse ${pondMovementDocNumber(r)}`}
                                     onClick={() =>
@@ -2731,22 +2760,26 @@ function InventoryContent() {
       <Modal
         isOpen={viewTransfer != null}
         onClose={() => setViewTransfer(null)}
-        title={viewTransfer ? viewTransfer.transfer_number || `TR-${viewTransfer.id}` : 'Transfer'}
+        title={viewTransfer ? viewTransfer.transfer_number || `TR-${viewTransfer.id}` : inventoryT('transfer', language)}
         size="md"
       >
         {viewTransfer ? (
           <div className="space-y-4 text-sm">
             <div className="grid gap-2 sm:grid-cols-2">
               <div>
-                <p className="text-xs font-medium uppercase text-muted-foreground">Status</p>
-                <p className="font-medium capitalize">{viewTransfer.status}</p>
+                <p className="text-xs font-medium uppercase text-muted-foreground">{inventoryT('status', language)}</p>
+                <p className="font-medium capitalize">
+                  {viewTransfer.status === 'posted'
+                    ? inventoryT('posted', language)
+                    : inventoryT('draft', language)}
+                </p>
               </div>
               <div>
-                <p className="text-xs font-medium uppercase text-muted-foreground">Date</p>
+                <p className="text-xs font-medium uppercase text-muted-foreground">{inventoryT('date', language)}</p>
                 <p>{formatDateOnly(viewTransfer.transfer_date)}</p>
               </div>
               <div className="sm:col-span-2">
-                <p className="text-xs font-medium uppercase text-muted-foreground">Route</p>
+                <p className="text-xs font-medium uppercase text-muted-foreground">{inventoryT('route', language)}</p>
                 <p>
                   {viewTransfer.from_station_name || viewTransfer.from_station_id}
                   <span className="mx-1.5 text-muted-foreground">→</span>
@@ -2755,23 +2788,23 @@ function InventoryContent() {
               </div>
               {viewTransfer.auto_journal_entry_number ? (
                 <div className="sm:col-span-2">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Journal</p>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">{inventoryT('journal', language)}</p>
                   <p className="font-mono text-xs">{viewTransfer.auto_journal_entry_number}</p>
                 </div>
               ) : null}
               {viewTransfer.memo ? (
                 <div className="sm:col-span-2">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Memo</p>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">{inventoryT('memo', language)}</p>
                   <p>{viewTransfer.memo}</p>
                 </div>
               ) : null}
             </div>
             <div>
-              <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Lines</p>
+              <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">{inventoryT('lines', language)}</p>
               <ul className="divide-y divide-border rounded-lg border border-border">
                 {(viewTransfer.lines || []).map(ln => (
                   <li key={ln.id ?? `${ln.item_id}-${ln.quantity}`} className="flex justify-between gap-3 px-3 py-2">
-                    <span>{ln.item_name || `Item #${ln.item_id}`}</span>
+                    <span>{ln.item_name || inventoryT('itemNum', language, { id: ln.item_id })}</span>
                     <span className="text-right tabular-nums">
                       <span className="font-medium">{ln.quantity}</span>
                       {ln.line_value ? (
@@ -2785,11 +2818,11 @@ function InventoryContent() {
               </ul>
               {viewTransfer.total_value ? (
                 <p className="mt-2 text-right text-sm font-semibold tabular-nums">
-                  Total {formatInventoryValue(viewTransfer.total_value, currencySymbol)}
+                  {inventoryT('total', language)} {formatInventoryValue(viewTransfer.total_value, currencySymbol)}
                 </p>
               ) : null}
             </div>
-            <p className="text-xs text-muted-foreground">{interStationTransferImpactSummary(viewTransfer)}</p>
+            <p className="text-xs text-muted-foreground">{interStationTransferImpactSummary(viewTransfer, language)}</p>
           </div>
         ) : null}
       </Modal>
@@ -2797,13 +2830,13 @@ function InventoryContent() {
       <Modal
         isOpen={viewPondReceipt != null}
         onClose={() => setViewPondReceipt(null)}
-        title={viewPondReceipt ? viewPondReceipt.receipt_number || `PWR-${viewPondReceipt.id}` : 'Pond receipt'}
+        title={viewPondReceipt ? viewPondReceipt.receipt_number || `PWR-${viewPondReceipt.id}` : inventoryT('pondReceipt', language)}
         size="md"
       >
         {viewPondReceipt ? (
           <div className="space-y-4 text-sm">
             <div>
-              <p className="text-xs font-medium uppercase text-muted-foreground">When</p>
+              <p className="text-xs font-medium uppercase text-muted-foreground">{inventoryT('when', language)}</p>
               <p>{viewPondReceipt.created_at ? formatDateOnly(viewPondReceipt.created_at) : '—'}</p>
             </div>
             <div>
@@ -2811,18 +2844,18 @@ function InventoryContent() {
               <p>
                 {viewPondReceipt.from_station_name || viewPondReceipt.from_station_id}
                 <span className="mx-1.5 text-muted-foreground">→</span>
-                {viewPondReceipt.pond_name || `Pond #${viewPondReceipt.pond_id}`}
+                {viewPondReceipt.pond_name || inventoryT('pondNum', language, { id: viewPondReceipt.pond_id })}
               </p>
             </div>
             <div>
-              <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Lines</p>
+              <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">{inventoryT('lines', language)}</p>
               <ul className="divide-y divide-border rounded-lg border border-border">
                 {(viewPondReceipt.lines || []).map(ln => (
                   <li
                     key={`${ln.item_id}-${ln.quantity}`}
                     className="flex justify-between gap-3 px-3 py-2"
                   >
-                    <span>{ln.item_name || `Item #${ln.item_id}`}</span>
+                    <span>{ln.item_name || inventoryT('itemNum', language, { id: ln.item_id })}</span>
                     <span className="text-right tabular-nums">
                       <span className="font-medium">{ln.quantity}</span>
                       {ln.line_value ? (
@@ -2836,11 +2869,11 @@ function InventoryContent() {
               </ul>
               {viewPondReceipt.total_value ? (
                 <p className="mt-2 text-right text-sm font-semibold tabular-nums">
-                  Total {formatInventoryValue(viewPondReceipt.total_value, currencySymbol)}
+                  {inventoryT('total', language)} {formatInventoryValue(viewPondReceipt.total_value, currencySymbol)}
                 </p>
               ) : null}
             </div>
-            <p className="text-xs text-muted-foreground">{pondWarehouseReceiptImpactSummary()}</p>
+            <p className="text-xs text-muted-foreground">{pondWarehouseReceiptImpactSummary(language)}</p>
           </div>
         ) : null}
       </Modal>
@@ -2867,7 +2900,7 @@ function InventoryContent() {
               disabled={confirmBusy}
               onClick={() => setConfirmAction(null)}
             >
-              Cancel
+              {t('cancel')}
             </button>
             <button
               type="button"
@@ -2887,20 +2920,23 @@ function InventoryContent() {
   )
 }
 
+function InventoryLoadingFallback() {
+  const { language } = useCompanyLocale()
+  return (
+    <PageLayout className="bg-slate-50">
+      <div className="flex min-h-[50vh] items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card px-10 py-12 text-center shadow-sm">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm font-medium text-foreground">{inventoryT('loadingInventory', language)}…</p>
+        </div>
+      </div>
+    </PageLayout>
+  )
+}
+
 export default function InventoryPage() {
   return (
-    <Suspense
-      fallback={
-        <PageLayout>
-          <div className="flex min-h-[50vh] items-center justify-center p-6">
-            <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card px-10 py-12 text-center shadow-sm">
-              <Loader2 className="h-10 w-10 animate-spin text-primary" />
-              <p className="text-sm font-medium text-foreground">Loading inventory…</p>
-            </div>
-          </div>
-        </PageLayout>
-      }
-    >
+    <Suspense fallback={<InventoryLoadingFallback />}>
       <InventoryContent />
     </Suspense>
   )

@@ -3,7 +3,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
@@ -78,6 +80,7 @@ function formatMoney(symbol: string, n: number): string {
 
 export default function AllPaymentsPage() {
   const router = useRouter()
+  const pageMeta = usePageMeta()
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState('')
@@ -272,44 +275,32 @@ export default function AllPaymentsPage() {
 
   if (loading && payments.length === 0 && !listError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <Loader2 className="h-10 w-10 animate-spin text-slate-400" aria-hidden />
-      </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-slate-400" aria-hidden />
+        </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="mb-6">
-            <Link
-              href="/payments"
-              className="mb-4 inline-flex items-center text-sm font-medium text-slate-600 transition hover:text-slate-900"
-            >
-              <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden />
-              Back to Payments
-            </Link>
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Payment register</h1>
-                <p className="mt-1 max-w-2xl text-slate-600">
-                  Single view of <strong className="font-medium text-slate-800">cash receipts</strong> (accounts
-                  receivable) and <strong className="font-medium text-slate-800">cash disbursements</strong>{' '}
-                  (accounts payable), consistent with a standard general-ledger cash book.
-                </p>
-              </div>
-              <DocumentExportButtons
-                onPrint={() => void handlePrintRegister()}
-                onDownloadCsv={handleDownloadRegisterCsv}
-                onDownloadJson={handleDownloadRegisterJson}
-                printLabel="Print register"
-              />
-            </div>
-          </div>
-
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={Receipt}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <DocumentExportButtons
+            onPrint={() => void handlePrintRegister()}
+            onDownloadCsv={handleDownloadRegisterCsv}
+            onDownloadJson={handleDownloadRegisterJson}
+            printLabel="Print register"
+          />
+        }
+      >
           {listError && (
             <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
               <AlertCircle className="h-5 w-5 shrink-0" aria-hidden />
@@ -737,8 +728,7 @@ export default function AllPaymentsPage() {
               await loadPayments()
             }}
           />
-        </div>
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

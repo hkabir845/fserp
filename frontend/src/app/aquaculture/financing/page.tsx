@@ -3,7 +3,10 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Landmark, RefreshCw, Trash2, Wallet } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_LINK, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -78,6 +81,7 @@ function monthStart(): string {
 }
 
 export default function AquacultureFinancingPage() {
+  const pageMeta = usePageMeta()
   const toast = useToast()
   const currency = getCurrencySymbol()
   const [loading, setLoading] = useState(true)
@@ -283,59 +287,60 @@ export default function AquacultureFinancingPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 p-4 pb-16 sm:p-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900 flex items-center gap-2">
-            <Wallet className="h-7 w-7 text-teal-700" />
-            Aquaculture financing
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-600">
-            One working-capital loan for the whole site: tag spend on ponds via bills and expenses, track how
-            disbursements are attributed, and repay from pond P&amp;L using profit transfers plus loan repayment.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <AquaculturePageShell
+      titleIcon={Wallet}
+      title={pageMeta.title}
+      description={pageMeta.description}
+      eyebrow={pageMeta.eyebrow}
+      maxWidthClass="max-w-6xl"
+      actions={
+        <>
           <button
             type="button"
             onClick={() => void load()}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className={AQ_HERO_BTN_GHOST}
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden />
             Refresh
           </button>
-          <Link
-            href="/loans"
-            className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800"
-          >
-            <Landmark className="h-4 w-4" />
+          <Link href="/loans" className={AQ_HERO_LINK}>
+            <Landmark className="h-3.5 w-3.5" aria-hidden />
             Loans register
           </Link>
-        </div>
-      </header>
-
+        </>
+      }
+      stats={
+        overview ? (
+          <div className="grid gap-2 sm:grid-cols-3">
+            <PipelineStatCard
+              title="Outstanding (tagged loans)"
+              value={`${currency}${formatNumber(overview.totals.outstanding_principal)}`}
+              sub="Principal still owed"
+              icon={Wallet}
+              tone="amber"
+            />
+            <PipelineStatCard
+              title="Aquaculture loans"
+              value={overview.totals.loan_count}
+              sub="Tagged working capital"
+              icon={Landmark}
+              tone="sky"
+            />
+            <PipelineStatCard
+              title="Active ponds"
+              value={overview.active_ponds.length}
+              sub="Currently in production"
+              icon={Landmark}
+              tone="emerald"
+            />
+          </div>
+        ) : undefined
+      }
+    >
       {loading && !overview ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : overview ? (
-        <>
-          <section className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Outstanding (tagged loans)</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">
-                {currency}
-                {formatNumber(overview.totals.outstanding_principal)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Aquaculture loans</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">{overview.totals.loan_count}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Active ponds</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">{overview.active_ponds.length}</p>
-            </div>
-          </section>
-
+        <div className="space-y-8">
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-900">Tagged loans</h2>
             {overview.loans.length === 0 ? (
@@ -708,8 +713,8 @@ export default function AquacultureFinancingPage() {
               )}
             </section>
           )}
-        </>
+        </div>
       ) : null}
-    </div>
+    </AquaculturePageShell>
   )
 }

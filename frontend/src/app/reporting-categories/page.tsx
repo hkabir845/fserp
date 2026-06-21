@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import {
   Loader2,
   Plus,
@@ -135,6 +137,7 @@ function ApplicationBadge({ app }: { app: ReportingApplication }) {
 export default function ReportingCategoriesPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
   const { selectedCompany, isClientReady } = useCompany()
   const [authReady, setAuthReady] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -545,32 +548,30 @@ export default function ReportingCategoriesPage() {
   if (!isAdmin) {
     return (
       <PageLayout className="bg-slate-50">
-        <div className="app-scroll-pad">
-          <h1 className="text-xl font-semibold text-slate-800">Reporting categories</h1>
-          <p className="mt-2 text-slate-600">Only company administrators can manage reporting categories.</p>
-        </div>
+        <ErpPageShell
+          showBackLink={false}
+          title={pageMeta.title}
+          titleIcon={Layers}
+          description="Only company administrators can manage reporting categories."
+          maxWidthClass="max-w-[1600px]"
+          contentClassName="mt-4"
+        >
+          {null}
+        </ErpPageShell>
       </PageLayout>
     )
   }
 
   return (
     <PageLayout className="bg-slate-50">
-      <div className="app-scroll-pad">
-        <div className="mx-auto max-w-5xl space-y-6">
-          <header>
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-slate-900 p-2.5 text-white shadow-sm">
-                <Layers className="h-6 w-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Reporting categories</h1>
-                <p className="text-sm text-slate-600">
-                  Custom income and expense labels that roll up to built-in P&amp;L types
-                </p>
-              </div>
-            </div>
-          </header>
-
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={Layers}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+      >
           {needsCompanyPick && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
               Select a <strong>company</strong> in the header switcher before managing categories.
@@ -1039,8 +1040,7 @@ export default function ReportingCategoriesPage() {
               </li>
             </ul>
           </footer>
-        </div>
-      </div>
+      </ErpPageShell>
     </PageLayout>
   )
 }

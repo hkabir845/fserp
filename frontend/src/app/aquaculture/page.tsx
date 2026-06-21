@@ -18,6 +18,7 @@ import {
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import {
   ResponsiveContainer,
   BarChart,
@@ -34,6 +35,10 @@ import {
   Line,
 } from 'recharts'
 import { useToast } from '@/components/Toast'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
+import { aquacultureT, aquacultureTFormat, nursingWorkflowSteps } from '@/lib/aquacultureI18n'
+import { useT } from '@/lib/i18n'
 import api from '@/lib/api'
 import {
   parseAquacultureExpenseRegister,
@@ -42,7 +47,6 @@ import {
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
-import { NURSING_WORKFLOW_STEPS } from '@/lib/aquaculturePondSite'
 
 type PeriodPreset = 'this_month' | 'last_month' | 'ytd' | 'last_90' | 'custom'
 
@@ -222,6 +226,8 @@ const PIE_COLORS = [
 const PURCHASE_LIKE = new Set(['feed_purchase', 'medicine_purchase', 'fry_stocking', 'equipment'])
 
 export default function AquacultureOverviewPage() {
+  const pageMeta = usePageMeta()
+  const { lang } = useT()
   const toast = useToast()
   const [preset, setPreset] = useState<PeriodPreset>('this_month')
   const [customStart, setCustomStart] = useState(() => periodRange('this_month').start)
@@ -422,37 +428,30 @@ export default function AquacultureOverviewPage() {
 
   const fmtMoney = (n: number) => `${sym}${formatNumber(n, 2)}`
 
+  const nursingSteps = useMemo(() => nursingWorkflowSteps(lang), [lang])
+
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-col gap-4 border-b border-slate-200/90 pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-teal-700">Aquaculture</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Operations dashboard</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Pond-level profit and loss, biological harvest weight, recorded feed use, expense mix, and biomass sampling for
-            the selected period. Packaged goods (feed sacks, medicine SKUs) follow Bills, Inventory, and Cashier; fish kg
-            and head in water follow Aquaculture sales, stock, and sampling—this dashboard rolls up module data and pond
-            P&amp;L allocation.
-          </p>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-            When fish farming is a different business than fuel retail (for example Premium Agro vs the filling station)
-            but the same owner, create a separate company for each under one organization, switch books from the header
-            company menu, and turn on aquaculture only on the farming company. A station named Premium Agro is only a
-            site inside the company you are viewing—not a second set of books by itself.
-          </p>
-        </div>
-        <div className="flex flex-col items-stretch gap-3 sm:items-end">
+    <AquaculturePageShell
+      showBackLink={false}
+      title={pageMeta.title}
+      titleIcon={Fish}
+      eyebrow={aquacultureT('aquaculture', lang)}
+      description={pageMeta.description ?? undefined}
+      maxWidthClass="max-w-[1400px]"
+      contentClassName="mt-4"
+      actions={
+        <>
           <div className="flex flex-wrap items-center gap-2">
             {(['this_month', 'last_month', 'ytd', 'last_90'] as const).map((p) => (
               <button
                 key={p}
                 type="button"
                 onClick={() => applyPresetButton(p)}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                className={
                   preset === p
-                    ? 'bg-teal-700 text-white shadow-sm'
-                    : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50'
-                }`}
+                    ? AQ_HERO_BTN_PRIMARY
+                    : AQ_HERO_BTN_GHOST
+                }
               >
                 {periodRange(p).label}
               </button>
@@ -460,10 +459,8 @@ export default function AquacultureOverviewPage() {
             <button
               type="button"
               onClick={() => setPreset('custom')}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                preset === 'custom'
-                  ? 'bg-teal-700 text-white shadow-sm'
-                  : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50'
+              className={`inline-flex items-center gap-1.5 ${
+                preset === 'custom' ? AQ_HERO_BTN_PRIMARY : AQ_HERO_BTN_GHOST
               }`}
             >
               <CalendarRange className="h-3.5 w-3.5" aria-hidden />
@@ -473,16 +470,16 @@ export default function AquacultureOverviewPage() {
               type="button"
               onClick={() => void load()}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              className={AQ_HERO_BTN_GHOST}
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden />
               Refresh
             </button>
           </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/90 bg-white px-3 py-2 shadow-sm sm:justify-end">
-            <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Dates</span>
-            <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
-              <span className="shrink-0 text-slate-500">From</span>
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-teal-200/80">Dates</span>
+            <label className="flex items-center gap-2 text-xs font-medium text-teal-100">
+              <span className="shrink-0 text-teal-200/80">From</span>
               <input
                 type="date"
                 value={customStart}
@@ -490,11 +487,11 @@ export default function AquacultureOverviewPage() {
                   setCustomStart(e.target.value)
                   setPreset('custom')
                 }}
-                className="rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-1.5 text-xs text-slate-900 outline-none ring-teal-600/20 focus:border-teal-500 focus:ring-2"
+                className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white outline-none focus:border-teal-300 focus:ring-2 focus:ring-teal-400/30"
               />
             </label>
-            <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
-              <span className="shrink-0 text-slate-500">To</span>
+            <label className="flex items-center gap-2 text-xs font-medium text-teal-100">
+              <span className="shrink-0 text-teal-200/80">To</span>
               <input
                 type="date"
                 value={customEnd}
@@ -502,14 +499,48 @@ export default function AquacultureOverviewPage() {
                   setCustomEnd(e.target.value)
                   setPreset('custom')
                 }}
-                className="rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-1.5 text-xs text-slate-900 outline-none ring-teal-600/20 focus:border-teal-500 focus:ring-2"
+                className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white outline-none focus:border-teal-300 focus:ring-2 focus:ring-teal-400/30"
               />
             </label>
           </div>
+        </>
+      }
+      stats={
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <PipelineStatCard
+            title="Net profit (P&L)"
+            value={fmtMoney(profitN)}
+            sub={totals ? `After ${fmtMoney(parseNum(totals.operating_expenses))} opex + ${fmtMoney(payrollN)} payroll` : '—'}
+            icon={Wallet}
+            tone={profitN >= 0 ? 'emerald' : 'amber'}
+          />
+          <PipelineStatCard
+            title="Revenue (fish & income)"
+            value={fmtMoney(revenueN)}
+            sub={`${salesInPeriod.length} sale line${salesInPeriod.length === 1 ? '' : 's'} in period`}
+            icon={TrendingUp}
+            tone="sky"
+          />
+          <PipelineStatCard
+            title="Total costs"
+            value={fmtMoney(costsN)}
+            sub="Direct + shared opex + payroll allocation"
+            icon={TrendingDown}
+            tone="slate"
+          />
+          <PipelineStatCard
+            title="Active ponds / cycles"
+            value={`${activePonds} / ${activeCycles}`}
+            sub={`${ponds.length} pond${ponds.length === 1 ? '' : 's'} total`}
+            icon={MapPin}
+            tone="slate"
+          />
         </div>
-      </div>
+      }
+    >
+      <p className="text-sm leading-relaxed text-slate-600">{aquacultureT('dashboardCompanyHint', lang)}</p>
 
-      <p className="mt-4 text-xs text-slate-500">
+      <p className="mt-3 text-xs text-slate-500">
         Period: <span className="font-medium text-slate-700">{periodLabel}</span> ({formatDateOnly(start)} –{' '}
         {formatDateOnly(end)})
         {pl ? (
@@ -526,38 +557,6 @@ export default function AquacultureOverviewPage() {
           </>
         ) : null}
       </p>
-
-      {/* KPI strip */}
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
-        <KpiCard
-          title="Net profit (P&L)"
-          value={fmtMoney(profitN)}
-          sub={totals ? `After ${fmtMoney(parseNum(totals.operating_expenses))} opex + ${fmtMoney(payrollN)} payroll` : '—'}
-          icon={Wallet}
-          accent={profitN >= 0 ? 'positive' : 'negative'}
-        />
-        <KpiCard
-          title="Revenue (fish & income)"
-          value={fmtMoney(revenueN)}
-          sub={`${salesInPeriod.length} sale line${salesInPeriod.length === 1 ? '' : 's'} in period`}
-          icon={TrendingUp}
-          accent="neutral"
-        />
-        <KpiCard
-          title="Total costs"
-          value={fmtMoney(costsN)}
-          sub="Direct + shared opex + payroll allocation"
-          icon={TrendingDown}
-          accent="neutral"
-        />
-        <KpiCard
-          title="Active ponds / cycles"
-          value={`${activePonds} / ${activeCycles}`}
-          sub={`${ponds.length} pond${ponds.length === 1 ? '' : 's'} total`}
-          icon={MapPin}
-          accent="neutral"
-        />
-      </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <KpiCard
@@ -709,33 +708,30 @@ export default function AquacultureOverviewPage() {
       </div>
 
       <p className="mt-4 text-xs leading-relaxed text-slate-500">
-        Activity charts and “recent” lists use the latest sale and expense batches returned by the API (up to 500 lines
-        each); P&amp;L figures above always cover the full selected dates. For FCR, record feed kg on{' '}
+        {aquacultureT('dashboardActivityChartsPart1', lang)}
         <Link href="/aquaculture/expenses" className="font-medium text-teal-800 underline">
-          Operating expenses
-        </Link>{' '}
-        when feed is not inventoried through POS; POS-on-account feed for pond customers posts to shop/inventory GL and
-        does not count in module expense totals unless you mirror it here.
+          {aquacultureT('dashboardOperatingExpensesLink', lang)}
+        </Link>
+        {aquacultureT('dashboardActivityChartsPart2', lang)}
       </p>
 
       {fcrAllSalesWeight != null && fcrHarvest != null && Math.abs(fcrAllSalesWeight - fcrHarvest) > 0.01 ? (
         <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-          <span className="font-medium text-slate-800">FCR note:</span> Using all sale-line weight (including fingerlings,
-          etc.) would give {formatNumber(fcrAllSalesWeight, 2)}. The headline FCR uses{' '}
-          <span className="font-medium">fish harvest sale</span> weight only.
+          <span className="font-medium text-slate-800">{aquacultureT('dashboardFcrNoteLabel', lang)}</span>
+          {aquacultureTFormat('dashboardFcrNotePart1', lang, { weight: formatNumber(fcrAllSalesWeight, 2) })}
+          <span className="font-medium">{aquacultureT('dashboardFcrNoteFishHarvest', lang)}</span>
+          {aquacultureT('dashboardFcrNotePart2', lang)}
         </p>
       ) : null}
 
       {/* Fry nursing → fingerling transfer workflow */}
       <section className="mt-10 rounded-xl border border-sky-200 bg-sky-50/60 p-5">
-        <h2 className="text-sm font-semibold text-sky-950">Physical site: fry nursing → fingerling transfers</h2>
-        <p className="mt-1 text-sm text-sky-900/90">
-          Each physical pond can have two profit centers — nursing phase (e.g. Mynuddin Nursing Pond at 3,000 pcs/kg)
-          and grow-out phase (Mynuddin Pond). After sampling records the current pcs/kg for that batch, transfer to production
-          ponds and move remainder to the grow-out pond on the same site.
-        </p>
+        <h2 className="text-sm font-semibold text-sky-950">
+          {aquacultureT('dashboardNursingWorkflowTitle', lang)}
+        </h2>
+        <p className="mt-1 text-sm text-sky-900/90">{aquacultureT('dashboardNursingWorkflowIntro', lang)}</p>
         <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-sky-900/85">
-          {NURSING_WORKFLOW_STEPS.map((step) => (
+          {nursingSteps.map((step) => (
             <li key={step}>{step}</li>
           ))}
         </ol>
@@ -744,25 +740,25 @@ export default function AquacultureOverviewPage() {
             href="/aquaculture/ponds"
             className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
           >
-            Ponds · create site pair
+            {aquacultureT('dashboardPondsSitePair', lang)}
           </Link>
           <Link
             href="/bills?new=1"
             className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
           >
-            Stock fry (vendor bill)
+            {aquacultureT('dashboardStockFryBill', lang)}
           </Link>
           <Link
             href="/aquaculture/transfers"
             className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
           >
-            Transfer fingerlings
+            {aquacultureT('dashboardTransferFingerlings', lang)}
           </Link>
           <Link
             href="/aquaculture/sampling"
             className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
           >
-            Biomass sampling
+            {aquacultureT('biomassSampling', lang)}
           </Link>
         </div>
       </section>
@@ -943,7 +939,7 @@ export default function AquacultureOverviewPage() {
         </div>
       ) : null}
 
-    </div>
+    </AquaculturePageShell>
   )
 }
 

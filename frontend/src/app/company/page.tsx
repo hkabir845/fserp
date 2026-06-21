@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import {
   Building2,
   Calendar,
@@ -16,6 +17,7 @@ import {
   Layers,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { getUniqueCurrencies } from '@/utils/currencies'
 import {
@@ -87,6 +89,7 @@ const emptyForm = (): CompanyForm => ({
 export default function CompanyPage() {
   const router = useRouter()
   const { error: showError, success: showSuccess } = useToast()
+  const pageMeta = usePageMeta()
   const [companyId, setCompanyId] = useState<number | null>(null)
   const [displayName, setDisplayName] = useState('')
   const [formData, setFormData] = useState<CompanyForm>(emptyForm)
@@ -253,37 +256,38 @@ export default function CompanyPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
-      </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+        </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen min-h-0 bg-slate-50 page-with-sidebar">
-      <Sidebar />
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-          <header className="mb-8 flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Tenant</p>
-              <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Company profile</h1>
-              <p className="mt-2 max-w-2xl text-slate-600">
-                Legal identity, address, currency, site preference (who may run one vs many active locations), and how
-                dates and times appear across the ERP.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || !companyId}
-              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              <Save className="h-4 w-4" />
-              {saving ? 'Saving…' : 'Save changes'}
-            </button>
-          </header>
-
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        titleId="company-title"
+        eyebrow={pageMeta.eyebrow}
+        eyebrowIcon={pageMeta.eyebrow ? Building2 : undefined}
+        title={pageMeta.title}
+        titleIcon={Building2}
+        description={pageMeta.description ?? undefined}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !companyId}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:bg-slate-500/50"
+          >
+            <Save className="h-4 w-4" />
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
+        }
+      >
           {!companyId ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-6 md:p-8 text-center text-amber-900">
               <p className="font-medium">No company is linked to this session.</p>
@@ -741,8 +745,7 @@ export default function CompanyPage() {
               </div>
             </div>
           )}
-        </div>
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

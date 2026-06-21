@@ -3,10 +3,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText, Ban } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useT } from '@/lib/i18n'
+import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
+import { useBillsT } from '@/lib/moduleI18n/bills'
 import api from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT, unwrapReferenceList } from '@/lib/pagination'
 import { preferNursingPondId, pondFishBillLabel } from '@/lib/aquaculturePondSite'
@@ -1006,6 +1012,10 @@ export default function BillsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const toast = useToast()
+  const pageMeta = usePageMeta()
+  const { t } = useT()
+  const tr = useErpCommonT()
+  const bt = useBillsT()
   const [bills, setBills] = useState<Bill[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [items, setItems] = useState<Item[]>([])
@@ -2610,21 +2620,42 @@ export default function BillsPage() {
   const { subtotal, taxAmount, total } = calculateTotals()
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Bills (Accounts Payable)</h1>
-          <p className="text-gray-600 mt-1">
-            Record vendor purchases and operating expenses for filling stations, aquaculture, and general AP — then pay
-            from Payments.
-          </p>
-          <div className="mt-3 max-w-4xl rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
-            <p className="font-semibold text-slate-900">How to record expenses on a bill</p>
-            <p className="mt-1 text-sm text-slate-600">
-              Choose <span className="font-medium">what this bill is mainly for</span> on the form, then add lines. The
-              form shows only the fields that match.
-            </p>
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        titleId="bills-title"
+        eyebrow={pageMeta.eyebrow}
+        title={pageMeta.title}
+        titleIcon={FileText}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <div className="flex flex-wrap items-end gap-2">
+            <DocumentExportButtons
+              onPrint={() => void handlePrintBillList()}
+              onDownloadCsv={handleDownloadBillListCsv}
+              onDownloadJson={handleDownloadBillListJson}
+              disabled={bills.length === 0}
+              printLabel={tr('printList')}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                resetForm()
+                setShowModal(true)
+              }}
+              className={AQ_HERO_BTN_PRIMARY}
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              <span>{tr('addBill')}</span>
+            </button>
+          </div>
+        }
+      >
+          <div className="mb-6 max-w-4xl rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+            <p className="font-semibold text-slate-900">{bt('howToRecordExpenses')}</p>
+            <p className="mt-1 text-sm text-slate-600">{bt('howToRecordHint')}</p>
             <ul className="mt-2 list-disc space-y-1.5 pl-5 leading-relaxed">
               <li>
                 <span className="font-medium text-slate-800">Station / shop:</span> fuel + <span className="font-medium">tank</span>;
@@ -2646,57 +2677,36 @@ export default function BillsPage() {
             <p className="mt-2 text-xs text-slate-600">
               Custom labels for aquaculture and fuel-station categories are set under{' '}
               <Link href="/reporting-categories" className="font-medium text-blue-700 underline hover:text-blue-800">
-                Reporting categories
+                {bt('reportingCategories')}
               </Link>{' '}
               (company admin). Built-in categories appear in the line pickers when you tag a pond or leave the pond unset.
             </p>
           </div>
-        </div>
 
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-4 flex-1">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+        <div className="mb-6 flex items-center">
+          <div className="flex flex-1 items-center space-x-4">
+            <div className="relative max-w-md flex-1">
+              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-gray-400" />
               <input
                 type="text"
-                placeholder="Search bills..."
+                placeholder={tr('searchBills')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="rounded-lg border border-gray-300 px-4 py-2 focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">All Status</option>
-              <option value="draft">Draft</option>
-              <option value="open">Open</option>
-              <option value="paid">Paid</option>
-              <option value="partial">Partially Paid</option>
-              <option value="overdue">Overdue</option>
+              <option value="">{tr('allStatus')}</option>
+              <option value="draft">{t('draft')}</option>
+              <option value="open">{tr('open')}</option>
+              <option value="paid">{tr('paid')}</option>
+              <option value="partial">{tr('partiallyPaid')}</option>
+              <option value="overdue">{tr('overdue')}</option>
             </select>
-          </div>
-          <div className="ml-4 flex flex-wrap items-center gap-2">
-            <DocumentExportButtons
-              onPrint={() => void handlePrintBillList()}
-              onDownloadCsv={handleDownloadBillListCsv}
-              onDownloadJson={handleDownloadBillListJson}
-              disabled={bills.length === 0}
-              printLabel="Print list"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                resetForm()
-                setShowModal(true)
-              }}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="h-5 w-5" />
-              <span>Add Bill</span>
-            </button>
           </div>
         </div>
 
@@ -2710,31 +2720,31 @@ export default function BillsPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Bill #
+                    {tr('billHash')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Vendor
+                    {t('vendor')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Receiving location
+                    {tr('receivingLocation')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Bill Date
+                    {tr('billDate')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Due Date
+                    {tr('dueDate')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Total
+                    {t('total')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Balance
+                    {tr('balance')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
+                    {t('status')}
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
+                    {t('actions')}
                   </th>
                 </tr>
               </thead>
@@ -2775,7 +2785,7 @@ export default function BillsPage() {
                           type="button"
                           onClick={() => handleViewBill(bill.id)}
                           className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="View bill"
+                          title={tr('viewBill')}
                         >
                           <Eye className="h-4 w-4" />
                         </button>
@@ -2846,7 +2856,7 @@ export default function BillsPage() {
             </table>
             {bills.length === 0 && (
               <div className="text-center py-12 text-gray-500">
-                <p>No bills found</p>
+                <p>{tr('noBillsFound')}</p>
               </div>
             )}
             {billsTotal > 0 && (
@@ -4048,7 +4058,7 @@ export default function BillsPage() {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

@@ -2,7 +2,9 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Info, Pen, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Gauge, Info, Pen, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -11,8 +13,10 @@ import { formatDateOnly, localDateISO } from '@/utils/date'
 import { CompanyDateInput } from '@/components/CompanyDateInput'
 import { PartialHarvestAdvicePanel } from '../PartialHarvestAdvicePanel'
 import { loadLevelBadgeClass, type StockMetricsRow } from '../aquacultureFishMetrics'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { aquacultureT, type AdviceLanguage } from '@/lib/aquacultureI18n'
+import { useT } from '@/lib/i18n'
 
 interface Pond {
   id: number
@@ -336,7 +340,9 @@ function extrapolationPreview(
 
 export default function AquacultureSamplingPage() {
   const toast = useToast()
+  const pageMeta = usePageMeta()
   const { language: lang } = useCompanyLocale()
+  const { t } = useT()
   const [ponds, setPonds] = useState<Pond[]>([])
   const [fishSpeciesOpts, setFishSpeciesOpts] = useState<FishSpeciesOpt[]>([])
   const [cycles, setCycles] = useState<CycleRow[]>([])
@@ -388,9 +394,9 @@ export default function AquacultureSamplingPage() {
       setPonds(Array.isArray(pRes.data) ? pRes.data : [])
       setFishSpeciesOpts(Array.isArray(spRes.data) ? spRes.data : [])
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not load ponds'))
+      toast.error(extractErrorMessage(e, aquacultureT('couldNotLoadPonds', lang)))
     }
-  }, [toast])
+  }, [toast, lang])
 
   const loadRows = useCallback(async () => {
     setLoading(true)
@@ -399,11 +405,11 @@ export default function AquacultureSamplingPage() {
       const { data } = await api.get<SampleRow[]>('/aquaculture/samples/', { params })
       setRows(Array.isArray(data) ? data : [])
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not load samples'))
+      toast.error(extractErrorMessage(e, aquacultureT('couldNotLoadSamples', lang)))
     } finally {
       setLoading(false)
     }
-  }, [toast, filterPond])
+  }, [toast, filterPond, lang])
 
   useEffect(() => {
     void loadPonds()
@@ -636,17 +642,17 @@ export default function AquacultureSamplingPage() {
 
   const save = async () => {
     if (!form.pond_id || !form.sample_date) {
-      toast.error('Pond and sample date are required')
+      toast.error(aquacultureT('errPondDateRequired', lang))
       return
     }
     const n = parseInt(form.estimated_fish_count, 10)
     if (!Number.isFinite(n) || n <= 0) {
-      toast.error('Number of fish in the net sample must be a positive integer')
+      toast.error(aquacultureT('errFishCountPositive', lang))
       return
     }
     const x = Number(String(form.estimated_total_weight_kg).replace(/,/g, ''))
     if (!Number.isFinite(x) || x <= 0) {
-      toast.error('Total weight of the net sample (kg) is required and must be greater than zero')
+      toast.error(aquacultureT('errWeightRequired', lang))
       return
     }
     const payload: Record<string, unknown> = {
@@ -672,52 +678,46 @@ export default function AquacultureSamplingPage() {
     try {
       if (editing) {
         await api.put(`/aquaculture/samples/${editing.id}/`, payload)
-        toast.success('Updated')
+        toast.success(aquacultureT('updated', lang))
       } else {
         await api.post('/aquaculture/samples/', payload)
-        toast.success('Saved')
+        toast.success(aquacultureT('saved', lang))
       }
       setModal(false)
       void loadRows()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Save failed'))
+      toast.error(extractErrorMessage(e, aquacultureT('saveFailed', lang)))
     }
   }
 
   const remove = async (r: SampleRow) => {
-    if (!window.confirm('Delete this sample?')) return
+    if (!window.confirm(aquacultureT('confirmDeleteSample', lang))) return
     try {
       await api.delete(`/aquaculture/samples/${r.id}/`)
-      toast.success('Deleted')
+      toast.success(aquacultureT('deleted', lang))
       void loadRows()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Delete failed'))
+      toast.error(extractErrorMessage(e, aquacultureT('deleteFailed', lang)))
     }
   }
 
   return (
-    <div className="w-full min-w-0 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 id="aq-sampling-title" className="text-xl font-bold tracking-tight text-slate-900">
-            Biomass sampling
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Record a <strong className="font-medium text-slate-800">net sample</strong>: catch a batch, weigh them together,
-            count them, and return them to the pond. The app combines your sample mean weight with{' '}
-            <strong className="font-medium text-slate-800">head count from Fish stock</strong> (transfers, stocking,
-            sales, adjustments) to estimate total pond biomass and growth since the last book mean.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="text-xs text-slate-600">
-            Pond
+    <AquaculturePageShell
+      titleId="aq-sampling-title"
+      eyebrow={pageMeta.eyebrow}
+      title={pageMeta.title}
+      titleIcon={Gauge}
+      description={pageMeta.description}
+      actions={
+        <>
+          <label className="text-xs font-medium text-teal-100">
+            {aquacultureT('pondFilter', lang)}
             <select
-              className="ml-1 block rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
               value={filterPond}
               onChange={(e) => setFilterPond(e.target.value)}
             >
-              <option value="">All</option>
+              <option value="">{aquacultureT('allPonds', lang)}</option>
               {activePonds.map((p) => (
                 <option key={p.id} value={p.id}>
                   {pondLabel(p)}
@@ -725,23 +725,23 @@ export default function AquacultureSamplingPage() {
               ))}
             </select>
           </label>
-          <button type="button" onClick={() => void loadRows()} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm">
-            <RefreshCw className="h-4 w-4" />
-            Refresh
+          <button type="button" onClick={() => void loadRows()} className={AQ_HERO_BTN_GHOST}>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            {aquacultureT('refresh', lang)}
           </button>
           <button
             type="button"
             onClick={openNew}
             disabled={loading || ponds.length === 0}
-            className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className={AQ_HERO_BTN_PRIMARY}
           >
-            <Plus className="h-4 w-4" />
-            Log sample
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            {aquacultureT('logSample', lang)}
           </button>
-        </div>
-      </div>
-
-      <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        </>
+      }
+    >
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex gap-3">
           <Info className="mt-0.5 h-5 w-5 shrink-0 text-teal-700" aria-hidden />
           <div className="min-w-0 flex-1 space-y-4 text-sm text-slate-700">
@@ -751,16 +751,15 @@ export default function AquacultureSamplingPage() {
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
-                <p className="text-xs font-semibold text-teal-900">1 · Net sample</p>
+                <p className="text-xs font-semibold text-teal-900">{aquacultureT('stepNetSample', lang)}</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                  e.g. 12 fish weighing 4&nbsp;kg → average <strong>0.33&nbsp;kg per fish</strong> in the sample.
+                  {aquacultureT('stepNetSampleExample', lang)}
                 </p>
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
-                <p className="text-xs font-semibold text-teal-900">2 · Pond total (estimate)</p>
+                <p className="text-xs font-semibold text-teal-900">{aquacultureT('stepPondTotal', lang)}</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                  Multiply that average by the <strong>fish head count in your books</strong> (from Pond stock). If books
-                  show 109,400 fish → about 36,100&nbsp;kg in the pond.
+                  {aquacultureT('stepPondTotalExample', lang)}
                 </p>
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
@@ -785,13 +784,13 @@ export default function AquacultureSamplingPage() {
         </div>
       ) : ponds.length === 0 ? (
         <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
-          <p className="font-medium">Add at least one pond first</p>
-          <p className="mt-1 text-amber-900/90">Sampling is recorded per pond.</p>
+          <p className="font-medium">{aquacultureT('addPondFirstTitle', lang)}</p>
+          <p className="mt-1 text-amber-900/90">{aquacultureT('addPondFirstBody', lang)}</p>
           <Link
             href="/aquaculture/ponds"
             className="mt-3 inline-block font-medium text-teal-800 underline decoration-teal-600/50 hover:decoration-teal-800"
           >
-            Go to Ponds
+            {aquacultureT('goToPonds', lang)}
           </Link>
         </div>
       ) : (
@@ -801,32 +800,32 @@ export default function AquacultureSamplingPage() {
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
                 <th scope="col" className={thMain}>
-                  When
-                  <span className={thSub}>Sample date</span>
+                  {aquacultureT('colWhen', lang)}
+                  <span className={thSub}>{aquacultureT('colWhenSub', lang)}</span>
                 </th>
                 <th scope="col" className={thMain}>
-                  Where
-                  <span className={thSub}>Pond, species, batch</span>
+                  {aquacultureT('colWhere', lang)}
+                  <span className={thSub}>{aquacultureT('colWhereSub', lang)}</span>
                 </th>
                 <th scope="col" className={`${thMain} min-w-[8.5rem]`}>
-                  What you measured
-                  <span className={thSub}>Fish caught in the net and their weight</span>
+                  {aquacultureT('colMeasured', lang)}
+                  <span className={thSub}>{aquacultureT('colMeasuredSub', lang)}</span>
                 </th>
                 <th scope="col" className={`${thMain} min-w-[7.5rem]`}>
-                  Size & growth
-                  <span className={thSub}>Pcs/kg and ADG since last sample</span>
+                  {aquacultureT('colSizeGrowth', lang)}
+                  <span className={thSub}>{aquacultureT('colSizeGrowthSub', lang)}</span>
                 </th>
                 <th scope="col" className={`${thMain} min-w-[8rem]`}>
-                  Books at save
-                  <span className={thSub}>Head count and avg weight from Pond stock</span>
+                  {aquacultureT('colBooks', lang)}
+                  <span className={thSub}>{aquacultureT('colBooksSub', lang)}</span>
                 </th>
                 <th scope="col" className={`${thMain} min-w-[9rem]`}>
-                  Pond estimate
-                  <span className={thSub}>Total kg if sample average applies to all fish</span>
+                  {aquacultureT('colPondEst', lang)}
+                  <span className={thSub}>{aquacultureT('colPondEstSub', lang)}</span>
                 </th>
                 <th scope="col" className={`${thMain} min-w-[8rem]`}>
-                  Market (optional)
-                  <span className={thSub}>Price, value, profit vs books</span>
+                  {aquacultureT('colMarket', lang)}
+                  <span className={thSub}>{aquacultureT('colMarketSub', lang)}</span>
                 </th>
                 <th scope="col" className={`${thMain} min-w-[9.5rem]`}>
                   {aquacultureT('shouldYouThin', lang)}
@@ -859,7 +858,7 @@ export default function AquacultureSamplingPage() {
                       <div className="text-xs font-medium text-slate-900">{formatDateOnly(r.sample_date)}</div>
                       {r.source_fish_sale_id != null ? (
                         <span className="mt-1 inline-block rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                          From harvest sale
+                          {aquacultureT('fromHarvestSale', lang)}
                         </span>
                       ) : null}
                     </td>
@@ -877,15 +876,15 @@ export default function AquacultureSamplingPage() {
                       <MetricCell
                         lines={[
                           {
-                            label: 'In the net',
+                            label: aquacultureT('inTheNetLabel', lang),
                             value:
                               r.estimated_fish_count != null && r.estimated_total_weight_kg != null
-                                ? `${formatNumber(r.estimated_fish_count, 0)} fish · ${formatNumber(Number(r.estimated_total_weight_kg))} kg`
+                                ? `${formatNumber(r.estimated_fish_count, 0)} ${aquacultureT('fishUnit', lang)} · ${formatNumber(Number(r.estimated_total_weight_kg))} kg`
                                 : '—',
                           },
                           {
-                            label: 'Average per fish',
-                            value: avgKg != null ? `${formatMeanKgPerFish(avgKg)} kg each` : '—',
+                            label: aquacultureT('avgPerFishLabel', lang),
+                            value: avgKg != null ? `${formatMeanKgPerFish(avgKg)} ${aquacultureT('kgEach', lang)}` : '—',
                           },
                         ]}
                       />
@@ -894,22 +893,24 @@ export default function AquacultureSamplingPage() {
                       <MetricCell
                         lines={[
                           {
-                            label: 'Pcs/kg',
+                            label: aquacultureT('pcsPerKgLabel', lang),
                             value:
                               growth?.pcsPerKg != null
-                                ? `${formatNumber(growth.pcsPerKg, 1)} fish per kg`
+                                ? `${formatNumber(growth.pcsPerKg, 1)} ${aquacultureT('fishPerKg', lang)}`
                                 : '—',
                           },
                           {
-                            label: 'ADG',
+                            label: aquacultureT('adgLabel', lang),
                             value:
                               growth?.adgGPerFishPerDay != null && Number.isFinite(growth.adgGPerFishPerDay)
-                                ? `${formatNumber(growth.adgGPerFishPerDay, 2)} g/fish/day${
-                                    growth.daysSincePrev != null ? ` · ${growth.daysSincePrev} d` : ''
+                                ? `${formatNumber(growth.adgGPerFishPerDay, 2)} ${aquacultureT('adgUnit', lang)}${
+                                    growth.daysSincePrev != null
+                                      ? ` · ${growth.daysSincePrev} ${aquacultureT('daysShort', lang)}`
+                                      : ''
                                   }`
                                 : growth?.prevSampleDate
-                                  ? '— (needs net count + kg on both samples)'
-                                  : 'First sample in batch',
+                                  ? aquacultureT('adgNeedsBothSamples', lang)
+                                  : aquacultureT('firstSampleInBatch', lang),
                             valueClass:
                               growth?.adgGPerFishPerDay == null
                                 ? 'text-slate-500'
@@ -920,7 +921,7 @@ export default function AquacultureSamplingPage() {
                           ...(growth?.prevSampleDate
                             ? [
                                 {
-                                  label: 'Since',
+                                  label: aquacultureT('sinceLabel', lang),
                                   value: formatDateOnly(growth.prevSampleDate),
                                 },
                               ]
@@ -932,13 +933,15 @@ export default function AquacultureSamplingPage() {
                       <MetricCell
                         lines={[
                           {
-                            label: 'Fish in books',
+                            label: aquacultureT('fishInBooksLabel', lang),
                             value:
-                              bookHead != null && bookHead > 0 ? `${formatNumber(bookHead, 0)} head` : '—',
+                              bookHead != null && bookHead > 0
+                                ? `${formatNumber(bookHead, 0)} ${aquacultureT('headUnit', lang)}`
+                                : '—',
                           },
                           {
-                            label: 'Book avg weight',
-                            value: bookMean != null ? `${formatMeanKgPerFish(bookMean)} kg each` : '—',
+                            label: aquacultureT('bookAvgWeight', lang),
+                            value: bookMean != null ? `${formatMeanKgPerFish(bookMean)} ${aquacultureT('kgEach', lang)}` : '—',
                           },
                         ]}
                       />
@@ -947,15 +950,15 @@ export default function AquacultureSamplingPage() {
                       <MetricCell
                         lines={[
                           {
-                            label: 'Estimated in pond',
-                            value: estBio != null ? `${formatNumber(estBio)} kg total` : '—',
+                            label: aquacultureT('estimatedInPond', lang),
+                            value: estBio != null ? `${formatNumber(estBio)} ${aquacultureT('kgTotal', lang)}` : '—',
                             valueClass: 'font-semibold',
                           },
                           {
-                            label: 'Change vs books',
+                            label: aquacultureT('changeVsBooks', lang),
                             value:
                               estGain != null
-                                ? `${estGain >= 0 ? '+' : ''}${formatNumber(estGain)} kg (fish grew or shrank)`
+                                ? `${estGain >= 0 ? '+' : ''}${formatNumber(estGain)} kg (${aquacultureT('grewOrShrunk', lang)})`
                                 : '—',
                             valueClass:
                               estGain == null ? '' : estGain >= 0 ? 'text-emerald-800' : 'text-rose-800',
@@ -968,17 +971,17 @@ export default function AquacultureSamplingPage() {
                         <MetricCell
                           lines={[
                             {
-                              label: 'Market price',
+                              label: aquacultureT('marketPrice', lang),
                               value: mktPrice != null ? `${formatMoney(mktPrice)} BDT/kg` : '—',
                             },
                             {
-                              label: 'Value at market',
+                              label: aquacultureT('valueAtMarket', lang),
                               value: mktValue != null ? `${formatMoney(mktValue)} BDT` : '—',
                             },
                             ...(bioMargin != null
                               ? [
                                   {
-                                    label: 'Profit vs bio-asset books',
+                                    label: aquacultureT('profitVsBio', lang),
                                     value: `${formatMoney(bioMargin)} BDT`,
                                     valueClass: marginClass(bioMargin),
                                   },
@@ -987,7 +990,7 @@ export default function AquacultureSamplingPage() {
                             ...(fullMargin != null
                               ? [
                                   {
-                                    label: 'Profit vs full pond cost',
+                                    label: aquacultureT('profitVsFullCost', lang),
                                     value: `${formatMoney(fullMargin)} BDT`,
                                     valueClass: marginClass(fullMargin),
                                   },
@@ -996,7 +999,7 @@ export default function AquacultureSamplingPage() {
                           ]}
                         />
                       ) : (
-                        <span className="text-xs text-slate-400">No market price entered</span>
+                        <span className="text-xs text-slate-400">{aquacultureT('noMarketPrice', lang)}</span>
                       )}
                     </td>
                     <td className={tdCell} title={load.title}>
@@ -1008,7 +1011,7 @@ export default function AquacultureSamplingPage() {
                           type="button"
                           onClick={() => openEdit(r)}
                           className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                          title="Edit sample"
+                          title={aquacultureT('editSample', lang)}
                         >
                           <Pen className="h-3.5 w-3.5" aria-hidden />
                           <span className="sr-only">Edit</span>
@@ -1017,7 +1020,7 @@ export default function AquacultureSamplingPage() {
                           type="button"
                           onClick={() => void remove(r)}
                           className="rounded p-1 text-slate-500 hover:bg-rose-50 hover:text-rose-700"
-                          title="Delete sample"
+                          title={aquacultureT('deleteSample', lang)}
                         >
                           <Trash2 className="h-3.5 w-3.5" aria-hidden />
                           <span className="sr-only">Delete</span>
@@ -1030,8 +1033,8 @@ export default function AquacultureSamplingPage() {
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
-                    No sampling records yet. After a net catch, click{' '}
-                    <span className="font-medium text-slate-700">Log sample</span>.
+                    {aquacultureT('noSamplesYet', lang)}{' '}
+                    <span className="font-medium text-slate-700">{aquacultureT('logSample', lang)}</span>.
                   </td>
                 </tr>
               ) : null}
@@ -1043,23 +1046,24 @@ export default function AquacultureSamplingPage() {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">{editing ? 'Edit net sample' : 'Log net sample'}</h2>
+            <h2 className="text-lg font-semibold text-slate-900">
+              {editing ? aquacultureT('editNetSample', lang) : aquacultureT('logSample', lang)}
+            </h2>
             {editing?.source_fish_sale_id != null ? (
               <p className="mt-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs leading-relaxed text-teal-950">
-                This row was created from a pond fish harvest sale. Editing here only changes this sampling record; the
-                sale screen remains the source of truth for that harvest.
+                {aquacultureT('harvestSaleEditNote', lang)}
               </p>
             ) : null}
 
             <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-xs text-slate-600">
-              <li>Choose pond, optional stocking batch, and species.</li>
-              <li>Enter how many fish were in the net and their combined weight (kg).</li>
-              <li>Review live extrapolation vs current Fish stock, then save (values are snapshotted).</li>
+              <li>{aquacultureT('modalStep1', lang)}</li>
+              <li>{aquacultureT('modalStep2', lang)}</li>
+              <li>{aquacultureT('modalStep3', lang)}</li>
             </ol>
 
             <div className="mt-4 space-y-3">
               <label className="block text-sm font-medium text-slate-700">
-                Pond
+                {aquacultureT('pondFilter', lang)}
                 <select
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.pond_id}
@@ -1073,13 +1077,13 @@ export default function AquacultureSamplingPage() {
                 </select>
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Stocking batch (optional)
+                {aquacultureT('stockingBatchOptional', lang)}
                 <select
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.production_cycle_id}
                   onChange={(e) => setForm((f) => ({ ...f, production_cycle_id: e.target.value }))}
                 >
-                  <option value="">All movements for this pond</option>
+                  <option value="">{aquacultureT('allMovementsPond', lang)}</option>
                   {cycles.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -1088,7 +1092,7 @@ export default function AquacultureSamplingPage() {
                 </select>
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Sample date
+                {aquacultureT('sampleDate', lang)}
                 <CompanyDateInput
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.sample_date}
@@ -1097,7 +1101,7 @@ export default function AquacultureSamplingPage() {
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Fish species
+                {aquacultureT('fishSpecies', lang)}
                 <select
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.fish_species}
@@ -1118,7 +1122,7 @@ export default function AquacultureSamplingPage() {
               </label>
               {form.fish_species === 'other' ? (
                 <label className="block text-sm font-medium text-slate-700">
-                  Other species name
+                  {aquacultureT('otherSpeciesName', lang)}
                   <input
                     type="text"
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -1130,13 +1134,15 @@ export default function AquacultureSamplingPage() {
               ) : null}
 
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fish stock reference (live)</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {aquacultureT('fishStockRefLive', lang)}
+                </p>
                 {stockPreviewLoading ? (
-                  <p className="mt-2 text-sm text-slate-500">Loading position…</p>
+                  <p className="mt-2 text-sm text-slate-500">{aquacultureT('loadingPosition', lang)}</p>
                 ) : stockPreview ? (
                   <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
                     <div>
-                      <dt className="text-slate-500">Implied head</dt>
+                      <dt className="text-slate-500">{aquacultureT('impliedHead', lang)}</dt>
                       <dd className="font-medium tabular-nums text-slate-900">
                         {stockPreview.implied_net_fish_count > 0
                           ? formatNumber(stockPreview.implied_net_fish_count, 0)
@@ -1144,23 +1150,20 @@ export default function AquacultureSamplingPage() {
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-slate-500">Implied net kg</dt>
+                      <dt className="text-slate-500">{aquacultureT('impliedNetKg', lang)}</dt>
                       <dd className="font-medium tabular-nums text-slate-900">
                         {formatNumber(Number(stockPreview.implied_net_weight_kg))}
                       </dd>
                     </div>
                   </dl>
                 ) : (
-                  <p className="mt-2 text-sm text-slate-500">Could not load position for this pond and species.</p>
+                  <p className="mt-2 text-sm text-slate-500">{aquacultureT('couldNotLoadPosition', lang)}</p>
                 )}
-                <p className="mt-2 text-xs leading-relaxed text-slate-500">
-                  Matches the Fish stock page for this pond, optional cycle filter, and species. Saving stores these as book
-                  head / mean for extrapolation.
-                </p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">{aquacultureT('stockRefHint', lang)}</p>
               </div>
 
               <label className="block text-sm font-medium text-slate-700">
-                Fish in net sample (count) <span className="text-rose-600">*</span>
+                {aquacultureT('fishInNetCount', lang)} <span className="text-rose-600">*</span>
                 <input
                   type="number"
                   min="1"
@@ -1172,7 +1175,7 @@ export default function AquacultureSamplingPage() {
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Combined weight of net sample (kg) <span className="text-rose-600">*</span>
+                {aquacultureT('combinedWeightKg', lang)} <span className="text-rose-600">*</span>
                 <input
                   type="number"
                   min="0"
@@ -1185,7 +1188,7 @@ export default function AquacultureSamplingPage() {
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="block text-sm font-medium text-slate-700">
-                  Sample mean weight (kg/fish)
+                  {aquacultureT('sampleMeanWeight', lang)}
                   <div
                     className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800 tabular-nums"
                     aria-live="polite"
@@ -1194,7 +1197,7 @@ export default function AquacultureSamplingPage() {
                   </div>
                 </div>
                 <div className="block text-sm font-medium text-slate-700">
-                  Pcs/kg (from net sample)
+                  {aquacultureT('pcsPerKgFromNet', lang)}
                   <div
                     className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800 tabular-nums"
                     aria-live="polite"
@@ -1205,35 +1208,39 @@ export default function AquacultureSamplingPage() {
               </div>
               {modalGrowthPreview.prevDate ? (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Growth vs last sample</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {aquacultureT('growthVsLastSample', lang)}
+                  </p>
                   <p className="mt-1 tabular-nums text-slate-800">
                     {modalGrowthPreview.adg != null && Number.isFinite(modalGrowthPreview.adg)
-                      ? `${formatNumber(modalGrowthPreview.adg, 2)} g/fish/day · ${modalGrowthPreview.days ?? '—'} d since ${formatDateOnly(modalGrowthPreview.prevDate)}`
-                      : `ADG unavailable — needs net count + kg on sample from ${formatDateOnly(modalGrowthPreview.prevDate)}`}
+                      ? `${formatNumber(modalGrowthPreview.adg, 2)} ${aquacultureT('adgUnit', lang)} · ${modalGrowthPreview.days ?? '—'} ${aquacultureT('daysShort', lang)} ${aquacultureT('sinceLabel', lang)} ${formatDateOnly(modalGrowthPreview.prevDate)}`
+                      : `${aquacultureT('adgUnavailable', lang)} ${formatDateOnly(modalGrowthPreview.prevDate)}`}
                   </p>
                 </div>
               ) : computedPcsPerKg != null ? (
-                <p className="text-xs text-slate-500">First sample for this pond and batch — ADG will appear on the next sample.</p>
+                <p className="text-xs text-slate-500">{aquacultureT('firstSampleAdgHint', lang)}</p>
               ) : null}
 
               {modalExtrapolation ? (
                 <div className="rounded-lg border border-teal-100 bg-teal-50/60 p-3 text-sm">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-teal-900">Preview (before save)</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-teal-900">
+                    {aquacultureT('previewBeforeSave', lang)}
+                  </p>
                   <dl className="mt-2 space-y-1.5">
                     <div className="flex justify-between gap-2">
-                      <dt className="text-teal-900/80">Book mean kg/fish</dt>
+                      <dt className="text-teal-900/80">{aquacultureT('bookMeanKgFish', lang)}</dt>
                       <dd className="tabular-nums font-medium text-teal-950">
                         {modalExtrapolation.refAvgKg != null ? formatMeanKgPerFish(modalExtrapolation.refAvgKg) : '—'}
                       </dd>
                     </div>
                     <div className="flex justify-between gap-2">
-                      <dt className="text-teal-900/80">Est. pond biomass</dt>
+                      <dt className="text-teal-900/80">{aquacultureT('estPondBiomass', lang)}</dt>
                       <dd className="tabular-nums font-medium text-teal-950">
                         {modalExtrapolation.biomassKg != null ? `${formatNumber(modalExtrapolation.biomassKg)} kg` : '—'}
                       </dd>
                     </div>
                     <div className="flex justify-between gap-2">
-                      <dt className="text-teal-900/80">Est. biomass vs book mean</dt>
+                      <dt className="text-teal-900/80">{aquacultureT('estBiomassVsBook', lang)}</dt>
                       <dd
                         className={`tabular-nums font-medium ${
                           modalExtrapolation.gainKg == null
@@ -1248,10 +1255,7 @@ export default function AquacultureSamplingPage() {
                     </div>
                   </dl>
                   {modalExtrapolation.refHead == null || modalExtrapolation.refHead <= 0 ? (
-                    <p className="mt-2 text-xs text-amber-800">
-                      No positive head count in Fish stock for this filter — extrapolation will be blank until stock is
-                      recorded.
-                    </p>
+                    <p className="mt-2 text-xs text-amber-800">{aquacultureT('noHeadForExtrap', lang)}</p>
                   ) : null}
                 </div>
               ) : null}
@@ -1263,7 +1267,7 @@ export default function AquacultureSamplingPage() {
               ) : null}
 
               <label className="block text-sm font-medium text-slate-700">
-                Market price (BDT/kg)
+                {aquacultureT('marketPriceOptional', lang)}
                 <input
                   type="number"
                   min="0"
@@ -1338,7 +1342,7 @@ export default function AquacultureSamplingPage() {
               ) : null}
 
               <label className="block text-sm font-medium text-slate-700">
-                Notes
+                {aquacultureT('notes', lang)}
                 <textarea
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   rows={2}
@@ -1350,15 +1354,15 @@ export default function AquacultureSamplingPage() {
             </div>
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" onClick={() => setModal(false)} className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100">
-                Cancel
+                {t('cancel')}
               </button>
               <button type="button" onClick={() => void save()} className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white">
-                Save
+                {t('save')}
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </AquaculturePageShell>
   )
 }

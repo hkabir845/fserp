@@ -12,6 +12,7 @@ import api from '@/lib/api'
 import { safeLogError } from '@/utils/connectionError'
 import { useErpNavigationMenu } from '@/hooks/useErpNavigationMenu'
 import { useCenterActiveListItem } from '@/hooks/useCenterActiveListItem'
+import { useT } from '@/lib/i18n'
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'sidebar_width_px'
 const SIDEBAR_WIDTH_DEFAULT = 256
@@ -31,15 +32,16 @@ function SidebarModeTabs({
   mode: SidebarMode
   onModeChange: (mode: SidebarMode) => void
 }) {
+  const { t } = useT()
   const tabs: { id: SidebarMode; label: string; icon: typeof Building2 }[] = [
-    { id: 'fsms_erp', label: 'FSMS ERP', icon: Building2 },
-    { id: 'saas_dashboard', label: 'SaaS', icon: Shield },
+    { id: 'fsms_erp', label: t('fsmsErpTab'), icon: Building2 },
+    { id: 'saas_dashboard', label: t('saasTab'), icon: Shield },
   ]
 
   return (
     <div
       role="tablist"
-      aria-label="Application mode"
+      aria-label={t('applicationMode')}
       className="erp-sidebar-tabs flex rounded-md p-0.5"
     >
       {tabs.map(({ id, label, icon: Icon }) => {
@@ -69,6 +71,7 @@ function SidebarModeTabs({
 }
 
 export default function Sidebar() {
+  const { t } = useT()
   const pathname = usePathname()
   const router = useRouter()
   const { navOpen: mobileNavOpen, setNavOpen: setMobileNavOpen, isDesktopLayout } = useSidebarNav()
@@ -405,7 +408,7 @@ export default function Sidebar() {
         type="button"
         onClick={() => setMobileNavOpen(true)}
         className="fixed left-[max(0.75rem,env(safe-area-inset-left,0px))] top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[60] flex h-11 w-11 items-center justify-center rounded-lg bg-[hsl(var(--sidebar-bg))] text-white shadow-lg ring-1 ring-[hsl(var(--sidebar-border))] md:hidden"
-        aria-label="Open navigation menu"
+        aria-label={t('openNavMenu')}
       >
         <Menu className="h-6 w-6" />
       </button>
@@ -413,7 +416,7 @@ export default function Sidebar() {
         <button
           type="button"
           className="fixed inset-0 z-[45] bg-black/50 backdrop-blur-[1px] md:hidden"
-          aria-label="Close menu"
+          aria-label={t('closeMenu')}
           onClick={() => setMobileNavOpen(false)}
         />
       )}
@@ -437,7 +440,7 @@ export default function Sidebar() {
           type="button"
           onClick={() => setMobileNavOpen(false)}
           className="rounded-md p-1.5 text-[hsl(var(--sidebar-fg-muted))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-fg))] md:hidden"
-          aria-label="Close navigation"
+          aria-label={t('closeNavigation')}
         >
           <X className="h-5 w-5" />
         </button>
@@ -485,7 +488,7 @@ export default function Sidebar() {
       <nav className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 px-2 pb-1.5 pt-2">
           <label htmlFor="sidebar-menu-search" className="sr-only">
-            Search menu
+            {t('searchMenu')}
           </label>
           <div className="relative">
             <Search
@@ -506,7 +509,7 @@ export default function Sidebar() {
                 type="button"
                 onClick={() => setNavSearchQuery('')}
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[hsl(var(--sidebar-fg-subtle))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-fg))]"
-                aria-label="Clear menu search"
+                aria-label={t('clearSearch')}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -599,16 +602,16 @@ export default function Sidebar() {
           className="erp-sidebar-footer-link flex w-full items-center gap-2 rounded-md px-2 py-1.5 transition-colors"
         >
           <KeyRound className="h-3.5 w-3.5 shrink-0" />
-          <span className="text-xs font-medium">Password</span>
+          <span className="text-xs font-medium">{t('password')}</span>
         </Link>
         <button
           type="button"
           onClick={performLogout}
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-red-300 transition-colors hover:bg-red-950/50 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60"
-          aria-label="Log out"
+          aria-label={t('logOut')}
         >
           <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          <span className="text-xs font-medium">Logout</span>
+          <span className="text-xs font-medium">{t('logout')}</span>
         </button>
       </div>
     </aside>
@@ -617,7 +620,7 @@ export default function Sidebar() {
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize navigation sidebar"
+        aria-label={t('resizeSidebar')}
         aria-valuemin={SIDEBAR_WIDTH_MIN}
         aria-valuemax={SIDEBAR_WIDTH_MAX}
         aria-valuenow={Math.round(sidebarWidthPx)}

@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { AlertTriangle, HelpCircle, Lock, Pencil, Pill, Plus, Trash2, type LucideIcon } from 'lucide-react'
 import type { MedicineProductLine } from './medicineUtils'
 import { formatDateOnly } from '@/utils/date'
@@ -44,27 +45,36 @@ export function MedicineStatCard(props: {
 
 export function MedicineTipsAside() {
   return (
-    <aside className="rounded-2xl border border-violet-100 bg-gradient-to-b from-violet-50/90 to-white p-4 shadow-sm">
-      <div className="flex items-center gap-2 text-sm font-semibold text-violet-950">
-        <HelpCircle className="h-4 w-4 text-violet-700" aria-hidden />
+    <aside className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-4 text-sm text-slate-700">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <HelpCircle className="h-3.5 w-3.5" aria-hidden />
         Quick guide
       </div>
-      <ul className="mt-3 space-y-2 text-xs leading-relaxed text-slate-700">
+      <ul className="mt-3 space-y-2 text-xs leading-relaxed text-slate-600">
         <li>
           <strong className="text-slate-900">1.</strong> In Items, set each SKU&apos;s unit (e.g. Lime → kg). Move stock to
-          the pond warehouse (Aquaculture → Stock → Add stock, or Inventory → move to pond).
+          the pond warehouse (
+          <Link href="/aquaculture/stock" className="font-medium text-teal-800 underline">
+            Pond stock
+          </Link>
+          {' '}
+          or{' '}
+          <Link href="/inventory" className="font-medium text-teal-800 underline">
+            Inventory
+          </Link>
+          ).
         </li>
         <li>
-          <strong className="text-slate-900">2.</strong> Selecting a pond fills water volume from pond setup (water area
-          decimal × depth). Edit the field if you only treat part of the pond.
+          <strong className="text-slate-900">2.</strong> Selecting a pond fills water volume from pond setup. Edit if you
+          only treat part of the pond.
         </li>
         <li>
-          <strong className="text-slate-900">3.</strong> Add one or more products for the same bath or protocol, then
-          record once — each product posts stock and COGS separately but shares the same batch reference in history.
+          <strong className="text-slate-900">3.</strong> Multi-product baths share application details and one batch
+          reference in history.
         </li>
         <li>
-          <strong className="text-slate-900">4.</strong> Use per-line notes only when dose differs by product; otherwise
-          set dose once under application details.
+          <strong className="text-slate-900">4.</strong> Delete restores stock and reverses COGS; edit protocol fields from
+          row actions.
         </li>
       </ul>
     </aside>

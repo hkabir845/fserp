@@ -1,7 +1,11 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
-import Sidebar from "@/components/Sidebar"
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { AQ_HERO_BTN_GHOST } from '@/components/aquaculture/AquacultureUi'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useCashierT } from '@/lib/moduleI18n/cashier'
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { useToast } from "@/components/Toast"
@@ -316,6 +320,8 @@ export default function CashierPOSPage() {
   const searchParams = useSearchParams()
   const toast = useToast()
   const { selectedCompany } = useCompany()
+  const pageMeta = usePageMeta()
+  const cashier = useCashierT()
 
   /** What this login may sell: from localStorage user (set at login). */
   const posSaleScope: PosSaleScope = getPosSaleScope()
@@ -1347,222 +1353,173 @@ export default function CashierPOSPage() {
 
   if (loading) {
     return (
-      <div className="page-with-sidebar flex h-screen bg-background">
-        <Sidebar />
-        <div className="flex flex-1 items-center justify-center p-6">
-          <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card px-10 py-12 text-center shadow-sm">
-            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center px-4">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200/90 bg-white px-10 py-12 text-center shadow-sm">
+            <Loader2 className="h-10 w-10 animate-spin text-teal-600" />
             <div>
-              <p className="text-sm font-medium text-foreground">Loading POS</p>
-              <p className="mt-1 text-xs text-muted-foreground">{scopeUi.loadingHint}</p>
+              <p className="text-sm font-medium text-slate-900">{cashier.t('loadingPos')}</p>
+              <p className="mt-1 text-xs text-slate-500">{cashier.loadingHint(posSaleScope)}</p>
             </div>
           </div>
         </div>
-      </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="page-with-sidebar flex h-screen bg-background">
-      <Sidebar />
-
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-l border-border/60 shadow-sm">
-        <header className="sticky top-0 z-40 border-b border-border bg-background/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4">
-          <div className="mx-auto flex max-w-[1600px] flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Point of sale
-                </p>
-                <span
-                  className={scopeUi.badgeClass}
-                  title="This register is configured for your login (POS scope)"
-                >
-                  {posSaleScope === "both" && (
-                    <span className="inline-flex items-center gap-0.5" aria-hidden>
-                      <Fuel className="h-3.5 w-3.5 shrink-0 opacity-90" />
-                      <Store className="h-3.5 w-3.5 shrink-0 opacity-90" />
-                    </span>
-                  )}
-                  {posSaleScope === "general" && <Store className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />}
-                  {posSaleScope === "fuel" && <Fuel className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />}
-                  {posSaleScope === "both" && "Fuel & shop"}
-                  {posSaleScope === "general" && "Shop only"}
-                  {posSaleScope === "fuel" && "Fuel only"}
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        titleId="pos-title"
+        eyebrow={pageMeta.eyebrow}
+        eyebrowIcon={ShoppingCart}
+        title={cashier.checkoutTitle(posSaleScope)}
+        titleIcon={ShoppingCart}
+        description={cashier.checkoutDescription(posSaleScope)}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <div className="flex flex-wrap items-end gap-2">
+            <span
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white backdrop-blur sm:text-xs"
+              title={cashier.t('scopeBadgeTitle')}
+            >
+              {posSaleScope === 'both' && (
+                <span className="inline-flex items-center gap-0.5" aria-hidden>
+                  <Fuel className="h-3.5 w-3.5 shrink-0 opacity-90" />
+                  <Store className="h-3.5 w-3.5 shrink-0 opacity-90" />
                 </span>
-                <span
-                  className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground sm:text-xs"
-                  title="Local time at this workstation"
-                >
-                  <Clock className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
-                  <time dateTime={now.toISOString()}>
-                    {formatDate(now, true)}
-                  </time>
-                </span>
-              </div>
-              <h1 className="mt-2 text-xl font-bold tracking-tight text-foreground sm:mt-1 sm:text-2xl md:text-3xl">
-                {posSaleScope === "general" && "Checkout — retail"}
-                {posSaleScope === "fuel" && "Checkout — fuel"}
-                {posSaleScope === "both" && "Checkout — fuel & retail"}
-              </h1>
-              <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
-                {posSaleScope === "general" && (
-                  <>
-                    Shop and services only on this register. Credit sales post to A/R; settle later under Payments
-                    → Received.
-                  </>
-                )}
-                {posSaleScope === "fuel" && (
-                  <>Pump sales only. Credit sales post to A/R; settle later under Payments → Received.</>
-                )}
-                {posSaleScope === "both" && (
-                  <>
-                    One ticket for pump dispense and counter items. Credit sales post to A/R; settle later under
-                    Payments → Received.
-                  </>
-                )}
-              </p>
-            </div>
-            <div className="flex w-full flex-wrap items-center justify-end gap-2 min-[400px]:w-auto sm:gap-3 lg:shrink-0">
-              <div className="relative" ref={shortcutsRef}>
-                <button
-                  type="button"
-                  onClick={() => setShowShortcuts(o => !o)}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation active:scale-[0.99] sm:min-h-10"
-                  aria-expanded={showShortcuts}
-                  aria-controls="pos-shortcuts-panel"
-                >
-                  <Keyboard className="h-4 w-4 text-muted-foreground" aria-hidden />
-                  Keys
-                </button>
-                {showShortcuts ? (
-                  <div
-                    id="pos-shortcuts-panel"
-                    className="absolute right-0 z-[70] mt-1.5 w-[min(100vw-2rem,20rem)] overflow-hidden rounded-xl border border-border bg-popover py-3 px-3 text-popover-foreground shadow-lg ring-1 ring-border"
-                    role="region"
-                    aria-label="Keyboard shortcuts"
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Shortcuts
-                    </p>
-                    <ul className="mt-2 space-y-2 text-sm">
-                      <li className="flex items-start justify-between gap-2">
-                        <span className="text-muted-foreground">Product search</span>
-                        <kbd className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          /
-                        </kbd>
-                      </li>
-                      <li className="flex items-start justify-between gap-2">
-                        <span className="text-muted-foreground">Complete sale</span>
-                        <span className="flex max-w-[11rem] shrink-0 flex-wrap items-center justify-end gap-1">
-                          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                            F9
-                          </kbd>
-                          <span className="text-xs text-muted-foreground">or</span>
-                          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                            ⌘/Ctrl
-                          </kbd>
-                          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                            Enter
-                          </kbd>
-                        </span>
-                      </li>
-                      <li className="flex items-start justify-between gap-2">
-                        <span className="text-muted-foreground">Close dialogs</span>
-                        <kbd className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          Esc
-                        </kbd>
-                      </li>
-                      <li className="flex items-start justify-between gap-2">
-                        <span className="text-muted-foreground">This panel</span>
-                        <kbd className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          ?
-                        </kbd>
-                      </li>
-                    </ul>
-                    <p className="mt-3 border-t border-border pt-2 text-[11px] leading-snug text-muted-foreground">
-                      Barcode scanners: focus search, scan code — if one match exists, press{" "}
-                      <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd>{" "}
-                      to add.
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-              <div className="relative" ref={printMenuRef}>
-                <button
-                  type="button"
-                  disabled={printBusy}
-                  onClick={() => setPrintMenuOpen(o => !o)}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-10"
-                >
-                  {printBusy ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  ) : (
-                    <Printer className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  Print
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                </button>
-                {printMenuOpen ? (
-                  <div className="absolute right-0 z-[60] mt-1.5 w-64 overflow-hidden rounded-xl border border-border bg-popover py-1.5 shadow-lg ring-1 ring-border">
-                    <button
-                      type="button"
-                      disabled={!canPrintUnifiedDraft}
-                      onClick={printDraftFromMenu}
-                      className="block w-full px-3 py-2.5 text-left text-sm text-popover-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <span className="font-medium">Draft invoice</span>
-                      <span className="block text-xs text-muted-foreground">
-                        Fuel line and shopping cart combined
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void printPosSummaryReport()}
-                      className="block w-full px-3 py-2.5 text-left text-sm text-popover-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <span className="font-medium">POS summary report</span>
-                      <span className="block text-xs text-muted-foreground">
-                        Today&apos;s sales &amp; dashboard totals
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!customerId}
-                      onClick={() => void printCustomerLedgerStatement()}
-                      className="block w-full px-3 py-2.5 text-left text-sm text-popover-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <span className="font-medium">Customer A/R statement</span>
-                      <span className="block text-xs text-muted-foreground">
-                        Ledger for selected customer
-                      </span>
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-              <div className="hidden max-w-[14rem] text-right text-sm text-muted-foreground sm:block">
-                <div className="inline-flex items-center justify-end gap-1.5 font-medium text-foreground">
-                  <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{posCompanyLabel}</span>
-                </div>
-                {posCompanyAddress ? <p className="truncate text-xs">{posCompanyAddress}</p> : null}
-              </div>
+              )}
+              {posSaleScope === 'general' && <Store className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />}
+              {posSaleScope === 'fuel' && <Fuel className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />}
+              {cashier.scopeLabel(posSaleScope)}
+            </span>
+            <span
+              className="inline-flex items-center gap-1.5 text-[11px] text-teal-100/90 sm:text-xs"
+              title={cashier.t('localTimeTitle')}
+            >
+              <Clock className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+              <time dateTime={now.toISOString()}>{formatDate(now, true)}</time>
+            </span>
+            <div className="relative" ref={shortcutsRef}>
               <button
                 type="button"
-                onClick={handleLogout}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-destructive/30 bg-background px-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation active:scale-[0.99] sm:min-h-10"
+                onClick={() => setShowShortcuts((o) => !o)}
+                className={AQ_HERO_BTN_GHOST}
+                aria-expanded={showShortcuts}
+                aria-controls="pos-shortcuts-panel"
               >
-                <LogOut className="h-4 w-4" />
-                Logout
+                <Keyboard className="h-3.5 w-3.5" aria-hidden />
+                {cashier.t('keys')}
               </button>
+              {showShortcuts ? (
+                <div
+                  id="pos-shortcuts-panel"
+                  className="absolute right-0 z-[70] mt-1.5 w-[min(100vw-2rem,20rem)] overflow-hidden rounded-xl border border-slate-200 bg-white py-3 px-3 text-slate-900 shadow-lg"
+                  role="region"
+                  aria-label={cashier.t('shortcutsAria')}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {cashier.t('shortcuts')}
+                  </p>
+                  <ul className="mt-2 space-y-2 text-sm">
+                    <li className="flex items-start justify-between gap-2">
+                      <span className="text-slate-600">{cashier.t('shortcutProductSearch')}</span>
+                      <kbd className="shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">/</kbd>
+                    </li>
+                    <li className="flex items-start justify-between gap-2">
+                      <span className="text-slate-600">{cashier.t('shortcutCompleteSale')}</span>
+                      <span className="flex max-w-[11rem] shrink-0 flex-wrap items-center justify-end gap-1">
+                        <kbd className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">F9</kbd>
+                        <span className="text-xs text-slate-500">{cashier.t('shortcutOr')}</span>
+                        <kbd className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">⌘/Ctrl</kbd>
+                        <kbd className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">Enter</kbd>
+                      </span>
+                    </li>
+                    <li className="flex items-start justify-between gap-2">
+                      <span className="text-slate-600">{cashier.t('shortcutCloseDialogs')}</span>
+                      <kbd className="shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">Esc</kbd>
+                    </li>
+                    <li className="flex items-start justify-between gap-2">
+                      <span className="text-slate-600">{cashier.t('shortcutThisPanel')}</span>
+                      <kbd className="shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">?</kbd>
+                    </li>
+                  </ul>
+                  <p className="mt-3 border-t border-slate-200 pt-2 text-[11px] leading-snug text-slate-500">
+                    {cashier.t('shortcutEnterHint')}
+                  </p>
+                </div>
+              ) : null}
             </div>
+            <div className="relative" ref={printMenuRef}>
+              <button
+                type="button"
+                disabled={printBusy}
+                onClick={() => setPrintMenuOpen((o) => !o)}
+                className={AQ_HERO_BTN_GHOST}
+              >
+                {printBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <Printer className="h-3.5 w-3.5" aria-hidden />
+                )}
+                {cashier.t('print')}
+                <ChevronDown className="h-3.5 w-3.5 opacity-80" aria-hidden />
+              </button>
+              {printMenuOpen ? (
+                <div className="absolute right-0 z-[60] mt-1.5 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-lg">
+                  <button
+                    type="button"
+                    disabled={!canPrintUnifiedDraft}
+                    onClick={printDraftFromMenu}
+                    className="block w-full px-3 py-2.5 text-left text-sm text-slate-900 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className="font-medium">{cashier.t('draftInvoice')}</span>
+                    <span className="block text-xs text-slate-500">{cashier.t('draftInvoiceSub')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void printPosSummaryReport()}
+                    className="block w-full px-3 py-2.5 text-left text-sm text-slate-900 transition-colors hover:bg-slate-50"
+                  >
+                    <span className="font-medium">{cashier.t('posSummary')}</span>
+                    <span className="block text-xs text-slate-500">{cashier.t('posSummarySub')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!customerId}
+                    onClick={() => void printCustomerLedgerStatement()}
+                    className="block w-full px-3 py-2.5 text-left text-sm text-slate-900 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className="font-medium">{cashier.t('customerAr')}</span>
+                    <span className="block text-xs text-slate-500">{cashier.t('customerArSub')}</span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <div className="hidden max-w-[14rem] text-right text-sm text-teal-100/90 sm:block">
+              <div className="inline-flex items-center justify-end gap-1.5 font-medium text-white">
+                <Building2 className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                <span className="truncate">{posCompanyLabel}</span>
+              </div>
+              {posCompanyAddress ? <p className="truncate text-xs text-teal-100/70">{posCompanyAddress}</p> : null}
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex min-h-10 items-center gap-2 rounded-full bg-red-500/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-red-500/30"
+            >
+              <LogOut className="h-3.5 w-3.5" aria-hidden />
+              {cashier.t('logout')}
+            </button>
           </div>
-        </header>
-
+        }
+      >
         <main
-          className="flex-1 overflow-auto px-3 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:px-6 sm:py-6"
           id="pos-workspace"
-          aria-label="Point of sale workspace"
+          className="pb-[max(1.25rem,env(safe-area-inset-bottom,0px))]"
+          aria-label={pageMeta.title}
         >
           <div
             className={`mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4 ${scopeUi.shell}`}
@@ -2697,7 +2654,7 @@ export default function CashierPOSPage() {
           </div>
           ) : null}
         </main>
-      </div>
+      </ErpPageShell>
 
       <Modal
         isOpen={!!stationStockItem}
@@ -2961,7 +2918,7 @@ export default function CashierPOSPage() {
           </div>
         </div>
       </Modal>
-    </div>
+    </PageLayout>
   )
 }
 

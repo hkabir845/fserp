@@ -2,14 +2,19 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowLeft, Beaker, Fish, Plus, RefreshCw, Trash2, ArrowRightLeft, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowRightLeft, Beaker, Fish, Plus, RefreshCw, Trash2, Pencil } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol, roundToDecimals } from '@/utils/currency'
 import { roundCountInputString, roundDecimalInputString } from '@/utils/inputDecimals'
-import { growOutPondsForTransfers, NURSING_WORKFLOW_STEPS, sameSiteGrowOutPond } from '@/lib/aquaculturePondSite'
+import { growOutPondsForTransfers, sameSiteGrowOutPond } from '@/lib/aquaculturePondSite'
+import { aquacultureT, aquacultureTFormat, nursingWorkflowSteps } from '@/lib/aquacultureI18n'
+import { useT } from '@/lib/i18n'
+import { usePageMeta } from '@/hooks/usePageMeta'
 
 const SAMPLE_STALE_DAYS = 30
 
@@ -195,7 +200,10 @@ function daysSinceIsoDate(iso: string): number | null {
 const COST_PREVIEW_DEBOUNCE_MS = 350
 
 export default function AquacultureFishTransfersPage() {
+  const pageMeta = usePageMeta()
   const toast = useToast()
+  const { lang, t: uiT, pick } = useT()
+  const nursingSteps = useMemo(() => nursingWorkflowSteps(lang), [lang])
   const [ponds, setPonds] = useState<Pond[]>([])
   const [cycles, setCycles] = useState<CycleRow[]>([])
   const [species, setSpecies] = useState<{ id: string; label: string }[]>([])
@@ -245,9 +253,9 @@ export default function AquacultureFishTransfersPage() {
       setCurrency(String(coRes.data?.currency || 'BDT').slice(0, 3))
       setPonds(Array.isArray(pondsRes.data) ? pondsRes.data : [])
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not load ponds'))
+      toast.error(extractErrorMessage(e, aquacultureT('couldNotLoadPonds', lang)))
     }
-  }, [toast])
+  }, [toast, lang])
 
   const loadCycles = useCallback(async () => {
     try {
@@ -276,11 +284,11 @@ export default function AquacultureFishTransfersPage() {
       if (data?.inter_pond_fish_transfer_note) setHelpNote(data.inter_pond_fish_transfer_note)
       setRows(Array.isArray(data?.transfers) ? data.transfers : [])
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not load transfers'))
+      toast.error(extractErrorMessage(e, aquacultureT('couldNotLoadTransfers', lang)))
     } finally {
       setLoading(false)
     }
-  }, [toast])
+  }, [toast, lang])
 
   useEffect(() => {
     void loadPonds()
@@ -541,7 +549,7 @@ export default function AquacultureFishTransfersPage() {
   const fillRemainderHeads = (lineIdx: number) => {
     const available = sourceStock?.implied_net_fish_count ?? 0
     if (available <= 0) {
-      toast.error('No book stock in the source pond for this species/cycle.')
+      toast.error(aquacultureT('noBookStockSource', lang))
       return
     }
     let sumOther = 0
@@ -552,7 +560,7 @@ export default function AquacultureFishTransfersPage() {
     }
     const rem = available - sumOther
     if (rem <= 0) {
-      toast.error('Other lines already use all available fish — reduce counts or check stock.')
+      toast.error(aquacultureT('allFishUsed', lang))
       return
     }
     setLineDrafts((d) =>
@@ -665,7 +673,7 @@ export default function AquacultureFishTransfersPage() {
     if (!fromPond) return
     const same = sameSiteGrowOutPond(fromPond, activePonds)
     if (!same) {
-      toast.error('Link a grow-out pond on the same physical site from Ponds setup first.')
+      toast.error(aquacultureT('linkGrowOutFirst', lang))
       return
     }
     const fpk = effectiveSamplePcs
@@ -682,7 +690,7 @@ export default function AquacultureFishTransfersPage() {
   const submit = async () => {
     const fp = parseInt(fromPondId, 10)
     if (!Number.isFinite(fp)) {
-      toast.error('Select source pond')
+      toast.error(aquacultureT('selectSourcePond', lang))
       return
     }
     if (fishSpecies === 'other' && !fishSpeciesOther.trim()) {
@@ -793,7 +801,7 @@ export default function AquacultureFishTransfersPage() {
     if (fromCycleId.trim() !== '') {
       const fcy = parseInt(fromCycleId, 10)
       if (!Number.isFinite(fcy)) {
-        toast.error('Invalid source production cycle')
+        toast.error(aquacultureT('invalidSourceCycle', lang))
         return
       }
       body.from_production_cycle_id = fcy
@@ -801,31 +809,26 @@ export default function AquacultureFishTransfersPage() {
     try {
       if (editingId != null) {
         await api.put(`/aquaculture/fish-pond-transfers/${editingId}/`, body)
-        toast.success('Transfer updated')
+        toast.success(aquacultureT('transferUpdated', lang))
       } else {
         await api.post('/aquaculture/fish-pond-transfers/', body)
-        toast.success('Transfer recorded')
+        toast.success(aquacultureT('transferRecorded', lang))
       }
       closeModal()
       void loadTransfers()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Save failed'))
+      toast.error(extractErrorMessage(e, uiT('saveFailed')))
     }
   }
 
-  const remove = async (t: TransferRow) => {
-    if (
-      !window.confirm(
-        'Remove this fish transfer? Pond stock and management P&L will be recalculated as if it never happened (same as rolling back the transfer).'
-      )
-    )
-      return
+  const remove = async (row: TransferRow) => {
+    if (!window.confirm(aquacultureT('confirmRemoveTransfer', lang))) return
     try {
-      await api.delete(`/aquaculture/fish-pond-transfers/${t.id}/`)
-      toast.success('Deleted')
+      await api.delete(`/aquaculture/fish-pond-transfers/${row.id}/`)
+      toast.success(uiT('deleted'))
       void loadTransfers()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Delete failed'))
+      toast.error(extractErrorMessage(e, uiT('deleteFailed')))
     }
   }
 
@@ -850,57 +853,34 @@ export default function AquacultureFishTransfersPage() {
   const sym = getCurrencySymbol(currency)
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <Link
-            href="/aquaculture"
-            className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:text-teal-950"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Dashboard
-          </Link>
-          <h1 id="aq-transfers-title" className="text-xl font-bold tracking-tight text-slate-900">
-            Fish pond transfers
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Move fingerlings from a <strong>nursing-phase</strong> pond (after sampling — pcs/kg from your seine count) to production
-            grow-out ponds — including the <strong>grow-out-phase pond on the same physical site</strong> for remainder
-            (e.g. Mynuddin Nursing → Mynuddin Pond). Each line records <strong>kg and head count</strong>{' '}
-            (both required). Optional <strong>cost per line</strong> reallocates biological cost on the management P&amp;L
-            (source pond decreases, receivers increase; company total unchanged). Stock feed and medicine still flow
-            through{' '}
-            <Link href="/aquaculture/expenses" className="font-medium text-teal-800 underline decoration-teal-600/40">
-              expenses
-            </Link>{' '}
-            or POS on account.
-          </p>
-          {helpNote ? (
-            <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700">
-              {helpNote}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void loadTransfers()}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
+    <AquaculturePageShell
+      titleId="aq-transfers-title"
+      title={pageMeta.title}
+      titleIcon={ArrowRightLeft}
+      description={pageMeta.description}
+      actions={
+        <>
+          <button type="button" onClick={() => void loadTransfers()} className={AQ_HERO_BTN_GHOST}>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            {uiT('refresh')}
           </button>
           <button
             type="button"
             onClick={openNew}
             disabled={loading || ponds.length === 0}
-            className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className={AQ_HERO_BTN_PRIMARY}
           >
-            <Plus className="h-4 w-4" />
-            Record transfer
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            {aquacultureT('recordTransfer', lang)}
           </button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      {helpNote ? (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700">
+          {helpNote}
+        </p>
+      ) : null}
 
       {loading ? (
         <div className="mt-10 flex justify-center">
@@ -908,9 +888,9 @@ export default function AquacultureFishTransfersPage() {
         </div>
       ) : ponds.length === 0 ? (
         <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
-          <p className="font-medium">Add ponds first</p>
+          <p className="font-medium">{aquacultureT('addPondsFirst', lang)}</p>
           <Link href="/aquaculture/ponds" className="mt-2 inline-block font-medium text-teal-800 underline">
-            Go to Ponds
+            {aquacultureT('goToPonds', lang)}
           </Link>
         </div>
       ) : (
@@ -930,13 +910,13 @@ export default function AquacultureFishTransfersPage() {
             <table className="min-w-[780px] w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">From → To</th>
-                  <th className="px-4 py-3">Species</th>
+                  <th className="px-4 py-3">{uiT("date")}</th>
+                  <th className="px-4 py-3">{aquacultureT('fromToCol', lang)}</th>
+                  <th className="px-4 py-3">{aquacultureT('species', lang)}</th>
                   <th className="px-4 py-3 text-right">Kg</th>
-                  <th className="px-4 py-3 text-right">Heads</th>
-                  <th className="px-4 py-3 text-right">Cost moved</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3 text-right">{pick('Heads', 'Head (টি)')}</th>
+                  <th className="px-4 py-3 text-right">{aquacultureT('costMoved', lang)}</th>
+                  <th className="px-4 py-3 text-right">{uiT("actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -998,8 +978,8 @@ export default function AquacultureFishTransfersPage() {
                                 openEdit(t)
                               }}
                               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100"
-                              title="Edit transfer"
-                              aria-label="Edit transfer"
+                              title={aquacultureT('editTransfer', lang)}
+                              aria-label={aquacultureT('editTransfer', lang)}
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
@@ -1010,8 +990,8 @@ export default function AquacultureFishTransfersPage() {
                                 void remove(t)
                               }}
                               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-rose-700 hover:bg-rose-50"
-                              title="Remove transfer (rollback)"
-                              aria-label="Remove transfer"
+                              title={aquacultureT('removeTransferRollback', lang)}
+                              aria-label={aquacultureT('removeTransfer', lang)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -1031,19 +1011,19 @@ export default function AquacultureFishTransfersPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-semibold text-slate-900">
-              {editingId != null ? 'Edit fish pond transfer' : 'Record fish pond transfer'}
+              {editingId != null ? aquacultureT('editFishTransfer', lang) : aquacultureT('recordFishTransfer', lang)}
             </h2>
             {fromPond?.pond_role === 'nursing' ? (
               <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
-                <p className="font-medium">Nursing → fingerling transfer</p>
+                <p className="font-medium">{aquacultureT('nursingFingerlingTransfer', lang)}</p>
                 <ol className="mt-1 list-decimal space-y-0.5 pl-4">
-                  {NURSING_WORKFLOW_STEPS.slice(3).map((s) => (
+                  {nursingSteps.slice(3).map((s) => (
                     <li key={s}>{s}</li>
                   ))}
                 </ol>
                 {transferDestinations.sameSite ? (
                   <p className="mt-2">
-                    Same-site grow-out:{' '}
+                    {aquacultureT('sameSiteGrowOut', lang)}:{' '}
                     <strong>
                       {transferDestinations.sameSite.operational_display_name ||
                         transferDestinations.sameSite.name}
@@ -1615,19 +1595,19 @@ export default function AquacultureFishTransfersPage() {
                 className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
                 onClick={closeModal}
               >
-                Cancel
+                {uiT("cancel")}
               </button>
               <button
                 type="button"
                 className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700"
                 onClick={() => void submit()}
               >
-                {editingId != null ? 'Save changes' : 'Save transfer'}
+                {editingId != null ? aquacultureT('saveChanges', lang) : aquacultureT('saveTransfer', lang)}
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </AquaculturePageShell>
   )
 }

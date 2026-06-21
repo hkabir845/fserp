@@ -17,6 +17,7 @@ import {
   type ErpAppMenuItem,
   type ErpAppSection,
 } from '@/navigation/erpAppMenu'
+import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 
 type UseErpNavigationMenuOptions = {
   /** Hide entries (e.g. `/apps` on the app launcher page). */
@@ -29,6 +30,7 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
   const { excludeHrefs = [], searchQuery = '' } = options
   const pathname = usePathname()
   const { mode, selectedCompany, isClientReady } = useCompany()
+  const { language } = useCompanyLocale()
 
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userPermissions, setUserPermissions] = useState<string[] | null>(null)
@@ -132,10 +134,10 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
   const isSuperAdmin = userRole === 'super_admin'
   const navReady = isClientReady && navSessionReady
 
-  const fsmsErpMenuItems = useMemo(() => getFsmsErpMenuItems(), [])
+  const fsmsErpMenuItems = useMemo(() => getFsmsErpMenuItems(language), [language])
   const saasMenuItems = useMemo(
-    () => getSaasMenuItems(companiesCount, usersCount),
-    [companiesCount, usersCount]
+    () => getSaasMenuItems(companiesCount, usersCount, language),
+    [companiesCount, usersCount, language]
   )
 
   const filteredMenuItems = useMemo(() => {
@@ -208,8 +210,8 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
     const visibleSections = new Set<ErpAppSection>(
       filteredMenuItems.map((item) => item.section)
     )
-    return getSectionDefinitions(isSuperAdmin, mode, visibleSections)
-  }, [filteredMenuItems, isSuperAdmin, mode])
+    return getSectionDefinitions(isSuperAdmin, mode, visibleSections, language)
+  }, [filteredMenuItems, isSuperAdmin, mode, language])
 
   const sectionsForNav = useMemo(() => {
     const ids = new Set(menuItemsForNav.map((i) => i.section))

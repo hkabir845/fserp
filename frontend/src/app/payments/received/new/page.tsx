@@ -3,8 +3,10 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import Sidebar from '@/components/Sidebar'
-import { ArrowLeft, AlertCircle, UserPlus } from 'lucide-react'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { AlertCircle, UserPlus, Wallet } from 'lucide-react'
 import api from '@/lib/api'
 import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { getCurrencySymbol, formatNumber, roundToDecimals } from '@/utils/currency'
@@ -188,6 +190,7 @@ interface PaymentAllocation {
 function RecordPaymentReceivedInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const pageMeta = usePageMeta()
   const prefillApplied = useRef(false)
 
   const [loading, setLoading] = useState(true)
@@ -647,35 +650,30 @@ function RecordPaymentReceivedInner() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600" />
-      </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+        </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <div className="app-scroll-pad max-w-5xl mx-auto">
-          <div className="mb-6">
-            <Link
-              href="/payments/received"
-              className="inline-flex items-center text-sm font-medium text-gray-600 hover:text-gray-900 mb-4"
-            >
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Back to Payments Received
-            </Link>
-            <h1 className="text-3xl font-bold text-gray-900">Record payment received</h1>
-            <p className="text-gray-600 mt-1 max-w-3xl">
-              Apply cash or transfer to <strong>open invoices</strong>, to{' '}
-              <strong>on-account A/R</strong> (e.g. opening / not on an invoice), or record a{' '}
-              <strong>customer advance (prepayment)</strong> that appears as a credit on the
-              customer balance until invoiced.
-            </p>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-md p-6">
+    <PageLayout className="bg-slate-50">
+      <div className="app-scroll-pad">
+        <ErpPageShell
+          flush
+          showBackLink
+          backHref="/payments/received"
+          backLabel={pageMeta.eyebrow}
+          title={pageMeta.title}
+          titleIcon={Wallet}
+          eyebrow={pageMeta.eyebrow}
+          description={pageMeta.description}
+          maxWidthClass="max-w-5xl"
+          contentClassName="mt-4"
+        >
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4 flex items-center">
                 <AlertCircle className="h-5 w-5 mr-2 shrink-0" />
@@ -1285,9 +1283,9 @@ function RecordPaymentReceivedInner() {
               </div>
             </form>
           </div>
-        </div>
+        </ErpPageShell>
       </div>
-    </div>
+    </PageLayout>
   )
 }
 
@@ -1295,8 +1293,8 @@ export default function NewPaymentReceivedPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-gray-100">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600" />
+        <div className="flex min-h-[50vh] items-center justify-center bg-slate-50">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
         </div>
       }
     >

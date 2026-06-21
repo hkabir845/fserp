@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import { Plus, Edit, Trash2, Search, MapPin } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
@@ -30,6 +32,7 @@ interface Station {
 
 export default function IslandsPage() {
   const router = useRouter()
+  const pageMeta = usePageMeta()
   const toast = useToast()
   const [islands, setIslands] = useState<Island[]>([])
   const [stations, setStations] = useState<Station[]>([])
@@ -193,24 +196,29 @@ export default function IslandsPage() {
   })
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Islands</h1>
-          <p className="text-gray-600 mt-1 max-w-3xl">
-            Pump islands belong only on fuel forecourt stations. Configure site type under{' '}
-            <a href="/stations" className="font-medium text-blue-600 hover:underline">
-              Stations
-            </a>
-            .
-          </p>
-          {stations.length > 0 && fuelForecourtStations.length === 0 ? (
-            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              No fuel-forecourt sites defined — islands attach only to stations with fuel retail enabled under Stations.
-            </div>
-          ) : null}
-        </div>
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={MapPin}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <button
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+          >
+            <Plus className="h-5 w-5" />
+            <span>Add Island</span>
+          </button>
+        }
+      >
+        {stations.length > 0 && fuelForecourtStations.length === 0 ? (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            No fuel-forecourt sites defined — islands attach only to stations with fuel retail enabled under Stations.
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-4 flex-1">
@@ -238,14 +246,6 @@ export default function IslandsPage() {
               ))}
             </select>
           </div>
-          
-          <button
-            onClick={() => setShowModal(true)}
-            className="ml-4 flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="h-5 w-5" />
-            <span>Add Island</span>
-          </button>
         </div>
 
         {loading ? (
@@ -450,8 +450,8 @@ export default function IslandsPage() {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }
 

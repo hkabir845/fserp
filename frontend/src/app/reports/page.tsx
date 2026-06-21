@@ -27,7 +27,10 @@ import { loadPrintBranding } from '@/utils/printBranding'
 import { useCenterActiveListItem } from '@/hooks/useCenterActiveListItem'
 import { FinancialAnalyticsPanel } from './analytics/FinancialAnalyticsPanel'
 import { AquaculturePlManagementPanel } from './aquaculture/AquaculturePlManagementPanel'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import { t as i18nT } from '@/lib/i18n'
 import { localizeReportCard } from '@/lib/reportCatalogI18n'
 import { getTenantLocaleConfig } from '@/utils/tenantLocale'
@@ -1343,6 +1346,7 @@ function getReportScopeForExport(
 export default function ReportsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const pageMeta = usePageMeta()
   const { selectedCompany } = useCompany()
   const { language: companyLang } = useCompanyLocale()
   /** Legal / display name for print & CSV — from API (same tenant as reports). */
@@ -2259,7 +2263,7 @@ export default function ReportsPage() {
   const printReport = () => {
     if (!reportData || !selectedReport) return
 
-    const reportTitle = reports.find(r => r.id === selectedReport)?.title || selectedReport
+    const reportTitle = filteredReports.find(r => r.id === selectedReport)?.title || selectedReport
     const siteScopeForPrint = getReportScopeForExport(
       selectedReport,
       reportData,
@@ -2670,7 +2674,7 @@ export default function ReportsPage() {
   const downloadReport = (format: 'json' | 'csv' = 'json') => {
     if (!reportData || !selectedReport) return
     
-    const reportTitle = reports.find(r => r.id === selectedReport)?.title || selectedReport
+    const reportTitle = filteredReports.find(r => r.id === selectedReport)?.title || selectedReport
     const fileName = `${reportTitle.replace(/\s+/g, '_')}_${
       selectedReport && SALES_PURCHASE_REPORT_IDS.has(selectedReport)
         ? salesPurchaseDateRange.endDate
@@ -3161,91 +3165,54 @@ export default function ReportsPage() {
     <div className="flex h-screen page-with-sidebar">
       <Sidebar />
       <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="space-y-6">
-          {/* Header */}
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
-            <p className="text-gray-600 mt-1">Business, operational, and aquaculture reports</p>
-          </div>
-
-          {/* Category Filters - Hide for cashiers */}
-          {userRole !== 'cashier' && (
-            <div className="flex items-center space-x-2 bg-gray-100 p-2 rounded-lg w-fit">
-              <button
-                onClick={() => setFilterCategory('all')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  filterCategory === 'all'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                All Reports
-              </button>
-              <button
-                onClick={() => setFilterCategory('mix')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  filterCategory === 'mix'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Mix — Fuel & Aquaculture
-              </button>
-              <button
-                onClick={() => setFilterCategory('financial')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  filterCategory === 'financial' 
-                    ? 'bg-blue-600 text-white shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Financial
-              </button>
-              <button
-                onClick={() => setFilterCategory('operational')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  filterCategory === 'operational' 
-                    ? 'bg-blue-600 text-white shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Operational
-              </button>
-              <button
-                onClick={() => setFilterCategory('inventory')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  filterCategory === 'inventory' 
-                    ? 'bg-blue-600 text-white shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Inventory
-              </button>
-              <button
-                onClick={() => setFilterCategory('analytical')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  filterCategory === 'analytical' 
-                    ? 'bg-blue-600 text-white shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Analytical
-              </button>
-              {showAquacultureReports ? (
-                <button
-                  onClick={() => setFilterCategory('aquaculture')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterCategory === 'aquaculture'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Aquaculture
-                </button>
-              ) : null}
-            </div>
-          )}
-
+        <AquaculturePageShell
+          flush
+          showBackLink={false}
+          titleId="reports-title"
+          eyebrow={pageMeta.eyebrow}
+          eyebrowIcon={BarChart3}
+          title={pageMeta.title}
+          titleIcon={BarChart3}
+          description={pageMeta.description ?? undefined}
+          maxWidthClass="w-full"
+          contentClassName="mt-4 space-y-4"
+          actions={
+            userRole !== 'cashier' ? (
+              <div className="flex flex-wrap gap-1.5">
+                {(
+                  [
+                    ['all', 'All Reports'],
+                    ['mix', 'Mix — Fuel & Aquaculture'],
+                    ['financial', 'Financial'],
+                    ['operational', 'Operational'],
+                    ['inventory', 'Inventory'],
+                    ['analytical', 'Analytical'],
+                  ] as const
+                ).map(([cat, label]) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setFilterCategory(cat)}
+                    className={filterCategory === cat ? AQ_HERO_BTN_PRIMARY : AQ_HERO_BTN_GHOST}
+                  >
+                    {label}
+                  </button>
+                ))}
+                {showAquacultureReports ? (
+                  <button
+                    type="button"
+                    onClick={() => setFilterCategory('aquaculture')}
+                    className={
+                      filterCategory === 'aquaculture' ? AQ_HERO_BTN_PRIMARY : AQ_HERO_BTN_GHOST
+                    }
+                  >
+                    Aquaculture
+                  </button>
+                ) : null}
+              </div>
+            ) : null
+          }
+        >
           {userRole != null &&
             userRole !== 'operator' &&
             userRole !== 'pump_attendant' &&
@@ -3308,8 +3275,8 @@ export default function ReportsPage() {
                     disabled={loading}
                     className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
                       isSelected
-                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/20'
-                        : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm'
+                        ? 'border-teal-500 bg-teal-50 ring-2 ring-teal-500/20'
+                        : 'border-gray-200 bg-white hover:border-teal-300 hover:shadow-sm'
                     } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <div className="flex items-start space-x-3">
@@ -3349,7 +3316,7 @@ export default function ReportsPage() {
                 {loading ? (
                   <div className="flex h-[600px] items-center justify-center">
                     <div className="text-center">
-                      <RefreshCw className="mx-auto mb-4 h-12 w-12 animate-spin text-blue-500" />
+                      <RefreshCw className="mx-auto mb-4 h-12 w-12 animate-spin text-teal-600" />
                       <p className="text-gray-600">Loading report...</p>
                     </div>
                   </div>
@@ -3370,7 +3337,7 @@ export default function ReportsPage() {
                     <div className="flex items-center justify-between mb-6 pb-4 border-b">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">
-                      {reports.find(r => r.id === selectedReport)?.title}
+                      {filteredReports.find(r => r.id === selectedReport)?.title}
                     </h2>
                     <p className="text-sm text-gray-500 mt-1">
                       Generated on {formatDate(new Date())}
@@ -3634,7 +3601,7 @@ export default function ReportsPage() {
               </div>
             </div>
           </div>
-        </div>
+        </AquaculturePageShell>
       </div>
     </div>
     </ReportDrillProvider>

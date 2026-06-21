@@ -4,13 +4,18 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Edit2, LayoutGrid, List, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 
-import { STOCKING_BATCH_WORKFLOW, suggestContinuousBatchName, suggestNursingBatchName, usesSeasonalStockingBatches } from '@/lib/stockingBatch'
+import { suggestContinuousBatchName, suggestNursingBatchName, usesSeasonalStockingBatches } from '@/lib/stockingBatch'
 import { isNursingRole } from '@/lib/aquaculturePondSite'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { aquacultureT, aquacultureTFormat, stockingBatchWorkflow } from '@/lib/aquacultureI18n'
+import { useT } from '@/lib/i18n'
 
 interface Pond {
   id: number
@@ -69,7 +74,10 @@ function suggestNextCycleCode(existingCodes: string[]): string {
 }
 
 export default function AquacultureCyclesPage() {
+  const pageMeta = usePageMeta()
   const toast = useToast()
+  const { lang, t, pick } = useT()
+  const workflow = useMemo(() => stockingBatchWorkflow(lang), [lang])
   const searchParams = useSearchParams()
   const [ponds, setPonds] = useState<Pond[]>([])
   const [fishSpecies, setFishSpecies] = useState<FishSpeciesOpt[]>([])
@@ -101,9 +109,9 @@ export default function AquacultureCyclesPage() {
       setPonds(Array.isArray(pondsRes.data) ? pondsRes.data : [])
       setFishSpecies(Array.isArray(speciesRes.data) ? speciesRes.data : [])
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not load ponds'))
+      toast.error(extractErrorMessage(e, aquacultureT('couldNotLoadPonds', lang)))
     }
-  }, [toast])
+  }, [toast, lang])
 
   const loadRows = useCallback(async () => {
     setLoading(true)
@@ -111,7 +119,7 @@ export default function AquacultureCyclesPage() {
       const { data } = await api.get<CycleRow[]>('/aquaculture/production-cycles/')
       setRows(Array.isArray(data) ? data : [])
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not load cycles'))
+      toast.error(extractErrorMessage(e, pick('Could not load cycles', 'চক্র লোড করা যায়নি')))
     } finally {
       setLoading(false)
     }
@@ -207,7 +215,7 @@ export default function AquacultureCyclesPage() {
 
   const save = async () => {
     if (!form.pond_id || !form.name.trim() || !form.start_date) {
-      toast.error('Pond, name, and start date are required')
+      toast.error(aquacultureT('pondNameStartRequired', lang))
       return
     }
     const payload: Record<string, unknown> = {
@@ -226,34 +234,34 @@ export default function AquacultureCyclesPage() {
       if (editing) {
         payload.code = form.code.trim()
         await api.put(`/aquaculture/production-cycles/${editing.id}/`, payload)
-        toast.success('Updated')
+        toast.success(t('updated'))
       } else {
         const { data } = await api.post<CycleRow>('/aquaculture/production-cycles/', payload)
         const c = data?.code?.trim()
-        toast.success(c ? `Created (${c})` : 'Created')
+        toast.success(c ? aquacultureTFormat('createdWithCode', lang, { code: c }) : aquacultureT('created', lang))
       }
       setModal(false)
       void loadRows()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Save failed'))
+      toast.error(extractErrorMessage(e, t('saveFailed')))
     }
   }
 
   const remove = async (r: CycleRow) => {
-    if (!window.confirm(`Delete cycle “${r.name}”? This cannot be undone if no dependencies block it.`)) return
+    if (!window.confirm(aquacultureTFormat('confirmDeleteCycle', lang, { name: r.name }))) return
     try {
       await api.delete(`/aquaculture/production-cycles/${r.id}/`)
-      toast.success('Deleted')
+      toast.success(t('deleted'))
       void loadRows()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Delete failed'))
+      toast.error(extractErrorMessage(e, t('deleteFailed')))
     }
   }
 
   const periodLabel = (r: CycleRow) => {
     const start = formatDateOnly(r.start_date)
     if (r.end_date) return `${start} → ${formatDateOnly(r.end_date)}`
-    return `${start} → Open`
+    return `${start} → ${aquacultureT('periodOpen', lang)}`
   }
 
   const CycleActions = ({ r }: { r: CycleRow }) => (
@@ -278,27 +286,22 @@ export default function AquacultureCyclesPage() {
   )
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 id="aq-cycles-title" className="text-xl font-bold tracking-tight text-slate-900">
-            Stocking batches
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Each <strong>tilapia</strong> fry purchase is a new batch (C01, C02, C03 per season).{' '}
-            <strong>Other species</strong> usually share one open batch per pond that keeps growing — FSERP
-            reuses it on new bills unless you start a 2nd batch on purpose.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-slate-600">
-            Pond
+    <AquaculturePageShell
+      titleId="aq-cycles-title"
+      title={pageMeta.title}
+      titleIcon={LayoutGrid}
+      description={pageMeta.description}
+      maxWidthClass="max-w-6xl"
+      actions={
+        <>
+          <label className="text-xs font-medium text-teal-100">
+            {t('pond')}
             <select
-              className="ml-1 block rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
               value={filterPond}
               onChange={(e) => setFilterPond(e.target.value)}
             >
-              <option value="">All ponds</option>
+              <option value="">{aquacultureT('allPondsFilter', lang)}</option>
               {ponds.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -307,59 +310,66 @@ export default function AquacultureCyclesPage() {
             </select>
           </label>
           <div
-            className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5"
+            className="inline-flex rounded-lg border border-white/20 bg-white/10 p-0.5"
             role="group"
-            aria-label="Display layout"
+            aria-label={aquacultureT('displayLayout', lang)}
           >
             <button
               type="button"
               onClick={() => setViewMode('list')}
               aria-pressed={viewMode === 'list'}
-              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-sm ${
-                viewMode === 'list' ? 'bg-teal-600 font-medium text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-xs font-semibold ${
+                viewMode === 'list' ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-100 hover:bg-white/10'
               }`}
             >
-              <List className="h-4 w-4" aria-hidden />
-              List
+              <List className="h-3.5 w-3.5" aria-hidden />
+              {aquacultureT('listView', lang)}
             </button>
             <button
               type="button"
               onClick={() => setViewMode('cards')}
               aria-pressed={viewMode === 'cards'}
-              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-sm ${
-                viewMode === 'cards'
-                  ? 'bg-teal-600 font-medium text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-xs font-semibold ${
+                viewMode === 'cards' ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-100 hover:bg-white/10'
               }`}
             >
-              <LayoutGrid className="h-4 w-4" aria-hidden />
-              Cards
+              <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+              {aquacultureT('cardsView', lang)}
             </button>
           </div>
-          <button
-            type="button"
-            onClick={() => void loadRows()}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
+          <button type="button" onClick={() => void loadRows()} className={AQ_HERO_BTN_GHOST}>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            {t('refresh')}
           </button>
           <button
             type="button"
             onClick={openNew}
             disabled={loading || ponds.length === 0}
-            className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+            className={AQ_HERO_BTN_PRIMARY}
           >
-            <Plus className="h-4 w-4" />
-            Add batch
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            {aquacultureT('addBatch', lang)}
           </button>
-        </div>
-      </div>
-
-      <section className="mt-6 rounded-xl border border-teal-100 bg-teal-50/40 p-4 text-sm text-teal-950">
-        <h2 className="font-semibold text-teal-900">{STOCKING_BATCH_WORKFLOW.title}</h2>
+        </>
+      }
+      stats={
+        rows.length > 0 ? (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <PipelineStatCard
+              title={pageMeta.title}
+              value={rows.length}
+              sub={t('total')}
+              icon={LayoutGrid}
+              tone="slate"
+            />
+          </div>
+        ) : undefined
+      }
+    >
+      <section className="rounded-xl border border-teal-100 bg-teal-50/40 p-4 text-sm text-teal-950">
+        <h2 className="font-semibold text-teal-900">{workflow.title}</h2>
         <ol className="mt-3 space-y-2">
-          {STOCKING_BATCH_WORKFLOW.steps.map((s) => (
+          {workflow.steps.map((s) => (
             <li key={s.phase} className="flex gap-2">
               <span className="shrink-0 font-medium text-teal-800">{s.phase}:</span>
               <span className="text-teal-900/90">{s.detail}</span>
@@ -371,9 +381,9 @@ export default function AquacultureCyclesPage() {
       {ponds.length === 0 ? (
         <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
           <Link href="/aquaculture/ponds" className="font-medium text-teal-800 underline">
-            Create a pond
+            {aquacultureT('createPondFirst', lang)}
           </Link>{' '}
-          first, then open stocking batches for each fry purchase.
+          {aquacultureT('createPondThenBatches', lang)}
         </div>
       ) : loading ? (
         <div className="mt-10 flex justify-center">
@@ -385,8 +395,8 @@ export default function AquacultureCyclesPage() {
           aria-labelledby="aq-cycles-title"
         >
           {filterPond
-            ? 'No batches for this pond in this view. Add a batch or clear the pond filter.'
-            : 'No stocking batches yet. Add one when you buy fry, or let FSERP create it when you post a fry bill to the nursing pond.'}
+            ? aquacultureT('noBatchesPondFilter', lang)
+            : aquacultureT('noBatchesYet', lang)}
         </div>
       ) : viewMode === 'list' ? (
         <div
@@ -396,13 +406,13 @@ export default function AquacultureCyclesPage() {
           <table className="min-w-[800px] w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">Batch</th>
-                <th className="px-4 py-3">Pond</th>
-                <th className="px-4 py-3">Species</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Period</th>
-                <th className="px-4 py-3 text-right">Sort</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-4 py-3">{aquacultureT('batch', lang)}</th>
+                <th className="px-4 py-3">{t('pond')}</th>
+                <th className="px-4 py-3">{aquacultureT('species', lang)}</th>
+                <th className="px-4 py-3">{t('status')}</th>
+                <th className="px-4 py-3">{pick('Period', 'সময়সীমা')}</th>
+                <th className="px-4 py-3 text-right">{pick('Sort', 'ক্রম')}</th>
+                <th className="px-4 py-3 text-right">{t('actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -411,11 +421,13 @@ export default function AquacultureCyclesPage() {
                   <td className="px-4 py-3">
                     <p className="font-medium text-slate-900">{r.name}</p>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      {r.code?.trim() ? `Code ${r.code.trim()} · ` : ''}Order {r.sort_order ?? 0}
+                      {r.code?.trim()
+                        ? aquacultureTFormat('codeOrder', lang, { code: r.code.trim(), order: r.sort_order ?? 0 })
+                        : `${pick('Order', 'ক্রম')} ${r.sort_order ?? 0}`}
                     </p>
                     {r.source_production_cycle_name || r.source_production_cycle_code ? (
                       <p className="mt-1 text-xs text-teal-800">
-                        From nursing: {r.source_production_cycle_code || r.source_production_cycle_name}
+                        {aquacultureT('fromNursing', lang)}: {r.source_production_cycle_code || r.source_production_cycle_name}
                       </p>
                     ) : null}
                     <p className="mt-1 text-xs text-slate-600 md:hidden">{periodLabel(r)}</p>
@@ -423,7 +435,7 @@ export default function AquacultureCyclesPage() {
                   <td className="px-4 py-3 text-slate-700">
                     {r.pond_name || pondName(r.pond_id)}
                     {r.pond_role === 'nursing' ? (
-                      <span className="ml-1 text-xs text-violet-700">(nursing)</span>
+                      <span className="ml-1 text-xs text-violet-700">({aquacultureT('nursingRole', lang)})</span>
                     ) : null}
                   </td>
                   <td className="px-4 py-3 text-slate-700">{r.fish_species_label || 'Tilapia'}</td>
@@ -433,7 +445,7 @@ export default function AquacultureCyclesPage() {
                         r.is_active !== false ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'
                       }`}
                     >
-                      {r.is_active !== false ? 'Active' : 'Inactive'}
+                      {r.is_active !== false ? pick('Active', 'সক্রিয়') : pick('Inactive', 'নিষ্ক্রিয়')}
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-slate-700">{periodLabel(r)}</td>
@@ -460,7 +472,9 @@ export default function AquacultureCyclesPage() {
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-slate-900">{r.name}</p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {r.code?.trim() ? `Code ${r.code.trim()} · ` : ''}Sort {r.sort_order ?? 0}
+                    {r.code?.trim()
+                      ? aquacultureTFormat('codeSort', lang, { code: r.code.trim(), order: r.sort_order ?? 0 })
+                      : `${pick('Sort', 'সাজানো')} ${r.sort_order ?? 0}`}
                   </p>
                 </div>
                 <span
@@ -468,32 +482,32 @@ export default function AquacultureCyclesPage() {
                     r.is_active !== false ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'
                   }`}
                 >
-                  {r.is_active !== false ? 'Active' : 'Inactive'}
+                  {r.is_active !== false ? pick('Active', 'সক্রিয়') : pick('Inactive', 'নিষ্ক্রিয়')}
                 </span>
               </div>
 
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                 <div className="col-span-2">
-                  <dt className="text-slate-500">Pond</dt>
+                  <dt className="text-slate-500">{t('pond')}</dt>
                   <dd className="font-medium text-slate-800">{pondName(r.pond_id)}</dd>
                 </div>
                 <div className="col-span-2">
-                  <dt className="text-slate-500">Period</dt>
+                  <dt className="text-slate-500">{pick('Period', 'সময়সীমা')}</dt>
                   <dd className="font-medium text-slate-800">{periodLabel(r)}</dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">Start</dt>
+                  <dt className="text-slate-500">{pick('Start', 'শুরু')}</dt>
                   <dd className="font-medium tabular-nums text-slate-800">{formatDateOnly(r.start_date)}</dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">End</dt>
+                  <dt className="text-slate-500">{pick('End', 'শেষ')}</dt>
                   <dd className="font-medium tabular-nums text-slate-800">
-                    {r.end_date ? formatDateOnly(r.end_date) : 'Open'}
+                    {r.end_date ? formatDateOnly(r.end_date) : aquacultureT('periodOpen', lang)}
                   </dd>
                 </div>
                 {r.created_at ? (
                   <div className="col-span-2">
-                    <dt className="text-slate-500">Record created</dt>
+                    <dt className="text-slate-500">{aquacultureT('recordCreated', lang)}</dt>
                     <dd className="font-medium text-slate-800">{formatDateOnly(r.created_at)}</dd>
                   </div>
                 ) : null}
@@ -514,10 +528,12 @@ export default function AquacultureCyclesPage() {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold">{editing ? 'Edit stocking batch' : 'New stocking batch'}</h2>
+            <h2 className="text-lg font-semibold">
+              {editing ? aquacultureT('editStockingBatch', lang) : aquacultureT('newStockingBatch', lang)}
+            </h2>
             <div className="mt-4 space-y-3">
               <label className="block text-sm font-medium text-slate-700">
-                Pond
+                {t('pond')}
                 <select
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.pond_id}
@@ -553,7 +569,7 @@ export default function AquacultureCyclesPage() {
                 </select>
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Species
+                {aquacultureT('species', lang)}
                 <select
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.fish_species}
@@ -583,18 +599,16 @@ export default function AquacultureCyclesPage() {
                 </select>
                 {!usesSeasonalStockingBatches(form.fish_species) ? (
                   <span className="mt-1 block text-xs font-normal text-slate-500">
-                    One continuous batch per pond is normal for this species. Only add a 2nd batch if you are
-                    deliberately starting a new rare stocking.
+                    {aquacultureT('continuousBatchHint', lang)}
                   </span>
                 ) : (
                   <span className="mt-1 block text-xs font-normal text-slate-500">
-                    Tilapia: up to three fry batches per season (C01, C02, C03) on nursing, then linked grow-out
-                    batches.
+                    {aquacultureT('tilapiaBatchHint', lang)}
                   </span>
                 )}
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Batch name
+                {aquacultureT('batchName', lang)}
                 <input
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.name}
@@ -603,26 +617,25 @@ export default function AquacultureCyclesPage() {
               </label>
               {editing ? (
                 <label className="block text-sm font-medium text-slate-700">
-                  Code
+                  {aquacultureT('codeLabel', lang)}
                   <input
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono"
                     value={form.code}
                     onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                    placeholder="e.g. C01"
+                    placeholder={aquacultureT('codePlaceholder', lang)}
                   />
                 </label>
               ) : (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-sm font-medium text-slate-700">Cycle code (assigned automatically)</p>
+                  <p className="text-sm font-medium text-slate-700">{aquacultureT('cycleCodeAuto', lang)}</p>
                   <p className="mt-1 font-mono text-base font-semibold text-slate-900">{form.code || '—'}</p>
                   <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                    Per pond: C01, C02, … with the lowest free number for this pond (gaps refill after a cycle is
-                    deleted).
+                    {aquacultureT('cycleCodeHint', lang)}
                   </p>
                 </div>
               )}
               <label className="block text-sm font-medium text-slate-700">
-                Start date
+                {pick('Start date', 'শুরুর তারিখ')}
                 <input
                   type="date"
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -631,7 +644,7 @@ export default function AquacultureCyclesPage() {
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                End date (optional — leave empty if open)
+                {aquacultureT('endDateOptional', lang)}
                 <input
                   type="date"
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -640,7 +653,7 @@ export default function AquacultureCyclesPage() {
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Sort order
+                {aquacultureT('sortOrder', lang)}
                 <input
                   type="number"
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -655,10 +668,10 @@ export default function AquacultureCyclesPage() {
                   checked={form.is_active}
                   onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
                 />
-                Active
+                {pick('Active', 'সক্রিয়')}
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Notes
+                {aquacultureT('notes', lang)}
                 <textarea
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   rows={2}
@@ -673,19 +686,19 @@ export default function AquacultureCyclesPage() {
                 onClick={() => setModal(false)}
                 className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button
                 type="button"
                 onClick={() => void save()}
                 className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white"
               >
-                Save
+                {t('save')}
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </AquaculturePageShell>
   )
 }

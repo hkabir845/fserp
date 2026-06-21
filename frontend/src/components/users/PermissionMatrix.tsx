@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from 'react'
 import { Search } from 'lucide-react'
+import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
+import { permissionItemMatchesQuery, localizePermissionGroup } from '@/lib/permissionCatalogI18n'
+import { useRolesT } from '@/lib/moduleI18n/roles'
 
 export type PermItem = { id: string; label: string; group: string }
 
@@ -25,19 +28,16 @@ export default function PermissionMatrix({
   showTechnicalIds = false,
 }: Props) {
   const [q, setQ] = useState('')
-  const norm = (s: string) => s.toLowerCase().trim()
+  const { language } = useCompanyLocale()
+  const rt = useRolesT()
 
   const { permGroups, filteredCatalog } = useMemo(() => {
-    const qn = norm(q)
-    const filtered =
-      !qn
-        ? catalog
-        : catalog.filter(
-            (c) => norm(c.label).includes(qn) || norm(c.id).includes(qn) || norm(c.group).includes(qn)
-          )
+    const filtered = !q.trim()
+      ? catalog
+      : catalog.filter((c) => permissionItemMatchesQuery(c, q, language))
     const groups = Array.from(new Set(filtered.map((c) => c.group)))
     return { permGroups: groups, filteredCatalog: filtered }
-  }, [catalog, q])
+  }, [catalog, q, language])
 
   const idsInGroup = (g: string) => filteredCatalog.filter((c) => c.group === g).map((c) => c.id)
 
@@ -59,7 +59,7 @@ export default function PermissionMatrix({
   }
 
   if (catalog.length === 0) {
-    return <p className="text-xs text-amber-700">Loading access list…</p>
+    return <p className="text-xs text-amber-700">{rt('permLoading')}</p>
   }
 
   return (
@@ -71,9 +71,9 @@ export default function PermissionMatrix({
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search modules…"
+            placeholder={rt('permSearchPlaceholder')}
             className="w-full rounded-lg border border-gray-200 bg-white py-1.5 pl-8 pr-2 text-xs text-gray-900 placeholder:text-gray-400 focus:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-            aria-label="Filter modules"
+            aria-label={rt('permSearchLabel')}
           />
         </div>
         <div className="flex flex-shrink-0 flex-wrap gap-1.5">
@@ -82,36 +82,37 @@ export default function PermissionMatrix({
             onClick={() => onChange(catalog.map((c) => c.id))}
             className="rounded border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
           >
-            Allow all
+            {rt('permAllowAll')}
           </button>
           <button
             type="button"
             onClick={() => onChange([])}
             className="rounded border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
           >
-            Deny all
+            {rt('permDenyAll')}
           </button>
         </div>
       </div>
       <p className="mb-2 text-[11px] text-gray-500">
-        {selected.length} of {catalog.length} areas allowed
-        {q ? ` (filtered: ${filteredCatalog.length} items)` : ''}
+        {rt('permAreasAllowed', { selected: selected.length, total: catalog.length })}
+        {q ? rt('permFiltered', { count: filteredCatalog.length }) : ''}
       </p>
       <div className={`space-y-3 overflow-y-auto pr-1 ${listClassName}`}>
         {permGroups.map((g) => {
           const items = filteredCatalog.filter((c) => c.group === g)
           if (items.length === 0) return null
+          const groupLabel = localizePermissionGroup(g, language)
           return (
             <div key={g}>
               <div className="flex flex-wrap items-center justify-between gap-1">
-                <p className="text-[11px] font-semibold uppercase text-gray-500">{g}</p>
+                <p className="text-[11px] font-semibold uppercase text-gray-500">{groupLabel}</p>
                 <div className="flex gap-1.5">
                   <button
                     type="button"
                     onClick={() => addGroup(g)}
                     className="text-[11px] text-indigo-600 hover:underline"
                   >
-                    All in group
+                    {rt('permAllInGroup')}
                   </button>
                   <span className="text-gray-300" aria-hidden>
                     |
@@ -121,7 +122,7 @@ export default function PermissionMatrix({
                     onClick={() => removeGroup(g)}
                     className="text-[11px] text-gray-500 hover:underline"
                   >
-                    None
+                    {rt('permNone')}
                   </button>
                 </div>
               </div>

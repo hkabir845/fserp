@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import {
   formatBankAccountWithCurrentBalance,
@@ -66,6 +68,7 @@ function formatMoney(symbol: string, n: number): string {
 
 export default function DepositsPage() {
   const router = useRouter()
+  const pageMeta = usePageMeta()
   const [bootLoading, setBootLoading] = useState(true)
   const [undepositedPayments, setUndepositedPayments] = useState<UndepositedPayment[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
@@ -213,48 +216,36 @@ export default function DepositsPage() {
 
   if (bootLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <Loader2 className="h-10 w-10 animate-spin text-slate-400" aria-hidden />
-      </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-slate-400" aria-hidden />
+        </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="mb-6">
-            <Link
-              href="/payments"
-              className="mb-4 inline-flex items-center text-sm font-medium text-slate-600 transition hover:text-slate-900"
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={Landmark}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          undepositedPayments.length > 0 && !showDepositForm ? (
+            <button
+              type="button"
+              onClick={handleOpenNewDeposit}
+              className="inline-flex shrink-0 items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
             >
-              <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden />
-              Back to Payments
-            </Link>
-
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Record deposits</h1>
-                <p className="mt-1 max-w-2xl text-slate-600">
-                  Move customer receipts from clearing accounts (cash on hand, undeposited funds, or
-                  card clearing) into a bank register — the standard AR cash workflow used in
-                  professional accounting systems.
-                </p>
-              </div>
-              {undepositedPayments.length > 0 && !showDepositForm && (
-                <button
-                  type="button"
-                  onClick={handleOpenNewDeposit}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                >
-                  <Plus className="h-5 w-5" aria-hidden />
-                  New deposit
-                </button>
-              )}
-            </div>
-          </div>
-
+              <Plus className="h-5 w-5" aria-hidden />
+              New deposit
+            </button>
+          ) : undefined
+        }
+      >
           {successMessage && (
             <div className="mb-6 flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900">
               <div className="flex gap-2">
@@ -698,8 +689,7 @@ export default function DepositsPage() {
               <p className="px-5 py-10 text-center text-sm text-slate-500">No deposits recorded yet.</p>
             )}
           </div>
-        </div>
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

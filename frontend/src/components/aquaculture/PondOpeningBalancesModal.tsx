@@ -546,7 +546,6 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
                   cutoverDate={cutoverDate}
                   readyPonds={goLiveSummary?.ready_ponds ?? 0}
                   totalPonds={goLiveSummary?.total_ponds ?? sorted.length}
-                  message={goLiveSummary?.message}
                   onGoToTab={goToTab}
                 />
               ) : null}

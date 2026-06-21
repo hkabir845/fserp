@@ -3,11 +3,16 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { CompanyProvider } from '@/contexts/CompanyContext'
-import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
 import { Plus, Edit2, Trash2, Mail, Phone, X, User, Briefcase, DollarSign, MapPin, Building2, AlertTriangle, RefreshCw, Search, Filter, BookOpen, Grid3x3, List, Droplets } from 'lucide-react'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useT } from '@/lib/i18n'
+import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
+import { useEmployeesT } from '@/lib/moduleI18n/employees'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateLong } from '@/utils/date'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
@@ -153,6 +158,10 @@ interface PondOption {
 export default function EmployeesPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
+  const { t } = useT()
+  const tr = useErpCommonT()
+  const et = useEmployeesT()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -431,13 +440,13 @@ export default function EmployeesPage() {
     e.preventDefault()
     
     if (!formData.first_name || !formData.last_name) {
-      toast.error('Please fill in required fields (First Name, Last Name)')
+      toast.error(tr('fillRequiredFields'))
       return
     }
 
     try {
       await api.post('/employees/', buildEmployeeSaveBody(), { timeout: 15000 })
-      toast.success('Employee created successfully!')
+      toast.success(et('employeeCreated'))
       setShowModal(false)
       resetForm()
       fetchEmployees()
@@ -483,7 +492,7 @@ export default function EmployeesPage() {
 
     try {
       await api.put(`/employees/${editingId}/`, buildEmployeeSaveBody(), { timeout: 15000 })
-      toast.success('Employee updated successfully!')
+      toast.success(et('employeeUpdated'))
       setShowModal(false)
       resetForm()
       fetchEmployees()
@@ -494,11 +503,11 @@ export default function EmployeesPage() {
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this employee?')) return
+    if (!confirm(tr('confirmDeleteEmployee'))) return
 
     try {
       await api.delete(`/employees/${id}/`, { timeout: 15000 })
-      toast.success('Employee deleted successfully!')
+      toast.success(et('employeeDeleted'))
       fetchEmployees()
     } catch (error) {
       console.error('Error deleting employee:', error)
@@ -509,20 +518,43 @@ export default function EmployeesPage() {
   if (loading) {
     return (
       <CompanyProvider>
-        <div className="flex min-h-screen items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+        <PageLayout className="bg-slate-50">
+          <div className="flex min-h-[50vh] items-center justify-center p-6">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          </div>
+        </PageLayout>
       </CompanyProvider>
     )
   }
 
   return (
     <CompanyProvider>
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {error ? (
-            <div className="flex-1 overflow-auto app-scroll-pad">
+      <PageLayout className="bg-slate-50">
+        <div className="app-scroll-pad">
+          <ErpPageShell
+            flush
+            showBackLink={false}
+            title={pageMeta.title}
+            titleIcon={User}
+            description={pageMeta.description}
+            maxWidthClass="max-w-[1600px]"
+            contentClassName="mt-4"
+            actions={
+              <button
+                type="button"
+                onClick={() => {
+                  resetForm()
+                  setEmpCodePickerNonce((n) => n + 1)
+                  setShowModal(true)
+                }}
+                className={AQ_HERO_BTN_PRIMARY}
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                <span>{et('newEmployee')}</span>
+              </button>
+            }
+          >
+            {error ? (
               <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
                 <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
                 <h3 className="text-xl font-bold text-red-800 mb-2">Error Loading Employees</h3>
@@ -535,33 +567,8 @@ export default function EmployeesPage() {
                   <span>Retry</span>
                 </button>
               </div>
-            </div>
-          ) : (
-            <div className="flex-1 overflow-auto">
-              {/* Master/Tenant Company Banner */}
-              <MasterCompanyBanner />
-              <TenantCompanyBanner />
-              
-              <div className="app-scroll-pad">
-                <div className="flex items-center justify-between mb-8">
-                  <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Employees</h1>
-                    <p className="text-gray-600 mt-1">Manage your workforce</p>
-                  </div>
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      resetForm()
-                      setEmpCodePickerNonce((n) => n + 1)
-                      setShowModal(true)
-                    }}
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
-                  >
-                    <Plus className="h-5 w-5" />
-                    <span>New Employee</span>
-                  </button>
-                </div>
-
+            ) : (
+              <>
                 {/* Search and Filter Bar */}
                 <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -570,7 +577,7 @@ export default function EmployeesPage() {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                         <input
                           type="text"
-                          placeholder="Search by name, code, email, phone, work site, or pond…"
+                          placeholder={et('searchEmployees')}
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
                           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -583,9 +590,9 @@ export default function EmployeesPage() {
                           onChange={(e) => setFilterActive(e.target.value as 'all' | 'active' | 'inactive')}
                           className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         >
-                          <option value="all">All Employees</option>
-                          <option value="active">Active Only</option>
-                          <option value="inactive">Inactive Only</option>
+                          <option value="all">{tr('allOnly', { entities: et('Employees') })}</option>
+                          <option value="active">{tr('activeOnly')}</option>
+                          <option value="inactive">{tr('inactiveOnly')}</option>
                         </select>
                       </div>
                     </div>
@@ -968,11 +975,12 @@ export default function EmployeesPage() {
                     </button>
                   </div>
                 )}
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </ErpPageShell>
+        </div>
 
-          {/* QuickBooks-style Employee Modal */}
+        {/* QuickBooks-style Employee Modal */}
           {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -1306,8 +1314,7 @@ export default function EmployeesPage() {
             </div>
           </div>
         )}
-        </div>
-      </div>
+      </PageLayout>
     </CompanyProvider>
   )
 }

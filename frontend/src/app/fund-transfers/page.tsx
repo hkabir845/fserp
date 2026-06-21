@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import { Plus, Edit2, Trash2, X, CheckCircle, XCircle, AlertCircle, ArrowRightLeft } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -65,6 +67,7 @@ function renderTransferAccountOptions(accounts: BankAccount[], currencySymbol: s
 export default function FundTransfersPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
   const [transfers, setTransfers] = useState<FundTransfer[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -274,43 +277,36 @@ export default function FundTransfersPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-auto">
-          <div className="app-scroll-pad flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
         </div>
-      </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <div className="app-scroll-pad">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Fund Transfers</h1>
-              <p className="text-gray-600 mt-1">
-                Move money between <strong>bank / cash</strong> registers and <strong>equity</strong> accounts (same idea
-                as QuickBooks: transfers between balance-sheet accounts for contributions, draws, and till/bank moves).
-                Bank lines come from your chart; equity lines are all active <strong>Equity</strong> type accounts.
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                resetForm()
-                setShowModal(true)
-              }}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="h-5 w-5" />
-              <span>New Transfer</span>
-            </button>
-          </div>
-
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={ArrowRightLeft}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <button
+            onClick={() => {
+              resetForm()
+              setShowModal(true)
+            }}
+            className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+          >
+            <Plus className="h-5 w-5" />
+            <span>New Transfer</span>
+          </button>
+        }
+      >
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="w-full">
               <thead className="bg-gray-50 border-b-2 border-gray-200">
@@ -408,8 +404,7 @@ export default function FundTransfersPage() {
               </div>
             )}
           </div>
-        </div>
-      </div>
+      </ErpPageShell>
 
       {/* Create/Edit Modal */}
       {showModal && (
@@ -555,7 +550,7 @@ export default function FundTransfersPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }
 

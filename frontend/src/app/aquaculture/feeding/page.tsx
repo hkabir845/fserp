@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft,
   ArrowRight,
   Bot,
   Check,
@@ -20,7 +19,10 @@ import {
   UtensilsCrossed,
   XCircle,
 } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_PRIMARY, AQ_HERO_LINK, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
@@ -32,7 +34,6 @@ import {
   FeedingInsightHero,
   MealPlanTable,
   PageTipsAside,
-  PipelineStatCard,
   StatusFilterTabs,
   WorkflowRail,
 } from './FeedingUi'
@@ -76,6 +77,7 @@ interface PondWarehouseItemRow {
 }
 
 export default function AquacultureFeedingPage() {
+  const pageMeta = usePageMeta()
   const toast = useToast()
   const searchRef = useRef<HTMLInputElement>(null)
   const [ponds, setPonds] = useState<Pond[]>([])
@@ -817,59 +819,36 @@ export default function AquacultureFeedingPage() {
   }, [rows, ponds, todayIso])
 
   return (
-    <div className="mx-auto max-w-[1440px] px-4 py-5 pb-24 sm:px-6 lg:px-8 lg:pb-8">
-      <Link
-        href="/aquaculture"
-        className="inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:text-teal-950"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden />
-        Aquaculture
-      </Link>
-
-      {/* Hero */}
-      <header className="mt-4 overflow-hidden rounded-2xl border border-teal-200/60 bg-gradient-to-br from-slate-900 via-teal-950 to-emerald-950 p-5 text-white shadow-xl sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-teal-200">
-              <Bot className="h-3.5 w-3.5" aria-hidden />
-              AI feeding advisor
-            </p>
-            <h1 className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl">
-              <UtensilsCrossed className="h-7 w-7 text-teal-300" strokeWidth={1.75} aria-hidden />
-              Daily feed plans
-            </h1>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-teal-100/90">
-              WorldFish-based rations from pond biomass. Generate → review → approve → apply to warehouse or expense.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/aquaculture/sampling"
-              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold backdrop-blur hover:bg-white/20"
-            >
-              <Gauge className="h-3.5 w-3.5" aria-hidden />
-              Sampling
-            </Link>
-            <Link
-              href="/aquaculture/ponds"
-              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold backdrop-blur hover:bg-white/20"
-            >
-              <MapPin className="h-3.5 w-3.5" aria-hidden />
-              Ponds
-            </Link>
-            <button
-              type="button"
-              onClick={() => void loadList()}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-teal-900 hover:bg-teal-50 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden />
-              Refresh
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+    <AquaculturePageShell
+      eyebrow={pageMeta.eyebrow ?? 'AI feeding advisor'}
+      eyebrowIcon={Bot}
+      title={pageMeta.title}
+      titleIcon={UtensilsCrossed}
+      description={pageMeta.description}
+      maxWidthClass="max-w-[1440px]"
+      actions={
+        <>
+          <Link href="/aquaculture/sampling" className={AQ_HERO_LINK}>
+            <Gauge className="h-3.5 w-3.5" aria-hidden />
+            Sampling
+          </Link>
+          <Link href="/aquaculture/ponds" className={AQ_HERO_LINK}>
+            <MapPin className="h-3.5 w-3.5" aria-hidden />
+            Ponds
+          </Link>
+          <button
+            type="button"
+            onClick={() => void loadList()}
+            disabled={loading}
+            className={AQ_HERO_BTN_PRIMARY}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden />
+            Refresh
+          </button>
+        </>
+      }
+      stats={
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <PipelineStatCard
             title="Needs review"
             value={pipelineStats.pending}
@@ -907,9 +886,9 @@ export default function AquacultureFeedingPage() {
             onClick={() => setFilterStatus('all')}
           />
         </div>
-      </header>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-12 lg:items-start">
+      }
+    >
+      <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
         {/* Left: generate + list */}
         <div className="space-y-4 lg:col-span-5 xl:col-span-5">
           <section className="rounded-2xl border border-teal-200/70 bg-white p-4 shadow-sm ring-1 ring-teal-500/10">
@@ -1545,7 +1524,7 @@ export default function AquacultureFeedingPage() {
           </button>
         </div>
       ) : null}
-    </div>
+    </AquaculturePageShell>
   )
 }
 

@@ -14,6 +14,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { formatBankRegisterLabel, normalizeBankAccountsFromApi } from '@/lib/bankAccountDisplay'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -60,6 +61,7 @@ type StationOpt = { id: number; station_name: string }
 type LedgerEntryModalKind = 'payment' | 'rent_charge' | 'adjustment'
 
 export default function LandlordDetailPage() {
+  const pageMeta = usePageMeta()
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -265,7 +267,7 @@ export default function LandlordDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900">
               <Landmark className="h-7 w-7 shrink-0 text-teal-700" aria-hidden />
-              {detail.name}
+              {detail.name || pageMeta.title}
             </h1>
             {detail.code ? (
               <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-sm text-slate-700">

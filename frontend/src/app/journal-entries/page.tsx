@@ -2,10 +2,12 @@
 
 import { useEffect, useState, Fragment, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
-import { Plus, Edit2, Trash2, X, Eye, CheckCircle, XCircle, AlertCircle, Search, Filter, AlertTriangle, RefreshCw } from 'lucide-react'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { Plus, Edit2, Trash2, X, Eye, CheckCircle, XCircle, AlertCircle, Search, Filter, AlertTriangle, RefreshCw, ScrollText } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api, { getBackendOrigin } from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -136,6 +138,7 @@ export default function JournalEntriesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const toast = useToast()
+  const pageMeta = usePageMeta()
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [allEntries, setAllEntries] = useState<JournalEntry[]>([]) // Store all entries for client-side filtering
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -846,17 +849,54 @@ export default function JournalEntriesPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <div className="app-scroll-pad">
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        titleId="journal-entries-title"
+        eyebrow={pageMeta.eyebrow}
+        eyebrowIcon={pageMeta.eyebrow ? ScrollText : undefined}
+        title={pageMeta.title}
+        titleIcon={ScrollText}
+        description={pageMeta.description ?? undefined}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center space-x-2 px-4 py-2 border border-white/25 bg-white/10 text-white rounded-lg hover:bg-white/15 transition-colors"
+            >
+              <Filter className="h-5 w-5" />
+              <span>Filter</span>
+            </button>
+            <DocumentExportButtons
+              onPrint={() => void handlePrintList()}
+              onDownloadCsv={handleDownloadListCsv}
+              onDownloadJson={handleDownloadListJson}
+              printLabel="Print list"
+            />
+            <button
+              onClick={() => {
+                resetForm()
+                setShowModal(true)
+              }}
+              className="flex items-center space-x-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-500 transition-colors"
+            >
+              <Plus className="h-5 w-5" />
+              <span>New Journal Entry</span>
+            </button>
+          </div>
+        }
+      >
           {error ? (
             <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
               <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
@@ -872,37 +912,6 @@ export default function JournalEntriesPage() {
             </div>
           ) : (
             <Fragment>
-              <div className="flex items-center justify-between mb-8">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">Journal Entries</h1>
-                <p className="text-gray-600 mt-1">Manual accounting entries</p>
-              </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <Filter className="h-5 w-5" />
-                <span>Filter</span>
-              </button>
-              <DocumentExportButtons
-                onPrint={() => void handlePrintList()}
-                onDownloadCsv={handleDownloadListCsv}
-                onDownloadJson={handleDownloadListJson}
-                printLabel="Print list"
-              />
-              <button
-                onClick={() => {
-                  resetForm()
-                  setShowModal(true)
-                }}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Plus className="h-5 w-5" />
-                <span>New Journal Entry</span>
-              </button>
-            </div>
-          </div>
 
           {/* Filter Panel */}
           {showFilters && (
@@ -1659,8 +1668,7 @@ export default function JournalEntriesPage() {
           )}
         </Fragment>
           )}
-        </div>
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

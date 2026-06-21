@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
+import { localizePermissionCatalog } from '@/lib/permissionCatalogI18n'
+import { useRolesT } from '@/lib/moduleI18n/roles'
 import PermissionMatrix, { type PermItem } from '@/components/users/PermissionMatrix'
 import { PosSaleScopeSelector } from '@/components/pos/PosSaleScopeSelector'
 import {
@@ -102,6 +107,9 @@ type PermDef = { id: string; label: string; group: string }
 export default function UsersPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
+  const { language } = useCompanyLocale()
+  const rt = useRolesT()
   const [users, setUsers] = useState<SystemUser[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -781,6 +789,11 @@ export default function UsersPage() {
     }
   }
 
+  const localizedPermCatalog = useMemo(
+    () => localizePermissionCatalog(permCatalog, language),
+    [permCatalog, language]
+  )
+
   const roleFilterOptions = useMemo(
     () =>
       Array.from(
@@ -827,31 +840,31 @@ export default function UsersPage() {
 
   if (loading) {
     return (
-      <PageLayout>
-        <div className="flex min-h-[50vh] items-center justify-center app-scroll-pad">
-          <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+      <PageLayout className="bg-slate-50">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
         </div>
       </PageLayout>
     )
   }
 
   const hasListFilters = Boolean(userSearch.trim() || roleFilter || statusFilter !== 'all')
+  const usersDescription = isCompanyOwner
+    ? 'Invite your team. Staff use their work email to sign in. A job type sets a sensible default; optional access profiles fine-tune which apps they see (manage profiles on Roles or below when adding a user).'
+    : 'Create and review accounts, assign a job type and company, and (for tenants) optional custom access profiles.'
 
   return (
-    <PageLayout>
-      <div className="app-scroll-pad mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-6 flex flex-col gap-4 lg:mb-8">
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">People &amp; access</p>
-              <h1 className="mt-1 text-2xl font-bold text-gray-900 sm:text-3xl">Users</h1>
-              <p className="mt-1 max-w-2xl text-sm text-gray-600 sm:text-base">
-                {isCompanyOwner
-                  ? 'Invite your team. Staff use their work email to sign in. A job type sets a sensible default; optional access profiles fine-tune which apps they see (manage profiles on Roles or below when adding a user).'
-                  : 'Create and review accounts, assign a job type and company, and (for tenants) optional custom access profiles.'}
-              </p>
-            </div>
-            <div className="flex flex-shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        eyebrow={pageMeta.eyebrow}
+        title={pageMeta.title}
+        titleIcon={Users}
+        description={usersDescription}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <div className="flex flex-shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
               <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm">
                 <button
                   type="button"
@@ -897,9 +910,9 @@ export default function UsersPage() {
                 <Users className="h-4 w-4" />
                 Add user
               </button>
-            </div>
           </div>
-
+        }
+      >
           {users.length > 0 && (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="relative min-w-0 flex-1">
@@ -970,7 +983,6 @@ export default function UsersPage() {
               </div>
             </div>
           )}
-        </div>
 
         {users.length > 0 && hasListFilters && filteredUsers.length === 0 && (
           <div className="mb-6 flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
@@ -1267,8 +1279,6 @@ export default function UsersPage() {
               </button>
             </div>
           )}
-        </div>
-
       {/* User Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -1646,14 +1656,12 @@ export default function UsersPage() {
                               <div className="border-t border-gray-100 bg-white p-3 sm:p-4">
                                 <PermissionMatrix
                                   idPrefix="userform-perm"
-                                  catalog={permCatalog as PermItem[]}
+                                  catalog={localizedPermCatalog as PermItem[]}
                                   selected={selectedProfilePerms}
                                   onChange={onProfileMatrixChange}
                                   listClassName="max-h-56 sm:max-h-64"
                                 />
-                                <p className="mt-2 text-[11px] text-gray-500">
-                                  Unchecked areas stay hidden in the app launcher. Saving the user also updates this profile.
-                                </p>
+                                <p className="mt-2 text-[11px] text-gray-500">{rt('usersUncheckedHint')}</p>
                               </div>
                             )}
                           </div>
@@ -1852,7 +1860,7 @@ export default function UsersPage() {
                   <p className="mt-2 text-xs font-medium text-gray-600">Module access</p>
                   <PermissionMatrix
                     idPrefix="newrole"
-                    catalog={permCatalog as PermItem[]}
+                    catalog={localizedPermCatalog as PermItem[]}
                     selected={newRolePerms}
                     onChange={onNewProfileMatrixChange}
                     listClassName="max-h-48"
@@ -1886,6 +1894,7 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+      </ErpPageShell>
     </PageLayout>
   )
 }

@@ -2,10 +2,15 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { Plus, Eye, Search, X, PlusCircle, Trash2, Send, CheckCircle, Edit2, FileText } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useT } from '@/lib/i18n'
+import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDate, formatDateOnly } from '@/utils/date'
@@ -156,6 +161,9 @@ export default function InvoicesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const toast = useToast()
+  const pageMeta = usePageMeta()
+  const { t } = useT()
+  const tr = useErpCommonT()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [items, setItems] = useState<Item[]>([])
@@ -730,12 +738,12 @@ export default function InvoicesPage() {
     e.preventDefault()
     
     if (!formData.customer_id || formData.customer_id === 0) {
-      toast.error('Please select a customer')
+      toast.error(tr('selectCustomer'))
       return
     }
 
     if (formData.lines.length === 0) {
-      toast.error('Please add at least one line item')
+      toast.error(tr('addLineItem'))
       return
     }
 
@@ -802,7 +810,7 @@ export default function InvoicesPage() {
       })
 
       if (response.ok) {
-        toast.success('Invoice created successfully!')
+        toast.success(tr('invoiceCreated'))
         setShowModal(false)
         resetForm()
         fetchData()
@@ -968,12 +976,12 @@ export default function InvoicesPage() {
     if (!editingInvoice) return
     
     if (!formData.customer_id || formData.customer_id === 0) {
-      toast.error('Please select a customer')
+      toast.error(tr('selectCustomer'))
       return
     }
 
     if (formData.lines.length === 0) {
-      toast.error('Please add at least one line item')
+      toast.error(tr('addLineItem'))
       return
     }
 
@@ -1143,71 +1151,74 @@ export default function InvoicesPage() {
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="min-w-0 flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Invoices</h1>
-          <p className="text-gray-600 mt-1">Manage customer invoices</p>
-          {printBranding && (
-            <p className="text-sm text-gray-800 mt-2 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-2 max-w-2xl">
-              <span className="font-semibold">{printBranding.companyName}</span>
-              {printBranding.stationName ? (
-                <span className="text-gray-600"> · Station: {printBranding.stationName}</span>
-              ) : null}
-              {printBranding.companyAddress ? (
-                <span className="block text-gray-500 text-xs mt-1 font-normal">
-                  {printBranding.companyAddress}
-                </span>
-              ) : null}
-            </p>
-          )}
-        </div>
-
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:flex-wrap">
-          <div className="flex min-w-0 w-full flex-1 flex-col gap-3 sm:min-w-[16rem] sm:flex-row sm:items-center sm:gap-4">
-            <div className="relative max-w-md flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-              <input
-                type="text"
-                placeholder="Search by invoice number..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
-              />
-            </div>
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm bg-white"
-            >
-              <option value="all">All Invoices</option>
-              <option value="pos">POS Invoices</option>
-              <option value="manual">Manual Invoices</option>
-            </select>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={FileText}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <div className="flex flex-wrap items-end gap-2">
             <DocumentExportButtons
               onPrint={() => void handlePrintInvoiceList()}
               onDownloadCsv={handleDownloadInvoiceListCsv}
               onDownloadJson={handleDownloadInvoiceListJson}
               disabled={filteredInvoices.length === 0}
-              printLabel="Print list"
+              printLabel={tr('printList')}
             />
             <button
+              type="button"
               onClick={handleOpenModal}
-              className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg font-medium"
+              className={AQ_HERO_BTN_PRIMARY}
             >
-              <Plus className="h-5 w-5" />
-              <span>New Invoice</span>
+              <Plus className="h-4 w-4" aria-hidden />
+              <span>{tr('newEntity', { entity: tr('Invoice') })}</span>
             </button>
           </div>
+        }
+      >
+        {printBranding && (
+          <p className="mb-4 text-sm text-gray-800 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-2 max-w-2xl">
+            <span className="font-semibold">{printBranding.companyName}</span>
+            {printBranding.stationName ? (
+              <span className="text-gray-600"> · Station: {printBranding.stationName}</span>
+            ) : null}
+            {printBranding.companyAddress ? (
+              <span className="block text-gray-500 text-xs mt-1 font-normal">
+                {printBranding.companyAddress}
+              </span>
+            ) : null}
+          </p>
+        )}
+
+        <div className="mb-6 flex min-w-0 w-full flex-col gap-3 sm:min-w-[16rem] sm:flex-row sm:items-center sm:gap-4">
+          <div className="relative max-w-md flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+            <input
+              type="text"
+              placeholder={tr('searchInvoiceNumber')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
+            />
+          </div>
+          <select
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value)}
+            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm bg-white"
+          >
+            <option value="all">{tr('allInvoices')}</option>
+            <option value="pos">{tr('posInvoices')}</option>
+            <option value="manual">{tr('manualInvoices')}</option>
+          </select>
         </div>
 
         {loading ? (
           <div className="flex flex-col justify-center items-center h-64 bg-white rounded-lg shadow">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-            <p className="text-gray-600">Loading invoices...</p>
+            <p className="text-gray-600">{tr('loadingEntity', { entity: tr('invoice') })}</p>
           </div>
         ) : error ? (
           <div className="bg-white rounded-lg shadow app-modal-pad">
@@ -1858,7 +1869,7 @@ export default function InvoicesPage() {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

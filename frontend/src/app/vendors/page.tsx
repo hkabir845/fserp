@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import {
   Plus,
@@ -21,6 +23,10 @@ import { vendorUsualReceivingLabel } from '@/lib/vendorReceivingDefaults'
 import { VendorDefaultReceivingSelect } from '@/components/vendors/VendorDefaultReceivingSelect'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
+import { useT } from '@/lib/i18n'
+import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
+import { useContactsT } from '@/lib/moduleI18n/contacts'
 import api, { getBackendOrigin } from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
@@ -96,6 +102,10 @@ interface CoaPickRow {
 export default function VendorsPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
+  const { t } = useT()
+  const tr = useErpCommonT()
+  const ct = useContactsT()
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -376,13 +386,13 @@ export default function VendorsPage() {
         default_expense_account_id: parseDefaultExpenseAccountIdPayload(),
         ...(vendorRefCode.trim() ? { vendor_number: vendorRefCode.trim() } : {}),
       })
-      toast.success('Vendor created successfully!')
+      toast.success(tr('entityCreated', { entity: ct('Vendor') }))
       setShowModal(false)
       fetchVendors()
       resetForm()
     } catch (error) {
       console.error('Error creating vendor:', error)
-      const errorMessage = extractErrorMessage(error, 'Failed to create vendor')
+      const errorMessage = extractErrorMessage(error, tr('failedCreateEntity', { entity: ct('vendor') }))
       toast.error(errorMessage)
     }
   }
@@ -444,14 +454,14 @@ export default function VendorsPage() {
         default_aquaculture_pond_id,
         default_expense_account_id: parseDefaultExpenseAccountIdPayload(),
       })
-      toast.success('Vendor updated successfully!')
+      toast.success(tr('entityUpdated', { entity: ct('Vendor') }))
       setShowModal(false)
       setEditingVendor(null)
       fetchVendors()
       resetForm()
     } catch (error) {
       console.error('Error updating vendor:', error)
-      const errorMessage = extractErrorMessage(error, 'Failed to update vendor')
+      const errorMessage = extractErrorMessage(error, tr('failedUpdateEntity', { entity: ct('vendor') }))
       toast.error(errorMessage)
     }
   }
@@ -459,12 +469,12 @@ export default function VendorsPage() {
   const handleDelete = async (vendorId: number) => {
     try {
       await api.delete(`/vendors/${vendorId}/`)
-      toast.success('Vendor deleted successfully!')
+      toast.success(tr('entityDeleted', { entity: ct('Vendor') }))
       setShowDeleteConfirm(null)
       fetchVendors()
     } catch (error) {
       console.error('Error deleting vendor:', error)
-      const errorMessage = extractErrorMessage(error, 'Failed to delete vendor')
+      const errorMessage = extractErrorMessage(error, tr('failedDeleteEntity', { entity: ct('vendor') }))
       toast.error(errorMessage)
     }
   }
@@ -558,27 +568,46 @@ export default function VendorsPage() {
 
   return (
     <CompanyProvider>
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Vendors</h1>
-            <p className="text-gray-600 mt-1">
-              One record per supplier (payables). Where each delivery goes is chosen on{' '}
-              <Link href="/bills" className="text-blue-600 hover:underline">
-                vendor bills
-              </Link>
-              , not by duplicating vendors per pond or site.
-            </p>
-          </div>
-          <DocumentExportButtons
-            onPrint={() => void handlePrintList()}
-            onDownloadCsv={() => void handleDownloadListCsv()}
-            onDownloadJson={() => void handleDownloadListJson()}
-            printLabel="Print list"
-          />
-        </div>
+      <PageLayout className="bg-slate-50">
+        <ErpPageShell
+          showBackLink={false}
+          titleId="vendors-title"
+          eyebrow={pageMeta.eyebrow}
+          title={pageMeta.title}
+          titleIcon={Building2}
+          description={pageMeta.description}
+          maxWidthClass="max-w-[1600px]"
+          contentClassName="mt-4"
+          actions={
+            <div className="flex flex-wrap items-end gap-2">
+              <DocumentExportButtons
+                onPrint={() => void handlePrintList()}
+                onDownloadCsv={() => void handleDownloadListCsv()}
+                onDownloadJson={() => void handleDownloadListJson()}
+                printLabel={tr('printList')}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  resetForm()
+                  setCreateCodeNonce((n) => n + 1)
+                  setShowModal(true)
+                }}
+                className={AQ_HERO_BTN_PRIMARY}
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                <span>{tr('addEntity', { entity: ct('Vendor') })}</span>
+              </button>
+            </div>
+          }
+        >
+        <p className="mb-4 text-sm text-muted-foreground">
+          One record per supplier (payables). Where each delivery goes is chosen on{' '}
+          <Link href="/bills" className="text-blue-600 hover:underline">
+            vendor bills
+          </Link>
+          , not by duplicating vendors per pond or site.
+        </p>
 
         <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950">
           <div className="flex gap-3">
@@ -606,29 +635,17 @@ export default function VendorsPage() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between mb-6">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-gray-400" />
             <input
               type="text"
-              placeholder="Search by name, #, email, usual location…"
+              placeholder={ct('searchVendors')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              resetForm()
-              setCreateCodeNonce((n) => n + 1)
-              setShowModal(true)
-            }}
-            className="ml-4 flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="h-5 w-5" />
-            <span>Add Vendor</span>
-          </button>
         </div>
 
         {loading ? (
@@ -638,14 +655,14 @@ export default function VendorsPage() {
         ) : error ? (
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
             <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-red-800 mb-2">Error Loading Vendors</h3>
+            <h3 className="text-xl font-bold text-red-800 mb-2">{tr('errorLoading', { entity: ct('Vendors') })}</h3>
             <p className="text-red-700 mb-4">{error}</p>
             <button
               onClick={fetchVendors}
               className="inline-flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
             >
               <RefreshCw className="h-5 w-5" />
-              <span>Retry</span>
+              <span>{tr('retry')}</span>
             </button>
           </div>
         ) : (
@@ -717,7 +734,7 @@ export default function VendorsPage() {
                       <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                         vendor.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                       }`}>
-                        {vendor.is_active ? 'Active' : 'Inactive'}
+                        {vendor.is_active ? t('active') : t('inactive')}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -774,10 +791,8 @@ export default function VendorsPage() {
         {showDeleteConfirm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 max-w-md w-full">
-              <h2 className="text-xl font-bold mb-4">Delete Vendor</h2>
-              <p className="text-gray-600 mb-6">
-                Are you sure you want to delete this vendor? This action cannot be undone.
-              </p>
+              <h2 className="text-xl font-bold mb-4">{tr('deleteEntity', { entity: ct('Vendor') })}</h2>
+              <p className="text-gray-600 mb-6">{tr('deleteConfirmBody', { entity: ct('vendor') })}</p>
               <div className="flex justify-end space-x-3">
                 <button
                   onClick={() => setShowDeleteConfirm(null)}
@@ -801,7 +816,7 @@ export default function VendorsPage() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg app-modal-pad max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-2xl font-bold mb-6">
-                {editingVendor ? 'Edit Vendor' : 'Add New Vendor'}
+                {editingVendor ? tr('editEntity', { entity: ct('Vendor') }) : tr('addNewEntity', { entity: ct('Vendor') })}
               </h2>
               <form onSubmit={editingVendor ? handleUpdate : handleCreate}>
                 {editingVendor ? (
@@ -1068,8 +1083,8 @@ export default function VendorsPage() {
             </div>
           </div>
         )}
-        </div>
-      </div>
+        </ErpPageShell>
+      </PageLayout>
     </CompanyProvider>
   )
 }

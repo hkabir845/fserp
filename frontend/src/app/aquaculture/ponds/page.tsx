@@ -19,7 +19,10 @@ import {
   ChevronDown,
   Sparkles,
   Landmark,
+  MapPin,
 } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
 import { PondOpeningBalancesModal, type PondOpeningSource } from '@/components/aquaculture/PondOpeningBalancesModal'
 import {
   PondGoLiveFleetBanner,
@@ -28,6 +31,7 @@ import {
 import type { OpeningBalancesResponse } from '@/components/aquaculture/pondOpeningShared'
 import { PondPhaseWorkflowPanel } from '@/components/aquaculture/PondPhaseWorkflowPanel'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import { NURSING_WORKFLOW_STEPS } from '@/lib/aquaculturePondSite'
 import api from '@/lib/api'
 import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
@@ -396,6 +400,7 @@ function PondLeaseCell({ p }: { p: Pond }) {
 }
 
 export default function AquaculturePondsPage() {
+  const pageMeta = usePageMeta()
   const toast = useToast()
   const [ponds, setPonds] = useState<Pond[]>([])
   const [loading, setLoading] = useState(true)
@@ -857,205 +862,186 @@ export default function AquaculturePondsPage() {
 
   return (
     <>
-      <div className="flex min-h-full min-w-0 flex-col">
-        <header className="border-b border-slate-200/90 bg-slate-50 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="mx-auto w-full max-w-[1800px]">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <h1 id="aq-ponds-title" className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
-                    Production ponds
-                  </h1>
-                  {!loading && ponds.length > 0 ? (
-                    <span className="rounded-full bg-slate-200/80 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
-                      {filteredPonds.length === ponds.length
-                        ? `${pondStats.total} total · ${pondStats.active} active`
-                        : `${filteredPonds.length} shown · ${pondStats.total} total`}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-1 max-w-3xl text-sm leading-snug text-slate-600">
-                  Each pond is a reporting unit for stocking, tilapia load, landlord lease math, and (usually) a linked POS
-                  customer for on-account feed and supplies.{' '}
-                  <Link
-                    href="/aquaculture/sales"
-                    className="font-medium text-teal-800 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900"
-                  >
-                    Sales
-                  </Link>
-                  <span className="text-slate-400"> · </span>
-                  <Link
-                    href="/aquaculture/expenses"
-                    className="font-medium text-teal-800 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900"
-                  >
-                    Expenses
-                  </Link>
-                  <span className="text-slate-400"> · </span>
-                  <Link
-                    href="/aquaculture/stock"
-                    className="font-medium text-teal-800 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900"
-                  >
-                    Stock
-                  </Link>
-                </p>
-              </div>
-              <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end xl:w-auto">
-                <div className="relative w-full sm:w-52 lg:w-60">
-                  <Search
-                    className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                    aria-hidden
-                  />
-                  <input
-                    type="search"
-                    placeholder="Search name, code, customer…"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
-                    aria-label="Search ponds"
-                  />
-                </div>
-                <div
-                  className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm"
-                  role="group"
-                  aria-label="Filter by pond status"
-                >
-                  {(['all', 'active', 'inactive'] as const).map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setStatusFilter(key)}
-                      aria-pressed={statusFilter === key}
-                      className={`rounded-md px-2.5 py-1.5 text-xs font-medium capitalize sm:text-sm ${
-                        statusFilter === key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {key}
-                    </button>
-                  ))}
-                </div>
-                <div
-                  className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5"
-                  role="group"
-                  aria-label="Display layout"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('list')}
-                    aria-pressed={viewMode === 'list'}
-                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-sm ${
-                      viewMode === 'list' ? 'bg-teal-600 font-medium text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <List className="h-4 w-4" aria-hidden />
-                    <span className="hidden sm:inline">Table</span>
-                    <span className="sm:hidden">Rows</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('cards')}
-                    aria-pressed={viewMode === 'cards'}
-                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-sm ${
-                      viewMode === 'cards'
-                        ? 'bg-teal-600 font-medium text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <LayoutGrid className="h-4 w-4" aria-hidden />
-                    Cards
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void load()}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Refresh
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOpeningModal(true)}
-                  disabled={ponds.length === 0}
-                  className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 shadow-sm hover:bg-teal-100 disabled:opacity-50"
-                  title="Go-live: P&L by income/expense category, customer A/R, advanced party openings; landlords on Landlords page"
-                >
-                  <Landmark className="h-4 w-4" aria-hidden />
-                  Go-live setup
-                </button>
-                <button
-                  type="button"
-                  onClick={openSitePair}
-                  className="inline-flex items-center gap-1 rounded-lg border border-teal-600 bg-white px-3 py-2 text-sm font-medium text-teal-800 shadow-sm hover:bg-teal-50"
-                >
-                  <Plus className="h-4 w-4" />
-                  Site pair
-                </button>
-                <button
-                  type="button"
-                  onClick={openNew}
-                  className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-700"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add pond
-                </button>
-              </div>
+      <AquaculturePageShell
+        titleId="aq-ponds-title"
+        title={pageMeta.title}
+        titleIcon={MapPin}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1800px]"
+        contentClassName="mt-0"
+        actions={
+          <>
+            <div className="relative w-full sm:w-52 lg:w-60">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-teal-100/70"
+                aria-hidden
+              />
+              <input
+                type="search"
+                placeholder="Search name, code, customer…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg border border-white/20 bg-white/10 py-1.5 pl-8 pr-3 text-sm text-white placeholder:text-teal-100/60 focus:border-white/40 focus:outline-none focus:ring-2 focus:ring-white/20"
+                aria-label="Search ponds"
+              />
             </div>
+            <div
+              className="inline-flex rounded-lg border border-white/20 bg-white/10 p-0.5"
+              role="group"
+              aria-label="Filter by pond status"
+            >
+              {(['all', 'active', 'inactive'] as const).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setStatusFilter(key)}
+                  aria-pressed={statusFilter === key}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-semibold capitalize sm:text-sm ${
+                    statusFilter === key ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-100 hover:bg-white/10'
+                  }`}
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+            <div
+              className="inline-flex rounded-lg border border-white/20 bg-white/10 p-0.5"
+              role="group"
+              aria-label="Display layout"
+            >
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                aria-pressed={viewMode === 'list'}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-xs font-semibold ${
+                  viewMode === 'list' ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-100 hover:bg-white/10'
+                }`}
+              >
+                <List className="h-3.5 w-3.5" aria-hidden />
+                <span className="hidden sm:inline">Table</span>
+                <span className="sm:hidden">Rows</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                aria-pressed={viewMode === 'cards'}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-xs font-semibold ${
+                  viewMode === 'cards' ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-100 hover:bg-white/10'
+                }`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+                Cards
+              </button>
+            </div>
+            <button type="button" onClick={() => void load()} className={AQ_HERO_BTN_GHOST}>
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpeningModal(true)}
+              disabled={ponds.length === 0}
+              className={AQ_HERO_BTN_GHOST}
+              title="Go-live: P&L by income/expense category, customer A/R, advanced party openings; landlords on Landlords page"
+            >
+              <Landmark className="h-3.5 w-3.5" aria-hidden />
+              Go-live setup
+            </button>
+            <button type="button" onClick={openSitePair} className={AQ_HERO_BTN_GHOST}>
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              Site pair
+            </button>
+            <button type="button" onClick={openNew} className={AQ_HERO_BTN_PRIMARY}>
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              Add pond
+            </button>
+          </>
+        }
+        stats={
+          !loading && ponds.length > 0 ? (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <PipelineStatCard
+                title="Water surface Σ"
+                value={pondStats.waterDec > 0 ? `${formatNumber(pondStats.waterDec, 2)} dec` : '—'}
+                sub="Stocking & density basis"
+                icon={Droplets}
+                tone="sky"
+              />
+              <PipelineStatCard
+                title="Lease land Σ"
+                value={pondStats.leaseDec > 0 ? `${formatNumber(pondStats.leaseDec, 2)} dec` : '—'}
+                sub="Landlord rent basis"
+                icon={Landmark}
+                tone="slate"
+              />
+              <PipelineStatCard
+                title="Tilapia biomass Σ"
+                value={pondStats.biomassKg > 0 ? `${formatNumber(pondStats.biomassKg, 1)} kg` : '—'}
+                sub="Where reported per pond"
+                icon={Fish}
+                tone="emerald"
+              />
+              <PipelineStatCard
+                title="Net lease position Σ"
+                value={fmtMoney(pondStats.balanceDueSum)}
+                sub="Positive = still to pay"
+                icon={Wallet}
+                tone="amber"
+              />
+            </div>
+          ) : undefined
+        }
+      >
+        {!pageMeta.description ? (
+          <p className="mb-4 max-w-3xl text-sm leading-snug text-slate-600">
+            Each pond is a reporting unit for stocking, tilapia load, landlord lease math, and (usually) a linked POS
+            customer for on-account feed and supplies.{' '}
+            <Link
+              href="/aquaculture/sales"
+              className="font-medium text-teal-800 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900"
+            >
+              Sales
+            </Link>
+            <span className="text-slate-400"> · </span>
+            <Link
+              href="/aquaculture/expenses"
+              className="font-medium text-teal-800 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900"
+            >
+              Expenses
+            </Link>
+            <span className="text-slate-400"> · </span>
+            <Link
+              href="/aquaculture/stock"
+              className="font-medium text-teal-800 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900"
+            >
+              Stock
+            </Link>
+          </p>
+        ) : null}
 
-            {!loading && ponds.length > 0 ? (
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-                <div className="rounded-lg border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Water surface Σ</p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-base font-bold tabular-nums text-slate-900 sm:text-lg">
-                    <Droplets className="h-4 w-4 shrink-0 text-sky-600" aria-hidden />
-                    {pondStats.waterDec > 0 ? `${formatNumber(pondStats.waterDec, 2)} dec` : '—'}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">Stocking &amp; density basis</p>
-                </div>
-                <div className="rounded-lg border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Lease land Σ</p>
-                  <p className="mt-0.5 text-base font-bold tabular-nums text-slate-900 sm:text-lg">
-                    {pondStats.leaseDec > 0 ? `${formatNumber(pondStats.leaseDec, 2)} dec` : '—'}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">Landlord rent basis</p>
-                </div>
-                <div className="rounded-lg border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tilapia biomass Σ</p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-base font-bold tabular-nums text-slate-900 sm:text-lg">
-                    <Fish className="h-4 w-4 shrink-0 text-teal-600" aria-hidden />
-                    {pondStats.biomassKg > 0 ? `${formatNumber(pondStats.biomassKg, 1)} kg` : '—'}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">Where reported per pond</p>
-                </div>
-                <div className="rounded-lg border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Net lease position Σ</p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-base font-bold tabular-nums text-slate-900 sm:text-lg">
-                    <Wallet className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
-                    {fmtMoney(pondStats.balanceDueSum)}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">Positive = still to pay</p>
-                </div>
-                <div className="col-span-2 rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2.5 shadow-sm sm:col-span-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-teal-900">Tip</p>
-                  <p className="mt-0.5 text-xs leading-snug text-teal-950/90">
-                    Use <span className="font-semibold">Cards</span> on small screens; <span className="font-semibold">Table</span> fits wide
-                    monitors. Open a pond for economics, FCR, and detail charts.
-                  </p>
-                </div>
-              </div>
-            ) : null}
+        <PondGoLiveFleetBanner
+          fleet={goLiveFleet}
+          cutoverDate={goLiveCutoverDate}
+          loading={goLiveLoading}
+          onOpenSetup={() => setOpeningModal(true)}
+        />
 
-            <PondGoLiveFleetBanner
-              fleet={goLiveFleet}
-              cutoverDate={goLiveCutoverDate}
-              loading={goLiveLoading}
-              onOpenSetup={() => setOpeningModal(true)}
-            />
-          </div>
-        </header>
+        {!loading && ponds.length > 0 ? (
+          <p className="mb-4 rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2.5 text-xs leading-snug text-teal-950/90">
+            <span className="font-semibold uppercase tracking-wide text-teal-900">Tip: </span>
+            Use <span className="font-semibold">Cards</span> on small screens; <span className="font-semibold">Table</span>{' '}
+            fits wide monitors. Open a pond for economics, FCR, and detail charts.{' '}
+            <span className="text-teal-900/80">
+              (
+              {filteredPonds.length === ponds.length
+                ? `${pondStats.total} total · ${pondStats.active} active`
+                : `${filteredPonds.length} shown · ${pondStats.total} total`}
+              )
+            </span>
+          </p>
+        ) : null}
 
-        <div className="min-w-0 flex-1 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="mx-auto w-full max-w-[1800px]">
-            <details className="group mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <details className="group mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-slate-800 marker:content-none [&::-webkit-details-marker]:hidden">
                 <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180" aria-hidden />
                 <Sparkles className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
@@ -1449,9 +1435,7 @@ export default function AquaculturePondsPage() {
                 })}
               </ul>
             )}
-          </div>
-        </div>
-      </div>
+      </AquaculturePageShell>
       <PondOpeningBalancesModal
         open={openingModal}
         currency={currency}

@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import { Plus, Edit, Trash2, Search, Fuel, Building2, MapPin, Zap, Gauge, Droplet, ArrowRight, X } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
@@ -90,6 +92,7 @@ interface Product {
 
 export default function NozzlesPage() {
   const router = useRouter()
+  const pageMeta = usePageMeta()
   const searchParams = useSearchParams()
   const toast = useToast()
   
@@ -473,14 +476,29 @@ export default function NozzlesPage() {
   })
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto app-scroll-pad">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Nozzle Configuration</h1>
-          <p className="text-gray-600 mt-1">Configure nozzles by selecting station, island, dispenser, meter, and tank</p>
-        </div>
-
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        title={pageMeta.title}
+        titleIcon={Fuel}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <button
+            type="button"
+            onClick={() => {
+              resetForm()
+              setCreateCodeNonce((n) => n + 1)
+              setShowModal(true)
+            }}
+            className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+          >
+            <Plus className="h-5 w-5" />
+            <span>Add Nozzle</span>
+          </button>
+        }
+      >
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-4 flex-1">
             <div className="relative flex-1 max-w-md">
@@ -507,19 +525,6 @@ export default function NozzlesPage() {
               ))}
             </select>
           </div>
-          
-          <button
-            type="button"
-            onClick={() => {
-              resetForm()
-              setCreateCodeNonce((n) => n + 1)
-              setShowModal(true)
-            }}
-            className="ml-4 flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="h-5 w-5" />
-            <span>Add Nozzle</span>
-          </button>
         </div>
 
         {loading ? (
@@ -1123,8 +1128,8 @@ export default function NozzlesPage() {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }
 

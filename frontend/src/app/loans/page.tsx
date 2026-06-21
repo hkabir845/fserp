@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
+import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import {
@@ -595,6 +597,7 @@ function computeAutoRepayFields(
 export default function LoansPage() {
   const router = useRouter()
   const toast = useToast()
+  const pageMeta = usePageMeta()
   const [loans, setLoans] = useState<LoanRow[]>([])
   const [counterpartiesAll, setCounterpartiesAll] = useState<Counterparty[]>([])
   const [coa, setCoa] = useState<CoaLine[]>([])
@@ -2111,72 +2114,47 @@ export default function LoansPage() {
   const cpName = (id: number) => counterpartiesAll.find((c) => c.id === id)?.name || `#${id}`
 
   return (
-    <div className="flex h-screen min-h-0 bg-[#f0f2f6] page-with-sidebar">
-      <Sidebar />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <main className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-7 lg:p-8">
-        <div className="max-w-7xl mx-auto space-y-6">
-          {/* Hero + actions */}
+    <PageLayout className="bg-slate-50">
+      <ErpPageShell
+        showBackLink={false}
+        titleId="loans-title"
+        eyebrow={pageMeta.eyebrow}
+        title={pageMeta.title}
+        titleIcon={Landmark}
+        description={pageMeta.description}
+        maxWidthClass="max-w-[1600px]"
+        contentClassName="mt-4"
+        actions={
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => load()}
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCp(true)}
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20"
+            >
+              <Users className="h-4 w-4" />
+              Counterparty
+            </button>
+            <button
+              type="button"
+              onClick={openNewLoanModal}
+              className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+            >
+              <Plus className="h-4 w-4" />
+              New loan
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-6">
           <div className="rounded-2xl border border-slate-200/90 bg-white shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-5 sm:px-8 py-7 text-white">
-              <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6">
-                <div className="flex gap-4 min-w-0">
-                  <div
-                    className="shrink-0 h-14 w-14 rounded-2xl bg-white/10 flex items-center justify-center ring-1 ring-white/15"
-                    aria-hidden
-                  >
-                    <Landmark className="h-7 w-7 text-amber-300" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-1.5">
-                      General ledger · Borrowings &amp; advances
-                    </p>
-                    <h1 className="text-2xl sm:text-[1.75rem] font-semibold tracking-tight leading-tight">
-                      Loans &amp; financing register
-                    </h1>
-                    <p className="mt-3 text-sm text-slate-300 max-w-3xl leading-relaxed">
-                      Set up <strong>counterparties</strong> with optional <strong>opening receivable or payable</strong>{' '}
-                      (posts to loan principal and Opening Balance Equity), then add facilities. Use each party’s{' '}
-                      <strong>Ledger</strong> for a single timeline: opening + all loans, disbursements, repayments, and
-                      interest — with print and CSV.                       Conventional and Shariah-labelled products use the same GL
-                      discipline; reconcile to your facility letter and local reporting.
-                    </p>
-                    <p className="mt-4 text-xs text-slate-400 max-w-3xl leading-relaxed">
-                      <span className="text-slate-500">Typical path:</span> add a <strong>counterparty</strong> (and opening
-                      balance if needed) → <strong>new loan</strong> in draft → <strong>Disburse / Repay</strong> when money
-                      moves. <strong>Statement</strong> per loan; <strong>Party ledger</strong> for the full relationship
-                      in one place.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => load()}
-                    className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-white/20 bg-white/5 text-sm font-medium text-white hover:bg-white/10 transition-colors"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                    Refresh
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowCp(true)}
-                    className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-white/20 bg-white/5 text-sm font-medium text-white hover:bg-white/10 transition-colors"
-                  >
-                    <Users className="h-4 w-4" />
-                    Counterparty
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openNewLoanModal}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-400 text-slate-900 text-sm font-semibold hover:bg-amber-300 shadow-md transition-colors"
-                  >
-                    <Plus className="h-4 w-4" />
-                    New loan
-                  </button>
-                </div>
-              </div>
-            </div>
             <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 bg-white">
               <div className="p-4 sm:p-5">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Register</p>
@@ -4800,8 +4778,7 @@ export default function LoansPage() {
             </div>
           </div>
         )}
-        </main>
-      </div>
-    </div>
+      </ErpPageShell>
+    </PageLayout>
   )
 }

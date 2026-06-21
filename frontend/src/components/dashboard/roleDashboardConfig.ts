@@ -1,4 +1,5 @@
 import type { UserRole } from '@/utils/rbac'
+import { aquacultureT, type AdviceLanguage } from '@/lib/aquacultureI18n'
 
 export type DashboardStatKey = 'today_sales' | 'customers' | 'invoices' | 'revenue'
 
@@ -142,6 +143,44 @@ export const ROLE_DASHBOARD_CONFIG: Record<string, RoleDashboardConfig> = {
 export function getRoleDashboardConfig(role: UserRole | string | null): RoleDashboardConfig {
   const key = (role || '').toLowerCase()
   return ROLE_DASHBOARD_CONFIG[key] ?? DEFAULT
+}
+
+type DashboardFocusKey =
+  | 'dashboardFocusDefault'
+  | 'dashboardFocusAdmin'
+  | 'dashboardFocusManager'
+  | 'dashboardFocusAccountant'
+  | 'dashboardFocusSupervisor'
+  | 'dashboardFocusCashier'
+  | 'dashboardFocusOperator'
+  | 'dashboardFocusPumpAttendant'
+  | 'dashboardFocusShopkeeper'
+  | 'dashboardFocusInventoryClerk'
+  | 'dashboardFocusSalesClerk'
+  | 'dashboardFocusForecourtSupervisor'
+  | 'dashboardFocusHrOfficer'
+  | 'dashboardFocusAuditor'
+
+const DASHBOARD_FOCUS_KEYS: Record<string, DashboardFocusKey> = {
+  admin: 'dashboardFocusAdmin',
+  manager: 'dashboardFocusManager',
+  accountant: 'dashboardFocusAccountant',
+  supervisor: 'dashboardFocusSupervisor',
+  cashier: 'dashboardFocusCashier',
+  operator: 'dashboardFocusOperator',
+  pump_attendant: 'dashboardFocusPumpAttendant',
+  shopkeeper: 'dashboardFocusShopkeeper',
+  inventory_clerk: 'dashboardFocusInventoryClerk',
+  sales_clerk: 'dashboardFocusSalesClerk',
+  forecourt_supervisor: 'dashboardFocusForecourtSupervisor',
+  hr_officer: 'dashboardFocusHrOfficer',
+  auditor: 'dashboardFocusAuditor',
+}
+
+export function getLocalizedDashboardFocus(role: UserRole | string | null, lang: AdviceLanguage): string {
+  const key = (role || '').toLowerCase()
+  const i18nKey = DASHBOARD_FOCUS_KEYS[key] ?? 'dashboardFocusDefault'
+  return aquacultureT(i18nKey, lang)
 }
 
 export const STAT_LABELS: Record<

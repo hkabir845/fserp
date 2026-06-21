@@ -3,14 +3,19 @@
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
-import { FileCheck, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { FileCheck, Loader2, Plus, RefreshCw, ShoppingBag, Trash2 } from 'lucide-react'
+import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
+import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AquacultureSaleFormModal } from './AquacultureSaleFormModal'
+import { aquacultureT, aquacultureTFormat } from '@/lib/aquacultureI18n'
+import { useT } from '@/lib/i18n'
 import {
   type CustomerSuggestion,
   type FishSpeciesOpt,
@@ -24,7 +29,9 @@ import {
 } from './aquacultureSaleShared'
 
 export default function AquacultureSalesPage() {
+  const pageMeta = usePageMeta()
   const toast = useToast()
+  const { lang, t, pick } = useT()
   const searchParams = useSearchParams()
   const [ponds, setPonds] = useState<Pond[]>([])
   const [incomeTypes, setIncomeTypes] = useState<IncomeTypeOpt[]>([])
@@ -59,18 +66,18 @@ export default function AquacultureSalesPage() {
       setFishSpecies(Array.isArray(spRes.data) ? spRes.data : [])
       setCustomers(normalizeCustomersFromApi(custRes.data))
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not load ponds'))
+      toast.error(extractErrorMessage(e, aquacultureT('couldNotLoadPonds', lang)))
     }
-  }, [toast])
+  }, [toast, lang])
 
   const loadIncomeTypes = useCallback(async () => {
     try {
       const { data } = await api.get<IncomeTypeOpt[]>('/aquaculture/income-types/')
       setIncomeTypes(Array.isArray(data) ? data : [])
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not load income types'))
+      toast.error(extractErrorMessage(e, aquacultureT('couldNotLoadIncomeTypes', lang)))
     }
-  }, [toast])
+  }, [toast, lang])
 
   const loadRows = useCallback(async () => {
     setLoading(true)
@@ -79,7 +86,7 @@ export default function AquacultureSalesPage() {
       const { data } = await api.get<SaleRow[]>('/aquaculture/sales/', { params })
       setRows(Array.isArray(data) ? data : [])
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not load sales'))
+      toast.error(extractErrorMessage(e, aquacultureT('couldNotLoadSales', lang)))
     } finally {
       setLoading(false)
     }
@@ -114,7 +121,7 @@ export default function AquacultureSalesPage() {
 
   const openEdit = (r: SaleRow) => {
     if (r.accounting_posted) {
-      toast.error('This line is already in the books. Change it from Invoices, or delete that invoice to unlock editing here.')
+      toast.error(aquacultureT('salePostedEditBlocked', lang))
       return
     }
     setEditing(r)
@@ -123,16 +130,16 @@ export default function AquacultureSalesPage() {
 
   const remove = async (r: SaleRow) => {
     if (r.accounting_posted) {
-      toast.error('Remove or void the linked invoice first, then you can delete this line.')
+      toast.error(aquacultureT('salePostedDeleteBlocked', lang))
       return
     }
-    if (!window.confirm('Delete this sale?')) return
+    if (!window.confirm(aquacultureT('confirmDelete', lang))) return
     try {
       await api.delete(`/aquaculture/sales/${r.id}/`)
-      toast.success('Deleted')
+      toast.success(t('deleted'))
       void loadRows()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Delete failed'))
+      toast.error(extractErrorMessage(e, t('deleteFailed')))
     }
   }
 
@@ -157,7 +164,7 @@ export default function AquacultureSalesPage() {
       }
       if (finalizeRecordAs === 'on_account') {
         if (!finalizeCustomerId.trim()) {
-          toast.error('Choose a customer for on-account (A/R) sales.')
+          toast.error(aquacultureT('chooseCustomerAr', lang))
           setFinalizeSubmitting(false)
           return
         }
@@ -170,12 +177,12 @@ export default function AquacultureSalesPage() {
         `/aquaculture/sales/${finalizeRow.id}/finalize/`,
         payload
       )
-      const invNo = data?.invoice?.invoice_number || 'invoice'
-      toast.success(`Recorded: ${invNo}. Revenue is in the journal (AUTO-INV sale entry).`)
+      const invNo = data?.invoice?.invoice_number || pick('invoice', 'ইনভয়েস')
+      toast.success(aquacultureTFormat('recordedInvoice', lang, { invNo }))
       setFinalizeRow(null)
       void loadRows()
     } catch (e) {
-      toast.error(extractErrorMessage(e, 'Could not record to books'))
+      toast.error(extractErrorMessage(e, aquacultureT('couldNotRecordBooks', lang)))
     } finally {
       setFinalizeSubmitting(false)
     }
@@ -187,49 +194,23 @@ export default function AquacultureSalesPage() {
   })
 
   return (
-    <div className="w-full min-w-0 px-4 py-6 sm:px-6 lg:px-8">
-      <datalist id="aq-sale-customer-suggestions">
-        {customers.map((c) => (
-          <option key={c.id} value={customerPickLabel(c)} />
-        ))}
-      </datalist>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium text-teal-800">
-            <Link href="/aquaculture" className="hover:underline">
-              Aquaculture
-            </Link>
-            <span className="text-slate-400" aria-hidden>
-              {' '}
-              /{' '}
-            </span>
-            <span className="text-slate-700">Pond &amp; fish sales</span>
-          </p>
-          <h1 id="aq-sales-title" className="mt-1 text-xl font-bold tracking-tight text-slate-900">
-            Pond &amp; fish sales
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Record one buyer visit with multiple lines — different species, or the same species from different production
-            cycles (size and price). Plus pond-side income such
-            as empty feed sacks and sales of used or scrap materials. Use{' '}
-            <Link href="/cashier" className="font-medium text-teal-800 underline">
-              Cashier
-            </Link>{' '}
-            for packaged retail over the counter—this screen is the operational record for fish leaving ponds (kg, head)
-            and aquaculture revenue. Use income type to classify each line; feed purchases stay on Expenses. Use{' '}
-            <strong className="font-medium text-slate-800">Record to books</strong> on a row to create the invoice and GL
-            entry (aquaculture revenue 4240–4244, cash or A/R).
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="text-xs text-slate-600">
-            Pond
+    <AquaculturePageShell
+      titleId="aq-sales-title"
+      eyebrow={pageMeta.eyebrow ?? aquacultureT('pondFishSales', lang)}
+      title={pageMeta.title}
+      titleIcon={ShoppingBag}
+      description={pageMeta.description ?? ''}
+      maxWidthClass="max-w-[1440px]"
+      actions={
+        <>
+          <label className="text-xs font-medium text-teal-100">
+            {t('pond')}
             <select
-              className="ml-1 block rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
               value={filterPond}
               onChange={(e) => setFilterPond(e.target.value)}
             >
-              <option value="">All</option>
+              <option value="">{t('all')}</option>
               {ponds.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -237,21 +218,40 @@ export default function AquacultureSalesPage() {
               ))}
             </select>
           </label>
-          <button type="button" onClick={() => void loadRows()} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm">
-            <RefreshCw className="h-4 w-4" />
-            Refresh
+          <button type="button" onClick={() => void loadRows()} className={AQ_HERO_BTN_GHOST}>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            {t('refresh')}
           </button>
           <button
             type="button"
             onClick={openNew}
             disabled={loading || ponds.length === 0}
-            className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className={AQ_HERO_BTN_PRIMARY}
           >
-            <Plus className="h-4 w-4" />
-            Record sale
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            {aquacultureT('recordSale', lang)}
           </button>
-        </div>
-      </div>
+        </>
+      }
+      stats={
+        ponds.length > 0 ? (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <PipelineStatCard
+              title={aquacultureT('pondFishSales', lang)}
+              value={rows.length}
+              sub={t('total')}
+              icon={ShoppingBag}
+              tone="slate"
+            />
+          </div>
+        ) : undefined
+      }
+    >
+      <datalist id="aq-sale-customer-suggestions">
+        {customers.map((c) => (
+          <option key={c.id} value={customerPickLabel(c)} />
+        ))}
+      </datalist>
 
       {loading ? (
         <div className="mt-10 flex justify-center">
@@ -259,19 +259,19 @@ export default function AquacultureSalesPage() {
         </div>
       ) : ponds.length === 0 ? (
         <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
-          <p className="font-medium">Add at least one pond first</p>
-          <p className="mt-1 text-amber-900/90">Sales are tied to a pond. Create ponds, then enter sales here.</p>
+          <p className="font-medium">{aquacultureT('addAtLeastOnePond', lang)}</p>
+          <p className="mt-1 text-amber-900/90">{aquacultureT('salesNeedPond', lang)}</p>
           <Link
             href="/aquaculture/ponds"
             className="mt-3 inline-block font-medium text-teal-800 underline decoration-teal-600/50 hover:decoration-teal-800"
           >
-            Go to Ponds
+            {aquacultureT('goToPonds', lang)}
           </Link>
         </div>
       ) : (
         <div className="mt-6 w-full min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full table-fixed border-collapse text-left text-sm" aria-labelledby="aq-sales-title">
-            <caption className="sr-only">Aquaculture pond and fish sales</caption>
+            <caption className="sr-only">{aquacultureT('pondFishSales', lang)}</caption>
             <colgroup>
               <col className="w-[6%]" />
               <col className="w-[8%]" />
@@ -289,40 +289,40 @@ export default function AquacultureSalesPage() {
             <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
               <tr>
                 <th scope="col" className="px-2 py-2 align-bottom">
-                  Date
+                  {t('date')}
                 </th>
                 <th scope="col" className="px-2 py-2 align-bottom">
-                  Pond
+                  {t('pond')}
                 </th>
                 <th scope="col" className="px-2 py-2 align-bottom">
-                  Cycle
+                  {aquacultureT('cycle', lang)}
                 </th>
                 <th scope="col" className="px-2 py-2 align-bottom">
-                  Income
+                  {aquacultureT('income', lang)}
                 </th>
                 <th scope="col" className="px-2 py-2 align-bottom">
-                  Species
+                  {aquacultureT('species', lang)}
                 </th>
                 <th scope="col" className="px-2 py-2 text-right align-bottom">
-                  Qty/kg
+                  {aquacultureT('qtyKg', lang)}
                 </th>
                 <th scope="col" className="px-2 py-2 text-right align-bottom">
-                  Heads
+                  {pick('Heads', 'Head (টি)')}
                 </th>
-                <th scope="col" className="px-2 py-2 text-right align-bottom" title="Fish per kg (from harvest lines with head count)">
-                  Fish/kg
+                <th scope="col" className="px-2 py-2 text-right align-bottom" title={pick('Fish per kg (from harvest lines with head count)', 'প্রতি kg মাছ (head count সহ ধরা লাইন)')}>
+                  {aquacultureT('fishPerKgCol', lang)}
                 </th>
                 <th scope="col" className="px-2 py-2 text-right align-bottom">
-                  Amount
+                  {pick('Amount', 'পরিমাণ')}
                 </th>
                 <th scope="col" className="px-2 py-2 align-bottom">
-                  Buyer
+                  {aquacultureT('buyer', lang)}
                 </th>
                 <th scope="col" className="px-2 py-2 align-bottom">
-                  Books
+                  {aquacultureT('books', lang)}
                 </th>
                 <th scope="col" className="px-2 py-2 align-bottom">
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only">{t('actions')}</span>
                 </th>
               </tr>
             </thead>
@@ -356,7 +356,7 @@ export default function AquacultureSalesPage() {
                       <span className="inline-flex flex-col gap-0.5 break-words">
                         <span className="inline-flex w-fit max-w-full items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-800 ring-1 ring-emerald-200">
                           <FileCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                          Posted
+                          {pick('Posted', 'পোস্ট করা')}
                         </span>
                         <Link
                           href="/invoices"
@@ -368,9 +368,9 @@ export default function AquacultureSalesPage() {
                     ) : (
                       <span
                         className="inline-block rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600 ring-1 ring-slate-200"
-                        title="Use Record in Actions to create the invoice and GL entry"
+                        title={aquacultureT('recordToBooksTitle', lang)}
                       >
-                        Not posted
+                        {aquacultureT('notPosted', lang)}
                       </span>
                     )}
                   </td>
@@ -380,10 +380,10 @@ export default function AquacultureSalesPage() {
                         <button
                           type="button"
                           className="rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white hover:bg-slate-800"
-                          title="Record to books"
+                          title={aquacultureT('recordToBooks', lang)}
                           onClick={() => openFinalize(r)}
                         >
-                          Record
+                          {pick('Record', 'রেকর্ড')}
                         </button>
                       ) : null}
                       <button
@@ -392,14 +392,14 @@ export default function AquacultureSalesPage() {
                         onClick={() => openEdit(r)}
                         disabled={!!r.accounting_posted}
                       >
-                        Edit
+                        {t('edit')}
                       </button>
                       <button
                         type="button"
                         className={r.accounting_posted ? 'cursor-not-allowed text-slate-300' : 'text-red-600'}
                         onClick={() => void remove(r)}
                         disabled={!!r.accounting_posted}
-                        title={r.accounting_posted ? 'Delete the linked invoice first' : 'Delete'}
+                        title={r.accounting_posted ? aquacultureT('deleteLinkedInvoiceFirst', lang) : t('delete')}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -411,7 +411,7 @@ export default function AquacultureSalesPage() {
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="px-2 py-8 text-center text-slate-500">
-                    No sales recorded.
+                    {aquacultureT('noSalesYet', lang)}
                   </td>
                 </tr>
               ) : null}
@@ -442,20 +442,18 @@ export default function AquacultureSalesPage() {
             aria-modal="true"
           >
             <h2 id="finalize-sale-title" className="text-lg font-semibold text-slate-900">
-              Record to books
+              {aquacultureT('recordToBooks', lang)}
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-600">
-              Creates invoice <span className="font-mono text-slate-800">INV-AQ-{finalizeRow.id}</span>, posts revenue
-              to your aquaculture income account (by income type), and debits cash or accounts receivable. You can
-              still see this row here for pond reporting; amounts lock until the invoice is removed.
+              {aquacultureTFormat('finalizeIntro', lang, { invRef: `INV-AQ-${finalizeRow.id}` })}
             </p>
             <div className="mt-4 space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3 text-sm text-slate-700">
               <div className="flex justify-between gap-2">
-                <span className="text-slate-500">Pond</span>
+                <span className="text-slate-500">{t('pond')}</span>
                 <span className="text-right font-medium">{finalizeRow.pond_name}</span>
               </div>
               <div className="flex justify-between gap-2">
-                <span className="text-slate-500">Amount</span>
+                <span className="text-slate-500">{pick('Amount', 'পরিমাণ')}</span>
                 <span className="font-medium tabular-nums">
                   {sym}
                   {formatNumber(Number(finalizeRow.total_amount))}
@@ -463,7 +461,7 @@ export default function AquacultureSalesPage() {
               </div>
             </div>
             <fieldset className="mt-4 space-y-2">
-              <legend className="text-sm font-medium text-slate-700">How was it settled?</legend>
+              <legend className="text-sm font-medium text-slate-700">{aquacultureT('howSettled', lang)}</legend>
               <label className="flex cursor-pointer items-start gap-2 text-sm">
                 <input
                   type="radio"
@@ -473,8 +471,8 @@ export default function AquacultureSalesPage() {
                   className="mt-1"
                 />
                 <span>
-                  <span className="font-medium text-slate-800">Cash or immediate payment</span>
-                  <span className="block text-slate-500">Invoice status: paid. Debits cash (or card clearing).</span>
+                  <span className="font-medium text-slate-800">{aquacultureT('cashImmediate', lang)}</span>
+                  <span className="block text-slate-500">{aquacultureT('cashImmediateHint', lang)}</span>
                 </span>
               </label>
               <label className="flex cursor-pointer items-start gap-2 text-sm">
@@ -486,35 +484,35 @@ export default function AquacultureSalesPage() {
                   className="mt-1"
                 />
                 <span>
-                  <span className="font-medium text-slate-800">On account (A/R)</span>
-                  <span className="block text-slate-500">Invoice status: sent. Debits accounts receivable.</span>
+                  <span className="font-medium text-slate-800">{aquacultureT('onAccountAr', lang)}</span>
+                  <span className="block text-slate-500">{aquacultureT('onAccountArHint', lang)}</span>
                 </span>
               </label>
             </fieldset>
             {finalizeRecordAs === 'cash_paid' ? (
               <label className="mt-3 block text-sm font-medium text-slate-700">
-                Payment method
+                {aquacultureT('paymentMethod', lang)}
                 <select
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={finalizePaymentMethod}
                   onChange={(e) => setFinalizePaymentMethod(e.target.value)}
                 >
-                  <option value="cash">Cash</option>
-                  <option value="card">Card</option>
-                  <option value="bank">Bank / transfer</option>
+                  <option value="cash">{aquacultureT('payCash', lang)}</option>
+                  <option value="card">{aquacultureT('payCard', lang)}</option>
+                  <option value="bank">{aquacultureT('payBank', lang)}</option>
                 </select>
               </label>
             ) : (
               <>
                 <label className="mt-3 block text-sm font-medium text-slate-700">
-                  Bill-to customer <span className="text-red-600">*</span>
+                  {aquacultureT('billToCustomer', lang)} <span className="text-red-600">*</span>
                   <select
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                     value={finalizeCustomerId}
                     onChange={(e) => setFinalizeCustomerId(e.target.value)}
                     required
                   >
-                    <option value="">Select customer…</option>
+                    <option value="">{aquacultureT('selectCustomer', lang)}</option>
                     {creditCustomerOptions.map((c) => (
                       <option key={c.id} value={c.id}>
                         {customerPickLabel(c)}
@@ -522,12 +520,11 @@ export default function AquacultureSalesPage() {
                     ))}
                   </select>
                   <span className="mt-1 block text-xs text-slate-500">
-                    Or link the pond to a POS customer under Ponds — it will be used if you leave this empty (on
-                    account only).
+                    {aquacultureT('pondCustomerHint', lang)}
                   </span>
                 </label>
                 <label className="mt-3 block text-sm font-medium text-slate-700">
-                  Due date
+                  {aquacultureT('dueDate', lang)}
                   <input
                     type="date"
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -539,13 +536,13 @@ export default function AquacultureSalesPage() {
             )}
             {finalizeRecordAs === 'cash_paid' ? (
               <label className="mt-3 block text-sm font-medium text-slate-700">
-                Invoice customer (optional)
+                {aquacultureT('invoiceCustomerOptional', lang)}
                 <select
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={finalizeCustomerId}
                   onChange={(e) => setFinalizeCustomerId(e.target.value)}
                 >
-                  <option value="">Walk-in (default)</option>
+                  <option value="">{aquacultureT('walkInDefault', lang)}</option>
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>
                       {customerPickLabel(c)}
@@ -561,7 +558,7 @@ export default function AquacultureSalesPage() {
                 onClick={() => setFinalizeRow(null)}
                 className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50"
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button
                 type="button"
@@ -570,12 +567,12 @@ export default function AquacultureSalesPage() {
                 className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
               >
                 {finalizeSubmitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                Confirm
+                {pick('Confirm', 'নিশ্চিত করুন')}
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </AquaculturePageShell>
   )
 }

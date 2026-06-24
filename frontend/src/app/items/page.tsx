@@ -2872,8 +2872,9 @@ export default function ItemsPage() {
                           />
                           <p className="mt-1 text-xs text-gray-500">
                             Stock is saved for the location you select (when you reopen, the form opens on the site that
-                            already has quantity). Cashier only lists this product at a shop when that location has
-                            quantity on hand. To relocate stock from another site, check the box below.
+                            already has quantity). Products appear in Cashier even when stock is zero at a site; the
+                            cashier sees &ldquo;Out of stock at this site&rdquo; until quantity is received here. To
+                            relocate stock from another site, check the box below.
                           </p>
                           {shopStationRows.some(
                             (r) =>

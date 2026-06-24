@@ -223,14 +223,25 @@ function posItemSupportsShopStationStockView(item: POSItem): boolean {
   return (item.pos_category || "").toLowerCase() !== "fuel"
 }
 
-/** Shop SKUs tracked in station bins: only show at a site when that bin has quantity. */
-function posItemHasStockAtSellingStation(item: POSItem, stationId: number | null): boolean {
-  if (stationId == null || !Number.isFinite(stationId)) return true
+/** On-hand qty at the selling station for shop-bin inventory; null when not station-tracked. */
+function posItemStockQtyAtSellingStation(item: POSItem, stationId: number | null): number | null {
+  if (item.item_type?.toLowerCase() !== "inventory") return null
+  if (!posItemSupportsShopStationStockView(item)) return null
+  if (stationId == null || !Number.isFinite(stationId)) {
+    return item.quantity_on_hand !== undefined ? Number(item.quantity_on_hand) : null
+  }
   const loc = item.location_stocks
-  if (!loc || !Array.isArray(loc) || loc.length === 0) return true
+  if (!loc || !Array.isArray(loc) || loc.length === 0) {
+    return item.quantity_on_hand !== undefined ? Number(item.quantity_on_hand) : null
+  }
   const row = loc.find(l => Number(l.station_id) === Number(stationId))
   const q = row ? parseFloat(String(row.quantity)) : 0
-  return Number.isFinite(q) && q > 0
+  return Number.isFinite(q) ? q : 0
+}
+
+function posItemIsOutOfStockAtSellingStation(item: POSItem, stationId: number | null): boolean {
+  const qty = posItemStockQtyAtSellingStation(item, stationId)
+  return qty !== null && qty <= 0
 }
 
 type CartEntry = {
@@ -439,10 +450,7 @@ export default function CashierPOSPage() {
     return nozzles.filter(n => Number(n.station_id) === Number(posStationId))
   }, [nozzles, posSaleScope, showNozzleColumn, posStationId])
 
-  const catalogItemsForSellingStation = useMemo(
-    () => posItems.filter(it => posItemHasStockAtSellingStation(it, posStationId)),
-    [posItems, posStationId]
-  )
+  const catalogItemsForSellingStation = useMemo(() => posItems, [posItems])
 
   useEffect(() => {
     if (!showNozzleColumn) {
@@ -854,9 +862,16 @@ export default function CashierPOSPage() {
   }
 
   const addItemToCart = (item: POSItem) => {
+    if (posItemIsOutOfStockAtSellingStation(item, posStationId)) {
+      toast.error(
+        `"${item.name}" has no stock at this site. Receive inventory in Items or switch selling location.`
+      )
+      return
+    }
+
     // Set selected item for visual feedback
     setSelectedItem(item)
-    
+
     setCartEntries(prev => {
       const existing = prev.find(entry => entry.item.id === item.id)
       if (existing) {
@@ -1084,6 +1099,15 @@ export default function CashierPOSPage() {
     if (fuelLines.length === 0 && validItems.length === 0) {
       toast.error(
         "Add fuel (nozzle + quantity) and/or products to the cart before completing the sale."
+      )
+      return
+    }
+
+    for (const entry of cartEntries) {
+      if (entry.quantity <= 0) continue
+      if (!posItemIsOutOfStockAtSellingStation(entry.item, posStationId)) continue
+      toast.error(
+        `"${entry.item.name}" has no stock at this site. Receive inventory or remove it from the cart.`
       )
       return
     }
@@ -1632,9 +1656,9 @@ export default function CashierPOSPage() {
                   </>
                 ) : posSaleScope === "both" && !selectedSellingLocationFuelsForecourt ? (
                   <>
-                    This site is not set up for fuel retail — pumps are hidden. The catalog lists products
-                    you can sell from here: items without per-site bins, and shop stock with quantity at this
-                    station. Tap <span className="font-medium text-foreground">Stock at all stations</span>{" "}
+                    This site is not set up for fuel retail — pumps are hidden. The catalog lists all
+                    POS products for this company; inventory lines deduct stock from the selling location
+                    below. Tap <span className="font-medium text-foreground">Stock at all stations</span>{" "}
                     to compare locations.
                   </>
                 ) : (
@@ -1864,6 +1888,7 @@ export default function CashierPOSPage() {
                 <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 sm:grid-cols-2 2xl:grid-cols-3">
                   {filteredItems.map(item => {
                     const isSelected = selectedItem?.id === item.id
+                    const outOfStock = posItemIsOutOfStockAtSellingStation(item, posStationId)
                     const siteStockRow =
                       posStationId != null && Number.isFinite(posStationId)
                         ? item.location_stocks?.find(
@@ -1882,7 +1907,9 @@ export default function CashierPOSPage() {
                         className={`flex flex-col overflow-hidden rounded-xl border text-left transition-all duration-200 ${
                           isSelected
                             ? "border-primary bg-primary/5 shadow-md ring-2 ring-primary ring-offset-2 ring-offset-background"
-                            : "border-border bg-card hover:border-primary/30 hover:shadow-md"
+                            : outOfStock
+                              ? "border-dashed border-muted-foreground/35 bg-muted/20 opacity-80"
+                              : "border-border bg-card hover:border-primary/30 hover:shadow-md"
                         }`}
                       >
                         <button
@@ -1934,10 +1961,17 @@ export default function CashierPOSPage() {
                               </span>
                             )}
                           </p>
+                          {outOfStock && (
+                            <p className="mt-2 text-xs font-medium text-destructive">
+                              Out of stock at this site
+                            </p>
+                          )}
                           {displayQty !== undefined &&
                             Number.isFinite(displayQty) &&
                             item.item_type?.toLowerCase() === "inventory" && (
-                              <p className="text-xs text-muted-foreground">
+                              <p
+                                className={`text-xs ${outOfStock ? "text-destructive/80" : "text-muted-foreground"}`}
+                              >
                                 {siteStockRow != null ? "At this site: " : "In stock: "}
                                 {formatNumber(displayQty)} {item.unit || "units"}
                                 {(() => {
@@ -1975,7 +2009,19 @@ export default function CashierPOSPage() {
 
                   {!filteredItems.length && (
                     <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-center text-sm text-muted-foreground sm:p-6 md:p-8">
-                      No matching items found.
+                      {posItems.length === 0 ? (
+                        <>
+                          No POS products are configured for this company. In{" "}
+                          <span className="font-medium text-foreground">Items</span>, set POS category to
+                          General, Feed, or Medicine, turn on{" "}
+                          <span className="font-medium text-foreground">Available in POS</span> and{" "}
+                          <span className="font-medium text-foreground">Active</span>, then refresh this page.
+                        </>
+                      ) : itemSearch.trim() ? (
+                        <>No matching items for &ldquo;{itemSearch.trim()}&rdquo;.</>
+                      ) : (
+                        <>No products available.</>
+                      )}
                     </div>
                   )}
                 </div>

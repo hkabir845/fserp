@@ -343,11 +343,11 @@ export function AquacultureStockLedgerFormModal({
   const isEdit = editing != null
   const glLinked = Boolean(editing?.journal_entry_id)
   const bookPostingLocked = isEdit
-  const isMortalityLoss = form.entry_kind === 'loss'
 
   const [form, setForm] = useState<FormState>(() =>
     emptyForm(ponds, defaultPondId, defaultSpecies, defaultCycleId),
   )
+  const isMortalityLoss = form.entry_kind === 'loss'
   const [cycles, setCycles] = useState<CycleRow[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [bioCost, setBioCost] = useState<BioCostReference | null>(null)

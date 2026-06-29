@@ -178,9 +178,16 @@ def pond_fry_stocking_capitalized_journal_total(
     Fry/fingerling vendor bills post Dr 1581 (biological inventory), not expense-type bill journals.
     Include in fry_stocking bucket so inter-pond transfer cost moves fry purchase value with the fish.
     """
+    from django.db.models import Q
+
+    fry_start = start
+    if cycle_filter_id is not None:
+        # Fry is usually purchased before or at batch start; include YTD fry bills for cycle-scoped transfers.
+        fry_start = date(start.year, 1, 1)
+
     q = JournalEntryLine.objects.filter(
         journal_entry__company_id=company_id,
-        journal_entry__entry_date__gte=start,
+        journal_entry__entry_date__gte=fry_start,
         journal_entry__entry_date__lte=end,
         journal_entry__is_posted=True,
         journal_entry__entry_number__startswith="AUTO-BILL-",
@@ -189,7 +196,11 @@ def pond_fry_stocking_capitalized_journal_total(
         aquaculture_pond_id=pond_id,
     )
     if cycle_filter_id is not None:
-        q = q.filter(aquaculture_production_cycle_id=cycle_filter_id)
+        # Fry bills are often pond-tagged without a cycle on the journal line; still count for batch transfers.
+        q = q.filter(
+            Q(aquaculture_production_cycle_id=cycle_filter_id)
+            | Q(aquaculture_production_cycle_id__isnull=True)
+        )
     t = q.aggregate(s=Sum("debit"))["s"]
     return _money_q(Decimal(str(t or 0)))
 

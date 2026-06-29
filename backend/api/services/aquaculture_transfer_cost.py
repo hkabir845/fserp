@@ -273,7 +273,10 @@ def _production_cost_share_for_line(
         share = _nursing_share_for_scope(from_cycle)
         if share > 0 or from_cycle is None:
             return share
-        return _nursing_share_for_scope(None)
+        share_ytd = _nursing_share_for_scope(None)
+        if share_ytd > share:
+            return share_ytd
+        return share
 
     share = _share_for_scope(from_cycle)
     if share > 0 or from_cycle is None:

@@ -56,3 +56,44 @@ def test_transfer_includes_fry_from_vendor_bill_1581(
         fish_count=250000,
     )
     assert cost == Decimal("175000.00")
+
+
+@pytest.mark.django_db
+def test_transfer_includes_uncycled_fry_bill_when_transfer_has_cycle(
+    api_client, company_tenant, auth_admin_headers, monkeypatch
+):
+    """Fry Dr 1581 without production_cycle on JE still counts when transfer is cycle-scoped."""
+    from api.models import AquacultureProductionCycle
+
+    _enable_aquaculture_with_coa(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Nursing Cycle Fry", pond_role="nursing", is_active=True
+    )
+    cycle = AquacultureProductionCycle.objects.create(
+        company_id=cid,
+        pond=src,
+        name="C01",
+        start_date=date(2026, 4, 15),
+        fish_species="tilapia",
+    )
+    h = auth_admin_headers
+    vendor_id = _vendor(api_client, h, "Hatchery Cycle")
+    fry = _fish_item(cid, name="Fry Cycle Test")
+    _post_open_fish_bill(api_client, h, vendor_id, fry.id, src.id, amount="350000.00")
+
+    monkeypatch.setattr(
+        "api.services.aquaculture_transfer_cost._nursing_stocked_heads_basis",
+        lambda **kwargs: 500000,
+    )
+
+    cost = resolve_auto_transfer_line_cost(
+        company_id=cid,
+        from_pond_id=src.id,
+        transfer_date=date(2026, 5, 17),
+        from_cycle=cycle,
+        weight_kg=Decimal("100"),
+        submitted_cost=Decimal("0"),
+        fish_count=250000,
+    )
+    assert cost == Decimal("175000.00")

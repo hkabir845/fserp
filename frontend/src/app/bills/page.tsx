@@ -15,6 +15,14 @@ import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
 import { useBillsT } from '@/lib/moduleI18n/bills'
 import api from '@/lib/api'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT, unwrapReferenceList } from '@/lib/pagination'
+import {
+  hasActiveTransactionFilters,
+  hasTransactionTextSearch,
+  transactionAmountParams,
+  transactionDateParams,
+} from '@/lib/transactionListFilters'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { TransactionListEmptyState } from '@/components/TransactionListEmptyState'
 import { preferNursingPondId, pondFishBillLabel } from '@/lib/aquaculturePondSite'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
@@ -1029,8 +1037,12 @@ export default function BillsPage() {
   const [listPage, setListPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const [billsTotal, setBillsTotal] = useState(0)
-  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const debouncedSearch = useDebouncedValue(searchTerm.trim())
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [minAmount, setMinAmount] = useState('')
+  const [maxAmount, setMaxAmount] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [showModal, setShowModal] = useState(false)
   const [approveBill, setApproveBill] = useState(false)
@@ -1343,13 +1355,28 @@ export default function BillsPage() {
   }, [router])
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(searchTerm), 350)
-    return () => clearTimeout(t)
-  }, [searchTerm])
-
-  useEffect(() => {
     setListPage(1)
-  }, [debouncedSearch, pageSize, statusFilter])
+  }, [debouncedSearch, pageSize, statusFilter, startDate, endDate, minAmount, maxAmount])
+
+  const hasTextSearch = hasTransactionTextSearch({ q: debouncedSearch })
+
+  const hasActiveFilters = hasActiveTransactionFilters({
+    search: searchTerm,
+    startDate,
+    endDate,
+    minAmount,
+    maxAmount,
+    extras: Boolean(statusFilter),
+  })
+
+  const clearFilters = () => {
+    setSearchTerm('')
+    setStatusFilter('')
+    setStartDate('')
+    setEndDate('')
+    setMinAmount('')
+    setMaxAmount('')
+  }
 
   const loadBills = useCallback(async () => {
     setLoading(true)
@@ -1358,7 +1385,11 @@ export default function BillsPage() {
         page: listPage,
         pageSize,
         q: debouncedSearch,
-        extra: statusFilter ? { status_filter: statusFilter } : {},
+        extra: {
+          ...(statusFilter ? { status_filter: statusFilter } : {}),
+          ...transactionDateParams(startDate, endDate, hasTextSearch),
+          ...transactionAmountParams(minAmount, maxAmount),
+        },
       })
       const billsRes = await api.get('/bills/', { params })
       const data = billsRes.data
@@ -1383,7 +1414,7 @@ export default function BillsPage() {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, listPage, pageSize, statusFilter, toast])
+  }, [debouncedSearch, listPage, pageSize, statusFilter, startDate, endDate, minAmount, maxAmount, hasTextSearch, toast])
 
   const loadCompanyCurrency = useCallback(async () => {
     try {
@@ -2597,6 +2628,9 @@ export default function BillsPage() {
     return billPaid(bill) > 0
   }
 
+  const billActionLabelClass =
+    'inline-block max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-150 group-hover/btn:ml-1 group-hover/btn:max-w-[4.5rem] group-hover/btn:opacity-100 text-xs font-medium'
+
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'open':
@@ -2683,9 +2717,9 @@ export default function BillsPage() {
             </p>
           </div>
 
-        <div className="mb-6 flex items-center">
-          <div className="flex flex-1 items-center space-x-4">
-            <div className="relative max-w-md flex-1">
+        <div className="mb-6 flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="relative max-w-md flex-1 min-w-[12rem]">
               <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-gray-400" />
               <input
                 type="text"
@@ -2707,7 +2741,24 @@ export default function BillsPage() {
               <option value="partial">{tr('partiallyPaid')}</option>
               <option value="overdue">{tr('overdue')}</option>
             </select>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2" aria-label="From date" />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2" aria-label="To date" />
+            <input type="number" min="0" step="0.01" placeholder="Min amount" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="w-28 rounded-lg border border-gray-300 px-3 py-2" />
+            <input type="number" min="0" step="0.01" placeholder="Max amount" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="w-28 rounded-lg border border-gray-300 px-3 py-2" />
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden />
+                Clear filters
+              </button>
+            ) : null}
           </div>
+          {hasTextSearch ? (
+            <p className="text-xs text-gray-500">Bill search spans all dates — date range paused while searching.</p>
+          ) : null}
         </div>
 
         {loading ? (
@@ -2716,6 +2767,7 @@ export default function BillsPage() {
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -2743,7 +2795,7 @@ export default function BillsPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('status')}
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('actions')}
                   </th>
                 </tr>
@@ -2779,15 +2831,16 @@ export default function BillsPage() {
                         {formatBillStatusLabel(bill.status)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex items-center justify-end gap-0.5">
                         <button
                           type="button"
                           onClick={() => handleViewBill(bill.id)}
-                          className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="group/btn inline-flex items-center rounded-lg p-2 text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-colors"
                           title={tr('viewBill')}
                         >
-                          <Eye className="h-4 w-4" />
+                          <Eye className="h-4 w-4 shrink-0" />
+                          <span className={billActionLabelClass}>View</span>
                         </button>
                         {canShowBillActions(bill) && (
                           <>
@@ -2795,7 +2848,7 @@ export default function BillsPage() {
                               type="button"
                               onClick={() => handleEdit(bill)}
                               disabled={isBillEditDisabled(bill)}
-                              className={`p-2 rounded-lg transition-colors ${
+                              className={`group/btn inline-flex items-center rounded-lg p-2 transition-colors ${
                                 isBillEditDisabled(bill)
                                   ? 'text-gray-400 cursor-not-allowed'
                                   : 'text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50'
@@ -2806,13 +2859,14 @@ export default function BillsPage() {
                                   : 'Edit bill'
                               }
                             >
-                              <Edit2 className="h-4 w-4" />
+                              <Edit2 className="h-4 w-4 shrink-0" />
+                              <span className={billActionLabelClass}>Edit</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => void handleVoidBill(bill.id, bill.bill_number)}
                               disabled={isBillVoidDisabled(bill)}
-                              className={`p-2 rounded-lg transition-colors ${
+                              className={`group/btn inline-flex items-center rounded-lg p-2 transition-colors ${
                                 isBillVoidDisabled(bill)
                                   ? 'text-gray-400 cursor-not-allowed'
                                   : 'text-amber-700 hover:text-amber-800 hover:bg-amber-50'
@@ -2827,13 +2881,14 @@ export default function BillsPage() {
                                   : 'Void bill (reverse GL and stock)'
                               }
                             >
-                              <Ban className="h-4 w-4" />
+                              <Ban className="h-4 w-4 shrink-0" />
+                              <span className={billActionLabelClass}>Void</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDelete(bill.id, bill.bill_number)}
                               disabled={isBillDeleteDisabled(bill)}
-                              className={`p-2 rounded-lg transition-colors ${
+                              className={`group/btn inline-flex items-center rounded-lg p-2 transition-colors ${
                                 isBillDeleteDisabled(bill)
                                   ? 'text-gray-400 cursor-not-allowed'
                                   : 'text-red-600 hover:text-red-700 hover:bg-red-50'
@@ -2844,7 +2899,8 @@ export default function BillsPage() {
                                   : 'Delete bill'
                               }
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="h-4 w-4 shrink-0" />
+                              <span className={billActionLabelClass}>Delete</span>
                             </button>
                           </>
                         )}
@@ -2854,10 +2910,19 @@ export default function BillsPage() {
                 ))}
               </tbody>
             </table>
-            {bills.length === 0 && (
-              <div className="text-center py-12 text-gray-500">
-                <p>{tr('noBillsFound')}</p>
-              </div>
+            </div>
+            {bills.length === 0 && !loading && (
+              <TransactionListEmptyState
+                icon={<FileText className="h-10 w-10 text-gray-400" />}
+                title={hasActiveFilters ? 'No bills match your filters' : tr('noBillsFound')}
+                description={
+                  hasActiveFilters
+                    ? 'Try adjusting search, status, dates, or amount range.'
+                    : 'Record vendor bills to track payables and link them to your chart of accounts.'
+                }
+                hasActiveFilters={hasActiveFilters}
+                onClearFilters={clearFilters}
+              />
             )}
             {billsTotal > 0 && (
               <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">

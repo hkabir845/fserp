@@ -15,7 +15,8 @@ from api.views.common import parse_json_body, require_company_id
 from api.models import Customer
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.station_defaults import parse_optional_station_fk
-from api.services.contact_ledgers import build_customer_ledger, ledger_query_dates
+from api.services.contact_ledgers import build_customer_ledger, ledger_dates_and_search
+from api.utils.transaction_filters import filter_json_transactions
 from api.services.payment_allocation import compute_customer_balance_due
 
 
@@ -343,10 +344,14 @@ def customer_detail(request, customer_id: int):
 def customer_ledger(request, customer_id: int):
     if request.method != "GET":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
-    start_d, end_d = ledger_query_dates(request)
+    start_d, end_d, q = ledger_dates_and_search(request)
     data = build_customer_ledger(
         request.company_id, customer_id, start_date=start_d, end_date=end_d
     )
     if data.get("detail") == "Customer not found":
         return JsonResponse(data, status=404)
+    if q:
+        data["transactions"] = filter_json_transactions(data.get("transactions") or [], q)
+        data["search_q"] = q
+        data["date_range_ignored"] = True
     return JsonResponse(data)

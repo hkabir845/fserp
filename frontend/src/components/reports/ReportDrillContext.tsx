@@ -9,11 +9,15 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { ArrowLeft, ChevronRight, Loader2, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Loader2, Search, X } from 'lucide-react'
 import api from '@/lib/api'
 import { formatCurrency } from '@/utils/formatting'
 import { formatDateOnly } from '@/utils/date'
 import { parseReportSiteScopeKey } from '@/app/reports/reportSiteScope'
+import {
+  hasTransactionTextSearch,
+  transactionDateParams,
+} from '@/lib/transactionListFilters'
 
 export type DrillContactEntity = 'customers' | 'vendors'
 
@@ -656,6 +660,8 @@ type GlStatementPayload = {
   start_date?: string | null
   end_date?: string | null
   filter_station_id?: number | null
+  search_q?: string | null
+  date_range_ignored?: boolean
   transactions?: {
     journal_entry_id?: number
     entry_number?: string
@@ -689,14 +695,25 @@ function GlStatementPanel({
   const [data, setData] = useState<GlStatementPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchQ, setSearchQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQ(searchQ.trim()), 350)
+    return () => window.clearTimeout(t)
+  }, [searchQ])
+
+  const hasTextSearch = hasTransactionTextSearch({ q: debouncedQ })
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
     const params: Record<string, string> = {}
-    if (startDate) params.start_date = startDate
-    if (endDate) params.end_date = endDate
+    const dates = transactionDateParams(startDate || '', endDate || '', hasTextSearch)
+    if (dates.start_date) params.start_date = dates.start_date
+    if (dates.end_date) params.end_date = dates.end_date
+    if (debouncedQ) params.q = debouncedQ
     if (stationId) params.station_id = String(stationId)
     void api
       .get(`/chart-of-accounts/${accountId}/statement/`, { params })
@@ -712,7 +729,7 @@ function GlStatementPanel({
     return () => {
       cancelled = true
     }
-  }, [accountId, startDate, endDate, stationId])
+  }, [accountId, startDate, endDate, stationId, debouncedQ, hasTextSearch])
 
   if (loading) return <LoadingPanel />
   if (error) return <ErrorPanel message={error} />
@@ -742,8 +759,27 @@ function GlStatementPanel({
             <span className="text-slate-500">
               Period: {data.start_date || '…'} → {data.end_date || '…'}
             </span>
+          ) : hasTextSearch ? (
+            <span className="text-slate-500">All dates (search active)</span>
           ) : null}
         </div>
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+        <label className="mb-1 block text-xs font-medium text-slate-600">Search (all dates)</label>
+        <div className="relative max-w-md">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            type="search"
+            value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            placeholder="Entry #, description, account…"
+            disabled={loading}
+            className="w-full rounded-md border border-slate-300 py-2 pl-8 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+        {hasTextSearch && (startDate || endDate) ? (
+          <p className="mt-1 text-xs text-slate-500">Date range paused while searching.</p>
+        ) : null}
       </div>
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -761,7 +797,9 @@ function GlStatementPanel({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
-                  No journal lines in this period.
+                  {hasTextSearch
+                    ? 'No journal lines match your search.'
+                    : 'No journal lines in this period.'}
                 </td>
               </tr>
             ) : (
@@ -1033,14 +1071,25 @@ function ContactLedgerPanel({
   const [data, setData] = useState<ContactLedgerPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchQ, setSearchQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQ(searchQ.trim()), 350)
+    return () => window.clearTimeout(t)
+  }, [searchQ])
+
+  const hasTextSearch = hasTransactionTextSearch({ q: debouncedQ })
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
     const params: Record<string, string> = {}
-    if (startDate) params.start_date = startDate
-    if (endDate) params.end_date = endDate
+    const dates = transactionDateParams(startDate || '', endDate || '', hasTextSearch)
+    if (dates.start_date) params.start_date = dates.start_date
+    if (dates.end_date) params.end_date = dates.end_date
+    if (debouncedQ) params.q = debouncedQ
     void api
       .get(`/${entity}/${entityId}/ledger/`, { params })
       .then((res) => {
@@ -1055,7 +1104,7 @@ function ContactLedgerPanel({
     return () => {
       cancelled = true
     }
-  }, [entity, entityId, startDate, endDate])
+  }, [entity, entityId, startDate, endDate, debouncedQ, hasTextSearch])
 
   if (loading) return <LoadingPanel />
   if (error) return <ErrorPanel message={error} />
@@ -1074,7 +1123,31 @@ function ContactLedgerPanel({
           <span>
             Closing: <strong>{formatCurrency(Number(data.closing_balance ?? 0))}</strong>
           </span>
+          {hasTextSearch ? (
+            <span className="text-slate-500">All dates (search active)</span>
+          ) : startDate || endDate ? (
+            <span className="text-slate-500">
+              Period: {startDate || '…'} → {endDate || '…'}
+            </span>
+          ) : null}
         </div>
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+        <label className="mb-1 block text-xs font-medium text-slate-600">Search (all dates)</label>
+        <div className="relative max-w-md">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            type="search"
+            value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            placeholder="Reference, description…"
+            disabled={loading}
+            className="w-full rounded-md border border-slate-300 py-2 pl-8 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+        {hasTextSearch && (startDate || endDate) ? (
+          <p className="mt-1 text-xs text-slate-500">Date range paused while searching.</p>
+        ) : null}
       </div>
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -1092,7 +1165,9 @@ function ContactLedgerPanel({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
-                  No ledger transactions in this period.
+                  {hasTextSearch
+                    ? 'No ledger lines match your search.'
+                    : 'No ledger transactions in this period.'}
                 </td>
               </tr>
             ) : (

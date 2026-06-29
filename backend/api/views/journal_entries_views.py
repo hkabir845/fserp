@@ -3,10 +3,18 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+
+from django.db.models import Q, Sum
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
+from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
+from api.utils.transaction_filters import (
+    apply_transaction_amount_range,
+    apply_transaction_date_range,
+)
 from api.services.reference_code import next_available_code
 from api.views.common import parse_json_body, require_company_id
 from django.utils import timezone as django_timezone
@@ -252,9 +260,9 @@ def journal_entries_list_or_create(request):
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
 
-def _journal_entries_list(request):
-    qs = (
-        JournalEntry.objects.filter(company_id=request.company_id)
+def _journal_entries_base_qs(company_id: int):
+    return (
+        JournalEntry.objects.filter(company_id=company_id)
         .select_related("station")
         .prefetch_related(
             "lines",
@@ -263,14 +271,102 @@ def _journal_entries_list(request):
             "lines__aquaculture_pond",
             "lines__tenant_reporting_category",
         )
-        .order_by("-entry_date", "-id")
     )
-    start = request.GET.get("start_date")
-    end = request.GET.get("end_date")
-    if start:
-        qs = qs.filter(entry_date__gte=_parse_date(start))
-    if end:
-        qs = qs.filter(entry_date__lte=_parse_date(end))
+
+
+def _journal_entries_apply_filters(qs, request):
+    qs = apply_transaction_date_range(qs, request, "entry_date")
+
+    min_amount = request.GET.get("min_amount")
+    max_amount = request.GET.get("max_amount")
+    filter_column = (request.GET.get("filter_column") or "").strip().lower()
+    filter_value = (request.GET.get("filter_value") or "").strip()
+    q = (request.GET.get("q") or "").strip()
+
+    need_amount_annotate = bool(
+        min_amount or max_amount or (filter_column == "amount" and filter_value)
+    )
+    if need_amount_annotate:
+        qs = qs.annotate(
+            _total_debit=Coalesce(Sum("lines__debit"), Decimal("0")),
+            _total_credit=Coalesce(Sum("lines__credit"), Decimal("0")),
+        )
+
+    if min_amount:
+        d_min = _decimal(min_amount)
+        if d_min > 0:
+            qs = qs.filter(_total_debit__gte=d_min)
+    if max_amount:
+        d_max = _decimal(max_amount)
+        if d_max > 0:
+            qs = qs.filter(_total_debit__lte=d_max)
+
+    if filter_column and filter_column != "all" and filter_value:
+        search_value = filter_value.lower()
+        if filter_column == "entry_number":
+            qs = qs.filter(entry_number__icontains=filter_value)
+        elif filter_column == "reference":
+            qs = qs.filter(description__icontains=filter_value)
+        elif filter_column == "description":
+            qs = qs.filter(description__icontains=filter_value)
+        elif filter_column == "account":
+            qs = qs.filter(
+                Q(lines__account__account_name__icontains=filter_value)
+                | Q(lines__account__account_code__icontains=filter_value)
+            ).distinct()
+        elif filter_column == "amount":
+            try:
+                if "-" in filter_value:
+                    parts = filter_value.split("-", 1)
+                    lo = _decimal(parts[0].strip())
+                    hi = _decimal(parts[1].strip())
+                    if lo > 0 and hi > 0:
+                        qs = qs.filter(_total_debit__gte=lo, _total_debit__lte=hi)
+                else:
+                    amount_value = _decimal(filter_value)
+                    if amount_value > 0:
+                        qs = qs.filter(
+                            _total_debit__gte=amount_value - Decimal("0.01"),
+                            _total_debit__lte=amount_value + Decimal("0.01"),
+                        )
+            except Exception:
+                pass
+        elif filter_column == "is_posted":
+            if search_value in ("true", "1", "yes", "posted"):
+                qs = qs.filter(is_posted=True)
+            elif search_value in ("false", "0", "no", "draft"):
+                qs = qs.filter(is_posted=False)
+
+    if q:
+        qs = qs.filter(
+            Q(entry_number__icontains=q)
+            | Q(description__icontains=q)
+            | Q(lines__account__account_name__icontains=q)
+            | Q(lines__account__account_code__icontains=q)
+            | Q(station__station_name__icontains=q)
+            | Q(lines__station__station_name__icontains=q)
+            | Q(lines__aquaculture_pond__name__icontains=q)
+        ).distinct()
+
+    return qs
+
+
+def _journal_entries_list(request):
+    qs = _journal_entries_base_qs(request.company_id)
+    qs = _journal_entries_apply_filters(qs, request)
+    qs = qs.order_by("-entry_date", "-id")
+
+    if wants_paged_response(request):
+        skip, limit = parse_skip_limit(request, default_limit=50, max_limit=500)
+        total = qs.count()
+        page = qs[skip : skip + limit]
+        return json_paged(
+            [_entry_to_json(e) for e in page],
+            total=total,
+            skip=skip,
+            limit=limit,
+        )
+
     try:
         limit = int(request.GET.get("limit", 100))
     except (ValueError, TypeError):

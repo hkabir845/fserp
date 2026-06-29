@@ -8,6 +8,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
+from api.utils.transaction_filters import filter_json_transactions
 from api.views.common import parse_json_body, parse_optional_company_station_id, require_company_id
 from api.models import BankAccount, ChartOfAccount
 from api.services.journal_statement import (
@@ -470,8 +471,9 @@ def bank_account_statement(request, account_id: int):
     )
     if not b:
         return JsonResponse({"detail": "Bank account not found"}, status=404)
-    start_date = _parse_date(request.GET.get("start_date"))
-    end_date = _parse_date(request.GET.get("end_date"))
+    q = (request.GET.get("q") or "").strip()
+    start_date = _parse_date(request.GET.get("start_date")) if not q else None
+    end_date = _parse_date(request.GET.get("end_date")) if not q else None
     st_sid, st_err = parse_optional_company_station_id(request.GET, request.company_id)
     if st_err:
         return st_err
@@ -493,6 +495,8 @@ def bank_account_statement(request, account_id: int):
             transactions, running, opening = build_statement_transactions(
                 coa, start_date=start_date, end_date=end_date, station_id=st_sid
             )
+    if q:
+        transactions = filter_json_transactions(transactions, q)
     nets = journal_net_movement_map([b.chart_account_id]) if b.chart_account_id else {}
     payload = {
         "account": _bank_to_json(b, journal_net_by_chart=nets or None),
@@ -500,9 +504,14 @@ def bank_account_statement(request, account_id: int):
         "end_date": end_date.isoformat() if end_date else None,
         "opening_balance": str(opening),
         "transactions": transactions,
-        "ending_balance": str(running),
+        "ending_balance": str(
+            running if not q else (transactions[-1]["balance"] if transactions else opening)
+        ),
         "source": "chart_journal_lines" if b.chart_account_id else "register_only",
     }
+    if q:
+        payload["search_q"] = q
+        payload["date_range_ignored"] = True
     if st_sid is not None:
         payload["filter_station_id"] = st_sid
     return JsonResponse(payload)

@@ -376,6 +376,15 @@ def ledger_query_dates(request) -> tuple[Optional[date], Optional[date]]:
     )
 
 
+def ledger_dates_and_search(request) -> tuple[Optional[date], Optional[date], str]:
+    """When ``q`` is set, skip date filtering so search spans all activity."""
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        return None, None, q
+    start_d, end_d = ledger_query_dates(request)
+    return start_d, end_d, ""
+
+
 def build_employee_ledger(
     company_id: int,
     employee_id: int,

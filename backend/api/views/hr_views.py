@@ -27,7 +27,8 @@ from api.services.reference_code import (
 )
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
-from api.services.contact_ledgers import build_employee_ledger, ledger_query_dates
+from api.services.contact_ledgers import build_employee_ledger, ledger_dates_and_search
+from api.utils.transaction_filters import filter_json_transactions
 from api.services.employee_payroll_subledger import refresh_employee_balance
 from api.services.employee_payroll_allocations import (
     employee_allocations_for_payroll,
@@ -427,12 +428,16 @@ def employee_detail(request, employee_id: int):
 @auth_required
 @require_company_id
 def employee_ledger(request, employee_id: int):
-    start_d, end_d = ledger_query_dates(request)
+    start_d, end_d, q = ledger_dates_and_search(request)
     data = build_employee_ledger(
         request.company_id, employee_id, start_date=start_d, end_date=end_d
     )
     if data.get("detail") == "Employee not found":
         return JsonResponse(data, status=404)
+    if q:
+        data["transactions"] = filter_json_transactions(data.get("transactions") or [], q)
+        data["search_q"] = q
+        data["date_range_ignored"] = True
     return JsonResponse(data)
 
 

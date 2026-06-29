@@ -45,6 +45,10 @@ from api.services.gl_posting import (
 )
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
+from api.utils.transaction_filters import (
+    apply_transaction_amount_range,
+    apply_transaction_date_range,
+)
 from api.views.common import parse_json_body, require_company_id
 from api.services.aquaculture_bill_defaults import (
     apply_aquaculture_expense_category_to_bill_line_row,
@@ -717,6 +721,8 @@ def _bills_list(request):
     status_filter = request.GET.get("status_filter", "").strip()
     if status_filter:
         qs = qs.filter(status=status_filter)
+    qs = apply_transaction_date_range(qs, request, "bill_date")
+    qs = apply_transaction_amount_range(qs, request, "total")
     q = (request.GET.get("q") or "").strip()
     if q:
         qs = qs.filter(

@@ -12,7 +12,14 @@ import { printLedgerStatement, buildLedgerStatementCsv } from '@/utils/printDocu
 import { loadPrintBranding } from '@/utils/printBranding'
 import { downloadCsvFile, downloadJsonFile } from '@/utils/businessDocumentExport'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
-import { ArrowLeft, BookOpen, RefreshCw } from 'lucide-react'
+import { TransactionListEmptyState } from '@/components/TransactionListEmptyState'
+import { ArrowLeft, BookOpen, FilterX, Loader2, RefreshCw, Search } from 'lucide-react'
+import {
+  hasActiveTransactionFilters,
+  hasTransactionTextSearch,
+  transactionDateParams,
+} from '@/lib/transactionListFilters'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useToast } from '@/components/Toast'
 
 export type LedgerEntity = 'customers' | 'vendors' | 'employees'
@@ -65,8 +72,11 @@ export default function ContactLedgerPage({
   const [currencySymbol, setCurrencySymbol] = useState('৳')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [searchQ, setSearchQ] = useState('')
+  const debouncedSearch = useDebouncedValue(searchQ.trim())
   const [data, setData] = useState<LedgerPayload | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [refetching, setRefetching] = useState(false)
   const [entryForm, setEntryForm] = useState({
     entry_date: new Date().toISOString().split('T')[0],
     entry_type: 'salary',
@@ -79,12 +89,28 @@ export default function ContactLedgerPage({
 
   const ledgerPath = `/${entity}/${entityId}/ledger/`
 
+  const hasTextSearch = hasTransactionTextSearch({ q: debouncedSearch })
+
+  const hasActiveFilters = hasActiveTransactionFilters({
+    search: searchQ,
+    startDate,
+    endDate,
+  })
+
+  const clearFilters = () => {
+    setStartDate('')
+    setEndDate('')
+    setSearchQ('')
+  }
+
   const load = useCallback(async () => {
-    setLoading(true)
+    setRefetching(true)
     try {
       const params = new URLSearchParams()
-      if (startDate) params.set('start_date', startDate)
-      if (endDate) params.set('end_date', endDate)
+      const dates = transactionDateParams(startDate, endDate, hasTextSearch)
+      if (dates.start_date) params.set('start_date', dates.start_date)
+      if (dates.end_date) params.set('end_date', dates.end_date)
+      if (debouncedSearch) params.set('q', debouncedSearch)
       const q = params.toString()
       const url = q ? `${ledgerPath}?${q}` : ledgerPath
       const res = await api.get<LedgerPayload>(url)
@@ -94,9 +120,10 @@ export default function ContactLedgerPage({
       toast.error('Failed to load ledger')
       setData(null)
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
+      setRefetching(false)
     }
-  }, [entity, entityId, startDate, endDate, ledgerPath])
+  }, [entity, entityId, startDate, endDate, debouncedSearch, hasTextSearch, ledgerPath, toast])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -226,7 +253,7 @@ export default function ContactLedgerPage({
             </div>
           </div>
 
-          {loading && !data ? (
+          {initialLoading && !data ? (
             <div className="flex justify-center py-24">
               <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
             </div>
@@ -308,24 +335,40 @@ export default function ContactLedgerPage({
                       className="mt-1 rounded border border-gray-300 px-3 py-2 text-sm"
                     />
                   </div>
+                  <div className="min-w-[14rem] flex-1">
+                    <label className="block text-xs font-medium text-gray-500">Search (all dates)</label>
+                    <div className="relative mt-1">
+                      <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="search"
+                        value={searchQ}
+                        onChange={(e) => setSearchQ(e.target.value)}
+                        placeholder="Reference, description…"
+                        className="w-full rounded border border-gray-300 py-2 pl-8 pr-3 text-sm"
+                      />
+                    </div>
+                    {hasTextSearch && (startDate || endDate) ? (
+                      <p className="mt-1 text-xs text-gray-500">Date range paused while searching.</p>
+                    ) : null}
+                  </div>
                   <button
                     type="button"
                     onClick={() => load()}
                     className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
                   >
-                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`h-4 w-4 ${refetching ? 'animate-spin' : ''}`} />
                     Apply
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStartDate('')
-                      setEndDate('')
-                    }}
-                    className="text-sm text-gray-600 hover:text-gray-900"
-                  >
-                    Clear dates
-                  </button>
+                  {hasActiveFilters ? (
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900"
+                    >
+                      <FilterX className="h-3.5 w-3.5" aria-hidden />
+                      Clear filters
+                    </button>
+                  ) : null}
                   <DocumentExportButtons
                     size="compact"
                     onPrint={() => void handlePrintLedger()}
@@ -423,7 +466,12 @@ export default function ContactLedgerPage({
                 </div>
               )}
 
-              <div className="overflow-hidden rounded-lg bg-white shadow">
+              <div className="relative overflow-hidden rounded-lg bg-white shadow">
+                {refetching ? (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-600" aria-label="Updating ledger" />
+                  </div>
+                ) : null}
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -439,8 +487,25 @@ export default function ContactLedgerPage({
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {data.transactions.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
-                          No transactions in this period.
+                        <td colSpan={7} className="p-0">
+                          <TransactionListEmptyState
+                            title={
+                              hasTextSearch
+                                ? 'No matching transactions'
+                                : hasActiveFilters
+                                  ? 'No transactions in this period'
+                                  : 'No ledger activity yet'
+                            }
+                            description={
+                              hasTextSearch
+                                ? 'Try different keywords or clear filters to see all activity.'
+                                : hasActiveFilters
+                                  ? 'Adjust the date range or clear filters to widen the view.'
+                                  : 'Invoices, bills, and payments for this contact will appear here.'
+                            }
+                            hasActiveFilters={hasActiveFilters}
+                            onClearFilters={clearFilters}
+                          />
                         </td>
                       </tr>
                     ) : (

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import PageLayout from '@/components/PageLayout'
 import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
-import { Plus, Edit2, Trash2, X, FileText, Filter, AlertTriangle, RefreshCw, LayoutTemplate, Loader2, Printer, ExternalLink, BookOpen } from 'lucide-react'
+import { Plus, Edit2, Trash2, X, FileText, Filter, AlertTriangle, RefreshCw, LayoutTemplate, Loader2, Printer, ExternalLink, BookOpen, Search } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import { useChartOfAccountsT, coaAccountTypeLabel } from '@/lib/moduleI18n/chartOfAccounts'
@@ -30,6 +30,10 @@ import {
   confirmDeletePaymentDialog,
   deletePaymentRequest,
 } from '@/app/payments/paymentMutations'
+import {
+  hasTransactionTextSearch,
+  transactionDateParams,
+} from '@/lib/transactionListFilters'
 
 interface AccountUsage {
   journal_lines: number
@@ -430,6 +434,8 @@ export default function ChartOfAccountsPage() {
   const [statementPrintBranding, setStatementPrintBranding] = useState<PrintBranding | null>(null)
   const [statementStartDate, setStatementStartDate] = useState<string>('')
   const [statementEndDate, setStatementEndDate] = useState<string>('')
+  const [statementSearch, setStatementSearch] = useState<string>('')
+  const [debouncedStatementSearch, setDebouncedStatementSearch] = useState<string>('')
   const [statementPeriodMode, setStatementPeriodMode] = useState<StatementPeriodMode>('range')
   const [statementPaymentDeletingId, setStatementPaymentDeletingId] = useState<number | null>(null)
   const [statementPayrollRemovingId, setStatementPayrollRemovingId] = useState<number | null>(null)
@@ -815,6 +821,13 @@ export default function ChartOfAccountsPage() {
       cancelled = true
     }
   }, [unlinkedBanks.length, selectedCompany?.id])
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedStatementSearch(statementSearch.trim()), 350)
+    return () => clearTimeout(t)
+  }, [statementSearch])
+
+  const hasStatementTextSearch = hasTransactionTextSearch({ q: debouncedStatementSearch })
   
   const fetchStatement = async (accountId: number, periodMode = statementPeriodMode) => {
     try {
@@ -834,9 +847,11 @@ export default function ChartOfAccountsPage() {
 
       const params = new URLSearchParams()
       if (periodMode === 'range') {
-        if (startDate) params.append('start_date', startDate)
-        if (endDate) params.append('end_date', endDate)
+        const dates = transactionDateParams(startDate, endDate, hasStatementTextSearch)
+        if (dates.start_date) params.append('start_date', dates.start_date)
+        if (dates.end_date) params.append('end_date', dates.end_date)
       }
+      if (debouncedStatementSearch) params.append('q', debouncedStatementSearch)
       const reportStation =
         typeof window !== 'undefined'
           ? localStorage.getItem('fserp_report_station_id')?.trim()
@@ -940,6 +955,11 @@ export default function ChartOfAccountsPage() {
     void fetchStatementRef.current(id)
     window.history.replaceState({}, '', '/chart-of-accounts')
   }, [loading, accounts])
+
+  useEffect(() => {
+    if (!showStatement || !statementAccountId) return
+    void fetchStatementRef.current(statementAccountId)
+  }, [debouncedStatementSearch, showStatement, statementAccountId])
   
   const handleStatementDateChange = async () => {
     if (statementAccountId) {
@@ -1873,6 +1893,8 @@ export default function ChartOfAccountsPage() {
                     setStatementPeriodMode('range')
                     setStatementStartDate('')
                     setStatementEndDate('')
+                    setStatementSearch('')
+                    setDebouncedStatementSearch('')
                   }}
                   className="text-gray-400 hover:text-gray-600 p-2"
                   aria-label="Close"
@@ -1938,12 +1960,31 @@ export default function ChartOfAccountsPage() {
                     Showing all posted journal lines for this account (lifetime activity).
                   </p>
                 )}
+                <div className="w-full min-w-[16rem] flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="search"
+                      value={statementSearch}
+                      onChange={(e) => setStatementSearch(e.target.value)}
+                      placeholder="Entry #, description, source…"
+                      disabled={statementLoading}
+                      className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Search spans all dates — date range paused while searching
+                  </p>
+                </div>
               </div>
               <div className="mt-4 grid grid-cols-4 gap-4 text-sm">
                 <div>
                   <span className="text-gray-600">Period:</span>
                   <p className="font-semibold">
-                    {formatStatementPeriodLabel(statement.period)}
+                    {hasStatementTextSearch
+                      ? `All dates (search: ${debouncedStatementSearch})`
+                      : formatStatementPeriodLabel(statement.period)}
                   </p>
                 </div>
                 <div>

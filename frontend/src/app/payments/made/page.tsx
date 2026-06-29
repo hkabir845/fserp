@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import PageLayout from '@/components/PageLayout'
@@ -18,7 +18,13 @@ import {
 } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import api from '@/lib/api'
-import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
+import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
+import {
+  hasTransactionTextSearch,
+  transactionAmountParams,
+  transactionDateParams,
+} from '@/lib/transactionListFilters'
+import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import EditPaymentModal from '../EditPaymentModal'
 import { confirmDeletePaymentDialog, deletePaymentRequest } from '../paymentMutations'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
@@ -123,31 +129,56 @@ export default function PaymentMadePage() {
   const [filterStatus, setFilterStatus] = useState<PaymentFilter>('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [searchQ, setSearchQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  const [minAmount, setMinAmount] = useState('')
+  const [maxAmount, setMaxAmount] = useState('')
+  const [listPage, setListPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [totalCount, setTotalCount] = useState(0)
   const [editPaymentId, setEditPaymentId] = useState<number | null>(null)
   const [policyBanner, setPolicyBanner] = useState<{ title: string; lines: string[] } | null>(null)
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
-    if (!token) {
-      router.push('/login')
-      return
+    const t = setTimeout(() => setDebouncedQ(searchQ.trim()), 350)
+    return () => clearTimeout(t)
+  }, [searchQ])
+
+  useEffect(() => {
+    setListPage(1)
+  }, [debouncedQ, startDate, endDate, minAmount, maxAmount, pageSize])
+
+  const hasTextSearch = hasTransactionTextSearch({ q: debouncedQ })
+
+  const fetchPaymentsMade = useCallback(async () => {
+    try {
+      const params = offsetListParams({
+        page: listPage,
+        pageSize,
+        q: debouncedQ || undefined,
+        extra: {
+          ...transactionDateParams(startDate, endDate, hasTextSearch),
+          ...transactionAmountParams(minAmount, maxAmount),
+        },
+      })
+      const response = await api.get('/payments/made/', { params })
+      const data = response.data
+      if (isOffsetPagedPayload(data)) {
+        setPaymentsMade(data.results as VendorPayment[])
+        setTotalCount(data.count)
+      } else if (Array.isArray(data)) {
+        setPaymentsMade(data)
+        setTotalCount(data.length)
+      } else {
+        setPaymentsMade([])
+        setTotalCount(0)
+      }
+    } catch (error: unknown) {
+      console.error('Error fetching payments made:', error)
+      setPaymentsMade([])
+      setTotalCount(0)
     }
-    fetchVendors()
-    fetchAllOutstandingBills()
-    fetchPaymentsMade()
-  }, [router])
-
-  useEffect(() => {
-    fetchPaymentsMade()
-    fetchAllOutstandingBills()
-  }, [startDate, endDate])
-
-  useEffect(() => {
-    const raw = searchParams.get('edit')
-    if (!raw || !/^\d+$/.test(raw)) return
-    const id = parseInt(raw, 10)
-    if (Number.isFinite(id) && id > 0) setEditPaymentId(id)
-  }, [searchParams])
+  }, [listPage, pageSize, debouncedQ, startDate, endDate, minAmount, maxAmount, hasTextSearch])
 
   const fetchVendors = async () => {
     try {
@@ -185,39 +216,26 @@ export default function PaymentMadePage() {
     }
   }
 
-  const fetchPaymentsMade = async () => {
-    try {
-      const params: Record<string, string | number> = {
-        skip: 0,
-        limit: 1000,
-      }
-      if (startDate && startDate.trim() !== '') {
-        params.start_date = startDate
-      }
-      if (endDate && endDate.trim() !== '') {
-        params.end_date = endDate
-      }
-
-      const response = await api.get('/payments/made', { params })
-
-      let payments: VendorPayment[] = []
-      if (Array.isArray(response.data)) {
-        payments = response.data
-      } else if (response.data && Array.isArray(response.data.payments)) {
-        payments = response.data.payments
-      } else if (response.data && Array.isArray(response.data.items)) {
-        payments = response.data.items
-      } else if (response.data && typeof response.data === 'object') {
-        const foundArray = Object.values(response.data).find((val: unknown) => Array.isArray(val))
-        payments = Array.isArray(foundArray) ? (foundArray as VendorPayment[]) : []
-      }
-
-      setPaymentsMade(payments)
-    } catch (error: unknown) {
-      console.error('Error fetching payments made:', error)
-      setPaymentsMade([])
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) {
+      router.push('/login')
+      return
     }
-  }
+    void fetchVendors()
+  }, [router])
+
+  useEffect(() => {
+    void fetchPaymentsMade()
+    void fetchAllOutstandingBills()
+  }, [fetchPaymentsMade])
+
+  useEffect(() => {
+    const raw = searchParams.get('edit')
+    if (!raw || !/^\d+$/.test(raw)) return
+    const id = parseInt(raw, 10)
+    if (Number.isFinite(id) && id > 0) setEditPaymentId(id)
+  }, [searchParams])
 
   const totalPayable = allOutstandingBills.reduce((sum, bill) => sum + parseNum(bill.balance_due), 0)
 
@@ -456,17 +474,34 @@ export default function PaymentMadePage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Search (all dates)</label>
+                <input
+                  type="search"
+                  value={searchQ}
+                  onChange={(e) => setSearchQ(e.target.value)}
+                  placeholder="Reference, memo, vendor…"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Min amount</label>
+                <input type="number" min="0" step="0.01" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Max amount</label>
+                <input type="number" min="0" step="0.01" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+              </div>
               <div className="flex items-end gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setStartDate('')
                     setEndDate('')
+                    setSearchQ('')
+                    setMinAmount('')
+                    setMaxAmount('')
                     setFilterStatus('all')
-                    setTimeout(() => {
-                      fetchPaymentsMade()
-                      fetchAllOutstandingBills()
-                    }, 100)
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
                 >
@@ -617,6 +652,16 @@ export default function PaymentMadePage() {
                       })}
                     </tbody>
                   </table>
+                </div>
+                <div className="border-t border-gray-100 px-4 py-3">
+                  <OffsetPaginationControls
+                    page={listPage}
+                    pageSize={pageSize}
+                    total={totalCount}
+                    onPageChange={setListPage}
+                    onPageSizeChange={setPageSize}
+                    disabled={loading}
+                  />
                 </div>
               </div>
             )}

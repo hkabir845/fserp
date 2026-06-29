@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState, Fragment, useRef } from 'react'
+import { useEffect, useState, Fragment, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
 import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { Plus, Edit2, Trash2, X, Eye, CheckCircle, XCircle, AlertCircle, Search, Filter, AlertTriangle, RefreshCw, ScrollText } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
@@ -37,6 +39,12 @@ import {
   type JournalQuickEntryKind,
 } from '@/lib/journalEntryTemplates'
 import { coaPickFromRows } from '@/lib/coaSuggestForm'
+import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
+import {
+  hasTransactionTextSearch,
+  transactionAmountParams,
+  transactionDateParams,
+} from '@/lib/transactionListFilters'
 
 interface JournalEntryLine {
   id?: number
@@ -140,10 +148,13 @@ export default function JournalEntriesPage() {
   const toast = useToast()
   const pageMeta = usePageMeta()
   const [entries, setEntries] = useState<JournalEntry[]>([])
-  const [allEntries, setAllEntries] = useState<JournalEntry[]>([]) // Store all entries for client-side filtering
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [listPage, setListPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [totalCount, setTotalCount] = useState(0)
   const [showModal, setShowModal] = useState(false)
   const [quickEntryKind, setQuickEntryKind] = useState<JournalQuickEntryKind | ''>('')
   const [showViewModal, setShowViewModal] = useState(false)
@@ -159,6 +170,9 @@ export default function JournalEntriesPage() {
   const [filterValue, setFilterValue] = useState<string>('')
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
+  const [minAmount, setMinAmount] = useState<string>('')
+  const [maxAmount, setMaxAmount] = useState<string>('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [formData, setFormData] = useState<{
     entry_date: string
@@ -231,20 +245,44 @@ export default function JournalEntriesPage() {
       router.push('/login')
       return
     }
-    fetchData()
+    void fetchReferenceData()
   }, [router])
 
-  const fetchData = async () => {
-    setLoading(true)
-    setError(null)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(filterValue.trim()), 350)
+    return () => clearTimeout(t)
+  }, [filterValue])
+
+  const hasTextSearch = hasTransactionTextSearch({ q: debouncedSearch, filterColumn, filterValue: debouncedSearch })
+
+  useEffect(() => {
+    setListPage(1)
+  }, [filterColumn, debouncedSearch, startDate, endDate, minAmount, maxAmount, pageSize])
+
+  const journalListParams = useCallback(
+    (page: number, size: number) =>
+      offsetListParams({
+        page,
+        pageSize: size,
+        extra: {
+          ...transactionDateParams(startDate, endDate, hasTextSearch),
+          ...transactionAmountParams(minAmount, maxAmount),
+          q: filterColumn === 'all' && debouncedSearch ? debouncedSearch : undefined,
+          filter_column: filterColumn !== 'all' && debouncedSearch ? filterColumn : undefined,
+          filter_value: filterColumn !== 'all' && debouncedSearch ? debouncedSearch : undefined,
+        },
+      }),
+    [startDate, endDate, minAmount, maxAmount, filterColumn, debouncedSearch, hasTextSearch],
+  )
+
+  const fetchReferenceData = async () => {
     try {
       const token = localStorage.getItem('access_token')
       if (!token) {
         router.push('/login')
         return
       }
-      
-      // Fetch company currency
+
       try {
         const companyRes = await api.get('/companies/current')
         if (companyRes.data?.currency) {
@@ -253,46 +291,12 @@ export default function JournalEntriesPage() {
       } catch (error) {
         console.error('Error fetching company currency:', error)
       }
-      
-      // Build query parameters
-      const params = new URLSearchParams()
-      if (filterColumn && filterColumn !== 'all' && filterValue) {
-        params.append('filter_column', filterColumn)
-        params.append('filter_value', filterValue)
-      }
-      if (startDate) {
-        params.append('start_date', startDate)
-      }
-      if (endDate) {
-        params.append('end_date', endDate)
-      }
-      params.append('limit', '1000') // Get more entries for client-side filtering
-      
-      const queryString = params.toString()
-      const url = `/journal-entries${queryString ? `?${queryString}` : ''}`
 
-      const [entriesRes, accountsRes, stationsRes, pondsRes] = await Promise.allSettled([
-        api.get(url),
+      const [accountsRes, stationsRes, pondsRes] = await Promise.allSettled([
         api.get('/chart-of-accounts/'),
         api.get<unknown[]>('/stations/', { timeout: 8000 }),
         api.get<unknown[]>('/aquaculture/ponds/', { timeout: 8000 }),
       ])
-
-      if (entriesRes.status === 'fulfilled') {
-        const raw = entriesRes.value.data
-        const entriesData = Array.isArray(raw) ? raw : []
-        if (!Array.isArray(raw)) {
-          console.error('Journal entries API did not return an array:', raw)
-        }
-        setAllEntries(entriesData)
-        setError(null)
-        // Filters will be applied automatically via useEffect
-      } else {
-        console.error('Failed to load journal entries:', entriesRes.reason)
-        const errorMsg = 'Failed to load journal entries'
-        setError(errorMsg)
-        toast.error(errorMsg)
-      }
 
       if (accountsRes.status === 'fulfilled') {
         const accountsData = accountsRes.value.data
@@ -336,9 +340,44 @@ export default function JournalEntriesPage() {
       } else {
         setPonds([])
       }
-    } catch (error: any) {
-      console.error('Error fetching data:', error)
-      if (error.response?.status === 401 || error.response?.status === 403) {
+    } catch (error: unknown) {
+      console.error('Error fetching reference data:', error)
+    }
+  }
+
+  const fetchEntries = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const token = localStorage.getItem('access_token')
+      if (!token) {
+        router.push('/login')
+        return
+      }
+
+      const params = journalListParams(listPage, pageSize)
+      const entriesRes = await api.get('/journal-entries/', { params, timeout: 15000 })
+      const data = entriesRes.data
+
+      if (isOffsetPagedPayload(data)) {
+        setEntries(data.results as JournalEntry[])
+        setTotalCount(data.count)
+        const totalPages = Math.max(1, Math.ceil(data.count / pageSize))
+        if (listPage > totalPages) {
+          setListPage(totalPages)
+        }
+      } else if (Array.isArray(data)) {
+        setEntries(data)
+        setTotalCount(data.length)
+      } else {
+        setEntries([])
+        setTotalCount(0)
+      }
+      setError(null)
+    } catch (error: unknown) {
+      console.error('Error fetching journal entries:', error)
+      const err = error as { response?: { status?: number } }
+      if (err.response?.status === 401 || err.response?.status === 403) {
         localStorage.removeItem('access_token')
         router.push('/login')
         return
@@ -348,108 +387,28 @@ export default function JournalEntriesPage() {
       toast.error(userMessage)
     } finally {
       setLoading(false)
+      setInitialLoad(false)
     }
-  }
-  
-  const applyClientSideFilters = (entriesList: JournalEntry[]) => {
-    let filtered = [...entriesList]
-    
-    // Apply client-side filtering if filter_column is set
-    if (filterColumn && filterColumn !== 'all' && filterValue) {
-      const searchValue = filterValue.toLowerCase().trim()
-      
-      switch (filterColumn) {
-        case 'entry_number':
-          filtered = filtered.filter(entry => 
-            entry.entry_number.toLowerCase().includes(searchValue)
-          )
-          break
-        case 'reference':
-          filtered = filtered.filter(entry => 
-            entry.reference?.toLowerCase().includes(searchValue)
-          )
-          break
-        case 'description':
-          filtered = filtered.filter(entry => 
-            entry.description?.toLowerCase().includes(searchValue)
-          )
-          break
-        case 'account':
-          filtered = filtered.filter(entry => 
-            entry.lines.some(line => 
-              line.debit_account_name?.toLowerCase().includes(searchValue) ||
-              line.debit_account_code?.toLowerCase().includes(searchValue) ||
-              line.credit_account_name?.toLowerCase().includes(searchValue) ||
-              line.credit_account_code?.toLowerCase().includes(searchValue)
-            )
-          )
-          break
-        case 'amount':
-          try {
-            // Try exact amount first
-            const amountValue = parseFloat(searchValue)
-            if (!isNaN(amountValue)) {
-              filtered = filtered.filter(entry => 
-                Math.abs(Number(entry.total_debit) - amountValue) < 0.01 ||
-                Math.abs(Number(entry.total_credit) - amountValue) < 0.01
-              )
-            } else if (searchValue.includes('-')) {
-              // Try range (e.g., "100-500")
-              const parts = searchValue.split('-')
-              const minAmount = parseFloat(parts[0].trim())
-              const maxAmount = parseFloat(parts[1].trim())
-              if (!isNaN(minAmount) && !isNaN(maxAmount)) {
-                filtered = filtered.filter(entry => 
-                  (Number(entry.total_debit) >= minAmount && Number(entry.total_debit) <= maxAmount) ||
-                  (Number(entry.total_credit) >= minAmount && Number(entry.total_credit) <= maxAmount)
-                )
-              }
-            }
-          } catch (e) {
-            // Invalid amount, skip filtering
-          }
-          break
-        case 'is_posted':
-          if (searchValue === 'true' || searchValue === '1' || searchValue === 'yes' || searchValue === 'posted') {
-            filtered = filtered.filter(entry => entry.is_posted === true)
-          } else if (searchValue === 'false' || searchValue === '0' || searchValue === 'no' || searchValue === 'draft') {
-            filtered = filtered.filter(entry => entry.is_posted === false)
-          }
-          break
-      }
-    }
-    
-    // Apply date range filter
-    if (startDate || endDate) {
-      filtered = filtered.filter(entry => {
-        const entryDate = new Date(entry.entry_date.split('T')[0]) // Extract date part only
-        if (startDate) {
-          const start = new Date(startDate)
-          start.setHours(0, 0, 0, 0)
-          if (entryDate < start) {
-            return false
-          }
-        }
-        if (endDate) {
-          const end = new Date(endDate)
-          end.setHours(23, 59, 59, 999)
-          if (entryDate > end) {
-            return false
-          }
-        }
-        return true
-      })
-    }
-    
-    setEntries(filtered)
-  }
-  
-  // Apply filters when filter values or allEntries change
+  }, [journalListParams, listPage, pageSize, router, toast])
+
   useEffect(() => {
-    if (allEntries.length >= 0) { // Always apply filters (even for empty array)
-      applyClientSideFilters(allEntries)
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+    void fetchEntries()
+  }, [fetchEntries])
+
+  const fetchAllFilteredEntries = async (): Promise<JournalEntry[]> => {
+    const params = {
+      ...journalListParams(1, 2000),
+      limit: '2000',
+      skip: '0',
     }
-  }, [filterColumn, filterValue, startDate, endDate, allEntries])
+    const res = await api.get('/journal-entries/', { params, timeout: 30000 })
+    const data = res.data
+    if (isOffsetPagedPayload(data)) return data.results as JournalEntry[]
+    if (Array.isArray(data)) return data
+    return []
+  }
 
   const calculateTotals = () => {
     const totalDebit = formData.lines
@@ -576,7 +535,7 @@ export default function JournalEntriesPage() {
       toast.success('Journal entry created successfully!')
       setShowModal(false)
       resetForm()
-      fetchData()
+      fetchEntries()
     } catch (error) {
       console.error('Error creating journal entry:', error)
       toast.error(extractErrorMessage(error, 'Failed to create journal entry'))
@@ -664,7 +623,7 @@ export default function JournalEntriesPage() {
       setShowModal(false)
       setEditingEntry(null)
       resetForm()
-      await fetchData()
+      await fetchEntries()
     } catch (error) {
       console.error('Error updating journal entry:', error)
       toast.error(extractErrorMessage(error, 'Failed to update journal entry'))
@@ -675,7 +634,7 @@ export default function JournalEntriesPage() {
     try {
       await api.post(`/journal-entries/${entryId}/post/`)
       toast.success('Journal entry posted successfully!')
-      await fetchData()
+      await fetchEntries()
     } catch (error) {
       console.error('Error posting journal entry:', error)
       toast.error(extractErrorMessage(error, 'Failed to post journal entry'))
@@ -686,7 +645,7 @@ export default function JournalEntriesPage() {
     try {
       await api.post(`/journal-entries/${entryId}/unpost/`, {})
       toast.success('Journal entry unposted successfully!')
-      await fetchData()
+      await fetchEntries()
     } catch (error) {
       console.error('Error unposting journal entry:', error)
       toast.error(extractErrorMessage(error, 'Failed to unpost journal entry'))
@@ -698,7 +657,7 @@ export default function JournalEntriesPage() {
       await api.delete(`/journal-entries/${entryId}/`)
       toast.success('Journal entry deleted successfully!')
       setShowDeleteConfirm(null)
-      await fetchData()
+      await fetchEntries()
     } catch (error) {
       console.error('Error deleting journal entry:', error)
       toast.error(extractErrorMessage(error, 'Failed to delete journal entry'))
@@ -768,19 +727,24 @@ export default function JournalEntriesPage() {
   const balanceDifference = Math.abs(totalDebit - totalCredit)
 
   const handlePrintList = async () => {
-    if (entries.length === 0) {
+    const exportEntries = entries.length > 0 && entries.length < totalCount
+      ? await fetchAllFilteredEntries()
+      : entries
+    if (exportEntries.length === 0) {
       toast.error('No journal entries to print for the current filter.')
       return
     }
     const sub = [
       startDate && `From ${startDate}`,
       endDate && `To ${endDate}`,
+      minAmount && `Min ${minAmount}`,
+      maxAmount && `Max ${maxAmount}`,
       filterValue && `Filter: ${filterColumn}=${filterValue}`,
       `Generated ${formatDate(new Date(), true)}`,
     ]
       .filter(Boolean)
       .join(' · ')
-    const rows = entries
+    const rows = exportEntries
       .map(
         (e) => `<tr>
           <td>${escapeHtml(e.entry_number)}</td>
@@ -802,23 +766,29 @@ export default function JournalEntriesPage() {
     if (!ok) toast.error('Allow pop-ups to print, or check your browser settings.')
   }
 
-  const handleDownloadListCsv = () => {
-    if (entries.length === 0) {
+  const handleDownloadListCsv = async () => {
+    const exportEntries = entries.length > 0 && entries.length < totalCount
+      ? await fetchAllFilteredEntries()
+      : entries
+    if (exportEntries.length === 0) {
       toast.error('No journal entries to export.')
       return
     }
     downloadCsvFile(
       `journal_entries_${new Date().toISOString().slice(0, 10)}.csv`,
-      buildJournalEntryListCsv(entries, { formatDate: formatDateOnly }),
+      buildJournalEntryListCsv(exportEntries, { formatDate: formatDateOnly }),
     )
   }
 
-  const handleDownloadListJson = () => {
-    if (entries.length === 0) {
+  const handleDownloadListJson = async () => {
+    const exportEntries = entries.length > 0 && entries.length < totalCount
+      ? await fetchAllFilteredEntries()
+      : entries
+    if (exportEntries.length === 0) {
       toast.error('No journal entries to export.')
       return
     }
-    downloadJsonFile(`journal_entries_${new Date().toISOString().slice(0, 10)}.json`, entries)
+    downloadJsonFile(`journal_entries_${new Date().toISOString().slice(0, 10)}.json`, exportEntries)
   }
 
   const handlePrintViewingEntry = async () => {
@@ -847,7 +817,7 @@ export default function JournalEntriesPage() {
     downloadJsonFile(`journal_${viewingEntry.entry_number}.json`, viewingEntry)
   }
 
-  if (loading) {
+  if (initialLoad && loading) {
     return (
       <PageLayout className="bg-slate-50">
         <div className="flex min-h-[50vh] items-center justify-center">
@@ -880,8 +850,8 @@ export default function JournalEntriesPage() {
             </button>
             <DocumentExportButtons
               onPrint={() => void handlePrintList()}
-              onDownloadCsv={handleDownloadListCsv}
-              onDownloadJson={handleDownloadListJson}
+              onDownloadCsv={() => void handleDownloadListCsv()}
+              onDownloadJson={() => void handleDownloadListJson()}
               printLabel="Print list"
             />
             <button
@@ -903,7 +873,7 @@ export default function JournalEntriesPage() {
               <h3 className="text-xl font-bold text-red-800 mb-2">Error Loading Journal Entries</h3>
               <p className="text-red-700 mb-4">{error}</p>
               <button
-                onClick={fetchData}
+                onClick={() => void fetchEntries()}
                 className="inline-flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
                 <RefreshCw className="h-5 w-5" />
@@ -924,6 +894,8 @@ export default function JournalEntriesPage() {
                     setFilterValue('')
                     setStartDate('')
                     setEndDate('')
+                    setMinAmount('')
+                    setMaxAmount('')
                     setShowFilters(false)
                   }}
                   className="text-sm text-gray-500 hover:text-gray-700"
@@ -932,11 +904,11 @@ export default function JournalEntriesPage() {
                 </button>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                 {/* Date Range */}
-                <div className="md:col-span-2">
+                <div className="md:col-span-2 lg:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Report Period: Date Range
+                    Date range
                   </label>
                   <div className="flex items-center space-x-2">
                     <input
@@ -953,6 +925,35 @@ export default function JournalEntriesPage() {
                       onChange={(e) => setEndDate(e.target.value)}
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="To Date"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Leave blank to include all dates, including back-dated entries.</p>
+                </div>
+
+                {/* Amount Range */}
+                <div className="md:col-span-2 lg:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Amount range (entry total)
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={minAmount}
+                      onChange={(e) => setMinAmount(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Min amount"
+                    />
+                    <span className="text-gray-500">to</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={maxAmount}
+                      onChange={(e) => setMaxAmount(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Max amount"
                     />
                   </div>
                 </div>
@@ -990,27 +991,56 @@ export default function JournalEntriesPage() {
                       type="text"
                       value={filterValue}
                       onChange={(e) => setFilterValue(e.target.value)}
-                      placeholder={filterColumn === 'amount' ? 'e.g., 1000 or 100-500' : filterColumn === 'is_posted' ? 'true/false or posted/draft' : 'Enter search value'}
+                      placeholder={
+                        filterColumn === 'all'
+                          ? 'Search entry #, description, account, site…'
+                          : filterColumn === 'amount'
+                            ? 'e.g., 1000 or 100-500'
+                            : filterColumn === 'is_posted'
+                              ? 'true/false or posted/draft'
+                              : 'Enter search value'
+                      }
                       className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      disabled={filterColumn === 'all'}
                     />
                     <Search className="absolute right-3 top-2.5 h-5 w-5 text-gray-400" />
                   </div>
+                  {filterColumn === 'all' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Searches all dates — old and new entries. Date range is ignored while searching.
+                    </p>
+                  )}
                   {filterColumn === 'amount' && (
                     <p className="text-xs text-gray-500 mt-1">Enter amount or range (e.g., 100-500)</p>
                   )}
                   {filterColumn === 'is_posted' && (
                     <p className="text-xs text-gray-500 mt-1">Enter: true/false, posted/draft, yes/no</p>
                   )}
+                  {filterColumn !== 'all' && filterColumn !== 'amount' && filterColumn !== 'is_posted' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Column search includes all dates; clear search to apply the date range again.
+                    </p>
+                  )}
                 </div>
               </div>
               
               {/* Active Filters Display */}
-              {(filterColumn !== 'all' || startDate || endDate) && (
+              {(hasTextSearch || startDate || endDate || minAmount || maxAmount) && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm text-gray-600">Active Filters:</span>
-                    {startDate && (
+                    {hasTextSearch && (
+                      <span className="px-2 py-1 bg-amber-100 text-amber-900 rounded text-xs">
+                        Search: {debouncedSearch}
+                        {filterColumn !== 'all' ? ` (${filterColumn.replace('_', ' ')})` : ' (all columns)'}
+                        <button
+                          onClick={() => setFilterValue('')}
+                          className="ml-1 hover:text-amber-700"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    )}
+                    {startDate && !hasTextSearch && (
                       <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
                         From: {formatDateOnly(startDate)}
                         <button
@@ -1021,7 +1051,7 @@ export default function JournalEntriesPage() {
                         </button>
                       </span>
                     )}
-                    {endDate && (
+                    {endDate && !hasTextSearch && (
                       <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
                         To: {formatDateOnly(endDate)}
                         <button
@@ -1032,15 +1062,28 @@ export default function JournalEntriesPage() {
                         </button>
                       </span>
                     )}
-                    {filterColumn !== 'all' && filterValue && (
-                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
-                        {filterColumn.replace('_', ' ')}: {filterValue}
+                    {hasTextSearch && (startDate || endDate) && (
+                      <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs italic">
+                        Date range paused during search
+                      </span>
+                    )}
+                    {minAmount && (
+                      <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs">
+                        Min: {minAmount}
                         <button
-                          onClick={() => {
-                            setFilterColumn('all')
-                            setFilterValue('')
-                          }}
-                          className="ml-1 hover:text-green-600"
+                          onClick={() => setMinAmount('')}
+                          className="ml-1 hover:text-purple-600"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    )}
+                    {maxAmount && (
+                      <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs">
+                        Max: {maxAmount}
+                        <button
+                          onClick={() => setMaxAmount('')}
+                          className="ml-1 hover:text-purple-600"
                         >
                           ×
                         </button>
@@ -1048,7 +1091,7 @@ export default function JournalEntriesPage() {
                     )}
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    Showing {entries.length} of {allEntries.length} entries
+                    {totalCount} matching {totalCount === 1 ? 'entry' : 'entries'} — use pagination below to browse all results.
                   </p>
                 </div>
               )}
@@ -1158,6 +1201,17 @@ export default function JournalEntriesPage() {
                 No journal entries found. Create your first entry to get started.
               </div>
             )}
+          </div>
+
+          <div className="mt-4 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <OffsetPaginationControls
+              page={listPage}
+              pageSize={pageSize}
+              total={totalCount}
+              onPageChange={setListPage}
+              onPageSizeChange={setPageSize}
+              disabled={loading}
+            />
           </div>
 
           {/* Delete Confirmation Modal */}
@@ -1328,13 +1382,15 @@ export default function JournalEntriesPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Entry Date *
                   </label>
-                  <input
-                    type="date"
+                  <CompanyDateInput
                     required
                     value={formData.entry_date}
-                    onChange={(e) => setFormData({ ...formData, entry_date: e.target.value })}
+                    onChange={(iso) => setFormData({ ...formData, entry_date: iso })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Past dates are allowed for back-dated GL entries.
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">

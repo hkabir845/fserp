@@ -10,6 +10,11 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
 from api.utils.customer_display import customer_display_name
+from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
+from api.utils.transaction_filters import (
+    apply_transaction_amount_range,
+    apply_transaction_date_range,
+)
 from api.exceptions import GlPostingError
 from api.views.common import parse_json_body, require_company_id
 from api.models import (
@@ -165,6 +170,36 @@ def _normalize_payment_method(body: dict) -> str:
     return raw if raw else "unspecified"
 
 
+def _payments_apply_text_search(qs, q: str):
+    if not q:
+        return qs
+    return qs.filter(
+        Q(reference__icontains=q)
+        | Q(memo__icontains=q)
+        | Q(payment_method__icontains=q)
+        | Q(customer__company_name__icontains=q)
+        | Q(customer__display_name__icontains=q)
+        | Q(vendor__company_name__icontains=q)
+        | Q(vendor__display_name__icontains=q)
+    )
+
+
+def _payments_apply_list_filters(qs, request):
+    qs = apply_transaction_date_range(qs, request, "payment_date")
+    qs = apply_transaction_amount_range(qs, request, "amount")
+    q = (request.GET.get("q") or "").strip()
+    return _payments_apply_text_search(qs, q)
+
+
+def _payments_paged_or_array(request, qs, serialize):
+    if wants_paged_response(request):
+        skip, limit = parse_skip_limit(request, default_limit=50, max_limit=500)
+        total = qs.count()
+        page = qs[skip : skip + limit]
+        return json_paged([serialize(p) for p in page], total=total, skip=skip, limit=limit)
+    return JsonResponse([serialize(p) for p in qs], safe=False)
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
@@ -182,20 +217,8 @@ def payments_all_list(request):
     ptype = (request.GET.get("type") or "all").strip().lower()
     if ptype in ("received", "made"):
         qs = qs.filter(payment_type=ptype)
-    start = request.GET.get("start_date")
-    end = request.GET.get("end_date")
-    if start:
-        qs = qs.filter(payment_date__gte=_parse_date(start))
-    if end:
-        qs = qs.filter(payment_date__lte=_parse_date(end))
-    q = (request.GET.get("q") or "").strip()
-    if q:
-        qs = qs.filter(
-            Q(reference__icontains=q)
-            | Q(memo__icontains=q)
-            | Q(payment_method__icontains=q)
-        )
-    return JsonResponse([_payment_register_json(p) for p in qs], safe=False)
+    qs = _payments_apply_list_filters(qs, request)
+    return _payments_paged_or_array(request, qs, _payment_register_json)
 
 
 @csrf_exempt
@@ -212,13 +235,8 @@ def payments_received_list(request):
         .prefetch_related("invoice_allocations")
         .order_by("-payment_date", "-id")
     )
-    start = request.GET.get("start_date")
-    end = request.GET.get("end_date")
-    if start:
-        qs = qs.filter(payment_date__gte=_parse_date(start))
-    if end:
-        qs = qs.filter(payment_date__lte=_parse_date(end))
-    return JsonResponse([_payment_to_json(p) for p in qs], safe=False)
+    qs = _payments_apply_list_filters(qs, request)
+    return _payments_paged_or_array(request, qs, _payment_to_json)
 
 
 @csrf_exempt
@@ -601,13 +619,8 @@ def payments_made_list(request):
         .prefetch_related("bill_allocations")
         .order_by("-payment_date", "-id")
     )
-    start = request.GET.get("start_date")
-    end = request.GET.get("end_date")
-    if start:
-        qs = qs.filter(payment_date__gte=_parse_date(start))
-    if end:
-        qs = qs.filter(payment_date__lte=_parse_date(end))
-    return JsonResponse([_payment_to_json(p) for p in qs], safe=False)
+    qs = _payments_apply_list_filters(qs, request)
+    return _payments_paged_or_array(request, qs, _payment_to_json)
 
 
 def _bill_allocation_row_amount(row: dict) -> Decimal:

@@ -7,6 +7,14 @@ import PageLayout from '@/components/PageLayout'
 import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
+import { isOffsetPagedPayload, offsetListParams } from '@/lib/pagination'
+import {
+  hasTransactionTextSearch,
+  transactionAmountParams,
+  transactionDateParams,
+} from '@/lib/transactionListFilters'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import {
@@ -90,7 +98,12 @@ export default function AllPaymentsPage() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [searchQ, setSearchQ] = useState('')
-  const [debouncedQ, setDebouncedQ] = useState('')
+  const debouncedQ = useDebouncedValue(searchQ.trim(), 320)
+  const [minAmount, setMinAmount] = useState('')
+  const [maxAmount, setMaxAmount] = useState('')
+  const [listPage, setListPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [totalCount, setTotalCount] = useState(0)
 
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set())
   const [editPaymentId, setEditPaymentId] = useState<number | null>(null)
@@ -100,22 +113,35 @@ export default function AllPaymentsPage() {
   } | null>(null)
 
   useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedQ(searchQ.trim()), 320)
-    return () => window.clearTimeout(t)
-  }, [searchQ])
+    setListPage(1)
+  }, [typeFilter, debouncedQ, startDate, endDate, minAmount, maxAmount, pageSize])
+
+  const hasTextSearch = hasTransactionTextSearch({ q: debouncedQ })
 
   const loadPayments = useCallback(async () => {
-    const res = await api.get<PaymentRow[]>('/payments/', {
-      params: {
+    const params = offsetListParams({
+      page: listPage,
+      pageSize,
+      q: debouncedQ || undefined,
+      extra: {
         type: typeFilter === 'all' ? undefined : typeFilter,
-        start_date: startDate || undefined,
-        end_date: endDate || undefined,
-        q: debouncedQ || undefined,
+        ...transactionDateParams(startDate, endDate, hasTextSearch),
+        ...transactionAmountParams(minAmount, maxAmount),
       },
     })
-    const rows = Array.isArray(res.data) ? res.data : []
-    setPayments(rows)
-  }, [typeFilter, startDate, endDate, debouncedQ])
+    const res = await api.get('/payments/', { params })
+    const data = res.data
+    if (isOffsetPagedPayload(data)) {
+      setPayments(data.results as PaymentRow[])
+      setTotalCount(data.count)
+    } else if (Array.isArray(data)) {
+      setPayments(data)
+      setTotalCount(data.length)
+    } else {
+      setPayments([])
+      setTotalCount(0)
+    }
+  }, [typeFilter, startDate, endDate, debouncedQ, minAmount, maxAmount, listPage, pageSize, hasTextSearch])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -182,12 +208,18 @@ export default function AllPaymentsPage() {
     setTypeFilter('all')
     setStartDate('')
     setEndDate('')
+    setMinAmount('')
+    setMaxAmount('')
     setSearchQ('')
-    setDebouncedQ('')
   }
 
   const hasActiveFilters =
-    typeFilter !== 'all' || Boolean(startDate) || Boolean(endDate) || Boolean(searchQ.trim())
+    typeFilter !== 'all' ||
+    Boolean(startDate) ||
+    Boolean(endDate) ||
+    Boolean(minAmount) ||
+    Boolean(maxAmount) ||
+    Boolean(searchQ.trim())
 
   const toggleExpand = (id: number) => {
     setExpanded((prev) => {
@@ -454,10 +486,38 @@ export default function AllPaymentsPage() {
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                   />
                 </div>
+                <div>
+                  <label htmlFor="pay-all-min" className="mb-1 block text-xs font-medium text-slate-500">
+                    Min amount
+                  </label>
+                  <input
+                    id="pay-all-min"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={minAmount}
+                    onChange={(e) => setMinAmount(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="pay-all-max" className="mb-1 block text-xs font-medium text-slate-500">
+                    Max amount
+                  </label>
+                  <input
+                    id="pay-all-max"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={maxAmount}
+                    onChange={(e) => setMaxAmount(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
               </div>
               <div className="min-w-[min(100%,20rem)] flex-1">
                 <label htmlFor="pay-all-search" className="mb-1 block text-xs font-medium text-slate-500">
-                  Search reference, memo, method
+                  Search (all dates)
                 </label>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -466,10 +526,13 @@ export default function AllPaymentsPage() {
                     type="search"
                     value={searchQ}
                     onChange={(e) => setSearchQ(e.target.value)}
-                    placeholder="Search…"
+                    placeholder="Reference, memo, party…"
                     className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                   />
                 </div>
+                {hasTextSearch && (startDate || endDate) ? (
+                  <p className="mt-1 text-xs text-slate-500">Date range paused while searching.</p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -707,6 +770,17 @@ export default function AllPaymentsPage() {
                 </p>
               </div>
             )}
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <OffsetPaginationControls
+              page={listPage}
+              pageSize={pageSize}
+              total={totalCount}
+              onPageChange={setListPage}
+              onPageSizeChange={setPageSize}
+              disabled={loading}
+            />
           </div>
 
           {loading && payments.length > 0 && (

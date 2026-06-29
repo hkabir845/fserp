@@ -13,7 +13,8 @@ from api.models import Vendor
 from api.services.coa_gl_defaults import ALLOWED_BILL_EXPENSE_DEBIT, parse_optional_chart_account_id
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.station_defaults import parse_optional_pond_fk, parse_optional_station_fk
-from api.services.contact_ledgers import build_vendor_ledger, ledger_query_dates
+from api.services.contact_ledgers import build_vendor_ledger, ledger_dates_and_search
+from api.utils.transaction_filters import filter_json_transactions
 
 
 def _serialize_date(d):
@@ -309,10 +310,14 @@ def vendor_detail(request, vendor_id: int):
 def vendor_ledger(request, vendor_id: int):
     if request.method != "GET":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
-    start_d, end_d = ledger_query_dates(request)
+    start_d, end_d, q = ledger_dates_and_search(request)
     data = build_vendor_ledger(
         request.company_id, vendor_id, start_date=start_d, end_date=end_d
     )
     if data.get("detail") == "Vendor not found":
         return JsonResponse(data, status=404)
+    if q:
+        data["transactions"] = filter_json_transactions(data.get("transactions") or [], q)
+        data["search_q"] = q
+        data["date_range_ignored"] = True
     return JsonResponse(data)

@@ -1,0 +1,13 @@
+import { useEffect, useState } from 'react'
+
+/** Debounce a value — default 350ms matches transaction list search across FSERP. */
+export function useDebouncedValue<T>(value: T, delayMs = 350): T {
+  const [debounced, setDebounced] = useState(value)
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(value), delayMs)
+    return () => window.clearTimeout(t)
+  }, [value, delayMs])
+
+  return debounced
+}

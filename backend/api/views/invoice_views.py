@@ -2,7 +2,7 @@
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -10,6 +10,11 @@ from django.views.decorators.csrf import csrf_exempt
 from api.exceptions import GlPostingError
 from api.utils.auth import auth_required
 from api.utils.customer_display import customer_display_name
+from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
+from api.utils.transaction_filters import (
+    apply_transaction_amount_range,
+    apply_transaction_date_range,
+)
 from api.views.common import parse_json_body, require_company_id
 from api.services.coa_gl_defaults import ALLOWED_INCOME, parse_optional_chart_account_id
 from api.models import Invoice, InvoiceLine, Customer, ShiftSession
@@ -142,19 +147,71 @@ def _refresh_invoice_totals_from_lines(inv: Invoice) -> None:
     inv.save(update_fields=["subtotal", "total", "updated_at"])
 
 
+def _invoices_apply_source_filter(qs, source: str):
+    s = (source or "").strip().lower()
+    if s in ("", "all"):
+        return qs
+    if s == "aquaculture":
+        return qs.filter(invoice_number__istartswith="INV-AQ-")
+    if s == "pos":
+        return qs.filter(invoice_number__istartswith="INV-POS-")
+    if s == "manual":
+        return qs.exclude(invoice_number__istartswith="INV-AQ-").exclude(
+            invoice_number__istartswith="INV-POS-"
+        )
+    return qs
+
+
+def _invoices_list(request):
+    cid = request.company_id
+    qs = (
+        Invoice.objects.filter(company_id=cid)
+        .select_related("customer", "shift_session", "station")
+        .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
+        .order_by("-invoice_date", "-id")
+    )
+    qs = apply_transaction_date_range(qs, request, "invoice_date")
+    qs = apply_transaction_amount_range(qs, request, "total")
+    source = request.GET.get("source_filter") or request.GET.get("source") or ""
+    qs = _invoices_apply_source_filter(qs, source)
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        qs = qs.filter(
+            Q(invoice_number__icontains=q)
+            | Q(customer__company_name__icontains=q)
+            | Q(customer__display_name__icontains=q)
+            | Q(customer__customer_number__icontains=q)
+            | Q(payment_method__icontains=q)
+        )
+    status_filter = (request.GET.get("status_filter") or "").strip()
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    if wants_paged_response(request):
+        skip, limit = parse_skip_limit(request, default_limit=50, max_limit=200)
+        total = qs.count()
+        page = qs[skip : skip + limit]
+        return json_paged(
+            [_invoice_to_json(inv, cid) for inv in page],
+            total=total,
+            skip=skip,
+            limit=limit,
+        )
+    try:
+        limit = int(request.GET.get("limit", 100))
+    except (ValueError, TypeError):
+        limit = 100
+    limit = max(1, min(limit, 2000))
+    qs = qs[:limit]
+    return JsonResponse([_invoice_to_json(inv, cid) for inv in qs], safe=False)
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
 def invoices_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
-        qs = (
-            Invoice.objects.filter(company_id=cid)
-            .select_related("customer", "shift_session", "station")
-            .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
-            .order_by("-invoice_date", "-id")
-        )
-        return JsonResponse([_invoice_to_json(inv, cid) for inv in qs], safe=False)
+        return _invoices_list(request)
     if request.method == "POST":
         body, err = parse_json_body(request)
         if err:

@@ -51,7 +51,16 @@ import type { BillReceiptLocationPond, BillReceiptLocationStation } from '@/lib/
 import type { FuelStationInvoiceIncomeCategory } from '@/lib/fuelStationInvoiceLine'
 import { invoiceFuelCategoriesFromApi } from '@/lib/fuelStationInvoiceLine'
 import { clearEntityScopedReportingCategoryCache } from '@/lib/entityScopedReportingCategories'
-import { REFERENCE_FETCH_LIMIT, unwrapReferenceList } from '@/lib/pagination'
+import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT, unwrapReferenceList } from '@/lib/pagination'
+import {
+  hasActiveTransactionFilters,
+  hasTransactionTextSearch,
+  transactionAmountParams,
+  transactionDateParams,
+} from '@/lib/transactionListFilters'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { TransactionListEmptyState } from '@/components/TransactionListEmptyState'
+import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { fetchEntityScopeDirectory } from '@/lib/entityScopeDirectory'
 
 interface InvoiceLineItem extends InvoiceFormLine {}
@@ -172,7 +181,15 @@ export default function InvoicesPage() {
   const [error, setError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
   const [searchTerm, setSearchTerm] = useState('')
+  const debouncedSearch = useDebouncedValue(searchTerm.trim())
   const [sourceFilter, setSourceFilter] = useState<string>('all') // 'all', 'pos', 'manual'
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [minAmount, setMinAmount] = useState('')
+  const [maxAmount, setMaxAmount] = useState('')
+  const [listPage, setListPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [totalCount, setTotalCount] = useState(0)
   const [showModal, setShowModal] = useState(false)
   const [showViewModal, setShowViewModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -249,14 +266,99 @@ export default function InvoicesPage() {
   }, [])
 
   useEffect(() => {
+    setListPage(1)
+  }, [debouncedSearch, sourceFilter, startDate, endDate, minAmount, maxAmount, pageSize])
+
+  const hasTextSearch = hasTransactionTextSearch({ q: debouncedSearch })
+
+  const hasActiveFilters = hasActiveTransactionFilters({
+    search: searchTerm,
+    startDate,
+    endDate,
+    minAmount,
+    maxAmount,
+    extras: sourceFilter !== 'all',
+  })
+
+  const clearFilters = () => {
+    setSearchTerm('')
+    setSourceFilter('all')
+    setStartDate('')
+    setEndDate('')
+    setMinAmount('')
+    setMaxAmount('')
+  }
+
+  const loadInvoices = useCallback(async () => {
+    try {
+      setError(null)
+      setLoading(true)
+      const params = offsetListParams({
+        page: listPage,
+        pageSize,
+        q: debouncedSearch || undefined,
+        extra: {
+          source_filter: sourceFilter !== 'all' ? sourceFilter : undefined,
+          ...transactionDateParams(startDate, endDate, hasTextSearch),
+          ...transactionAmountParams(minAmount, maxAmount),
+        },
+      })
+      const response = await api.get('/invoices/', { params, timeout: 15000 })
+      const data = response.data
+      if (isOffsetPagedPayload(data)) {
+        setInvoices(
+          (data.results as Record<string, unknown>[]).map((row) => normalizeInvoiceFromApi(row)),
+        )
+        setTotalCount(data.count)
+        const totalPages = Math.max(1, Math.ceil(data.count / pageSize))
+        if (listPage > totalPages) setListPage(totalPages)
+        setRetryCount(0)
+      } else if (Array.isArray(data)) {
+        setInvoices(data.map((row: Record<string, unknown>) => normalizeInvoiceFromApi(row)))
+        setTotalCount(data.length)
+      } else {
+        setError('Invalid response format from invoices API')
+        setInvoices([])
+        setTotalCount(0)
+      }
+    } catch (error: unknown) {
+      console.error('Error loading invoices:', error)
+      setError(extractErrorMessage(error, 'Failed to load invoices'))
+      setInvoices([])
+      setTotalCount(0)
+    } finally {
+      setLoading(false)
+    }
+  }, [
+    listPage,
+    pageSize,
+    debouncedSearch,
+    sourceFilter,
+    startDate,
+    endDate,
+    minAmount,
+    maxAmount,
+    hasTextSearch,
+  ])
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) {
+      router.push('/login')
+      return
+    }
+    void loadInvoices()
+  }, [router, loadInvoices])
+
+  useEffect(() => {
     const token = localStorage.getItem('access_token')
     if (!token) {
       router.push('/login')
       return
     }
 
-    fetchData()
-  }, [router, sourceFilter]) // Refetch when sourceFilter changes
+    fetchReferenceData()
+  }, [router])
 
   // Fetch customers and items when modal opens
   useEffect(() => {
@@ -303,169 +405,29 @@ export default function InvoicesPage() {
     formData.lines.length,
   ])
 
-  const fetchData = async (isRetry = false) => {
+  const fetchReferenceData = useCallback(async () => {
     try {
-      setError(null)
-      if (!isRetry) {
-        setLoading(true)
+      const companyRes = await api.get('/companies/current')
+      if (companyRes.data?.currency) {
+        setCurrencySymbol(getCurrencySymbol(companyRes.data.currency))
       }
-
-      // Fetch company currency and print header (company + station)
-      try {
-        const companyRes = await api.get('/companies/current')
-        if (companyRes.data?.currency) {
-          setCurrencySymbol(getCurrencySymbol(companyRes.data.currency))
-        }
-      } catch (error) {
-        console.error('Error fetching company currency:', error)
-        // Don't fail the whole fetch if currency fails
-      }
-      void loadPrintBranding(api)
-        .then(setPrintBranding)
-        .catch(() => setPrintBranding(null))
-
-      void api
-        .get('/customers/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } })
-        .then((res) => {
-          const raw = unwrapReferenceList<Customer>(res.data)
-          setCustomers(raw.filter((c) => c.is_active !== false))
-        })
-        .catch(() => {})
-
-      void loadInvoiceReferenceData()
-
-      // Fetch invoices with proper error handling
-      const includePos = sourceFilter === 'all' || sourceFilter === 'pos'
-      
-      // Use params object - axios will handle URL encoding and query string construction
-      // Remove trailing slash to avoid issues with query params
-      const response = await api.get('/invoices', {
-        params: { include_pos: includePos }
-      })
-      
-      // Handle response - axios wraps the response in response.data
-      const invoicesData = response.data
-      
-      if (response.status === 200) {
-        // Ensure we have an array
-        if (Array.isArray(invoicesData)) {
-          setInvoices(
-            invoicesData.map((row: Record<string, unknown>) => normalizeInvoiceFromApi(row))
-          )
-          setError(null)
-          setRetryCount(0)
-        } else if (invoicesData && Array.isArray(invoicesData.data)) {
-          // Handle case where data might be wrapped
-          setInvoices(
-            invoicesData.data.map((row: Record<string, unknown>) => normalizeInvoiceFromApi(row))
-          )
-          setError(null)
-          setRetryCount(0)
-        } else {
-          const errorMsg = `Invalid response format: expected array of invoices, got ${typeof invoicesData}`
-          console.error('Invalid response format:', {
-            status: response.status,
-            dataType: typeof invoicesData,
-            data: invoicesData,
-            keys: invoicesData ? Object.keys(invoicesData) : 'N/A'
-          })
-          setError(errorMsg)
-          toast.error(errorMsg)
-        }
-      } else {
-        const errorMsg = `Unexpected response status: ${response.status}`
-        console.error('Failed to load invoices:', response.status, invoicesData)
-        setError(errorMsg)
-        toast.error(errorMsg)
-      }
-    } catch (error: any) {
-      console.error('Error fetching invoices - Full error object:', {
-        error,
-        message: error.message,
-        response: error.response,
-        request: error.request,
-        config: error.config,
-        stack: error.stack
-      })
-      
-      let errorMessage = 'Failed to load invoices'
-      
-      if (error.response) {
-        // Server responded with error status
-        const status = error.response.status
-        const detail = error.response.data?.detail || error.response.data?.message || 'Unknown error'
-        
-        console.error('API Error Response:', {
-          status,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          headers: error.response.headers
-        })
-        
-        if (status === 401) {
-          errorMessage = 'Authentication required. Please log in again.'
-          router.push('/login')
-          return
-        } else if (status === 403) {
-          // Extract detailed permission error from backend
-          const permissionDetail = error.response.data?.detail || ''
-          
-          // Get current user role for better error message
-          let currentRole = 'Unknown'
-          try {
-            const userStr = localStorage.getItem('user')
-            if (userStr) {
-              const user = JSON.parse(userStr)
-              currentRole = user.role || 'Unknown'
-            }
-          } catch (e) {
-            console.error('Error parsing user data:', e)
-          }
-          
-          if (permissionDetail.includes('Required roles')) {
-            errorMessage = `Permission Denied: ${permissionDetail}. Your current role (${currentRole}) does not have access to invoices. Required roles: Super Admin, Admin, Accountant, or Cashier. Please contact an administrator.`
-          } else {
-            errorMessage = `Permission Denied: ${permissionDetail || `You do not have permission to view invoices. Your current role (${currentRole}) is not authorized. Required roles: Super Admin, Admin, Accountant, or Cashier.`}`
-          }
-        } else if (status === 404) {
-          errorMessage = 'Invoices endpoint not found. Please check if the backend is running correctly.'
-        } else if (status === 500) {
-          // Extract the actual error message from the detail
-          let serverError = 'Unknown server error'
-          if (typeof detail === 'string') {
-            serverError = detail
-          } else if (detail && typeof detail === 'object') {
-            // Try to extract meaningful error message
-            serverError = detail.message || detail.error || JSON.stringify(detail)
-          }
-          errorMessage = `Server error: ${serverError}`
-          
-          // If it's a schema/database error, provide helpful guidance
-          if (serverError.toLowerCase().includes('no such column') || 
-              serverError.toLowerCase().includes('operationalerror') ||
-              serverError.toLowerCase().includes('schema')) {
-            errorMessage = `Database schema error detected. The backend may need to apply database migrations. Error: ${serverError}`
-          }
-        } else {
-          errorMessage = `Error ${status}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`
-        }
-      } else {
-        errorMessage = extractErrorMessage(
-          error,
-          'Could not load invoices. Check your connection and try again.'
-        )
-      }
-      
-      setError(errorMessage)
-      toast.error(errorMessage)
-    } finally {
-      setLoading(false)
+    } catch (error) {
+      console.error('Error fetching company currency:', error)
     }
-  }
+    void loadPrintBranding(api).then(setPrintBranding).catch(() => setPrintBranding(null))
+    void api
+      .get('/customers/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } })
+      .then((res) => {
+        const raw = unwrapReferenceList<Customer>(res.data)
+        setCustomers(raw.filter((c) => c.is_active !== false))
+      })
+      .catch(() => {})
+    void loadInvoiceReferenceData()
+  }, [loadInvoiceReferenceData])
 
   const handleRetry = () => {
-    setRetryCount(prev => prev + 1)
-    fetchData(true)
+    setRetryCount((prev) => prev + 1)
+    void loadInvoices()
   }
 
   const fetchCustomersAndItems = async () => {
@@ -529,23 +491,7 @@ export default function InvoicesPage() {
     return invoice.customer_id ? `Customer #${invoice.customer_id}` : '—'
   }
 
-  const filteredInvoices = invoices.filter((invoice) => {
-    const displayNumber = getDisplayNumber(invoice)
-    const q = searchTerm.toLowerCase()
-    const matchesSearch =
-      displayNumber.toLowerCase().includes(q) ||
-      resolveInvoiceCustomerLabel(invoice).toLowerCase().includes(q)
-
-    const matchesSource =
-      sourceFilter === 'all' ||
-      (sourceFilter === 'pos' &&
-        (invoice.source === 'pos_fuel' ||
-          invoice.source === 'pos_general' ||
-          invoice.source === 'pos_mixed')) ||
-      (sourceFilter === 'manual' &&
-        (invoice.source === 'manual' || invoice.source === 'aquaculture_pond_sale'))
-    return matchesSearch && matchesSource
-  })
+  const filteredInvoices = invoices
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -813,7 +759,7 @@ export default function InvoicesPage() {
         toast.success(tr('invoiceCreated'))
         setShowModal(false)
         resetForm()
-        fetchData()
+        void loadInvoices()
       } else {
         const errorData = await response.json().catch(() => ({}))
         console.error('Failed to create invoice:', response.status, errorData)
@@ -886,7 +832,7 @@ export default function InvoicesPage() {
 
       if (response.status === 200) {
         toast.success(`Invoice ${invoiceNumber} posted successfully!`)
-        fetchData() // Refresh the invoice list
+        void loadInvoices() // Refresh the invoice list
       } else {
         console.error('Failed to post invoice:', response.status)
         toast.error('Failed to post invoice')
@@ -1017,7 +963,7 @@ export default function InvoicesPage() {
         setShowEditModal(false)
         setEditingInvoice(null)
         resetForm()
-        fetchData()
+        void loadInvoices()
       } else {
         console.error('Failed to update invoice:', response.status)
         toast.error('Failed to update invoice')
@@ -1039,7 +985,7 @@ export default function InvoicesPage() {
 
       if (response.status === 204 || response.status === 200) {
         toast.success(`Invoice ${invoiceNumber} deleted successfully!`)
-        fetchData() // Refresh the invoice list
+        void loadInvoices() // Refresh the invoice list
       } else {
         console.error('Failed to delete invoice:', response.status)
         toast.error('Failed to delete invoice')
@@ -1193,26 +1139,49 @@ export default function InvoicesPage() {
           </p>
         )}
 
-        <div className="mb-6 flex min-w-0 w-full flex-col gap-3 sm:min-w-[16rem] sm:flex-row sm:items-center sm:gap-4">
-          <div className="relative max-w-md flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-            <input
-              type="text"
-              placeholder={tr('searchInvoiceNumber')}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
-            />
+        <div className="mb-6 flex min-w-0 w-full flex-col gap-3">
+          <div className="flex min-w-0 w-full flex-col gap-3 sm:min-w-[16rem] sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              <div className="relative max-w-md flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                <input
+                  type="text"
+                  placeholder={tr('searchInvoiceNumber')}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
+                />
+              </div>
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm bg-white"
+              >
+                <option value="all">{tr('allInvoices')}</option>
+                <option value="pos">{tr('posInvoices')}</option>
+                <option value="manual">{tr('manualInvoices')}</option>
+              </select>
+            </div>
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden />
+                Clear filters
+              </button>
+            ) : null}
           </div>
-          <select
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
-            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm bg-white"
-          >
-            <option value="all">{tr('allInvoices')}</option>
-            <option value="pos">{tr('posInvoices')}</option>
-            <option value="manual">{tr('manualInvoices')}</option>
-          </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" aria-label="From date" />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" aria-label="To date" />
+            <input type="number" min="0" step="0.01" placeholder="Min amount" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+            <input type="number" min="0" step="0.01" placeholder="Max amount" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+          </div>
+          {hasTextSearch && (startDate || endDate) ? (
+            <p className="text-xs text-gray-500">Search spans all dates — date range paused while searching.</p>
+          ) : null}
         </div>
 
         {loading ? (
@@ -1237,7 +1206,7 @@ export default function InvoicesPage() {
                   {retryCount > 0 && <span className="text-sm opacity-75">({retryCount})</span>}
                 </button>
                 <button
-                  onClick={() => fetchData(false)}
+                  onClick={() => void loadInvoices()}
                   className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   Refresh
@@ -1286,27 +1255,29 @@ export default function InvoicesPage() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredInvoices.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-6 py-16 text-center">
-                        <div className="flex flex-col items-center">
-                          <div className="bg-gray-100 rounded-full p-4 mb-4">
-                            <FileText className="h-10 w-10 text-gray-400" />
-                          </div>
-                          <h3 className="text-lg font-semibold text-gray-900 mb-2">No Invoices Found</h3>
-                          <p className="text-gray-600 mb-4 max-w-sm">
-                            {sourceFilter !== 'all' 
-                              ? `No invoices found for the selected filter (${sourceFilter}). Try selecting "All Invoices" or create a new invoice.`
-                              : "You haven't created any invoices yet. Create your first invoice to get started."}
-                          </p>
-                          {sourceFilter === 'all' && (
-                            <button
-                              onClick={handleOpenModal}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                            >
-                              <Plus className="h-5 w-5" />
-                              <span>Create First Invoice</span>
-                            </button>
-                          )}
-                        </div>
+                      <td colSpan={10} className="p-0">
+                        <TransactionListEmptyState
+                          icon={<FileText className="h-10 w-10 text-gray-400" />}
+                          title="No invoices in this view"
+                          description={
+                            hasActiveFilters
+                              ? 'Try adjusting search, dates, amounts, or source filter.'
+                              : "You haven't created any invoices yet. Create your first invoice to get started."
+                          }
+                          hasActiveFilters={hasActiveFilters}
+                          onClearFilters={clearFilters}
+                          action={
+                            !hasActiveFilters ? (
+                              <button
+                                onClick={handleOpenModal}
+                                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
+                              >
+                                <Plus className="h-5 w-5" />
+                                <span>Create first invoice</span>
+                              </button>
+                            ) : undefined
+                          }
+                        />
                       </td>
                     </tr>
                   ) : (
@@ -1401,12 +1372,16 @@ export default function InvoicesPage() {
                 </tbody>
               </table>
             </div>
-            {filteredInvoices.length > 0 && (
-              <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
-                <p className="text-sm text-gray-600">
-                  Showing <span className="font-semibold">{filteredInvoices.length}</span> of <span className="font-semibold">{invoices.length}</span> invoice{invoices.length !== 1 ? 's' : ''}
-                  {searchTerm && ` matching "${searchTerm}"`}
-                </p>
+            {invoices.length > 0 && (
+              <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 space-y-3">
+                <OffsetPaginationControls
+                  page={listPage}
+                  pageSize={pageSize}
+                  total={totalCount}
+                  onPageChange={setListPage}
+                  onPageSizeChange={setPageSize}
+                  disabled={loading}
+                />
               </div>
             )}
           </div>

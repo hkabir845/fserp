@@ -51,6 +51,11 @@ from api.services.aquaculture_transfer_cost import (
     preview_transfer_line_costs,
     resolve_auto_transfer_line_cost,
 )
+from api.services.aquaculture_fish_transfer_gl_service import (
+    delete_aquaculture_fish_pond_transfer_journal as _delete_fish_transfer_gl,
+    sync_aquaculture_fish_pond_transfer_gl,
+    transfer_gl_status,
+)
 from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
 from api.services.aquaculture_biomass_sample_valuation_service import (
     apply_biomass_sample_valuation,
@@ -66,6 +71,11 @@ from api.services.aquaculture_stock_service import (
 from api.services.aquaculture_fish_biomass_ledger_service import (
     SOURCE_LABELS as FISH_BIOMASS_LEDGER_SOURCE_LABELS,
     compute_fish_biomass_ledger_rows,
+)
+from api.services.aquaculture_biological_asset_service import (
+    compute_biological_asset_ledger_rows,
+    compute_biological_asset_portfolio,
+    compute_pond_biological_asset_summary,
 )
 from api.services.aquaculture_pond_consumption_ledger_service import (
     CONSUMPTION_KIND_LABELS,
@@ -4022,6 +4032,112 @@ def aquaculture_fish_biomass_ledger(request):
 @require_http_methods(["GET"])
 @auth_required
 @require_company_id
+def aquaculture_biological_asset_summary(request):
+    """Pond biological asset valuation: accumulated cost, cost/fish, cost/kg, bucket breakdown."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    pond_id, e = _parse_optional_int(request.GET.get("pond_id"), name="pond_id")
+    if e:
+        return e
+    if pond_id is None:
+        as_of_raw = (request.GET.get("as_of") or "").strip()
+        as_of = date.today()
+        if as_of_raw:
+            try:
+                as_of = date.fromisoformat(as_of_raw.split("T")[0])
+            except Exception:
+                return JsonResponse({"detail": "as_of must be YYYY-MM-DD"}, status=400)
+        return JsonResponse(compute_biological_asset_portfolio(cid, as_of_date=as_of))
+    if not _pond_for_company(cid, pond_id):
+        return JsonResponse({"detail": "pond not found"}, status=404)
+    cy_id, e = _parse_optional_int(request.GET.get("production_cycle_id"), name="production_cycle_id")
+    if e:
+        return e
+    cycle = None
+    if cy_id is not None:
+        cycle = AquacultureProductionCycle.objects.filter(pk=cy_id, company_id=cid).first()
+        if not cycle:
+            return JsonResponse({"detail": "production_cycle not found"}, status=404)
+        if cycle.pond_id != pond_id:
+            return JsonResponse({"detail": "production_cycle_id does not belong to pond_id"}, status=400)
+    as_of_raw = (request.GET.get("as_of") or "").strip()
+    as_of = date.today()
+    if as_of_raw:
+        try:
+            as_of = date.fromisoformat(as_of_raw.split("T")[0])
+        except Exception:
+            return JsonResponse({"detail": "as_of must be YYYY-MM-DD"}, status=400)
+    payload = compute_pond_biological_asset_summary(
+        cid, pond_id=pond_id, as_of_date=as_of, production_cycle=cycle
+    )
+    return JsonResponse(payload)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def aquaculture_biological_asset_ledger(request):
+    """Chronological biological asset ledger: cost events + fish movements with cost annotations."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    pond_id, e = _parse_optional_int(request.GET.get("pond_id"), name="pond_id")
+    if e:
+        return e
+    if pond_id is None:
+        return JsonResponse({"detail": "pond_id is required"}, status=400)
+    if not _pond_for_company(cid, pond_id):
+        return JsonResponse({"detail": "pond not found"}, status=404)
+    cy_id, e = _parse_optional_int(request.GET.get("production_cycle_id"), name="production_cycle_id")
+    if e:
+        return e
+    cycle = None
+    if cy_id is not None:
+        cycle = AquacultureProductionCycle.objects.filter(pk=cy_id, company_id=cid).first()
+        if not cycle:
+            return JsonResponse({"detail": "production_cycle not found"}, status=404)
+        if cycle.pond_id != pond_id:
+            return JsonResponse({"detail": "production_cycle_id does not belong to pond_id"}, status=400)
+    as_of_raw = (request.GET.get("as_of") or "").strip()
+    as_of = date.today()
+    if as_of_raw:
+        try:
+            as_of = date.fromisoformat(as_of_raw.split("T")[0])
+        except Exception:
+            return JsonResponse({"detail": "as_of must be YYYY-MM-DD"}, status=400)
+    try:
+        limit = int(request.GET.get("limit") or 200)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "limit must be an integer"}, status=400)
+    limit = max(1, min(limit, 2000))
+    rows = compute_biological_asset_ledger_rows(
+        cid,
+        pond_id=pond_id,
+        as_of_date=as_of,
+        production_cycle=cycle,
+        limit=limit,
+    )
+    summary = compute_pond_biological_asset_summary(
+        cid, pond_id=pond_id, as_of_date=as_of, production_cycle=cycle
+    )
+    return JsonResponse(
+        {
+            "summary": summary,
+            "rows": rows,
+            "row_count": len(rows),
+            "limit": limit,
+        }
+    )
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
 def aquaculture_pond_warehouse_consumption_ledger(request):
     """Read-only ledger of feed and medicine consumed from each pond's warehouse."""
     err = _aquaculture_access(request)
@@ -4711,6 +4827,7 @@ def _fish_transfer_to_json(t: AquacultureFishPondTransfer) -> dict:
     if t.from_production_cycle_id and getattr(t, "from_production_cycle", None):
         fcname = (t.from_production_cycle.name or "").strip()
     lines = [_fish_transfer_line_to_json(x) for x in t.lines.all()]
+    gl = transfer_gl_status(t.company_id, t.id)
     return {
         "id": t.id,
         "company_id": t.company_id,
@@ -4725,6 +4842,7 @@ def _fish_transfer_to_json(t: AquacultureFishPondTransfer) -> dict:
         "memo": t.memo or "",
         "lines": lines,
         "created_at": t.created_at.isoformat() if t.created_at else "",
+        **gl,
     }
 
 
@@ -5033,6 +5151,7 @@ def aquaculture_fish_pond_transfers(request):
         for ln in data["line_models"]:
             ln.transfer = xfer
             ln.save()
+        gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, xfer)
 
     xfer = (
         AquacultureFishPondTransfer.objects.filter(pk=xfer.pk)
@@ -5044,6 +5163,7 @@ def aquaculture_fish_pond_transfers(request):
         {
             "inter_pond_fish_transfer_note": INTER_POND_FISH_TRANSFER_PL_NOTE,
             "transfer": _fish_transfer_to_json(xfer),
+            "gl_sync": gl_result,
         },
         status=201,
     )
@@ -5097,6 +5217,7 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
             for ln in data["line_models"]:
                 ln.transfer = t
                 ln.save()
+            gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, t)
         t = (
             AquacultureFishPondTransfer.objects.filter(pk=t.pk)
             .select_related("from_pond", "from_production_cycle")
@@ -5107,12 +5228,14 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
             {
                 "inter_pond_fish_transfer_note": INTER_POND_FISH_TRANSFER_PL_NOTE,
                 "transfer": _fish_transfer_to_json(t),
+                "gl_sync": gl_result,
             }
         )
     pond_ids = [t.from_pond_id] + list(t.lines.values_list("to_pond_id", flat=True))
     lock_err = _ponds_write_lock_response(cid, pond_ids, t.transfer_date)
     if lock_err:
         return lock_err
+    _delete_fish_transfer_gl(cid, t.id)
     t.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
 

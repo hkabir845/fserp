@@ -33,6 +33,11 @@ from api.services.aquaculture_constants import (
     fish_species_display_label,
 )
 from api.services.aquaculture_fcr_service import fcr_period_summary_block
+from api.services.aquaculture_biological_asset_service import (
+    compute_biological_asset_ledger_rows,
+    compute_biological_asset_portfolio,
+    compute_pond_biological_asset_summary,
+)
 from api.services.aquaculture_fish_biomass_ledger_service import compute_fish_biomass_ledger_rows
 from api.services.aquaculture_growth_service import build_fish_growth_report
 from api.services.aquaculture_pond_performance_service import build_pond_performance_report
@@ -199,6 +204,8 @@ def build_aquaculture_report(
         payload = _report_fish_growth(company_id, start, end, request)
     elif report_id == "aquaculture-pond-performance":
         payload = _report_pond_performance(company_id, start, end, request)
+    elif report_id == "aquaculture-biological-asset-ledger":
+        payload = _report_biological_asset_ledger(company_id, start, end, request)
     else:
         return JsonResponse({"detail": "Unknown aquaculture report"}, status=404)
 
@@ -220,6 +227,7 @@ def build_aquaculture_report(
             "aquaculture-fish-stock-breakdown",
             "aquaculture-fish-biomass-movements",
             "aquaculture-fish-stock-adjustments",
+            "aquaculture-biological-asset-ledger",
         }
         if report_id in date_range_reports:
             _attach_fcr_to_report(payload, company_id, start, end, request)
@@ -1446,6 +1454,83 @@ def _report_fish_biomass_movements(
             "total_fish_count_delta": grand_fish,
         },
         "accounting_note": note_fish_biomass_movements(company_id),
+    }
+
+
+def _report_biological_asset_ledger(
+    company_id: int, start: date, end: date, request: HttpRequest
+) -> dict[str, Any] | JsonResponse:
+    """Pond biological asset valuation and movement ledger as of period end."""
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    cycle_filter_id, cycle_obj, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    as_of = end
+
+    def _pond_group(pid: int, pname: str) -> dict[str, Any]:
+        cycle = cycle_obj if cycle_obj and cycle_obj.pond_id == pid else None
+        summary = compute_pond_biological_asset_summary(
+            company_id,
+            pond_id=pid,
+            as_of_date=as_of,
+            production_cycle=cycle,
+        )
+        rows = compute_biological_asset_ledger_rows(
+            company_id,
+            pond_id=pid,
+            as_of_date=as_of,
+            production_cycle=cycle,
+            limit=500,
+        )
+        return {
+            "pond_id": pid,
+            "pond_name": pname,
+            "summary": summary,
+            "lines": rows,
+            "line_count": len(rows),
+        }
+
+    groups: list[dict[str, Any]] = []
+    if pond_filter_id is not None:
+        pond = AquaculturePond.objects.filter(pk=pond_filter_id, company_id=company_id).first()
+        pname = (pond.name or "").strip() if pond else f"Pond #{pond_filter_id}"
+        groups.append(_pond_group(pond_filter_id, pname))
+    else:
+        portfolio = compute_biological_asset_portfolio(company_id, as_of_date=as_of)
+        for prow in portfolio.get("ponds") or []:
+            pid = int(prow["pond_id"])
+            groups.append(_pond_group(pid, str(prow.get("pond_name") or f"Pond #{pid}")))
+
+    grand_value = Decimal("0")
+    grand_fish = 0
+    for g in groups:
+        s = g.get("summary") or {}
+        grand_value += _decimal(str(s.get("total_biological_asset_value") or "0"))
+        grand_fish += int(s.get("live_fish_count") or 0)
+
+    return {
+        "period": _period_block(start, end),
+        "currency_code": BDT,
+        "as_of_date": as_of.isoformat(),
+        "summary": {
+            "pond_count": len(groups),
+            "total_biological_asset_value": str(_money_q(grand_value)),
+            "total_live_fish_count": grand_fish,
+        },
+        "groups": groups,
+        "totals": {
+            "pond_count": len(groups),
+            "total_biological_asset_value": str(_money_q(grand_value)),
+            "total_live_fish_count": grand_fish,
+        },
+        "methodology": (
+            "Biological asset value = direct pond production costs (fry, feed, medicine, labour, and other "
+            "direct buckets) + transfer-in − transfer-out − harvest bio relief. Mortality reduces live fish "
+            "count but does not reduce this accumulated total unless a separate book write-off is posted. "
+            "Figures are as of the report period end date."
+        ),
     }
 
 

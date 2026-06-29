@@ -91,6 +91,8 @@ interface LastSampleReference {
 
 interface BioCostReference {
   cost_per_kg: string
+  cost_per_fish?: string | null
+  live_fish_count?: number
   basis_note?: string
   biological_cost_total?: string
   denominator_kg?: string
@@ -288,7 +290,7 @@ function emptyForm(
     kg_removed: '',
     adj_fish_count: '',
     adj_weight_kg: '',
-    book_value: '',
+    book_value: '0',
     post_to_books: false,
     memo: '',
   }
@@ -341,6 +343,7 @@ export function AquacultureStockLedgerFormModal({
   const isEdit = editing != null
   const glLinked = Boolean(editing?.journal_entry_id)
   const bookPostingLocked = isEdit
+  const isMortalityLoss = form.entry_kind === 'loss'
 
   const [form, setForm] = useState<FormState>(() =>
     emptyForm(ponds, defaultPondId, defaultSpecies, defaultCycleId),
@@ -647,8 +650,16 @@ export function AquacultureStockLedgerFormModal({
 
   useEffect(() => {
     if (bookValueTouched || glLinked || bookPostingLocked || suggestedBookValue == null) return
+    if (isMortalityLoss) return
     setForm((f) => (f.book_value === suggestedBookValue ? f : { ...f, book_value: suggestedBookValue }))
-  }, [suggestedBookValue, bookValueTouched, glLinked, bookPostingLocked])
+  }, [suggestedBookValue, bookValueTouched, glLinked, bookPostingLocked, isMortalityLoss])
+
+  useEffect(() => {
+    if (bookValueTouched || glLinked || bookPostingLocked || !isMortalityLoss) return
+    setForm((f) =>
+      f.book_value === '0' && !f.post_to_books ? f : { ...f, book_value: '0', post_to_books: false },
+    )
+  }, [isMortalityLoss, bookValueTouched, glLinked, bookPostingLocked, form.entry_kind])
 
   const applyBioCostBookValue = () => {
     if (suggestedBookValue == null) return
@@ -1115,24 +1126,69 @@ export function AquacultureStockLedgerFormModal({
                 <p className="mt-1 text-xs text-slate-500">{t('stockGlHint')}</p>
               )}
               <div className="mt-4 space-y-3">
+                {isMortalityLoss ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-950">
+                    <p className="font-medium">Mortality — cost stays on survivors</p>
+                    <p className="mt-1 leading-snug">
+                      Leave book value at <span className="font-semibold">0</span> so accumulated fry, feed, and pond
+                      costs redistribute over the remaining live fish. Only enter a book value if you need a GL
+                      write-down (Dr 6726 / Cr 1581).
+                    </p>
+                    {bioCost?.cost_per_fish ? (
+                      <p className="mt-2 tabular-nums text-amber-900">
+                        Current survivor cost:{' '}
+                        <span className="font-semibold">
+                          {sym}
+                          {formatNumber(Number(bioCost.cost_per_fish), 2)}/fish
+                        </span>
+                        {bioCost.cost_per_kg ? (
+                          <>
+                            {' '}
+                            · {sym}
+                            {formatNumber(Number(bioCost.cost_per_kg), 2)}/kg
+                          </>
+                        ) : null}
+                        {bioCost.live_fish_count != null ? (
+                          <> · {formatNumber(bioCost.live_fish_count, 0)} live fish</>
+                        ) : null}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 {bioCostLoading ? (
-                  <p className="text-xs text-slate-500">Looking up production cost/kg for bio-asset relief…</p>
+                  <p className="text-xs text-slate-500">Looking up production cost for this pond…</p>
                 ) : bioCost ? (
                   <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-600">
                     <p>
                       <span className="font-medium text-slate-800">Production cost</span>{' '}
-                      <span className="tabular-nums font-medium text-slate-800">
-                        {sym}
-                        {formatNumber(Number(bioCost.cost_per_kg), 2)}/kg
-                      </span>
+                      {bioCost.cost_per_fish ? (
+                        <>
+                          <span className="tabular-nums font-medium text-slate-800">
+                            {sym}
+                            {formatNumber(Number(bioCost.cost_per_fish), 2)}/fish
+                          </span>
+                          {bioCost.cost_per_kg ? (
+                            <span className="text-slate-500">
+                              {' '}
+                              · {sym}
+                              {formatNumber(Number(bioCost.cost_per_kg), 2)}/kg
+                            </span>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="tabular-nums font-medium text-slate-800">
+                          {sym}
+                          {formatNumber(Number(bioCost.cost_per_kg), 2)}/kg
+                        </span>
+                      )}
                       <span className="text-slate-500"> (fry + feed + medicine + preparation)</span>
                     </p>
                     {bioCost.basis_note ? (
                       <p className="mt-1 text-[11px] leading-snug text-slate-500">{bioCost.basis_note}</p>
                     ) : null}
-                    {weightKgForBook != null && suggestedBookValue ? (
+                    {!isMortalityLoss && weightKgForBook != null && suggestedBookValue ? (
                       <p className="mt-1 tabular-nums text-slate-700">
-                        Suggested bio-asset write-down for {formatNumber(weightKgForBook, 2)} kg:{' '}
+                        Suggested bio-asset amount for {formatNumber(weightKgForBook, 2)} kg:{' '}
                         <span className="font-semibold text-teal-900">
                           {sym}
                           {formatNumber(Number(suggestedBookValue), 2)}
@@ -1147,15 +1203,34 @@ export function AquacultureStockLedgerFormModal({
                           </button>
                         ) : null}
                       </p>
-                    ) : (
+                    ) : !isMortalityLoss ? (
                       <p className="mt-1 text-slate-500">
-                        Enter weight removed — book value fills from accumulated production cost/kg.
+                        Enter weight — book value fills from accumulated production cost/kg.
                       </p>
-                    )}
+                    ) : weightKgForBook != null && suggestedBookValue ? (
+                      <p className="mt-1 tabular-nums text-slate-700">
+                        Optional GL write-down for {formatNumber(weightKgForBook, 2)} kg:{' '}
+                        <span className="font-semibold">{sym}{formatNumber(Number(suggestedBookValue), 2)}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForm((f) => ({
+                              ...f,
+                              book_value: suggestedBookValue,
+                              post_to_books: true,
+                            }))
+                            setBookValueTouched(true)
+                          }}
+                          className="ml-2 font-medium text-teal-800 underline hover:text-teal-950"
+                        >
+                          Apply GL write-down
+                        </button>
+                      </p>
+                    ) : null}
                   </div>
                 ) : (
                   <p className="text-xs text-slate-500">
-                    No production cost/kg for this pond yet — enter book value manually (market rate if needed).
+                    No production cost for this pond yet — enter book value manually if needed.
                   </p>
                 )}
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -1164,7 +1239,7 @@ export function AquacultureStockLedgerFormModal({
                   <input
                     className={`${inputCls} mt-1.5`}
                     inputMode="decimal"
-                    placeholder={suggestedBookValue ?? '0'}
+                    placeholder={isMortalityLoss ? '0' : suggestedBookValue ?? '0'}
                     value={form.book_value}
                     onChange={(e) => {
                       setBookValueTouched(true)
@@ -1172,7 +1247,9 @@ export function AquacultureStockLedgerFormModal({
                     }}
                   />
                   <span className="mt-1 block text-xs text-slate-500">
-                    Editable — override the suggested amount anytime.
+                    {isMortalityLoss
+                      ? 'Default 0 — accumulated cost remains on surviving fish unless you post a GL write-down.'
+                      : 'Editable — override the suggested amount anytime.'}
                   </span>
                 </label>
                 <label className="flex items-end sm:col-span-1">

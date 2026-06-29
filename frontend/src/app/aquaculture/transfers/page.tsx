@@ -78,6 +78,40 @@ interface TransferRow {
   fish_species_other?: string
   memo: string
   lines: TransferLine[]
+  gl_posted?: boolean
+  journal_entry_number?: string | null
+  gl_total_amount?: string | null
+}
+
+interface GlSyncPayload {
+  posted?: boolean
+  reason?: string
+  total_gl_amount?: string
+  total_requested?: string
+  gl_capped?: boolean
+  gl_cap_note?: string | null
+  journal_entry_number?: string | null
+}
+
+function formatTransferGlMessage(
+  glSync: GlSyncPayload | undefined,
+  transfer: TransferRow | undefined,
+  currencySymbol: string
+): string {
+  if (glSync?.posted) {
+    const amt = glSync.total_gl_amount || transfer?.gl_total_amount
+    const parts = ['GL 1581 posted']
+    if (amt) parts.push(`${currencySymbol}${formatNumber(Number(amt), 2)}`)
+    if (glSync.gl_capped) parts.push('(capped at source 1581 balance)')
+    return parts.join(' · ')
+  }
+  if (glSync?.reason === 'source_pond_1581_balance_zero') {
+    return 'GL not posted — source pond has no 1581 balance'
+  }
+  if (glSync?.reason === 'no_cost_amount') {
+    return 'GL not posted — no transfer cost on lines'
+  }
+  return ''
 }
 
 type LineDraft = {
@@ -807,12 +841,25 @@ export default function AquacultureFishTransfersPage() {
       body.from_production_cycle_id = fcy
     }
     try {
+      let glMsg = ''
       if (editingId != null) {
-        await api.put(`/aquaculture/fish-pond-transfers/${editingId}/`, body)
-        toast.success(aquacultureT('transferUpdated', lang))
+        const { data } = await api.put<{ transfer?: TransferRow; gl_sync?: GlSyncPayload }>(
+          `/aquaculture/fish-pond-transfers/${editingId}/`,
+          body
+        )
+        glMsg = formatTransferGlMessage(data?.gl_sync, data?.transfer, sym)
+        toast.success(
+          glMsg ? `${aquacultureT('transferUpdated', lang)} ${glMsg}` : aquacultureT('transferUpdated', lang)
+        )
       } else {
-        await api.post('/aquaculture/fish-pond-transfers/', body)
-        toast.success(aquacultureT('transferRecorded', lang))
+        const { data } = await api.post<{ transfer?: TransferRow; gl_sync?: GlSyncPayload }>(
+          '/aquaculture/fish-pond-transfers/',
+          body
+        )
+        glMsg = formatTransferGlMessage(data?.gl_sync, data?.transfer, sym)
+        toast.success(
+          glMsg ? `${aquacultureT('transferRecorded', lang)} ${glMsg}` : aquacultureT('transferRecorded', lang)
+        )
       }
       closeModal()
       void loadTransfers()
@@ -916,13 +963,14 @@ export default function AquacultureFishTransfersPage() {
                   <th className="px-4 py-3 text-right">Kg</th>
                   <th className="px-4 py-3 text-right">{pick('Heads', 'Head (টি)')}</th>
                   <th className="px-4 py-3 text-right">{aquacultureT('costMoved', lang)}</th>
+                  <th className="px-4 py-3">GL 1581</th>
                   <th className="px-4 py-3 text-right">{uiT("actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
                       No transfers yet. Example: log fry on a vendor bill (kg + heads), then record a transfer with each
                       line showing destination pond, kg moved, and head count (required). Optional cost per line
                       reallocates nursing biological cost to grow-out ponds.
@@ -965,6 +1013,18 @@ export default function AquacultureFishTransfersPage() {
                             <span className="text-amber-700" title="Edit and save to fill from source pond P&L">
                               Not set
                             </span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-600">
+                          {t.gl_posted ? (
+                            <span className="text-teal-800" title={t.journal_entry_number || undefined}>
+                              Posted
+                              {t.gl_total_amount ? ` · ${sym}${formatNumber(Number(t.gl_total_amount), 2)}` : ''}
+                            </span>
+                          ) : cost > 0 ? (
+                            <span className="text-slate-500">Not posted</span>
                           ) : (
                             '—'
                           )}

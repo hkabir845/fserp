@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft,
   Archive,
+  BookOpen,
   CalendarRange,
   Fish,
   Gauge,
@@ -329,6 +330,20 @@ interface LedgerRow {
   memo: string
 }
 
+interface BioAssetSummary {
+  total_biological_asset_value: string
+  live_fish_count: number
+  live_weight_kg: string
+  cost_per_fish: string | null
+  cost_per_kg: string | null
+  transfer_cost_in?: string
+  transfer_cost_out?: string
+  harvest_bio_relief?: string
+  gl_1581_balance?: string
+  cost_redistribution_note?: string | null
+  gl_reconciliation_note?: string | null
+}
+
 function sampleMeanWeightKg(s: SampleRow): number | null {
   if (s.avg_weight_kg != null && s.avg_weight_kg !== '') {
     const n = Number(s.avg_weight_kg)
@@ -396,6 +411,7 @@ export default function PondDetailViewPage() {
   const [inventoryItems, setInventoryItems] = useState<ItemPickRow[]>([])
   const [defaultFeedSel, setDefaultFeedSel] = useState('')
   const [defaultFeedSaving, setDefaultFeedSaving] = useState(false)
+  const [bioAsset, setBioAsset] = useState<BioAssetSummary | null>(null)
   const load = useCallback(async () => {
     if (!Number.isFinite(pondIdNum)) return
     setLoading(true)
@@ -415,6 +431,7 @@ export default function PondDetailViewPage() {
         whOutcome,
         pwrRes,
         itemsPick,
+        bioRes,
       ] = await Promise.all([
         api.get<Record<string, unknown>>('/companies/current/'),
         api.get<PondDetail>(`/aquaculture/ponds/${pondIdNum}/`),
@@ -443,6 +460,11 @@ export default function PondDetailViewPage() {
           .catch((err: unknown) => ({ whOk: false as const, err })),
         api.get<PondWarehouseReceipt[]>('/inventory/pond-warehouse-receipts/').catch(() => ({ data: [] })),
         api.get<ItemPickRow[]>('/items/', { params: { pos_only: 'true' } }).catch(() => ({ data: [] })),
+        api
+          .get<BioAssetSummary>('/aquaculture/biological-asset-summary/', {
+            params: { pond_id: pondIdNum, as_of: end },
+          })
+          .catch(() => ({ data: null })),
       ])
       setCurrency(String(co.data?.currency || 'BDT').slice(0, 3))
       setPond(pondRes.data)
@@ -470,6 +492,7 @@ export default function PondDetailViewPage() {
       setPondWarehouseReceipts(Array.isArray(pwrRes.data) ? pwrRes.data : [])
       const rawItems = Array.isArray(itemsPick.data) ? itemsPick.data : []
       setInventoryItems(rawItems.filter((it) => (it.item_type || '').toLowerCase() === 'inventory'))
+      setBioAsset(bioRes.data ?? null)
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not load pond'))
       setPond(null)
@@ -829,6 +852,42 @@ export default function PondDetailViewPage() {
           )}
 
           <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-teal-800">
+                <BookOpen className="h-4 w-4" aria-hidden />
+                Biological asset value
+              </p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+                {bioAsset
+                  ? `${getCurrencySymbol(currency)}${fmtMoney(parseNum(bioAsset.total_biological_asset_value))}`
+                  : '—'}
+              </p>
+              <p className="mt-1 text-xs text-slate-600">
+                Fry + feed + medicine + labour + direct pond costs ± transfers − harvest relief (as of {end}).
+                {bioAsset?.gl_reconciliation_note ? ` ${bioAsset.gl_reconciliation_note}` : ''}
+              </p>
+            </div>
+            <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">Cost per fish / kg</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+                {bioAsset?.cost_per_fish
+                  ? `${getCurrencySymbol(currency)}${fmtMoney(parseNum(bioAsset.cost_per_fish), 2)}`
+                  : '—'}
+                <span className="text-base font-normal text-slate-500"> / fish</span>
+              </p>
+              <p className="mt-1 text-sm tabular-nums text-slate-700">
+                {bioAsset?.cost_per_kg
+                  ? `${getCurrencySymbol(currency)}${fmtMoney(parseNum(bioAsset.cost_per_kg), 2)}/kg`
+                  : '—'}
+                {' · '}
+                {bioAsset?.live_fish_count != null
+                  ? `${formatNumber(bioAsset.live_fish_count, 0)} live fish`
+                  : '—'}
+              </p>
+              {bioAsset?.cost_redistribution_note ? (
+                <p className="mt-1 text-xs text-amber-800">{bioAsset.cost_redistribution_note}</p>
+              ) : null}
+            </div>
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <Sprout className="h-4 w-4" aria-hidden />

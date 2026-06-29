@@ -227,6 +227,7 @@ AQUACULTURE_REPORT_IDS = frozenset(
         "aquaculture-fish-stock-breakdown",
         "aquaculture-fish-biomass-movements",
         "aquaculture-fish-stock-adjustments",
+        "aquaculture-biological-asset-ledger",
         "aquaculture-fcr-biomass",
         "aquaculture-fish-growth",
         "aquaculture-pond-performance",

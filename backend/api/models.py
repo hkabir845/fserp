@@ -104,6 +104,13 @@ class Company(models.Model):
         blank=True,
         help_text="Cutover date for aquaculture go-live: openings and biological snapshot as of this date.",
     )
+    aquaculture_capitalize_pond_consumption_to_bioasset = models.BooleanField(
+        default=False,
+        help_text=(
+            "When true, pond feed/medicine warehouse consumption posts Dr 1581 Biological Inventory "
+            "instead of Dr COGS, so direct pond inputs accumulate in the bio-asset GL account."
+        ),
+    )
     organization = models.ForeignKey(
         Organization,
         on_delete=models.PROTECT,

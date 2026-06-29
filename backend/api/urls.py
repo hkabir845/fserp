@@ -616,6 +616,14 @@ urlpatterns = [
     path("aquaculture/fish-stock-position/", aquaculture_views.aquaculture_fish_stock_position),
     path("aquaculture/fish-biomass-ledger/", aquaculture_views.aquaculture_fish_biomass_ledger),
     path(
+        "aquaculture/biological-asset-summary/",
+        aquaculture_views.aquaculture_biological_asset_summary,
+    ),
+    path(
+        "aquaculture/biological-asset-ledger/",
+        aquaculture_views.aquaculture_biological_asset_ledger,
+    ),
+    path(
         "aquaculture/pond-warehouse-consumption-ledger/",
         aquaculture_views.aquaculture_pond_warehouse_consumption_ledger,
     ),

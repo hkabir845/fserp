@@ -1259,6 +1259,18 @@ def post_aquaculture_pond_feed_consumption_journal(
     if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
         return True
 
+    from api.models import Company
+
+    company = Company.objects.filter(pk=company_id).only("aquaculture_capitalize_pond_consumption_to_bioasset").first()
+    capitalize_bio = bool(getattr(company, "aquaculture_capitalize_pond_consumption_to_bioasset", False))
+    bio_debit = None
+    if capitalize_bio:
+        bio_debit = ChartOfAccount.objects.filter(
+            company_id=company_id, account_code=CODE_INV_BIO, is_active=True
+        ).first()
+        if not bio_debit:
+            capitalize_bio = False
+
     buckets: dict[tuple[int, int], Decimal] = defaultdict(lambda: Decimal("0"))
     for it, qty in line_rows:
         if not item_tracks_physical_stock(it):
@@ -1271,10 +1283,16 @@ def post_aquaculture_pond_feed_consumption_journal(
         if amt <= 0:
             continue
         inv_acc = _inventory_account_for_item(company_id, it)
-        cogs_acc = _cogs_account_for_item(company_id, it)
-        if not inv_acc or not cogs_acc:
+        if not inv_acc:
             continue
-        key = (cogs_acc.id, inv_acc.id)
+        if capitalize_bio and bio_debit:
+            debit_acc_id = bio_debit.id
+        else:
+            cogs_acc = _cogs_account_for_item(company_id, it)
+            if not cogs_acc:
+                continue
+            debit_acc_id = cogs_acc.id
+        key = (debit_acc_id, inv_acc.id)
         buckets[key] = buckets.get(key, Decimal("0")) + amt
 
     if not buckets:
@@ -1286,10 +1304,16 @@ def post_aquaculture_pond_feed_consumption_journal(
     cat = (exp_row.expense_category if exp_row else "") or ""
     if cat == "medicine_consumed":
         line_memo = f"Aquaculture pond medicine consumption (expense {expense_id})"[:300]
-        desc = f"Aquaculture — pond warehouse medicine consumption (expense #{expense_id})"[:500]
+        if capitalize_bio:
+            desc = f"Aquaculture — pond medicine to biological inventory (expense #{expense_id})"[:500]
+        else:
+            desc = f"Aquaculture — pond warehouse medicine consumption (expense #{expense_id})"[:500]
     else:
         line_memo = f"Aquaculture pond feed consumption (expense {expense_id})"[:300]
-        desc = f"Aquaculture — pond warehouse feed consumption (expense #{expense_id})"[:500]
+        if capitalize_bio:
+            desc = f"Aquaculture — pond feed to biological inventory (expense #{expense_id})"[:500]
+        else:
+            desc = f"Aquaculture — pond warehouse feed consumption (expense #{expense_id})"[:500]
     aq_meta: dict | None = None
     if exp_row and exp_row.pond_id:
         aq_meta = {
@@ -1300,15 +1324,15 @@ def post_aquaculture_pond_feed_consumption_journal(
             ),
         }
     for (cogs_id, inv_id), amt in buckets.items():
-        cogs = ChartOfAccount.objects.filter(
+        debit = ChartOfAccount.objects.filter(
             id=cogs_id, company_id=company_id, is_active=True
         ).first()
         inv_a = ChartOfAccount.objects.filter(
             id=inv_id, company_id=company_id, is_active=True
         ).first()
-        if not cogs or not inv_a:
+        if not debit or not inv_a:
             continue
-        lines.append((cogs, amt, Decimal("0"), line_memo))
+        lines.append((debit, amt, Decimal("0"), line_memo))
         lines.append((inv_a, Decimal("0"), amt, line_memo))
         aq_costing.append(aq_meta)
         aq_costing.append(aq_meta)
@@ -1566,6 +1590,97 @@ def delete_aquaculture_fish_sale_bio_relief_journal(company_id: int, sale_id: in
         entry_number=f"AUTO-AQ-SALE-{sale_id}-BIO",
     ).delete()
     return deleted
+
+
+def delete_aquaculture_fish_pond_transfer_journal(company_id: int, transfer_id: int) -> int:
+    deleted, _ = JournalEntry.objects.filter(
+        company_id=company_id,
+        entry_number=f"AUTO-AQ-FISH-XFER-{transfer_id}",
+    ).delete()
+    return deleted
+
+
+def post_aquaculture_fish_pond_transfer_journal(
+    company_id: int,
+    transfer_id: int,
+    entry_date: date,
+    *,
+    from_pond_id: int,
+    from_production_cycle_id: int | None,
+    from_pond_label: str,
+    line_posts: list[tuple],
+    memo: str = "",
+    gl_capped: bool = False,
+    total_requested: Decimal | None = None,
+) -> JournalEntry | None:
+    """
+    Idempotent entry_number AUTO-AQ-FISH-XFER-{transfer_id}.
+
+    Re-tags biological inventory (1581) from source pond to each destination pond:
+      per line: Dr 1581 (to pond, fish_transfer_in) / Cr 1581 (from pond, fish_transfer_out).
+    """
+    entry_number = f"AUTO-AQ-FISH-XFER-{transfer_id}"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
+        return JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).first()
+
+    bio = ChartOfAccount.objects.filter(company_id=company_id, account_code="1581", is_active=True).first()
+    if not bio:
+        logger.warning(
+            "skip aquaculture fish pond transfer journal %s: missing COA 1581",
+            entry_number,
+        )
+        return None
+
+    lines: list[tuple] = []
+    aq_costing: list[Optional[dict]] = []
+    for ln, amt in line_posts:
+        amount = amt.quantize(Decimal("0.01"))
+        if amount <= 0:
+            continue
+        to_pond_id = getattr(ln, "to_pond_id", None)
+        if not to_pond_id:
+            continue
+        to_cycle_id = getattr(ln, "to_production_cycle_id", None)
+        to_label = ""
+        if getattr(ln, "to_pond", None):
+            to_label = (ln.to_pond.name or "").strip()
+        wk = getattr(ln, "weight_kg", None)
+        fc = getattr(ln, "fish_count", None)
+        line_memo = (
+            memo
+            or f"Fish transfer #{transfer_id} — {fc or '?'} fish, {wk or '?'} kg to {to_label or to_pond_id}"
+        )[:300]
+        dr_meta = {
+            "pond_id": to_pond_id,
+            "production_cycle_id": to_cycle_id,
+            "cost_bucket": "fish_transfer_in",
+        }
+        cr_meta = {
+            "pond_id": from_pond_id,
+            "production_cycle_id": from_production_cycle_id,
+            "cost_bucket": "fish_transfer_out",
+        }
+        lines.append((bio, amount, Decimal("0"), line_memo))
+        aq_costing.append(dr_meta)
+        lines.append((bio, Decimal("0"), amount, line_memo))
+        aq_costing.append(cr_meta)
+
+    if not lines:
+        return None
+
+    cap_note = ""
+    if gl_capped and total_requested is not None and total_requested > 0:
+        cap_note = " (capped at source 1581 balance)"
+    desc = f"Aquaculture — inter-pond fish biological cost ({from_pond_label}){cap_note}"[:500]
+    return _create_posted_entry(
+        company_id,
+        entry_date,
+        entry_number,
+        desc,
+        lines,
+        gl_station_id=None,
+        aquaculture_line_costing=aq_costing,
+    )
 
 
 def delete_auto_fund_transfer_journal(company_id: int, transfer_id: int) -> int:

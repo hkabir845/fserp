@@ -287,6 +287,9 @@ def _company_to_json(c: Company) -> dict:
         "station_mode": (getattr(c, "station_mode", None) or "single")[:16],
         "aquaculture_licensed": bool(getattr(c, "aquaculture_licensed", False)),
         "aquaculture_enabled": bool(getattr(c, "aquaculture_enabled", False)),
+        "aquaculture_capitalize_pond_consumption_to_bioasset": bool(
+            getattr(c, "aquaculture_capitalize_pond_consumption_to_bioasset", False)
+        ),
     }
 
 
@@ -756,6 +759,20 @@ def company_detail(request, company_id: int):
                         },
                         status=403,
                     )
+            if "aquaculture_capitalize_pond_consumption_to_bioasset" in body:
+                if not (is_super or tenant_admin):
+                    return JsonResponse(
+                        {"detail": "Only Admin may change aquaculture biological asset GL settings."},
+                        status=403,
+                    )
+                if not bool(getattr(company, "aquaculture_licensed", False)):
+                    return JsonResponse(
+                        {"detail": "Aquaculture license required for this setting."},
+                        status=400,
+                    )
+                company.aquaculture_capitalize_pond_consumption_to_bioasset = bool(
+                    body.get("aquaculture_capitalize_pond_consumption_to_bioasset")
+                )
             company.save()
             payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
             _enrich_company_group_context(payload, company, getattr(request, "api_user", None))

@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Beaker, Fish, Layers, ListOrdered, Package, Settings2, ArrowRightLeft } from 'lucide-react'
+import { Beaker, BookOpen, Fish, Layers, ListOrdered, Package, Settings2, ArrowRightLeft } from 'lucide-react'
 
 export type AquacultureStockNavItem = {
   href: string
@@ -21,6 +21,13 @@ export const AQUACULTURE_STOCK_SUB_NAV: AquacultureStockNavItem[] = [
   },
   { href: '/aquaculture/stock/movements', label: 'All movements', icon: ArrowRightLeft, group: 'fish' },
   { href: '/aquaculture/stock/breakdown', label: 'Batch detail', icon: Layers, group: 'fish' },
+  {
+    href: '/aquaculture/stock/biological-asset',
+    label: 'Biological asset',
+    sidebarLabel: 'Bio asset',
+    icon: BookOpen,
+    group: 'fish',
+  },
   {
     href: '/aquaculture/stock/supplies',
     label: 'Feed & supplies',
@@ -53,7 +60,7 @@ export const AQUACULTURE_STOCK_SUB_NAV: AquacultureStockNavItem[] = [
 
 export function parseAquacultureStockRoute(pathname: string): {
   mainTab: 'fish' | 'warehouse'
-  fishSubTab: 'overview' | 'adjustments' | 'history' | 'breakdown'
+  fishSubTab: 'overview' | 'adjustments' | 'history' | 'breakdown' | 'biological_asset'
   whSubTab: 'on_hand' | 'movements' | 'consumed'
   isOptionsPage: boolean
 } {
@@ -79,6 +86,9 @@ export function parseAquacultureStockRoute(pathname: string): {
   }
   if (suffix === '/breakdown') {
     return { mainTab: 'fish', fishSubTab: 'breakdown', whSubTab: 'on_hand', isOptionsPage: false }
+  }
+  if (suffix === '/biological-asset') {
+    return { mainTab: 'fish', fishSubTab: 'biological_asset', whSubTab: 'on_hand', isOptionsPage: false }
   }
 
   return { mainTab: 'fish', fishSubTab: 'overview', whSubTab: 'on_hand', isOptionsPage: false }

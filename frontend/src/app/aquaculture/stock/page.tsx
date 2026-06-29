@@ -30,6 +30,7 @@ import { aquacultureExpenseDeleteConfirmMessage } from '@/lib/aquacultureExpense
 import { PondWarehouseAddStockModal } from '@/components/aquaculture/PondWarehouseAddStockModal'
 import { PondWarehouseInterPondModal } from '@/components/aquaculture/PondWarehouseInterPondModal'
 import { AquacultureStockLedgerFormModal } from './AquacultureStockLedgerFormModal'
+import { AquacultureBiologicalAssetPanel } from './AquacultureBiologicalAssetPanel'
 
 const iconAction =
   'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:pointer-events-none disabled:opacity-40'
@@ -974,6 +975,14 @@ function AquacultureStockPageContent() {
     setPosSpecies(raw)
   }, [searchParams, fishSpecies])
 
+  /** Deep link: `?pond_id=12` — e.g. from biological asset portfolio row. */
+  useEffect(() => {
+    const pid = (searchParams.get('pond_id') || '').trim()
+    if (!pid) return
+    if (ponds.length > 0 && !ponds.some((p) => String(p.id) === pid)) return
+    setPosPond(pid)
+  }, [searchParams, ponds])
+
   useEffect(() => {
     void loadPosition()
   }, [loadPosition])
@@ -1674,6 +1683,16 @@ function AquacultureStockPageContent() {
           )}
         </div>
       </section>
+      ) : null}
+
+      {fishSubTab === 'biological_asset' ? (
+        <AquacultureBiologicalAssetPanel
+          ponds={ponds}
+          posPond={posPond}
+          posCycle={posCycle}
+          posCycles={posCycles}
+          currency={currency}
+        />
       ) : null}
 
       {fishSubTab === 'adjustments' ? (

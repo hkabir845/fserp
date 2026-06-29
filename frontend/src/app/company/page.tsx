@@ -99,6 +99,7 @@ export default function CompanyPage() {
   const [activeStationCount, setActiveStationCount] = useState<number | null>(null)
   const [aquacultureLicensed, setAquacultureLicensed] = useState(false)
   const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
+  const [capitalizeConsumptionToBioasset, setCapitalizeConsumptionToBioasset] = useState(false)
   const [canEditAquacultureToggle, setCanEditAquacultureToggle] = useState(false)
 
   const currencies = useMemo(() => getUniqueCurrencies(), [])
@@ -119,6 +120,7 @@ export default function CompanyPage() {
         active_station_count?: number
         aquaculture_licensed?: boolean
         aquaculture_enabled?: boolean
+        aquaculture_capitalize_pond_consumption_to_bioasset?: boolean
         can_edit_aquaculture_toggle?: boolean
       }
       setCanEditStationMode(Boolean(ext.can_edit_station_mode))
@@ -127,6 +129,7 @@ export default function CompanyPage() {
       )
       setAquacultureLicensed(Boolean(ext.aquaculture_licensed))
       setAquacultureEnabled(Boolean(ext.aquaculture_enabled))
+      setCapitalizeConsumptionToBioasset(Boolean(ext.aquaculture_capitalize_pond_consumption_to_bioasset))
       setCanEditAquacultureToggle(Boolean(ext.can_edit_aquaculture_toggle))
       setFormData({
         company_name: String(data.company_name || data.name || ''),
@@ -217,6 +220,7 @@ export default function CompanyPage() {
       }
       if (aquacultureLicensed && canEditAquacultureToggle) {
         payload.aquaculture_enabled = aquacultureEnabled
+        payload.aquaculture_capitalize_pond_consumption_to_bioasset = capitalizeConsumptionToBioasset
       }
 
       const { data } = await api.put<Record<string, unknown>>(`/companies/${companyId}/`, payload)
@@ -602,6 +606,24 @@ export default function CompanyPage() {
                             </span>
                           </p>
                         )}
+                        {aquacultureEnabled && canEditAquacultureToggle ? (
+                          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-teal-200 bg-teal-50/40 p-4">
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              checked={capitalizeConsumptionToBioasset}
+                              onChange={(e) => setCapitalizeConsumptionToBioasset(e.target.checked)}
+                            />
+                            <div>
+                              <p className="font-medium text-slate-900">Capitalize pond feed &amp; medicine to GL 1581</p>
+                              <p className="text-sm leading-relaxed text-slate-600">
+                                When enabled, feed and medicine consumed from pond warehouses posts Dr Biological
+                                Inventory (1581) instead of COGS, so direct pond inputs accumulate in the bio-asset GL
+                                account alongside fry purchases. New consumption only — does not restate history.
+                              </p>
+                            </div>
+                          </label>
+                        ) : null}
                       </div>
                     </div>
                   </section>

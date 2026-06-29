@@ -1,14 +1,16 @@
-# FSERP — one-time local environment setup (Windows).
+# FSERP — local environment setup (Windows).
 # Run from repo root:  pwsh -File scripts/dev-setup.ps1
+# After moving the project drive to another PC, run again (or use setup-this-pc.bat).
 #
 # Stack: Django 5 API (backend/) + Next.js UI (frontend/) + SQLite (dev)
-# After setup: Terminal → Run Task → "FSERP: Run backend + frontend"
+# After setup: backend/run-dev.bat + frontend/run-dev.bat
+
+param(
+    [switch]$Force
+)
 
 $ErrorActionPreference = "Stop"
-$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-if ((Split-Path -Leaf $repoRoot) -eq "scripts") {
-    $repoRoot = Split-Path -Parent $repoRoot
-}
+$repoRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $repoRoot
 
 $python = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
@@ -30,15 +32,25 @@ if (-not $npm) {
 
 # --- Python / Django ---
 . (Join-Path $repoRoot "scripts\resolve-venv.ps1")
-$venvPy = Get-FserpVenvPython -Root $repoRoot
+$venvPy = if ($Force) { $null } else { Get-FserpVenvPython -Root $repoRoot }
 if (-not $venvPy) {
-  foreach ($broken in @(".venv", ".venv-local")) {
-    $dir = Join-Path $repoRoot $broken
-    if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+  if (-not $Force) {
+    Write-Host "No working Python venv on this PC (common after moving a portable drive)." -ForegroundColor Yellow
   }
-  Write-Host "Creating .venv-local ..." -ForegroundColor Cyan
+  foreach ($broken in @(".venv", ".venv-local", "backend\venv")) {
+    $dir = Join-Path $repoRoot $broken
+    if (Test-Path $dir) {
+      Write-Host "Removing stale venv: $broken" -ForegroundColor DarkYellow
+      Remove-Item $dir -Recurse -Force
+    }
+  }
+  Write-Host "Creating .venv-local with $python ..." -ForegroundColor Cyan
   & $python -m venv (Join-Path $repoRoot ".venv-local")
   $venvPy = Get-FserpVenvPython -Root $repoRoot
+  if (-not $venvPy) {
+    Write-Host "ERROR: Failed to create a working venv." -ForegroundColor Red
+    exit 1
+  }
 }
 & $venvPy -m pip install --upgrade pip
 & $venvPy -m pip install -r (Join-Path $repoRoot "requirements-django.txt")

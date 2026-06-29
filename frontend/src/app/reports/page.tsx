@@ -201,6 +201,7 @@ type ReportType =
   | 'aquaculture-fish-stock-breakdown'
   | 'aquaculture-fish-biomass-movements'
   | 'aquaculture-fish-stock-adjustments'
+  | 'aquaculture-biological-asset-ledger'
   | 'aquaculture-fcr-biomass'
   | 'aquaculture-fish-growth'
   | 'aquaculture-pond-performance'
@@ -604,6 +605,14 @@ const reports: ReportCard[] = [
     category: 'aquaculture',
   },
   {
+    id: 'aquaculture-biological-asset-ledger',
+    title: 'Aquaculture — Biological asset ledger',
+    description:
+      'Pond biological asset value (fry + feed + labour + direct costs), cost per fish/kg, cost buckets, and movement ledger as of period end',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
     id: 'aquaculture-fish-stock-adjustments',
     title: 'Aquaculture — Mortality & stock adjustments',
     description:
@@ -758,6 +767,7 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
   'aquaculture-fish-stock-breakdown',
   'aquaculture-fish-biomass-movements',
   'aquaculture-fish-stock-adjustments',
+  'aquaculture-biological-asset-ledger',
   'aquaculture-fcr-biomass',
   'aquaculture-fish-growth',
   'aquaculture-pond-performance',
@@ -809,6 +819,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'aquaculture-fish-stock-breakdown',
   'aquaculture-fish-biomass-movements',
   'aquaculture-fish-stock-adjustments',
+  'aquaculture-biological-asset-ledger',
   'aquaculture-fcr-biomass',
   'aquaculture-fish-growth',
   'aquaculture-pond-performance',
@@ -956,6 +967,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'aquaculture-fish-stock-breakdown',
   'aquaculture-fish-biomass-movements',
   'aquaculture-fish-stock-adjustments',
+  'aquaculture-biological-asset-ledger',
   'aquaculture-fcr-biomass',
   'aquaculture-fish-growth',
   'aquaculture-pond-performance',
@@ -9683,6 +9695,107 @@ function renderReportTable(
           <span className="float-right tabular-nums">
             {Number(totals.total_weight_kg_delta ?? 0).toLocaleString()} kg ·{' '}
             {(totals.total_fish_count_delta ?? 0).toLocaleString()} fish
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'aquaculture-biological-asset-ledger' && data && Array.isArray(data.groups)) {
+    const period = data.period || {}
+    const groups: any[] = data.groups
+    const totals = data.totals || {}
+    const summary = data.summary || {}
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            rt('reportMovementsFiltered')
+          )}
+        {renderAquacultureFcrBlock(data)}
+        <p className="text-sm font-medium text-slate-700">
+          Biological asset ledger — accumulated production cost, survivor unit economics, and fish movements.
+        </p>
+        {data.methodology ? <p className="text-xs text-slate-600">{String(data.methodology)}</p> : null}
+        {data.as_of_date ? (
+          <p className="text-xs text-slate-500">Valuation as of {String(data.as_of_date)} (period end).</p>
+        ) : null}
+        {groups.map((g: any) => {
+          const s = g.summary || {}
+          return (
+            <div key={`bio-${g.pond_id}`} className="rounded-lg border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-100 bg-teal-50/80 px-4 py-3">
+                <h4 className="font-semibold text-teal-950">{g.pond_name}</h4>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm tabular-nums text-teal-900">
+                  <span>
+                    Bio asset: {MoneyBdt(s.total_biological_asset_value ?? '0')}
+                  </span>
+                  <span>
+                    {s.cost_per_fish ? `${MoneyBdt(s.cost_per_fish)}/fish` : '—/fish'}
+                  </span>
+                  <span>
+                    {s.cost_per_kg ? `${MoneyBdt(s.cost_per_kg)}/kg` : '—/kg'}
+                  </span>
+                  <span>{(s.live_fish_count ?? 0).toLocaleString()} live fish</span>
+                </div>
+              </div>
+              {(s.cost_buckets || []).length > 0 ? (
+                <div className="border-b border-gray-100 px-4 py-2">
+                  <p className="text-xs font-semibold uppercase text-gray-500">Cost buckets</p>
+                  <ul className="mt-1 grid gap-1 text-sm sm:grid-cols-2">
+                    {(s.cost_buckets || []).map((b: any) => (
+                      <li key={b.cost_bucket} className="flex justify-between gap-2">
+                        <span className="text-gray-700">{b.label}</span>
+                        <span className="tabular-nums font-medium">{MoneyBdt(b.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <div className="overflow-x-auto p-2">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-gray-500">
+                      <th className="px-2 py-1">Date</th>
+                      <th className="px-2 py-1">Event</th>
+                      <th className="px-2 py-1 text-right">Δ Fish</th>
+                      <th className="px-2 py-1 text-right">Δ kg</th>
+                      <th className="px-2 py-1 text-right">Cost</th>
+                      <th className="px-2 py-1">Note</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {(g.lines || []).map((ln: any, idx: number) => (
+                      <tr key={`${ln.entry_date}-${ln.source_doc}-${idx}`}>
+                        <td className="px-2 py-1.5 whitespace-nowrap">{ln.entry_date}</td>
+                        <td className="px-2 py-1.5">{ln.entry_type_label || ln.entry_type}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{ln.fish_count_delta ?? '—'}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{ln.weight_kg_delta ?? '—'}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {ln.cost_amount
+                            ? MoneyBdt(ln.cost_amount)
+                            : ln.implied_harvest_cost
+                              ? `~${MoneyBdt(ln.implied_harvest_cost)}`
+                              : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-gray-600">{(ln.cost_note || ln.memo || '').slice(0, 80)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        })}
+        <div className="rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
+          Total — {summary.pond_count ?? totals.pond_count ?? 0} pond(s)
+          <span className="float-right tabular-nums">
+            {MoneyBdt(totals.total_biological_asset_value ?? summary.total_biological_asset_value ?? '0')} ·{' '}
+            {(totals.total_live_fish_count ?? summary.total_live_fish_count ?? 0).toLocaleString()} live fish
           </span>
         </div>
       </div>

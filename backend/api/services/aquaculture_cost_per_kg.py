@@ -166,6 +166,34 @@ def landlord_lease_payment_pond_operating_total_company(
     return _money_q(Decimal(str(t or 0)))
 
 
+def pond_fry_stocking_capitalized_journal_total(
+    *,
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+) -> Decimal:
+    """
+    Fry/fingerling vendor bills post Dr 1581 (biological inventory), not expense-type bill journals.
+    Include in fry_stocking bucket so inter-pond transfer cost moves fry purchase value with the fish.
+    """
+    q = JournalEntryLine.objects.filter(
+        journal_entry__company_id=company_id,
+        journal_entry__entry_date__gte=start,
+        journal_entry__entry_date__lte=end,
+        journal_entry__is_posted=True,
+        journal_entry__entry_number__startswith="AUTO-BILL-",
+        debit__gt=0,
+        account__account_code="1581",
+        aquaculture_pond_id=pond_id,
+    )
+    if cycle_filter_id is not None:
+        q = q.filter(aquaculture_production_cycle_id=cycle_filter_id)
+    t = q.aggregate(s=Sum("debit"))["s"]
+    return _money_q(Decimal(str(t or 0)))
+
+
 def vendor_bill_pond_bucket_additions(
     *,
     company_id: int,
@@ -412,6 +440,16 @@ def pond_bucket_amounts_for_period(
     )
     if ll_lease != 0:
         out["lease"] += ll_lease
+
+    fry_cap = pond_fry_stocking_capitalized_journal_total(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+    )
+    if fry_cap != 0:
+        out["fry_stocking"] += fry_cap
 
     return dict(out)
 

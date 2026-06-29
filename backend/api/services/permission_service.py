@@ -253,6 +253,11 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
         "group": "Reports — Aquaculture",
     },
     {
+        "report_id": "aquaculture-biological-asset-ledger",
+        "label": "Aquaculture — Biological asset ledger",
+        "group": "Reports — Aquaculture",
+    },
+    {
         "report_id": "aquaculture-fish-stock-adjustments",
         "label": "Aquaculture — Mortality & stock adjustments",
         "group": "Reports — Aquaculture",

@@ -356,7 +356,8 @@ def lookup_transfer_cost_per_head(
         return None, "No stocked fingerling count for per-head transfer cost."
     per_head = _money_q(bio_total / Decimal(stocked_heads))
     note = (
-        f"Transfer cost/head = production costs ({bio_total}) ÷ {stocked_heads} stocked fingerlings. "
+        f"Transfer cost/head = production costs ({bio_total}) ÷ {stocked_heads} stocked fingerlings "
+        "(includes fry vendor bills capitalized to GL 1581). "
         "Shop supplies, lease, and other overhead are excluded from fish transfer cost."
     )
     return per_head, note

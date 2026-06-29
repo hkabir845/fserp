@@ -13,6 +13,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from api.models import AquacultureProductionCycle
 from api.services.aquaculture_data_bank_service import pond_biological_settlement
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
+from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 from api.services.aquaculture_transfer_cost import (
     _biological_production_cost_total,
     _transfer_denominator_kg,
@@ -132,13 +133,23 @@ def lookup_bio_cost_per_kg(
         "Includes fry, feed, medicine, pond preparation, and transfer-in. "
         "Lease, labor, and other overhead are excluded."
     )
+    cost_per_fish: str | None = None
+    pos_rows = compute_fish_stock_position_rows(
+        company_id, pond_id=pond_id, production_cycle_id=cycle_filter_id
+    )
+    if pos_rows:
+        live_count = int(pos_rows[0].get("implied_net_fish_count") or 0)
+        if live_count > 0:
+            cost_per_fish = str(_money_q(bio_total / Decimal(live_count)))
     return {
         "found": True,
         "cost_per_kg": str(per_kg),
+        "cost_per_fish": cost_per_fish,
         "basis_note": note,
         "biological_cost_total": str(_money_q(bio_total)),
         "denominator_kg": str(denom),
         "on_hand_weight_kg": str(on_hand),
+        "live_fish_count": int(pos_rows[0].get("implied_net_fish_count") or 0) if pos_rows else 0,
         "bio_asset_balance": str(bio_balance),
         "book_cost_per_kg": book_cost_per_kg,
         "method": "biological_production",

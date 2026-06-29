@@ -9,7 +9,10 @@ from api.models import AquaculturePond, AquacultureProductionCycle
 from api.services.aquaculture_pl_service import _money_q, compute_aquaculture_pl_summary_dict
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 
-# Biological production costs moved with fish — excludes shop supplies, lease, overhead, etc.
+# Costs that stay on the source pond when fish leave (not moved with fingerlings/fish).
+_BIO_ASSET_EXCLUDED_FROM_TRANSFER = frozenset({"lease", "shop_supplies"})
+
+# Legacy P&L bucket subset (fallback when bio-asset summary is empty).
 _TRANSFER_COST_BUCKETS = frozenset(
     {
         "fry_stocking",
@@ -17,6 +20,15 @@ _TRANSFER_COST_BUCKETS = frozenset(
         "feed",
         "medicine",
         "fish_transfer_in",
+        "labor",
+        "electricity",
+        "equipment",
+        "repair_maintenance",
+        "transportation",
+        "fisherman",
+        "day_labor",
+        "miscellaneous",
+        "ancillary",
     }
 )
 
@@ -45,6 +57,65 @@ def _biological_production_cost_total(costing_lines: list[dict]) -> Decimal:
             continue
         total += Decimal(str(row.get("amount") or 0))
     return _money_q(total)
+
+
+def _transferable_bio_asset_total(summary: dict) -> Decimal:
+    """Pond biological asset value movable with fish (excludes lease, shop supplies)."""
+    total = Decimal(str(summary.get("total_biological_asset_value") or 0))
+    for row in summary.get("cost_buckets") or []:
+        code = str(row.get("cost_bucket") or "")
+        if code in _BIO_ASSET_EXCLUDED_FROM_TRANSFER:
+            total -= Decimal(str(row.get("amount") or 0))
+    return max(Decimal("0"), _money_q(total))
+
+
+def _bio_asset_transfer_share(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+    weight_kg: Decimal,
+    fish_count: int | None,
+    prefer_heads: bool,
+) -> Decimal:
+    """
+    Move a proportional slice of the source pond biological asset with the fish.
+
+    Uses live fish count (or live kg for grow-out) as the denominator so partial
+    transfers and mortality redistribution stay aligned with survivor economics.
+    """
+    from api.services.aquaculture_biological_asset_service import compute_pond_biological_asset_summary
+
+    summary = compute_pond_biological_asset_summary(
+        company_id,
+        pond_id=from_pond_id,
+        as_of_date=transfer_date,
+        production_cycle=from_cycle,
+    )
+    movable = _transferable_bio_asset_total(summary)
+    if movable <= 0:
+        return Decimal("0")
+
+    live_c = int(summary.get("live_fish_count") or 0)
+    live_kg = Decimal(str(summary.get("live_weight_kg") or 0))
+    cycle_filter_id = from_cycle.id if from_cycle is not None else None
+    if live_c <= 0:
+        live_c = _nursing_stocked_heads_basis(
+            company_id=company_id,
+            pond_id=from_pond_id,
+            cycle_filter_id=cycle_filter_id,
+        )
+    heads = int(fish_count or 0)
+    wk = _money_q(weight_kg)
+
+    if prefer_heads and heads > 0 and live_c > 0:
+        return _money_q(movable * Decimal(heads) / Decimal(live_c))
+    if wk > 0 and live_kg > 0:
+        return _money_q(movable * wk / live_kg)
+    if heads > 0 and live_c > 0:
+        return _money_q(movable * Decimal(heads) / Decimal(live_c))
+    return Decimal("0")
 
 
 def _transfer_denominator_kg(
@@ -190,6 +261,17 @@ def _production_cost_share_for_line(
     """Compute this line's BDT share of fry/feed/medicine costs; tries cycle scope then YTD fallback."""
 
     def _share_for_scope(cycle_obj: AquacultureProductionCycle | None) -> Decimal:
+        share = _bio_asset_transfer_share(
+            company_id=company_id,
+            from_pond_id=from_pond_id,
+            transfer_date=transfer_date,
+            from_cycle=cycle_obj,
+            weight_kg=weight_kg,
+            fish_count=fish_count,
+            prefer_heads=False,
+        )
+        if share > 0:
+            return share
         start, end = pl_window_for_transfer_date(transfer_date, cycle_obj)
         cycle_filter_id = cycle_obj.id if cycle_obj is not None else None
         payload = compute_aquaculture_pl_summary_dict(
@@ -225,6 +307,18 @@ def _production_cost_share_for_line(
         return _money_q(bio_total * wk / denom)
 
     def _nursing_share_for_scope(cycle_obj: AquacultureProductionCycle | None) -> Decimal:
+        share = _bio_asset_transfer_share(
+            company_id=company_id,
+            from_pond_id=from_pond_id,
+            transfer_date=transfer_date,
+            from_cycle=cycle_obj,
+            weight_kg=weight_kg,
+            fish_count=fish_count,
+            prefer_heads=True,
+        )
+        if share > 0:
+            return share
+        # Fallback: P&L production buckets ÷ stocked fingerlings (legacy data).
         cycle_filter_id = cycle_obj.id if cycle_obj is not None else None
         start, end = pl_window_for_transfer_date(transfer_date, cycle_obj)
         payload = compute_aquaculture_pl_summary_dict(
@@ -315,6 +409,17 @@ def _bio_total_for_transfer_scope(
     transfer_date: date,
     from_cycle: AquacultureProductionCycle | None,
 ) -> Decimal:
+    from api.services.aquaculture_biological_asset_service import compute_pond_biological_asset_summary
+
+    summary = compute_pond_biological_asset_summary(
+        company_id,
+        pond_id=from_pond_id,
+        as_of_date=transfer_date,
+        production_cycle=from_cycle,
+    )
+    movable = _transferable_bio_asset_total(summary)
+    if movable > 0:
+        return movable
     start, end = pl_window_for_transfer_date(transfer_date, from_cycle)
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
     payload = compute_aquaculture_pl_summary_dict(
@@ -340,28 +445,40 @@ def lookup_transfer_cost_per_head(
     transfer_date: date,
     from_cycle: AquacultureProductionCycle | None,
 ) -> tuple[Decimal | None, str]:
-    """Production cost per stocked fingerling for nursing-style inter-pond transfers."""
+    """Production cost per live fingerling for nursing-style inter-pond transfers."""
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
-    bio_total = _bio_total_for_transfer_scope(
-        company_id=company_id,
-        from_pond_id=from_pond_id,
-        transfer_date=transfer_date,
-        from_cycle=from_cycle,
+    from api.services.aquaculture_biological_asset_service import compute_pond_biological_asset_summary
+
+    summary = compute_pond_biological_asset_summary(
+        company_id,
+        pond_id=from_pond_id,
+        as_of_date=transfer_date,
+        production_cycle=from_cycle,
     )
+    bio_total = _transferable_bio_asset_total(summary)
+    if bio_total <= 0:
+        bio_total = _bio_total_for_transfer_scope(
+            company_id=company_id,
+            from_pond_id=from_pond_id,
+            transfer_date=transfer_date,
+            from_cycle=from_cycle,
+        )
     if bio_total <= 0:
         return None, "No fry/feed/medicine/preparation costs recorded for this pond in the selected period."
-    stocked_heads = _nursing_stocked_heads_basis(
-        company_id=company_id,
-        pond_id=from_pond_id,
-        cycle_filter_id=cycle_filter_id,
-    )
-    if stocked_heads <= 0:
-        return None, "No stocked fingerling count for per-head transfer cost."
-    per_head = _money_q(bio_total / Decimal(stocked_heads))
+    live_heads = int(summary.get("live_fish_count") or 0)
+    if live_heads <= 0:
+        live_heads = _nursing_stocked_heads_basis(
+            company_id=company_id,
+            pond_id=from_pond_id,
+            cycle_filter_id=cycle_filter_id,
+        )
+    if live_heads <= 0:
+        return None, "No live fingerling count for per-head transfer cost."
+    per_head = _money_q(bio_total / Decimal(live_heads))
     note = (
-        f"Transfer cost/head = production costs ({bio_total}) ÷ {stocked_heads} stocked fingerlings "
-        "(includes fry vendor bills capitalized to GL 1581). "
-        "Shop supplies, lease, and other overhead are excluded from fish transfer cost."
+        f"Transfer cost/head = movable biological asset ({bio_total}) ÷ {live_heads} live fingerlings "
+        "(fry vendor bills Dr 1581, feed, medicine, labour on pond; lease stays on source pond). "
+        "Shop supplies are not moved with fish."
     )
     return per_head, note
 

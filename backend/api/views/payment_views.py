@@ -25,11 +25,10 @@ from api.models import (
     ShiftSession,
     Vendor,
 )
-from api.services.payment_station import apply_payment_register_station
 from api.services.gl_posting import (
     post_bank_deposit_journal,
-    post_payment_made_journal,
-    post_payment_received_journal,
+    sync_payment_made_gl,
+    sync_payment_received_gl,
     reverse_payment_made_posting,
     reverse_payment_received_posting,
 )
@@ -569,10 +568,9 @@ def payments_received_create(request):
                 PaymentInvoiceAllocation.objects.create(
                     payment_id=p.id, invoice_id=iid, amount=d_amt
                 )
-            post_payment_received_journal(request.company_id, p)
+            sync_payment_received_gl(request.company_id, p)
             refresh_invoices_touched_by_payment(request.company_id, p.id)
             p.refresh_from_db()
-            apply_payment_register_station(request.company_id, p)
             if shift_session_id_for_roll is not None:
                 record_ar_collection_on_shift(
                     request.company_id, shift_session_id_for_roll, amount, pm_norm
@@ -962,10 +960,9 @@ def payments_made_create(request):
                 PaymentBillAllocation.objects.create(
                     payment_id=p.id, bill_id=bid, amount=d_amt
                 )
-            post_payment_made_journal(request.company_id, p)
+            sync_payment_made_gl(request.company_id, p)
             refresh_bills_touched_by_payment(request.company_id, p.id)
             p.refresh_from_db()
-            apply_payment_register_station(request.company_id, p)
     except GlPostingError as e:
         return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 
@@ -1338,10 +1335,9 @@ def payment_detail_update_delete(request, payment_id: int):
                         PaymentInvoiceAllocation.objects.create(
                             payment_id=p.id, invoice_id=iid, amount=d_amt
                         )
-                    post_payment_received_journal(cid, p)
+                    sync_payment_received_gl(cid, p)
                     refresh_invoices_touched_by_payment(cid, p.id)
                     p.refresh_from_db()
-                    apply_payment_register_station(cid, p)
             except GlPostingError as e:
                 return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 
@@ -1430,10 +1426,9 @@ def payment_detail_update_delete(request, payment_id: int):
                         PaymentBillAllocation.objects.create(
                             payment_id=p.id, bill_id=bid, amount=d_amt
                         )
-                    post_payment_made_journal(cid, p)
+                    sync_payment_made_gl(cid, p)
                     refresh_bills_touched_by_payment(cid, p.id)
                     p.refresh_from_db()
-                    apply_payment_register_station(cid, p)
             except GlPostingError as e:
                 return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 

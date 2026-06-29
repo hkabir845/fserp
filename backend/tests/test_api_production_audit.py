@@ -880,7 +880,16 @@ def test_payments_made_create_and_list(
         **h,
     )
     assert pay.status_code == 201
-    assert json.loads(pay.content)["payment_type"] == "made"
+    pay_body = json.loads(pay.content)
+    assert pay_body["payment_type"] == "made"
+    from api.models import JournalEntry
+
+    pay_id = pay_body["id"]
+    assert JournalEntry.objects.filter(
+        company_id=company_master.id,
+        entry_number=f"AUTO-PAY-{pay_id}-MADE",
+        is_posted=True,
+    ).exists()
 
     listed = json.loads(api_client.get("/api/payments/made/", **h).content)
     assert len(listed) == 1

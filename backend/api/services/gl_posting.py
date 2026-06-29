@@ -346,23 +346,28 @@ _STANDARD_GL_ACCOUNTS: dict[str, tuple[str, str, str]] = {
     CODE_INV_SHOP: ("Inventory — C-Store / Shop", "asset", "inventory"),
 }
 
+# Cash, A/P, A/R, and a general expense line — required for vendor bills and payments.
+_CORE_POSTING_GL_ACCOUNTS: dict[str, tuple[str, str, str]] = {
+    CODE_CASH: ("Cash on Hand — Station Tills", "asset", "cash_on_hand"),
+    CODE_UNDEPOSITED: ("Cash Clearing — Undeposited", "asset", "other_current_asset"),
+    CODE_AP: ("Accounts Payable — Trade", "liability", "accounts_payable"),
+    CODE_AR: ("Accounts Receivable — Trade", "asset", "accounts_receivable"),
+    CODE_OFFICE_EXP: (
+        "Office & Administrative",
+        "expense",
+        "office_general_administrative_expenses",
+    ),
+}
 
-def _ensure_standard_account(company_id: int, code: str) -> Optional[ChartOfAccount]:
-    """
-    Return the active standard account for ``code``, creating it from the template if missing.
-    Used only for the COGS-relief fallback accounts so COGS is never skipped for lack of a GL
-    account. Re-activates a soft-disabled standard account rather than leaving COGS unposted.
-    """
-    acc = _coa(company_id, code)
-    if acc:
-        return acc
-    spec = _STANDARD_GL_ACCOUNTS.get(code)
-    if not spec:
-        return None
-    name, acc_type, sub_type = spec
-    existing = ChartOfAccount.objects.filter(
-        company_id=company_id, account_code=code
-    ).first()
+
+def _provision_chart_account(
+    company_id: int,
+    code: str,
+    name: str,
+    acc_type: str,
+    sub_type: str,
+) -> Optional[ChartOfAccount]:
+    existing = ChartOfAccount.objects.filter(company_id=company_id, account_code=code).first()
     if existing:
         if not existing.is_active:
             existing.is_active = True
@@ -380,6 +385,37 @@ def _ensure_standard_account(company_id: int, code: str) -> Optional[ChartOfAcco
         opening_balance_date=timezone.now().date(),
         is_active=True,
     )
+
+
+def _ensure_standard_account(company_id: int, code: str) -> Optional[ChartOfAccount]:
+    """
+    Return the active standard account for ``code``, creating it from the template if missing.
+    Used only for the COGS-relief fallback accounts so COGS is never skipped for lack of a GL
+    account. Re-activates a soft-disabled standard account rather than leaving COGS unposted.
+    """
+    acc = _coa(company_id, code)
+    if acc:
+        return acc
+    spec = _STANDARD_GL_ACCOUNTS.get(code)
+    if not spec:
+        return None
+    name, acc_type, sub_type = spec
+    return _provision_chart_account(company_id, code, name, acc_type, sub_type)
+
+
+def _ensure_core_posting_account(company_id: int, code: str) -> Optional[ChartOfAccount]:
+    """
+    Return active core posting account (1010, 2000, etc.), provisioning from the fuel-station
+    template when missing so vendor bills and payments always double-entry post.
+    """
+    acc = _coa(company_id, code)
+    if acc:
+        return acc
+    spec = _CORE_POSTING_GL_ACCOUNTS.get(code)
+    if not spec:
+        return None
+    name, acc_type, sub_type = spec
+    return _provision_chart_account(company_id, code, name, acc_type, sub_type)
 
 
 def _is_walkin_customer(customer: Optional[Customer]) -> bool:
@@ -421,7 +457,10 @@ def _debit_account_for_paid_sale(
         if undep and cash:
             return undep
         return undep or cash
-    return _coa(company_id, CODE_CASH) or _coa(company_id, CODE_UNDEPOSITED)
+    return (
+        _ensure_core_posting_account(company_id, CODE_CASH)
+        or _ensure_core_posting_account(company_id, CODE_UNDEPOSITED)
+    )
 
 
 def post_pos_cash_donation_journal(
@@ -1724,7 +1763,7 @@ def post_invoice_sale_journal(
             company_id, payment_method, bank_account_id
         )
     elif inv.status in ("sent", "partial", "overdue"):
-        debit_acc = _coa(company_id, CODE_AR)
+        debit_acc = _ensure_core_posting_account(company_id, CODE_AR)
     else:
         return False
 
@@ -1959,7 +1998,7 @@ def post_payment_received_journal(company_id: int, p: Payment) -> bool:
         company_id=company_id, entry_number=entry_number
     ).exists():
         return True
-    ar = _coa(company_id, CODE_AR)
+    ar = _ensure_core_posting_account(company_id, CODE_AR)
     if not ar:
         raise GlPostingError(
             "G/L: Accounts Receivable (code 1100) is missing or inactive. Add or enable it in the "
@@ -2072,7 +2111,7 @@ def post_payment_made_journal(company_id: int, p: Payment) -> bool:
                 )
                 Payment.objects.filter(pk=lp.pk).update(vendor_ap_decremented=True)
         return True
-    ap = _coa(company_id, CODE_AP)
+    ap = _ensure_core_posting_account(company_id, CODE_AP)
     if not ap:
         raise GlPostingError(
             "G/L: Accounts Payable (code 2000) is missing or inactive. Add or enable it in the "
@@ -2115,6 +2154,27 @@ def post_payment_made_journal(company_id: int, p: Payment) -> bool:
             )
             Payment.objects.filter(pk=lp.pk).update(vendor_ap_decremented=True)
     return True
+
+
+def sync_payment_made_gl(company_id: int, p: Payment) -> bool:
+    """
+    Resolve analytic site on the payment, then post AUTO-PAY-{id}-MADE (idempotent).
+    Call after bill allocations are saved so shop/aquaculture station tags reach the journal.
+    """
+    from api.services.payment_station import apply_payment_register_station
+
+    apply_payment_register_station(company_id, p)
+    p.refresh_from_db()
+    return post_payment_made_journal(company_id, p)
+
+
+def sync_payment_received_gl(company_id: int, p: Payment) -> bool:
+    """Resolve register site, then post AUTO-PAY-{id}-RCV (idempotent)."""
+    from api.services.payment_station import apply_payment_register_station
+
+    apply_payment_register_station(company_id, p)
+    p.refresh_from_db()
+    return post_payment_received_journal(company_id, p)
 
 
 def _normalize_label(s: str) -> str:
@@ -2476,10 +2536,14 @@ def _build_bill_journal_lines(
 
     Returns (lines, aquaculture_line_costing) for _create_posted_entry.
     """
-    ap = _coa(company_id, CODE_AP)
-    exp = _coa(company_id, ErpCoaCode.STATION_OPERATING) or _coa(company_id, CODE_OFFICE_EXP) or ChartOfAccount.objects.filter(
-        company_id=company_id, account_type="expense", is_active=True
-    ).first()
+    ap = _ensure_core_posting_account(company_id, CODE_AP)
+    exp = (
+        _coa(company_id, ErpCoaCode.STATION_OPERATING)
+        or _ensure_core_posting_account(company_id, CODE_OFFICE_EXP)
+        or ChartOfAccount.objects.filter(
+            company_id=company_id, account_type="expense", is_active=True
+        ).first()
+    )
     if not ap or not exp:
         return None
 
@@ -2624,7 +2688,7 @@ def bill_eligible_for_posting(bill: Optional[Bill]) -> bool:
 def _ensure_vendor_ap_for_posted_bill(company_id: int, bill: Bill) -> None:
     """
     Add bill total to vendor.current_balance once (idempotent via vendor_ap_incremented).
-    Runs for every posted bill so A/P stays in sync even when AUTO-BILL GL entry cannot be built.
+    Called only after AUTO-BILL-{id} journal exists or was just created.
     """
     with transaction.atomic():
         b = Bill.objects.select_for_update().filter(pk=bill.pk, company_id=company_id).first()
@@ -2856,8 +2920,10 @@ def post_bill_journal(
     company_id: int, bill: Bill, *, acknowledge_tank_overfill: bool = False
 ) -> bool:
     """
-    Post vendor bill: AUTO-BILL-{id} when chart of accounts allows; always (when posted) vendor A/P
-    and one-time inventory/tank receipt for qualifying lines.
+    Post vendor bill: AUTO-BILL-{id}, vendor A/P subledger, and inventory/tank receipt.
+
+    Double-entry rule: vendor A/P and stock receipt run only after the bill journal posts
+    (or already exists). Missing COA or unbalanced lines raise GlPostingError — never A/P-only.
     """
     bill = Bill.objects.filter(pk=bill.pk, company_id=company_id).first()
     if not bill or not bill_eligible_for_posting(bill):
@@ -2883,18 +2949,26 @@ def post_bill_journal(
     validate_bill_entity_tags_for_gl(company_id, bill)
 
     built = _build_bill_journal_lines(company_id, bill)
-    je = None
-    if built:
-        lines, aq_cost = built
-        bst = _gl_station_id(company_id, bill.receipt_station_id)
-        je = _create_posted_entry(
-            company_id,
-            bill.bill_date,
-            entry_number,
-            f"Bill {bill.bill_number}",
-            lines,
-            gl_station_id=bst,
-            aquaculture_line_costing=aq_cost,
+    if not built:
+        raise GlPostingError(
+            "G/L: Cannot post vendor bill — missing Accounts Payable (2000) or expense accounts, "
+            "or bill lines could not be balanced. Sync the chart of accounts or fix bill lines."
+        )
+    lines, aq_cost = built
+    bst = _gl_station_id(company_id, bill.receipt_station_id)
+    je = _create_posted_entry(
+        company_id,
+        bill.bill_date,
+        entry_number,
+        f"Bill {bill.bill_number}",
+        lines,
+        gl_station_id=bst,
+        aquaculture_line_costing=aq_cost,
+    )
+    if not je:
+        raise GlPostingError(
+            "G/L: The vendor bill journal was not created (unbalanced or invalid). "
+            "Check chart of accounts and bill line amounts."
         )
 
     _ensure_vendor_ap_for_posted_bill(company_id, bill)
@@ -2910,7 +2984,7 @@ def post_bill_journal(
             "try_apply_bill_stock_receipt failed for bill %s (after journal attempt)",
             bill.id,
         )
-    return je is not None
+    return True
 
 
 def resync_posted_bill_journal_from_lines(company_id: int, bill_id: int) -> bool:
@@ -3018,14 +3092,22 @@ def sync_invoice_gl(
     payment_method: str = "cash",
     bank_account_id: Optional[int] = None,
 ) -> None:
-    """Create posted journals for invoice lifecycle (sale + optional AR receipt)."""
+    """Create posted journals for invoice lifecycle (sale + COGS + optional AR receipt)."""
     inv.refresh_from_db()
-    post_invoice_sale_journal(
+    if inv.status in ("draft", "void") or (inv.total or Decimal("0")) <= 0:
+        return
+    ok = post_invoice_sale_journal(
         company_id,
         inv,
         payment_method=payment_method,
         bank_account_id=bank_account_id,
     )
+    if not ok:
+        raise GlPostingError(
+            "G/L: Cannot post invoice sale journal. Assign a selling site (station) or pond on lines, "
+            "ensure revenue/chart accounts exist (4200 shop, 424x aquaculture harvest), and that "
+            "1010 Cash or 1100 A/R is available for the invoice status."
+        )
     post_invoice_cogs_journal(company_id, inv)
     if (
         old_status
@@ -3033,12 +3115,16 @@ def sync_invoice_gl(
         and inv.status == "paid"
         and invoice_sale_used_ar(company_id, inv.id)
     ):
-        post_invoice_receipt_journal(
+        rcpt_ok = post_invoice_receipt_journal(
             company_id,
             inv,
             payment_method=payment_method,
             bank_account_id=bank_account_id,
         )
+        if not rcpt_ok:
+            raise GlPostingError(
+                "G/L: Invoice was on A/R but the cash receipt journal (AUTO-INV-*-RCPT) could not be posted."
+            )
 
 
 def _payment_received_clearing_buckets(

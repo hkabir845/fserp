@@ -542,7 +542,7 @@ def preview_transfer_line_costs(
 
     line_out: list[dict] = []
     for wk, fc in parsed:
-        if wk <= 0:
+        if wk <= 0 and not (fc and fc > 0):
             line_out.append({"cost_amount": None})
             continue
         cost = resolve_auto_transfer_line_cost(
@@ -607,7 +607,8 @@ def sync_transfer_line_production_costs(transfer) -> int:
     updated = 0
     for ln in lines:
         wk = _money_q(ln.weight_kg or Decimal("0"))
-        if wk <= 0:
+        fc = int(ln.fish_count or 0) or None
+        if wk <= 0 and not fc:
             continue
         new_cost = resolve_auto_transfer_line_cost(
             company_id=transfer.company_id,

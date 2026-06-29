@@ -18,7 +18,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Q
 
-from api.models import Bill, Payment, Vendor
+from api.models import Bill, JournalEntry, Payment, Vendor
 from api.services.payment_allocation import compute_vendor_balance_due
 
 
@@ -69,12 +69,22 @@ class Command(BaseCommand):
                 Vendor.objects.filter(pk=v.pk, company_id=company_id).update(
                     current_balance=new_balance
                 )
-                Bill.objects.filter(company_id=company_id, vendor_id=v.id).exclude(
+                for b in Bill.objects.filter(company_id=company_id, vendor_id=v.id).exclude(
                     status="draft"
-                ).update(vendor_ap_incremented=True)
-                Payment.objects.filter(
+                ).only("id", "company_id"):
+                    en = f"AUTO-BILL-{b.id}"
+                    has_je = JournalEntry.objects.filter(
+                        company_id=company_id, entry_number=en
+                    ).exists()
+                    Bill.objects.filter(pk=b.pk).update(vendor_ap_incremented=has_je)
+                for p in Payment.objects.filter(
                     company_id=company_id, vendor_id=v.id, payment_type="made"
-                ).update(vendor_ap_decremented=True)
+                ).only("id", "company_id"):
+                    en = f"AUTO-PAY-{p.id}-MADE"
+                    has_je = JournalEntry.objects.filter(
+                        company_id=company_id, entry_number=en
+                    ).exists()
+                    Payment.objects.filter(pk=p.pk).update(vendor_ap_decremented=has_je)
 
         if dry:
             self.stdout.write(self.style.WARNING("Dry run: no database changes."))

@@ -109,3 +109,58 @@ def test_transfer_includes_uncycled_fry_bill_when_transfer_has_cycle(
         fish_count=250000,
     )
     assert cost == Decimal("175000.00") or abs(cost - Decimal("175000.00")) < Decimal("5000")
+
+
+@pytest.mark.django_db
+def test_sync_transfer_cost_head_only_line_zero_weight(
+    api_client, company_tenant, auth_admin_headers, monkeypatch
+):
+    """Nursing transfers often have fish_count but no weight — sync must still recalc cost."""
+    from api.models import AquacultureFishPondTransfer, AquacultureFishPondTransferLine
+    from api.services.aquaculture_transfer_cost import sync_transfer_line_production_costs
+
+    _enable_aquaculture_with_coa(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Nursing Head Only", pond_role="nursing", is_active=True
+    )
+    dst = AquaculturePond.objects.create(company_id=cid, name="Grow Head Only", is_active=True)
+    h = auth_admin_headers
+    vendor_id = _vendor(api_client, h, "Hatchery Head Sync")
+    fry = _fish_item(cid, name="Fry Head Sync")
+    _post_open_fish_bill(api_client, h, vendor_id, fry.id, src.id, amount="350000.00")
+
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=src,
+        entry_date=date(2026, 4, 1),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=500000,
+        weight_kg_delta=Decimal("250"),
+        memo="Opening stock",
+    )
+
+    monkeypatch.setattr(
+        "api.services.aquaculture_transfer_cost._nursing_stocked_heads_basis",
+        lambda **kwargs: 500000,
+    )
+
+    tr = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2026, 5, 17),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr,
+        to_pond=dst,
+        weight_kg=Decimal("0"),
+        fish_count=250000,
+        cost_amount=Decimal("4028.00"),
+    )
+    assert sync_transfer_line_production_costs(tr) == 1
+    tr.lines.first().refresh_from_db()
+    updated = tr.lines.first().cost_amount
+    assert updated > Decimal("100000.00")
+    assert updated != Decimal("4028.00")

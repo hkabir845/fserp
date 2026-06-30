@@ -407,6 +407,65 @@ def _nursing_fry_pool_for_pond_batch(
     return _money_q(max(fry_exp, fry_gl))
 
 
+def _nursing_uncycled_other_production_total(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    start: date,
+    end: date,
+) -> Decimal:
+    """
+    Feed/medicine/labor on the nursing pond not yet tagged to a batch — counts toward
+    the active batch transfer cost when legacy rows lack production_cycle_id.
+    """
+    from django.db.models import Sum
+
+    from api.models import AquacultureExpense
+    from api.services.aquaculture_cost_per_kg import (
+        aquaculture_expense_category_to_cost_bucket,
+        fry_stocking_capitalized_manual_expense_ids,
+        vendor_bill_pond_bucket_additions,
+    )
+
+    total = Decimal("0")
+    capitalized_fry_ids = fry_stocking_capitalized_manual_expense_ids(company_id)
+    for row in (
+        AquacultureExpense.objects.filter(
+            company_id=company_id,
+            pond_id=from_pond_id,
+            production_cycle__isnull=True,
+            expense_date__gte=start,
+            expense_date__lte=end,
+        )
+        .exclude(pk__in=capitalized_fry_ids)
+        .values("expense_category")
+        .annotate(s=Sum("amount"))
+    ):
+        bucket = aquaculture_expense_category_to_cost_bucket(
+            row["expense_category"] or "", company_id=company_id
+        )
+        if bucket not in _TRANSFER_COST_BUCKETS or bucket in _NURSING_FIXED_POND_BUCKETS:
+            continue
+        if bucket == "fry_stocking":
+            continue
+        total += Decimal(str(row["s"] or 0))
+
+    for bkey, bamt in vendor_bill_pond_bucket_additions(
+        company_id=company_id,
+        pond_id=from_pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=None,
+        uncycled_bill_lines_only=True,
+    ).items():
+        if bkey not in _TRANSFER_COST_BUCKETS or bkey in _NURSING_FIXED_POND_BUCKETS:
+            continue
+        if bkey == "fry_stocking":
+            continue
+        total += bamt
+    return _money_q(total)
+
+
 def _nursing_batch_cost_pool(
     *,
     company_id: int,
@@ -449,6 +508,21 @@ def _nursing_batch_cost_pool(
         from_cycle=from_cycle,
     )
     fry = max(fry_cycle, fry_pond)
+    if from_cycle is not None:
+        open_batches = AquacultureProductionCycle.objects.filter(
+            company_id=company_id,
+            pond_id=from_pond_id,
+            end_date__isnull=True,
+            is_active=True,
+            source_production_cycle__isnull=True,
+        ).count()
+        if open_batches <= 1:
+            other += _nursing_uncycled_other_production_total(
+                company_id=company_id,
+                from_pond_id=from_pond_id,
+                start=start,
+                end=end,
+            )
     total = _money_q(other + fry)
     if total > 0:
         return total

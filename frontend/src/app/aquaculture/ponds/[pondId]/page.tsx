@@ -238,6 +238,12 @@ interface CycleRow {
   start_date?: string
   end_date?: string | null
   is_active?: boolean
+  fish_species_label?: string
+  fry_stocking_date?: string | null
+  fry_stocking_fish_count?: number | null
+  fry_stocking_weight_kg?: string | null
+  fry_stocking_cost_amount?: string | null
+  fry_vendor_bill_numbers?: string
 }
 
 interface WarehouseStockRow {
@@ -1442,13 +1448,21 @@ export default function PondDetailViewPage() {
           )}
 
           <section className="mb-6">
-            <h2 className="mb-2 text-sm font-semibold text-foreground">Production cycles</h2>
+            <h2 className="mb-2 text-sm font-semibold text-foreground">Production cycles (stocking batches)</h2>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Fry vendor bills with batch left blank auto-create a batch (C01, C02, …) on the nursing pond. Fry
+              count, weight, and purchase cost appear below when the bill is posted.
+            </p>
             <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
-              <table className="w-full min-w-[520px] text-left text-sm">
+              <table className="w-full min-w-[880px] text-left text-sm">
                 <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
-                    <th className="px-4 py-2">Name</th>
-                    <th className="px-4 py-2">Code</th>
+                    <th className="px-4 py-2">Batch</th>
+                    <th className="px-4 py-2">Species</th>
+                    <th className="px-4 py-2">Fry date</th>
+                    <th className="px-4 py-2 text-right">Fish (#)</th>
+                    <th className="px-4 py-2 text-right">Weight (kg)</th>
+                    <th className="px-4 py-2 text-right">Fry cost</th>
                     <th className="px-4 py-2">Period</th>
                     <th className="px-4 py-2">Status</th>
                   </tr>
@@ -1456,16 +1470,42 @@ export default function PondDetailViewPage() {
                 <tbody className="divide-y divide-border/70">
                   {cycles.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
-                        No cycles
+                      <td colSpan={8} className="px-4 py-6 text-center text-muted-foreground">
+                        No batches yet — post a fry vendor bill to this pond (leave batch blank to auto-create).
                       </td>
                     </tr>
                   ) : (
                     cycles.map((c) => (
                       <tr key={c.id}>
-                        <td className="px-4 py-2 font-medium text-foreground">{c.name}</td>
-                        <td className="px-4 py-2 text-muted-foreground">{c.code || '—'}</td>
-                        <td className="px-4 py-2 text-muted-foreground">
+                        <td className="px-4 py-2">
+                          <div className="font-medium text-foreground">{c.code || c.name}</div>
+                          {c.code && c.name && c.name !== c.code ? (
+                            <div className="text-xs text-muted-foreground">{c.name}</div>
+                          ) : null}
+                          {c.fry_vendor_bill_numbers ? (
+                            <div className="text-xs text-muted-foreground">{c.fry_vendor_bill_numbers}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-2 text-muted-foreground">{c.fish_species_label || '—'}</td>
+                        <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
+                          {c.fry_stocking_date ? formatDateOnly(c.fry_stocking_date) : formatDateOnly(c.start_date)}
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums text-foreground">
+                          {c.fry_stocking_fish_count != null && c.fry_stocking_fish_count > 0
+                            ? formatNumber(c.fry_stocking_fish_count, 0)
+                            : '—'}
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums text-foreground">
+                          {c.fry_stocking_weight_kg
+                            ? formatNumber(parseNum(c.fry_stocking_weight_kg), 2)
+                            : '—'}
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums text-foreground">
+                          {c.fry_stocking_cost_amount
+                            ? `${sym}${formatNumber(parseNum(c.fry_stocking_cost_amount), 2)}`
+                            : '—'}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
                           {formatDateOnly(c.start_date)} → {formatDateOnly(c.end_date)}
                         </td>
                         <td className="px-4 py-2">{c.is_active !== false ? 'Active' : 'Inactive'}</td>

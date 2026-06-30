@@ -8,7 +8,11 @@ import re
 from datetime import date
 from typing import TYPE_CHECKING
 
-from api.models import AquaculturePond, AquacultureProductionCycle, Bill, BillLine, Company
+from decimal import Decimal
+
+from django.db.models import Q
+
+from api.models import AquaculturePond, AquacultureProductionCycle, Bill, BillLine, Company, Item
 from api.services.aquaculture_constants import fish_species_display_label, normalize_fish_species
 
 if TYPE_CHECKING:
@@ -77,6 +81,31 @@ def species_uses_seasonal_stocking_batches(fish_species: str | None) -> bool:
     """
     sp_code, _ = normalize_fish_species(fish_species or "tilapia")
     return sp_code == "tilapia"
+
+
+def _line_opens_new_stocking_batch(company_id: int, pl: dict) -> bool:
+    """
+    Fry / fingerling purchase lines start a new tilapia nursing batch (C01, C02, …).
+    Feed, medicine, and other pond costs reuse the pond's open batch when left blank.
+    """
+    bucket = (pl.get("aquaculture_cost_bucket") or "").strip()
+    if bucket == "fry_stocking":
+        return True
+    try:
+        fish_count = int(pl.get("aquaculture_fish_count") or 0)
+    except (TypeError, ValueError):
+        fish_count = 0
+    if fish_count <= 0:
+        return False
+    item_id = pl.get("item_id")
+    if not item_id:
+        return False
+    cat = (
+        Item.objects.filter(pk=item_id, company_id=company_id)
+        .values_list("pos_category", flat=True)
+        .first()
+    )
+    return (cat or "").strip().lower() == "fish"
 
 
 def open_stocking_batch_for_pond_species(
@@ -286,6 +315,8 @@ def assign_auto_production_cycles_for_parsed_bill_lines(
     if not Company.objects.filter(pk=company_id, aquaculture_enabled=True).exists():
         return
 
+    _clear_stale_cycle_refs_in_parsed_lines(company_id, parsed_lines)
+
     bill_date = bill.bill_date
     bill_ref = ((bill.bill_number or "").strip() or f"#{bill.pk}")[:80]
 
@@ -345,12 +376,39 @@ def assign_auto_production_cycles_for_parsed_bill_lines(
             reused_cycle_by_pond_species[key] = existing.id
             pl["aquaculture_production_cycle_id"] = existing.id
 
+    # Tilapia (seasonal batches): feed/medicine reuse the pond's open batch; only fry lines open C01/C02/C03.
+    reused_open_batch_by_pond: dict[int, int] = {}
+    for pl in parsed_lines:
+        pid = pl.get("aquaculture_pond_id")
+        if not pid or pl.get("aquaculture_production_cycle_id"):
+            continue
+        pid_i = int(pid)
+        sp, _ = _species_for_pond_line(pl, pid_i)
+        if not species_uses_seasonal_stocking_batches(sp):
+            continue
+        if _line_opens_new_stocking_batch(company_id, pl):
+            continue
+        if pid_i in reused_open_batch_by_pond:
+            pl["aquaculture_production_cycle_id"] = reused_open_batch_by_pond[pid_i]
+            continue
+        sp_code, _ = normalize_fish_species(sp)
+        existing = open_stocking_batch_for_pond_species(company_id, pid_i, sp_code)
+        if existing:
+            reused_open_batch_by_pond[pid_i] = existing.id
+            pl["aquaculture_production_cycle_id"] = existing.id
+
     pond_ids_needing_new: set[int] = set()
     for pl in parsed_lines:
         pid = pl.get("aquaculture_pond_id")
         if not pid or pl.get("aquaculture_production_cycle_id"):
             continue
-        pond_ids_needing_new.add(int(pid))
+        pid_i = int(pid)
+        sp, _ = _species_for_pond_line(pl, pid_i)
+        if _line_opens_new_stocking_batch(company_id, pl):
+            pond_ids_needing_new.add(pid_i)
+        elif not species_uses_seasonal_stocking_batches(sp):
+            # Pangasius / carp: first pond-tagged bill opens the long-running batch.
+            pond_ids_needing_new.add(pid_i)
 
     if not pond_ids_needing_new:
         return
@@ -496,3 +554,257 @@ def link_production_cycles_to_vendor_bills(
 
     stats["bills_touched"] = len(touched_bills)
     return stats
+
+
+def _clear_stale_cycle_refs_in_parsed_lines(company_id: int, parsed_lines: list[dict]) -> None:
+    """Drop production_cycle_id when the batch was deleted or belongs to another pond."""
+    ids: set[int] = set()
+    for pl in parsed_lines:
+        raw = pl.get("aquaculture_production_cycle_id")
+        if raw not in (None, ""):
+            try:
+                ids.add(int(raw))
+            except (TypeError, ValueError):
+                pl["aquaculture_production_cycle_id"] = None
+    if not ids:
+        return
+    valid = {
+        row["id"]: row["pond_id"]
+        for row in AquacultureProductionCycle.objects.filter(
+            company_id=company_id, pk__in=ids
+        ).values("id", "pond_id")
+    }
+    for pl in parsed_lines:
+        raw = pl.get("aquaculture_production_cycle_id")
+        if raw in (None, ""):
+            continue
+        try:
+            cyc_id = int(raw)
+        except (TypeError, ValueError):
+            pl["aquaculture_production_cycle_id"] = None
+            continue
+        pid = pl.get("aquaculture_pond_id")
+        if cyc_id not in valid or (pid and int(pid) != valid[cyc_id]):
+            pl["aquaculture_production_cycle_id"] = None
+
+
+def _bill_line_to_assignment_dict(line: BillLine) -> dict:
+    return {
+        "item_id": line.item_id,
+        "aquaculture_pond_id": line.aquaculture_pond_id,
+        "aquaculture_production_cycle_id": line.aquaculture_production_cycle_id,
+        "aquaculture_cost_bucket": (line.aquaculture_cost_bucket or "").strip(),
+        "aquaculture_fish_count": line.aquaculture_fish_count,
+        "aquaculture_fish_species": (line.aquaculture_fish_species or "").strip(),
+        "aquaculture_fish_species_other": (line.aquaculture_fish_species_other or "").strip(),
+    }
+
+
+def repair_stale_aquaculture_bill_line_cycles(
+    company_id: int,
+    *,
+    pond_ids: list[int] | None = None,
+    bill_ids: list[int] | None = None,
+    resync_gl: bool = True,
+) -> dict[str, int]:
+    """
+    Re-link vendor bill lines after batch delete/recreate/edit.
+
+    1) Match cycles whose notes/name reference the bill number.
+    2) Re-run auto-assignment for lines whose cycle is missing or on the wrong pond.
+    3) Refresh posted AUTO-BILL journals so fry/feed costs stay on the correct batch.
+    """
+    stats = {
+        "link_lines_linked": 0,
+        "repair_bills_touched": 0,
+        "repair_lines_updated": 0,
+        "journals_resynced": 0,
+    }
+    if not Company.objects.filter(pk=company_id, aquaculture_enabled=True).exists():
+        return stats
+
+    link_stats = link_production_cycles_to_vendor_bills(
+        company_id, bill_ids=bill_ids, dry_run=False
+    )
+    stats["link_lines_linked"] = int(link_stats.get("lines_linked") or 0)
+
+    valid_cycle_pond = {
+        row["id"]: row["pond_id"]
+        for row in AquacultureProductionCycle.objects.filter(company_id=company_id).values(
+            "id", "pond_id"
+        )
+    }
+
+    line_qs = BillLine.objects.filter(
+        bill__company_id=company_id,
+        aquaculture_pond_id__isnull=False,
+    )
+    if pond_ids:
+        line_qs = line_qs.filter(aquaculture_pond_id__in=pond_ids)
+    if bill_ids:
+        line_qs = line_qs.filter(bill_id__in=bill_ids)
+
+    stale_bill_ids: set[int] = set()
+    for ln in line_qs.only("bill_id", "aquaculture_pond_id", "aquaculture_production_cycle_id"):
+        cyc = ln.aquaculture_production_cycle_id
+        if cyc and valid_cycle_pond.get(cyc) == ln.aquaculture_pond_id:
+            continue
+        stale_bill_ids.add(ln.bill_id)
+
+    if not stale_bill_ids:
+        return stats
+
+    from api.services.gl_posting import resync_posted_bill_journal_from_lines
+
+    for bill in (
+        Bill.objects.filter(pk__in=stale_bill_ids, company_id=company_id)
+        .prefetch_related("lines__item")
+        .order_by("id")
+    ):
+        lines_list = list(bill.lines.all())
+        parsed = [_bill_line_to_assignment_dict(ln) for ln in lines_list]
+        assign_auto_production_cycles_for_parsed_bill_lines(company_id, bill, parsed)
+        bill_updated = False
+        for ln, pl in zip(lines_list, parsed):
+            new_cyc = pl.get("aquaculture_production_cycle_id")
+            if new_cyc != ln.aquaculture_production_cycle_id:
+                ln.aquaculture_production_cycle_id = new_cyc
+                ln.save(update_fields=["aquaculture_production_cycle_id"])
+                stats["repair_lines_updated"] += 1
+                bill_updated = True
+        if bill_updated:
+            stats["repair_bills_touched"] += 1
+            if resync_gl and resync_posted_bill_journal_from_lines(company_id, bill.id):
+                stats["journals_resynced"] += 1
+
+    return stats
+
+
+def link_orphan_bill_lines_to_cycle_by_start_date(
+    company_id: int,
+    cycle: AquacultureProductionCycle,
+) -> int:
+    """
+    After a batch is recreated on a pond, attach orphan vendor lines from the same bill date.
+    Helps when the user deleted C01 and opened a new C01 with the fry bill's stocking date.
+    """
+    return BillLine.objects.filter(
+        bill__company_id=company_id,
+        aquaculture_pond_id=cycle.pond_id,
+        aquaculture_production_cycle_id__isnull=True,
+        bill__bill_date=cycle.start_date,
+    ).update(aquaculture_production_cycle_id=cycle.id)
+
+
+def refresh_pond_batch_integrity(
+    company_id: int,
+    *,
+    pond_id: int,
+    production_cycle_id: int | None = None,
+    resync_transfers: bool = True,
+    resync_gl: bool = True,
+) -> dict[str, int]:
+    """Repair bill/journal batch tags and optionally reprice nursing transfers for one pond."""
+    stats: dict[str, int] = {}
+    if production_cycle_id is not None:
+        cycle = AquacultureProductionCycle.objects.filter(
+            pk=production_cycle_id, company_id=company_id, pond_id=pond_id
+        ).first()
+        if cycle:
+            stats["start_date_lines_linked"] = link_orphan_bill_lines_to_cycle_by_start_date(
+                company_id, cycle
+            )
+    repair_stats = repair_stale_aquaculture_bill_line_cycles(
+        company_id,
+        pond_ids=[pond_id],
+        resync_gl=resync_gl,
+    )
+    stats.update(repair_stats)
+    if resync_transfers:
+        from api.services.aquaculture_transfer_cost import resync_nursing_pond_transfer_costs
+
+        stats["transfers_resynced"] = resync_nursing_pond_transfer_costs(
+            company_id=company_id,
+            from_pond_id=pond_id,
+            from_production_cycle_id=production_cycle_id,
+            sync_gl=True,
+        )
+    return stats
+
+
+def _is_fry_stocking_bill_line(line: BillLine) -> bool:
+    bucket = (getattr(line, "aquaculture_cost_bucket", None) or "").strip()
+    if bucket == "fry_stocking":
+        return True
+    fc = int(getattr(line, "aquaculture_fish_count", None) or 0)
+    if fc <= 0:
+        return False
+    item = getattr(line, "item", None)
+    return item is not None and (getattr(item, "pos_category", None) or "").strip().lower() == "fish"
+
+
+def fry_stocking_summaries_for_cycles(
+    company_id: int,
+    cycle_ids: list[int],
+) -> dict[int, dict[str, str | int | None]]:
+    """
+    Fry purchase totals per production cycle from posted vendor bill lines (fish / fry_stocking).
+    """
+    if not cycle_ids:
+        return {}
+    fry_line_q = Q(aquaculture_cost_bucket="fry_stocking") | Q(
+        aquaculture_fish_count__gt=0,
+        item__pos_category__iexact="fish",
+    )
+    lines = (
+        BillLine.objects.filter(
+            bill__company_id=company_id,
+            aquaculture_production_cycle_id__in=cycle_ids,
+            bill__stock_receipt_applied=True,
+        )
+        .filter(fry_line_q)
+        .select_related("bill", "item")
+        .order_by("aquaculture_production_cycle_id", "bill__bill_date", "id")
+    )
+    acc: dict[int, dict] = {}
+    bill_nums: dict[int, set[str]] = {}
+    for ln in lines:
+        if not _is_fry_stocking_bill_line(ln):
+            continue
+        cy_id = ln.aquaculture_production_cycle_id
+        if cy_id is None:
+            continue
+        if cy_id not in acc:
+            acc[cy_id] = {
+                "fry_stocking_date": None,
+                "fry_stocking_fish_count": 0,
+                "fry_stocking_weight_kg": Decimal("0"),
+                "fry_stocking_cost_amount": Decimal("0"),
+            }
+            bill_nums[cy_id] = set()
+        row = acc[cy_id]
+        b = ln.bill
+        bdate = b.bill_date.isoformat() if b and b.bill_date else None
+        if bdate and (row["fry_stocking_date"] is None or bdate < row["fry_stocking_date"]):
+            row["fry_stocking_date"] = bdate
+        row["fry_stocking_fish_count"] += int(ln.aquaculture_fish_count or 0)
+        if ln.aquaculture_fish_weight_kg is not None:
+            row["fry_stocking_weight_kg"] += Decimal(str(ln.aquaculture_fish_weight_kg))
+        row["fry_stocking_cost_amount"] += Decimal(str(ln.amount or 0))
+        bnum = (b.bill_number or "").strip() if b else ""
+        if bnum:
+            bill_nums[cy_id].add(bnum)
+
+    out: dict[int, dict[str, str | int | None]] = {}
+    for cy_id, row in acc.items():
+        w = row["fry_stocking_weight_kg"]
+        cost = row["fry_stocking_cost_amount"]
+        nums = sorted(bill_nums.get(cy_id) or [])
+        out[cy_id] = {
+            "fry_stocking_date": row["fry_stocking_date"],
+            "fry_stocking_fish_count": row["fry_stocking_fish_count"] or None,
+            "fry_stocking_weight_kg": str(w.quantize(Decimal("0.01"))) if w else None,
+            "fry_stocking_cost_amount": str(cost.quantize(Decimal("0.01"))) if cost else None,
+            "fry_vendor_bill_numbers": ", ".join(nums) if nums else "",
+        }
+    return out

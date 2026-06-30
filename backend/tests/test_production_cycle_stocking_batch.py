@@ -125,7 +125,13 @@ def test_tilapia_creates_new_batch_per_bill(company_tenant):
     )
     for n in (1, 2):
         bill = SimpleNamespace(bill_number=f"T-{n}", bill_date=date(2026, 3, n), pk=n)
-        lines = [{"aquaculture_pond_id": pond.id, "aquaculture_fish_species": "tilapia"}]
+        lines = [
+            {
+                "aquaculture_pond_id": pond.id,
+                "aquaculture_fish_species": "tilapia",
+                "aquaculture_cost_bucket": "fry_stocking",
+            }
+        ]
         assign_auto_production_cycles_for_parsed_bill_lines(company_tenant.id, bill, lines)
     assert AquacultureProductionCycle.objects.filter(company_id=company_tenant.id, pond_id=pond.id).count() == 2
 

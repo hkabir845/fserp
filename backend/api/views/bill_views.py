@@ -30,6 +30,7 @@ from api.services.aquaculture_constants import (
 from api.services.aquaculture_pond_display import bill_line_pond_display_name
 from api.services.aquaculture_production_cycle_service import (
     assign_auto_production_cycles_for_parsed_bill_lines,
+    repair_stale_aquaculture_bill_line_cycles,
 )
 from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.station_stock import receipt_station_id_for_vendor
@@ -862,6 +863,25 @@ def bills_create(request):
                     b,
                     acknowledge_tank_overfill=ack_tank_overfill,
                 )
+            repair_stale_aquaculture_bill_line_cycles(
+                request.company_id,
+                bill_ids=[b.id],
+                resync_gl=True,
+            )
+            b = (
+                Bill.objects.filter(id=b.id)
+                .select_related("vendor", "receipt_station")
+                .prefetch_related(
+                    "lines__item",
+                    "lines__tank",
+                    "lines__aquaculture_pond",
+                    "lines__aquaculture_production_cycle",
+                    "lines__expense_account",
+                    "lines__tenant_reporting_category",
+                    "payment_allocations",
+                )
+                .first()
+            )
     except GlPostingError as e:
         return JsonResponse({"detail": e.detail}, status=400)
     except StockBusinessError as e:
@@ -1047,6 +1067,25 @@ def bill_detail(request, bill_id: int):
                             b,
                             acknowledge_tank_overfill=ack_tank_overfill,
                         )
+                repair_stale_aquaculture_bill_line_cycles(
+                    request.company_id,
+                    bill_ids=[b.id],
+                    resync_gl=True,
+                )
+                b = (
+                    Bill.objects.filter(id=b.id)
+                    .select_related("vendor", "receipt_station")
+                    .prefetch_related(
+                        "lines__item",
+                        "lines__tank",
+                        "lines__aquaculture_pond",
+                        "lines__aquaculture_production_cycle",
+                        "lines__expense_account",
+                        "lines__tenant_reporting_category",
+                        "payment_allocations",
+                    )
+                    .first()
+                )
         except GlPostingError as e:
             return JsonResponse({"detail": e.detail}, status=400)
         except StockBusinessError as e:

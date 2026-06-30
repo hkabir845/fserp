@@ -40,7 +40,10 @@ interface CycleRow {
   pond_id: number
   start_date?: string
   end_date?: string | null
+  is_active?: boolean
   source_production_cycle_id?: number | null
+  fry_stocking_date?: string | null
+  fry_stocking_fish_count?: number | null
 }
 
 interface TransferCostPreviewLine {
@@ -360,11 +363,15 @@ export default function AquacultureFishTransfersPage() {
         .filter(
           (c) =>
             c.pond_id === pid &&
+            c.is_active !== false &&
             (c.source_production_cycle_id == null || c.source_production_cycle_id === 0),
         )
         .sort((a, b) => {
-          const da = a.start_date || ''
-          const db = b.start_date || ''
+          const ca = (a.code || '').trim()
+          const cb = (b.code || '').trim()
+          if (ca && cb && ca !== cb) return ca.localeCompare(cb, undefined, { numeric: true })
+          const da = a.fry_stocking_date || a.start_date || ''
+          const db = b.fry_stocking_date || b.start_date || ''
           if (da !== db) return db.localeCompare(da)
           return b.id - a.id
         })
@@ -374,10 +381,14 @@ export default function AquacultureFishTransfersPage() {
 
   const formatCycleOptionLabel = (c: CycleRow) => {
     const code = (c.code || '').trim()
-    const started = c.start_date ? formatDateOnly(c.start_date) : ''
-    const bits = [c.name || `Batch ${c.id}`]
-    if (code) bits.push(code)
-    if (started) bits.push(started)
+    const started = c.fry_stocking_date || c.start_date
+    const startedLabel = started ? formatDateOnly(started) : ''
+    const bits = [code || c.name || `Batch ${c.id}`]
+    if (code && c.name && c.name !== code) bits.push(c.name)
+    if (c.fry_stocking_fish_count != null && c.fry_stocking_fish_count > 0) {
+      bits.push(`${formatNumber(c.fry_stocking_fish_count, 0)} fish`)
+    }
+    if (startedLabel) bits.push(startedLabel)
     return bits.join(' · ')
   }
 
@@ -616,6 +627,15 @@ export default function AquacultureFishTransfersPage() {
     })()
     return () => ac.abort()
   }, [modal, fromPondId, fishSpecies, fishSpeciesOther, editingId])
+
+  /** When the nursing pond has exactly one active fry batch, pre-select it for transfer costing. */
+  useEffect(() => {
+    if (!modal || editingId != null || fromCycleId.trim()) return
+    const cohorts = nursingCohortCycles(fromPondId)
+    if (cohorts.length === 1) {
+      setFromCycleId(String(cohorts[0].id))
+    }
+  }, [modal, editingId, fromPondId, fromCycleId, nursingCohortCycles])
 
   const effectiveSamplePcs = useMemo(() => {
     const raw = lastSample?.fish_per_kg?.trim() ?? ''

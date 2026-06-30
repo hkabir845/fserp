@@ -126,7 +126,9 @@ from api.services.gl_posting import (
 from api.services.aquaculture_production_cycle_service import (
     cycle_code_conflict,
     ensure_destination_cycle_for_transfer,
+    fry_stocking_summaries_for_cycles,
     next_automatic_cycle_code,
+    refresh_pond_batch_integrity,
 )
 from api.services.reference_code import assign_string_code_if_empty
 from api.services.aquaculture_cutover import (
@@ -728,13 +730,13 @@ def _cycle_for_company(company_id: int, cycle_id: int) -> AquacultureProductionC
     return AquacultureProductionCycle.objects.filter(pk=cycle_id, company_id=company_id).first()
 
 
-def _cycle_to_json(c: AquacultureProductionCycle) -> dict:
+def _cycle_to_json(c: AquacultureProductionCycle, *, fry_summary: dict | None = None) -> dict:
     pond = getattr(c, "pond", None)
     pond_name = (pond.name or "").strip() if pond else ""
     pond_role = (getattr(pond, "pond_role", None) or "grow_out") if pond else "grow_out"
     src = getattr(c, "source_production_cycle", None)
     sp_code = (c.fish_species or "").strip() or "tilapia"
-    return {
+    payload = {
         "id": c.id,
         "pond_id": c.pond_id,
         "pond_name": pond_name,
@@ -754,7 +756,15 @@ def _cycle_to_json(c: AquacultureProductionCycle) -> dict:
         "notes": c.notes or "",
         "created_at": c.created_at.isoformat() if c.created_at else "",
         "updated_at": c.updated_at.isoformat() if c.updated_at else "",
+        "fry_stocking_date": None,
+        "fry_stocking_fish_count": None,
+        "fry_stocking_weight_kg": None,
+        "fry_stocking_cost_amount": None,
+        "fry_vendor_bill_numbers": "",
     }
+    if fry_summary:
+        payload.update(fry_summary)
+    return payload
 
 
 def _aquaculture_access(request) -> JsonResponse | None:
@@ -1090,11 +1100,17 @@ def aquaculture_production_cycles_list_or_create(request):
         )
         pid = request.GET.get("pond_id")
         if pid and str(pid).strip().isdigit():
-            p_int = int(pid)
-            qs = qs.filter(pond_id=p_int)
-            qs = filter_live_pond_queryset(qs, cid, p_int, "start_date")
+            qs = qs.filter(pond_id=int(pid))
         qs = qs.order_by("pond_id", "sort_order", "-start_date", "id")
-        return JsonResponse([_cycle_to_json(c) for c in qs], safe=False)
+        cycles = list(qs)
+        fry_by_cycle = fry_stocking_summaries_for_cycles(cid, [c.id for c in cycles])
+        return JsonResponse(
+            [
+                _cycle_to_json(c, fry_summary=fry_by_cycle.get(c.id))
+                for c in cycles
+            ],
+            safe=False,
+        )
 
     body, e = parse_json_body(request)
     if e:
@@ -1148,6 +1164,7 @@ def aquaculture_production_cycles_list_or_create(request):
         notes=(body.get("notes") or "")[:5000],
     )
     c.save()
+    refresh_pond_batch_integrity(cid, pond_id=pond.id, production_cycle_id=c.id)
     return JsonResponse(_cycle_to_json(c), status=201)
 
 
@@ -1217,11 +1234,15 @@ def aquaculture_production_cycle_detail(request, cycle_id: int):
                 body.get("fish_species_other"), c.fish_species
             )
         c.save()
-        return JsonResponse(_cycle_to_json(c))
+        refresh_pond_batch_integrity(cid, pond_id=c.pond_id, production_cycle_id=c.id)
+        fry_by_cycle = fry_stocking_summaries_for_cycles(cid, [c.id])
+        return JsonResponse(_cycle_to_json(c, fry_summary=fry_by_cycle.get(c.id)))
     lock_err = _pond_write_lock_response(cid, c.pond_id, c.start_date)
     if lock_err:
         return lock_err
+    pond_id = c.pond_id
     c.delete()
+    refresh_pond_batch_integrity(cid, pond_id=pond_id, production_cycle_id=None)
     return JsonResponse({"detail": "Deleted"}, status=200)
 
 

@@ -185,19 +185,42 @@ export interface BillLinePondTagFields {
 export function applyHeaderPondToBillLines<T extends BillLinePondTagFields>(
   lines: T[],
   pondId: number,
-  isFishLine: (line: T) => boolean
+  _isFishLine: (line: T) => boolean
 ): T[] {
   return lines.map((line) => {
     if (line.aquaculture_cost_mode === 'shared_equal' || line.aquaculture_cost_mode === 'shared_manual') {
       return line
     }
-    if (isFishLine(line)) {
-      return { ...line, aquaculture_pond_id: pondId }
-    }
     const cur = line.aquaculture_pond_id
-    if (cur !== '' && cur != null && Number(cur) > 0) return line
-    return { ...line, aquaculture_pond_id: pondId }
+    const curNum = cur !== '' && cur != null && Number.isFinite(Number(cur)) ? Number(cur) : null
+    const keepCycle =
+      curNum === pondId && line.aquaculture_production_cycle_id != null && line.aquaculture_production_cycle_id !== ''
+        ? line.aquaculture_production_cycle_id
+        : ''
+    return {
+      ...line,
+      aquaculture_pond_id: pondId,
+      aquaculture_production_cycle_id: keepCycle,
+    }
   })
+}
+
+/** Apply header receiving location to line-level pond tags before save. */
+export function syncBillLinesToReceiptHeader<T extends BillLinePondTagFields>(
+  lines: T[],
+  locationKey: string,
+  stations: BillReceiptLocationStation[],
+  ponds: BillReceiptLocationPond[],
+  isFishLine: (line: T) => boolean
+): T[] {
+  const resolved = resolveBillReceiptLocation(locationKey, stations, ponds)
+  if (resolved.headerPondId) {
+    return applyHeaderPondToBillLines(lines, resolved.headerPondId, isFishLine)
+  }
+  if (resolved.billPurpose === 'station' && locationKey.trim()) {
+    return clearPondTagsFromNonFishLines(lines, isFishLine)
+  }
+  return lines
 }
 
 export function clearPondTagsFromNonFishLines<T extends BillLinePondTagFields>(

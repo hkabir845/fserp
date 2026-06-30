@@ -62,8 +62,7 @@ import {
   vendorUsualReceivingSummary,
 } from '@/lib/vendorReceivingDefaults'
 import {
-  applyHeaderPondToBillLines,
-  clearPondTagsFromNonFishLines,
+  syncBillLinesToReceiptHeader,
   formatPondScopeKey,
   headerPondIdFromLocationKey,
   inferReceiptLocationKeyFromBill,
@@ -1231,8 +1230,8 @@ export default function BillsPage() {
         if (!vendorExpense) return line
         return { ...line, expense_account_id: vendorExpense }
       })
-      if (resolved.headerPondId) {
-        lines = applyHeaderPondToBillLines(lines, resolved.headerPondId, isFishLine)
+      if (receipt_location_key) {
+        lines = syncBillLinesToReceiptHeader(lines, receipt_location_key, stations, aquaculturePonds, isFishLine)
       }
       return {
         ...prev,
@@ -1251,12 +1250,7 @@ export default function BillsPage() {
         if (!line.item_id) return false
         return (items.find((i) => i.id === line.item_id)?.pos_category || '').toLowerCase() === 'fish'
       }
-      let lines = prev.lines
-      if (resolved.headerPondId) {
-        lines = applyHeaderPondToBillLines(lines, resolved.headerPondId, isFishLine)
-      } else if (resolved.billPurpose === 'station' && key) {
-        lines = clearPondTagsFromNonFishLines(lines, isFishLine)
-      }
+      const lines = syncBillLinesToReceiptHeader(prev.lines, key, stations, aquaculturePonds, isFishLine)
       return {
         ...prev,
         receipt_location_key: key,
@@ -2027,7 +2021,17 @@ export default function BillsPage() {
   }
 
   const performCreate = async (confirm?: { acknowledgeTankOverfill: boolean }) => {
-    const linesToSave = finalizeBillLinesForSave(formData.lines, items)
+    const isFishLine = (line: BillLineItem) => {
+      if (!line.item_id) return false
+      return (items.find((i) => i.id === line.item_id)?.pos_category || '').toLowerCase() === 'fish'
+    }
+    const linesToSave = syncBillLinesToReceiptHeader(
+      finalizeBillLinesForSave(formData.lines, items),
+      formData.receipt_location_key,
+      stations,
+      aquaculturePonds,
+      isFishLine
+    )
     const { subtotal, taxAmount, total } = calculateTotals(linesToSave)
 
     const over = buildTankOverfillReview(linesToSave, items, tanks)
@@ -2227,7 +2231,17 @@ export default function BillsPage() {
   const performUpdate = async (confirm?: { acknowledgeTankOverfill: boolean }) => {
     if (!editingBill) return
 
-    const linesToSave = finalizeBillLinesForSave(formData.lines, items)
+    const isFishLine = (line: BillLineItem) => {
+      if (!line.item_id) return false
+      return (items.find((i) => i.id === line.item_id)?.pos_category || '').toLowerCase() === 'fish'
+    }
+    const linesToSave = syncBillLinesToReceiptHeader(
+      finalizeBillLinesForSave(formData.lines, items),
+      formData.receipt_location_key,
+      stations,
+      aquaculturePonds,
+      isFishLine
+    )
     const { subtotal, taxAmount, total } = calculateTotals(linesToSave)
     const nextStatus =
       editingBill.status === 'draft' && postDraftBillOnUpdate ? 'open' : editingBill.status

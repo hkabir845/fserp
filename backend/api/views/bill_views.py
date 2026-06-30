@@ -295,12 +295,8 @@ def _parse_bill_line_aquaculture(company_id: int, row: dict):
             )
         cyc = AquacultureProductionCycle.objects.filter(pk=cid, company_id=company_id).first()
         if not cyc or cyc.pond_id != pid:
-            return None, JsonResponse(
-                {
-                    "detail": "aquaculture_production_cycle_id must belong to aquaculture_pond_id",
-                },
-                status=400,
-            )
+            # Pond was changed (e.g. grow-out → nursing); drop stale batch — auto-assign on save.
+            cid = None
     return {
         "aquaculture_pond_id": pid,
         "aquaculture_production_cycle_id": cid,

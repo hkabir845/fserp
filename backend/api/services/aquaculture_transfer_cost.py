@@ -226,6 +226,33 @@ def lookup_transfer_cost_per_kg(
     return per_kg, note
 
 
+def _nursing_cost_as_of_date(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    cycle_filter_id: int | None,
+    transfer_date: date,
+    exclude_transfer_id: int | None = None,
+) -> date:
+    """Use the latest transfer date in the batch so fry + later feed/medicine costs are included."""
+    from api.models import AquacultureFishPondTransfer
+
+    q = AquacultureFishPondTransfer.objects.filter(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+    )
+    if cycle_filter_id is not None:
+        q = q.filter(from_production_cycle_id=cycle_filter_id)
+    else:
+        q = q.filter(from_production_cycle_id__isnull=True)
+    if exclude_transfer_id is not None:
+        q = q.exclude(pk=exclude_transfer_id)
+    latest = q.order_by("-transfer_date").values_list("transfer_date", flat=True).first()
+    if latest and latest > transfer_date:
+        return latest
+    return transfer_date
+
+
 def _nursing_batch_cost_pool(
     *,
     company_id: int,
@@ -378,10 +405,17 @@ def _nursing_line_cost_from_per_head(
     if heads <= 0:
         return Decimal("0")
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
+    cost_as_of = _nursing_cost_as_of_date(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+        transfer_date=transfer_date,
+        exclude_transfer_id=exclude_transfer_id,
+    )
     bio_total = _nursing_batch_cost_pool(
         company_id=company_id,
         from_pond_id=from_pond_id,
-        transfer_date=transfer_date,
+        transfer_date=cost_as_of,
         from_cycle=from_cycle,
     )
     if bio_total <= 0:
@@ -699,23 +733,29 @@ def lookup_transfer_cost_per_head(
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
     from api.services.aquaculture_biological_asset_service import compute_pond_biological_asset_summary
 
+    cost_as_of = _nursing_cost_as_of_date(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+        transfer_date=transfer_date,
+    )
     summary = compute_pond_biological_asset_summary(
         company_id,
         pond_id=from_pond_id,
-        as_of_date=transfer_date,
+        as_of_date=cost_as_of,
         production_cycle=from_cycle,
     )
     bio_total = _nursing_batch_cost_pool(
         company_id=company_id,
         from_pond_id=from_pond_id,
-        transfer_date=transfer_date,
+        transfer_date=cost_as_of,
         from_cycle=from_cycle,
     )
     if bio_total <= 0:
         bio_total = _bio_total_for_transfer_scope(
             company_id=company_id,
             from_pond_id=from_pond_id,
-            transfer_date=transfer_date,
+            transfer_date=cost_as_of,
             from_cycle=from_cycle,
         )
     if bio_total <= 0:
@@ -892,9 +932,33 @@ def resync_nursing_pond_transfer_costs(
     """
     Recompute line costs on every inter-pond transfer out of this nursing pond/cycle.
 
-    When a second fingerling move is recorded, earlier moves must share the same survivor
-    fingerling pool (cumulative transfer-out) so each line gets fish_count × cost/fish.
+    Fry + feed + medicine on the nursing pond are spread across all fingerlings moved out:
+    line cost = fish_count × (total batch bio-cost ÷ total fish moved). Uses the latest
+    transfer date in the batch for the cost pool so later expenses are included on every line.
     """
+    pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).only("pond_role").first()
+    role = (pond.pond_role or "").strip().lower() if pond else ""
+
+    if role == "nursing":
+        from api.models import AquacultureFishPondTransfer
+
+        cycle_ids = AquacultureFishPondTransfer.objects.filter(
+            company_id=company_id,
+            from_pond_id=from_pond_id,
+        ).values_list("from_production_cycle_id", flat=True).distinct()
+        if from_production_cycle_id is not None:
+            cycle_ids = [from_production_cycle_id]
+
+        updated = 0
+        for cycle_id in cycle_ids:
+            updated += _resync_nursing_batch_group(
+                company_id=company_id,
+                from_pond_id=from_pond_id,
+                from_production_cycle_id=cycle_id,
+                after_transfer_date=after_transfer_date,
+            )
+        return updated
+
     from api.models import AquacultureFishPondTransfer
 
     qs = AquacultureFishPondTransfer.objects.filter(
@@ -910,6 +974,87 @@ def resync_nursing_pond_transfer_costs(
     updated = 0
     for tr in qs.order_by("transfer_date", "id"):
         updated += sync_transfer_line_production_costs(tr)
+    return updated
+
+
+def _resync_nursing_batch_group(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    from_production_cycle_id: int | None,
+    after_transfer_date: date | None = None,
+) -> int:
+    """Spread one nursing batch cost pool across all transfer lines by fish count."""
+    from api.models import AquacultureFishPondTransfer, AquacultureProductionCycle
+
+    qs = AquacultureFishPondTransfer.objects.filter(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+    )
+    if from_production_cycle_id is not None:
+        qs = qs.filter(from_production_cycle_id=from_production_cycle_id)
+    else:
+        qs = qs.filter(from_production_cycle__isnull=True)
+    if after_transfer_date is not None:
+        qs = qs.filter(transfer_date__gte=after_transfer_date)
+
+    transfers = list(qs.prefetch_related("lines").order_by("transfer_date", "id"))
+    if not transfers:
+        return 0
+
+    from_cycle = None
+    if from_production_cycle_id is not None:
+        from_cycle = AquacultureProductionCycle.objects.filter(
+            pk=from_production_cycle_id, company_id=company_id
+        ).first()
+
+    max_date = max(t.transfer_date for t in transfers)
+    line_refs: list = []
+    total_fish = 0
+    for tr in transfers:
+        for ln in tr.lines.all():
+            fc = int(ln.fish_count or 0)
+            if fc <= 0:
+                continue
+            total_fish += fc
+            line_refs.append(ln)
+
+    if total_fish <= 0:
+        return 0
+
+    bio_total = _nursing_batch_cost_pool(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        transfer_date=max_date,
+        from_cycle=from_cycle,
+    )
+    if bio_total <= 0:
+        return 0
+
+    cycle_filter_id = from_production_cycle_id
+    denom = _nursing_fingerling_allocation_denominator(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+        transfer_date=max_date,
+        fish_count=total_fish,
+        transfer_total_fish_count=None,
+        exclude_transfer_id=None,
+    )
+    if denom <= 0:
+        denom = total_fish
+
+    updated = 0
+    for ln in line_refs:
+        fc = int(ln.fish_count or 0)
+        new_cost = _money_q(bio_total * Decimal(fc) / Decimal(denom))
+        if new_cost <= 0:
+            continue
+        if _money_q(ln.cost_amount or Decimal("0")) == new_cost:
+            continue
+        ln.cost_amount = new_cost
+        ln.save(update_fields=["cost_amount"])
+        updated += 1
     return updated
 
 

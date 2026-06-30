@@ -5192,7 +5192,28 @@ def aquaculture_fish_pond_transfers(request):
         xfer_qs = AquacultureFishPondTransfer.objects.filter(pk__in=ordered_ids).select_related(
             "from_pond", "from_production_cycle"
         ).prefetch_related("lines__to_pond", "lines__to_production_cycle")
+        nursing_resynced: set[tuple[int, int | None]] = set()
         for t in xfer_qs:
+            role = (getattr(t.from_pond, "pond_role", None) or "").strip().lower()
+            if role != "nursing":
+                continue
+            key = (t.from_pond_id, t.from_production_cycle_id)
+            if key in nursing_resynced:
+                continue
+            nursing_resynced.add(key)
+            resync_nursing_pond_transfer_costs(
+                company_id=cid,
+                from_pond_id=t.from_pond_id,
+                from_production_cycle_id=t.from_production_cycle_id,
+            )
+        if nursing_resynced:
+            xfer_qs = AquacultureFishPondTransfer.objects.filter(pk__in=ordered_ids).select_related(
+                "from_pond", "from_production_cycle"
+            ).prefetch_related("lines__to_pond", "lines__to_production_cycle")
+        for t in xfer_qs:
+            key = (t.from_pond_id, t.from_production_cycle_id)
+            if key in nursing_resynced:
+                continue
             backfill_missing_transfer_line_costs(t)
         if ordered_ids:
             order = Case(*[When(pk=pk, then=pos) for pos, pk in enumerate(ordered_ids)])

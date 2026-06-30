@@ -16,10 +16,12 @@ from api.models import (
     Company,
 )
 from api.models import AquacultureFishPondTransfer, AquacultureFishPondTransferLine
+from api.services.aquaculture_pl_service import _money_q
 from api.services.aquaculture_transfer_cost import (
     backfill_missing_transfer_line_costs,
     preview_transfer_line_costs,
     resolve_auto_transfer_line_cost,
+    resync_nursing_pond_transfer_costs,
 )
 
 
@@ -168,6 +170,16 @@ def test_fish_pond_transfer_api_auto_fills_zero_cost(api_client, company_tenant,
         weight_kg=Decimal("50.00"),
         fish_count=2500,
         total_amount=Decimal("2500.00"),
+    )
+    from api.models import AquacultureBiomassSample
+
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=src,
+        sample_date=date(2026, 5, 1),
+        estimated_fish_count=600,
+        estimated_total_weight_kg=Decimal("12"),
+        fish_species="tilapia",
     )
     h = {**auth_admin_headers, "HTTP_X_COMPANY_ID": str(cid)}
     r = api_client.post(
@@ -328,7 +340,6 @@ def test_two_nursing_transfers_share_total_bio_by_survivor_fish_count(company_te
         cost_amount=Decimal("0"),
     )
 
-    from api.services.aquaculture_pl_service import _money_q
     from api.services.aquaculture_transfer_cost import resync_nursing_pond_transfer_costs
 
     resync_nursing_pond_transfer_costs(
@@ -347,6 +358,94 @@ def test_two_nursing_transfers_share_total_bio_by_survivor_fish_count(company_te
     assert c1 + c2 == Decimal("660000.00")
     assert c1 > c2
     assert c1 < Decimal("660000.00")
+
+
+@pytest.mark.django_db
+def test_nursing_resync_spreads_later_expenses_across_all_transfer_dates(company_tenant):
+    """
+    Mynuddin-style: fry in April, feed in June, transfers on multiple dates.
+    After resync every line shares one cost pool (through latest transfer date) by fish count.
+    """
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Mynuddin Nursing Pond", pond_role="nursing", is_active=True
+    )
+    dst_a = AquaculturePond.objects.create(company_id=cid, name="Ashari-2 Pond", is_active=True)
+    dst_b = AquaculturePond.objects.create(company_id=cid, name="Ashari-1 Pond", is_active=True)
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 4, 1),
+        expense_category="fry_stocking",
+        amount=Decimal("391200.00"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 6, 1),
+        expense_category="feed_purchase",
+        amount=Decimal("22000.00"),
+    )
+    tr_early = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2025, 4, 23),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr_early,
+        to_pond=dst_a,
+        weight_kg=Decimal("1956"),
+        fish_count=107580,
+        cost_amount=Decimal("391200.00"),
+    )
+    tr_late = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2025, 6, 10),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr_late,
+        to_pond=dst_a,
+        weight_kg=Decimal("1934"),
+        fish_count=116040,
+        cost_amount=Decimal("3368.54"),
+    )
+    tr_mid = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2025, 6, 18),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr_mid,
+        to_pond=dst_b,
+        weight_kg=Decimal("3570.16"),
+        fish_count=122528,
+        cost_amount=Decimal("5886.93"),
+    )
+
+    from api.services.aquaculture_transfer_cost import resync_nursing_pond_transfer_costs
+
+    resync_nursing_pond_transfer_costs(
+        company_id=cid,
+        from_pond_id=src.id,
+        from_production_cycle_id=None,
+    )
+    lines = list(
+        AquacultureFishPondTransferLine.objects.filter(
+            transfer__from_pond_id=src.id
+        ).order_by("transfer__transfer_date")
+    )
+    total_fish = sum(int(ln.fish_count or 0) for ln in lines)
+    total_cost = sum(ln.cost_amount or Decimal("0") for ln in lines)
+    bio_total = Decimal("413200.00")
+    per_fish = bio_total / Decimal(total_fish)
+    assert total_cost <= bio_total
+    assert lines[0].cost_amount == _money_q(per_fish * 107580)
+    assert lines[0].cost_amount < Decimal("391200.00")
 
 
 @pytest.mark.django_db

@@ -204,7 +204,7 @@ def test_fish_pond_transfer_api_auto_fills_zero_cost(api_client, company_tenant,
     )
     assert r.status_code == 201, r.content.decode()
     line = json.loads(r.content)["transfer"]["lines"][0]
-    assert Decimal(line["cost_amount"]) == Decimal("1333.33")  # per-head: 2000 × 400 ÷ live survivors
+    assert Decimal(line["cost_amount"]) == Decimal("800.00")  # 2000 × 400 ÷ 1000 live (3500 − 2500 sold)
 
 
 @pytest.mark.django_db
@@ -795,3 +795,160 @@ def test_nursing_batch_resync_without_nursing_role_when_large_head_batch(company
     assert tr1.lines.first().cost_amount == _money_q(per_fish * 200000)
     assert tr2.lines.first().cost_amount == _money_q(per_fish * 146148)
     assert tr1.lines.first().cost_amount + tr2.lines.first().cost_amount == Decimal("1100000.00")
+
+
+@pytest.mark.django_db
+def test_transfer_api_includes_fry_and_other_cost_columns(api_client, company_tenant, auth_admin_headers):
+    """Transfer list JSON exposes fry_cost_amount + other_expense_amount summing to cost_amount."""
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Split Nursing", pond_role="nursing", is_active=True
+    )
+    dst = AquaculturePond.objects.create(company_id=cid, name="Split Grow", is_active=True)
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 4, 1),
+        expense_category="fry_stocking",
+        amount=Decimal("800000.00"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 5, 1),
+        expense_category="feed_purchase",
+        amount=Decimal("200000.00"),
+    )
+    tr = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2025, 6, 10),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr,
+        to_pond=dst,
+        weight_kg=Decimal("500"),
+        fish_count=100000,
+        cost_amount=Decimal("500000.00"),
+    )
+    h = {**auth_admin_headers, "HTTP_X_COMPANY_ID": str(cid)}
+    r = api_client.get("/api/aquaculture/fish-pond-transfers/", **h)
+    assert r.status_code == 200
+    xfer = next(x for x in r.json()["transfers"] if x["id"] == tr.id)
+    line = xfer["lines"][0]
+    fry = Decimal(line["fry_cost_amount"])
+    other = Decimal(line["other_expense_amount"])
+    total = Decimal(line["cost_amount"])
+    assert fry + other == total
+    assert fry > Decimal("0")
+    assert other > Decimal("0")
+    assert Decimal(xfer["fry_cost_total"]) == fry
+    assert Decimal(xfer["other_expense_total"]) == other
+    assert Decimal(xfer["cost_total"]) == total
+
+
+@pytest.mark.django_db
+def test_nursing_transfer_does_not_use_draft_line_count_as_cost_denominator(company_tenant, monkeypatch):
+    """
+    Bug: entering 210k heads on the first transfer must not make the survivor pool 210k,
+    which capped line cost at the entire bio-asset (138,935) instead of heads × cost/fish.
+    """
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Digonta Nursing", pond_role="nursing", is_active=True
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2026, 4, 1),
+        expense_category="fry_stocking",
+        amount=Decimal("138935.00"),
+    )
+    monkeypatch.setattr(
+        "api.services.aquaculture_transfer_cost._live_fingerling_heads_basis",
+        lambda **kwargs: 9700,
+    )
+
+    cost = resolve_auto_transfer_line_cost(
+        company_id=cid,
+        from_pond_id=src.id,
+        transfer_date=date(2026, 6, 30),
+        from_cycle=None,
+        weight_kg=Decimal("15000"),
+        submitted_cost=Decimal("0"),
+        fish_count=210000,
+        transfer_total_fish_count=210000,
+    )
+    per_fish = Decimal("138935.00") / Decimal("9700")
+    assert cost == _money_q(per_fish * 210000)
+    assert cost > Decimal("138935.00")
+
+
+@pytest.mark.django_db
+def test_nursing_transfer_500k_fry_at_220_per_piece_plus_feed(company_tenant):
+    """
+    500k fry @ BDT 2.20 + feed/medicine spread over survivors; 210k moved ≈ proportional share.
+    Lease/electricity excluded from movable pool.
+    """
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="User Nursing", pond_role="nursing", is_active=True
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2026, 3, 1),
+        expense_category="fry_stocking",
+        amount=Decimal("1100000.00"),
+        memo="500k fry @ 2.20",
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2026, 4, 1),
+        expense_category="feed_purchase",
+        amount=Decimal("350000.00"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2026, 4, 1),
+        expense_category="day_labor",
+        amount=Decimal("45000.00"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2026, 4, 1),
+        expense_category="electricity",
+        amount=Decimal("60000.00"),
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=src,
+        entry_date=date(2026, 4, 15),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=450000,
+        weight_kg_delta=Decimal("32142.8571"),
+        memo="Survivors after nursing",
+    )
+
+    preview = preview_transfer_line_costs(
+        company_id=cid,
+        from_pond_id=src.id,
+        transfer_date=date(2026, 6, 30),
+        from_cycle=None,
+        lines=[{"weight_kg": Decimal("15000"), "fish_count": 210000}],
+    )
+    movable = Decimal("1100000.00") + Decimal("350000.00") + Decimal("45000.00")
+    per_head = movable / Decimal("450000")
+    expected = _money_q(per_head * 210000)
+    assert preview["cost_basis"] == "per_head"
+    assert Decimal(preview["transfer_cost_per_head"]) == _money_q(per_head)
+    assert Decimal(preview["lines"][0]["cost_amount"]) == expected
+    assert expected > Decimal("462000.00")  # fry-only floor: 210k × 2.20

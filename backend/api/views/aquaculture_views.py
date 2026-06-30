@@ -52,6 +52,8 @@ from api.services.aquaculture_transfer_cost import (
     preview_transfer_line_costs,
     resync_nursing_pond_transfer_costs,
     resolve_auto_transfer_line_cost,
+    split_transfer_line_cost_amount,
+    transfer_cost_pools_for_scope,
 )
 from api.services.aquaculture_fish_transfer_gl_service import (
     delete_aquaculture_fish_pond_transfer_journal as _delete_fish_transfer_gl,
@@ -4869,13 +4871,20 @@ def aquaculture_pond_profit_transfers(request):
     return JsonResponse(_profit_transfer_to_json(xfer, include_journal=True), status=201)
 
 
-def _fish_transfer_line_to_json(line: AquacultureFishPondTransferLine) -> dict:
+def _fish_transfer_line_to_json(
+    line: AquacultureFishPondTransferLine,
+    *,
+    fry_pool: Decimal,
+    other_pool: Decimal,
+) -> dict:
     cname = ""
     if line.to_production_cycle_id and getattr(line, "to_production_cycle", None):
         cname = (line.to_production_cycle.name or "").strip()
     tpname = ""
     if getattr(line, "to_pond", None):
         tpname = (line.to_pond.name or "").strip()
+    cost = _money_q(line.cost_amount or Decimal("0"))
+    fry_cost, other_expense = split_transfer_line_cost_amount(cost, fry_pool, other_pool)
     return {
         "id": line.id,
         "to_pond_id": line.to_pond_id,
@@ -4885,7 +4894,9 @@ def _fish_transfer_line_to_json(line: AquacultureFishPondTransferLine) -> dict:
         "weight_kg": str(line.weight_kg),
         "fish_count": line.fish_count,
         "pcs_per_kg": str(line.pcs_per_kg) if line.pcs_per_kg is not None else None,
-        "cost_amount": str(_money_q(line.cost_amount or Decimal(0))),
+        "cost_amount": str(cost),
+        "fry_cost_amount": str(fry_cost),
+        "other_expense_amount": str(other_expense),
     }
 
 
@@ -4894,7 +4905,18 @@ def _fish_transfer_to_json(t: AquacultureFishPondTransfer) -> dict:
     fcname = ""
     if t.from_production_cycle_id and getattr(t, "from_production_cycle", None):
         fcname = (t.from_production_cycle.name or "").strip()
-    lines = [_fish_transfer_line_to_json(x) for x in t.lines.all()]
+    fry_pool, other_pool = transfer_cost_pools_for_scope(
+        company_id=t.company_id,
+        from_pond_id=t.from_pond_id,
+        transfer_date=t.transfer_date,
+        from_cycle=t.from_production_cycle,
+    )
+    lines = [
+        _fish_transfer_line_to_json(x, fry_pool=fry_pool, other_pool=other_pool) for x in t.lines.all()
+    ]
+    fry_total = _money_q(sum(Decimal(ln["fry_cost_amount"]) for ln in lines))
+    other_total = _money_q(sum(Decimal(ln["other_expense_amount"]) for ln in lines))
+    cost_total = _money_q(sum(Decimal(ln["cost_amount"]) for ln in lines))
     gl = transfer_gl_status(t.company_id, t.id)
     return {
         "id": t.id,
@@ -4909,6 +4931,9 @@ def _fish_transfer_to_json(t: AquacultureFishPondTransfer) -> dict:
         "fish_species_other": t.fish_species_other or "",
         "memo": t.memo or "",
         "lines": lines,
+        "fry_cost_total": str(fry_total),
+        "other_expense_total": str(other_total),
+        "cost_total": str(cost_total),
         "created_at": t.created_at.isoformat() if t.created_at else "",
         **gl,
     }

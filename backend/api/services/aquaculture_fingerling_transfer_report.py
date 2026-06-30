@@ -15,25 +15,11 @@ from typing import Any
 from django.db import models
 
 from api.models import AquacultureFishPondTransfer, AquaculturePond
-from api.services.aquaculture_biological_asset_service import compute_pond_biological_asset_summary
 from api.services.aquaculture_constants import fish_species_display_label
 from api.services.aquaculture_transfer_cost import (
-    _BIO_ASSET_EXCLUDED_FROM_TRANSFER,
     backfill_missing_transfer_line_costs,
-)
-
-_FRY_BUCKETS = frozenset({"fry_stocking"})
-_SKIP_BUCKETS = frozenset(
-    {
-        "fish_transfer_in",
-        "fish_transfer_out",
-        "biological_writeoff",
-        "lease",
-        "shop_supplies",
-        "electricity",
-        "equipment",
-        "repair_maintenance",
-    }
+    split_transfer_line_cost_amount,
+    transfer_cost_pools_for_scope,
 )
 
 
@@ -111,27 +97,12 @@ def _source_cost_split(
     from_cycle,
     transfer_date: date,
 ) -> tuple[Decimal, Decimal]:
-    """Return (fry_purchase_pool, other_expenses_pool) from source pond bio buckets at transfer date."""
-    summary = compute_pond_biological_asset_summary(
-        company_id,
-        pond_id=from_pond_id,
-        as_of_date=transfer_date,
-        production_cycle=from_cycle,
+    return transfer_cost_pools_for_scope(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        transfer_date=transfer_date,
+        from_cycle=from_cycle,
     )
-    fry = Decimal("0")
-    other = Decimal("0")
-    for row in summary.get("cost_buckets") or []:
-        code = str(row.get("cost_bucket") or "").strip()
-        if code in _SKIP_BUCKETS or code in _BIO_ASSET_EXCLUDED_FROM_TRANSFER:
-            continue
-        amt = Decimal(str(row.get("amount") or 0))
-        if amt <= 0:
-            continue
-        if code in _FRY_BUCKETS:
-            fry += amt
-        else:
-            other += amt
-    return _money_q(fry), _money_q(other)
 
 
 def _split_line_cost(
@@ -139,15 +110,7 @@ def _split_line_cost(
     fry_pool: Decimal,
     other_pool: Decimal,
 ) -> tuple[Decimal, Decimal]:
-    total = line_cost
-    if total <= 0:
-        return Decimal("0"), Decimal("0")
-    movable = fry_pool + other_pool
-    if movable <= 0:
-        return total, Decimal("0")
-    purchase = _money_q(total * fry_pool / movable)
-    other = _money_q(total - purchase)
-    return purchase, other
+    return split_transfer_line_cost_amount(line_cost, fry_pool, other_pool)
 
 
 def _pcs_per_kg(fish_count: int | None, weight_kg: Decimal, stored_pcs: Decimal | None) -> str | None:
@@ -296,8 +259,12 @@ def _summaries_from_statement(
             }
         )
 
-    nursing_total = _money_q(sum(Decimal(r["total_cost_out"]) for r in nursing_summary))
-    growout_total = _money_q(sum(Decimal(r["total_liability_in"]) for r in growout_summary))
+    nursing_total = _money_q(
+        sum((Decimal(r["total_cost_out"]) for r in nursing_summary), Decimal("0"))
+    )
+    growout_total = _money_q(
+        sum((Decimal(r["total_liability_in"]) for r in growout_summary), Decimal("0"))
+    )
     diff = _money_q(nursing_total - growout_total)
 
     totals = {

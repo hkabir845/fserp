@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from django.db import models
+
 from api.models import AquaculturePond, AquacultureProductionCycle
 from api.services.aquaculture_pl_service import _money_q, compute_aquaculture_pl_summary_dict
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
@@ -81,6 +83,89 @@ def _nursing_transferable_cost_total(costing_lines: list[dict]) -> Decimal:
             continue
         total += Decimal(str(row.get("amount") or 0))
     return _money_q(total)
+
+
+def transfer_cost_pools_for_scope(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+) -> tuple[Decimal, Decimal]:
+    """Return (fry_stocking pool, other production pool) for splitting transfer line cost display."""
+    cycle_filter_id = from_cycle.id if from_cycle is not None else None
+    cost_as_of = _nursing_cost_as_of_date(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+        transfer_date=transfer_date,
+    )
+    start, end = pl_window_for_transfer_date(cost_as_of, from_cycle)
+    payload = compute_aquaculture_pl_summary_dict(
+        company_id,
+        start,
+        end,
+        from_pond_id,
+        cycle_filter_id,
+        from_cycle,
+        include_cycle_breakdown=False,
+    )
+    fry = Decimal("0")
+    other = Decimal("0")
+    ponds = payload.get("ponds") or []
+    if ponds:
+        for row in ponds[0].get("cost_per_kg", {}).get("costing_lines") or []:
+            code = str(row.get("cost_bucket") or "")
+            if code not in _TRANSFER_COST_BUCKETS or code in _NURSING_FIXED_POND_BUCKETS:
+                continue
+            amt = Decimal(str(row.get("amount") or 0))
+            if amt <= 0:
+                continue
+            if code == "fry_stocking":
+                fry += amt
+            else:
+                other += amt
+    if fry <= 0 and other <= 0:
+        from api.services.aquaculture_biological_asset_service import compute_pond_biological_asset_summary
+
+        summary = compute_pond_biological_asset_summary(
+            company_id,
+            pond_id=from_pond_id,
+            as_of_date=cost_as_of,
+            production_cycle=from_cycle,
+        )
+        skip = _NURSING_FIXED_POND_BUCKETS | frozenset(
+            {"fish_transfer_in", "fish_transfer_out", "biological_writeoff", "prior_pl_opening"}
+        )
+        for row in summary.get("cost_buckets") or []:
+            code = str(row.get("cost_bucket") or "").strip()
+            if code in skip or code in _BIO_ASSET_EXCLUDED_FROM_TRANSFER:
+                continue
+            amt = Decimal(str(row.get("amount") or 0))
+            if amt <= 0:
+                continue
+            if code == "fry_stocking":
+                fry += amt
+            else:
+                other += amt
+    return _money_q(fry), _money_q(other)
+
+
+def split_transfer_line_cost_amount(
+    line_cost: Decimal,
+    fry_pool: Decimal,
+    other_pool: Decimal,
+) -> tuple[Decimal, Decimal]:
+    """Split line cost_amount into fry purchase share and feed/medicine/labor share."""
+    total = _money_q(line_cost or Decimal("0"))
+    if total <= 0:
+        return Decimal("0"), Decimal("0")
+    movable = _money_q(fry_pool + other_pool)
+    if movable <= 0:
+        return total, Decimal("0")
+    fry_share = _money_q(total * fry_pool / movable)
+    other_share = _money_q(total - fry_share)
+    return fry_share, other_share
 
 
 def _transferable_bio_asset_total(summary: dict) -> Decimal:
@@ -277,6 +362,51 @@ def _nursing_cost_as_of_date(
     return transfer_date
 
 
+def _nursing_fry_pool_for_pond_batch(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+) -> Decimal:
+    """
+    Fry purchase total for a nursing batch — any production_cycle tag on the same pond.
+
+    Fry is usually bought once per batch before cycle tags are aligned; cycle-scoped P&L
+    alone often misses fry posted on sibling cycles or left untagged.
+    """
+    from django.db.models import Sum
+
+    from api.models import AquacultureExpense
+    from api.services.aquaculture_cost_per_kg import (
+        fry_stocking_capitalized_manual_expense_ids,
+        pond_fry_stocking_capitalized_journal_total,
+    )
+
+    start, end = pl_window_for_transfer_date(transfer_date, from_cycle)
+    capitalized_ids = fry_stocking_capitalized_manual_expense_ids(company_id)
+    exp_total = (
+        AquacultureExpense.objects.filter(
+            company_id=company_id,
+            pond_id=from_pond_id,
+            expense_category="fry_stocking",
+            expense_date__gte=start,
+            expense_date__lte=end,
+        )
+        .exclude(pk__in=capitalized_ids)
+        .aggregate(s=Sum("amount"))["s"]
+    )
+    fry_exp = _money_q(Decimal(str(exp_total or 0)))
+    fry_gl = pond_fry_stocking_capitalized_journal_total(
+        company_id=company_id,
+        pond_id=from_pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=None,
+    )
+    return _money_q(max(fry_exp, fry_gl))
+
+
 def _nursing_batch_cost_pool(
     *,
     company_id: int,
@@ -297,11 +427,31 @@ def _nursing_batch_cost_pool(
         include_cycle_breakdown=False,
     )
     ponds = payload.get("ponds") or []
+    fry_cycle = Decimal("0")
+    other = Decimal("0")
     if ponds:
         cpk = ponds[0].get("cost_per_kg") or {}
-        total = _nursing_transferable_cost_total(cpk.get("costing_lines") or [])
-        if total > 0:
-            return total
+        for row in cpk.get("costing_lines") or []:
+            code = str(row.get("cost_bucket") or "")
+            if code not in _TRANSFER_COST_BUCKETS or code in _NURSING_FIXED_POND_BUCKETS:
+                continue
+            amt = Decimal(str(row.get("amount") or 0))
+            if amt <= 0:
+                continue
+            if code == "fry_stocking":
+                fry_cycle += amt
+            else:
+                other += amt
+    fry_pond = _nursing_fry_pool_for_pond_batch(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        transfer_date=transfer_date,
+        from_cycle=from_cycle,
+    )
+    fry = max(fry_cycle, fry_pond)
+    total = _money_q(other + fry)
+    if total > 0:
+        return total
     return _bio_total_for_transfer_scope(
         company_id=company_id,
         from_pond_id=from_pond_id,
@@ -344,16 +494,36 @@ def _latest_sample_fish_count(
 ) -> int:
     from api.models import AquacultureBiomassSample
 
-    q = AquacultureBiomassSample.objects.filter(
+    def _pick_count(qs) -> int:
+        row = (
+            qs.order_by("-sample_date", "-id")
+            .values_list("stock_reference_fish_count", "estimated_fish_count")
+            .first()
+        )
+        if not row:
+            return 0
+        ref, est = row
+        if ref is not None and int(ref) > 0:
+            return int(ref)
+        return int(est or 0)
+
+    base = AquacultureBiomassSample.objects.filter(
         company_id=company_id,
         pond_id=pond_id,
         sample_date__lte=as_of_date,
-        estimated_fish_count__gt=0,
+    ).filter(
+        models.Q(stock_reference_fish_count__gt=0) | models.Q(estimated_fish_count__gt=0)
     )
     if cycle_filter_id is not None:
-        q = q.filter(production_cycle_id=cycle_filter_id)
-    row = q.order_by("-sample_date", "-id").values_list("estimated_fish_count", flat=True).first()
-    return int(row or 0)
+        scoped = _pick_count(base.filter(production_cycle_id=cycle_filter_id))
+        if scoped > 0:
+            return scoped
+        # Cycle sample may be a seine subsample — prefer pond-wide extrapolated reference.
+        pond_wide = _pick_count(base)
+        if pond_wide > scoped:
+            return pond_wide
+        return scoped
+    return _pick_count(base)
 
 
 def _nursing_fingerling_allocation_denominator(
@@ -369,31 +539,30 @@ def _nursing_fingerling_allocation_denominator(
     """
     Survivor fingerling pool for spreading accumulated nursing costs (fry + feed + …).
 
-    Uses the largest reliable count of fingerlings that will share the cost pool:
-    cumulative transfer-out totals (all moves from this batch), biomass sample, live
-    survivors, or original fry stocking count — never only the fish on one line when
-    that would allocate ~100% of the pond bio-asset to a partial move.
+    Uses fish already moved out plus live survivors still on the nursing pond (or a
+    biomass / vendor-bill stocking estimate when the ledger is stale). The fish count
+    on the transfer line being priced is never part of this pool — it only multiplies
+    cost/head in the numerator.
     """
+    del fish_count, transfer_total_fish_count  # draft line counts must not inflate the pool
+
     prior_out = _cumulative_transfer_fish_out(
         company_id=company_id,
         from_pond_id=from_pond_id,
         cycle_filter_id=cycle_filter_id,
         exclude_transfer_id=exclude_transfer_id,
     )
-    cumulative_out = prior_out
-    if transfer_total_fish_count and int(transfer_total_fish_count) > 0:
-        cumulative_out += int(transfer_total_fish_count)
-
     sample = _latest_sample_fish_count(
         company_id=company_id,
         pond_id=from_pond_id,
         cycle_filter_id=cycle_filter_id,
         as_of_date=transfer_date,
     )
-    live = _live_fingerling_heads_basis(
+    live = _nursing_pond_survivor_live_heads(
         company_id=company_id,
         pond_id=from_pond_id,
         cycle_filter_id=cycle_filter_id,
+        as_of_date=transfer_date,
     )
     stocked = _nursing_stocked_heads_basis(
         company_id=company_id,
@@ -403,13 +572,16 @@ def _nursing_fingerling_allocation_denominator(
 
     # Mortality keeps full fry+feed cost on survivors: pool = already moved + still on hand.
     survivor_pool = prior_out + live
-    if sample > 0:
-        if prior_out <= 0:
-            survivor_pool = max(sample, cumulative_out)
-        elif survivor_pool > sample:
-            survivor_pool = max(cumulative_out, sample)
-    if cumulative_out > survivor_pool:
-        survivor_pool = cumulative_out
+    if sample > 0 and survivor_pool < sample:
+        survivor_pool = max(survivor_pool, sample)
+    if prior_out <= 0 and live <= 0 and sample > 0:
+        survivor_pool = sample
+    elif prior_out <= 0 and live <= 0 and stocked > 0:
+        survivor_pool = stocked
+    elif prior_out <= 0 and stocked > survivor_pool:
+        # Vendor fry bill shows full batch; ledger live not reconciled yet.
+        survivor_pool = max(survivor_pool, stocked)
+
     if survivor_pool > 0:
         return survivor_pool
     if sample > 0:
@@ -463,6 +635,41 @@ def _nursing_line_cost_from_per_head(
     return _money_q(bio_total * Decimal(heads) / Decimal(denom))
 
 
+def _nursing_pond_survivor_live_heads(
+    *,
+    company_id: int,
+    pond_id: int,
+    cycle_filter_id: int | None,
+    as_of_date: date,
+) -> int:
+    """Best live-fingerling estimate for nursing cost/head when cycle tags disagree."""
+    live = _live_fingerling_heads_basis(
+        company_id=company_id,
+        pond_id=pond_id,
+        cycle_filter_id=cycle_filter_id,
+    )
+    sample = _latest_sample_fish_count(
+        company_id=company_id,
+        pond_id=pond_id,
+        cycle_filter_id=cycle_filter_id,
+        as_of_date=as_of_date,
+    )
+    stocked = _nursing_stocked_heads_basis(
+        company_id=company_id,
+        pond_id=pond_id,
+        cycle_filter_id=cycle_filter_id,
+    )
+    if sample > 0 and (live <= 0 or live > sample * 3):
+        return sample
+    if live > 0:
+        if stocked > 0 and live > stocked * 2:
+            return max(sample, stocked) if sample > 0 else stocked
+        return live
+    if sample > 0:
+        return sample
+    return stocked
+
+
 def _live_fingerling_heads_basis(
     *,
     company_id: int,
@@ -475,25 +682,33 @@ def _live_fingerling_heads_basis(
     Uses implied net fish count from stock position; falls back to latest biomass sample estimate.
     Never uses original vendor-bill stocked count — mortality cost stays on survivors.
     """
-    pos_rows = compute_fish_stock_position_rows(
-        company_id,
-        pond_id=pond_id,
-        production_cycle_id=cycle_filter_id,
-    )
-    if not pos_rows:
+    def _live_for_scope(scope_cycle_id: int | None) -> int:
+        pos_rows = compute_fish_stock_position_rows(
+            company_id,
+            pond_id=pond_id,
+            production_cycle_id=scope_cycle_id,
+        )
+        if not pos_rows:
+            return 0
+        row = pos_rows[0]
+        live = int(row.get("implied_net_fish_count") or 0)
+        if live > 0:
+            return live
+        samp_fc = row.get("latest_sample_estimated_fish_count")
+        if samp_fc is not None:
+            try:
+                n = int(samp_fc)
+                if n > 0:
+                    return n
+            except (TypeError, ValueError):
+                pass
         return 0
-    row = pos_rows[0]
-    live = int(row.get("implied_net_fish_count") or 0)
+
+    live = _live_for_scope(cycle_filter_id)
     if live > 0:
         return live
-    samp_fc = row.get("latest_sample_estimated_fish_count")
-    if samp_fc is not None:
-        try:
-            n = int(samp_fc)
-            if n > 0:
-                return n
-        except (TypeError, ValueError):
-            pass
+    if cycle_filter_id is not None:
+        return _live_for_scope(None)
     return 0
 
 
@@ -504,19 +719,27 @@ def _nursing_stocked_heads_basis(
     cycle_filter_id: int | None,
 ) -> int:
     """Fingerlings stocked on nursing pond (vendor fish bills), for per-head transfer costing."""
-    pos_rows = compute_fish_stock_position_rows(
-        company_id,
-        pond_id=pond_id,
-        production_cycle_id=cycle_filter_id,
-    )
-    if not pos_rows:
-        return 0
-    row = pos_rows[0]
-    bill_heads = int(row.get("vendor_bill_in_fish_count") or 0)
-    if bill_heads > 0:
-        return bill_heads
-    implied = int(row.get("implied_net_fish_count") or 0)
-    return implied if implied > 0 else 0
+    def _stocked_for_scope(scope_cycle_id: int | None) -> int:
+        pos_rows = compute_fish_stock_position_rows(
+            company_id,
+            pond_id=pond_id,
+            production_cycle_id=scope_cycle_id,
+        )
+        if not pos_rows:
+            return 0
+        row = pos_rows[0]
+        bill_heads = int(row.get("vendor_bill_in_fish_count") or 0)
+        if bill_heads > 0:
+            return bill_heads
+        implied = int(row.get("implied_net_fish_count") or 0)
+        return implied if implied > 0 else 0
+
+    stocked = _stocked_for_scope(cycle_filter_id)
+    if stocked > 0:
+        return stocked
+    if cycle_filter_id is not None:
+        return _stocked_for_scope(None)
+    return 0
 
 
 def _production_cost_share_for_line(

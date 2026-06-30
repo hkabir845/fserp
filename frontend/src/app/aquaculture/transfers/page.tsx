@@ -74,6 +74,8 @@ interface TransferLine {
   fish_count: number | null
   pcs_per_kg: string | null
   cost_amount: string
+  fry_cost_amount?: string
+  other_expense_amount?: string
 }
 
 interface TransferRow {
@@ -88,6 +90,9 @@ interface TransferRow {
   fish_species_other?: string
   memo: string
   lines: TransferLine[]
+  fry_cost_total?: string
+  other_expense_total?: string
+  cost_total?: string
   gl_posted?: boolean
   journal_entry_number?: string | null
   gl_total_amount?: string | null
@@ -1053,7 +1058,7 @@ export default function AquacultureFishTransfersPage() {
             ) : null}
           </p>
           <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
-            <table className="min-w-[780px] w-full text-left text-sm">
+            <table className="min-w-[980px] w-full text-left text-sm">
               <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3">{uiT("date")}</th>
@@ -1061,6 +1066,8 @@ export default function AquacultureFishTransfersPage() {
                   <th className="px-4 py-3">{aquacultureT('species', lang)}</th>
                   <th className="px-4 py-3 text-right">Kg</th>
                   <th className="px-4 py-3 text-right">{pick('Heads', 'Head (টি)')}</th>
+                  <th className="px-4 py-3 text-right">{aquacultureT('transferFryCost', lang)}</th>
+                  <th className="px-4 py-3 text-right">{aquacultureT('transferOtherExpense', lang)}</th>
                   <th className="px-4 py-3 text-right">{aquacultureT('costMoved', lang)}</th>
                   <th className="px-4 py-3">GL 1581</th>
                   <th className="px-4 py-3 text-right">{uiT("actions")}</th>
@@ -1069,7 +1076,7 @@ export default function AquacultureFishTransfersPage() {
               <tbody className="divide-y divide-border/70">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
+                    <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
                       No transfers yet. Example: log fry on a vendor bill (kg + heads), then record a transfer with each
                       line showing destination pond, kg moved, and head count (required). Optional cost per line
                       reallocates nursing biological cost to grow-out ponds.
@@ -1079,7 +1086,15 @@ export default function AquacultureFishTransfersPage() {
                   rows.map((t) => {
                     const kg = t.lines.reduce((a, l) => a + (Number.parseFloat(l.weight_kg) || 0), 0)
                     const heads = t.lines.reduce((a, l) => a + (l.fish_count != null ? Number(l.fish_count) : 0), 0)
-                    const cost = t.lines.reduce((a, l) => a + (Number.parseFloat(l.cost_amount) || 0), 0)
+                    const cost =
+                      Number.parseFloat(t.cost_total ?? '') ||
+                      t.lines.reduce((a, l) => a + (Number.parseFloat(l.cost_amount) || 0), 0)
+                    const fryCost =
+                      Number.parseFloat(t.fry_cost_total ?? '') ||
+                      t.lines.reduce((a, l) => a + (Number.parseFloat(l.fry_cost_amount ?? '') || 0), 0)
+                    const otherExpense =
+                      Number.parseFloat(t.other_expense_total ?? '') ||
+                      t.lines.reduce((a, l) => a + (Number.parseFloat(l.other_expense_amount ?? '') || 0), 0)
                     const dest = t.lines
                       .map((l) => {
                         const h = l.fish_count != null ? `, ${formatNumber(Number(l.fish_count), 0)} head` : ''
@@ -1106,6 +1121,12 @@ export default function AquacultureFishTransfersPage() {
                         <td className="px-4 py-3 text-right tabular-nums">{formatNumber(kg, 2)}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{formatNumber(heads, 0)}</td>
                         <td className="px-4 py-3 text-right tabular-nums">
+                          {cost > 0 ? `${sym}${formatNumber(fryCost, 2)}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums">
+                          {cost > 0 ? `${sym}${formatNumber(otherExpense, 2)}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums font-medium">
                           {cost > 0 ? (
                             `${sym}${formatNumber(cost, 2)}`
                           ) : kg > 0 ? (

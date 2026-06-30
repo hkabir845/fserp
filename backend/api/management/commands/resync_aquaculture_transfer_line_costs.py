@@ -13,6 +13,7 @@ from django.db import transaction
 
 from api.models import AquacultureFishPondTransfer, AquaculturePond, Company
 from api.services.aquaculture_transfer_cost import (
+    pond_uses_nursing_batch_costing,
     resync_nursing_pond_transfer_costs,
     sync_transfer_line_production_costs,
 )
@@ -63,8 +64,11 @@ class Command(BaseCommand):
         nursing_keys: set[tuple[int, int | None]] = set()
         grow_out_ids: list[int] = []
         for tr in qs.order_by("transfer_date", "id"):
-            role = (getattr(tr.from_pond, "pond_role", None) or "").strip().lower()
-            if role == "nursing":
+            if pond_uses_nursing_batch_costing(
+                company_id=company_id,
+                from_pond_id=tr.from_pond_id,
+                from_production_cycle_id=tr.from_production_cycle_id,
+            ):
                 nursing_keys.add((tr.from_pond_id, tr.from_production_cycle_id))
             else:
                 grow_out_ids.append(tr.id)
@@ -89,6 +93,7 @@ class Command(BaseCommand):
                     company_id=company_id,
                     from_pond_id=pond_id,
                     from_production_cycle_id=cycle_id,
+                    sync_gl=True,
                 )
                 if n:
                     lines_updated += n

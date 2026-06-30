@@ -609,3 +609,189 @@ def test_nursing_transfer_cost_uses_live_heads_and_all_production_expenses(compa
     assert Decimal(preview["movable_bio_asset_total"]) == Decimal("1600000.00")
     assert Decimal(preview["transfer_cost_per_head"]) == Decimal("3.56")
     assert Decimal(preview["lines"][0]["cost_amount"]) == Decimal("426666.67")
+
+
+@pytest.mark.django_db
+def test_mynuddin_nursing_fry_and_feed_exclude_fixed_pond_costs(company_tenant):
+    """
+    Mynuddin-style: 1.1M fry + feed/medicine/day labor move with fingerlings;
+    lease/electricity/equipment stay on the nursing pond.
+    """
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Mynuddin Nursing Pond", pond_role="nursing", is_active=True
+    )
+    dst1 = AquaculturePond.objects.create(company_id=cid, name="Ashari Grow 1", is_active=True)
+    dst2 = AquaculturePond.objects.create(company_id=cid, name="Ashari Grow 2", is_active=True)
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 4, 23),
+        expense_category="fry_stocking",
+        amount=Decimal("1100000.33"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 5, 15),
+        expense_category="feed_purchase",
+        amount=Decimal("85000.00"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 5, 20),
+        expense_category="day_labor",
+        amount=Decimal("12000.00"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 5, 1),
+        expense_category="electricity",
+        amount=Decimal("45000.00"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 5, 1),
+        expense_category="equipment",
+        amount=Decimal("80000.00"),
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=src,
+        entry_date=date(2025, 5, 25),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=346148,
+        weight_kg_delta=Decimal("1730.74"),
+        memo="Survivors after mortality",
+    )
+
+    tr1 = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2025, 6, 10),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr1,
+        to_pond=dst1,
+        weight_kg=Decimal("900"),
+        fish_count=107580,
+        cost_amount=Decimal("1100000.33"),
+    )
+    tr2 = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2025, 6, 18),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr2,
+        to_pond=dst2,
+        weight_kg=Decimal("1200"),
+        fish_count=122528,
+        cost_amount=Decimal("0"),
+    )
+
+    resync_nursing_pond_transfer_costs(
+        company_id=cid,
+        from_pond_id=src.id,
+        from_production_cycle_id=None,
+    )
+    tr1.lines.first().refresh_from_db()
+    tr2.lines.first().refresh_from_db()
+    movable_total = Decimal("1100000.33") + Decimal("85000.00") + Decimal("12000.00")
+    transferred_fish = 107580 + 122528
+    survivor_pool = 346148
+    per_fish = movable_total / Decimal(survivor_pool)
+    assert tr1.lines.first().cost_amount == _money_q(per_fish * 107580)
+    assert tr2.lines.first().cost_amount == _money_q(per_fish * 122528)
+    line_total = tr1.lines.first().cost_amount + tr2.lines.first().cost_amount
+    assert abs(line_total - _money_q(movable_total * Decimal(transferred_fish) / Decimal(survivor_pool))) <= Decimal(
+        "0.02"
+    )
+    assert tr1.lines.first().cost_amount < Decimal("1100000.33")
+
+
+@pytest.mark.django_db
+def test_nursing_batch_resync_without_nursing_role_when_large_head_batch(company_tenant):
+    """Ponds used as nursing without pond_role still batch-resync fingerling transfers."""
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Mynuddin (no role tag)", is_active=True
+    )
+    dst = AquaculturePond.objects.create(company_id=cid, name="Grow Out", is_active=True)
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 4, 23),
+        expense_category="fry_stocking",
+        amount=Decimal("1100000.00"),
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=src,
+        entry_date=date(2025, 4, 23),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=500000,
+        weight_kg_delta=Decimal("250"),
+        memo="Fry stocked",
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=src,
+        entry_date=date(2025, 6, 1),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=-153852,
+        weight_kg_delta=Decimal("-76.926"),
+        memo="Mortality adjustment before fingerling transfer",
+    )
+    tr1 = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2025, 6, 10),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr1,
+        to_pond=dst,
+        weight_kg=Decimal("500"),
+        fish_count=200000,
+        cost_amount=Decimal("1100000.00"),
+    )
+    tr2 = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2025, 6, 18),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr2,
+        to_pond=dst,
+        weight_kg=Decimal("600"),
+        fish_count=146148,
+        cost_amount=Decimal("0"),
+    )
+
+    from api.services.aquaculture_transfer_cost import pond_uses_nursing_batch_costing
+
+    assert pond_uses_nursing_batch_costing(company_id=cid, from_pond_id=src.id)
+    resync_nursing_pond_transfer_costs(
+        company_id=cid,
+        from_pond_id=src.id,
+        from_production_cycle_id=None,
+    )
+    tr1.lines.first().refresh_from_db()
+    tr2.lines.first().refresh_from_db()
+    total_fish = 200000 + 146148
+    per_fish = Decimal("1100000.00") / Decimal(total_fish)
+    assert tr1.lines.first().cost_amount == _money_q(per_fish * 200000)
+    assert tr2.lines.first().cost_amount == _money_q(per_fish * 146148)
+    assert tr1.lines.first().cost_amount + tr2.lines.first().cost_amount == Decimal("1100000.00")

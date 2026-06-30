@@ -48,6 +48,7 @@ from api.services.aquaculture_feeding_advice_service import build_feeding_advice
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.aquaculture_transfer_cost import (
     backfill_missing_transfer_line_costs,
+    pond_uses_nursing_batch_costing,
     preview_transfer_line_costs,
     resync_nursing_pond_transfer_costs,
     resolve_auto_transfer_line_cost,
@@ -5194,8 +5195,11 @@ def aquaculture_fish_pond_transfers(request):
         ).prefetch_related("lines__to_pond", "lines__to_production_cycle")
         nursing_resynced: set[tuple[int, int | None]] = set()
         for t in xfer_qs:
-            role = (getattr(t.from_pond, "pond_role", None) or "").strip().lower()
-            if role != "nursing":
+            if not pond_uses_nursing_batch_costing(
+                company_id=cid,
+                from_pond_id=t.from_pond_id,
+                from_production_cycle_id=t.from_production_cycle_id,
+            ):
                 continue
             key = (t.from_pond_id, t.from_production_cycle_id)
             if key in nursing_resynced:
@@ -5205,6 +5209,7 @@ def aquaculture_fish_pond_transfers(request):
                 company_id=cid,
                 from_pond_id=t.from_pond_id,
                 from_production_cycle_id=t.from_production_cycle_id,
+                sync_gl=True,
             )
         if nursing_resynced:
             xfer_qs = AquacultureFishPondTransfer.objects.filter(pk__in=ordered_ids).select_related(
@@ -5257,6 +5262,7 @@ def aquaculture_fish_pond_transfers(request):
             company_id=cid,
             from_pond_id=xfer.from_pond_id,
             from_production_cycle_id=xfer.from_production_cycle_id,
+            sync_gl=True,
         )
         gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, xfer)
 
@@ -5328,6 +5334,7 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
                 company_id=cid,
                 from_pond_id=t.from_pond_id,
                 from_production_cycle_id=t.from_production_cycle_id,
+                sync_gl=True,
             )
             gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, t)
         t = (

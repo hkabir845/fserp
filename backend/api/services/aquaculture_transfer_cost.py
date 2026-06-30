@@ -12,6 +12,17 @@ from api.services.aquaculture_stock_service import compute_fish_stock_position_r
 # Costs that stay on the source pond when fish leave (not moved with fingerlings/fish).
 _BIO_ASSET_EXCLUDED_FROM_TRANSFER = frozenset({"lease", "shop_supplies"})
 
+# Nursing pond fixed assets / overhead — stay on source when fingerlings move to grow-out ponds.
+_NURSING_FIXED_POND_BUCKETS = frozenset(
+    {
+        "lease",
+        "shop_supplies",
+        "electricity",
+        "equipment",
+        "repair_maintenance",
+    }
+)
+
 # Legacy P&L bucket subset (fallback when bio-asset summary is empty).
 _TRANSFER_COST_BUCKETS = frozenset(
     {
@@ -54,6 +65,19 @@ def _biological_production_cost_total(costing_lines: list[dict]) -> Decimal:
     for row in costing_lines or []:
         code = str(row.get("cost_bucket") or "")
         if code not in _TRANSFER_COST_BUCKETS:
+            continue
+        total += Decimal(str(row.get("amount") or 0))
+    return _money_q(total)
+
+
+def _nursing_transferable_cost_total(costing_lines: list[dict]) -> Decimal:
+    """Fry + feed + medicine + labor + … movable with fingerlings; fixed pond overhead excluded."""
+    total = Decimal("0")
+    for row in costing_lines or []:
+        code = str(row.get("cost_bucket") or "")
+        if code not in _TRANSFER_COST_BUCKETS:
+            continue
+        if code in _NURSING_FIXED_POND_BUCKETS:
             continue
         total += Decimal(str(row.get("amount") or 0))
     return _money_q(total)
@@ -275,7 +299,7 @@ def _nursing_batch_cost_pool(
     ponds = payload.get("ponds") or []
     if ponds:
         cpk = ponds[0].get("cost_per_kg") or {}
-        total = _biological_production_cost_total(cpk.get("costing_lines") or [])
+        total = _nursing_transferable_cost_total(cpk.get("costing_lines") or [])
         if total > 0:
             return total
     return _bio_total_for_transfer_scope(
@@ -350,13 +374,13 @@ def _nursing_fingerling_allocation_denominator(
     survivors, or original fry stocking count — never only the fish on one line when
     that would allocate ~100% of the pond bio-asset to a partial move.
     """
-    cumulative_out = _cumulative_transfer_fish_out(
+    prior_out = _cumulative_transfer_fish_out(
         company_id=company_id,
         from_pond_id=from_pond_id,
         cycle_filter_id=cycle_filter_id,
         exclude_transfer_id=exclude_transfer_id,
     )
-    prior_out = cumulative_out
+    cumulative_out = prior_out
     if transfer_total_fish_count and int(transfer_total_fish_count) > 0:
         cumulative_out += int(transfer_total_fish_count)
 
@@ -377,12 +401,17 @@ def _nursing_fingerling_allocation_denominator(
         cycle_filter_id=cycle_filter_id,
     )
 
-    if cumulative_out > 0:
-        if sample > 0:
-            return max(cumulative_out, sample)
-        if prior_out <= 0 and live > 0 and cumulative_out < live:
-            return live
-        return cumulative_out
+    # Mortality keeps full fry+feed cost on survivors: pool = already moved + still on hand.
+    survivor_pool = prior_out + live
+    if sample > 0:
+        if prior_out <= 0:
+            survivor_pool = max(sample, cumulative_out)
+        elif survivor_pool > sample:
+            survivor_pool = max(cumulative_out, sample)
+    if cumulative_out > survivor_pool:
+        survivor_pool = cumulative_out
+    if survivor_pool > 0:
+        return survivor_pool
     if sample > 0:
         return sample
     if live > 0:
@@ -616,13 +645,15 @@ def _transfer_uses_head_cost_basis(
         cycle_filter_id=cycle_filter_id,
     )
     heads = int(fish_count or 0)
-    if heads <= 0:
-        return False, live_heads or stocked_heads
     head_basis_heads = stocked_heads if stocked_heads > 0 else live_heads
     pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).only("pond_role").first()
     role = (pond.pond_role or "").strip().lower() if pond else ""
     if role == "nursing":
-        return True, head_basis_heads or heads
+        return True, head_basis_heads or heads or stocked_heads or live_heads
+    if head_basis_heads >= 10000:
+        return True, head_basis_heads
+    if heads <= 0:
+        return False, live_heads or stocked_heads
     if head_basis_heads <= 0:
         return False, live_heads or stocked_heads
     use_head = head_basis_heads >= 10000
@@ -783,9 +814,9 @@ def lookup_transfer_cost_per_head(
     per_head = _money_q(bio_total / Decimal(denom))
     note = (
         f"Transfer cost/head = movable biological asset ({bio_total}) ÷ {denom} survivor fingerlings "
-        "(total fish moved from this nursing batch, or live count when only one move is recorded; "
-        "fry + feed + medicine + pond care on the nursing pond). "
-        "Each line = fish count × cost/head. Lease and shop supplies stay on the source pond."
+        "(fish already moved + still in pond, or biomass sample; "
+        "fry + feed + medicine + pond care + day labor on the nursing pond). "
+        "Each line = fish count × cost/head. Lease, electricity, aerators/equipment stay on the source pond."
     )
     return per_head, note
 
@@ -905,9 +936,15 @@ def resolve_auto_transfer_line_cost(
     transfer_total_fish_count: int | None = None,
     exclude_transfer_id: int | None = None,
 ) -> Decimal:
-    """Use submitted cost when positive; otherwise this line's share of pond production costs."""
+    """Use submitted cost when positive (grow-out kg basis only); nursing always auto-calculates."""
     submitted = _money_q(submitted_cost or Decimal("0"))
-    if submitted > 0:
+    use_head, _ = _transfer_uses_head_cost_basis(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        from_cycle=from_cycle,
+        fish_count=fish_count,
+    )
+    if submitted > 0 and not use_head:
         return submitted
     return _production_cost_share_for_line(
         company_id=company_id,
@@ -922,12 +959,75 @@ def resolve_auto_transfer_line_cost(
     )
 
 
+def pond_uses_nursing_batch_costing(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    from_production_cycle_id: int | None = None,
+) -> bool:
+    """
+    Nursing ponds and fingerling source ponds (large head-count batches) use batch cost spreading:
+    total fry + feed + medicine ÷ survivor fingerlings × each line's fish_count.
+    """
+    pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).only("pond_role").first()
+    role = (pond.pond_role or "").strip().lower() if pond else ""
+    if role == "nursing":
+        return True
+
+    from_cycle = None
+    if from_production_cycle_id is not None:
+        from_cycle = AquacultureProductionCycle.objects.filter(
+            pk=from_production_cycle_id, company_id=company_id
+        ).first()
+    use_head, _ = _transfer_uses_head_cost_basis(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        from_cycle=from_cycle,
+    )
+    if use_head:
+        return True
+
+    from django.db.models import Sum
+
+    from api.models import AquacultureFishPondTransferLine
+
+    q = AquacultureFishPondTransferLine.objects.filter(
+        transfer__company_id=company_id,
+        transfer__from_pond_id=from_pond_id,
+        fish_count__gt=0,
+    )
+    if from_production_cycle_id is not None:
+        q = q.filter(transfer__from_production_cycle_id=from_production_cycle_id)
+    total_heads = int(q.aggregate(s=Sum("fish_count"))["s"] or 0)
+    return total_heads >= 10000
+
+
+def _sync_transfer_batch_gl(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    from_production_cycle_id: int | None,
+) -> None:
+    """Repost 1581 journals after nursing batch line costs change."""
+    from api.models import AquacultureFishPondTransfer
+    from api.services.aquaculture_fish_transfer_gl_service import sync_aquaculture_fish_pond_transfer_gl
+
+    qs = AquacultureFishPondTransfer.objects.filter(company_id=company_id, from_pond_id=from_pond_id)
+    if from_production_cycle_id is not None:
+        qs = qs.filter(from_production_cycle_id=from_production_cycle_id)
+    else:
+        qs = qs.filter(from_production_cycle__isnull=True)
+    for tr in qs.order_by("transfer_date", "id"):
+        sync_aquaculture_fish_pond_transfer_gl(company_id, tr)
+
+
 def resync_nursing_pond_transfer_costs(
     *,
     company_id: int,
     from_pond_id: int,
     from_production_cycle_id: int | None,
     after_transfer_date: date | None = None,
+    sync_gl: bool = False,
 ) -> int:
     """
     Recompute line costs on every inter-pond transfer out of this nursing pond/cycle.
@@ -938,8 +1038,13 @@ def resync_nursing_pond_transfer_costs(
     """
     pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).only("pond_role").first()
     role = (pond.pond_role or "").strip().lower() if pond else ""
+    uses_batch = pond_uses_nursing_batch_costing(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        from_production_cycle_id=from_production_cycle_id,
+    )
 
-    if role == "nursing":
+    if uses_batch or role == "nursing":
         from api.models import AquacultureFishPondTransfer
 
         cycle_ids = AquacultureFishPondTransfer.objects.filter(
@@ -957,6 +1062,13 @@ def resync_nursing_pond_transfer_costs(
                 from_production_cycle_id=cycle_id,
                 after_transfer_date=after_transfer_date,
             )
+        if sync_gl and updated > 0:
+            for cycle_id in cycle_ids:
+                _sync_transfer_batch_gl(
+                    company_id=company_id,
+                    from_pond_id=from_pond_id,
+                    from_production_cycle_id=cycle_id,
+                )
         return updated
 
     from api.models import AquacultureFishPondTransfer
@@ -1101,3 +1213,28 @@ def sync_transfer_line_production_costs(transfer) -> int:
 def backfill_missing_transfer_line_costs(transfer) -> int:
     """Alias: sync all line costs (including fixing nursing double-count)."""
     return sync_transfer_line_production_costs(transfer)
+
+
+def resync_fingerling_transfers_for_pond(
+    *,
+    company_id: int,
+    pond_id: int,
+    production_cycle_id: int | None = None,
+    sync_gl: bool = True,
+) -> int:
+    """
+    After fry/feed/medicine is posted on a nursing source pond, re-spread costs across
+    all fingerling transfer lines (and repost 1581 GL when sync_gl=True).
+    """
+    if not pond_uses_nursing_batch_costing(
+        company_id=company_id,
+        from_pond_id=pond_id,
+        from_production_cycle_id=production_cycle_id,
+    ):
+        return 0
+    return resync_nursing_pond_transfer_costs(
+        company_id=company_id,
+        from_pond_id=pond_id,
+        from_production_cycle_id=production_cycle_id,
+        sync_gl=sync_gl,
+    )

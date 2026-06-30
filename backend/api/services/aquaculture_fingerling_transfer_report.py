@@ -30,6 +30,9 @@ _SKIP_BUCKETS = frozenset(
         "biological_writeoff",
         "lease",
         "shop_supplies",
+        "electricity",
+        "equipment",
+        "repair_maintenance",
     }
 )
 

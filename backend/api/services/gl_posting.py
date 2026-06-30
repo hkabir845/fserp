@@ -3012,6 +3012,7 @@ def post_bill_journal(
                 "try_apply_bill_stock_receipt failed for bill %s (journal already exists)",
                 bill.id,
             )
+        _resync_aquaculture_fingerling_transfers_for_posted_bill(company_id, bill)
         return True
 
     validate_bill_entity_tags_for_gl(company_id, bill)
@@ -3052,7 +3053,27 @@ def post_bill_journal(
             "try_apply_bill_stock_receipt failed for bill %s (after journal attempt)",
             bill.id,
         )
+    _resync_aquaculture_fingerling_transfers_for_posted_bill(company_id, bill)
     return True
+
+
+def _resync_aquaculture_fingerling_transfers_for_posted_bill(company_id: int, bill: Bill) -> None:
+    """When fry/feed bills post on a nursing pond, re-spread fingerling transfer liabilities."""
+    pond_ids = set(
+        BillLine.objects.filter(bill_id=bill.id, bill__company_id=company_id)
+        .exclude(aquaculture_pond_id__isnull=True)
+        .values_list("aquaculture_pond_id", flat=True)
+    )
+    if not pond_ids:
+        return
+    from api.services.aquaculture_transfer_cost import resync_fingerling_transfers_for_pond
+
+    for pond_id in pond_ids:
+        resync_fingerling_transfers_for_pond(
+            company_id=company_id,
+            pond_id=int(pond_id),
+            sync_gl=True,
+        )
 
 
 def resync_posted_bill_journal_from_lines(company_id: int, bill_id: int) -> bool:

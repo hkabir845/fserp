@@ -154,49 +154,56 @@ def sync_aquaculture_expense_posting_effects(company_id: int, expense_id: int) -
                     expense_id=exp.id,
                     entry_date=exp.expense_date,
                 )
-            return
+        else:
+            row_tuples: list[tuple[Item, Decimal]] = []
+            lines_data: list[dict] = []
+            for ln in lines:
+                it = ln.item
+                qty = ln.quantity if ln.quantity is not None else Decimal("0")
+                if qty <= 0:
+                    continue
+                row_tuples.append((it, qty))
+                lines_data.append({"item": it, "quantity": qty})
 
-        row_tuples: list[tuple[Item, Decimal]] = []
-        lines_data: list[dict] = []
-        for ln in lines:
-            it = ln.item
-            qty = ln.quantity if ln.quantity is not None else Decimal("0")
-            if qty <= 0:
-                continue
-            row_tuples.append((it, qty))
-            lines_data.append({"item": it, "quantity": qty})
+            if row_tuples:
+                st = exp.source_station_id
+                if st is not None:
+                    posted = post_aquaculture_shop_stock_issue_journal(
+                        company_id,
+                        expense_id=exp.id,
+                        entry_date=exp.expense_date,
+                        station_id=int(st),
+                        line_rows=row_tuples,
+                    )
+                    if posted:
+                        decrement_station_lines(company_id, int(st), lines_data)
+                        for d in lines_data:
+                            it = d["item"]
+                            if not item_uses_station_bins(company_id, it) and item_tracks_physical_stock(it):
+                                if it.quantity_on_hand is not None:
+                                    Item.objects.filter(pk=it.pk, company_id=company_id).update(
+                                        quantity_on_hand=F("quantity_on_hand") - d["quantity"]
+                                    )
+                elif exp.pond_id is not None and (exp.expense_category or "") in POND_WAREHOUSE_CONSUMPTION_CATEGORIES:
+                    posted = post_aquaculture_pond_feed_consumption_journal(
+                        company_id,
+                        expense_id=exp.id,
+                        entry_date=exp.expense_date,
+                        line_rows=row_tuples,
+                    )
+                    if posted:
+                        decrement_pond_lines(company_id, int(exp.pond_id), lines_data)
 
-        if not row_tuples:
-            return
+                amt = _total_cost_at_issue(lines_data)
+                if amt > 0 and exp.amount != amt:
+                    AquacultureExpense.objects.filter(pk=exp.pk).update(amount=amt)
 
-        st = exp.source_station_id
-        if st is not None:
-            posted = post_aquaculture_shop_stock_issue_journal(
-                company_id,
-                expense_id=exp.id,
-                entry_date=exp.expense_date,
-                station_id=int(st),
-                line_rows=row_tuples,
+        if exp.pond_id:
+            from api.services.aquaculture_transfer_cost import resync_fingerling_transfers_for_pond
+
+            resync_fingerling_transfers_for_pond(
+                company_id=company_id,
+                pond_id=int(exp.pond_id),
+                production_cycle_id=exp.production_cycle_id,
+                sync_gl=True,
             )
-            if posted:
-                decrement_station_lines(company_id, int(st), lines_data)
-                for d in lines_data:
-                    it = d["item"]
-                    if not item_uses_station_bins(company_id, it) and item_tracks_physical_stock(it):
-                        if it.quantity_on_hand is not None:
-                            Item.objects.filter(pk=it.pk, company_id=company_id).update(
-                                quantity_on_hand=F("quantity_on_hand") - d["quantity"]
-                            )
-        elif exp.pond_id is not None and (exp.expense_category or "") in POND_WAREHOUSE_CONSUMPTION_CATEGORIES:
-            posted = post_aquaculture_pond_feed_consumption_journal(
-                company_id,
-                expense_id=exp.id,
-                entry_date=exp.expense_date,
-                line_rows=row_tuples,
-            )
-            if posted:
-                decrement_pond_lines(company_id, int(exp.pond_id), lines_data)
-
-        amt = _total_cost_at_issue(lines_data)
-        if amt > 0 and exp.amount != amt:
-            AquacultureExpense.objects.filter(pk=exp.pk).update(amount=amt)

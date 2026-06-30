@@ -36,9 +36,11 @@ interface Pond {
 interface CycleRow {
   id: number
   name: string
+  code?: string
   pond_id: number
   start_date?: string
   end_date?: string | null
+  source_production_cycle_id?: number | null
 }
 
 interface TransferCostPreviewLine {
@@ -349,6 +351,36 @@ export default function AquacultureFishTransfersPage() {
     }
   }, [])
 
+  /** Fry/nursing cohort batches for source pond (excludes grow-out batches linked from nursing). */
+  const nursingCohortCycles = useCallback(
+    (pondIdStr: string) => {
+      const pid = parseInt(pondIdStr, 10)
+      if (!Number.isFinite(pid)) return []
+      return cycles
+        .filter(
+          (c) =>
+            c.pond_id === pid &&
+            (c.source_production_cycle_id == null || c.source_production_cycle_id === 0),
+        )
+        .sort((a, b) => {
+          const da = a.start_date || ''
+          const db = b.start_date || ''
+          if (da !== db) return db.localeCompare(da)
+          return b.id - a.id
+        })
+    },
+    [cycles],
+  )
+
+  const formatCycleOptionLabel = (c: CycleRow) => {
+    const code = (c.code || '').trim()
+    const started = c.start_date ? formatDateOnly(c.start_date) : ''
+    const bits = [c.name || `Batch ${c.id}`]
+    if (code) bits.push(code)
+    if (started) bits.push(started)
+    return bits.join(' · ')
+  }
+
   const loadSpecies = useCallback(async () => {
     try {
       const { data } = await api.get<{ id: string; label: string }[]>('/aquaculture/fish-species/')
@@ -378,6 +410,12 @@ export default function AquacultureFishTransfersPage() {
     void loadCycles()
     void loadSpecies()
   }, [loadPonds, loadCycles, loadSpecies])
+
+  /** Refresh batch list when transfer modal opens or source pond changes (e.g. after a new fry bill). */
+  useEffect(() => {
+    if (!modal) return
+    void loadCycles()
+  }, [modal, fromPondId, loadCycles])
 
   useEffect(() => {
     void loadTransfers()
@@ -706,9 +744,21 @@ export default function AquacultureFishTransfersPage() {
     (pondIdStr: string) => {
       const pid = parseInt(pondIdStr, 10)
       if (!Number.isFinite(pid)) return []
-      return cycles.filter((c) => c.pond_id === pid)
+      return cycles
+        .filter((c) => c.pond_id === pid)
+        .sort((a, b) => {
+          const da = a.start_date || ''
+          const db = b.start_date || ''
+          if (da !== db) return db.localeCompare(da)
+          return b.id - a.id
+        })
     },
-    [cycles]
+    [cycles],
+  )
+
+  const sourceNursingCycles = useMemo(
+    () => nursingCohortCycles(fromPondId),
+    [nursingCohortCycles, fromPondId],
   )
 
   const closeModal = () => {
@@ -739,7 +789,7 @@ export default function AquacultureFishTransfersPage() {
     skipAutoCostLine.current = new Set()
     skipAutoPcsLine.current = new Set()
     autoCycleFromSampleDone.current = false
-    setFromPondId('')
+    setFromPondId(fromP ? String(fromP.id) : '')
     setFromCycleId('')
     setTransferDate(new Date().toISOString().slice(0, 10))
     setFishSpecies('tilapia')
@@ -1485,22 +1535,39 @@ export default function AquacultureFishTransfersPage() {
               </div>
               <label className="block text-sm font-medium text-foreground/85">
                 Source stocking batch (nursing cohort)
-                <select
-                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                  value={fromCycleId}
-                  onChange={(e) => setFromCycleId(e.target.value)}
-                >
-                  <option value="">— None —</option>
-                  {cyclesForPond(fromPondId).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                  Pick the fry batch leaving nursing (e.g. C02). FSERP opens a linked grow-out batch on each
-                  destination pond when you leave destination batch blank.
-                </span>
+                <div className="mt-1 flex gap-2">
+                  <select
+                    className="min-w-0 flex-1 rounded-lg border border-border px-3 py-2"
+                    value={fromCycleId}
+                    onChange={(e) => setFromCycleId(e.target.value)}
+                  >
+                    <option value="">— None —</option>
+                    {sourceNursingCycles.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {formatCycleOptionLabel(c)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-medium text-primary hover:bg-muted/60"
+                    title="Reload batches (e.g. after posting a fry bill)"
+                    onClick={() => void loadCycles()}
+                  >
+                    Refresh
+                  </button>
+                </div>
+                {fromPondId && sourceNursingCycles.length === 0 ? (
+                  <span className="mt-1 block text-xs font-medium text-amber-800">
+                    No nursing batch on this pond yet — post a fry vendor bill (leave batch blank to auto-create
+                    C01/C02), then click Refresh.
+                  </span>
+                ) : (
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                    Pick the fry batch leaving nursing (e.g. C02). FSERP opens a linked grow-out batch on each
+                    destination pond when you leave destination batch blank.
+                  </span>
+                )}
               </label>
               <label className="block text-sm font-medium text-foreground/85">
                 Species
@@ -1661,7 +1728,7 @@ export default function AquacultureFishTransfersPage() {
                             <option value="">—</option>
                             {cyclesForPond(ln.to_pond_id).map((c) => (
                               <option key={c.id} value={c.id}>
-                                {c.name}
+                                {formatCycleOptionLabel(c)}
                               </option>
                             ))}
                           </select>

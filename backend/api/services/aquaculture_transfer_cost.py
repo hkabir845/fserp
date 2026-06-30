@@ -110,7 +110,7 @@ def transfer_cost_pools_for_scope(
         from_cycle,
         include_cycle_breakdown=False,
     )
-    fry = Decimal("0")
+    fry_cycle = Decimal("0")
     other = Decimal("0")
     ponds = payload.get("ponds") or []
     if ponds:
@@ -122,9 +122,31 @@ def transfer_cost_pools_for_scope(
             if amt <= 0:
                 continue
             if code == "fry_stocking":
-                fry += amt
+                fry_cycle += amt
             else:
                 other += amt
+    fry_pond = _nursing_fry_pool_for_pond_batch(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        transfer_date=cost_as_of,
+        from_cycle=from_cycle,
+    )
+    fry = max(fry_cycle, fry_pond)
+    if from_cycle is not None:
+        open_batches = AquacultureProductionCycle.objects.filter(
+            company_id=company_id,
+            pond_id=from_pond_id,
+            end_date__isnull=True,
+            is_active=True,
+            source_production_cycle__isnull=True,
+        ).count()
+        if open_batches <= 1:
+            other += _nursing_uncycled_other_production_total(
+                company_id=company_id,
+                from_pond_id=from_pond_id,
+                start=start,
+                end=end,
+            )
     if fry <= 0 and other <= 0:
         from api.services.aquaculture_biological_asset_service import compute_pond_biological_asset_summary
 

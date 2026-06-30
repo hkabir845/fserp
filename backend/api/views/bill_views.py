@@ -57,11 +57,13 @@ from api.services.aquaculture_bill_defaults import (
     expense_category_from_cost_bucket,
     validate_and_apply_shared_pond_bill_line_category,
 )
+from api.services.bill_list_filters import apply_bill_list_entity_scope
 from api.services.bill_purpose_validation import (
     infer_bill_purpose_from_parsed_lines,
     parse_bill_purpose,
     validate_parsed_lines_for_bill_purpose,
 )
+from api.services.tenant_reporting_categories import _parse_entity_scope_params
 from api.services.fuel_station_bill_defaults import apply_fuel_station_category_to_bill_line_row
 from api.services.aquaculture_bill_pond_share import (
     bill_line_cost_mode,
@@ -719,6 +721,15 @@ def _bills_list(request):
     status_filter = request.GET.get("status_filter", "").strip()
     if status_filter:
         qs = qs.filter(status=status_filter)
+    station_id, pond_id, head_office, scope_err = _parse_entity_scope_params(request)
+    if scope_err:
+        return JsonResponse({"detail": scope_err}, status=400)
+    qs = apply_bill_list_entity_scope(
+        qs,
+        station_id=station_id,
+        pond_id=pond_id,
+        head_office=head_office,
+    )
     qs = apply_transaction_date_range(qs, request, "bill_date")
     qs = apply_transaction_amount_range(qs, request, "total")
     q = (request.GET.get("q") or "").strip()

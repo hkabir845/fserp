@@ -850,6 +850,72 @@ def test_transfer_api_includes_fry_and_other_cost_columns(api_client, company_te
 
 
 @pytest.mark.django_db
+def test_transfer_other_expenses_include_uncycled_feed_when_source_batch_set(
+    api_client, company_tenant, auth_admin_headers, monkeypatch
+):
+    """Cycle-scoped transfer must still split feed/medicine not tagged to the batch."""
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Mynuddin Nursing Pond", pond_role="nursing", is_active=True
+    )
+    dst = AquaculturePond.objects.create(company_id=cid, name="Grow Batch", is_active=True)
+    cycle = AquacultureProductionCycle.objects.create(
+        company_id=cid,
+        pond=src,
+        name="N01",
+        start_date=date(2026, 4, 1),
+        fish_species="tilapia",
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        production_cycle=cycle,
+        expense_date=date(2026, 4, 1),
+        expense_category="fry_stocking",
+        amount=Decimal("800000.00"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        production_cycle=None,
+        expense_date=date(2026, 5, 1),
+        expense_category="feed_purchase",
+        amount=Decimal("200000.00"),
+    )
+    monkeypatch.setattr(
+        "api.services.aquaculture_transfer_cost._nursing_stocked_heads_basis",
+        lambda **kwargs: 500000,
+    )
+    tr = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        from_production_cycle=cycle,
+        transfer_date=date(2026, 6, 10),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr,
+        to_pond=dst,
+        weight_kg=Decimal("500"),
+        fish_count=250000,
+        cost_amount=Decimal("500000.00"),
+    )
+    h = {**auth_admin_headers, "HTTP_X_COMPANY_ID": str(cid)}
+    r = api_client.get("/api/aquaculture/fish-pond-transfers/", **h)
+    assert r.status_code == 200
+    xfer = next(x for x in r.json()["transfers"] if x["id"] == tr.id)
+    line = xfer["lines"][0]
+    fry = Decimal(line["fry_cost_amount"])
+    other = Decimal(line["other_expense_amount"])
+    total = Decimal(line["cost_amount"])
+    assert fry + other == total
+    assert fry > Decimal("0")
+    assert other > Decimal("0")
+    assert other >= Decimal("50000.00")
+
+
+@pytest.mark.django_db
 def test_nursing_transfer_does_not_use_draft_line_count_as_cost_denominator(company_tenant, monkeypatch):
     """
     Bug: entering 210k heads on the first transfer must not make the survivor pool 210k,

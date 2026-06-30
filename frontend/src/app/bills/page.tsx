@@ -70,6 +70,10 @@ import {
   resolveBillReceiptLocation,
 } from '@/lib/billReceiptLocation'
 import { BillReceiptLocationSelect } from '@/components/bills/BillReceiptLocationSelect'
+import { BillLineEntitySelect } from '@/components/bills/BillLineEntitySelect'
+import { reportScopeQueryParams } from '@/app/reports/reportSiteScope'
+import { scopeDisplayLabel } from '@/app/reporting-categories/reportingCategoriesScope'
+import { useCompany } from '@/contexts/CompanyContext'
 import { VendorReferenceCombobox } from '@/components/reference/VendorReferenceCombobox'
 import {
   fetchEntityScopeDirectory,
@@ -1023,6 +1027,7 @@ export default function BillsPage() {
   const { t } = useT()
   const tr = useErpCommonT()
   const bt = useBillsT()
+  const { selectedCompany } = useCompany()
   const [bills, setBills] = useState<Bill[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [items, setItems] = useState<Item[]>([])
@@ -1043,6 +1048,7 @@ export default function BillsPage() {
   const [minAmount, setMinAmount] = useState('')
   const [maxAmount, setMaxAmount] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
+  const [siteFilterKey, setSiteFilterKey] = useState<string>('')
   const [showModal, setShowModal] = useState(false)
   const [approveBill, setApproveBill] = useState(false)
   const [postDraftBillOnUpdate, setPostDraftBillOnUpdate] = useState(false)
@@ -1350,7 +1356,7 @@ export default function BillsPage() {
 
   useEffect(() => {
     setListPage(1)
-  }, [debouncedSearch, pageSize, statusFilter, startDate, endDate, minAmount, maxAmount])
+  }, [debouncedSearch, pageSize, statusFilter, siteFilterKey, startDate, endDate, minAmount, maxAmount])
 
   const hasTextSearch = hasTransactionTextSearch({ q: debouncedSearch })
 
@@ -1360,12 +1366,13 @@ export default function BillsPage() {
     endDate,
     minAmount,
     maxAmount,
-    extras: Boolean(statusFilter),
+    extras: Boolean(statusFilter || siteFilterKey),
   })
 
   const clearFilters = () => {
     setSearchTerm('')
     setStatusFilter('')
+    setSiteFilterKey('')
     setStartDate('')
     setEndDate('')
     setMinAmount('')
@@ -1381,6 +1388,7 @@ export default function BillsPage() {
         q: debouncedSearch,
         extra: {
           ...(statusFilter ? { status_filter: statusFilter } : {}),
+          ...reportScopeQueryParams(siteFilterKey),
           ...transactionDateParams(startDate, endDate, hasTextSearch),
           ...transactionAmountParams(minAmount, maxAmount),
         },
@@ -1408,7 +1416,7 @@ export default function BillsPage() {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, listPage, pageSize, statusFilter, startDate, endDate, minAmount, maxAmount, hasTextSearch, toast])
+  }, [debouncedSearch, listPage, pageSize, statusFilter, siteFilterKey, startDate, endDate, minAmount, maxAmount, hasTextSearch, toast])
 
   const loadCompanyCurrency = useCallback(async () => {
     try {
@@ -2517,6 +2525,9 @@ export default function BillsPage() {
       return
     }
     const sub = [
+      siteFilterKey
+        ? `Site: ${scopeDisplayLabel(siteFilterKey, stations, aquaculturePonds, selectedCompany?.name)}`
+        : '',
       statusFilter && `Status: ${statusFilter}`,
       debouncedSearch && `Search: ${debouncedSearch}`,
       `Generated ${formatDate(new Date(), true)}`,
@@ -2743,6 +2754,24 @@ export default function BillsPage() {
                 className="w-full rounded-lg border border-border py-2 pl-10 pr-4 focus:border-ring focus:ring-2 focus:ring-ring"
               />
             </div>
+            <div className="min-w-[14rem] max-w-xs flex-1">
+              <label className="sr-only" htmlFor="bill-list-site-filter">
+                Site
+              </label>
+              <BillLineEntitySelect
+                id="bill-list-site-filter"
+                value={siteFilterKey}
+                onChange={setSiteFilterKey}
+                stations={stations}
+                ponds={aquaculturePonds}
+                companyName={selectedCompany?.name}
+                className="w-full rounded-lg border border-border px-3 py-2 focus:ring-2 focus:ring-ring"
+                showHeadOffice
+                showAllEntitiesOption
+                emptyLabel="All sites"
+                placeholder="Filter by site or pond…"
+              />
+            </div>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -2931,7 +2960,7 @@ export default function BillsPage() {
                 title={hasActiveFilters ? 'No bills match your filters' : tr('noBillsFound')}
                 description={
                   hasActiveFilters
-                    ? 'Try adjusting search, status, dates, or amount range.'
+                    ? 'Try adjusting search, site, status, dates, or amount range.'
                     : 'Record vendor bills to track payables and link them to your chart of accounts.'
                 }
                 hasActiveFilters={hasActiveFilters}

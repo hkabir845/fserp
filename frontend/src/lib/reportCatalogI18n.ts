@@ -473,6 +473,16 @@ export const REPORT_CATALOG_LABELS: Record<string, Loc> = {
       bn: 'পুকুরের মধ্যে মাছ স্থানান্তর — ওজন, মাথা সংখ্যা ও খরচ বরাদ্দ (BDT)',
     },
   },
+  'aquaculture-fingerling-transfers': {
+    title: {
+      en: 'Aquaculture — Fingerling transfers (nursing → grow-out)',
+      bn: 'অ্যাকোয়াকালচার — ফিঙ্গারলিং স্থানান্তর (নার্সিং → গ্রো-আউট)',
+    },
+    description: {
+      en: 'Nursing pond fingerling moves with purchase vs other costs and receiving pond liability reconciliation (BDT)',
+      bn: 'নার্সিং পুকুর থেকে ফিঙ্গারলিং — ক্রয় ও অন্যান্য খরচ, গ্রহণকারী পুকুরের দায় ও মিল (BDT)',
+    },
+  },
   'aquaculture-pond-total-inventory': {
     title: {
       en: 'Aquaculture — Pond total inventory & value',

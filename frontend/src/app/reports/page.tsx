@@ -194,6 +194,7 @@ type ReportType =
   | 'aquaculture-production-cycles'
   | 'aquaculture-profit-transfers'
   | 'aquaculture-fish-transfers'
+  | 'aquaculture-fingerling-transfers'
   | 'aquaculture-pond-feed-stock'
   | 'aquaculture-pond-medicine-stock'
   | 'aquaculture-pond-supplies-stock'
@@ -680,6 +681,14 @@ const reports: ReportCard[] = [
     category: 'aquaculture',
   },
   {
+    id: 'aquaculture-fingerling-transfers',
+    title: 'Aquaculture — Fingerling transfers (nursing → grow-out)',
+    description:
+      'Nursing pond fingerling moves: species, fish count, pcs/kg, fry purchase + other costs, receiving pond liability, and balanced reconciliation',
+    icon: Fish,
+    category: 'aquaculture',
+  },
+  {
     id: 'aquaculture-pond-total-inventory',
     title: 'Aquaculture — Pond total inventory & value',
     description:
@@ -760,6 +769,7 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
   'aquaculture-fish-transfers',
+  'aquaculture-fingerling-transfers',
   'aquaculture-pond-feed-stock',
   'aquaculture-pond-medicine-stock',
   'aquaculture-pond-supplies-stock',
@@ -812,6 +822,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
   'aquaculture-fish-transfers',
+  'aquaculture-fingerling-transfers',
   'aquaculture-pond-feed-stock',
   'aquaculture-pond-medicine-stock',
   'aquaculture-pond-supplies-stock',
@@ -960,6 +971,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
   'aquaculture-fish-transfers',
+  'aquaculture-fingerling-transfers',
   'aquaculture-pond-feed-stock',
   'aquaculture-pond-medicine-stock',
   'aquaculture-pond-supplies-stock',
@@ -1381,7 +1393,14 @@ export default function ReportsPage() {
   const [aquaculturePondId, setAquaculturePondId] = useState('')
   const [aquacultureCycleId, setAquacultureCycleId] = useState('')
   const [aquacultureIncludeCycleBreakdown, setAquacultureIncludeCycleBreakdown] = useState(false)
-  const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string }[]>([])
+  const [fingerlingSearch, setFingerlingSearch] = useState('')
+  const [fingerlingSpecies, setFingerlingSpecies] = useState('')
+  const [fingerlingMinCost, setFingerlingMinCost] = useState('')
+  const [fingerlingMaxCost, setFingerlingMaxCost] = useState('')
+  const [fingerlingNursingPondId, setFingerlingNursingPondId] = useState('')
+  const [fingerlingGrowoutPondId, setFingerlingGrowoutPondId] = useState('')
+  const [fingerlingBalance, setFingerlingBalance] = useState<'all' | 'balanced' | 'unbalanced'>('all')
+  const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string; pond_role?: string }[]>([])
   const [aquacultureCycles, setAquacultureCycles] = useState<{ id: number; name: string }[]>([])
   /** null = not loaded yet; false = company setting off */
   const [companyAquacultureEnabled, setCompanyAquacultureEnabled] = useState<boolean | null>(null)
@@ -1648,7 +1667,7 @@ export default function ReportsPage() {
     }
     let cancelled = false
     api
-      .get<{ id: number; name: string }[]>('/aquaculture/ponds/')
+      .get<{ id: number; name: string; pond_role?: string }[]>('/aquaculture/ponds/')
       .then((res) => {
         if (cancelled) return
         setAquaculturePonds(Array.isArray(res.data) ? res.data : [])
@@ -1925,6 +1944,19 @@ export default function ReportsPage() {
           params.include_cycle_breakdown = 'true'
         }
       }
+      if (reportId === 'aquaculture-fingerling-transfers') {
+        if (fingerlingSearch.trim()) params.q = fingerlingSearch.trim()
+        if (fingerlingSpecies.trim()) params.species = fingerlingSpecies.trim()
+        if (fingerlingMinCost.trim()) params.min_cost = fingerlingMinCost.trim()
+        if (fingerlingMaxCost.trim()) params.max_cost = fingerlingMaxCost.trim()
+        if (fingerlingNursingPondId && /^\d+$/.test(fingerlingNursingPondId)) {
+          params.nursing_pond_id = fingerlingNursingPondId
+        }
+        if (fingerlingGrowoutPondId && /^\d+$/.test(fingerlingGrowoutPondId)) {
+          params.growout_pond_id = fingerlingGrowoutPondId
+        }
+        if (fingerlingBalance !== 'all') params.balance = fingerlingBalance
+      }
     }
 
     if (BUSINESS_LINE_REPORT_IDS.has(reportId)) {
@@ -2071,6 +2103,13 @@ export default function ReportsPage() {
     aquaculturePondId,
     aquacultureCycleId,
     aquacultureIncludeCycleBreakdown,
+    fingerlingSearch,
+    fingerlingSpecies,
+    fingerlingMinCost,
+    fingerlingMaxCost,
+    fingerlingNursingPondId,
+    fingerlingGrowoutPondId,
+    fingerlingBalance,
     businessSegment,
     salesPurchaseDateRange,
     scrollReportPanelIntoView,
@@ -3458,6 +3497,131 @@ export default function ReportsPage() {
                                   />
                                   Include cycle breakdown (when not filtering by one cycle)
                                 </label>
+                              </>
+                            )}
+                            {selectedReport === 'aquaculture-fingerling-transfers' && (
+                              <>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-xs font-medium text-cyan-900" htmlFor="fl-report-search">
+                                    Search
+                                  </label>
+                                  <input
+                                    id="fl-report-search"
+                                    type="search"
+                                    value={fingerlingSearch}
+                                    onChange={(e) => setFingerlingSearch(e.target.value)}
+                                    placeholder="Pond, species, batch, memo…"
+                                    className="erp-field min-w-[14rem] rounded-md px-2 py-1.5 text-sm"
+                                  />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-xs font-medium text-cyan-900" htmlFor="fl-report-species">
+                                    Species
+                                  </label>
+                                  <select
+                                    id="fl-report-species"
+                                    value={fingerlingSpecies}
+                                    onChange={(e) => setFingerlingSpecies(e.target.value)}
+                                    className="erp-field min-w-[10rem] rounded-md px-2 py-1.5 text-sm"
+                                  >
+                                    <option value="">All species</option>
+                                    <option value="tilapia">Tilapia</option>
+                                    <option value="pangas">Pangas</option>
+                                    <option value="rui">Rui</option>
+                                    <option value="koi">Koi</option>
+                                    <option value="other">Other</option>
+                                  </select>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-xs font-medium text-cyan-900" htmlFor="fl-nursing-pond">
+                                    Nursing pond
+                                  </label>
+                                  <select
+                                    id="fl-nursing-pond"
+                                    value={fingerlingNursingPondId}
+                                    onChange={(e) => setFingerlingNursingPondId(e.target.value)}
+                                    className="erp-field min-w-[12rem] rounded-md px-2 py-1.5 text-sm"
+                                  >
+                                    <option value="">All nursing</option>
+                                    {aquaculturePonds
+                                      .filter((p) => (p.pond_role || '').toLowerCase() === 'nursing')
+                                      .map((p) => (
+                                        <option key={`n-${p.id}`} value={String(p.id)}>
+                                          {p.name}
+                                        </option>
+                                      ))}
+                                  </select>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-xs font-medium text-cyan-900" htmlFor="fl-growout-pond">
+                                    Receiving pond
+                                  </label>
+                                  <select
+                                    id="fl-growout-pond"
+                                    value={fingerlingGrowoutPondId}
+                                    onChange={(e) => setFingerlingGrowoutPondId(e.target.value)}
+                                    className="erp-field min-w-[12rem] rounded-md px-2 py-1.5 text-sm"
+                                  >
+                                    <option value="">All grow-out</option>
+                                    {aquaculturePonds
+                                      .filter((p) => {
+                                        const r = (p.pond_role || 'grow_out').toLowerCase()
+                                        return r !== 'nursing'
+                                      })
+                                      .map((p) => (
+                                        <option key={`g-${p.id}`} value={String(p.id)}>
+                                          {p.name}
+                                        </option>
+                                      ))}
+                                  </select>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-xs font-medium text-cyan-900" htmlFor="fl-min-cost">
+                                    Min cost (BDT)
+                                  </label>
+                                  <input
+                                    id="fl-min-cost"
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    value={fingerlingMinCost}
+                                    onChange={(e) => setFingerlingMinCost(e.target.value)}
+                                    placeholder="0"
+                                    className="erp-field w-[8rem] rounded-md px-2 py-1.5 text-sm tabular-nums"
+                                  />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-xs font-medium text-cyan-900" htmlFor="fl-max-cost">
+                                    Max cost (BDT)
+                                  </label>
+                                  <input
+                                    id="fl-max-cost"
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    value={fingerlingMaxCost}
+                                    onChange={(e) => setFingerlingMaxCost(e.target.value)}
+                                    placeholder="Any"
+                                    className="erp-field w-[8rem] rounded-md px-2 py-1.5 text-sm tabular-nums"
+                                  />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-xs font-medium text-cyan-900" htmlFor="fl-balance">
+                                    Balance
+                                  </label>
+                                  <select
+                                    id="fl-balance"
+                                    value={fingerlingBalance}
+                                    onChange={(e) =>
+                                      setFingerlingBalance(e.target.value as 'all' | 'balanced' | 'unbalanced')
+                                    }
+                                    className="erp-field min-w-[10rem] rounded-md px-2 py-1.5 text-sm"
+                                  >
+                                    <option value="all">All transfers</option>
+                                    <option value="balanced">Balanced only</option>
+                                    <option value="unbalanced">Unbalanced only</option>
+                                  </select>
+                                </div>
                               </>
                             )}
                             <button
@@ -8990,6 +9154,295 @@ function renderReportTable(
                     ? MoneyBdt(totals.total_amount)
                     : `Samples: ${totals.sample_count ?? 0}`}
             </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'aquaculture-fingerling-transfers' && data && Array.isArray(data.transfers)) {
+    const period = data.period || {}
+    const statementLines: any[] = data.statement_lines || []
+    const transfers: any[] = data.transfers
+    const nursingSummary: any[] = data.nursing_summary || []
+    const growoutSummary: any[] = data.growout_summary || []
+    const recon = data.reconciliation || {}
+    const totals = data.totals || {}
+    const filtersApplied = data.filters_applied || {}
+    const balanced = recon.balanced !== false
+    const hasActiveFilters = Boolean(
+      filtersApplied.search_q ||
+        filtersApplied.species ||
+        filtersApplied.min_cost ||
+        filtersApplied.max_cost ||
+        filtersApplied.nursing_pond_id ||
+        filtersApplied.growout_pond_id ||
+        (filtersApplied.balance && filtersApplied.balance !== 'all')
+    )
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Transfer date within this range. Use Aquaculture filters above for search and cost value.'
+          )}
+        {data.report_note ? (
+          <p className="text-sm text-muted-foreground">{data.report_note}</p>
+        ) : null}
+        {hasActiveFilters ? (
+          <p className="rounded-md border border-cyan-200 bg-cyan-50/80 px-3 py-2 text-xs text-cyan-950">
+            <span className="font-semibold">Active filters:</span>{' '}
+            {[
+              filtersApplied.search_q && `search="${filtersApplied.search_q}"`,
+              filtersApplied.species && `species=${filtersApplied.species}`,
+              filtersApplied.min_cost && `min cost ${filtersApplied.min_cost}`,
+              filtersApplied.max_cost && `max cost ${filtersApplied.max_cost}`,
+              filtersApplied.nursing_pond_id && `nursing pond #${filtersApplied.nursing_pond_id}`,
+              filtersApplied.growout_pond_id && `receiving pond #${filtersApplied.growout_pond_id}`,
+              filtersApplied.balance && filtersApplied.balance !== 'all' && filtersApplied.balance,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+        ) : null}
+
+        <div className="rounded-lg border border-border bg-white shadow-sm">
+          <div className="border-b border-border/70 bg-muted/40 px-4 py-2">
+            <h4 className="font-semibold text-foreground">Full statement — all fingerling transfer lines</h4>
+            <p className="text-xs text-muted-foreground">
+              {statementLines.length} line(s) · amounts in BDT · liability = receiving pond biological cost
+            </p>
+          </div>
+          <div className="overflow-x-auto p-2">
+            {statementLines.length === 0 ? (
+              <p className="px-2 py-4 text-sm text-muted-foreground">No lines match the current filters.</p>
+            ) : (
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="px-2 py-1">Date</th>
+                    <th className="px-2 py-1">Nursing pond</th>
+                    <th className="px-2 py-1">Species</th>
+                    <th className="px-2 py-1">Receiving pond</th>
+                    <th className="px-2 py-1 text-right">Fish (#)</th>
+                    <th className="px-2 py-1 text-right">kg</th>
+                    <th className="px-2 py-1 text-right">pcs/kg</th>
+                    <th className="px-2 py-1 text-right">Fry purchase</th>
+                    <th className="px-2 py-1 text-right">Other costs</th>
+                    <th className="px-2 py-1 text-right">Total liability</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/70">
+                  {statementLines.map((ln: any) => (
+                    <tr key={`st-${ln.line_id}`}>
+                      <td className="whitespace-nowrap px-2 py-1.5">{ln.transfer_date}</td>
+                      <td className="px-2 py-1.5">
+                        {ln.from_pond_name || '—'}
+                        {ln.from_cycle_name ? (
+                          <div className="text-[11px] text-muted-foreground">{ln.from_cycle_name}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-1.5">{ln.fish_species_label || '—'}</td>
+                      <td className="px-2 py-1.5">
+                        {ln.to_pond_name || '—'}
+                        {ln.to_cycle_name ? (
+                          <div className="text-[11px] text-muted-foreground">{ln.to_cycle_name}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {ln.fish_count != null ? Number(ln.fish_count).toLocaleString() : '—'}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {Number(ln.weight_kg || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {ln.pcs_per_kg
+                          ? Number(ln.pcs_per_kg).toLocaleString(undefined, { maximumFractionDigits: 2 })
+                          : '—'}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.purchase_cost)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.other_expenses_cost)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{MoneyBdt(ln.total_cost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-muted/40">
+                  <tr>
+                    <td colSpan={4} className="px-2 py-2 text-right text-xs font-semibold">
+                      Statement subtotal
+                    </td>
+                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">
+                      {Number(totals.fish_count || 0).toLocaleString()}
+                    </td>
+                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">
+                      {Number(totals.weight_kg || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                    </td>
+                    <td />
+                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">
+                      {MoneyBdt(totals.purchase_cost)}
+                    </td>
+                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">
+                      {MoneyBdt(totals.other_expenses)}
+                    </td>
+                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">
+                      {MoneyBdt(totals.total_cost)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {transfers.length === 0 && statementLines.length === 0 ? (
+          <p className="rounded-lg border border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+            No fingerling transfers from nursing ponds in this period.
+          </p>
+        ) : transfers.length > 0 ? (
+          <>
+            <h4 className="text-sm font-semibold text-foreground">By transfer document</h4>
+            {transfers.map((t: any) => (
+            <div key={`fl-${t.transfer_id}`} className="rounded-lg border border-border bg-white shadow-sm">
+              <div className="border-b border-border/70 bg-teal-50/80 px-4 py-2">
+                <h4 className="font-semibold text-teal-950">
+                  {t.transfer_date} · {t.from_pond_name || 'Nursing pond'} → grow-out
+                </h4>
+                <p className="text-xs text-teal-900/80">
+                  {t.fish_species_label || '—'}
+                  {t.from_cycle_name ? ` · batch: ${t.from_cycle_name}` : ''}
+                  {t.transfer_balanced === false ? (
+                    <span className="ml-2 font-semibold text-amber-800">Transfer not balanced</span>
+                  ) : null}
+                </p>
+              </div>
+              <div className="overflow-x-auto p-2">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="px-2 py-1">Receiving pond</th>
+                      <th className="px-2 py-1 text-right">Fish (#)</th>
+                      <th className="px-2 py-1 text-right">Weight (kg)</th>
+                      <th className="px-2 py-1 text-right">pcs/kg</th>
+                      <th className="px-2 py-1 text-right">Fry purchase</th>
+                      <th className="px-2 py-1 text-right">Other costs</th>
+                      <th className="px-2 py-1 text-right">Total liability</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/70">
+                    {(t.lines || []).map((ln: any) => (
+                      <tr key={ln.line_id}>
+                        <td className="px-2 py-1.5">
+                          {ln.to_pond_name || '—'}
+                          {ln.to_cycle_name ? (
+                            <div className="text-[11px] text-muted-foreground">{ln.to_cycle_name}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {ln.fish_count != null ? Number(ln.fish_count).toLocaleString() : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {Number(ln.weight_kg || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {ln.pcs_per_kg ? Number(ln.pcs_per_kg).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.purchase_cost)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.other_expenses_cost)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums font-medium">{MoneyBdt(ln.total_cost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/40">
+                    <tr>
+                      <td colSpan={4} className="px-2 py-2 text-right text-xs font-semibold text-foreground">
+                        Nursing out / Grow-out in
+                      </td>
+                      <td className="px-2 py-2 text-right text-xs tabular-nums" colSpan={2}>
+                        {MoneyBdt(t.nursing_cost_out)} / {MoneyBdt(t.growout_liability_in)}
+                      </td>
+                      <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">
+                        {t.transfer_balanced ? '✓' : '≠'}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+            ))}
+          </>
+        ) : null}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+            <h4 className="mb-2 text-sm font-semibold text-foreground">Nursing ponds — cost transferred out</h4>
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="border-b text-muted-foreground">
+                  <th className="py-1 text-left">Pond</th>
+                  <th className="py-1 text-right">Fish</th>
+                  <th className="py-1 text-right">Fry purchase</th>
+                  <th className="py-1 text-right">Other</th>
+                  <th className="py-1 text-right">Total out</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {nursingSummary.map((r: any) => (
+                  <tr key={`n-${r.pond_id}`}>
+                    <td className="py-1.5">{r.pond_name}</td>
+                    <td className="py-1.5 text-right tabular-nums">{Number(r.fish_count_out || 0).toLocaleString()}</td>
+                    <td className="py-1.5 text-right tabular-nums">{MoneyBdt(r.purchase_cost_out)}</td>
+                    <td className="py-1.5 text-right tabular-nums">{MoneyBdt(r.other_expenses_out)}</td>
+                    <td className="py-1.5 text-right tabular-nums font-medium">{MoneyBdt(r.total_cost_out)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+            <h4 className="mb-2 text-sm font-semibold text-foreground">Grow-out ponds — liability received</h4>
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="border-b text-muted-foreground">
+                  <th className="py-1 text-left">Pond</th>
+                  <th className="py-1 text-right">Fish</th>
+                  <th className="py-1 text-right">Fry purchase</th>
+                  <th className="py-1 text-right">Other</th>
+                  <th className="py-1 text-right">Total in</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {growoutSummary.map((r: any) => (
+                  <tr key={`g-${r.pond_id}`}>
+                    <td className="py-1.5">{r.pond_name}</td>
+                    <td className="py-1.5 text-right tabular-nums">{Number(r.fish_count_in || 0).toLocaleString()}</td>
+                    <td className="py-1.5 text-right tabular-nums">{MoneyBdt(r.purchase_cost_in)}</td>
+                    <td className="py-1.5 text-right tabular-nums">{MoneyBdt(r.other_expenses_in)}</td>
+                    <td className="py-1.5 text-right tabular-nums font-medium">{MoneyBdt(r.total_liability_in)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div
+          className={`rounded-lg border-2 px-4 py-3 text-sm font-bold ${
+            balanced ? 'border-emerald-300 bg-emerald-50 text-emerald-950' : 'border-amber-400 bg-amber-50 text-amber-950'
+          }`}
+        >
+          <div>Reconciliation — nursing cost out vs grow-out liability in</div>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2 font-normal text-sm">
+            <span>
+              Out: {MoneyBdt(recon.nursing_total_cost_out)} · In: {MoneyBdt(recon.growout_total_liability_in)}
+            </span>
+            <span className="tabular-nums">
+              {balanced ? 'Balanced ✓' : `Difference: ${MoneyBdt(recon.difference)}`}
+            </span>
+          </div>
+          <div className="mt-2 text-xs font-normal opacity-90">
+            {Number(totals.fish_count || 0).toLocaleString()} fish · {Number(totals.weight_kg || 0).toLocaleString()} kg
+            · Fry {MoneyBdt(totals.purchase_cost)} + Other {MoneyBdt(totals.other_expenses)} = {MoneyBdt(totals.total_cost)}
           </div>
         </div>
       </div>

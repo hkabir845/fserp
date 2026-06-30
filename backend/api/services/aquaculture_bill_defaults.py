@@ -122,6 +122,20 @@ def chart_account_id_for_aquaculture_expense_category(company_id: int, category:
     return int(acc.id) if acc else None
 
 
+def chart_account_id_for_aquaculture_bill_expense(company_id: int, category: str) -> int | None:
+    """Bill-line expense account: fry stocking uses biological inventory (1581) when seeded."""
+    from api.services.aquaculture_pond_bio_capitalization import bio_inventory_account
+
+    from api.services.tenant_reporting_categories import resolve_aquaculture_expense_to_builtin
+
+    builtin = resolve_aquaculture_expense_to_builtin(company_id, category)
+    if builtin == "fry_stocking":
+        bio = bio_inventory_account(company_id)
+        if bio:
+            return int(bio.id)
+    return chart_account_id_for_aquaculture_expense_category(company_id, category)
+
+
 def validate_and_apply_shared_pond_bill_line_category(company_id: int, row: dict) -> str | None:
     """
     Shared pond split rows carry aquaculture_expense_category without aquaculture_pond_id.
@@ -144,7 +158,7 @@ def validate_and_apply_shared_pond_bill_line_category(company_id: int, row: dict
             code, company_id=company_id
         )
     if not row.get("item_id") and not row.get("expense_account_id"):
-        aid = chart_account_id_for_aquaculture_expense_category(company_id, code)
+        aid = chart_account_id_for_aquaculture_bill_expense(company_id, code)
         if aid:
             row["expense_account_id"] = aid
     return None
@@ -185,7 +199,7 @@ def apply_aquaculture_expense_category_to_bill_line_row(company_id: int, row: di
             code, company_id=company_id
         )
     if not row.get("item_id") and not row.get("expense_account_id"):
-        aid = chart_account_id_for_aquaculture_expense_category(company_id, code)
+        aid = chart_account_id_for_aquaculture_bill_expense(company_id, code)
         if aid:
             row["expense_account_id"] = aid
     return None

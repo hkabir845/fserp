@@ -178,6 +178,8 @@ def build_aquaculture_report(
         payload = _report_profit_transfers(company_id, start, end, request)
     elif report_id == "aquaculture-fish-transfers":
         payload = _report_fish_transfers(company_id, start, end, request)
+    elif report_id == "aquaculture-fingerling-transfers":
+        payload = _report_fingerling_transfers(company_id, start, end, request)
     elif report_id == "aquaculture-pond-feed-stock":
         payload = _report_pond_warehouse_stock(company_id, end, request, stock_kind="feed")
     elif report_id == "aquaculture-pond-medicine-stock":
@@ -222,6 +224,7 @@ def build_aquaculture_report(
             "aquaculture-production-cycles",
             "aquaculture-profit-transfers",
             "aquaculture-fish-transfers",
+            "aquaculture-fingerling-transfers",
             "aquaculture-equipment-assets",
             "aquaculture-fish-stock-position",
             "aquaculture-fish-stock-breakdown",
@@ -1853,6 +1856,38 @@ def _report_profit_transfers(company_id: int, start: date, end: date, request: H
         "summary": summary,
         "groups": groups,
         "totals": {"total_amount": str(grand), "line_count": summary["line_count"]},
+    }
+
+
+def _report_fingerling_transfers(company_id: int, start: date, end: date, request: HttpRequest) -> dict[str, Any]:
+    from api.services.aquaculture_fingerling_transfer_report import (
+        compute_fingerling_transfer_report,
+        parse_fingerling_transfer_report_filters,
+    )
+
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+    filters = parse_fingerling_transfer_report_filters(
+        search_q=request.GET.get("q") or request.GET.get("search"),
+        species=request.GET.get("species"),
+        min_cost_raw=request.GET.get("min_cost"),
+        max_cost_raw=request.GET.get("max_cost"),
+        nursing_pond_id_raw=request.GET.get("nursing_pond_id"),
+        growout_pond_id_raw=request.GET.get("growout_pond_id"),
+        balance=request.GET.get("balance"),
+    )
+    body = compute_fingerling_transfer_report(
+        company_id,
+        start=start,
+        end=end,
+        pond_filter_id=pond_filter_id,
+        filters=filters,
+    )
+    return {
+        "period": _period_block(start, end),
+        "currency_code": BDT,
+        **body,
     }
 
 

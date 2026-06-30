@@ -246,6 +246,12 @@ def expense_account_for_pond_bill_line(
     if not bucket:
         bucket = "miscellaneous"
 
+    # Fry always capitalizes to biological inventory (1581), matching manual pond fry expenses.
+    if bucket == "fry_stocking":
+        bio = bio_inventory_account(company_id)
+        if bio:
+            return bio
+
     if company_capitalizes_pond_production(company_id) and pond_cost_bucket_capitalizes_to_bio(bucket):
         bio = bio_inventory_account(company_id)
         if bio:

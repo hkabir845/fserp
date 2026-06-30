@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRightLeft, Beaker, Fish, Plus, RefreshCw, Trash2, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowRightLeft, Beaker, FileBarChart, Fish, Plus, RefreshCw, Trash2, Pencil } from 'lucide-react'
 import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
 import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
@@ -999,6 +999,13 @@ export default function AquacultureFishTransfersPage() {
       description={pageMeta.description}
       actions={
         <>
+          <Link
+            href="/reports?report=aquaculture-fingerling-transfers&category=aquaculture"
+            className={AQ_HERO_BTN_GHOST}
+          >
+            <FileBarChart className="h-3.5 w-3.5" aria-hidden />
+            Fingerling report
+          </Link>
           <button type="button" onClick={() => void loadTransfers()} className={AQ_HERO_BTN_GHOST}>
             <RefreshCw className="h-3.5 w-3.5" aria-hidden />
             {uiT('refresh')}

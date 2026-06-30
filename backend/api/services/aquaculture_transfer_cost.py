@@ -374,28 +374,40 @@ def _production_cost_share_for_line(
         heads = int(fish_count or 0)
         if heads <= 0:
             return Decimal("0")
+        stocked_heads = _nursing_stocked_heads_basis(
+            company_id=company_id,
+            pond_id=from_pond_id,
+            cycle_filter_id=cycle_filter_id,
+        )
         live_heads = _live_fingerling_heads_basis(
             company_id=company_id,
             pond_id=from_pond_id,
             cycle_filter_id=cycle_filter_id,
         )
-        if live_heads <= 0:
+        denom_heads = stocked_heads if stocked_heads > 0 else live_heads
+        if denom_heads <= 0:
             return Decimal("0")
-        return _money_q(bio_total * Decimal(heads) / Decimal(live_heads))
+        return _money_q(bio_total * Decimal(heads) / Decimal(denom_heads))
 
     pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).only("pond_role").first()
     role = (pond.pond_role or "").strip().lower() if pond else ""
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
+    stocked_heads = _nursing_stocked_heads_basis(
+        company_id=company_id,
+        pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+    )
     live_heads = _live_fingerling_heads_basis(
         company_id=company_id,
         pond_id=from_pond_id,
         cycle_filter_id=cycle_filter_id,
     )
+    head_basis_heads = stocked_heads if stocked_heads > 0 else live_heads
     use_head_basis = (
         fish_count
         and int(fish_count) > 0
-        and live_heads > 0
-        and (role == "nursing" or live_heads >= 10000)
+        and head_basis_heads > 0
+        and (role == "nursing" or head_basis_heads >= 10000)
     )
     if use_head_basis:
         share = _nursing_share_for_scope(from_cycle)
@@ -433,12 +445,13 @@ def _transfer_uses_head_cost_basis(
         cycle_filter_id=cycle_filter_id,
     )
     heads = int(fish_count or 0)
-    if heads <= 0 or live_heads <= 0:
-        return False, live_heads or stocked_heads
+    head_basis_heads = stocked_heads if stocked_heads > 0 else live_heads
+    if heads <= 0 or head_basis_heads <= 0:
+        return False, head_basis_heads or live_heads or stocked_heads
     pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).only("pond_role").first()
     role = (pond.pond_role or "").strip().lower() if pond else ""
-    use_head = role == "nursing" or live_heads >= 10000
-    return use_head, live_heads
+    use_head = role == "nursing" or head_basis_heads >= 10000
+    return use_head, head_basis_heads
 
 
 def _bio_total_for_transfer_scope(

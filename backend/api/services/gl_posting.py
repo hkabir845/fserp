@@ -2512,7 +2512,7 @@ def _bill_line_aquaculture_meta(company_id: int, line: BillLine) -> Optional[dic
     bucket = (getattr(line, "aquaculture_cost_bucket", None) or "").strip()
     item = getattr(line, "item", None)
     if not bucket and item:
-        bucket = item_shop_issue_cost_bucket(item)
+        bucket = "fry_stocking" if _is_fish_item(item) else item_shop_issue_cost_bucket(item)
     if not bucket:
         bucket = "equipment"
     meta["cost_bucket"] = bucket[:40]
@@ -2532,16 +2532,16 @@ def _bill_line_expense_debit_account(
     vendor: Optional[Vendor],
     office_exp: ChartOfAccount,
 ) -> ChartOfAccount:
-    """Non-inventory bill debits: line override, fuel-station rollup COA, item default, vendor default, else office expense."""
+    """Non-inventory bill debits: pond COA rules, line override, fuel-station rollup, item/vendor default."""
+    if getattr(line, "aquaculture_pond_id", None):
+        from api.services.aquaculture_pond_bio_capitalization import expense_account_for_pond_bill_line
+
+        return expense_account_for_pond_bill_line(company_id, line, fallback=office_exp)
     lid = getattr(line, "expense_account_id", None)
     if lid:
         acc = ChartOfAccount.objects.filter(pk=lid, company_id=company_id, is_active=True).first()
         if acc and normalize_chart_account_type(acc.account_type) in _EXP_DEBIT_TYPES:
             return acc
-    if getattr(line, "aquaculture_pond_id", None):
-        from api.services.aquaculture_pond_bio_capitalization import expense_account_for_pond_bill_line
-
-        return expense_account_for_pond_bill_line(company_id, line, fallback=office_exp)
     if not getattr(line, "aquaculture_pond_id", None):
         fs_cat = (getattr(line, "fuel_station_expense_category", None) or "").strip()
         if fs_cat or getattr(line, "tenant_reporting_category_id", None):
@@ -2999,6 +2999,7 @@ def post_bill_journal(
     if JournalEntry.objects.filter(
         company_id=company_id, entry_number=entry_number
     ).exists():
+        resync_posted_bill_journal_from_lines(company_id, bill.id)
         _ensure_vendor_ap_for_posted_bill(company_id, bill)
         try:
             try_apply_bill_stock_receipt(

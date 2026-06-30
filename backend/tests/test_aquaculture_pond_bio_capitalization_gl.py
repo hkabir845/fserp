@@ -17,6 +17,7 @@ from api.models import (
     Company,
     JournalEntry,
     JournalEntryLine,
+    Vendor,
 )
 from api.services.aquaculture_fish_transfer_gl_service import sync_aquaculture_fish_pond_transfer_gl
 
@@ -35,6 +36,74 @@ def _enable_capitalize(company):
     Company.objects.filter(pk=company.id).update(
         aquaculture_capitalize_pond_consumption_to_bioasset=True
     )
+
+
+@pytest.mark.django_db
+def test_nursing_pond_expense_mode_fry_bill_posts_to_1581(
+    api_client, company_tenant, auth_admin_headers
+):
+    """Expense-line fry stocking on a nursing pond must post Dr 1581 like item-mode fry bills."""
+    _enable_capitalize(company_tenant)
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(
+        company_id=cid, name="Nursing Fry Expense", pond_role="nursing", is_active=True
+    )
+    vendor = Vendor.objects.filter(company_id=cid).first()
+    if vendor is None:
+        vendor = Vendor.objects.create(
+            company_id=cid,
+            company_name="CP Bangladesh",
+            display_name="CP Bangladesh",
+            vendor_number="V-FRY-EXP",
+            is_active=True,
+        )
+    coa1581 = ChartOfAccount.objects.get(company_id=cid, account_code="1581")
+    h = auth_admin_headers
+    r = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor.id,
+                "bill_date": "2025-04-23",
+                "status": "open",
+                "lines": [
+                    {
+                        "description": "Tilapia Fry",
+                        "quantity": "166.67",
+                        "unit_cost": "6600",
+                        "amount": "1100000.33",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_expense_category": "fry_stocking",
+                    }
+                ],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert r.status_code == 201, r.content.decode()
+    body = json.loads(r.content.decode())
+    line = body["lines"][0]
+    assert line["aquaculture_cost_bucket"] == "fry_stocking"
+    assert line["expense_account_id"] == coa1581.id
+
+    bill_id = body["id"]
+    bio_line = JournalEntryLine.objects.filter(
+        journal_entry__company_id=cid,
+        journal_entry__entry_number=f"AUTO-BILL-{bill_id}",
+        account__account_code="1581",
+        aquaculture_pond_id=pond.id,
+        debit__gt=0,
+    ).first()
+    assert bio_line is not None
+    assert bio_line.debit == Decimal("1100000.33")
+    assert bio_line.aquaculture_cost_bucket == "fry_stocking"
+    assert not JournalEntryLine.objects.filter(
+        journal_entry__company_id=cid,
+        journal_entry__entry_number=f"AUTO-BILL-{bill_id}",
+        account__account_code="6715",
+        debit__gt=0,
+    ).exists()
 
 
 @pytest.mark.django_db

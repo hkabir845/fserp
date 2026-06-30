@@ -206,7 +206,7 @@ def pond_fry_stocking_capitalized_journal_total(
         # Fry is usually purchased before or at batch start; include YTD fry bills for cycle-scoped transfers.
         fry_start = date(start.year, 1, 1)
 
-    q = JournalEntryLine.objects.filter(
+    q1581 = JournalEntryLine.objects.filter(
         journal_entry__company_id=company_id,
         journal_entry__entry_date__gte=fry_start,
         journal_entry__entry_date__lte=end,
@@ -215,20 +215,43 @@ def pond_fry_stocking_capitalized_journal_total(
         account__account_code="1581",
         aquaculture_pond_id=pond_id,
     ).filter(
-        Q(journal_entry__entry_number__startswith="AUTO-BILL-")
+        Q(
+            journal_entry__entry_number__startswith="AUTO-BILL-",
+            aquaculture_cost_bucket="fry_stocking",
+        )
         | Q(
             journal_entry__entry_number__startswith="AUTO-AQ-EXP-",
             aquaculture_cost_bucket="fry_stocking",
         )
     )
     if cycle_filter_id is not None:
-        # Fry bills are often pond-tagged without a cycle on the journal line; still count for batch transfers.
-        q = q.filter(
+        q1581 = q1581.filter(
             Q(aquaculture_production_cycle_id=cycle_filter_id)
             | Q(aquaculture_production_cycle_id__isnull=True)
         )
-    t = q.aggregate(s=Sum("debit"))["s"]
-    return _money_q(Decimal(str(t or 0)))
+    t1581 = q1581.aggregate(s=Sum("debit"))["s"]
+
+    # Legacy expense-mode fry bills posted to 6715 before unified 1581 routing.
+    q6715 = JournalEntryLine.objects.filter(
+        journal_entry__company_id=company_id,
+        journal_entry__entry_date__gte=fry_start,
+        journal_entry__entry_date__lte=end,
+        journal_entry__is_posted=True,
+        debit__gt=0,
+        account__account_code="6715",
+        aquaculture_pond_id=pond_id,
+        aquaculture_cost_bucket="fry_stocking",
+        journal_entry__entry_number__startswith="AUTO-BILL-",
+    )
+    if cycle_filter_id is not None:
+        q6715 = q6715.filter(
+            Q(aquaculture_production_cycle_id=cycle_filter_id)
+            | Q(aquaculture_production_cycle_id__isnull=True)
+        )
+    t6715 = q6715.aggregate(s=Sum("debit"))["s"]
+
+    total = Decimal(str(t1581["s"] or 0)) + Decimal(str(t6715["s"] or 0))
+    return _money_q(total)
 
 
 def vendor_bill_pond_bucket_additions(
@@ -470,6 +493,9 @@ def pond_bucket_amounts_for_period(
         end=end,
         cycle_filter_id=cycle_filter_id,
     ).items():
+        if bkey == "fry_stocking":
+            # Fry vendor bills are included via pond_fry_stocking_capitalized_journal_total (1581 + legacy 6715).
+            continue
         if bamt != 0:
             out[bkey] += bamt
 

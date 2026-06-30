@@ -220,6 +220,7 @@ AQUACULTURE_REPORT_IDS = frozenset(
         "aquaculture-production-cycles",
         "aquaculture-profit-transfers",
         "aquaculture-fish-transfers",
+        "aquaculture-fingerling-transfers",
         "aquaculture-pond-feed-stock",
         "aquaculture-pond-medicine-stock",
         "aquaculture-pond-supplies-stock",

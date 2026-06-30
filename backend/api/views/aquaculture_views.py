@@ -4965,18 +4965,6 @@ def _parse_fish_transfer_payload(
         if not to_pond:
             return JsonResponse({"detail": f"lines[{i}].to_pond not found"}, status=404), None
         wk = _decimal(row.get("weight_kg"))
-        if wk <= 0:
-            return JsonResponse({"detail": f"lines[{i}].weight_kg must be greater than zero"}, status=400), None
-        total_transfer_weight += wk
-        parsed_rows.append({"index": i, "row": row, "to_pond": to_pond, "wk": wk})
-
-    total_transfer_weight = _money_q(total_transfer_weight)
-    line_models: list[AquacultureFishPondTransferLine] = []
-    for pr in parsed_rows:
-        i = pr["index"]
-        row = pr["row"]
-        to_pond = pr["to_pond"]
-        wk = pr["wk"]
         fcount = row.get("fish_count")
         if fcount in (None, ""):
             return JsonResponse(
@@ -4992,6 +4980,29 @@ def _parse_fish_transfer_payload(
                 {"detail": f"lines[{i}].fish_count must be greater than zero"},
                 status=400,
             ), None
+        if wk <= 0:
+            from api.services.aquaculture_transfer_cost import _transfer_uses_head_cost_basis
+
+            use_head, _ = _transfer_uses_head_cost_basis(
+                company_id=cid,
+                from_pond_id=from_pond_id,
+                from_cycle=from_cycle_obj,
+                fish_count=fcount_i,
+            )
+            if not use_head:
+                return JsonResponse({"detail": f"lines[{i}].weight_kg must be greater than zero"}, status=400), None
+            wk = Decimal("0")
+        total_transfer_weight += wk
+        parsed_rows.append({"index": i, "row": row, "to_pond": to_pond, "wk": wk, "fcount_i": fcount_i})
+
+    total_transfer_weight = _money_q(total_transfer_weight)
+    line_models: list[AquacultureFishPondTransferLine] = []
+    for pr in parsed_rows:
+        i = pr["index"]
+        row = pr["row"]
+        to_pond = pr["to_pond"]
+        wk = pr["wk"]
+        fcount_i = pr["fcount_i"]
         cost_amt = _money_q(_decimal(row.get("cost_amount"), "0"))
         if cost_amt < 0:
             return JsonResponse({"detail": f"lines[{i}].cost_amount cannot be negative"}, status=400), None
